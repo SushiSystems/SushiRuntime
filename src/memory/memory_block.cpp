@@ -8,11 +8,13 @@ namespace SushiBLAS
 {
     MemoryBlock::~MemoryBlock() 
     {
-        SB_LOG_DEBUG("MemoryBlock: Destroying block at {} | Size: {} | Device: {}", ptr, size, device_id);
+        // TODO: Ilerde detaylı memory leak analizi için buraya block ID loglaması eklenebilir.
+        SB_LOG_DEBUG("MemoryBlock: Logical destructor called (Address: {}) | Size: {} | Device: {}", 
+                     ptr, size, device_id);
         
-        if (owner_device) 
-        {
-            owner_device->destroy_block(this);
-        }
+        // AŞAMA 0.1 FIX:
+        // owner_device->destroy_block(this) KESİNLİKLE ÇAĞRILMAMALI.
+        // Bu blok bir havuza (pool) aittir. Pool yok olduğunda veya resetlendiğinde
+        // toplu temizlik yapılır. Kendi kendini yok etmesi double-free'ye yol açar.
     }
 } // namespace SushiBLAS

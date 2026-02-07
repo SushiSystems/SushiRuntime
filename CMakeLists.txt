@@ -29,6 +29,7 @@ set(SB_CPP_SRC
 )
 
 add_subdirectory(src)
+add_subdirectory(kernel)
 
 
 # error handling
@@ -42,7 +43,7 @@ add_executable(SushiBLAS_prototype ${SB_CPP_SRC})
 
 target_include_directories(SushiBLAS_prototype PRIVATE ${SB_INC_DIRS})
 
-target_link_libraries(SushiBLAS_prototype PRIVATE SushiBLAS_src)
+target_link_libraries(SushiBLAS_prototype PRIVATE SushiBLAS_src SushiBLAS_kernels)
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(SushiBLAS_prototype PUBLIC OpenMP::OpenMP_CXX)
@@ -70,6 +71,56 @@ if(MSVC)
     target_compile_options(SushiBLAS_prototype PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math -O3>
     )
+endif()
+
+enable_testing() # Test mekanizmasını aktif et
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/heads/main.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+# 6. Test Executable Tanımı
+add_executable(sushiblas_tests
+    "tests/main_test.cpp"
+    "tests/test_memory_pool.cpp"
+    "tests/test_device_manager.cpp"
+    "tests/test_infrastructure_stress.cpp"
+    "tests/test_cuda.cpp"
+    "tests/test_tensor_stress.cpp"
+    "tests/bench_infrastructure.cpp"
+    "tests/test_sgemm.cpp"
+)
+
+# KRİTİK: Testleri doğrudan kütüphaneye (SushiBLAS_src) bağlayın
+target_link_libraries(sushiblas_tests 
+    PRIVATE 
+    SushiBLAS_src 
+    SushiBLAS_kernels
+    GTest::gtest_main
+)
+
+target_include_directories(sushiblas_tests PRIVATE ${SB_INC_DIRS})
+
+include(GoogleTest)
+gtest_discover_tests(sushiblas_tests)
+
+# MSVC Ayarları (Testler için de geçerli)
+if(MSVC)
+    target_compile_options(sushiblas_tests PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:
+            /arch:AVX2
+            /O2
+            /Oi
+            /Ot
+            /EHsc
+        >
+    )
+    # Linker: LIBCMT (Static CRT) çakışmasını engelle (Dynamic CRT /MD kullandığımız için)
+    target_link_options(sushiblas_tests PRIVATE /NODEFAULTLIB:LIBCMT)
 endif()
 
 # MSVC Ayarları

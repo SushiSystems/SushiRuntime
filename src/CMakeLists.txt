@@ -1,53 +1,57 @@
 # src/CMakeLists.txt
 
-# Kaynak dosyalarını belirle
+# AŞAMA 1.3 FIX: Explicit Source Listing (No GLOB)
 set(SB_SRC_FILES
-    "core/ref_counted.h"
-    "core/storage.h"
-    "core/sushi_ptr.h"
+    # Common
+    "common/logging/logger.h"
+    "common/common.h"
+    
+    # Core
     "core/tensor.h"
-    "device/cpu_device.cpp"
-    "device/cuda_device.cu"
+    "core/sushi_ptr.h"
+    "core/storage.h"
+    "core/ref_counted.h"
+    
+    # Device
     "device/device.h"
+    "device/device_manager.h"
     "device/device_manager.cpp"
-    "event/cuda_event.h"
+    "device/cpu_device.h"
+    "device/cpu_device.cpp"
+    
+    # Event
     "event/event.h"
-    "memory/memory_block.cpp"
-    "memory/memory_block.h"
+    "event/cpu_event.h"
+    
+    # Memory
     "memory/memory_pool.h"
-    "stream/cpu_stream.h"
-    "stream/cuda_stream.h"
+    "memory/memory_block.h"
+    "memory/memory_block.cpp"
+    
+    # Stream
     "stream/stream.h"
+    "stream/cpu_stream.h"
 )
 
-# SushiBLAS_src kütüphanesini oluştur
+# CUDA Sources (Conditional)
+if(CMAKE_CUDA_COMPILER)
+    list(APPEND SB_SRC_FILES
+        "device/cuda_device.h"
+        "device/cuda_device.cu"
+        "event/cuda_event.h"
+        "stream/cuda_stream.h"
+    )
+endif()
+
+# Library Definition
 add_library(SushiBLAS_src STATIC ${SB_SRC_FILES})
 
-# Include dizinlerini ayarla
+if(CMAKE_CUDA_COMPILER)
+    target_compile_definitions(SushiBLAS_src PUBLIC USE_CUDA)
+endif()
+
+# Include Directories
 target_include_directories(SushiBLAS_src PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/device
-    ${CMAKE_CURRENT_SOURCE_DIR}/event
-    ${CMAKE_CURRENT_SOURCE_DIR}/memory
-    ${CMAKE_CURRENT_SOURCE_DIR}/stream
+    ${CMAKE_SOURCE_DIR}/include
 )
-
-# CUDA ayarlarını yapılandır
-if(CMAKE_CUDA_COMPILER)
-    set_target_properties(SushiBLAS_src PROPERTIES
-        CUDA_SEPARABLE_COMPILATION ON
-    )
-    
-    # MSVC ve CUDA uyumluluğu için
-    if(MSVC)
-        target_compile_options(SushiBLAS_src PRIVATE
-            $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math -O3>
-        )
-    endif()
-endif()
-
-# OpenMP desteği
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(SushiBLAS_src PUBLIC OpenMP::OpenMP_CXX)
-endif()

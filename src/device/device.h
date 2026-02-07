@@ -1,11 +1,16 @@
 #pragma once
 
+#include <unordered_map>
+#include <mutex>
+#include <algorithm>
+#include <cstddef>
+
 #include "../common/logging/logger.h"
+#include "../memory/memory_pool.h"
 #include "../core/sushi_ptr.h"
-#include "../core/storage.h"
-#include "memory_pool.h"
-#include "stream.h"
-#include "event.h"
+#include "../common/common.h"
+#include "../stream/stream.h"
+#include "../event/event.h"
 
 namespace SushiBLAS 
 {
@@ -21,8 +26,36 @@ namespace SushiBLAS
             sushi_ptr<MemoryPool> pool;
             int32_t device_id;
 
+            // System Allocation Tracking
+            mutable std::mutex allocation_mutex;
+            std::vector<void*> system_allocations;
+            
+            // Block Registry: void* addr -> MemoryBlock*
+            // AŞAMA 4.1 FIX: Map-based tracking instead of in-place headers
+            // This is essential for CUDA where the CPU cannot read/write headers in device memory.
+            std::unordered_map<void*, MemoryBlock*> block_registry;
+
         public:
-            virtual ~Device() = default;
+            virtual ~Device() 
+            {
+                std::lock_guard<std::mutex> lock(allocation_mutex);
+                
+                // Clear registry and delete block metadata
+                for (auto& [ptr, block] : block_registry)
+                {
+                    delete block;
+                }
+                block_registry.clear();
+
+                if (!system_allocations.empty())
+                {                    
+                    for (void* ptr : system_allocations)
+                    {
+                        free_raw(ptr);
+                    }
+                    system_allocations.clear();
+                }
+            }
 
             virtual void* allocate(size_t size) 
             {
@@ -31,29 +64,28 @@ namespace SushiBLAS
                 if (!block) 
                 {
                     constexpr size_t align = CACHE_LINE_SIZE;
+                    void* raw_mem = allocate_tracked(size);
+                    
+                    SB_THROW_IF(raw_mem == nullptr, "Memory: Physical allocation failed for {} bytes on Device {}", 
+                                size, get_name());
 
-                    size_t header_size = sizeof(MemoryBlock*) + sizeof(MemoryBlock);
-                    size_t total_header = (header_size + align - 1) & ~(align - 1);
-
-                    void* raw_mem = allocate_raw(total_header + size);
-                    SB_THROW_IF(raw_mem == nullptr, "Memory: Physical allocation failed for {} bytes on Device {}", total_header + size, get_name());
-
-                    uint8_t* base = static_cast<uint8_t*>(raw_mem);
-                    MemoryBlock* block_ptr = new (base) MemoryBlock(
-                        nullptr, 
+                    // Metadata is stored on Host
+                    MemoryBlock* block_ptr = new MemoryBlock(
+                        raw_mem, 
                         size, 
                         align, 
-                        total_header,
+                        0, // header_offset not used in map-based impl
                         this->device_id
                     );
 
                     block_ptr->owner_device = this;
+                    block_ptr->status = BlockStatus::ALLOCATED;
 
-                    uint8_t* data_ptr = base + total_header;
+                    {
+                        std::lock_guard<std::mutex> lock(allocation_mutex);
+                        block_registry[raw_mem] = block_ptr;
+                    }
 
-                    *(reinterpret_cast<MemoryBlock**>(data_ptr) - 1) = block_ptr;
-
-                    block_ptr->ptr = data_ptr;
                     block = block_ptr;
                 }
 
@@ -64,13 +96,38 @@ namespace SushiBLAS
             {
                 if (!ptr) return;
 
-                MemoryBlock* block = MemoryBlock::from_ptr(ptr);
+                MemoryBlock* block = nullptr;
+                {
+                    std::lock_guard<std::mutex> lock(allocation_mutex);
+                    auto it = block_registry.find(ptr);
+                    if (it != block_registry.end())
+                    {
+                        block = it->second;
+                    }
+                }
                 
-                SB_THROW_IF(block->device_id != this->get_id(), 
-                            "Memory: Device mismatch. Trying to deallocate block from device {} on device {}", 
+                SB_THROW_IF(!block, "Memory: Attempted to deallocate unknown pointer {} on device {}", ptr, get_name());
+                
+                SB_ASSERT(block->device_id == this->get_id(), 
+                            "Memory: Device mismatch. Block is from dev {} but dealloc on dev {}", 
                             block->device_id, this->get_id());
 
                 pool->deallocate(block, e, tag);
+            }
+
+            virtual void destroy_block(MemoryBlock* block)
+            {
+                if (!block) return;
+                
+                void* raw_ptr = block->ptr;
+                
+                {
+                    std::lock_guard<std::mutex> lock(allocation_mutex);
+                    block_registry.erase(raw_ptr);
+                }
+
+                delete block;
+                deallocate_tracked(raw_ptr);
             }
 
             virtual sushi_ptr<Stream> create_stream() = 0;
@@ -85,15 +142,43 @@ namespace SushiBLAS
             virtual void copy_d2h(void* dst, const void* src, size_t size, Stream* stream) = 0;
             virtual void copy_d2d(void* dst, Device* src_dev, const void* src, size_t size, Stream* stream) = 0;
 
-            virtual void destroy_block(MemoryBlock* block)
+        protected:
+            Device(int32_t id) : device_id(id), pool(make_sushi<MemoryPool>(id)) { }
+            
+            virtual void* allocate_raw(size_t size) = 0;
+            virtual void free_raw(void* ptr) { (void)ptr; };
+
+        private:
+            void* allocate_tracked(size_t size)
             {
-                free_raw(block);
+                void* ptr = allocate_raw(size);
+                if (ptr)
+                {
+                    std::lock_guard<std::mutex> lock(allocation_mutex);
+                    system_allocations.push_back(ptr);
+                }
+                return ptr;
             }
 
-        protected:
-            Device(int32_t id) : device_id(id), pool(make_sushi<MemoryPool>()) {}
-            virtual void* allocate_raw(size_t size) = 0;
-            virtual void free_raw(void* ptr) = 0;
-        };
-        
+            void deallocate_tracked(void* ptr)
+            {
+                if (!ptr) return;
+                
+                {
+                    std::lock_guard<std::mutex> lock(allocation_mutex);
+                    auto it = std::find(system_allocations.begin(), system_allocations.end(), ptr);
+                    
+                    if (it != system_allocations.end())
+                    {
+                        *it = system_allocations.back();
+                        system_allocations.pop_back();
+                        free_raw(ptr);
+                    }
+                    else
+                    {
+                        SB_LOG_ERROR("Device: Double free or unknown pointer: {}", ptr);
+                    }
+                }
+            }
+    };
 } // namespace SushiBLAS

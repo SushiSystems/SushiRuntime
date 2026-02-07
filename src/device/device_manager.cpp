@@ -1,98 +1,93 @@
+#include "device_manager.h"
+#include "cpu_device.h"
 #include <iostream>
 
-#include "../core/sushi_ptr.h"
-#include "cpu_device.cpp"
-#include "device.h"
-
 #ifdef USE_CUDA
-
-    #include "cuda_device.h"
-
     #include <cuda_runtime.h>
-
+    #include "cuda_device.h"
 #endif
-
-#define MAX_SUPPORTED_DEVICES 16
 
 namespace SushiBLAS 
 {
-
-    class DeviceManager 
+    DeviceManager& DeviceManager::instance() 
     {
-        private:
-            sushi_ptr<Device> devices[MAX_SUPPORTED_DEVICES];
-            int device_count = 0;
-            int active_device_idx = 0;
+        static DeviceManager inst;
+        return inst;
+    }
 
-            DeviceManager() = default;
+    void DeviceManager::probe_devices() 
+    {   
+        // Zaten taranmışsa tekrar ekleme yapma (Singleton güvenliği)
+        if (device_count > 0) return;
 
-        public:
-            static DeviceManager& instance() 
+        // 0. Cihaz her zaman CPU olsun (Logical Index 0 = Host)
+        register_device(make_sushi<CPUDevice>());
+
+        #ifdef USE_CUDA
+            int cuda_count = 0;
+            cudaError_t err = cudaGetDeviceCount(&cuda_count);
+            
+            if (err == cudaSuccess) 
             {
-                static DeviceManager inst;
-                return inst;
-            }
-
-            void probe_devices() 
-            {   
-                // first register cpu device
-                register_device(make_sushi<CPUDevice>());
-
-                #ifdef USE_CUDA
-
-                int cuda_count = 0;
-                cudaError_t err = cudaGetDeviceCount(&cuda_count);
-                
-                if (err == cudaSuccess) 
-                {
-                    for (int i = 0; i < cuda_count; ++i) 
-                    {
-                        if (device_count >= MAX_SUPPORTED_DEVICES) break;
-                        // pass device id to CUDADevice constructor
-                        register_device(make_sushi<CUDADevice>(i));
-                    }
-                } 
-                else 
-                {
-                    std::cerr << "CUDA devices not found or driver error." << std::endl;
+                for (int i = 0; i < cuda_count; ++i) 
+                {   
+                    if (device_count >= MAX_SUPPORTED_DEVICES) break; 
+                    
+                    // CUDA ID'leri 0, 1, 2... diye gider.
+                    // Manager içinde bunlar 1, 2, 3... indexlerine yerleşir.
+                    register_device(make_sushi<CUDADevice>(i));
                 }
-
-                #endif
-            }
-
-            bool register_device(sushi_ptr<Device> dev) 
+            } 
+            else 
             {
-                if (device_count >= MAX_SUPPORTED_DEVICES) return false;
-
-                devices[device_count++] = dev;
-                return true;
+                SB_LOG_WARN("Device Manager: CUDA devices not found or driver error: {}", cudaGetErrorString(err));
             }
+        #endif
+    }
 
-            sushi_ptr<Device> get_current_device() 
-            {
-                return devices[active_device_idx];
-            }
+    bool DeviceManager::register_device(sushi_ptr<Device> dev) 
+    {
+        if (device_count >= MAX_SUPPORTED_DEVICES) 
+        {
+            SB_LOG_ERROR("Device Manager: Maximum number of devices reached.");
+            return false;
+        }
 
-            void set_device(int idx) 
-            {
-                if (idx >= 0 && idx < device_count) 
-                {
-                    active_device_idx = idx;
-                }
-            }
+        devices[device_count++] = dev;
+        return true;
+    }
 
-            int get_count() const { return device_count; }
+    // AŞAMA 3.1 FIX: Thread-Safe Getter
+    sushi_ptr<Device> DeviceManager::get_device(int index) 
+    {
+        if (index >= 0 && index < device_count) 
+        {
+            return devices[index];
+        }
+        
+        SB_LOG_ERROR("Device Manager: Invalid device index requested: {}", index);
+        return nullptr;
+    }
 
-            // debug
-            void list_devices() 
-            {
-                std::cout << "--- Registered Devices ---" << std::endl;
+    int DeviceManager::get_count() const 
+    { 
+        return device_count;
+    }
 
-                for(int i = 0; i < device_count; ++i) 
-                {
-                    std::cout << i << ": " << devices[i]->get_name() 
-                            << " (Refs: " << devices[i]->get_ref_count() << ")" << std::endl;
-                }
-            }
-    };
+    void DeviceManager::list_devices() 
+    {
+        std::cout << "--- Registered Devices ---" << std::endl;
+        std::cout << "Index | Name            | Physical ID | Refs" << std::endl;
+        std::cout << "------------------------------------------" << std::endl;
+        
+        for(int i = 0; i < device_count; ++i) 
+        {
+            // Index: Kullanıcının get_device(i) ile çağırdığı numara.
+            // Physical ID: CUDA API veya OS tarafındaki ID (CPU için -1).
+            std::cout << "  " << i << "   | " 
+                      << devices[i]->get_name() << " \t| "
+                      << devices[i]->get_id() << "          | " 
+                      << devices[i]->get_ref_count() << std::endl;
+        }
+    }
 } // namespace SushiBLAS

@@ -1,8 +1,9 @@
 #pragma once
 
 #include <cstdint>
+
 #include "../core/sushi_ptr.h"
-#include "event.h"
+#include "../event/event.h"
 
 namespace SushiBLAS 
 {
@@ -15,11 +16,11 @@ namespace SushiBLAS
         PENDING
     };
 
-    struct MemoryBlock
+    struct alignas(CACHE_LINE_SIZE) MemoryBlock
     {
         void* ptr = nullptr;       // Data başlangıcı
         size_t size = 0;           // Data boyutu
-        size_t alignment = 64;     // İstenen hizalama
+        size_t alignment = CACHE_LINE_SIZE;     // İstenen hizalama
         size_t header_offset = 0;  // Data'dan geriye kaç byte gidilmeli?
         int32_t device_id = -1;
         
@@ -39,12 +40,6 @@ namespace SushiBLAS
         {
             if (status == BlockStatus::FREE) return true;
             return (status == BlockStatus::PENDING && ready_event && ready_event->is_completed());
-        }
-
-        static MemoryBlock* from_ptr(void* ptr) 
-        {
-            if (!ptr) return nullptr;
-            return *(reinterpret_cast<MemoryBlock**>(ptr) - 1);
         }
     };
 }

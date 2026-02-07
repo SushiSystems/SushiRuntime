@@ -1,72 +1,84 @@
+#include "cpu_device.h"
+#include "../stream/cpu_stream.h"
+#include "../event/cpu_event.h" // CPUEvent tanımı için gerekli
 #include <cstdlib>
 #include <cstring>
 
-#include "cpu_stream.h"
-#include "device.h"
-
 namespace SushiBLAS 
 {
-    class CPUEvent final : public Event 
+    CPUDevice::CPUDevice() : Device(-1) 
     {
-        bool completed = false;
-        const char* name;
+        std::strncpy(device_name_, "Host CPU", sizeof(device_name_));
+        default_stream_ = create_stream();
+    }
 
-        public:
-            CPUEvent(const char* n) : name(n) {}
-            void record(Stream* s) override { completed = true; }
-            bool is_completed() const override { return completed; }
-
-            void synchronize() override { /* Already sync on CPU */ }
-
-            const char* get_name() const override { return name; }
-            float elapsed_time(Event* start) override { return 0.0f; }
-    };
-
-    class CPUDevice final : public Device 
+    CPUDevice::~CPUDevice() 
     {
-        sushi_ptr<Stream> default_stream;
+        synchronize(); // Önceki aşamada eklediğimiz gibi
+    }
 
-        public:
-            CPUDevice() : Device(-1) 
-            {
-                default_stream = create_stream();
-            }
+    const char* CPUDevice::get_name() const 
+    { 
+        return device_name_; 
+    }
 
-            // TODO: Print the actual CPU name
-            const char* get_name() const override { return "Host CPU"; } 
-            int get_id() const override { return -1; }
+    int CPUDevice::get_id() const 
+    { 
+        return -1; 
+    }
 
-            sushi_ptr<Stream> create_stream() override { return make_sushi<CPUStream>(); }
+    sushi_ptr<Stream> CPUDevice::create_stream() 
+    { 
+        return make_sushi<CPUStream>(); 
+    }
 
-            sushi_ptr<Stream> get_default_stream() override { return default_stream; }
+    sushi_ptr<Stream> CPUDevice::get_default_stream() 
+    { 
+        return default_stream_; 
+    }
 
-            sushi_ptr<Event> create_event(const char* name) override { return make_sushi<CPUEvent>(name); }
+    sushi_ptr<Event> CPUDevice::create_event(const char* name) 
+    { 
+        return make_sushi<CPUEvent>(name); 
+    }
 
-            void synchronize() override { /* Already sync on CPU */ }
+    void CPUDevice::synchronize() 
+    { 
+        // CPU üzerinde işlemler zaten senkron ilerler.
+    }
 
-            void copy_h2d(void* dst, const void* src, size_t size, Stream* s) override { std::memcpy(dst, src, size); }
-            void copy_d2h(void* dst, const void* src, size_t size, Stream* s) override { std::memcpy(dst, src, size); }
-            void copy_d2d(void* dst, Device* src_dev, const void* src, size_t size, Stream* s) override { std::memcpy(dst, src, size); }
+    void CPUDevice::copy_h2d(void* dst, const void* src, size_t size, Stream* s) 
+    { 
+        std::memcpy(dst, src, size); 
+    }
 
-        protected:
-            void* allocate_raw(size_t size) override 
-            {
-                #if defined(_MSC_VER) || defined(__MINGW32__)
-                    return _aligned_malloc(size, 64);
-                #else
-                    void* ptr = nullptr;
-                    if (posix_memalign(&ptr, 64, size) != 0) return nullptr;
-                    return ptr;
-                #endif
-            }
+    void CPUDevice::copy_d2h(void* dst, const void* src, size_t size, Stream* s) 
+    { 
+        std::memcpy(dst, src, size); 
+    }
 
-            void free_raw(void* ptr) override 
-            {
-                #if defined(_MSC_VER) || defined(__MINGW32__)
-                    _aligned_free(ptr);
-                #else
-                    std::free(ptr);
-                #endif
-            }
-    };
+    void CPUDevice::copy_d2d(void* dst, Device* src_dev, const void* src, size_t size, Stream* s) 
+    { 
+        std::memcpy(dst, src, size); 
+    }
+
+    void* CPUDevice::allocate_raw(size_t size) 
+    {
+        #if defined(_MSC_VER) || defined(__MINGW32__)
+            return _aligned_malloc(size, CACHE_LINE_SIZE);
+        #else
+            void* ptr = nullptr;
+            if (posix_memalign(&ptr, CACHE_LINE_SIZE, size) != 0) return nullptr;
+            return ptr;
+        #endif
+    }
+
+    void CPUDevice::free_raw(void* ptr) 
+    {
+        #if defined(_MSC_VER) || defined(__MINGW32__)
+            _aligned_free(ptr);
+        #else
+            std::free(ptr);
+        #endif
+    }
 } // namespace SushiBLAS

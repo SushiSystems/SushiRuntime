@@ -3,14 +3,15 @@
 #include <cstddef>
 #include <cassert>
 
+#include "../common/logging/logger.h"
+#include "../common/common.h"
 #include "../device/device.h"
-#include "sushi_ptr.h"
 
-#define CACHE_LINE_SIZE 64
+#include "sushi_ptr.h"
 
 namespace SushiBLAS 
 {
-    class Storage : public RefCounted 
+    class alignas(CACHE_LINE_SIZE) Storage : public RefCounted 
     {
         public:
             void* data_ptr = nullptr;
@@ -46,7 +47,7 @@ namespace SushiBLAS
         protected:
             ~Storage() override 
             {
-                SB_THROW_IF(get_ref_count() != 0, "Storage: RefCount must be 0 during destruction! Current: {}", get_ref_count());
+                SB_ASSERT(get_ref_count() == 0, "Storage: RefCount must be 0 during destruction!");
 
                 if (data_ptr && device) 
                 {
