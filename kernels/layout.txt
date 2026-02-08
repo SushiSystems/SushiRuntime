@@ -1,0 +1,41 @@
+Layouts:
+
+interface/
+ ├── axpy/
+ ├── gemv/
+ ├── gemm/
+ └── trsm/
+
+kernels/
+ ├── cpu/
+ │   ├── ref/
+ │   │   └── dgemm_4x4.cpp
+ │   │
+ │   ├── arm/
+ │   │   ├── neon/
+ │   │   └── sve/
+ │   │
+ │   └── x86/
+ │       ├── sse2/
+ │       ├── avx2/
+ │       └── avx512/
+ │
+ └── cuda/
+     ├── tensor_core/
+     └── standard/
+
+backend/
+ ├── cpu/
+ └── cuda/
+
+Pipeline:
+
+ A[User Code] --> B[Public API Layer - SushiBLAS::gemm]
+ B --> C[Validation & Logic Layer - Shape/Device Check]
+ C --> D{Backend Dispatcher}
+ D -- CPU --> E[CPU Dispatcher - AVX/AVX512/Ref]
+ D -- CUDA --> F[CUDA Dispatcher - TensorCore/Standard]
+ E --> G[Task Scheduler / Thread Pool]
+ F --> H[CUDA Stream / Command Queue]
+ G --> I[Kernels]
+ H --> I

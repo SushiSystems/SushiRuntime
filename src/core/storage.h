@@ -6,7 +6,6 @@
 #include "../common/logging/logger.h"
 #include "../common/common.h"
 #include "../device/device.h"
-
 #include "sushi_ptr.h"
 
 namespace SushiBLAS 

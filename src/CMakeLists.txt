@@ -28,6 +28,9 @@ set(SB_SRC_FILES
     "memory/memory_block.h"
     "memory/memory_block.cpp"
     
+    # Scheduler
+    "scheduler/task_scheduler.cpp"
+
     # Stream
     "stream/stream.h"
     "stream/cpu_stream.h"

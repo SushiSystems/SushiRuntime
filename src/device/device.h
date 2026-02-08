@@ -11,6 +11,7 @@
 #include "../common/common.h"
 #include "../stream/stream.h"
 #include "../event/event.h"
+#include "hardware_info.h"
 
 namespace SushiBLAS 
 {
@@ -29,18 +30,22 @@ namespace SushiBLAS
             // System Allocation Tracking
             mutable std::mutex allocation_mutex;
             std::vector<void*> system_allocations;
-            
+
             // Block Registry: void* addr -> MemoryBlock*
-            // AŞAMA 4.1 FIX: Map-based tracking instead of in-place headers
-            // This is essential for CUDA where the CPU cannot read/write headers in device memory.
+            // Map-based tracking instead of in-place headers.
             std::unordered_map<void*, MemoryBlock*> block_registry;
 
         public:
             virtual ~Device() 
             {
+                // Ensure MemoryPool is destroyed BEFORE we delete the blocks.
+                // MemoryPool destructor triggers cache flushing, which accesses the blocks.
+                // If we delete blocks first, MemoryPool will access freed memory -> Access Violation.
+                if (pool) pool->invalidate();
+                pool = nullptr;
+
                 std::lock_guard<std::mutex> lock(allocation_mutex);
                 
-                // Clear registry and delete block metadata
                 for (auto& [ptr, block] : block_registry)
                 {
                     delete block;
@@ -66,15 +71,14 @@ namespace SushiBLAS
                     constexpr size_t align = CACHE_LINE_SIZE;
                     void* raw_mem = allocate_tracked(size);
                     
-                    SB_THROW_IF(raw_mem == nullptr, "Memory: Physical allocation failed for {} bytes on Device {}", 
+                    SB_THROW_IF(raw_mem == nullptr, "Physical allocation failed for {} bytes on Device {}", 
                                 size, get_name());
 
-                    // Metadata is stored on Host
                     MemoryBlock* block_ptr = new MemoryBlock(
                         raw_mem, 
                         size, 
                         align, 
-                        0, // header_offset not used in map-based impl
+                        0,
                         this->device_id
                     );
 
@@ -106,10 +110,10 @@ namespace SushiBLAS
                     }
                 }
                 
-                SB_THROW_IF(!block, "Memory: Attempted to deallocate unknown pointer {} on device {}", ptr, get_name());
+                SB_THROW_IF(!block, "Attempted to deallocate unknown pointer {} on device {}", ptr, get_name());
                 
                 SB_ASSERT(block->device_id == this->get_id(), 
-                            "Memory: Device mismatch. Block is from dev {} but dealloc on dev {}", 
+                            "Device mismatch. Block is from dev {} but dealloc on dev {}", 
                             block->device_id, this->get_id());
 
                 pool->deallocate(block, e, tag);
@@ -130,17 +134,18 @@ namespace SushiBLAS
                 deallocate_tracked(raw_ptr);
             }
 
-            virtual sushi_ptr<Stream> create_stream() = 0;
-            virtual void synchronize() = 0;
-
-            virtual const char* get_name() const = 0;
             virtual int get_id() const = 0;
+            virtual const char* get_name() const = 0;
+            virtual sushi_ptr<Stream> create_stream() = 0;
             virtual sushi_ptr<Stream> get_default_stream() = 0;
             virtual sushi_ptr<Event> create_event(const char* name) = 0;
+            virtual void synchronize() = 0;
 
             virtual void copy_h2d(void* dst, const void* src, size_t size, Stream* stream) = 0;
             virtual void copy_d2h(void* dst, const void* src, size_t size, Stream* stream) = 0;
             virtual void copy_d2d(void* dst, Device* src_dev, const void* src, size_t size, Stream* stream) = 0;
+
+            virtual HardwareInfo get_hardware_info() const = 0;
 
         protected:
             Device(int32_t id) : device_id(id), pool(make_sushi<MemoryPool>(id)) { }
@@ -176,7 +181,7 @@ namespace SushiBLAS
                     }
                     else
                     {
-                        SB_LOG_ERROR("Device: Double free or unknown pointer: {}", ptr);
+                        SB_LOG_ERROR("Double free or unknown pointer: {}", ptr);
                     }
                 }
             }

@@ -18,10 +18,10 @@ namespace SushiBLAS
 
     struct alignas(CACHE_LINE_SIZE) MemoryBlock
     {
-        void* ptr = nullptr;       // Data başlangıcı
-        size_t size = 0;           // Data boyutu
-        size_t alignment = CACHE_LINE_SIZE;     // İstenen hizalama
-        size_t header_offset = 0;  // Data'dan geriye kaç byte gidilmeli?
+        void* ptr = nullptr;
+        size_t size = 0;
+        size_t alignment = CACHE_LINE_SIZE;
+        size_t header_offset = 0;
         int32_t device_id = -1;
         
         Device* owner_device = nullptr;
@@ -42,4 +42,4 @@ namespace SushiBLAS
             return (status == BlockStatus::PENDING && ready_event && ready_event->is_completed());
         }
     };
-}
+} // namespace SushiBLAS

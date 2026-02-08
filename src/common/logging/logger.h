@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+#include <source_location>
 
 #ifndef SB_ENABLE_LOGGING
     #define SB_ENABLE_LOGGING 1
@@ -39,14 +40,28 @@ namespace SushiBLAS
             return std::format("{:%H:%M:%S}", now);
         }
 
+        constexpr std::string_view extract_function_name(std::string_view sv)
+        {
+             // void SushiBLAS::Class::Func(args)
+             return sv;
+        }
+
         template<typename... Args>
-        void log_base(LogType level, std::string_view prefix, std::string_view fmt, Args&&... args) 
+        void log_base(LogType level, std::string_view prefix, const std::source_location& loc, std::string_view fmt, Args&&... args) 
         {
             #if SB_ENABLE_LOGGING
                 try 
                 {
                     std::string msg = std::vformat(fmt, std::make_format_args(args...));
-                    auto output = std::format("[{}] [{}] {}\n", get_timestamp(), prefix, msg);
+                    
+                    // [TIME] [LEVEL] [Function] Message
+                    std::string_view func_name = extract_function_name(loc.function_name());
+                    
+                    auto output = std::format("[{}] [{}] [{}] {}\n", 
+                        get_timestamp(), 
+                        prefix, 
+                        func_name, 
+                        msg);
                     
                     if (level <= LogType::ERR) std::cerr << output;
                     else std::cout << output;
@@ -62,19 +77,19 @@ namespace SushiBLAS
     #if SB_ENABLE_LOGGING
         #define SB_LOG_ERROR(fmt, ...)                                                                  \
             if constexpr (SushiBLAS::ACTIVE_LOG_LEVEL >= SushiBLAS::LogType::ERR)                       \
-                SushiBLAS::Detail::log_base(SushiBLAS::LogType::ERR, "ERROR", fmt, ##__VA_ARGS__)
+                SushiBLAS::Detail::log_base(SushiBLAS::LogType::ERR, "ERROR", std::source_location::current(), fmt, ##__VA_ARGS__)
 
         #define SB_LOG_WARN(fmt, ...)                                                                   \
             if constexpr (SushiBLAS::ACTIVE_LOG_LEVEL >= SushiBLAS::LogType::WARN)                      \
-                SushiBLAS::Detail::log_base(SushiBLAS::LogType::WARN, "WARN", fmt, ##__VA_ARGS__)
+                SushiBLAS::Detail::log_base(SushiBLAS::LogType::WARN, "WARN", std::source_location::current(), fmt, ##__VA_ARGS__)
 
         #define SB_LOG_INFO(fmt, ...)                                                                   \
             if constexpr (SushiBLAS::ACTIVE_LOG_LEVEL >= SushiBLAS::LogType::INFO)                      \
-                SushiBLAS::Detail::log_base(SushiBLAS::LogType::INFO, "INFO", fmt, ##__VA_ARGS__)
+                SushiBLAS::Detail::log_base(SushiBLAS::LogType::INFO, "INFO", std::source_location::current(), fmt, ##__VA_ARGS__)
 
         #define SB_LOG_DEBUG(fmt, ...)                                                                  \
             if constexpr (SushiBLAS::ACTIVE_LOG_LEVEL >= SushiBLAS::LogType::DEBUG)                     \
-                SushiBLAS::Detail::log_base(SushiBLAS::LogType::DEBUG, "DEBUG", fmt, ##__VA_ARGS__)
+                SushiBLAS::Detail::log_base(SushiBLAS::LogType::DEBUG, "DEBUG", std::source_location::current(), fmt, ##__VA_ARGS__)
     #else
         #define SB_LOG_ERROR(fmt, ...) ((void)0)
         #define SB_LOG_WARN(fmt, ...)  ((void)0)

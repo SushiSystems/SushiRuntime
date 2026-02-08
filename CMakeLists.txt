@@ -1,14 +1,17 @@
 cmake_minimum_required(VERSION 3.18)
 
-# CUDA path
-set(CMAKE_CUDA_COMPILER "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/bin/nvcc.exe")
+# CUDA path - Remove hardcoded path for portability
+# set(CMAKE_CUDA_COMPILER "...") 
 
 project(SushiBLAS LANGUAGES CXX CUDA)
 
 find_package(OpenMP COMPONENTS CXX REQUIRED)
 
-# GTX 1060 (Pascal) mimarisi
-set(CMAKE_CUDA_ARCHITECTURES 61)
+# CUDA Architectures: Use 'native' for local optimization or a list of common arches
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES native)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -17,7 +20,7 @@ set(SB_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(SB_API_DIR "${SB_ROOT_DIR}/api")         # root/api
 set(SB_SRC_DIR "${SB_ROOT_DIR}/src")         # root/src
-set(SB_CORE_DIR "${SB_SRC_DIR}/core")       # root/src/core
+set(SB_CORE_DIR "${SB_SRC_DIR}/core")        # root/src/core
 
 set(SB_INC_DIRS 
     ${SB_API_DIR}
@@ -29,7 +32,7 @@ set(SB_CPP_SRC
 )
 
 add_subdirectory(src)
-add_subdirectory(kernel)
+add_subdirectory(kernels)
 
 
 # error handling
@@ -71,6 +74,9 @@ if(MSVC)
     target_compile_options(SushiBLAS_prototype PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math -O3>
     )
+
+    # Linker: LIBCMT (Static CRT) çakışmasını engelle
+    target_link_options(SushiBLAS_prototype PRIVATE /NODEFAULTLIB:LIBCMT)
 endif()
 
 enable_testing() # Test mekanizmasını aktif et
@@ -85,14 +91,12 @@ FetchContent_MakeAvailable(googletest)
 
 # 6. Test Executable Tanımı
 add_executable(sushiblas_tests
-    "tests/main_test.cpp"
-    "tests/test_memory_pool.cpp"
-    "tests/test_device_manager.cpp"
-    "tests/test_infrastructure_stress.cpp"
-    "tests/test_cuda.cpp"
-    "tests/test_tensor_stress.cpp"
-    "tests/bench_infrastructure.cpp"
-    "tests/test_sgemm.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/main_test.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime/test_device_manager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime/test_memory.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime/test_pipeline.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime/test_scheduler.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_tensor.cpp"
 )
 
 # KRİTİK: Testleri doğrudan kütüphaneye (SushiBLAS_src) bağlayın
@@ -100,7 +104,7 @@ target_link_libraries(sushiblas_tests
     PRIVATE 
     SushiBLAS_src 
     SushiBLAS_kernels
-    GTest::gtest_main
+    GTest::gtest
 )
 
 target_include_directories(sushiblas_tests PRIVATE ${SB_INC_DIRS})

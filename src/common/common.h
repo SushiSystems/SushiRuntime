@@ -11,7 +11,4 @@ namespace SushiBLAS
     inline constexpr size_t MAX_POOL_INSTANCES = 16;
 
     inline constexpr size_t MAX_SUPPORTED_DEVICES = 16;
-
-    // Could add other global configuration here, like alignment requirements, 
-    // default pool sizes, etc.
-}
+} // namespace SushiBLAS

@@ -1,5 +1,3 @@
-# kernel/CMakeLists.txt
-
 set(SB_KERNEL_FILES
     "cpu/ref/ref_sgemm.cpp"
     "cpu/ref/sgemm_4x4.cpp"

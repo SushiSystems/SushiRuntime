@@ -55,23 +55,10 @@ namespace SushiBLAS
             T* get() const { return ptr; }
             explicit operator bool() const { return ptr != nullptr; }
 
-            bool operator==(std::nullptr_t) const noexcept {
-                return ptr == nullptr;
-            }
-
-            // nullptr ile karşılaştırma (!=)
-            bool operator!=(std::nullptr_t) const noexcept {
-                return ptr != nullptr;
-            }
-
-            // Diğer sushi_ptr nesneleriyle karşılaştırma
-            bool operator==(const sushi_ptr& other) const noexcept {
-                return ptr == other.ptr;
-            }
-
-            bool operator!=(const sushi_ptr& other) const noexcept {
-                return ptr != other.ptr;
-            }
+            bool operator==(std::nullptr_t) const noexcept { return ptr == nullptr; }
+            bool operator!=(std::nullptr_t) const noexcept { return ptr != nullptr; }
+            bool operator==(const sushi_ptr& other) const noexcept { return ptr == other.ptr; }
+            bool operator!=(const sushi_ptr& other) const noexcept { return ptr != other.ptr; }
     };
 
     template <typename T, typename... Args>

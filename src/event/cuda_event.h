@@ -26,7 +26,7 @@ namespace SushiBLAS
 
             void record(Stream* stream) override 
             {
-                cudaStream_t s = static_cast<cudaStream_t>(stream->get_native_handle());
+                cudaStream_t s = (stream) ? static_cast<cudaStream_t>(stream->get_native_handle()) : nullptr;
                 cudaEventRecord(handle_, s);
             }
 
