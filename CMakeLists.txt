@@ -1,17 +1,26 @@
 cmake_minimum_required(VERSION 3.20)
 
+# --- Force Authoritative vcpkg Path (Fixes VS Hijacking) ---
+if(WIN32)
+    set(VCPKG_ROOT "C:/vcpkg" CACHE PATH "" FORCE)
+    set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "" FORCE)
+    message(STATUS ">>> Forced VCPKG_ROOT to: ${VCPKG_ROOT}")
+endif()
+
 # --- vcpkg Classic Mode ---
-set(VCPKG_MANIFEST_MODE OFF)
-set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "" FORCE)
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+endif()
 
 # --- Compiler Selection ---
-if(WIN32)
-    # Absolute paths to ensure CMake correctly identifies the compiler
+if(WIN32 AND NOT DEFINED CMAKE_CXX_COMPILER)
     set(INTEL_ONEAPI_DIR "C:/Program Files (x86)/Intel/oneAPI/compiler/latest")
-    set(CMAKE_CXX_COMPILER "${INTEL_ONEAPI_DIR}/bin/dpcpp-cl.exe" CACHE FILEPATH "CXX compiler")
-    set(CMAKE_C_COMPILER "${INTEL_ONEAPI_DIR}/bin/icx-cl.exe" CACHE FILEPATH "C compiler")
+    set(CMAKE_CXX_COMPILER "${INTEL_ONEAPI_DIR}/bin/icx-cl.exe" CACHE FILEPATH "CXX compiler")
+    # Intel runtime libs (fixes LNK1104 during compiler check)
+    set(INTEL_LIB_PATH "${INTEL_ONEAPI_DIR}/lib")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LIBPATH:\"${INTEL_LIB_PATH}\"")
     
-    # Help CMake find the IntelSYCL package
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
     list(APPEND CMAKE_PREFIX_PATH "${INTEL_ONEAPI_DIR}/lib/cmake/IntelSYCL")
 endif()
 
@@ -54,6 +63,15 @@ else()
 endif()
 
 # --- Dependencies ---
+
+# Force correct vcpkg tools path if on Windows
+if(WIN32)
+    set(VCPKG_TOOL_PATH "C:/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe")
+    if(EXISTS "${VCPKG_TOOL_PATH}")
+        set(PKG_CONFIG_EXECUTABLE "${VCPKG_TOOL_PATH}" CACHE FILEPATH "" FORCE)
+        message(STATUS "Using explicit PKG_CONFIG: ${PKG_CONFIG_EXECUTABLE}")
+    endif()
+endif()
 
 # 1. HWLOC (Hardware Locality) - via vcpkg with pkg-config
 find_package(PkgConfig REQUIRED)

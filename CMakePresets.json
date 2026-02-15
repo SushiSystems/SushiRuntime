@@ -1,0 +1,29 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "Intel oneAPI + vcpkg",
+            "description": "Intel oneAPI DPC++ with vcpkg classic mode",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "INTEL_ONEAPI_DIR": "C:/Program Files (x86)/Intel/oneAPI/compiler/latest",
+                "CMAKE_CXX_COMPILER": "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/bin/icx-cl.exe",
+                "CMAKE_C_COMPILER": "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/bin/icx-cl.exe",
+                "CMAKE_CXX_FLAGS": "-fsycl",
+                "CMAKE_MAKE_PROGRAM": "C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
+            },
+            "environment": {
+                "ONEAPI_ROOT": "C:/Program Files (x86)/Intel/oneAPI",
+                "CMPLR_ROOT": "C:/Program Files (x86)/Intel/oneAPI/compiler/latest",
+                "PATH": "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/bin;C:/vcpkg/installed/x64-windows/bin;$penv{PATH}",
+                "INCLUDE": "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/include;C:/Program Files (x86)/Intel/oneAPI/tbb/latest/include;$penv{INCLUDE}",
+                "LIB": "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib;C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib/ocloc;C:/Program Files (x86)/Intel/oneAPI/tbb/latest/lib/intel64/vc14;$penv{LIB}",
+                "CPATH": "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/include"
+            }
+        }
+    ]
+}

@@ -1,6 +1,0 @@
-oneAPI
-oneAPI for AMD GPUs
-CUDA
-oneAPI for NVIDIA GPUs
-
-doxygen
