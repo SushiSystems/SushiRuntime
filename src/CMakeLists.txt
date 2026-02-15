@@ -1,60 +1,58 @@
-# src/CMakeLists.txt
+cmake_minimum_required(VERSION 3.20)
 
-# AŞAMA 1.3 FIX: Explicit Source Listing (No GLOB)
-set(SB_SRC_FILES
-    # Common
-    "common/logging/logger.h"
-    "common/common.h"
-    
-    # Core
-    "core/tensor.h"
-    "core/sushi_ptr.h"
-    "core/storage.h"
-    "core/ref_counted.h"
-    
-    # Device
-    "device/device.h"
-    "device/device_manager.h"
-    "device/device_manager.cpp"
-    "device/cpu_device.h"
-    "device/cpu_device.cpp"
-    
-    # Event
-    "event/event.h"
-    "event/cpu_event.h"
-    
-    # Memory
-    "memory/memory_pool.h"
-    "memory/memory_block.h"
-    "memory/memory_block.cpp"
-    
-    # Scheduler
-    "scheduler/task_scheduler.cpp"
-
-    # Stream
-    "stream/stream.h"
-    "stream/cpu_stream.h"
+# --- Gather Sources ---
+# Note: Recursive GLOB is convenient for development but explicit listing is preferred for production stability.
+# For now, GLOB is used to capture new files automatically.
+file(GLOB_RECURSE SRC_FILES 
+    CONFIGURE_DEPENDS 
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 )
 
-# CUDA Sources (Conditional)
-if(CMAKE_CUDA_COMPILER)
-    list(APPEND SB_SRC_FILES
-        "device/cuda_device.h"
-        "device/cuda_device.cu"
-        "event/cuda_event.h"
-        "stream/cuda_stream.h"
-    )
-endif()
+# --- Define Library ---
+add_library(sushiruntime SHARED ${SRC_FILES})
 
-# Library Definition
-add_library(SushiBLAS_src STATIC ${SB_SRC_FILES})
+# --- Include Directories ---
+# --- Include Directories ---
+target_include_directories(sushiruntime PUBLIC 
+    "${CMAKE_SOURCE_DIR}/include"
+)
 
-if(CMAKE_CUDA_COMPILER)
-    target_compile_definitions(SushiBLAS_src PUBLIC USE_CUDA)
-endif()
 
-# Include Directories
-target_include_directories(SushiBLAS_src PUBLIC 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
+# --- Link Libraries ---
+target_link_libraries(sushiruntime PRIVATE
+    PkgConfig::HWLOC
+    IntelSYCL::SYCL_CXX
+)
+
+# --- Apply SYCL to specific source files ---
+# Only files that use SYCL need special compilation flags
+add_sycl_to_target(
+    TARGET sushiruntime
+    SOURCES
+        memory/usm_allocator.cpp
+        graph/task_graph.cpp
+        execution/runtime_context.cpp
+)
+
+# --- Properties ---
+set_target_properties(sushiruntime PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    OUTPUT_NAME "sushiruntime"
+)
+
+# --- Install Target ---
+install(TARGETS sushiruntime 
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+    INCLUDES DESTINATION include
+)
+
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/include/" 
+    DESTINATION include
 )

@@ -2,7 +2,9 @@
 bin/
 lib/
 out/
+docs/
 
+Doxyfile
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
