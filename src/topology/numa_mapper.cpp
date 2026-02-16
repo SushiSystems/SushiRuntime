@@ -18,29 +18,32 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#include "../../include/SushiRuntime/topology/numa_mapper.hpp"
-#include "../../include/SushiRuntime/core/logger.hpp"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <hwloc.h>
+#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/topology/numa_mapper.hpp>
 
 namespace SushiRuntime
 {
     namespace Topology
     {
         /**
-         * @brief implementation of the numa mapper.
+         * @brief Implementation of the NUMA mapper.
          * 
-         * uses the hwloc library to map pci devices to their closest numa nodes.
+         * Uses the hwloc library to map PCI devices to their closest NUMA nodes.
          */
         void NUMAMapper::map_distances(std::vector<HardwareNode>& nodes) 
         {
-            SR_LOG_INFO("initializing hardware topology mapping via hwloc...");
+            SR_LOG_INFO("Initializing hardware topology mapping via hwloc...");
 
             hwloc_topology_t topology;
             
-            /** @brief step 1: initialize and load the topology. */
+            /** @brief Step 1: initialize and load the topology. */
             if (hwloc_topology_init(&topology) < 0) 
             {
-                SR_LOG_ERROR("failed to initialize hwloc topology.");
+                SR_LOG_ERROR("Failed to initialize hwloc topology.");
                 return;
             }
             hwloc_topology_load(topology);
@@ -54,7 +57,7 @@ namespace SushiRuntime
                  */
                 if (node.is_gpu) 
                 {
-                    /** @brief find the pci device in the hwloc topology. */
+                    /** @brief Find the PCI device in the hwloc topology. */
                     hwloc_obj_t pci_device = hwloc_get_pcidev_by_busid(topology, 
                                                                     node.pci_address.domain, 
                                                                     node.pci_address.bus, 
@@ -63,13 +66,13 @@ namespace SushiRuntime
 
                     if (pci_device) 
                     {
-                        /** @brief find the numa node that is an ancestor of the pci device. */
+                        /** @brief Find the NUMA node that is an ancestor of the PCI device. */
                         hwloc_obj_t ancestor = hwloc_get_ancestor_obj_by_type(topology, HWLOC_OBJ_NUMANODE, pci_device);
                         
                         if (ancestor) 
                         {
                             node.numa_node_id = ancestor->os_index;
-                            SR_LOG_INFO("device [{}] (pci {:02x}:{:02x}.{:x}) is hard-bound to numa node {}", 
+                            SR_LOG_INFO("Device [{}] (PCI {:02x}:{:02x}.{:x}) is hard-bound to NUMA node {}", 
                                         node.name, node.pci_address.bus, node.pci_address.device, 
                                         node.pci_address.function, node.numa_node_id);
                         } 
@@ -77,12 +80,12 @@ namespace SushiRuntime
                         {
                             /** @brief fallback to node 0 if no direct numa ancestor is found. */
                             node.numa_node_id = 0; 
-                            SR_LOG_WARN("no direct numa ancestor for [{}], falling back to node 0", node.name);
+                            SR_LOG_WARN("No direct NUMA ancestor for [{}], falling back to node 0", node.name);
                         }
                     }
                     else 
                     {
-                        SR_LOG_WARN("could not find pci device in hwloc topology for [{}].", node.name);
+                        SR_LOG_WARN("Could not find PCI device in hwloc topology for [{}].", node.name);
                         node.numa_node_id = 0;
                     }
                 } 
@@ -93,16 +96,16 @@ namespace SushiRuntime
                 }
             }
 
-            /** @brief step 2: cleanup the topology object. */
+            /** @brief Step 2: cleanup the topology object. */
             hwloc_topology_destroy(topology);
         }
 
         /**
-         * @brief returns the latency cost between nodes based on acpi slit standards.
+         * @brief Returns the latency cost between nodes based on ACPI SLIT standards.
          * 
-         * @param numa_node_a first numa node id.
-         * @param numa_node_b second numa node id.
-         * @return int the cost (10 for local, 21 for remote).
+         * @param numa_node_a First NUMA node ID.
+         * @param numa_node_b Second NUMA node ID.
+         * @return int The cost (10 for local, 21 for remote).
          */
         int NUMAMapper::get_distance(int numa_node_a, int numa_node_b) const 
         {

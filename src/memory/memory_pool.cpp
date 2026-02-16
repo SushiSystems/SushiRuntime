@@ -18,4 +18,4 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#include "../../include/SushiRuntime/memory/memory_pool.hpp"
+#include <SushiRuntime/memory/memory_pool.hpp>

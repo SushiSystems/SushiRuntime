@@ -20,77 +20,78 @@
 
 #pragma once
 
-#include <sycl/sycl.hpp>
 #include <memory>
-#include <vector>
 #include <string>
-#include "../core/common.hpp"
-#include "../core/sushi_ptr.hpp"
-#include "../memory/usm_allocator.hpp"
+#include <vector>
+#include <sycl/sycl.hpp>
+#include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 
 namespace SushiRuntime
 {
     namespace Execution
     {
         /**
-         * @brief main control unit of SushiRuntime.
+         * @brief Main control unit of SushiRuntime.
          * 
-         * this class manages hardware, usm pools, and sycl queues.
-         * it uses the pimpl pattern to keep the abi stable and hide logic.
+         * This class manages hardware, USM pools, and SYCL queues.
+         * It uses the Pimpl pattern to keep the ABI stable and hide logic.
          */
-        class RuntimeContext 
+        class SUSHIRUNTIME_API RuntimeContext 
         {
             public:
-                /** @brief creates a new runtime context and scans for hardware. */
+                /** @brief Creates a new runtime context and scans for hardware. */
                 RuntimeContext();
                 
-                /** @brief destroys the context and frees all resources. */
+                /** @brief Destroys the context and frees all resources. */
                 ~RuntimeContext();
 
-                /** @brief copy and move are disabled to keep state integrity. */
+                /** @brief Copy and move are disabled to keep state integrity. */
                 RuntimeContext(const RuntimeContext&) = delete;
                 RuntimeContext& operator=(const RuntimeContext&) = delete;
 
                 /**
-                 * @brief finds and lists all available hardware (cpu, gpu, fpga).
+                 * @brief Finds and lists all available hardware (CPU, GPU, FPGA).
                  */
                 void probe_hardware();
 
                 /**
-                 * @brief gets a sycl queue for a specific device.
-                 * @param xpu_index the index of the device (default is 0).
-                 * @return sycl::queue& reference to the device queue.
+                 * @brief Gets a SYCL queue for a specific device.
+                 * @param xpu_index The index of the device (default is 0).
+                 * @return sycl::queue& Reference to the device queue.
                  */
                 sycl::queue& get_queue(size_t xpu_index = 0);
 
                 /**
-                 * @brief selects a queue based on numa location.
-                 * @param numa_id the id of the target numa node.
-                 * @return sycl::queue& reference to the closest device queue.
+                 * @brief Selects a queue based on NUMA location.
+                 * @param numa_id The ID of the target NUMA node.
+                 * @return sycl::queue& Reference to the closest device queue.
                  */
                 sycl::queue& get_numa_local_queue(int numa_id);
 
                 /**
-                 * @brief returns the main usm allocator for this context.
-                 * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> the global allocator.
+                 * @brief Returns the main USM allocator for this context.
+                 * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> The global allocator.
                  */
                 sushi_ptr<SushiRuntime::Memory::USMAllocator> get_allocator();
 
                 /**
-                 * @brief returns a usm allocator optimized for a specific numa node.
-                 * @param numa_id the id of the target numa node.
-                 * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> the numa-optimized allocator.
+                 * @brief Returns a USM allocator optimized for a specific NUMA node.
+                 * @param numa_id The ID of the target NUMA node.
+                 * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> The NUMA-optimized allocator.
                  */
                 sushi_ptr<SushiRuntime::Memory::USMAllocator> get_allocator(int numa_id);
 
                 /**
-                 * @brief waits for all async operations to finish (global sync).
+                 * @brief Waits for all async operations to finish (global sync).
                  */
                 void wait_all();
 
             private:
                 struct Impl;
-                /** @brief pimpl handle for internal implementation details. */
+                /** @brief Pimpl handle for internal implementation details. */
                 sushi_ptr<Impl> impl_; 
         };
     

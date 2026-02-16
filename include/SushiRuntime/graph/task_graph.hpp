@@ -19,11 +19,12 @@
 /**************************************************************************/
 
 #pragma once
-#include <sycl/sycl.hpp>
-#include <functional>
-#include <vector>
 #include <memory>
-#include "../core/sushi_ptr.hpp"
+#include <vector>
+#include <functional>
+#include <sycl/sycl.hpp>
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 
 namespace SushiRuntime 
 {
@@ -35,45 +36,49 @@ namespace SushiRuntime
     namespace Graph
     {
         /**
-         * @brief task work type defined as a sycl kernel or transfer.
+         * @brief Task work type defined as a SYCL kernel or transfer.
          */
         using TaskWork = std::function<void(sycl::handler&)>;
 
         /**
-         * @brief manages and optimizes dependencies between async tasks.
+         * @brief Manages and optimizes dependencies between async tasks.
          * 
          * TaskGraph collects work (kernels), analyzes data dependencies,
          * and executes them in the best order on the hardware. 
-         * it can also perform optimizations like kernel fusion.
+         * It can also perform optimizations like kernel fusion.
          */
-        class TaskGraph 
+        class SUSHIRUNTIME_API TaskGraph 
         {
             public:
                 /**
-                 * @brief creates a new task graph.
-                 * @param ctx reference to the associated RuntimeContext.
+                 * @brief Creates a new task graph.
+                 * @param ctx Reference to the associated RuntimeContext.
                  */
                 TaskGraph(SushiRuntime::Execution::RuntimeContext& ctx);
                 
-                /** @brief destroys the graph and cleans up task states. */
+                /** @brief Destroys the graph and cleans up task states. */
                 ~TaskGraph();
 
+                /** @brief Disable copy for Pimpl safety and state integrity. */
+                TaskGraph(const TaskGraph&) = delete;
+                TaskGraph& operator=(const TaskGraph&) = delete;
+
                 /**
-                 * @brief adds a new node with manual dependencies.
-                 * @param work the sycl kernel or transfer operation.
-                 * @param dependencies events that must finish before this task starts.
+                 * @brief Adds a new node with manual dependencies.
+                 * @param work The SYCL kernel or transfer operation.
+                 * @param dependencies Events that must finish before this task starts.
                  */
                 void add_node(TaskWork work, const std::vector<sycl::event>& dependencies = {});
 
                 /**
-                 * @brief adds a node with automatic dependency tracking.
+                 * @brief Adds a node with automatic dependency tracking.
                  * 
-                 * this method tracks memory addresses to build the dependency graph.
+                 * This method tracks memory addresses to build the dependency graph.
                  * 
-                 * @param work the work to execute.
-                 * @param read_access memory addresses that will be read.
-                 * @param write_access memory addresses that will be written to.
-                 * @param dependencies extra manual dependencies.
+                 * @param work The work to execute.
+                 * @param read_access Memory addresses that will be read.
+                 * @param write_access Memory addresses that will be written to.
+                 * @param dependencies Extra manual dependencies.
                  */
                 void add_node(TaskWork work, 
                              const std::vector<void*>& read_access, 
@@ -81,16 +86,16 @@ namespace SushiRuntime
                              const std::vector<sycl::event>& dependencies = {});
 
                 /**
-                 * @brief analyzes, optimizes, and submits the graph to hardware queues.
-                 * @return sycl::event event indicating the completion of the graph.
+                 * @brief Analyzes, optimizes, and submits the graph to hardware queues.
+                 * @return sycl::event Event indicating the completion of the graph.
                  */
                 sycl::event execute();
 
             private:
                 struct Impl;
-                /** @brief pimpl handle for internal implementation details. */
+                /** @brief Pimpl handle for internal implementation details. */
                 sushi_ptr<Impl> impl_;
-                /** @brief reference to the runtime context. */
+                /** @brief Reference to the runtime context. */
                 SushiRuntime::Execution::RuntimeContext& ctx_;
         };
     

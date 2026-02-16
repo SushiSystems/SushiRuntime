@@ -28,25 +28,25 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief supported hardware backends.
+         * @brief Supported hardware backends.
          */
         enum class Backend 
         {
-            SYCL, /**< sycl support via intel dpc++, adaptivecpp, or hipsycl. */
-            CUDA, /**< native nvidia cuda support for interoperability. */
-            HOST  /**< standard cpu host backend. */
+            SYCL, /**< SYCL support via Intel DPC++, AdaptiveCPP, or hipSYCL. */
+            CUDA, /**< Native NVIDIA CUDA support for interoperability. */
+            HOST  /**< Standard CPU host backend. */
         };
 
-        /** @brief standard cache line size for modern hpc systems (in bytes). */
+        /** @brief Standard cache line size for modern HPC systems (in bytes). */
         inline constexpr size_t CACHE_LINE_SIZE = 64; 
 
-        /** @brief maximum number of supported devices in numa or multi-gpu systems. */
+        /** @brief Maximum number of supported devices in NUMA or multi-GPU systems. */
         inline constexpr size_t MAX_SUPPORTED_XPU = 16;
         
-        /** @brief maximum number of supported numa nodes. */
+        /** @brief Maximum number of supported NUMA nodes. */
         inline constexpr size_t MAX_NUMA_NODES = 64;
 
-        /** @brief default memory alignment for usm (unified shared memory). */
+        /** @brief Default memory alignment for USM (Unified Shared Memory). */
         inline constexpr size_t DEFAULT_ALIGNMENT = 128; 
         
     } // namespace Core

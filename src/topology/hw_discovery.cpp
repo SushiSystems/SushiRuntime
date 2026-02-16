@@ -18,27 +18,27 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#include "../../include/SushiRuntime/topology/hw_discovery.hpp"
-#include "../../include/SushiRuntime/core/logger.hpp"
 #include <cstdio>
+#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/topology/hw_discovery.hpp>
 
 namespace SushiRuntime
 {
     namespace Topology
     {
-        /** @brief triggers an expanded hardware probe to find all compute units. */
+        /** @brief Triggers an expanded hardware probe to find all compute units. */
         std::vector<HardwareNode> HardwareDiscovery::probe_all_devices() 
         {
-            SR_LOG_DEBUG("starting expanded hardware probe...");
+            SR_LOG_DEBUG("Starting expanded hardware probe...");
             std::vector<HardwareNode> discovered_nodes;
 
             discover_sycl_devices(discovered_nodes);
 
-            SR_LOG_INFO("expanded probe complete. {} nodes found.", discovered_nodes.size());
+            SR_LOG_INFO("Expanded probe complete. {} nodes found.", discovered_nodes.size());
             return discovered_nodes;
         }
 
-        /** @brief scans all sycl devices and extracts their physical and capability details. */
+        /** @brief Scans all SYCL devices and extracts their physical and capability details. */
         void HardwareDiscovery::discover_sycl_devices(std::vector<HardwareNode>& nodes) 
         {
             try 
@@ -55,7 +55,7 @@ namespace SushiRuntime
                     node.is_gpu = dev.is_gpu();
                     node.numa_node_id = -1; 
                     
-                    /** @brief retrieve capacity and memory info. */
+                    /** @brief Retrieve capacity and memory info. */
                     node.global_mem_size = dev.get_info<sycl::info::device::global_mem_size>();
                     node.max_compute_units = dev.get_info<sycl::info::device::max_compute_units>();
 
@@ -63,17 +63,17 @@ namespace SushiRuntime
                     {
                         try 
                         {
-                            /** @brief try to extract pci address for numa mapping. */
+                            /** @brief Try to extract PCI address for NUMA mapping. */
                             std::string pci_str = "";
                             if (dev.has(sycl::aspect::ext_intel_pci_address)) {
                                 pci_str = dev.get_info<sycl::ext::intel::info::device::pci_address>();
                             } else {
-                                SR_LOG_WARN("device {} does not support intel pci address extension.", node.name);
+                                SR_LOG_WARN("Device {} does not support Intel PCI address extension.", node.name);
                             }
  
                             if (!pci_str.empty()) 
                             {
-                                /** @brief parse pci address string (format: 0000:00:02.0). */
+                                /** @brief Parse PCI address string (format: 0000:00:02.0). */
                                 // TODO: replace sscanf with a safer parsing method or std::regex.
                                 sscanf(pci_str.c_str(), "%x:%x:%x.%x", 
                                     &node.pci_address.domain, 
@@ -81,14 +81,14 @@ namespace SushiRuntime
                                     &node.pci_address.device, 
                                     &node.pci_address.function);
                                 
-                                SR_LOG_DEBUG("device {} pci: {:04x}:{:02x}:{:02x}.{:x}", 
+                                SR_LOG_DEBUG("Device {} PCI: {:04x}:{:02x}:{:02x}.{:x}", 
                                             node.name, node.pci_address.domain, node.pci_address.bus, 
                                             node.pci_address.device, node.pci_address.function);
                             }
                         } 
                         catch (...) 
                         {
-                            SR_LOG_WARN("could not retrieve pci address for {}, numa mapping may be degraded.", node.name);
+                            SR_LOG_WARN("Could not retrieve PCI address for {}, NUMA mapping may be degraded.", node.name);
                             node.pci_address = {0,0,0,0};
                         }
                     }
@@ -98,7 +98,7 @@ namespace SushiRuntime
             }
             catch (const sycl::exception& e) 
             {
-                SR_LOG_ERROR("sycl exception: {}", e.what());
+                SR_LOG_ERROR("SYCL exception: {}", e.what());
                 throw std::runtime_error("hardware discovery failed.");
             }
         }

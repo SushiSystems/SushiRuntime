@@ -18,10 +18,10 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#include "../../include/SushiRuntime/memory/usm_allocator.hpp"
-#include "../../include/SushiRuntime/memory/memory_pool.hpp"
-#include "../../include/SushiRuntime/core/logger.hpp"
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/memory/memory_pool.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 
 namespace SushiRuntime
 {
@@ -30,16 +30,16 @@ namespace SushiRuntime
         using namespace SushiRuntime::Core;
 
         /**
-         * @brief implementation of the usm manager.
+         * @brief Implementation of the USM manager.
          * 
-         * handles small object allocations through a bitmask pool and larger ones via system calls.
+         * Handles small object allocations through a bitmask pool and larger ones via system calls.
          */
         class USMManagerImpl : public USMAllocator 
         {
             public:
                 explicit USMManagerImpl(sycl::queue& q, int numa_id) : queue_(q), numa_id_(numa_id) 
                 {
-                     /** @brief initialize a small 16kb memory pool (64 slots * 256 bytes). */
+                     /** @brief Initialize a small 16KB memory pool (64 slots * 256 bytes). */
                      size_t pool_size = 64 * 256;
                      void* raw = sycl::malloc_shared(pool_size, q);
                      
@@ -53,7 +53,7 @@ namespace SushiRuntime
                      }
                      else
                      {
-                          SR_LOG_ERROR("failed to allocate initial memory pool page.");
+                          SR_LOG_ERROR("Failed to allocate initial memory pool page.");
                           pool_initialized_ = false;
                      }
                 }
@@ -67,17 +67,17 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief allocates memory using bitmask pool or sycl system calls.
-                 * @param bytes number of bytes requested.
-                 * @param strategy the allocation strategy (device, shared, or host).
-                 * @param alignment alignment requirement for the pointer.
-                 * @return void* pointer to the allocated memory.
+                 * @brief Allocates memory using bitmask pool or SYCL system calls.
+                 * @param bytes Number of bytes requested.
+                 * @param strategy The allocation strategy (device, shared, or host).
+                 * @param alignment Alignment requirement for the pointer.
+                 * @return void* Pointer to the allocated memory.
                  */
                 void* allocate(size_t bytes, 
                             AllocStrategy strategy = AllocStrategy::SHARED,
                             size_t alignment = DEFAULT_ALIGNMENT) override 
                 {
-                    /** @brief try to use the bitmask pool for small shared allocations. */
+                    /** @brief Try to use the bitmask pool for small shared allocations. */
                     // TODO: optimize selection logic based on requested alignment.
                     if (pool_initialized_ && bytes <= 256 && strategy == AllocStrategy::SHARED)
                     {
@@ -85,7 +85,7 @@ namespace SushiRuntime
                         if (p) return p;
                     }
 
-                    /** @brief fall back to system allocation if pool is full or request is large. */
+                    /** @brief Fall back to system allocation if pool is full or request is large. */
                     // TODO: implement a thread-local cache for frequently reused small blocks.
                     // TODO: create a dedicated arena allocator for large, infrequent requests.
                     void* ptr = nullptr;
@@ -106,21 +106,21 @@ namespace SushiRuntime
                     } 
                     catch (const sycl::exception& e) 
                     {
-                        SR_LOG_ERROR("sycl allocation failed: {}", e.what());
+                        SR_LOG_ERROR("SYCL allocation failed: {}", e.what());
                     }
 
                     return ptr;
                 }
 
                 /**
-                 * @brief deallocates memory. automatically detects if it belongs to the pool.
-                 * @param ptr pointer to the memory to return.
+                 * @brief Deallocates memory. Automatically detects if it belongs to the pool.
+                 * @param ptr Pointer to the memory to return.
                  */
                 void deallocate(void* ptr) override 
                 {
                     if (!ptr) return;
 
-                    /** @brief return to pool if pointer is within the page range. */
+                    /** @brief Return to pool if pointer is within the page range. */
                     if (pool_initialized_ && 
                         ptr >= page_.start_ptr && 
                         ptr < static_cast<char*>(page_.start_ptr) + (64 * 256))
@@ -132,7 +132,7 @@ namespace SushiRuntime
                     sycl::free(ptr, queue_.get_context());
                 }
 
-                /** @brief retrieves the sycl device that owns the memory pointer. */
+                /** @brief Retrieves the SYCL device that owns the memory pointer. */
                 sycl::device get_device_of(void* ptr) override 
                 {
                     return sycl::get_pointer_device(ptr, queue_.get_context());
@@ -146,7 +146,7 @@ namespace SushiRuntime
                 bool pool_initialized_ = false;
         };
 
-        /** @brief factory function to create an instance of the usm manager. */
+        /** @brief Factory function to create an instance of the USM manager. */
         sushi_ptr<USMAllocator> create_allocator(sycl::queue& q, int numa_id) 
         {
             return make_sushi<USMManagerImpl>(q, numa_id);

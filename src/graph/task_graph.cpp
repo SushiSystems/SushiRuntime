@@ -18,16 +18,16 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#include "../../include/SushiRuntime/graph/task_graph.hpp"
-#include "../../include/SushiRuntime/execution/runtime_context.hpp"
-#include "../../include/SushiRuntime/core/logger.hpp"
-#include "../../include/SushiRuntime/graph/node.hpp"
-#include "../../include/SushiRuntime/graph/dependency_tracker.hpp"
-#include "../../include/SushiRuntime/scheduler/task_scheduler.hpp"
-#include <sycl/sycl.hpp>
-#include <vector>
-#include <thread>
 #include <future>
+#include <thread>
+#include <vector>
+#include <sycl/sycl.hpp>
+#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/graph/dependency_tracker.hpp>
+#include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime 
 {
@@ -37,15 +37,15 @@ namespace SushiRuntime
         using namespace SushiRuntime::Core;
 
         /**
-         * @brief private implementation of the TaskGraph.
+         * @brief Private implementation of the TaskGraph.
          */
         struct TaskGraph::Impl : public Core::RefCounted
         {
-            /** @brief storage for all nodes in the graph. */
+            /** @brief Storage for all nodes in the graph. */
             std::vector<sushi_ptr<Node>> nodes;
-            /** @brief tracker to handle automatic dependencies. */
+            /** @brief Tracker to handle automatic dependencies. */
             DependencyTracker tracker;
-            /** @brief reference to the runtime context. */
+            /** @brief Reference to the runtime context. */
             RuntimeContext& context;
 
             Impl(RuntimeContext& ctx) : context(ctx) {}
@@ -54,13 +54,13 @@ namespace SushiRuntime
 
         TaskGraph::TaskGraph(RuntimeContext& ctx) : impl_(make_sushi<Impl>(ctx)), ctx_(ctx) 
         {
-            SR_LOG_DEBUG("production analyzer initialized.");
+            SR_LOG_DEBUG("Production analyzer initialized.");
         }
 
         TaskGraph::~TaskGraph() = default;
 
         /**
-         * @brief adds a task node with manual sycl event dependencies.
+         * @brief Adds a task node with manual SYCL event dependencies.
          */
         void TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies) 
         {
@@ -68,12 +68,12 @@ namespace SushiRuntime
             node->work = std::move(work);
             node->sycl_deps = dependencies;
             
-            SR_LOG_DEBUG("node added with {} manual dependencies.", dependencies.size());
+            SR_LOG_DEBUG("Node added with {} manual dependencies.", dependencies.size());
             impl_->nodes.push_back(std::move(node));
         }
 
         /**
-         * @brief adds a task node and resolves usm data dependencies automatically.
+         * @brief Adds a task node and resolves USM data dependencies automatically.
          */
         void TaskGraph::add_node(TaskWork work, 
                                  const std::vector<void*>& read_access, 
@@ -88,25 +88,25 @@ namespace SushiRuntime
             for(void* ptr : read_access) impl_->tracker.resolve(node.get(), ptr, false);
             for(void* ptr : write_access) impl_->tracker.resolve(node.get(), ptr, true);
 
-            SR_LOG_DEBUG("node added with automatic dependency tracking (r: {}, w: {}).", read_access.size(), write_access.size());
+            SR_LOG_DEBUG("Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
             
             impl_->nodes.push_back(std::move(node));
         }
 
         /**
-         * @brief executes the entire graph using the task scheduler.
+         * @brief Executes the entire graph using the task scheduler.
          */
         // TODO: refactor this function to be non-blocking and return a future immediately.
         sycl::event TaskGraph::execute() 
         {
-            SR_LOG_INFO("executing dag with {} nodes.", impl_->nodes.size());
+            SR_LOG_INFO("Executing DAG with {} nodes.", impl_->nodes.size());
 
             if(impl_->nodes.empty()) return sycl::event{};
 
-            /** @brief setup local scheduler for this execution. */
+            /** @brief Setup local scheduler for this execution. */
             SushiRuntime::Scheduler::TaskScheduler scheduler(ctx_);
 
-            /** @brief identify roots and create a sentinel node for completion. */
+            /** @brief Identify roots and create a sentinel node for completion. */
             std::vector<Node*> roots;
             auto sentinel = make_sushi<Node>();
             
@@ -138,13 +138,13 @@ namespace SushiRuntime
                 }
             }
 
-            /** @brief submit all root nodes to start execution. */
+            /** @brief Submit all root nodes to start execution. */
             for(auto* root : roots) 
             {
                 scheduler.submit(root);
             }
 
-            /** @brief launch worker threads to help with task processing. */
+            /** @brief Launch worker threads to help with task processing. */
             // TODO: use a persistent thread pool to avoid thread creation overhead.
             std::vector<std::thread> workers;
             size_t concurrency = std::thread::hardware_concurrency();
@@ -159,12 +159,12 @@ namespace SushiRuntime
                     }
                     catch(const std::exception& e)
                     {
-                        SR_LOG_ERROR("worker thread {} crashed: {}", i, e.what());
+                        SR_LOG_ERROR("Worker thread {} crashed: {}", i, e.what());
                     }
                 });
             }
             
-            /** @brief join execution loop on the main thread. */
+            /** @brief Join execution loop on the main thread. */
             scheduler.dispatch_loop(0);
             
             for(auto& t : workers) 
@@ -172,7 +172,7 @@ namespace SushiRuntime
                 if(t.joinable()) t.join();
             }
 
-            SR_LOG_INFO("dag execution completed.");
+            SR_LOG_INFO("DAG execution completed.");
             return sycl::event{};
         }
 

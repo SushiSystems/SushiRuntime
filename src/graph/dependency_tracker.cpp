@@ -18,9 +18,9 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#include "../../include/SushiRuntime/graph/dependency_tracker.hpp"
-#include "../../include/SushiRuntime/core/logger.hpp"
 #include <thread>
+#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/graph/dependency_tracker.hpp>
 
 namespace SushiRuntime 
 {
@@ -28,24 +28,24 @@ namespace SushiRuntime
     {
         DependencyTracker::DependencyTracker() 
         {
-            /** @brief initializing resources. */
+            /** @brief Initializing resources. */
         }
 
         /**
-         * @brief resolves memory dependencies for a task node.
+         * @brief Resolves memory dependencies for a task node.
          * 
-         * handles raw, war, and waw dependencies using a sharded spinlock.
+         * Handles RAW, WAR, and WAW dependencies using a sharded spinlock.
          * 
-         * @param node the task node to check.
-         * @param ptr the memory address being accessed.
-         * @param is_write true if the task writes to the memory.
+         * @param node The task node to check.
+         * @param ptr The memory address being accessed.
+         * @param is_write True if the task writes to the memory.
          */
         void DependencyTracker::resolve(Node* node, void* ptr, bool is_write) 
         {
             size_t idx = get_shard_idx(ptr);
             auto& state = registry[idx];
 
-            /** @brief busy-wait loop for the sharded spinlock. */
+            /** @brief Busy-wait loop for the sharded spinlock. */
             while(state.lock.test_and_set(std::memory_order_acquire)) 
             {
                 // TODO: use assembly 'pause' instruction for lower cpu power usage.
@@ -85,15 +85,15 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief adds a direct dependency between two graph nodes.
-         * @param from the node that must finish first.
-         * @param to the node that depends on the first one.
+         * @brief Adds a direct dependency between two graph nodes.
+         * @param from The node that must finish first.
+         * @param to The node that depends on the first one.
          */
         void DependencyTracker::add_dependency(Node* from, Node* to)
         {
             if (from && to)
             {
-                /** @brief use atomic successor list to avoid locks. */
+                /** @brief Use atomic successor list to avoid locks. */
                 from->add_successor(to);
                 to->in_degree.fetch_add(1, std::memory_order_relaxed);
             }

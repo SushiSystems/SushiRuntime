@@ -18,13 +18,13 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#include "../../include/SushiRuntime/execution/runtime_context.hpp"
-#include "../../include/SushiRuntime/topology/hw_discovery.hpp"
-#include "../../include/SushiRuntime/topology/numa_mapper.hpp"
-#include "../../include/SushiRuntime/core/logger.hpp"
-#include <atomic>
-#include <array>
 #include <map>
+#include <array>
+#include <atomic>
+#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/topology/numa_mapper.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime
 {
@@ -34,34 +34,34 @@ namespace SushiRuntime
         using namespace SushiRuntime::Core;
 
         /**
-         * @brief private implementation of RuntimeContext (pimpl).
+         * @brief Private implementation of RuntimeContext (Pimpl).
          * 
-         * handles hardware topology, queues, and allocators.
+         * Handles hardware topology, queues, and allocators.
          */
         struct RuntimeContext::Impl : public Core::RefCounted
         {
-            /** @brief hardware inventory. */
+            /** @brief Hardware inventory. */
             std::vector<HardwareNode> nodes;
             
-            /** @brief device discovery units: numa id -> queue list. */
+            /** @brief Device discovery units: NUMA ID -> queue list. */
             std::map<int, std::vector<sycl::queue>> numa_aware_queues;
             
-            /** @brief flat list for fast access to all queues. */
+            /** @brief Flat list for fast access to all queues. */
             std::vector<sycl::queue> all_queues;
 
-            /** @brief numa-local allocators using atomic storage. */
+            /** @brief NUMA-local allocators using atomic storage. */
             std::atomic<SushiRuntime::Memory::USMAllocator*> numa_allocators[Core::MAX_NUMA_NODES];
 
             Impl() 
             {
-                for(int i=0; i<Core::MAX_NUMA_NODES; ++i) 
+                for (size_t i = 0; i < Core::MAX_NUMA_NODES; ++i) 
                     numa_allocators[i].store(nullptr, std::memory_order_relaxed);
             }
 
             ~Impl() 
             {
-                /** @brief cleanup atomic pointers manually. */
-                for(int i=0; i<Core::MAX_NUMA_NODES; ++i)
+                /** @brief Cleanup atomic pointers manually. */
+                for (size_t i = 0; i < Core::MAX_NUMA_NODES; ++i)
                 {
                     auto* ptr = numa_allocators[i].load(std::memory_order_relaxed);
                     if (ptr) 
@@ -79,28 +79,28 @@ namespace SushiRuntime
 
         RuntimeContext::RuntimeContext() : impl_(make_sushi<Impl>()) 
         {
-            SR_LOG_INFO("initializing compute stack...");
+            SR_LOG_INFO("Initializing compute stack...");
             probe_hardware();
         }
 
         RuntimeContext::~RuntimeContext() = default;
 
         /**
-         * @brief hardware discovery and topology mapping process.
+         * @brief Hardware discovery and topology mapping process.
          */
         void RuntimeContext::probe_hardware() 
         {
             try 
             {
-                /** @brief step 1: hardware discovery - probe sycl devices. */
+                /** @brief Step 1: hardware discovery - probe SYCL devices. */
                 HardwareDiscovery discovery;
                 impl_->nodes = discovery.probe_all_devices();
 
-                /** @brief step 2: numa mapping - map devices to numa nodes. */
+                /** @brief Step 2: NUMA mapping - map devices to NUMA nodes. */
                 NUMAMapper mapper;
                 mapper.map_distances(impl_->nodes);
 
-                /** @brief step 3: queue configuration - create sycl queues. */
+                /** @brief Step 3: queue configuration - create SYCL queues. */
                 impl_->all_queues.clear();
                 impl_->numa_aware_queues.clear();
 
@@ -116,14 +116,14 @@ namespace SushiRuntime
                     impl_->all_queues.push_back(q);
                     impl_->numa_aware_queues[node.numa_node_id].push_back(q);
 
-                    SR_LOG_INFO("device: {} | numa: {} | memory: {} mb | compute units: {}", 
+                    SR_LOG_INFO("Device: {} | NUMA: {} | Memory: {} MB | Compute units: {}", 
                                node.name, 
                                node.numa_node_id,
                                node.global_mem_size / (1024 * 1024),
                                node.max_compute_units);
                 }
 
-                SR_LOG_INFO("infrastructure ready. total devices: {}, numa domains: {}", 
+                SR_LOG_INFO("Infrastructure ready. Total devices: {}, NUMA domains: {}", 
                             impl_->all_queues.size(), 
                             impl_->numa_aware_queues.size());
 
@@ -131,14 +131,14 @@ namespace SushiRuntime
             }
             catch (const std::exception& e) 
             {
-                SR_LOG_ERROR("critical initialization failure: {}", e.what());
+                SR_LOG_ERROR("Critical initialization failure: {}", e.what());
                 throw;
             }
         }
 
         sycl::queue& RuntimeContext::get_queue(size_t index) 
         {
-            SR_THROW_IF(index >= impl_->all_queues.size(), "queue index out of bounds.");
+            SR_THROW_IF(index >= impl_->all_queues.size(), "Queue index out of bounds.");
             return impl_->all_queues[index];
         }
 
@@ -148,12 +148,12 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief returns the closest sycl queue for a specific numa node.
+         * @brief Returns the closest SYCL queue for a specific NUMA node.
          * 
-         * falls back to default queue if none found.
+         * Falls back to default queue if none found.
          * 
-         * @param numa_id target numa node id.
-         * @return sycl::queue& reference to the queue.
+         * @param numa_id Target NUMA node ID.
+         * @return sycl::queue& Reference to the queue.
          */
         sycl::queue& RuntimeContext::get_numa_local_queue(int numa_id)
         {
@@ -164,35 +164,35 @@ namespace SushiRuntime
                  return it->second[0];
              }
              
-             SR_LOG_WARN("no queue found for numa {}, falling back to default.", numa_id);
+             SR_LOG_WARN("No queue found for NUMA {}, falling back to default.", numa_id);
              return get_queue(0);
         }
 
         /**
-         * @brief returns a numa-aware usm allocator (lazy initialization).
+         * @brief Returns a NUMA-aware USM allocator (lazy initialization).
          * 
-         * creates a new allocator atomically if it doesn't exist.
+         * Creates a new allocator atomically if it doesn't exist.
          * 
-         * @param numa_id target numa node id.
-         * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> the allocator.
+         * @param numa_id Target NUMA node ID.
+         * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> The allocator.
          */
         sushi_ptr<SushiRuntime::Memory::USMAllocator> RuntimeContext::get_allocator(int numa_id)
         {
-            if (numa_id < 0 || numa_id >= Core::MAX_NUMA_NODES) 
+            if (numa_id < 0 || static_cast<size_t>(numa_id) >= Core::MAX_NUMA_NODES) 
             {
-                SR_LOG_WARN("invalid numa id {}, falling back to default.", numa_id);
+                SR_LOG_WARN("Invalid NUMA ID {}, falling back to default.", numa_id);
                 return get_allocator();
             }
 
-            /** @brief step 1: fast path - check if exists. */
+            /** @brief Step 1: fast path - check if exists. */
             auto* existing = impl_->numa_allocators[numa_id].load(std::memory_order_acquire);
             if (existing) 
             {
                 return sushi_ptr<SushiRuntime::Memory::USMAllocator>(existing);
             }
 
-            /** @brief step 2: slow path - create and try atomic swap. */
-            SR_LOG_DEBUG("initializing allocator for numa {} (potential race)", numa_id);
+            /** @brief Step 2: slow path - create and try atomic swap. */
+            SR_LOG_DEBUG("Initializing allocator for NUMA {} (potential race)", numa_id);
             sycl::queue& q = get_numa_local_queue(numa_id);
             auto new_alloc_sushi = SushiRuntime::Memory::create_allocator(q, numa_id);
             auto* new_alloc_raw = new_alloc_sushi.get();
@@ -201,7 +201,7 @@ namespace SushiRuntime
 
             SushiRuntime::Memory::USMAllocator* expected = nullptr;
             
-            /** @brief step 3: compare-and-swap (cas). */
+            /** @brief Step 3: compare-and-swap (CAS). */
             if (impl_->numa_allocators[numa_id].compare_exchange_strong(expected, new_alloc_raw, 
                                                                         std::memory_order_release, 
                                                                         std::memory_order_acquire)) 

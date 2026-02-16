@@ -19,12 +19,13 @@
 /**************************************************************************/
 
 #pragma once
-#include <sycl/sycl.hpp>
+
 #include <atomic>
 #include <vector>
-#include "../../include/SushiRuntime/core/logger.hpp"
-#include "../../include/SushiRuntime/graph/task_graph.hpp"
-#include "../../include/SushiRuntime/graph/node.hpp"
+#include <sycl/sycl.hpp>
+#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/logger.hpp>
 
 namespace SushiRuntime
 {
@@ -33,12 +34,12 @@ namespace SushiRuntime
         using namespace SushiRuntime::Core;
 
         /**
-         * @brief polls hardware events in a lock-free manner.
+         * @brief Polls hardware events in a lock-free manner.
          */
         class EventPolling 
         {
             public:
-                /** @brief structure to link a sycl event with a graph node. */
+                /** @brief Structure to link a SYCL event with a graph node. */
                 struct PolledEvent 
                 {
                     sycl::event event;
@@ -46,19 +47,19 @@ namespace SushiRuntime
                 };
 
             private:
-                /** @brief counter for adaptive backoff strategy. */
+                /** @brief Counter for adaptive backoff strategy. */
                 size_t backoff_counter = 0;
-                /** @brief maximum value for the backoff counter. */
+                /** @brief Maximum value for the backoff counter. */
                 static constexpr size_t MAX_BACKOFF = 16; 
 
             public:
                 /**
-                 * @brief checks for completed events and triggers successors.
+                 * @brief Checks for completed events and triggers successors.
                  * 
-                 * uses adaptive backoff to reduce cpu and driver load.
+                 * Uses adaptive backoff to reduce CPU and driver load.
                  * 
-                 * @param active_events list of events currently being monitored.
-                 * @param local_queue current thread's task queue.
+                 * @param active_events List of events currently being monitored.
+                 * @param local_queue Current thread's task queue.
                  */
                 template<typename QueueType>
                 void poll_events(std::vector<PolledEvent>& active_events, QueueType& local_queue) 
@@ -101,9 +102,9 @@ namespace SushiRuntime
 
             private:
                 /**
-                 * @brief activates next nodes in the graph when a task finishes.
-                 * @param node_void pointer to the finished node.
-                 * @param queue current thread's task queue to push new ready nodes.
+                 * @brief Activates next nodes in the graph when a task finishes.
+                 * @param node_void Pointer to the finished node.
+                 * @param queue Current thread's task queue to push new ready nodes.
                  */
                 template<typename QueueType>
                 void trigger_successors(void* node_void, QueueType& queue) 

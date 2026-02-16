@@ -20,37 +20,38 @@
 
 #pragma once
 
-#include "hw_discovery.hpp"
 #include <vector>
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/topology/hw_discovery.hpp>
 
 namespace SushiRuntime
 {
     namespace Topology
     {
         /**
-         * @brief maps memory access distances (numa distance) between hardware units.
+         * @brief Maps memory access distances (NUMA distance) between hardware units.
          */
-        class NUMAMapper 
+        class SUSHIRUNTIME_API NUMAMapper 
         {
             public:
                 NUMAMapper() = default;
 
                 /**
-                 * @brief identifies the closest numa node for each device in the list.
-                 * @param nodes the list of hardware nodes to map.
+                 * @brief Identifies the closest NUMA node for each device in the list.
+                 * @param nodes The list of hardware nodes to map.
                  */
                 void map_distances(std::vector<HardwareNode>& nodes);
 
                 /**
-                 * @brief returns the latency cost between two numa nodes.
-                 * @param numa_node_a first numa node id.
-                 * @param numa_node_b second numa node id.
-                 * @return int the distance or latency value.
+                 * @brief Returns the latency cost between two NUMA nodes.
+                 * @param numa_node_a First NUMA node ID.
+                 * @param numa_node_b Second NUMA node ID.
+                 * @return int The distance or latency value.
                  */
                 int get_distance(int numa_node_a, int numa_node_b) const;
 
             private:
-                /** @brief flag to indicate if hwloc is ready. */
+                /** @brief Flag to indicate if hwloc is ready. */
                 bool hwloc_initialized = false;
         };
         

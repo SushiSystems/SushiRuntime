@@ -19,50 +19,58 @@
 /**************************************************************************/
 
 #pragma once
-#include <vector>
-#include <memory>
+
 #include <atomic>
+#include <memory>
+#include <vector>
 #include <sycl/sycl.hpp>
-#include "event_polling.hpp"
-#include "../execution/runtime_context.hpp"
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/scheduler/event_polling.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime 
 {
+    /** @brief Forward declaration to allow friend access without full include. */
+    namespace Graph 
+    { 
+        class TaskGraph; 
+    }
+
     namespace Scheduler 
     {
         class Deque;
 
         /**
-         * @brief work-stealing scheduler loop.
+         * @brief Work-stealing scheduler loop.
          */
-        class TaskScheduler 
+        class SUSHIRUNTIME_API TaskScheduler 
         {
             friend class SushiRuntime::Graph::TaskGraph;
 
             private:
-                /** @brief list of queues for each worker thread. */
+                /** @brief List of queues for each worker thread. */
                 std::vector<sushi_ptr<Deque>> worker_queues;
-                /** @brief flag to control the execution of the loop. */
+                /** @brief Flag to control the execution of the loop. */
                 std::atomic<bool> running{true};
-                /** @brief poller to track sycl events. */
+                /** @brief Poller to track SYCL events. */
                 EventPolling event_poller;
-                /** @brief reference to the runtime context. */
+                /** @brief Reference to the runtime context. */
                 SushiRuntime::Execution::RuntimeContext& context;
 
-                /** @brief executes a single task and tracks its events. */
+                /** @brief Executes a single task and tracks its events. */
                 void execute_task(void* task_ptr, std::vector<EventPolling::PolledEvent>& events);
-                /** @brief looks for a task to steal from another thread's queue. */
+                /** @brief Looks for a task to steal from another thread's queue. */
                 void* find_task_to_steal(int th_id);
 
             public:
-                /** @brief creates a new task scheduler. */
+                /** @brief Creates a new task scheduler. */
                 TaskScheduler(SushiRuntime::Execution::RuntimeContext& ctx);
-                /** @brief cleans up the scheduler and worker queues. */
+                /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();
 
-                /** @brief main loop for worker threads. */
+                /** @brief Main loop for worker threads. */
                 void dispatch_loop(int thread_id);
-                /** @brief submits a new task to the scheduler. */
+                /** @brief Submits a new task to the scheduler. */
                 void submit(void* task);
         };
 

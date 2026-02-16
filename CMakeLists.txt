@@ -41,7 +41,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
     # Windows / MSVC
     # Note: /O2 is incompatible with /RTC1 (which is default in Debug)
-    add_compile_options(/W4 /permissive- /Zc:preprocessor /std:c++20)
+    add_compile_options(/W4 /permissive-)
     add_compile_options($<$<NOT:$<CONFIG:Debug>>:/O2>)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 else()

@@ -22,44 +22,45 @@
 
 #include <atomic>
 #include <iostream>
-#include "logger.hpp"
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/logger.hpp>
 
 namespace SushiRuntime 
 {
     namespace Core
     {
         /**
-         * @brief base class for reference counting.
+         * @brief Base class for reference counting.
          * 
-         * this class implements an intrusive reference counting mechanism.
-         * it manages the lifetime of objects using atomic operations.
+         * This class implements an intrusive reference counting mechanism.
+         * It manages the lifetime of objects using atomic operations.
          */
-        class RefCounted 
+        class SUSHIRUNTIME_API RefCounted 
         {
             protected:
-                /** @brief atomic reference counter. */
+                /** @brief Atomic reference counter. */
                 mutable std::atomic<int32_t> ref_count{0};
 
-                /** @brief virtual destructor for safe inheritance. */
+                /** @brief Virtual destructor for safe inheritance. */
                 virtual ~RefCounted() = default;
 
             public:
                 /**
-                 * @brief increases the reference count by 1.
+                 * @brief Increases the reference count by 1.
                  */
                 void add_ref() const noexcept 
                 {
                     int32_t old = ref_count.fetch_add(1, std::memory_order_relaxed);
-                    SR_LOG_DEBUG("ref add: {} -> {}", old, old + 1);
+                    SR_LOG_DEBUG("Ref add: {} -> {}", old, old + 1);
                 }
 
                 /**
-                 * @brief decreases the reference count by 1. deletes the object if count reaches zero.
+                 * @brief Decreases the reference count by 1. Deletes the object if count reaches zero.
                  */
                 void release() const noexcept 
                 {
                     int32_t old = ref_count.fetch_sub(1, std::memory_order_release);
-                    SR_LOG_DEBUG("ref release: {} -> {}", old, old - 1);
+                    SR_LOG_DEBUG("Ref release: {} -> {}", old, old - 1);
 
                     if (old == 1) 
                     {
@@ -69,8 +70,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief returns the current reference count.
-                 * @return int32_t the reference count value.
+                 * @brief Returns the current reference count.
+                 * @return int32_t The reference count value.
                  */
                 int32_t get_ref_count() const noexcept 
                 {

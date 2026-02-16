@@ -20,13 +20,13 @@
 
 #pragma once
 
-#include <format>
+#include <mutex>
 #include <chrono>
+#include <format>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
 #include <source_location>
-#include <mutex>
 
 #ifndef SR_ENABLE_LOGGING
     #define SR_ENABLE_LOGGING 1
@@ -37,15 +37,15 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief logging levels to filter messages.
+         * @brief Logging levels to filter messages.
          */
         enum class LogType : int 
         {
-            OFF   = 0, /**< logging is disabled */
-            ERR   = 1, /**< only error messages */
-            WARN  = 2, /**< warnings and errors */
-            INFO  = 3, /**< info, warnings and errors */
-            DEBUG = 4  /**< all messages including debug */
+            OFF   = 0, /**< Logging is disabled */
+            ERR   = 1, /**< Only error messages */
+            WARN  = 2, /**< Warnings and errors */
+            INFO  = 3, /**< Info, warnings and errors */
+            DEBUG = 4  /**< All messages including debug */
         };
 
         #if SR_ENABLE_LOGGING
@@ -59,17 +59,17 @@ namespace SushiRuntime
         #endif
 
         /**
-         * @brief internal tools for the logging system.
+         * @brief Internal tools for the logging system.
          */
         namespace Detail 
         {
-            /** @brief mutex for thread-safe output. */
+            /** @brief Mutex for thread-safe output. */
             inline std::mutex log_mutex;
 
             /**
-             * @brief gets local time in a platform-independent way.
-             * @param result the tm structure to fill.
-             * @param time the timestamp to convert.
+             * @brief Gets local time in a platform-independent way.
+             * @param result The tm structure to fill.
+             * @param time The timestamp to convert.
              */
             inline void portable_localtime(std::tm* result, const std::time_t* time)
             {
@@ -81,8 +81,8 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief creates a timestamp with millisecond precision.
-             * @return formatted time string (HH:MM:SS.mmm).
+             * @brief Creates a timestamp with millisecond precision.
+             * @return Formatted time string (HH:MM:SS.mmm).
              */
             inline std::string get_timestamp() 
             {
@@ -97,9 +97,9 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief extracts or formats the function name.
-             * @param sv the string view to process.
-             * @return the processed function name.
+             * @brief Extracts or formats the function name.
+             * @param sv The string view to process.
+             * @return The processed function name.
              */
             constexpr std::string_view extract_function_name(std::string_view sv)
             {
@@ -129,7 +129,7 @@ namespace SushiRuntime
                     } 
                     catch (const std::format_error& e) 
                     {
-                        std::cerr << "log format error: " << e.what() << "\n";
+                        std::cerr << "Log format error: " << e.what() << "\n";
                     }
                 #endif
             }
@@ -137,24 +137,24 @@ namespace SushiRuntime
     } // namespace Core
     
     /**
-     * @brief logs a message at error level.
+     * @brief Logs a message at error level.
      */
     #if SR_ENABLE_LOGGING
         #define SR_LOG_ERROR(fmt, ...) \
             if constexpr (SushiRuntime::Core::ACTIVE_LOG_LEVEL >= SushiRuntime::Core::LogType::ERR) \
                 SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::ERR, "ERROR", std::source_location::current(), fmt __VA_OPT__(,) __VA_ARGS__)
 
-        /** @brief logs a message at warning level. */
+        /** @brief Logs a message at warning level. */
         #define SR_LOG_WARN(fmt, ...) \
             if constexpr (SushiRuntime::Core::ACTIVE_LOG_LEVEL >= SushiRuntime::Core::LogType::WARN) \
                 SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::WARN, "WARN", std::source_location::current(), fmt __VA_OPT__(,) __VA_ARGS__)
 
-        /** @brief logs a message at info level. */
+        /** @brief Logs a message at info level. */
         #define SR_LOG_INFO(fmt, ...) \
             if constexpr (SushiRuntime::Core::ACTIVE_LOG_LEVEL >= SushiRuntime::Core::LogType::INFO) \
                 SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::INFO, "INFO", std::source_location::current(), fmt __VA_OPT__(,) __VA_ARGS__)
 
-        /** @brief logs a message at debug level. */
+        /** @brief Logs a message at debug level. */
         #define SR_LOG_DEBUG(fmt, ...) \
             if constexpr (SushiRuntime::Core::ACTIVE_LOG_LEVEL >= SushiRuntime::Core::LogType::DEBUG) \
                 SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::DEBUG, "DEBUG", std::source_location::current(), fmt __VA_OPT__(,) __VA_ARGS__)
@@ -166,16 +166,16 @@ namespace SushiRuntime
     #endif
 
     /**
-     * @brief throws an exception and logs it if a condition is met.
-     * @param condition the condition to check.
-     * @param fmt the error message format.
-     * @param ... the format arguments.
+     * @brief Throws an exception and logs it if a condition is met.
+     * @param condition The condition to check.
+     * @param fmt The error message format.
+     * @param ... The format arguments.
      */
     #define SR_THROW_IF(condition, fmt, ...) \
         do { \
             if (condition) { \
                 std::string msg_ = std::format(fmt, __VA_ARGS__); \
-                SR_LOG_ERROR("runtime exception: {}", msg_); \
+                SR_LOG_ERROR("Runtime exception: {}", msg_); \
                 throw std::runtime_error(msg_); \
             } \
         } while (0)

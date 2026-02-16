@@ -18,30 +18,30 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#include "../include/SushiRuntime/execution/runtime_context.hpp"
-#include "../include/SushiRuntime/memory/usm_allocator.hpp"
-#include "../include/SushiRuntime/core/logger.hpp"
-#include <iostream>
-#include <vector>
 #include <cmath>
+#include <vector>
+#include <iostream>
+#include "../include/SushiRuntime/core/logger.hpp"
+#include "../include/SushiRuntime/memory/usm_allocator.hpp"
+#include "../include/SushiRuntime/execution/runtime_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Memory;
 
 int main() 
 {
-    SR_LOG_INFO("starting memory pool verification...");
+    SR_LOG_INFO("Starting memory pool verification...");
 
     try 
     {
-        /** @brief step 1: initialize the runtime context for computation. */
+        /** @brief Step 1: initialize the runtime context for computation. */
         SushiRuntime::Execution::RuntimeContext ctx;
 
-        /** @brief step 2: get the allocator for numa node 0. */
+        /** @brief Step 2: get the allocator for NUMA node 0. */
         auto allocator = ctx.get_allocator(0);
 
-        /** @brief step 3: allocate small objects. these should come from the bitmask pool. */
-        SR_LOG_INFO("allocating 10 small objects (256 bytes)...");
+        /** @brief Step 3: allocate small objects. These should come from the bitmask pool. */
+        SR_LOG_INFO("Allocating 10 small objects (256 bytes)...");
         std::vector<void*> small_ptrs;
         
         void* first_ptr = allocator->allocate(256, AllocStrategy::SHARED);
@@ -52,40 +52,40 @@ int main()
             small_ptrs.push_back(allocator->allocate(256, AllocStrategy::SHARED));
         }
 
-        /** @brief step 4: verify if allocations are contiguous (indicating pool usage). */
+        /** @brief Step 4: verify if allocations are contiguous (indicating pool usage). */
         long diff = static_cast<char*>(small_ptrs[1]) - static_cast<char*>(small_ptrs[0]);
-        SR_LOG_INFO("distance between first two allocations: {} bytes", diff);
+        SR_LOG_INFO("Distance between first two allocations: {} bytes", diff);
 
         if (diff == 256) 
         {
-            SR_LOG_INFO("success: memory allocated contiguously (likely from pool).");
+            SR_LOG_INFO("Success: memory allocated contiguously (likely from pool).");
         }
         else 
         {
-            SR_LOG_WARN("memory not contiguous. diff: {}", diff);
+            SR_LOG_WARN("Memory not contiguous. Diff: {}", diff);
         }
 
-        /** @brief step 5: allocate a large object. this should bypass the pool and use system calls. */
-        SR_LOG_INFO("allocating large object (1mb)...");
+        /** @brief Step 5: allocate a large object. This should bypass the pool and use system calls. */
+        SR_LOG_INFO("Allocating large object (1MB)...");
         void* large_ptr = allocator->allocate(1024*1024, AllocStrategy::SHARED);
         
         long large_diff = std::abs(static_cast<char*>(large_ptr) - static_cast<char*>(first_ptr));
-        SR_LOG_INFO("distance to large allocation: {} bytes", large_diff);
+        SR_LOG_INFO("Distance to large allocation: {} bytes", large_diff);
 
         if (large_diff > 16384) 
         {
-            SR_LOG_INFO("success: large object allocated outside pool page.");
+            SR_LOG_INFO("Success: large object allocated outside pool page.");
         }
 
-        /** @brief step 6: clean up all allocated memory. */
+        /** @brief Step 6: clean up all allocated memory. */
         for(void* p : small_ptrs) allocator->deallocate(p);
         allocator->deallocate(large_ptr);
 
-        SR_LOG_INFO("verification completed.");
+        SR_LOG_INFO("Verification completed.");
     }
     catch (const std::exception& e) 
     {
-        SR_LOG_ERROR("test failed: {}", e.what());
+        SR_LOG_ERROR("Test failed: {}", e.what());
         return 1;
     }
 

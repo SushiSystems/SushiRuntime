@@ -19,57 +19,59 @@
 /**************************************************************************/
 
 #pragma once
+
 #include <sycl/sycl.hpp>
-#include "../core/common.hpp"
-#include "../core/sushi_ptr.hpp"
+#include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 
 namespace SushiRuntime
 {
     namespace Memory
     {
-        /** @brief strategies for memory allocation. */
+        /** @brief Strategies for memory allocation. */
         enum class AllocStrategy 
         {
-            DEVICE, /**< gpu only for fast access. */
-            SHARED, /**< shared between cpu and gpu for flexibility. */
-            HOST    /**< cpu only using pinned memory. */
+            DEVICE, /**< GPU only for fast access. */
+            SHARED, /**< Shared between CPU and GPU for flexibility. */
+            HOST    /**< CPU only using pinned memory. */
         };
 
         /**
-         * @brief base class for usm (unified shared memory) allocation.
+         * @brief Base class for USM (Unified Shared Memory) allocation.
          */
-        class USMAllocator : public Core::RefCounted
+        class SUSHIRUNTIME_API USMAllocator : public Core::RefCounted
         {
             public:
                 virtual ~USMAllocator() = default;
 
                 /**
-                 * @brief allocates memory with specific alignment and strategy.
-                 * @param bytes number of bytes to allocate.
-                 * @param strategy the allocation strategy to use.
-                 * @param alignment memory alignment requirements.
-                 * @return void* pointer to the allocated memory.
+                 * @brief Allocates memory with specific alignment and strategy.
+                 * @param bytes Number of bytes to allocate.
+                 * @param strategy The allocation strategy to use.
+                 * @param alignment Memory alignment requirements.
+                 * @return void* Pointer to the allocated memory.
                  */
                 virtual void* allocate(size_t bytes, 
                                     AllocStrategy strategy = AllocStrategy::SHARED,
                                     size_t alignment = Core::DEFAULT_ALIGNMENT) = 0;
 
                 /**
-                 * @brief frees allocated memory.
-                 * @param ptr pointer to the memory to free.
+                 * @brief Frees allocated memory.
+                 * @param ptr Pointer to the memory to free.
                  */
                 virtual void deallocate(void* ptr) = 0;
 
                 /**
-                 * @brief returns the device associated with a memory pointer.
-                 * @param ptr memory pointer to check.
-                 * @return sycl::device the device that owns the memory.
+                 * @brief Returns the device associated with a memory pointer.
+                 * @param ptr Memory pointer to check.
+                 * @return sycl::device The device that owns the memory.
                  */
                 virtual sycl::device get_device_of(void* ptr) = 0;
         };
 
-        /** @brief helper function to create a new usm allocator. */
-        sushi_ptr<USMAllocator> create_allocator(sycl::queue& queue, int numa_id = 0);
+        /** @brief Helper function to create a new USM allocator. */
+        SUSHIRUNTIME_API sushi_ptr<USMAllocator> create_allocator(sycl::queue& queue, int numa_id = 0);
 
     } // namespace Memory
 } // namespace SushiRuntime

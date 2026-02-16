@@ -19,11 +19,13 @@
 /**************************************************************************/
 
 #pragma once
-#include <atomic>
+
 #include <array>
+#include <atomic>
 #include <vector>
-#include "node.hpp"
-#include "../core/common.hpp"
+#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/export.hpp>
 
 namespace SushiRuntime 
 {
@@ -32,19 +34,19 @@ namespace SushiRuntime
         struct Node; 
 
         /**
-         * @brief state tracking for usm resources.
+         * @brief State tracking for USM resources.
          * 
-         * uses cache line alignment to prevent false sharing.
+         * Uses cache line alignment to prevent false sharing.
          */
         struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) ResourceState 
         {
-            /** @brief sharded spinlock for high performance. */
+            /** @brief Sharded spinlock for high performance. */
             std::atomic_flag lock = ATOMIC_FLAG_INIT;
             
-            /** @brief pointer to the last node that wrote to this resource. */
+            /** @brief Pointer to the last node that wrote to this resource. */
             Node* last_writer = nullptr; 
             
-            /** @brief list of nodes currently reading from this resource. */
+            /** @brief List of nodes currently reading from this resource. */
             std::vector<Node*> readers;
             
             ResourceState() 
@@ -54,22 +56,22 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief tracks dependencies between tasks without using locks.
+         * @brief Tracks dependencies between tasks without using locks.
          * 
-         * uses static shards instead of an unordered_map for better speed.
+         * Uses static shards instead of an unordered_map for better speed.
          */
-        class DependencyTracker 
+        class SUSHIRUNTIME_API DependencyTracker 
         {
             private:
-                /** @brief number of shards used to reduce contention. */
+                /** @brief Number of shards used to reduce contention. */
                 static constexpr size_t SHARD_COUNT = 1024;
-                /** @brief registry of resource states. */
+                /** @brief Registry of resource states. */
                 std::array<ResourceState, SHARD_COUNT> registry;
 
                 /**
-                 * @brief generates a slot index from a pointer address.
-                 * @param ptr the pointer to map.
-                 * @return size_t the index in the shard registry.
+                 * @brief Generates a slot index from a pointer address.
+                 * @param ptr The pointer to map.
+                 * @return size_t The index in the shard registry.
                  */
                 inline size_t get_shard_idx(void* ptr) const 
                 {
@@ -77,21 +79,21 @@ namespace SushiRuntime
                 }
 
             public:
-                /** @brief initializes the dependency tracker. */
+                /** @brief Initializes the dependency tracker. */
                 DependencyTracker();
 
                 /**
-                 * @brief resolves implicit dependencies for a task node.
-                 * @param node the task node to check.
-                 * @param ptr the memory resource being accessed.
-                 * @param is_write true if the access is a write operation.
+                 * @brief Resolves implicit dependencies for a task node.
+                 * @param node The task node to check.
+                 * @param ptr The memory resource being accessed.
+                 * @param is_write True if the access is a write operation.
                  */
                 void resolve(Node* node, void* ptr, bool is_write);
 
                 /**
-                 * @brief creates a direct dependency between two nodes.
-                 * @param from the source node.
-                 * @param to the target node.
+                 * @brief Creates a direct dependency between two nodes.
+                 * @param from The source node.
+                 * @param to The target node.
                  */
                 void add_dependency(Node* from, Node* to);
         };

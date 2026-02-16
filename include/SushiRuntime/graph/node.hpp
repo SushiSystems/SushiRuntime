@@ -21,24 +21,25 @@
 #pragma once
 
 #include <atomic>
-#include <vector>
-#include <functional>
-#include <optional>
 #include <memory>
-#include "../scheduler/splittable_task.hpp"
-#include "../core/ref_counted.hpp"
+#include <vector>
+#include <optional>
+#include <functional>
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/ref_counted.hpp>
+#include <SushiRuntime/scheduler/splittable_task.hpp>
 
 namespace SushiRuntime 
 {
     namespace Graph 
     {
-        /** @brief work definition for a task node. */
+        /** @brief Work definition for a task node. */
         using TaskWork = std::function<void(sycl::handler&)>;
 
         struct Node;
 
         /**
-         * @brief element for a lock-free linked list of successor nodes.
+         * @brief Element for a lock-free linked list of successor nodes.
          */
         struct SuccessorNode 
         {
@@ -47,30 +48,30 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief representing a node in the runtime graph. 
+         * @brief Representing a node in the runtime graph. 
          * 
-         * it uses lock-free dependency management and inherits from SplittableTask.
+         * It uses lock-free dependency management and inherits from SplittableTask.
          */
         struct Node : public SushiRuntime::Scheduler::SplittableTask
         {
-            /** @brief the work to be executed in this node. */
+            /** @brief The work to be executed in this node. */
             TaskWork work;
             
-            /** @brief number of incoming dependencies. */
+            /** @brief Number of incoming dependencies. */
             std::atomic<int32_t> in_degree{0};
             
-            /** @brief head of the lock-free successor list. */
+            /** @brief Head of the lock-free successor list. */
             std::atomic<SuccessorNode*> successor_list{nullptr};
             
-            /** @brief sycl events this node depends on. */
+            /** @brief SYCL events this node depends on. */
             std::vector<sycl::event> sycl_deps;
             
-            /** @brief flag to indicate if the node is fused with others. */
+            /** @brief Flag to indicate if the node is fused with others. */
             bool is_fused = false;
 
             /**
-             * @brief adds a successor node in a lock-free way.
-             * @param target the node that depends on this node.
+             * @brief Adds a successor node in a lock-free way.
+             * @param target The node that depends on this node.
              */
             void add_successor(Node* target) noexcept 
             {
@@ -80,30 +81,31 @@ namespace SushiRuntime
                 do 
                 {
                     new_node->next = old_head;
-                } while (!successor_list.compare_exchange_weak(old_head, new_node, 
+                } 
+                while (!successor_list.compare_exchange_weak(old_head, new_node, 
                                                               std::memory_order_release, 
                                                               std::memory_order_relaxed));
             }
 
-            /** @brief executes the task work within a sycl handler. */
+            /** @brief Executes the task work within a SYCL handler. */
             void execute(sycl::handler& h) override 
             {
                 if(work) work(h);
             }
 
-            /** @brief optionally splits the task into smaller subtasks for better load balancing. */
+            /** @brief Optionally splits the task into smaller subtasks for better load balancing. */
             std::optional<sushi_ptr<SushiRuntime::Scheduler::SplittableTask>> split() override 
             {
                 return std::nullopt;
             }
 
-            /** @brief returns true if the task can be split. */
+            /** @brief Returns true if the task can be split. */
             bool is_splittable() const override 
             {
                 return false;
             }
 
-            /** @brief destructor cleans up the atomic successor list. */
+            /** @brief Destructor cleans up the atomic successor list. */
             ~Node() 
             {
                 SuccessorNode* curr = successor_list.load(std::memory_order_relaxed);

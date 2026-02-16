@@ -19,60 +19,61 @@
 /**************************************************************************/
 
 #pragma once
-#include <sycl/sycl.hpp>
-#include <vector>
 #include <string>
+#include <vector>
+#include <sycl/sycl.hpp>
+#include <SushiRuntime/core/export.hpp>
 
 namespace SushiRuntime
 {
     namespace Topology
     {
         /**
-         * @brief pci bus-device-function (bdf) address.
+         * @brief PCI Bus-Device-Function (BDF) address.
          * 
-         * used to map sycl devices to numa nodes using hwloc.
+         * Used to map SYCL devices to NUMA nodes using hwloc.
          */
         struct PCIDomainAddress 
         {
-            uint32_t domain;   /**< pci domain */
-            uint32_t bus;      /**< pci bus */
-            uint32_t device;   /**< pci device */
-            uint32_t function; /**< pci function */
+            uint32_t domain;   /**< PCI domain */
+            uint32_t bus;      /**< PCI bus */
+            uint32_t device;   /**< PCI device */
+            uint32_t function; /**< PCI function */
         };
 
         /**
-         * @brief represents a hardware unit like cpu or gpu.
+         * @brief Represents a hardware unit like CPU or GPU.
          */
         struct HardwareNode 
         {
-            size_t logical_id;          /**< logical id within sushiruntime. */
-            int numa_node_id;           /**< id of the numa node from hwloc. */
-            sycl::device sycl_dev;      /**< sycl device object. */
-            std::string name;           /**< name of the device. */
-            bool is_gpu;                /**< true if the device is a gpu. */
+            size_t logical_id;          /**< Logical ID within SushiRuntime. */
+            int numa_node_id;           /**< ID of the NUMA node from hwloc. */
+            sycl::device sycl_dev;      /**< SYCL device object. */
+            std::string name;           /**< Name of the device. */
+            bool is_gpu;                /**< True if the device is a GPU. */
             
-            PCIDomainAddress pci_address; /**< pci address of the device. */
+            PCIDomainAddress pci_address; /**< PCI address of the device. */
             
-            size_t global_mem_size;       /**< total global memory size in bytes. */
-            uint32_t max_compute_units;   /**< total number of compute units. */
+            size_t global_mem_size;       /**< Total global memory size in bytes. */
+            uint32_t max_compute_units;   /**< Total number of compute units. */
         };
 
         /**
-         * @brief class to find all hardware in the system.
+         * @brief Class to find all hardware in the system.
          */
-        class HardwareDiscovery 
+        class SUSHIRUNTIME_API HardwareDiscovery 
         {
             public:
                 HardwareDiscovery() = default;
 
                 /**
-                 * @brief scans for all sycl devices and returns a list of hardware nodes.
-                 * @return std::vector<HardwareNode> list of found hardware.
+                 * @brief Scans for all SYCL devices and returns a list of hardware nodes.
+                 * @return std::vector<HardwareNode> List of found hardware.
                  */
                 std::vector<HardwareNode> probe_all_devices();
 
             private:
-                /** @brief scans sycl platforms to find devices. */
+                /** @brief Scans SYCL platforms to find devices. */
                 void discover_sycl_devices(std::vector<HardwareNode>& nodes);
         };
 

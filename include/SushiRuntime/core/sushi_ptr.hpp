@@ -20,20 +20,20 @@
 
 #pragma once
 
-#include "ref_counted.hpp"
-#include <utility>
 #include <cstddef>
+#include <utility>
 #include <functional>
+#include <SushiRuntime/core/ref_counted.hpp>
 
 namespace SushiRuntime 
 {
     /**
-     * @brief smart pointer for RefCounted objects.
+     * @brief Smart pointer for RefCounted objects.
      * 
      * @tparam T a type derived from RefCounted.
      * 
-     * sushi_ptr uses the RAII principle. it handles reference counting automatically.
-     * it increases the count on copy and decreases it on destruction or reset.
+     * Sushi_ptr uses the RAII principle. It handles reference counting automatically.
+     * It increases the count on copy and decreases it on destruction or reset.
      */
     template <typename T>
     class sushi_ptr 
@@ -45,36 +45,36 @@ namespace SushiRuntime
             friend class sushi_ptr;
             
         public:
-            /** @brief creates an empty sushi_ptr. */
+            /** @brief Creates an empty sushi_ptr. */
             sushi_ptr() noexcept : ptr(nullptr) { }
 
-            /** @brief creates a sushi_ptr from a raw pointer and increases reference count. */
+            /** @brief Creates a sushi_ptr from a raw pointer and increases reference count. */
             sushi_ptr(T* p) : ptr(p) { if (ptr) ptr->add_ref(); }
                 
-            /** @brief copy constructor. increases reference count. */
+            /** @brief Copy constructor. Increases reference count. */
             sushi_ptr(const sushi_ptr& other) : ptr(other.ptr) { if (ptr) ptr->add_ref(); }
 
-            /** @brief converts from a different sushi_ptr type. increases reference count. */
+            /** @brief Converts from a different sushi_ptr type. Increases reference count. */
             template <typename U>
             sushi_ptr(const sushi_ptr<U>& other) : ptr(other.ptr) { if (ptr) ptr->add_ref(); }
 
-            /** @brief move constructor. does not change reference count. */
+            /** @brief Move constructor. Does not change reference count. */
             sushi_ptr(sushi_ptr&& other) noexcept : ptr(other.ptr) { other.ptr = nullptr; }
 
-            /** @brief moves from a different sushi_ptr type. */
+            /** @brief Moves from a different sushi_ptr type. */
             template <typename U>
             sushi_ptr(sushi_ptr<U>&& other) noexcept : ptr(other.ptr) { other.ptr = nullptr; }
 
-            /** @brief destructor. decreases reference count and deletes object if zero. */
+            /** @brief Destructor. Decreases reference count and deletes object if zero. */
             ~sushi_ptr() { if (ptr) ptr->release(); }
 
-            /** @brief swaps the content of two sushi_ptr objects. */
+            /** @brief Swaps the content of two sushi_ptr objects. */
             void swap(sushi_ptr& other) noexcept 
             {
                 std::swap(ptr, other.ptr);
             }
 
-            /** @brief copy assignment operator. */
+            /** @brief Copy assignment operator. */
             sushi_ptr& operator=(const sushi_ptr& other) 
             {
                 sushi_ptr<T> temp(other);
@@ -90,7 +90,7 @@ namespace SushiRuntime
                 return *this;
             }
 
-            /** @brief move assignment operator. */
+            /** @brief Move assignment operator. */
             sushi_ptr& operator=(sushi_ptr&& other) noexcept 
             {
                 sushi_ptr<T> temp(std::move(other));
@@ -106,20 +106,20 @@ namespace SushiRuntime
                 return *this;
             }
 
-            /** @brief resets the pointer to null or a new raw pointer. */
+            /** @brief Resets the pointer to null or a new raw pointer. */
             void reset(T* p = nullptr) 
             {
                 sushi_ptr<T>(p).swap(*this);
             }
 
-            /** @brief arrow operator for member access. */
+            /** @brief Arrow operator for member access. */
             T* operator->() const noexcept { return ptr; }
-            /** @brief dereference operator. */
+            /** @brief Dereference operator. */
             T& operator*() const noexcept { return *ptr; }
-            /** @brief returns the underlying raw pointer. */
+            /** @brief Returns the underlying raw pointer. */
             T* get() const noexcept { return ptr; }
             
-            /** @brief checks if the pointer is not null. */
+            /** @brief Checks if the pointer is not null. */
             explicit operator bool() const noexcept { return ptr != nullptr; }
 
             bool operator==(std::nullptr_t) const noexcept { return ptr == nullptr; }
@@ -128,14 +128,14 @@ namespace SushiRuntime
             bool operator!=(const sushi_ptr& other) const noexcept { return ptr != other.ptr; }
     };
 
-    /** @brief global swap function for sushi_ptr. */
+    /** @brief Global swap function for sushi_ptr. */
     template <typename T>
     void swap(sushi_ptr<T>& lhs, sushi_ptr<T>& rhs) noexcept 
     {
         lhs.swap(rhs);
     }
 
-    /** @brief utility function to create a new RefCounted object wrapped in a sushi_ptr. */
+    /** @brief Utility function to create a new RefCounted object wrapped in a sushi_ptr. */
     template <typename T, typename... Args>
     sushi_ptr<T> make_sushi(Args&&... args) 
     {
@@ -146,7 +146,7 @@ namespace SushiRuntime
 
 namespace std 
 {
-    /** @brief hash support for sushi_ptr to allow usage in unordered containers. */
+    /** @brief Hash support for sushi_ptr to allow usage in unordered containers. */
     template <typename T>
     struct hash<SushiRuntime::sushi_ptr<T>> 
     {

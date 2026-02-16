@@ -19,61 +19,63 @@
 /**************************************************************************/
 
 #pragma once
-#include "../../include/SushiRuntime/memory/usm_allocator.hpp"
-#include "../../include/SushiRuntime/core/logger.hpp"
-#include <atomic>
+
 #include <bit>
+#include <atomic>
 #include <cstddef>
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 
 namespace SushiRuntime 
 {
     namespace Memory
     {
         /**
-         * @brief bitmask-based management for memory slots.
+         * @brief Bitmask-based management for memory slots.
          * 
-         * each uint64_t bitmask represents 64 slots in a page.
+         * Each uint64_t bitmask represents 64 slots in a page.
          */
         struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) MemoryPage 
         {
-            /** @brief start address of the page. */
+            /** @brief Start address of the page. */
             void* start_ptr;
-            /** @brief atomic mask where 0 means empty and 1 means full. */
+            /** @brief Atomic mask where 0 means empty and 1 means full. */
             std::atomic<uint64_t> bitmask{0};
-            /** @brief id of the numa node where this page lives. */
+            /** @brief ID of the NUMA node where this page lives. */
             int numa_node_id;
-            /** @brief size of each slot in the page. */
+            /** @brief Size of each slot in the page. */
             size_t slot_size;
         };
 
         /**
-         * @brief thread-local cache (tlc) for fast allocation.
+         * @brief Thread-local cache (TLC) for fast allocation.
          * 
-         * allows each thread to access local slots without using locks.
+         * Allows each thread to access local slots without using locks.
          */
         struct ThreadLocalCache 
         {
-            /** @brief number of slots stored in a single batch. */
+            /** @brief Number of slots stored in a single batch. */
             static constexpr size_t BATCH_SIZE = 16;
-            /** @brief array of available memory slots. */
+            /** @brief Array of available memory slots. */
             void* slots[BATCH_SIZE];
-            /** @brief number of slots currently in the cache. */
+            /** @brief Number of slots currently in the cache. */
             size_t count = 0;
         };
 
-        /** @brief global thread-local storage for the cache. */
+        /** @brief Global thread-local storage for the cache. */
         inline thread_local ThreadLocalCache t_cache;
 
         /**
-         * @brief memory pool that uses bitmasks to track free space.
+         * @brief Memory pool that uses bitmasks to track free space.
          */
         class BitmaskMemoryPool 
         {
             public:
                 /**
-                 * @brief allocates a memory slot from a specific page.
-                 * @param page the memory page to allocate from.
-                 * @return void* pointer to the allocated memory, or nullptr if full.
+                 * @brief Allocates a memory slot from a specific page.
+                 * @param page The memory page to allocate from.
+                 * @return void* Pointer to the allocated memory, or nullptr if full.
                  */
                 // TODO: support multiple pages to handle high allocation pressure.
                 void* allocate_from_page(MemoryPage& page) 
@@ -101,9 +103,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief returns a memory slot back to the page.
-                 * @param page the memory page that owns the slot.
-                 * @param ptr the pointer to the memory being freed.
+                 * @brief Returns a memory slot back to the page.
+                 * @param page The memory page that owns the slot.
+                 * @param ptr The pointer to the memory being freed.
                  */
                 void deallocate_to_page(MemoryPage& page, void* ptr) 
                 {

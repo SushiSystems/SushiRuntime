@@ -24,6 +24,10 @@ target_link_libraries(sushiruntime PRIVATE
     IntelSYCL::SYCL_CXX
 )
 
+# --- Compile Definitions ---
+target_compile_definitions(sushiruntime PRIVATE SUSHIRUNTIME_EXPORTS)
+
+
 # --- Apply SYCL to specific source files ---
 # Only files that use SYCL need special compilation flags
 add_sycl_to_target(

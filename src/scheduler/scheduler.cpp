@@ -18,14 +18,14 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#include "../../include/SushiRuntime/scheduler/task_scheduler.hpp"
-#include "../../include/SushiRuntime/scheduler/splittable_task.hpp"
-#include "../../include/SushiRuntime/execution/runtime_context.hpp"
-#include "../../include/SushiRuntime/core/logger.hpp"
-#include "../../include/SushiRuntime/core/common.hpp"
+#include <new>
 #include <thread>
 #include <optional>
-#include <new>
+#include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/scheduler/splittable_task.hpp>
+#include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime
 {
@@ -35,10 +35,10 @@ namespace SushiRuntime
         using namespace SushiRuntime::Core;
 
         /**
-         * @brief lock-free chase-lev deque for task scheduling.
+         * @brief Lock-free Chase-Lev deque for task scheduling.
          * 
-         * the owner thread pushes and pops from the bottom (lifo).
-         * stealer threads steal from the top (fifo).
+         * The owner thread pushes and pops from the bottom (LIFO).
+         * Stealer threads steal from the top (FIFO).
          */
         class alignas(SushiRuntime::Core::CACHE_LINE_SIZE) Deque : public Core::RefCounted 
         {
@@ -61,7 +61,7 @@ namespace SushiRuntime
                 delete[] array.load(std::memory_order_relaxed);
             }
 
-            /** @brief pushes a task into the deque. */
+            /** @brief Pushes a task into the deque. */
             void push(void* task) 
             {
                 int64_t b = bottom.load(std::memory_order_relaxed);
@@ -69,7 +69,7 @@ namespace SushiRuntime
                 
                 if (b - t >= INITIAL_CAPACITY) 
                 {
-                    SR_THROW_IF(true, "hpc deque overflow. capacity: {}", INITIAL_CAPACITY);
+                    SR_THROW_IF(true, "HPC deque overflow. Capacity: {}", INITIAL_CAPACITY);
                 }
 
                 array.load(std::memory_order_relaxed)[b & MASK] = task;
@@ -77,7 +77,7 @@ namespace SushiRuntime
                 bottom.store(b + 1, std::memory_order_relaxed);
             }
 
-            /** @brief removes and returns a task from the bottom. */
+            /** @brief Removes and returns a task from the bottom. */
             void* pop() 
             {
                 int64_t b = bottom.load(std::memory_order_relaxed) - 1;
@@ -99,7 +99,7 @@ namespace SushiRuntime
                 return nullptr;
             }
 
-            /** @brief steals a task from the top. */
+            /** @brief Steals a task from the top. */
             void* steal() 
             {
                 int64_t t = top.load(std::memory_order_acquire);
@@ -127,22 +127,22 @@ namespace SushiRuntime
                 worker_queues.push_back(make_sushi<Deque>());
             }
             
-            SR_LOG_INFO("task scheduler initialized with {} worker queues.", threads);
+            SR_LOG_INFO("Task scheduler initialized with {} worker queues.", threads);
         }
 
         TaskScheduler::~TaskScheduler() = default;
 
         /**
-         * @brief main dispatch loop for worker threads.
+         * @brief Main dispatch loop for worker threads.
          * 
-         * workers poll for events, try to pop tasks from their own queue, 
+         * Workers poll for events, try to pop tasks from their own queue, 
          * or steal tasks from others.
          */
         void TaskScheduler::dispatch_loop(int thread_id) 
         {
             if (static_cast<size_t>(thread_id) >= worker_queues.size()) 
             {
-                SR_LOG_ERROR("dispatch loop thread_id {} out of bounds!", thread_id);
+                SR_LOG_ERROR("Dispatch loop thread_id {} out of bounds!", thread_id);
                 return;
             }
 
@@ -168,7 +168,7 @@ namespace SushiRuntime
             }
         }
 
-        /** @brief submits a generic splittable task to the hardware queue. */
+        /** @brief Submits a generic splittable task to the hardware queue. */
         void TaskScheduler::execute_task(void* task_ptr, std::vector<EventPolling::PolledEvent>& events) 
         {
             auto* task = static_cast<SplittableTask*>(task_ptr);
@@ -185,7 +185,7 @@ namespace SushiRuntime
             events.push_back({e, task_ptr});
         }
 
-        /** @brief attempts to find a task to steal from a different thread. */
+        /** @brief Attempts to find a task to steal from a different thread. */
         void* TaskScheduler::find_task_to_steal(int th_id) 
         {
             // TODO: use a random victim selection strategy to reduce contention.
@@ -201,7 +201,7 @@ namespace SushiRuntime
             return nullptr;
         }
 
-        /** @brief submits a new task to the main thread's queue. */
+        /** @brief Submits a new task to the main thread's queue. */
         void TaskScheduler::submit(void* task) 
         {
             if (!worker_queues.empty()) 
