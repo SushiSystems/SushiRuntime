@@ -46,6 +46,9 @@ namespace SushiRuntime
         /** @brief Maximum number of supported NUMA nodes. */
         inline constexpr size_t MAX_NUMA_NODES = 64;
 
+        /** @brief Maximum number of worker threads. */
+        inline constexpr size_t MAX_WORKER_THREADS = 256;
+
         /** @brief Default memory alignment for USM (Unified Shared Memory). */
         inline constexpr size_t DEFAULT_ALIGNMENT = 128; 
         

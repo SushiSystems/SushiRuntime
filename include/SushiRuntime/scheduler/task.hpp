@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* splittable_task.hpp                                                    */
+/* task.hpp                                                               */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -26,6 +26,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/core/ref_counted.hpp>
 
 namespace SushiRuntime 
 {
@@ -34,34 +35,72 @@ namespace SushiRuntime
         /**
          * @brief Interface for tasks that can be split for load balancing.
          */
-        class SUSHIRUNTIME_API SplittableTask : public Core::RefCounted 
+        class SUSHIRUNTIME_API Task : public Core::RefCounted 
         {
         public:
-            virtual ~SplittableTask() = default;
+            enum class ExecutionMode { KERNEL, HOST };
+
+            /** @brief Default constructor. */
+            Task() = default;
+            
+            /** @brief Constructor with name. */
+            Task(const char* name) : name_(name) {}
 
             /**
-             * @brief Main execution logic for the task.
+             * @brief Returns the name of the task.
+             * @return const char* Pointer to the task name.
+             */
+            virtual const char* get_name() const { return name_; }
+
+            /**
+             * @brief Sets the name of the task.
+             * @param name Pointer to the task name (should be persistent, e.g., string literal).
+             */
+            virtual void set_name(const char* name) { name_ = name; }
+
+            /**
+             * @brief Returns the execution mode of this task.
+             * @return ExecutionMode::KERNEL by default.
+             */
+            virtual ExecutionMode get_execution_mode() const { return ExecutionMode::KERNEL; }
+
+            /**
+             * @brief Main execution logic for the task (Kernel Mode).
              * @param h SYCL handler to submit work.
              */
-            virtual void execute(sycl::handler& h) = 0;
+            virtual void execute(sycl::handler& /*h*/) {}
+
+            /**
+             * @brief Main execution logic for the task (Host Mode).
+             * @param q SYCL queue to submit work to.
+             * @param deps List of event dependencies.
+             * @return sycl::event The event returned by the library call.
+             */
+            virtual sycl::event execute_host(sycl::queue& /*q*/, const std::vector<sycl::event>& /*deps*/) { return {}; }
 
             /**
              * @brief Splits the task into two. Returns the new task part.
              * @return optional sushi_ptr to the new task part.
              */
-            virtual std::optional<sushi_ptr<SplittableTask>> split() = 0;
+            virtual std::optional<sushi_ptr<Task>> split() = 0;
 
             /**
              * @brief Determines if the task is still large enough to be split.
              * @return true if the task can be split.
              */
             virtual bool is_splittable() const = 0;
+            
+            virtual ~Task() = default;
+
+        protected:
+            /** @brief Task name (0-allocation). */
+            const char* name_ = "unnamed_task";
         };
 
         /**
          * @brief Example of a range-based task that can be split.
          */
-        class SUSHIRUNTIME_API RangeTask : public SplittableTask 
+        class SUSHIRUNTIME_API RangeTask : public Task 
         {
             private:
                 /** @brief Atomic start index of the current range. */
@@ -73,8 +112,8 @@ namespace SushiRuntime
 
             public:
                 /** @brief Creates a new range task. */
-                RangeTask(size_t start, size_t end, auto func) 
-                    : start_(start), end_(end), kernel_func_(func) {}
+                RangeTask(size_t start, size_t end, auto func, const char* name = "range_task") 
+                    : Task(name), start_(start), end_(end), kernel_func_(func) {}
 
                 /** @brief Executes the task for the current valid range. */
                 void execute(sycl::handler& h) override 
@@ -90,7 +129,7 @@ namespace SushiRuntime
                  * 
                  * @return optional sushi_ptr to the new range task.
                  */
-                std::optional<sushi_ptr<SplittableTask>> split() override 
+                std::optional<sushi_ptr<Task>> split() override 
                 {
                     size_t s = start_.load(std::memory_order_acquire);
                     size_t mid = s + (end_ - s) / 2;

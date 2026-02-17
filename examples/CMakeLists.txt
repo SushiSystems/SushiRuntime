@@ -9,3 +9,12 @@ target_link_libraries(verify_memory_pool PRIVATE
 set_target_properties(verify_memory_pool PROPERTIES
     BUILD_RPATH "${CMAKE_BINARY_DIR}/src"
 )
+
+add_executable(sushi_blas_prototype sushi_blas_prototype.cpp)
+target_link_libraries(sushi_blas_prototype PRIVATE 
+    sushiruntime
+    IntelSYCL::SYCL_CXX
+)
+set_target_properties(sushi_blas_prototype PROPERTIES
+    BUILD_RPATH "${CMAKE_BINARY_DIR}/src"
+)

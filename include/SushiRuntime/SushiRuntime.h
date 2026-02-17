@@ -44,5 +44,5 @@
 
 // Scheduler Components
 #include "scheduler/task_scheduler.hpp"
-#include "scheduler/splittable_task.hpp"
+#include "scheduler/task.hpp"
 #include "scheduler/event_polling.hpp"

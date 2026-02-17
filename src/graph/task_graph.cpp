@@ -144,33 +144,11 @@ namespace SushiRuntime
                 scheduler.submit(root);
             }
 
-            /** @brief Launch worker threads to help with task processing. */
-            // TODO: use a persistent thread pool to avoid thread creation overhead.
-            std::vector<std::thread> workers;
-            size_t concurrency = std::thread::hardware_concurrency();
-            if(concurrency == 0) concurrency = 1;
-
-            for(size_t i=1; i<concurrency; ++i) 
-            {
-                workers.emplace_back([&scheduler, i](){
-                    try 
-                    {
-                        scheduler.dispatch_loop(i);
-                    }
-                    catch(const std::exception& e)
-                    {
-                        SR_LOG_ERROR("Worker thread {} crashed: {}", i, e.what());
-                    }
-                });
-            }
-            
-            /** @brief Join execution loop on the main thread. */
+            /** @brief Join execution loop on the main thread as worker 0. */
             scheduler.dispatch_loop(0);
             
-            for(auto& t : workers) 
-            {
-                if(t.joinable()) t.join();
-            }
+            // Wait for the sentinel to signal completion
+            future.wait();
 
             SR_LOG_INFO("DAG execution completed.");
             return sycl::event{};

@@ -58,6 +58,7 @@ namespace SushiRuntime
                  * 
                  * Uses adaptive backoff to reduce CPU and driver load.
                  * 
+                 * // TODO: Replace active_events vector with a fixed-size buffer or span to reduce allocations.
                  * @param active_events List of events currently being monitored.
                  * @param local_queue Current thread's task queue.
                  */

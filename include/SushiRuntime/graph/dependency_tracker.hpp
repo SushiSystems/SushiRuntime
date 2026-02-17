@@ -46,11 +46,13 @@ namespace SushiRuntime
             /** @brief Pointer to the last node that wrote to this resource. */
             Node* last_writer = nullptr; 
             
+            // TODO: Use a fixed-size array or object pool for readers instead of vector.
             /** @brief List of nodes currently reading from this resource. */
             std::vector<Node*> readers;
             
             ResourceState() 
             {
+                // TODO: Avoid dynamic reserve here.
                 readers.reserve(16);
             }
         };

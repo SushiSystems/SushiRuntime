@@ -23,7 +23,7 @@
 #include <optional>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/logger.hpp>
-#include <SushiRuntime/scheduler/splittable_task.hpp>
+#include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -121,16 +121,27 @@ namespace SushiRuntime
         {
             size_t threads = std::thread::hardware_concurrency();
             if (threads == 0) threads = 1;
+            if (threads > Core::MAX_WORKER_THREADS) threads = Core::MAX_WORKER_THREADS;
 
-            for(size_t i=0; i<threads; ++i)
+            num_workers = threads;
+
+            for(size_t i=0; i<num_workers; ++i)
             {
-                worker_queues.push_back(make_sushi<Deque>());
+                worker_queues[i] = make_sushi<Deque>();
+                workers[i] = std::thread([this, i] { dispatch_loop(static_cast<int>(i)); });
             }
             
-            SR_LOG_INFO("Task scheduler initialized with {} worker queues.", threads);
+            SR_LOG_INFO("Task scheduler initialized with {} worker queues and threads.", num_workers);
         }
 
-        TaskScheduler::~TaskScheduler() = default;
+        TaskScheduler::~TaskScheduler()
+        {
+            running.store(false, std::memory_order_release);
+            for (size_t i = 0; i < num_workers; ++i)
+            {
+                if (workers[i].joinable()) workers[i].join();
+            }
+        }
 
         /**
          * @brief Main dispatch loop for worker threads.
@@ -140,13 +151,15 @@ namespace SushiRuntime
          */
         void TaskScheduler::dispatch_loop(int thread_id) 
         {
-            if (static_cast<size_t>(thread_id) >= worker_queues.size()) 
+            if (static_cast<size_t>(thread_id) >= num_workers) 
             {
                 SR_LOG_ERROR("Dispatch loop thread_id {} out of bounds!", thread_id);
                 return;
             }
 
             auto& my_queue = worker_queues[thread_id];
+            
+            // TODO: Use a thread-local fixed-size array or a small-vector for event polling.
             std::vector<EventPolling::PolledEvent> active_events;
 
             while (running.load(std::memory_order_relaxed)) 
@@ -168,19 +181,32 @@ namespace SushiRuntime
             }
         }
 
-        /** @brief Submits a generic splittable task to the hardware queue. */
+        /** @brief Submits a generic task to the hardware queue. */
         void TaskScheduler::execute_task(void* task_ptr, std::vector<EventPolling::PolledEvent>& events) 
         {
-            auto* task = static_cast<SplittableTask*>(task_ptr);
+            auto* task = static_cast<Task*>(task_ptr);
+            SR_LOG_DEBUG("Executing task: {}", task->get_name());
             
             // TODO: select the best queue based on task locality or load.
             auto& q = context.get_queue(0); 
-            
-            // TODO: support direct sycl event chaining to reduce host overhead.
-            sycl::event e = q.submit([&](sycl::handler& h) 
+            sycl::event e;
+
+            if (task->get_execution_mode() == Task::ExecutionMode::HOST)
             {
-                task->execute(h);
-            });
+                // Execute directly on the queue (library calls)
+                // TODO: Pass dependencies correctly from the task graph
+                // For now, passing empty dependencies as the scheduler doesn't track fine-grained event deps here yet
+                e = task->execute_host(q, {});
+            }
+            else
+            {
+                // Execute as kernel lambda
+                // TODO: support direct sycl event chaining to reduce host overhead.
+                e = q.submit([&](sycl::handler& h) 
+                {
+                    task->execute(h);
+                });
+            }
             
             events.push_back({e, task_ptr});
         }
@@ -190,9 +216,9 @@ namespace SushiRuntime
         {
             // TODO: use a random victim selection strategy to reduce contention.
             // TODO: prioritize stealing from workers on the same numa node.
-            for (size_t i = 0; i < worker_queues.size(); ++i) 
+            for (size_t i = 0; i < num_workers; ++i) 
             {
-                size_t victim_id = (th_id + i + 1) % worker_queues.size();
+                size_t victim_id = (th_id + i + 1) % num_workers;
                 if (static_cast<int>(victim_id) == th_id) continue;
                 
                 void* stolen = worker_queues[victim_id]->steal();
@@ -204,7 +230,7 @@ namespace SushiRuntime
         /** @brief Submits a new task to the main thread's queue. */
         void TaskScheduler::submit(void* task) 
         {
-            if (!worker_queues.empty()) 
+            if (num_workers > 0) 
             {
                 worker_queues[0]->push(task);
             }

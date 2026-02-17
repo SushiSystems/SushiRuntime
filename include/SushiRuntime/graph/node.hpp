@@ -27,7 +27,7 @@
 #include <functional>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
-#include <SushiRuntime/scheduler/splittable_task.hpp>
+#include <SushiRuntime/scheduler/task.hpp>
 
 namespace SushiRuntime 
 {
@@ -50,9 +50,9 @@ namespace SushiRuntime
         /**
          * @brief Representing a node in the runtime graph. 
          * 
-         * It uses lock-free dependency management and inherits from SplittableTask.
+         * It uses lock-free dependency management and inherits from Task.
          */
-        struct Node : public SushiRuntime::Scheduler::SplittableTask
+        struct Node : public SushiRuntime::Scheduler::Task
         {
             /** @brief The work to be executed in this node. */
             TaskWork work;
@@ -63,6 +63,7 @@ namespace SushiRuntime
             /** @brief Head of the lock-free successor list. */
             std::atomic<SuccessorNode*> successor_list{nullptr};
             
+            // TODO: Replace with a fixed-size array or small-vector to avoid allocations per node.
             /** @brief SYCL events this node depends on. */
             std::vector<sycl::event> sycl_deps;
             
@@ -94,7 +95,7 @@ namespace SushiRuntime
             }
 
             /** @brief Optionally splits the task into smaller subtasks for better load balancing. */
-            std::optional<sushi_ptr<SushiRuntime::Scheduler::SplittableTask>> split() override 
+            std::optional<sushi_ptr<SushiRuntime::Scheduler::Task>> split() override 
             {
                 return std::nullopt;
             }
