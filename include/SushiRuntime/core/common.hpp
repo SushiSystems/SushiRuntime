@@ -54,3 +54,5 @@ namespace SushiRuntime
         
     } // namespace Core
 } // namespace SushiRuntime
+
+namespace sr = SushiRuntime;
