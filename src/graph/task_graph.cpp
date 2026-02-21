@@ -180,6 +180,9 @@ namespace SushiRuntime
                 scheduler.submit(root);
             }
 
+            /** @brief Start the workers after safely queueing roots. */
+            scheduler.start();
+
             /** @brief Join execution loop on the main thread as worker 0. */
             // FIX DEADLOCK: DO NOT call dispatch_loop(0) on the main thread, as
             // worker thread 0 is already running it! This corrupts the lock-free deque.

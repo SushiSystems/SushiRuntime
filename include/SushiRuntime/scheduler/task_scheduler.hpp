@@ -77,6 +77,8 @@ namespace SushiRuntime
 
                 /** @brief Main loop for worker threads. */
                 void dispatch_loop(int thread_id);
+                /** @brief Starts the background worker threads. */
+                void start();
                 /** @brief Submits a new task to the scheduler. */
                 void submit(void* task);
         };

@@ -129,13 +129,16 @@ namespace SushiRuntime
             {
                 worker_queues[i] = make_sushi<Deque>();
             }
+            
+            SR_LOG_INFO("Task scheduler initialized with {} worker queues and threads.", num_workers);
+        }
 
+        void TaskScheduler::start() 
+        {
             for(size_t i=0; i<num_workers; ++i)
             {
                 workers[i] = std::thread([this, i] { dispatch_loop(static_cast<int>(i)); });
             }
-            
-            SR_LOG_INFO("Task scheduler initialized with {} worker queues and threads.", num_workers);
         }
 
         TaskScheduler::~TaskScheduler()
