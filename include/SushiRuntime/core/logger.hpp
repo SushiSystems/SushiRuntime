@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <cstdio>
 #include <mutex>
 #include <chrono>
 #include <format>
@@ -27,6 +28,12 @@
 #include <stdexcept>
 #include <string_view>
 #include <source_location>
+#include <queue>
+#include <thread>
+#include <condition_variable>
+#include <atomic>
+#include <utility>
+#include <string>
 
 #ifndef SR_ENABLE_LOGGING
     #define SR_ENABLE_LOGGING 1
@@ -63,8 +70,78 @@ namespace SushiRuntime
          */
         namespace Detail 
         {
-            /** @brief Mutex for thread-safe output. */
-            inline std::mutex log_mutex;
+            class AsyncLogger {
+            private:
+                std::queue<std::pair<LogType, std::string>> queue_;
+                std::mutex mutex_;
+                std::condition_variable cv_;
+                std::thread worker_;
+                std::atomic<bool> running_;
+
+                void process_logs() 
+                {
+                    while (running_.load(std::memory_order_relaxed)) 
+                    {
+                        std::unique_lock<std::mutex> lock(mutex_);
+                        cv_.wait(lock, [this]() { return !queue_.empty() || !running_.load(std::memory_order_relaxed); });
+
+                        while (!queue_.empty()) 
+                        {
+                            auto log_entry = std::move(queue_.front());
+                            queue_.pop();
+                            lock.unlock(); // Unlock while writing to file/terminal
+
+                            FILE* stream = (log_entry.first <= LogType::ERR) ? stderr : stdout;
+
+                            #ifdef _WIN32
+                                _lock_file(stream);
+                                fputs(log_entry.second.c_str(), stream);
+                                fflush(stream);
+                                _unlock_file(stream);
+                            #else
+                                flockfile(stream);
+                                fputs(log_entry.second.c_str(), stream);
+                                fflush(stream);
+                                funlockfile(stream);
+                            #endif
+                            lock.lock(); // Lock again before checking queue
+                        }
+                    }
+                }
+
+            public:
+                AsyncLogger() : running_(true) 
+                {
+                    worker_ = std::thread(&AsyncLogger::process_logs, this);
+                }
+
+                ~AsyncLogger() 
+                {
+                    running_.store(false, std::memory_order_relaxed);
+                    cv_.notify_one();
+
+                    if (worker_.joinable()) 
+                    {
+                        worker_.join();
+                    }
+                }
+
+                void enqueue(LogType level, std::string&& msg) 
+                {
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        queue_.emplace(level, std::move(msg));
+                    }
+
+                    cv_.notify_one();
+                }
+            };
+
+            inline AsyncLogger& get_logger() 
+            {
+                static AsyncLogger instance;
+                return instance;
+            }
 
             /**
              * @brief Gets local time in a platform-independent way.
@@ -103,7 +180,7 @@ namespace SushiRuntime
              */
             constexpr std::string_view extract_function_name(std::string_view sv)
             {
-                    return sv;
+                return sv;
             }
 
             template<typename... Args>
@@ -123,9 +200,7 @@ namespace SushiRuntime
                             func_name, 
                             msg);
                         
-                        std::lock_guard<std::mutex> lock(log_mutex);
-                        if (level <= LogType::ERR) std::cerr << output;
-                        else std::cout << output;
+                        get_logger().enqueue(level, std::move(output));
                     } 
                     catch (const std::format_error& e) 
                     {

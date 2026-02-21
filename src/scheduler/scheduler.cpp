@@ -128,6 +128,10 @@ namespace SushiRuntime
             for(size_t i=0; i<num_workers; ++i)
             {
                 worker_queues[i] = make_sushi<Deque>();
+            }
+
+            for(size_t i=0; i<num_workers; ++i)
+            {
                 workers[i] = std::thread([this, i] { dispatch_loop(static_cast<int>(i)); });
             }
             
@@ -208,6 +212,14 @@ namespace SushiRuntime
                 });
             }
             
+            // Prevent dummy sycl events from crashing the polling loop
+            if (e == sycl::event{})
+            {
+                e = q.submit([&](sycl::handler& h) {
+                    h.host_task([]() {});
+                });
+            }
+
             events.push_back({e, task_ptr});
         }
 

@@ -41,6 +41,11 @@ namespace SushiRuntime
         using TaskWork = std::function<void(sycl::handler&)>;
 
         /**
+         * @brief Task work type for host-side (library) execution. 
+         */
+        using HostWork = std::function<sycl::event(sycl::queue&, const std::vector<sycl::event>&)>;
+
+        /**
          * @brief Manages and optimizes dependencies between async tasks.
          * 
          * TaskGraph collects work (kernels), analyzes data dependencies,
@@ -64,23 +69,54 @@ namespace SushiRuntime
                 TaskGraph& operator=(const TaskGraph&) = delete;
 
                 /**
-                 * @brief Adds a new node with manual dependencies.
-                 * @param work The SYCL kernel or transfer operation.
-                 * @param dependencies Events that must finish before this task starts.
+                 * @brief Adds a task for the device (GPU/CPU).
+                 * 
+                 * Use this for your own SYCL kernels or memory transfers.
+                 * It gives you a sycl::handler to define the work.
+                 * 
+                 * @param work Function that uses a sycl::handler to run work.
+                 * @param dependencies Manual events to wait for before starting.
                  */
                 void add_node(TaskWork work, const std::vector<sycl::event>& dependencies = {});
 
                 /**
-                 * @brief Adds a node with automatic dependency tracking.
+                 * @brief Adds a device task with automatic dependency tracking.
                  * 
-                 * This method tracks memory addresses to build the dependency graph.
+                 * The runtime checks the memory addresses (USM) to automatically 
+                 * find when this task can safely run.
                  * 
-                 * @param work The work to execute.
-                 * @param read_access Memory addresses that will be read.
-                 * @param write_access Memory addresses that will be written to.
-                 * @param dependencies Extra manual dependencies.
+                 * @param work Function that uses a sycl::handler to run work.
+                 * @param read_access List of memory addresses this task reads from.
+                 * @param write_access List of memory addresses this task writes to.
+                 * @param dependencies Additional manual events to wait for.
                  */
                 void add_node(TaskWork work, 
+                             const std::vector<void*>& read_access, 
+                             const std::vector<void*>& write_access,
+                             const std::vector<sycl::event>& dependencies = {});
+
+                /**
+                 * @brief Adds a task for host-side libraries (like oneMKL).
+                 * 
+                 * Use this when a library needs a sycl::queue and returns a sycl::event.
+                 * The runtime runs this as a separate host task.
+                 * 
+                 * @param work Function that takes a queue and returns a completion event.
+                 * @param dependencies Manual events to wait for.
+                 */
+                void add_host_node(HostWork work, const std::vector<sycl::event>& dependencies = {});
+
+                /**
+                 * @brief Adds a host-side library task with automatic dependency tracking.
+                 * 
+                 * Perfect for oneMKL GEMM and other library calls that use USM pointers.
+                 * 
+                 * @param work Function that takes a queue and returns a completion event.
+                 * @param read_access Memory addresses the library reads from.
+                 * @param write_access Memory addresses the library writes to.
+                 * @param dependencies Additional manual events.
+                 */
+                void add_host_node(HostWork work, 
                              const std::vector<void*>& read_access, 
                              const std::vector<void*>& write_access,
                              const std::vector<sycl::event>& dependencies = {});

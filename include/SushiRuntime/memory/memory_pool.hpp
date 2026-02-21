@@ -93,7 +93,7 @@ namespace SushiRuntime
                         
                         // use atomic swap to reserve the slot
                         if (page.bitmask.compare_exchange_weak(current_mask, new_mask, 
-                                                            std::memory_order_release, 
+                                                            std::memory_order_acquire, 
                                                             std::memory_order_relaxed)) 
                         {
                             return static_cast<uint8_t*>(page.start_ptr) + (first_free * page.slot_size);

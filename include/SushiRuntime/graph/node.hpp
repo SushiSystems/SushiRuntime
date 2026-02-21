@@ -26,8 +26,8 @@
 #include <optional>
 #include <functional>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/core/ref_counted.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
+#include <SushiRuntime/core/ref_counted.hpp>
 
 namespace SushiRuntime 
 {
@@ -35,6 +35,9 @@ namespace SushiRuntime
     {
         /** @brief Work definition for a task node. */
         using TaskWork = std::function<void(sycl::handler&)>;
+        
+        /** @brief Work definition for a host-side library call node. */
+        using HostWork = std::function<sycl::event(sycl::queue&, const std::vector<sycl::event>&)>;
 
         struct Node;
 
@@ -57,6 +60,12 @@ namespace SushiRuntime
             /** @brief The work to be executed in this node. */
             TaskWork work;
             
+            /** @brief The host work to be executed in this node if it's a HOST task. */
+            HostWork host_work;
+            
+            /** @brief The execution mode of this node. */
+            ExecutionMode mode = ExecutionMode::KERNEL;
+
             /** @brief Number of incoming dependencies. */
             std::atomic<int32_t> in_degree{0};
             
@@ -88,10 +97,23 @@ namespace SushiRuntime
                                                               std::memory_order_relaxed));
             }
 
+            /** @brief Returns the execution mode for this node. */
+            ExecutionMode get_execution_mode() const override 
+            {
+                return mode;
+            }
+
             /** @brief Executes the task work within a SYCL handler. */
             void execute(sycl::handler& h) override 
             {
                 if(work) work(h);
+            }
+
+            /** @brief Executes the host work with a queue. */
+            sycl::event execute_host(sycl::queue& q, const std::vector<sycl::event>& deps) override 
+            {
+                if(host_work) return host_work(q, deps);
+                return {};
             }
 
             /** @brief Optionally splits the task into smaller subtasks for better load balancing. */

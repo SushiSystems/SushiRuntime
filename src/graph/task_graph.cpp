@@ -60,7 +60,7 @@ namespace SushiRuntime
         TaskGraph::~TaskGraph() = default;
 
         /**
-         * @brief Adds a task node with manual SYCL event dependencies.
+         * @brief Adds a device task (kernel/transfer) with manual event dependencies.
          */
         void TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies) 
         {
@@ -73,7 +73,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Adds a task node and resolves USM data dependencies automatically.
+         * @brief Adds a device task and resolves USM data dependencies automatically.
          */
         void TaskGraph::add_node(TaskWork work, 
                                  const std::vector<void*>& read_access, 
@@ -94,6 +94,42 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Adds a host task (library call) with manual event dependencies.
+         */
+        void TaskGraph::add_host_node(HostWork work, const std::vector<sycl::event>& dependencies) 
+        {
+            auto node = make_sushi<Node>();
+            node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+            node->host_work = std::move(work);
+            node->sycl_deps = dependencies;
+            
+            SR_LOG_DEBUG("Host Node added with {} manual dependencies.", dependencies.size());
+            impl_->nodes.push_back(std::move(node));
+        }
+
+        /**
+         * @brief Adds a host task (library call) and resolves USM data dependencies automatically.
+         */
+        void TaskGraph::add_host_node(HostWork work, 
+                                 const std::vector<void*>& read_access, 
+                                 const std::vector<void*>& write_access,
+                                 const std::vector<sycl::event>& dependencies)
+        {
+            auto node = make_sushi<Node>();
+            node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+            node->host_work = std::move(work);
+            node->sycl_deps = dependencies;
+            
+            // resolve usm dependencies for reads and writes
+            for(void* ptr : read_access) impl_->tracker.resolve(node.get(), ptr, false);
+            for(void* ptr : write_access) impl_->tracker.resolve(node.get(), ptr, true);
+
+            SR_LOG_DEBUG("Host Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
+            
+            impl_->nodes.push_back(std::move(node));
+        }
+
+        /**
          * @brief Executes the entire graph using the task scheduler.
          */
         // TODO: refactor this function to be non-blocking and return a future immediately.
@@ -103,16 +139,16 @@ namespace SushiRuntime
 
             if(impl_->nodes.empty()) return sycl::event{};
 
-            /** @brief Setup local scheduler for this execution. */
-            SushiRuntime::Scheduler::TaskScheduler scheduler(ctx_);
-
-            /** @brief Identify roots and create a sentinel node for completion. */
-            std::vector<Node*> roots;
-            auto sentinel = make_sushi<Node>();
-            
-            auto* sched_ptr = &scheduler;
+            /** @brief Establish completion primitives first so they outlive the scheduler. */
             std::promise<void> promise;
             auto future = promise.get_future();
+
+            std::vector<Node*> roots;
+            auto sentinel = make_sushi<Node>();
+
+            /** @brief Setup local scheduler for this execution. Scheduler must be destroyed before sentinel and promise. */
+            SushiRuntime::Scheduler::TaskScheduler scheduler(ctx_);
+            auto* sched_ptr = &scheduler;
             
             sentinel->work = [sched_ptr, &promise](sycl::handler& h) 
             {
@@ -145,7 +181,9 @@ namespace SushiRuntime
             }
 
             /** @brief Join execution loop on the main thread as worker 0. */
-            scheduler.dispatch_loop(0);
+            // FIX DEADLOCK: DO NOT call dispatch_loop(0) on the main thread, as
+            // worker thread 0 is already running it! This corrupts the lock-free deque.
+            // scheduler.dispatch_loop(0);
             
             // Wait for the sentinel to signal completion
             future.wait();

@@ -49,7 +49,8 @@ public:
         
         // --- Simulated Implementation ---
         // We submit a dummy command to simulate work and respect dependencies.
-        auto e = q.submit([&](sycl::handler& h) {
+        auto e = q.submit([&](sycl::handler& h) 
+        {
             h.depends_on(deps);
             h.host_task([=](){
                 std::cout << "[SushiBLAS Prototype] Executing oneMKL GEMM..." << std::endl;
