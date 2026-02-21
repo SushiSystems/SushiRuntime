@@ -38,11 +38,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # --- Compiler Flags (Production Ready) ---
-if(MSVC)
-    # Windows / MSVC
-    # Note: /O2 is incompatible with /RTC1 (which is default in Debug)
+if(MSVC OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+    # Windows / MSVC / Intel icx-cl
     add_compile_options(/W4 /permissive-)
-    add_compile_options($<$<NOT:$<CONFIG:Debug>>:/O2>)
+    
+    # Release / Maximum Performance Optimizations
+    add_compile_options($<$<CONFIG:Release>:/O2>)         # Maximum speed optimization
+    add_compile_options($<$<CONFIG:Release>:/fp:fast>)    # Fast floating-point math
+    add_compile_options($<$<CONFIG:Release>:/arch:AVX2>)  # Enable AVX2 instructions (Works on AMD)
+    
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 else()
     # Linux / GCC / Clang / Intel oneAPI
