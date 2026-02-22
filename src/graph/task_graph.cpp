@@ -94,37 +94,42 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Adds a host task (library call) with manual event dependencies.
+         * @brief Adds a semantic task into the graph with full profiler and optimization metadata.
          */
-        void TaskGraph::add_host_node(HostWork work, const std::vector<sycl::event>& dependencies) 
-        {
-            auto node = make_sushi<Node>();
-            node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
-            node->host_work = std::move(work);
-            node->sycl_deps = dependencies;
-            
-            SR_LOG_DEBUG("Host Node added with {} manual dependencies.", dependencies.size());
-            impl_->nodes.push_back(std::move(node));
-        }
-
-        /**
-         * @brief Adds a host task (library call) and resolves USM data dependencies automatically.
-         */
-        void TaskGraph::add_host_node(HostWork work, 
-                                 const std::vector<void*>& read_access, 
+        void TaskGraph::add_task(const TaskMetadata& meta,
+                                 const std::vector<void*>& read_access,
                                  const std::vector<void*>& write_access,
+                                 HostWork fallback_work,
                                  const std::vector<sycl::event>& dependencies)
         {
             auto node = make_sushi<Node>();
-            node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
-            node->host_work = std::move(work);
+            node->metadata = meta;
+            // Differentiating execution mode based on TaskType
+            if (meta.task_type == TaskType::MATH_OP || meta.task_type == TaskType::CUSTOM_HOST) 
+            {
+                node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+                node->host_work = std::move(fallback_work);
+            } 
+            else 
+            {
+                node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::KERNEL;
+                node->host_work = std::move(fallback_work); // Even kernel falbacks can be packaged loosely for now
+            }
             node->sycl_deps = dependencies;
             
-            // resolve usm dependencies for reads and writes
-            for(void* ptr : read_access) impl_->tracker.resolve(node.get(), ptr, false);
-            for(void* ptr : write_access) impl_->tracker.resolve(node.get(), ptr, true);
+            // Resolve USM dependencies for reads and writes
+            for(void* ptr : read_access) 
+            {
+                if (ptr) impl_->tracker.resolve(node.get(), ptr, false);
+            }
+            for(void* ptr : write_access) 
+            {
+                if (ptr) impl_->tracker.resolve(node.get(), ptr, true);
+            }
 
-            SR_LOG_DEBUG("Host Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
+            SR_LOG_DEBUG("Semantic Node '{}' (Type: {}) added (R: {}, W: {}).", 
+                         meta.name, static_cast<int>(meta.task_type), 
+                         read_access.size(), write_access.size());
             
             impl_->nodes.push_back(std::move(node));
         }

@@ -28,6 +28,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
+#include <SushiRuntime/graph/task_types.hpp>
 
 namespace SushiRuntime 
 {
@@ -57,6 +58,9 @@ namespace SushiRuntime
          */
         struct Node : public SushiRuntime::Scheduler::Task
         {
+            /** @brief The semantic metadata defining this task. */
+            TaskMetadata metadata;
+
             /** @brief The work to be executed in this node. */
             TaskWork work;
             

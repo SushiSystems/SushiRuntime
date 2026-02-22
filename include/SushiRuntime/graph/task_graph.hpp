@@ -21,10 +21,10 @@
 #pragma once
 #include <memory>
 #include <vector>
-#include <functional>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/graph/task_types.hpp>
 
 namespace SushiRuntime 
 {
@@ -96,30 +96,19 @@ namespace SushiRuntime
                              const std::vector<sycl::event>& dependencies = {});
 
                 /**
-                 * @brief Adds a task for host-side libraries (like oneMKL).
+                 * @brief Adds a semantic task into the graph with full profiler and optimization metadata.
                  * 
-                 * Use this when a library needs a sycl::queue and returns a sycl::event.
-                 * The runtime runs this as a separate host task.
-                 * 
-                 * @param work Function that takes a queue and returns a completion event.
-                 * @param dependencies Manual events to wait for.
+                 * @param meta Definitions containing the operation type and properties.
+                 * @param read_access Memory pointers that this operation reads.
+                 * @param write_access Memory pointers that this operation overwrites or updates.
+                 * @param fallback_work A lambda function executed safely if the Operation is not fused by the optimizer.
+                 * @param dependencies Additional explicit user dependencies.
                  */
-                void add_host_node(HostWork work, const std::vector<sycl::event>& dependencies = {});
-
-                /**
-                 * @brief Adds a host-side library task with automatic dependency tracking.
-                 * 
-                 * Perfect for oneMKL GEMM and other library calls that use USM pointers.
-                 * 
-                 * @param work Function that takes a queue and returns a completion event.
-                 * @param read_access Memory addresses the library reads from.
-                 * @param write_access Memory addresses the library writes to.
-                 * @param dependencies Additional manual events.
-                 */
-                void add_host_node(HostWork work, 
-                             const std::vector<void*>& read_access, 
-                             const std::vector<void*>& write_access,
-                             const std::vector<sycl::event>& dependencies = {});
+                void add_task(const TaskMetadata& meta,
+                              const std::vector<void*>& read_access,
+                              const std::vector<void*>& write_access,
+                              HostWork fallback_work,
+                              const std::vector<sycl::event>& dependencies = {});
 
                 /**
                  * @brief Analyzes, optimizes, and submits the graph to hardware queues.
