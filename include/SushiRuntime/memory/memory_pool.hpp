@@ -42,6 +42,8 @@ namespace SushiRuntime
             void* start_ptr;
             /** @brief Atomic mask where 0 means empty and 1 means full. */
             std::atomic<uint64_t> bitmask{0};
+            /** @brief Next page in the linked list pool. */
+            std::atomic<MemoryPage*> next{nullptr};
             /** @brief ID of the NUMA node where this page lives. */
             int numa_node_id;
             /** @brief Size of each slot in the page. */
@@ -56,11 +58,26 @@ namespace SushiRuntime
         struct ThreadLocalCache 
         {
             /** @brief Number of slots stored in a single batch. */
-            static constexpr size_t BATCH_SIZE = 16;
+            static constexpr size_t BATCH_SIZE = 64;
             /** @brief Array of available memory slots. */
             void* slots[BATCH_SIZE];
             /** @brief Number of slots currently in the cache. */
             size_t count = 0;
+            
+            /** @brief Pops a slot from the local cache, or returns nullptr if empty. */
+            inline void* pop() 
+            {
+                if (count == 0) return nullptr;
+                return slots[--count];
+            }
+            
+            /** @brief Pushes a free slot back to the local cache, returns false if full. */
+            inline bool push(void* ptr) 
+            {
+                if (count >= BATCH_SIZE) return false;
+                slots[count++] = ptr;
+                return true;
+            }
         };
 
         /** @brief Global thread-local storage for the cache. */
@@ -73,38 +90,64 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Allocates a memory slot from a specific page.
-                 * @param page The memory page to allocate from.
-                 * @return void* Pointer to the allocated memory, or nullptr if full.
+                 * @brief Allocates a single slot. Traverses the linked list of pages.
+                 * @param root_page The starting memory page in the linked list pool.
+                 * @return void* Pointer to the allocated memory, or nullptr if completely full.
                  */
-                // TODO: support multiple pages to handle high allocation pressure.
-                void* allocate_from_page(MemoryPage& page) 
+                void* allocate_from_pool(MemoryPage* root_page) 
                 {
-                    uint64_t current_mask = page.bitmask.load(std::memory_order_relaxed);
+                    MemoryPage* current_page = root_page;
                     
-                    while (current_mask != ~0ULL)
-                    { 
-                        // find the first zero bit (empty slot)
-                        // TODO: use simd instructions (e.g. avx2) to speed up free slot search.
-                        int first_free = std::countr_one(current_mask);
-                        if (first_free >= 64) break;
-
-                        uint64_t new_mask = current_mask | (1ULL << first_free);
+                    while (current_page != nullptr)
+                    {
+                        uint64_t current_mask = current_page->bitmask.load(std::memory_order_relaxed);
                         
-                        // use atomic swap to reserve the slot
-                        if (page.bitmask.compare_exchange_weak(current_mask, new_mask, 
-                                                            std::memory_order_acquire, 
-                                                            std::memory_order_relaxed)) 
-                        {
-                            return static_cast<uint8_t*>(page.start_ptr) + (first_free * page.slot_size);
+                        while (current_mask != ~0ULL)
+                        { 
+                            // find the first zero bit (empty slot) using std::countr_one
+                            int first_free = std::countr_one(current_mask);
+                            if (first_free >= 64) break;
+
+                            uint64_t new_mask = current_mask | (1ULL << first_free);
+                            
+                            // use atomic hardware compare-and-swap
+                            if (current_page->bitmask.compare_exchange_weak(current_mask, new_mask, 
+                                                                std::memory_order_acquire, 
+                                                                std::memory_order_relaxed)) 
+                            {
+                                return static_cast<uint8_t*>(current_page->start_ptr) + (first_free * current_page->slot_size);
+                            }
                         }
+                        
+                        // Page full or highly contested, move to next page in the chain
+                        current_page = current_page->next.load(std::memory_order_acquire);
                     }
-                    return nullptr;
+                    
+                    return nullptr; // Entire pool chain is full
                 }
 
                 /**
-                 * @brief Returns a memory slot back to the page.
-                 * @param page The memory page that owns the slot.
+                 * @brief Batch allocates slots directly into a ThreadLocalCache.
+                 * @param root_page Top of the linked pool.
+                 * @param tlc The thread local cache object to fill.
+                 * @return size_t How many slots were successfully grabbed.
+                 */
+                size_t allocate_batch(MemoryPage* root_page, ThreadLocalCache& tlc)
+                {
+                    size_t grabbed = 0;
+                    while (grabbed < ThreadLocalCache::BATCH_SIZE)
+                    {
+                        void* ptr = allocate_from_pool(root_page);
+                        if (!ptr) break; // Pool empty
+                        tlc.slots[tlc.count++] = ptr;
+                        grabbed++;
+                    }
+                    return grabbed;
+                }
+
+                /**
+                 * @brief Returns a memory slot back to its specific designated page.
+                 * @param page The specific memory page that owns the slot.
                  * @param ptr The pointer to the memory being freed.
                  */
                 void deallocate_to_page(MemoryPage& page, void* ptr) 

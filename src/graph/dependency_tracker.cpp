@@ -31,6 +31,20 @@ namespace SushiRuntime
             /** @brief Initializing resources. */
         }
 
+        void DependencyTracker::reset()
+        {
+            for (auto& state : registry)
+            {
+                while(state.lock.test_and_set(std::memory_order_acquire)) 
+                {
+                    std::this_thread::yield(); 
+                }
+                state.last_writer = nullptr;
+                state.readers.clear();
+                state.lock.clear(std::memory_order_release);
+            }
+        }
+
         /**
          * @brief Resolves memory dependencies for a task node.
          * 
@@ -61,7 +75,12 @@ namespace SushiRuntime
                 }
 
                 // war: track dependency from all readers to this writer
-                for(Node* reader : state.readers) 
+                for (size_t i = 0; i < state.readers.static_count; ++i) 
+                {
+                    Node* reader = state.readers.static_data[i];
+                    if(reader != node) add_dependency(reader, node);
+                }
+                for (Node* reader : state.readers.dynamic_data) 
                 {
                     if(reader != node) add_dependency(reader, node);
                 }

@@ -138,10 +138,47 @@ namespace SushiRuntime
                     }
             };
 
-            inline AsyncLogger& get_logger() 
+            class SyncLogger 
             {
-                static AsyncLogger instance;
-                return instance;
+                private:
+                    std::mutex sync_mutex_;
+                public:
+                    void enqueue(LogType level, std::string&& msg) 
+                    {
+                        std::lock_guard<std::mutex> lock(sync_mutex_);
+                        FILE* stream = (level <= LogType::ERR) ? stderr : stdout;
+                        #ifdef _WIN32
+                            _lock_file(stream);
+                            fputs(msg.c_str(), stream);
+                            fflush(stream);
+                            _unlock_file(stream);
+                        #else
+                            flockfile(stream);
+                            fputs(msg.c_str(), stream);
+                            fflush(stream);
+                            funlockfile(stream);
+                        #endif
+                    }
+            };
+
+            inline std::atomic<bool>& is_sync_logging_enabled()
+            {
+                static std::atomic<bool> mode{false};
+                return mode;
+            }
+
+            inline void dispatch_log(LogType level, std::string&& msg) 
+            {
+                if (is_sync_logging_enabled().load(std::memory_order_relaxed)) 
+                {
+                    static SyncLogger sync_logger;
+                    sync_logger.enqueue(level, std::move(msg));
+                } 
+                else 
+                {
+                    static AsyncLogger async_logger;
+                    async_logger.enqueue(level, std::move(msg));
+                }
             }
 
             /**
@@ -201,7 +238,7 @@ namespace SushiRuntime
                             func_name, 
                             msg);
                         
-                        get_logger().enqueue(level, std::move(output));
+                        dispatch_log(level, std::move(output));
                     } 
                     catch (const std::format_error& e) 
                     {
@@ -240,6 +277,10 @@ namespace SushiRuntime
         #define SR_LOG_INFO(fmt, ...)  ((void)0)
         #define SR_LOG_DEBUG(fmt, ...) ((void)0)
     #endif
+
+    /** @brief Switches the logger to synchronous block-printing mode (useful for tests). */
+    #define SR_LOGGER_SET_SYNC_MODE(mode) \
+        SushiRuntime::Core::Detail::is_sync_logging_enabled().store(mode, std::memory_order_release)
 
     /**
      * @brief Throws an exception and logs it if a condition is met.

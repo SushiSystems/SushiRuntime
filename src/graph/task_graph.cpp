@@ -191,6 +191,10 @@ namespace SushiRuntime
             // Wait for the sentinel to signal completion
             future.wait();
 
+            // Clear the graph completely to release memory and prevent "double execution" bugs
+            impl_->nodes.clear();
+            impl_->tracker.reset();
+
             SR_LOG_INFO("DAG execution completed.");
             return sycl::event{};
         }

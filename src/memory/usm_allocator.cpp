@@ -39,30 +39,26 @@ namespace SushiRuntime
             public:
                 explicit USMManagerImpl(sycl::queue& q, int numa_id) : queue_(q), numa_id_(numa_id) 
                 {
-                     /** @brief Initialize a small 16KB memory pool (64 slots * 256 bytes). */
-                     size_t pool_size = 64 * 256;
-                     void* raw = sycl::malloc_shared(pool_size, q);
+                     // Set up root page (not allocated here, but prepared)
+                     root_page_.store(nullptr, std::memory_order_relaxed);
                      
-                     if (raw)
-                     {
-                        page_.start_ptr = raw;
-                        page_.bitmask.store(0, std::memory_order_relaxed);
-                        page_.numa_node_id = numa_id;
-                        page_.slot_size = 256; 
-                        pool_initialized_ = true;
-                     }
-                     else
-                     {
-                          SR_LOG_ERROR("Failed to allocate initial memory pool page.");
-                          pool_initialized_ = false;
-                     }
+                     // Pre-allocate the first page
+                     allocate_new_page();
                 }
 
                 ~USMManagerImpl() override
                 {
-                    if(pool_initialized_ && page_.start_ptr) 
+                    // Clean up all pages in the linked list
+                    MemoryPage* curr = root_page_.load(std::memory_order_relaxed);
+                    while (curr)
                     {
-                        sycl::free(page_.start_ptr, queue_);
+                        MemoryPage* next = curr->next.load(std::memory_order_relaxed);
+                        if (curr->start_ptr)
+                        {
+                            sycl::free(curr->start_ptr, queue_);
+                        }
+                        delete curr;
+                        curr = next;
                     }
                 }
 
@@ -78,11 +74,30 @@ namespace SushiRuntime
                             size_t alignment = DEFAULT_ALIGNMENT) override 
                 {
                     /** @brief Try to use the bitmask pool for small shared allocations. */
-                    // TODO: optimize selection logic based on requested alignment.
-                    if (pool_initialized_ && bytes <= 256 && strategy == AllocStrategy::SHARED)
+                    if (bytes <= 256 && strategy == AllocStrategy::SHARED)
                     {
-                        void* p = pool_.allocate_from_page(page_);
-                        if (p) return p;
+                        void* ptr = t_cache.pop();
+                        if (ptr) return ptr;
+                        
+                        // Local cache is empty, fetch a batch from the global pool
+                        MemoryPage* root = root_page_.load(std::memory_order_acquire);
+                        if (root)
+                        {
+                            size_t grabbed = pool_.allocate_batch(root, t_cache);
+                            if (grabbed == 0)
+                            {
+                                // Pool is entirely full, dynamically expand!
+                                if (allocate_new_page())
+                                {
+                                    // Successfully added a new page, try fetching again
+                                    root = root_page_.load(std::memory_order_acquire);
+                                    pool_.allocate_batch(root, t_cache);
+                                }
+                            }
+                            
+                            ptr = t_cache.pop();
+                            if (ptr) return ptr;
+                        }
                     }
 
                     /** @brief Fall back to system allocation if pool is full or request is large. */
@@ -120,13 +135,19 @@ namespace SushiRuntime
                 {
                     if (!ptr) return;
 
-                    /** @brief Return to pool if pointer is within the page range. */
-                    if (pool_initialized_ && 
-                        ptr >= page_.start_ptr && 
-                        ptr < static_cast<char*>(page_.start_ptr) + (64 * 256))
+                    /** @brief Return to pool if pointer belongs to any page. */
+                    if (strategy_is_shared_pool(ptr))
                     {
-                        pool_.deallocate_to_page(page_, ptr);
-                        return;
+                        // Try to push straight to thread local cache first for massive speedup
+                        if (t_cache.push(ptr)) return;
+                        
+                        // If local cache is full, return directly to its physical global page
+                        MemoryPage* owner = find_owner_page(ptr);
+                        if (owner)
+                        {
+                            pool_.deallocate_to_page(*owner, ptr);
+                            return;
+                        }
                     }
 
                     sycl::free(ptr, queue_.get_context());
@@ -142,8 +163,79 @@ namespace SushiRuntime
                 sycl::queue& queue_;
                 int numa_id_;
                 BitmaskMemoryPool pool_;
-                MemoryPage page_;
-                bool pool_initialized_ = false;
+                std::atomic<MemoryPage*> root_page_{nullptr};
+                
+                /** @brief Protects page expansion */
+                std::atomic_flag expansion_lock_ = ATOMIC_FLAG_INIT;
+
+                bool allocate_new_page()
+                {
+                    // Only one thread should be expanding the pool at a time
+                    if (expansion_lock_.test_and_set(std::memory_order_acquire))
+                    {
+                        // Another thread is already expanding it. Yield and let them finish.
+                        std::this_thread::yield();
+                        return false; 
+                    }
+                    
+                    size_t pool_size = 64 * 256;
+                    void* raw = nullptr;
+                    try {
+                        raw = sycl::malloc_shared(pool_size, queue_);
+                    } catch(...) {}
+
+                    if (!raw)
+                    {
+                        SR_LOG_ERROR("Failed to allocate new memory pool page.");
+                        expansion_lock_.clear(std::memory_order_release);
+                        return false;
+                    }
+
+                    MemoryPage* new_page = new MemoryPage();
+                    new_page->start_ptr = raw;
+                    new_page->bitmask.store(0, std::memory_order_relaxed);
+                    new_page->numa_node_id = numa_id_;
+                    new_page->slot_size = 256;
+                    // new_page->next is already nullptr
+
+                    // Thread it to the front of the list (Lock-Free Push)
+                    MemoryPage* old_root = root_page_.load(std::memory_order_relaxed);
+                    do {
+                        new_page->next.store(old_root, std::memory_order_relaxed);
+                    } while (!root_page_.compare_exchange_weak(old_root, new_page, 
+                                                            std::memory_order_release, 
+                                                            std::memory_order_relaxed));
+
+                    SR_LOG_INFO("BitmaskMemoryPool expanded with a new page.");
+                    expansion_lock_.clear(std::memory_order_release);
+                    return true;
+                }
+
+                bool strategy_is_shared_pool(void* ptr)
+                {
+                    MemoryPage* curr = root_page_.load(std::memory_order_acquire);
+                    while (curr)
+                    {
+                        void* start = curr->start_ptr;
+                        void* end = static_cast<char*>(start) + (64 * 256);
+                        if (ptr >= start && ptr < end) return true;
+                        curr = curr->next.load(std::memory_order_acquire);
+                    }
+                    return false;
+                }
+                
+                MemoryPage* find_owner_page(void* ptr)
+                {
+                    MemoryPage* curr = root_page_.load(std::memory_order_acquire);
+                    while (curr)
+                    {
+                        void* start = curr->start_ptr;
+                        void* end = static_cast<char*>(start) + (64 * 256);
+                        if (ptr >= start && ptr < end) return curr;
+                        curr = curr->next.load(std::memory_order_acquire);
+                    }
+                    return nullptr;
+                }
         };
 
         /** @brief Factory function to create an instance of the USM manager. */

@@ -50,7 +50,7 @@ namespace SushiRuntime
                 /** @brief Counter for adaptive backoff strategy. */
                 size_t backoff_counter = 0;
                 /** @brief Maximum value for the backoff counter. */
-                static constexpr size_t MAX_BACKOFF = 16; 
+                static constexpr size_t MAX_BACKOFF = 64; 
 
             public:
                 /**
@@ -70,6 +70,9 @@ namespace SushiRuntime
                     // skip checks if backoff is active to reduce overhead
                     if (backoff_counter > 0) 
                     {
+                        if (backoff_counter > 16) {
+                            std::this_thread::yield();
+                        }
                         backoff_counter--;
                         return;
                     }

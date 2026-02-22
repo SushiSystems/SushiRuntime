@@ -38,6 +38,37 @@ namespace SushiRuntime
          * 
          * Uses cache line alignment to prevent false sharing.
          */
+        
+        /**
+         * @brief A small vector-like container for Node pointers, using a static array
+         *        for small capacities and falling back to a dynamic vector.
+         */
+        struct SmallNodeVector 
+        {
+            static constexpr size_t STATIC_CAP = 64;
+            Node* static_data[STATIC_CAP];
+            size_t static_count = 0;
+            std::vector<Node*> dynamic_data;
+            
+            inline void push_back(Node* n) 
+            {
+                if (static_count < STATIC_CAP) 
+                {
+                    static_data[static_count++] = n;
+                } 
+                else 
+                {
+                    dynamic_data.push_back(n);
+                }
+            }
+            
+            inline void clear() 
+            {
+                static_count = 0;
+                dynamic_data.clear();
+            }
+        };
+
         struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) ResourceState 
         {
             /** @brief Sharded spinlock for high performance. */
@@ -46,14 +77,13 @@ namespace SushiRuntime
             /** @brief Pointer to the last node that wrote to this resource. */
             Node* last_writer = nullptr; 
             
-            // TODO: Use a fixed-size array or object pool for readers instead of vector.
             /** @brief List of nodes currently reading from this resource. */
-            std::vector<Node*> readers;
+            SmallNodeVector readers;
             
             ResourceState() 
             {
-                // TODO: Avoid dynamic reserve here.
-                readers.reserve(16);
+                // No dynamic reserve needed for SmallNodeVector's static part.
+                // Dynamic part will grow as needed.
             }
         };
 
@@ -83,6 +113,9 @@ namespace SushiRuntime
             public:
                 /** @brief Initializes the dependency tracker. */
                 DependencyTracker();
+
+                /** @brief Clears all resources. */
+                void reset();
 
                 /**
                  * @brief Resolves implicit dependencies for a task node.
