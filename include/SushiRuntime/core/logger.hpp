@@ -246,7 +246,7 @@ namespace SushiRuntime
                     }
                 #endif
             }
-        }
+        } // namespace Detail
     } // namespace Core
     
     /**

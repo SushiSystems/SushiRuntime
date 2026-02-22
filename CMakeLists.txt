@@ -40,7 +40,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # --- Compiler Flags (Production Ready) ---
 if(MSVC OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
     # Windows / MSVC / Intel icx-cl
-    add_compile_options(/W4 /permissive-)
+    add_compile_options(/W4 /permissive- /EHsc)
     
     # Release / Maximum Performance Optimizations
     add_compile_options($<$<CONFIG:Release>:/O2>)         # Maximum speed optimization
@@ -92,4 +92,9 @@ add_subdirectory(src)
 
 # --- Testing ---
 enable_testing()
+
+# Find GTest
+find_package(GTest CONFIG REQUIRED)
+
 add_subdirectory(examples)
+add_subdirectory(tests)
