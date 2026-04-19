@@ -65,6 +65,14 @@ namespace SushiRuntime
             virtual ExecutionMode get_execution_mode() const { return ExecutionMode::KERNEL; }
 
             /**
+             * @brief Indicates whether the task is a graph node managed by the DAG layer.
+             *
+             * This gives the scheduler a safe way to distinguish graph nodes from other
+             * task types without relying on unchecked casts.
+             */
+            virtual bool is_graph_node() const noexcept { return false; }
+
+            /**
              * @brief Main execution logic for the task (Kernel Mode).
              * @param h SYCL handler to submit work.
              */
@@ -89,6 +97,12 @@ namespace SushiRuntime
              * @return true if the task can be split.
              */
             virtual bool is_splittable() const = 0;
+            
+            /**
+             * @brief Returns the priority of the task. Higher value = higher priority.
+             * @return int 0 by default.
+             */
+            virtual int get_priority() const noexcept { return 0; }
             
             virtual ~Task() = default;
 
@@ -138,9 +152,8 @@ namespace SushiRuntime
                     if (mid <= s || (end_ - mid) < 1024) return std::nullopt;
 
                     if (start_.compare_exchange_strong(s, mid, std::memory_order_acq_rel)) 
-                    {
                         return make_sushi<RangeTask>(mid, end_, kernel_func_);
-                    }
+                    
                     return std::nullopt;
                 }
 

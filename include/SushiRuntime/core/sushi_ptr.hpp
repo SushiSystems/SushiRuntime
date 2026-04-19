@@ -52,18 +52,18 @@ namespace SushiRuntime
             sushi_ptr(T* p) : ptr(p) { if (ptr) ptr->add_ref(); }
                 
             /** @brief Copy constructor. Increases reference count. */
-            sushi_ptr(const sushi_ptr& other) : ptr(other.ptr) { if (ptr) ptr->add_ref(); }
+            sushi_ptr(const sushi_ptr& other) : ptr(other.ptr)          { if (ptr) ptr->add_ref(); }
 
             /** @brief Converts from a different sushi_ptr type. Increases reference count. */
             template <typename U>
-            sushi_ptr(const sushi_ptr<U>& other) : ptr(other.ptr) { if (ptr) ptr->add_ref(); }
+            sushi_ptr(const sushi_ptr<U>& other) : ptr(other.ptr)       { if (ptr) ptr->add_ref(); }
 
             /** @brief Move constructor. Does not change reference count. */
-            sushi_ptr(sushi_ptr&& other) noexcept : ptr(other.ptr) { other.ptr = nullptr; }
+            sushi_ptr(sushi_ptr&& other) noexcept : ptr(other.ptr)      { other.ptr = nullptr; }
 
             /** @brief Moves from a different sushi_ptr type. */
             template <typename U>
-            sushi_ptr(sushi_ptr<U>&& other) noexcept : ptr(other.ptr) { other.ptr = nullptr; }
+            sushi_ptr(sushi_ptr<U>&& other) noexcept : ptr(other.ptr)   { other.ptr = nullptr; }
 
             /** @brief Destructor. Decreases reference count and deletes object if zero. */
             ~sushi_ptr() { if (ptr) ptr->release(); }
@@ -113,11 +113,27 @@ namespace SushiRuntime
             }
 
             /** @brief Arrow operator for member access. */
-            T* operator->() const noexcept { return ptr; }
+            T* operator->() const noexcept  { return ptr; }
             /** @brief Dereference operator. */
-            T& operator*() const noexcept { return *ptr; }
+            T& operator*() const noexcept   { return *ptr; }
             /** @brief Returns the underlying raw pointer. */
-            T* get() const noexcept { return ptr; }
+            T* get() const noexcept         { return ptr; }
+
+            /**
+             * @brief Detaches the underlying pointer and returns it.
+             * 
+             * This method returns the raw pointer and sets the internal state to null, 
+             * effectively transferring ownership to the caller. The reference count 
+             * is NOT changed.
+             * 
+             * @return T* The underlying raw pointer.
+             */
+            T* leak() noexcept
+            {
+                T* p = ptr;
+                ptr = nullptr;
+                return p;
+            }
             
             /** @brief Checks if the pointer is not null. */
             explicit operator bool() const noexcept { return ptr != nullptr; }

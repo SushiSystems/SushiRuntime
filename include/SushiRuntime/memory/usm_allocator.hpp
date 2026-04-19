@@ -29,13 +29,52 @@ namespace SushiRuntime
 {
     namespace Memory
     {
-        /** @brief Strategies for memory allocation. */
-        enum class AllocStrategy 
+        /** 
+         * @brief Interface for memory allocation strategies (Strategy Pattern).
+         * Resolves OCP violation by allowing open extension of allocation methods.
+         */
+        class SUSHIRUNTIME_API IAllocatorStrategy 
         {
-            DEVICE, /**< GPU only for fast access. */
-            SHARED, /**< Shared between CPU and GPU for flexibility. */
-            HOST    /**< CPU only using pinned memory. */
+        public:
+            virtual ~IAllocatorStrategy() = default;
+            virtual void* allocate_raw(size_t bytes, size_t alignment, sycl::queue& queue) const = 0;
+            virtual bool is_poolable() const = 0;
         };
+
+        namespace Strategies 
+        {
+            class SUSHIRUNTIME_API Shared : public IAllocatorStrategy 
+            {
+            public:
+                void* allocate_raw(size_t bytes, size_t alignment, sycl::queue& queue) const override 
+                {
+                    return sycl::aligned_alloc_shared(alignment, bytes, queue);
+                }
+                
+                bool is_poolable() const override   { return true; }
+                static const Shared& instance()     { static Shared s; return s; }
+            };
+
+            class SUSHIRUNTIME_API Device : public IAllocatorStrategy 
+            {
+            public:
+                void* allocate_raw(size_t bytes, size_t alignment, sycl::queue& queue) const override {
+                    return sycl::aligned_alloc_device(alignment, bytes, queue);
+                }
+                bool is_poolable() const override   { return false; }
+                static const Device& instance()     { static Device s; return s; }
+            };
+
+            class SUSHIRUNTIME_API Host : public IAllocatorStrategy 
+            {
+            public:
+                void* allocate_raw(size_t bytes, size_t alignment, sycl::queue& queue) const override {
+                    return sycl::aligned_alloc_host(alignment, bytes, queue.get_context());
+                }
+                bool is_poolable() const override   { return false; }
+                static const Host& instance()       { static Host s; return s; }
+            };
+        }
 
         /**
          * @brief Base class for USM (Unified Shared Memory) allocation.
@@ -53,7 +92,7 @@ namespace SushiRuntime
                  * @return void* Pointer to the allocated memory.
                  */
                 virtual void* allocate(size_t bytes, 
-                                    AllocStrategy strategy = AllocStrategy::SHARED,
+                                    const IAllocatorStrategy& strategy = Strategies::Shared::instance(),
                                     size_t alignment = Core::DEFAULT_ALIGNMENT) = 0;
 
                 /**

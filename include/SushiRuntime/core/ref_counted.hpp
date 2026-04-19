@@ -45,13 +45,17 @@ namespace SushiRuntime
                 virtual ~RefCounted() = default;
 
             public:
+
+                RefCounted() = default;
+                RefCounted(const RefCounted&) = delete;
+                RefCounted& operator=(const RefCounted&) = delete;  
+
                 /**
                  * @brief Increases the reference count by 1.
                  */
                 void add_ref() const noexcept 
                 {
-                    int32_t old = ref_count.fetch_add(1, std::memory_order_relaxed);
-                    SR_LOG_DEBUG("Ref add: {} -> {}", old, old + 1);
+                    ref_count.fetch_add(1, std::memory_order_relaxed);
                 }
 
                 /**
@@ -60,7 +64,6 @@ namespace SushiRuntime
                 void release() const noexcept 
                 {
                     int32_t old = ref_count.fetch_sub(1, std::memory_order_release);
-                    SR_LOG_DEBUG("Ref release: {} -> {}", old, old - 1);
 
                     if (old == 1) 
                     {

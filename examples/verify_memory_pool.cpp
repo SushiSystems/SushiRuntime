@@ -20,7 +20,8 @@
 
 #include <cmath>
 #include <vector>
-#include <iostream>
+#define NOMINMAX
+#include <thread>
 #include "../include/SushiRuntime/core/logger.hpp"
 #include "../include/SushiRuntime/memory/usm_allocator.hpp"
 #include "../include/SushiRuntime/execution/runtime_context.hpp"
@@ -30,6 +31,7 @@ using namespace SushiRuntime::Memory;
 
 int main() 
 {
+    SR_LOGGER_SET_SYNC_MODE(true);
     SR_LOG_INFO("Starting memory pool verification...");
 
     try 
@@ -44,12 +46,12 @@ int main()
         SR_LOG_INFO("Allocating 10 small objects (256 bytes)...");
         std::vector<void*> small_ptrs;
         
-        void* first_ptr = allocator->allocate(256, AllocStrategy::SHARED);
+        void* first_ptr = allocator->allocate(256);
         small_ptrs.push_back(first_ptr);
 
         for(int i=0; i<9; ++i) 
         {
-            small_ptrs.push_back(allocator->allocate(256, AllocStrategy::SHARED));
+            small_ptrs.push_back(allocator->allocate(256));
         }
 
         /** @brief Step 4: verify if allocations are contiguous (indicating pool usage). */
@@ -67,7 +69,7 @@ int main()
 
         /** @brief Step 5: allocate a large object. This should bypass the pool and use system calls. */
         SR_LOG_INFO("Allocating large object (1MB)...");
-        void* large_ptr = allocator->allocate(1024*1024, AllocStrategy::SHARED);
+        void* large_ptr = allocator->allocate(1024*1024);
         
         long large_diff = std::abs(static_cast<char*>(large_ptr) - static_cast<char*>(first_ptr));
         SR_LOG_INFO("Distance to large allocation: {} bytes", large_diff);

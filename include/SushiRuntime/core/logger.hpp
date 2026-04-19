@@ -84,7 +84,10 @@ namespace SushiRuntime
                         while (running_.load(std::memory_order_relaxed)) 
                         {
                             std::unique_lock<std::mutex> lock(mutex_);
-                            cv_.wait(lock, [this]() { return !queue_.empty() || !running_.load(std::memory_order_relaxed); });
+                            cv_.wait(lock, [this]() 
+                            { 
+                                return !queue_.empty() || !running_.load(std::memory_order_relaxed); 
+                            });
 
                             while (!queue_.empty()) 
                             {
@@ -288,13 +291,13 @@ namespace SushiRuntime
      * @param fmt The error message format.
      * @param ... The format arguments.
      */
-    #define SR_THROW_IF(condition, fmt, ...) \
-        do { \
-            if (condition) { \
-                std::string msg_ = std::format(fmt, __VA_ARGS__); \
-                SR_LOG_ERROR("Runtime exception: {}", msg_); \
-                throw std::runtime_error(msg_); \
-            } \
+    #define SR_THROW_IF(condition, fmt, ...)                        \
+        do {                                                        \
+            if (condition) {                                        \
+                std::string msg_ = std::format(fmt, __VA_ARGS__);   \
+                SR_LOG_ERROR("Runtime exception: {}", msg_);        \
+                throw std::runtime_error(msg_);                     \
+            }                                                       \
         } while (0)
 
 } // namespace SushiRuntime

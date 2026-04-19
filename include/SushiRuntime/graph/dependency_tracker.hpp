@@ -101,13 +101,17 @@ namespace SushiRuntime
                 std::array<ResourceState, SHARD_COUNT> registry;
 
                 /**
-                 * @brief Generates a slot index from a pointer address.
+                 * @brief Generates a slot index from a pointer address using SplitMix64 hash.
                  * @param ptr The pointer to map.
                  * @return size_t The index in the shard registry.
                  */
                 inline size_t get_shard_idx(void* ptr) const 
                 {
-                    return (reinterpret_cast<size_t>(ptr) >> 6) % SHARD_COUNT;
+                    uint64_t z = reinterpret_cast<uint64_t>(ptr);
+                    z += 0x9e3779b97f4a7c15;
+                    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
+                    z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
+                    return (z ^ (z >> 31)) % SHARD_COUNT;
                 }
 
             public:

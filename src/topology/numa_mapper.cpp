@@ -21,7 +21,10 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#define NOMINMAX
+#include <thread>
 #include <hwloc.h>
+#include <hwloc/distances.h>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 
@@ -91,8 +94,22 @@ namespace SushiRuntime
                 } 
                 else 
                 {
-                    /** @brief default numa node for cpu devices. */
-                    node.numa_node_id = 0; 
+                    /** @brief Find the actual physical NUMA location for CPU nodes. */
+                    hwloc_cpuset_t cpuset = hwloc_bitmap_alloc();
+                    hwloc_get_cpubind(topology, cpuset, HWLOC_CPUBIND_PROCESS);
+                    
+                    hwloc_obj_t numa_obj = hwloc_get_next_obj_covering_cpuset_by_type(topology, cpuset, HWLOC_OBJ_NUMANODE, NULL);
+                    if (numa_obj) 
+                    {
+                        node.numa_node_id = numa_obj->os_index;
+                        SR_LOG_INFO("CPU Device [{}] is bound to NUMA node {}.", node.name, node.numa_node_id);
+                    } else 
+                    {
+                        node.numa_node_id = 0; 
+                        SR_LOG_WARN("Exact NUMA assignment for CPU could not be made, Default (0) is being used.");
+                    }
+                    
+                    hwloc_bitmap_free(cpuset);
                 }
             }
 
@@ -109,8 +126,43 @@ namespace SushiRuntime
          */
         int NUMAMapper::get_distance(int numa_node_a, int numa_node_b) const 
         {
-            // TODO: load actual slit table from system acpi for precise latency.
-            if (numa_node_a == numa_node_b) return 10; 
+            if (numa_node_a == numa_node_b) return 10; // Local node cost is always 10 (ACPI Standard)
+            
+            if (hwloc_initialized) 
+            {
+                hwloc_topology_t topology;
+                hwloc_topology_init(&topology);
+                hwloc_topology_load(topology);
+
+                // Query physical latency (distance) matrices from hardware
+                struct hwloc_distances_s *distances;
+                unsigned int nr = 1;
+                
+                // Retrieve NUMA latency table (SLIT/SRAT) reported by the operating system
+                if (hwloc_distances_get_by_type(topology, HWLOC_OBJ_NUMANODE, &nr, &distances, 0, 0) == 0 && nr > 0) 
+                {
+                    unsigned int idx_a = -1, idx_b = -1;
+                    
+                    // Find the indices of the nodes in the matrix
+                    for (unsigned int i = 0; i < distances->nbobjs; i++) {
+                        if (distances->objs[i]->os_index == (unsigned)numa_node_a) idx_a = i;
+                        if (distances->objs[i]->os_index == (unsigned)numa_node_b) idx_b = i;
+                    }
+
+                    if (idx_a != (unsigned)-1 && idx_b != (unsigned)-1) 
+                    {
+                        // Extract the value from the matrix
+                        uint64_t hwloc_val = distances->values[idx_a * distances->nbobjs + idx_b];
+                        hwloc_distances_release(topology, distances);
+                        hwloc_topology_destroy(topology);
+                        return static_cast<int>(hwloc_val);
+                    }
+                    hwloc_distances_release(topology, distances);
+                }
+                hwloc_topology_destroy(topology);
+            }
+            
+            // Industrial standard remote NUMA latency (Remote Hop) if hardware doesn't provide SLIT table
             return 21; 
         }
         

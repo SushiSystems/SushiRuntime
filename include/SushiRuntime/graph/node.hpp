@@ -40,6 +40,44 @@ namespace SushiRuntime
         /** @brief Work definition for a host-side library call node. */
         using HostWork = std::function<sycl::event(sycl::queue&, const std::vector<sycl::event>&)>;
 
+        struct SmallEventVector 
+        {
+            static constexpr size_t STATIC_CAP = 8;
+
+            size_t static_count = 0;
+            sycl::event static_data[STATIC_CAP];
+            std::vector<sycl::event> dynamic_data;
+            
+            inline SmallEventVector& operator=(const std::vector<sycl::event>& vec) 
+            {
+                static_count = 0;
+                dynamic_data.clear();
+
+                for (const auto& e : vec) 
+                {
+                    if (static_count < STATIC_CAP) 
+                        static_data[static_count++] = e;
+                    else 
+                        dynamic_data.push_back(e);
+                }
+                return *this;
+            }
+
+            inline std::vector<sycl::event> to_vector() const
+            {
+                std::vector<sycl::event> res;
+                res.reserve(static_count + dynamic_data.size());
+
+                for (size_t i = 0; i < static_count; ++i) 
+                    res.push_back(static_data[i]);
+
+                for (const auto& e : dynamic_data) 
+                    res.push_back(e);
+                
+                return res;
+            }
+        };
+
         struct Node;
 
         /**
@@ -73,12 +111,16 @@ namespace SushiRuntime
             /** @brief Number of incoming dependencies. */
             std::atomic<int32_t> in_degree{0};
             
-            /** @brief Head of the lock-free successor list. */
+            /** @brief Head of the lock-free successor list (for spillover). */
             std::atomic<SuccessorNode*> successor_list{nullptr};
+
+            /** @brief Inline buffer for successors to avoid heap allocations. */
+            static constexpr int MAX_INLINE_SUCCESSORS = 16;
+            std::atomic<int32_t> inline_successor_count{0};
+            Node* inline_successors[MAX_INLINE_SUCCESSORS] = {nullptr};
             
-            // TODO: Replace with a fixed-size array or small-vector to avoid allocations per node.
-            /** @brief SYCL events this node depends on. */
-            std::vector<sycl::event> sycl_deps;
+            /** @brief SYCL events this node depends on (heap-free for small amounts). */
+            SmallEventVector sycl_deps;
             
             /** @brief Flag to indicate if the node is fused with others. */
             bool is_fused = false;
@@ -89,7 +131,14 @@ namespace SushiRuntime
              */
             void add_successor(Node* target) noexcept 
             {
-                // TODO: use an object pool for successor nodes to avoid frequent new/delete operations.
+                int32_t idx = inline_successor_count.fetch_add(1, std::memory_order_relaxed);
+                if (idx < MAX_INLINE_SUCCESSORS)
+                {
+                    inline_successors[idx] = target;
+                    return;
+                }
+
+                // Spillover to heap-allocated lock-free linked list
                 SuccessorNode* new_node = new SuccessorNode{target, nullptr};
                 SuccessorNode* old_head = successor_list.load(std::memory_order_relaxed);
                 do 
@@ -102,16 +151,16 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the execution mode for this node. */
-            ExecutionMode get_execution_mode() const override 
-            {
-                return mode;
-            }
+            ExecutionMode get_execution_mode() const override   { return mode; }
+
+            /** @brief Indicates that this task is a graph node. */
+            bool is_graph_node() const noexcept override        { return true; }
+
+            /** @brief Returns prioritized value from metadata. */
+            int get_priority() const noexcept override          { return metadata.priority; }
 
             /** @brief Executes the task work within a SYCL handler. */
-            void execute(sycl::handler& h) override 
-            {
-                if(work) work(h);
-            }
+            void execute(sycl::handler& h) override             { if(work) work(h); }
 
             /** @brief Executes the host work with a queue. */
             sycl::event execute_host(sycl::queue& q, const std::vector<sycl::event>& deps) override 
@@ -121,16 +170,10 @@ namespace SushiRuntime
             }
 
             /** @brief Optionally splits the task into smaller subtasks for better load balancing. */
-            std::optional<sushi_ptr<SushiRuntime::Scheduler::Task>> split() override 
-            {
-                return std::nullopt;
-            }
+            std::optional<sushi_ptr<SushiRuntime::Scheduler::Task>> split() override { return std::nullopt; }
 
             /** @brief Returns true if the task can be split. */
-            bool is_splittable() const override 
-            {
-                return false;
-            }
+            bool is_splittable() const override { return false; }
 
             /** @brief Destructor cleans up the atomic successor list. */
             ~Node() 

@@ -1,27 +1,30 @@
 /**************************************************************************/
 /* usm_allocator.cpp                                                      */
 /**************************************************************************/
-/*                          This file is part of:                         */
-/*                              SushiRuntime                              */
-/*              https://github.com/SushiSystems/SushiRuntime              */
-/*                        https://sushisystems.io                         */
+/* This file is part of:                         */
+/* SushiRuntime                              */
+/* https://github.com/SushiSystems/SushiRuntime              */
+/* https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
 /* All Rights Reserved.                                                   */
-/*                                                                        */
+/* */
 /* CONFIDENTIAL: This software is the proprietary information of          */
 /* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
 /* via any medium is strictly prohibited.                                 */
-/*                                                                        */
+/* */
 /* This source code and the intellectual property contained herein        */
 /* is confidential and may not be disclosed, copied, or used without      */
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
+#include <vector>
+#include <algorithm>
+#include <cstdint>
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/core/logger.hpp>
-#include <SushiRuntime/memory/memory_pool.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/memory/memory_pool.hpp>
+#include <SushiRuntime/core/logger.hpp>
 
 namespace SushiRuntime
 {
@@ -29,131 +32,222 @@ namespace SushiRuntime
     {
         using namespace SushiRuntime::Core;
 
+        static std::atomic<uint64_t> g_allocator_id_counter{1};
+
         /**
-         * @brief Implementation of the USM manager.
-         * 
-         * Handles small object allocations through a bitmask pool and larger ones via system calls.
+         * @brief Lock-Free 3-Level Radix Tree (PageMap) for O(1) pointer-to-page resolution.
+         * Modeled after TCMalloc. Replaces all global locks and binary searches.
+         * Maps a 50-bit virtual address space down to 4KB granular chunks.
          */
+        class LockFreePageMap 
+        {
+        private:
+            static constexpr size_t PAGE_SHIFT = 12; // 4KB Page Granularity
+            
+            // 3-Level Trie constraints covering 38 bits of PageID (50 bits of VMA)
+            static constexpr size_t L1_BITS = 14; 
+            static constexpr size_t L2_BITS = 12;
+            static constexpr size_t L3_BITS = 12;
+
+            static constexpr size_t L1_SIZE = 1ULL << L1_BITS; // 16384
+            static constexpr size_t L2_SIZE = 1ULL << L2_BITS; // 4096
+            static constexpr size_t L3_SIZE = 1ULL << L3_BITS; // 4096
+
+            struct Leaf {
+                std::atomic<MemoryPage*> entries[L3_SIZE];
+                Leaf() { for (auto& e : entries) e.store(nullptr, std::memory_order_relaxed); }
+            };
+
+            struct Node {
+                std::atomic<Leaf*> entries[L2_SIZE];
+                Node() { for (auto& e : entries) e.store(nullptr, std::memory_order_relaxed); }
+            };
+
+            // Root array is statically allocated but highly cache-friendly (131 KB)
+            std::atomic<Node*> root_[L1_SIZE];
+
+        public:
+            LockFreePageMap() 
+            {
+                for (auto& e : root_) e.store(nullptr, std::memory_order_relaxed);
+            }
+
+            ~LockFreePageMap() 
+            {
+                for (size_t i = 0; i < L1_SIZE; ++i) 
+                {
+                    Node* n = root_[i].load(std::memory_order_relaxed);
+                    if (n) 
+                    {
+                        for (size_t j = 0; j < L2_SIZE; ++j) 
+                        {
+                            Leaf* l = n->entries[j].load(std::memory_order_relaxed);
+                            if (l) delete l;
+                        }
+                        delete n;
+                    }
+                }
+            }
+
+            /**
+             * @brief Registers a memory span into the Radix Tree.
+             * Allocates trie nodes dynamically and lock-free via CAS.
+             */
+            void set(void* ptr, size_t size, MemoryPage* page) 
+            {
+                uintptr_t start = reinterpret_cast<uintptr_t>(ptr);
+                uintptr_t end = start + size;
+                
+                uintptr_t start_page = start >> PAGE_SHIFT;
+                uintptr_t end_page = (end - 1) >> PAGE_SHIFT;
+
+                for (uintptr_t p = start_page; p <= end_page; ++p) 
+                {
+                    uintptr_t i1 = (p >> (L2_BITS + L3_BITS)) & (L1_SIZE - 1);
+                    uintptr_t i2 = (p >> L3_BITS) & (L2_SIZE - 1);
+                    uintptr_t i3 = p & (L3_SIZE - 1);
+
+                    Node* node = root_[i1].load(std::memory_order_acquire);
+                    if (!node) 
+                    {
+                        Node* new_node = new Node();
+                        Node* expected = nullptr;
+                        if (root_[i1].compare_exchange_strong(expected, new_node, 
+                                                              std::memory_order_acq_rel, 
+                                                              std::memory_order_acquire)) {
+                            node = new_node;
+                        } else {
+                            delete new_node;
+                            node = expected;
+                        }
+                    }
+
+                    Leaf* leaf = node->entries[i2].load(std::memory_order_acquire);
+                    if (!leaf) 
+                    {
+                        Leaf* new_leaf = new Leaf();
+                        Leaf* expected = nullptr;
+                        if (node->entries[i2].compare_exchange_strong(expected, new_leaf, 
+                                                                      std::memory_order_acq_rel, 
+                                                                      std::memory_order_acquire)) {
+                            leaf = new_leaf;
+                        } else {
+                            delete new_leaf;
+                            leaf = expected;
+                        }
+                    }
+
+                    // Map the exact 4KB chunk to our MemoryPage.
+                    leaf->entries[i3].store(page, std::memory_order_release);
+                }
+            }
+
+            /**
+             * @brief Ultra-fast, wait-free, lock-free pointer resolution. O(1).
+             */
+            MemoryPage* get(void* ptr) const 
+            {
+                uintptr_t p = reinterpret_cast<uintptr_t>(ptr) >> PAGE_SHIFT;
+                
+                uintptr_t i1 = (p >> (L2_BITS + L3_BITS)) & (L1_SIZE - 1);
+                Node* node = root_[i1].load(std::memory_order_acquire);
+                if (!node) return nullptr;
+
+                uintptr_t i2 = (p >> L3_BITS) & (L2_SIZE - 1);
+                Leaf* leaf = node->entries[i2].load(std::memory_order_acquire);
+                if (!leaf) return nullptr;
+
+                uintptr_t i3 = p & (L3_SIZE - 1);
+                return leaf->entries[i3].load(std::memory_order_acquire);
+            }
+        };
+
         class USMManagerImpl : public USMAllocator 
         {
             public:
-                explicit USMManagerImpl(sycl::queue& q, int numa_id) : queue_(q), numa_id_(numa_id) 
+                explicit USMManagerImpl(sycl::queue& q, int numa_id) 
+                    : queue_(q), numa_id_(numa_id), allocator_id_(g_allocator_id_counter.fetch_add(1, std::memory_order_relaxed)) 
                 {
-                     // Set up root page (not allocated here, but prepared)
-                     root_page_.store(nullptr, std::memory_order_relaxed);
-                     
-                     // Pre-allocate the first page
-                     allocate_new_page();
+                    for (int i = 0; i < NUM_BUCKETS; ++i) 
+                    {
+                        root_pages_[i].store(nullptr, std::memory_order_relaxed);
+                        expansion_locks_[i].store(false, std::memory_order_relaxed);
+                        allocate_new_page(i);
+                    }
                 }
 
                 ~USMManagerImpl() override
                 {
-                    // Clean up all pages in the linked list
-                    MemoryPage* curr = root_page_.load(std::memory_order_relaxed);
-                    while (curr)
+                    for (int i = 0; i < NUM_BUCKETS; ++i) 
                     {
-                        MemoryPage* next = curr->next.load(std::memory_order_relaxed);
-                        if (curr->start_ptr)
+                        MemoryPage* curr = root_pages_[i].load(std::memory_order_relaxed);
+                        while (curr)
                         {
-                            sycl::free(curr->start_ptr, queue_);
+                            MemoryPage* next = curr->next.load(std::memory_order_relaxed);
+                            if (curr->start_ptr)
+                                sycl::free(curr->start_ptr, queue_);
+
+                            delete curr;
+                            curr = next;
                         }
-                        delete curr;
-                        curr = next;
                     }
                 }
 
-                /**
-                 * @brief Allocates memory using bitmask pool or SYCL system calls.
-                 * @param bytes Number of bytes requested.
-                 * @param strategy The allocation strategy (device, shared, or host).
-                 * @param alignment Alignment requirement for the pointer.
-                 * @return void* Pointer to the allocated memory.
-                 */
                 void* allocate(size_t bytes, 
-                            AllocStrategy strategy = AllocStrategy::SHARED,
+                            const IAllocatorStrategy& strategy = Strategies::Shared::instance(),
                             size_t alignment = DEFAULT_ALIGNMENT) override 
                 {
-                    /** @brief Try to use the bitmask pool for small shared allocations. */
-                    if (bytes <= 256 && strategy == AllocStrategy::SHARED)
+                    if (strategy.is_poolable() && bytes <= MAX_POOL_ALLOC_SIZE && alignment <= DEFAULT_ALIGNMENT)
                     {
-                        void* ptr = t_cache.pop();
-                        if (ptr) return ptr;
-                        
-                        // Local cache is empty, fetch a batch from the global pool
-                        MemoryPage* root = root_page_.load(std::memory_order_acquire);
+                        int bucket_idx = get_bucket_index(bytes);
+
+                        if (void* ptr = t_cache.pop(bucket_idx, allocator_id_)) 
+                            return ptr;
+
+                        MemoryPage* root = root_pages_[bucket_idx].load(std::memory_order_acquire);
                         if (root)
                         {
-                            size_t grabbed = pool_.allocate_batch(root, t_cache);
-                            if (grabbed == 0)
-                            {
-                                // Pool is entirely full, dynamically expand!
-                                if (allocate_new_page())
-                                {
-                                    // Successfully added a new page, try fetching again
-                                    root = root_page_.load(std::memory_order_acquire);
-                                    pool_.allocate_batch(root, t_cache);
-                                }
-                            }
-                            
-                            ptr = t_cache.pop();
+                            void* ptr = pool_.allocate_from_pool(root);
                             if (ptr) return ptr;
+
+                            if (allocate_new_page(bucket_idx))
+                            {
+                                root = root_pages_[bucket_idx].load(std::memory_order_acquire);
+                                ptr = pool_.allocate_from_pool(root);
+                                if (ptr) return ptr;
+                            }
                         }
                     }
 
-                    /** @brief Fall back to system allocation if pool is full or request is large. */
-                    // TODO: implement a thread-local cache for frequently reused small blocks.
-                    // TODO: create a dedicated arena allocator for large, infrequent requests.
                     void* ptr = nullptr;
                     try 
                     {
-                        if (strategy == AllocStrategy::SHARED) 
-                        {
-                            ptr = sycl::aligned_alloc_shared(alignment, bytes, queue_);
-                        } 
-                        else if (strategy == AllocStrategy::DEVICE) 
-                        {
-                            ptr = sycl::aligned_alloc_device(alignment, bytes, queue_);
-                        } 
-                        else 
-                        {
-                            ptr = sycl::aligned_alloc_host(alignment, bytes, queue_.get_context());
-                        }
+                        ptr = strategy.allocate_raw(bytes, alignment, queue_);
                     } 
                     catch (const sycl::exception& e) 
                     {
                         SR_LOG_ERROR("SYCL allocation failed: {}", e.what());
                     }
-
                     return ptr;
                 }
 
-                /**
-                 * @brief Deallocates memory. Automatically detects if it belongs to the pool.
-                 * @param ptr Pointer to the memory to return.
-                 */
                 void deallocate(void* ptr) override 
                 {
                     if (!ptr) return;
 
-                    /** @brief Return to pool if pointer belongs to any page. */
-                    if (strategy_is_shared_pool(ptr))
+                    // O(1) Radix Tree Lock-Free Lookup - Zero Contention!
+                    MemoryPage* owner = page_map_.get(ptr);
+                    
+                    if (owner)
                     {
-                        // Try to push straight to thread local cache first for massive speedup
-                        if (t_cache.push(ptr)) return;
-                        
-                        // If local cache is full, return directly to its physical global page
-                        MemoryPage* owner = find_owner_page(ptr);
-                        if (owner)
-                        {
-                            pool_.deallocate_to_page(*owner, ptr);
-                            return;
-                        }
+                        if (t_cache.push(owner->bucket_idx, ptr, owner, allocator_id_)) return;
+                        pool_.deallocate_to_page(*owner, ptr);
+                        return;
                     }
 
                     sycl::free(ptr, queue_.get_context());
                 }
 
-                /** @brief Retrieves the SYCL device that owns the memory pointer. */
                 sycl::device get_device_of(void* ptr) override 
                 {
                     return sycl::get_pointer_device(ptr, queue_.get_context());
@@ -162,32 +256,56 @@ namespace SushiRuntime
             private:
                 sycl::queue& queue_;
                 int numa_id_;
+                uint64_t allocator_id_;
                 BitmaskMemoryPool pool_;
-                std::atomic<MemoryPage*> root_page_{nullptr};
                 
-                /** @brief Protects page expansion */
-                std::atomic_flag expansion_lock_ = ATOMIC_FLAG_INIT;
+                static constexpr int NUM_BUCKETS = 4;
+                static constexpr size_t BUCKET_SIZES[NUM_BUCKETS] = {128, 256, 1024, 4096};
+                static constexpr size_t MAX_POOL_ALLOC_SIZE = 4096;
+                
+                std::array<std::atomic<MemoryPage*>, NUM_BUCKETS> root_pages_;
+                std::array<std::atomic<bool>, NUM_BUCKETS> expansion_locks_;
 
-                bool allocate_new_page()
+                // TCMalloc style Radix Tree replaces global mutex and sorted arrays
+                LockFreePageMap page_map_;
+
+                static constexpr size_t MAX_PAGES = 4096;
+                std::atomic<MemoryPage*> global_pages_[MAX_PAGES] = {nullptr};
+                std::atomic<int> global_page_count_{0};
+
+                int get_bucket_index(size_t size)
                 {
-                    // Only one thread should be expanding the pool at a time
-                    if (expansion_lock_.test_and_set(std::memory_order_acquire))
+                    if (size <= 128) return 0;
+                    if (size <= 256) return 1;
+                    if (size <= 1024) return 2;
+                    return 3;
+                }
+
+                bool allocate_new_page(int bucket_idx)
+                {
+                    size_t slot_size = BUCKET_SIZES[bucket_idx];
+                    
+                    bool expected = false;
+                    while (!expansion_locks_[bucket_idx].compare_exchange_weak(expected, 
+                                                                                true, 
+                                                                                std::memory_order_acquire))
                     {
-                        // Another thread is already expanding it. Yield and let them finish.
                         std::this_thread::yield();
-                        return false; 
+                        expected = false;
                     }
                     
-                    size_t pool_size = 64 * 256;
+                    size_t pool_size = 64 * slot_size;
                     void* raw = nullptr;
-                    try {
+                    try 
+                    {
                         raw = sycl::malloc_shared(pool_size, queue_);
-                    } catch(...) {}
+                    } 
+                    catch(...) {}
 
                     if (!raw)
                     {
-                        SR_LOG_ERROR("Failed to allocate new memory pool page.");
-                        expansion_lock_.clear(std::memory_order_release);
+                        SR_LOG_ERROR("Failed to allocate new memory pool page for bucket {}", bucket_idx);
+                        expansion_locks_[bucket_idx].store(false, std::memory_order_release);
                         return false;
                     }
 
@@ -195,54 +313,34 @@ namespace SushiRuntime
                     new_page->start_ptr = raw;
                     new_page->bitmask.store(0, std::memory_order_relaxed);
                     new_page->numa_node_id = numa_id_;
-                    new_page->slot_size = 256;
-                    // new_page->next is already nullptr
+                    new_page->slot_size = slot_size;
+                    new_page->bucket_idx = bucket_idx; 
 
-                    // Thread it to the front of the list (Lock-Free Push)
-                    MemoryPage* old_root = root_page_.load(std::memory_order_relaxed);
-                    do {
+                    MemoryPage* old_root = root_pages_[bucket_idx].load(std::memory_order_relaxed);
+                    do 
+                    {
                         new_page->next.store(old_root, std::memory_order_relaxed);
-                    } while (!root_page_.compare_exchange_weak(old_root, new_page, 
+                    } 
+                    while (!root_pages_[bucket_idx].compare_exchange_weak(old_root, new_page, 
                                                             std::memory_order_release, 
                                                             std::memory_order_relaxed));
 
-                    SR_LOG_INFO("BitmaskMemoryPool expanded with a new page.");
-                    expansion_lock_.clear(std::memory_order_release);
-                    return true;
-                }
+                    int p_idx = global_page_count_.fetch_add(1, std::memory_order_relaxed);
+                    if (static_cast<size_t>(p_idx) < MAX_PAGES) 
+                        global_pages_[p_idx].store(new_page, std::memory_order_release);
 
-                bool strategy_is_shared_pool(void* ptr)
-                {
-                    MemoryPage* curr = root_page_.load(std::memory_order_acquire);
-                    while (curr)
-                    {
-                        void* start = curr->start_ptr;
-                        void* end = static_cast<char*>(start) + (64 * 256);
-                        if (ptr >= start && ptr < end) return true;
-                        curr = curr->next.load(std::memory_order_acquire);
-                    }
-                    return false;
-                }
-                
-                MemoryPage* find_owner_page(void* ptr)
-                {
-                    MemoryPage* curr = root_page_.load(std::memory_order_acquire);
-                    while (curr)
-                    {
-                        void* start = curr->start_ptr;
-                        void* end = static_cast<char*>(start) + (64 * 256);
-                        if (ptr >= start && ptr < end) return curr;
-                        curr = curr->next.load(std::memory_order_acquire);
-                    }
-                    return nullptr;
+                    // Register the newly allocated chunk in the Radix Tree
+                    page_map_.set(raw, pool_size, new_page);
+
+                    expansion_locks_[bucket_idx].store(false, std::memory_order_release);
+                    return true;
                 }
         };
 
-        /** @brief Factory function to create an instance of the USM manager. */
         sushi_ptr<USMAllocator> create_allocator(sycl::queue& q, int numa_id) 
         {
             return make_sushi<USMManagerImpl>(q, numa_id);
         }
         
-    } // namespace Memory
-} // namespace SushiRuntime
+    } 
+}

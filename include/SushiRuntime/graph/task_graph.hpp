@@ -19,12 +19,15 @@
 /**************************************************************************/
 
 #pragma once
+
+#include <functional>
 #include <memory>
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
 
 namespace SushiRuntime 
 {
@@ -96,12 +99,35 @@ namespace SushiRuntime
                              const std::vector<sycl::event>& dependencies = {});
 
                 /**
-                 * @brief Adds a semantic task into the graph with full profiler and optimization metadata.
+                 * @brief Adds a semantic task into the graph with explicit device and host fallback work.
+                 * 
+                 * Use this overload for kernel-capable tasks that need a real device lambda.
+                 * The host fallback is still tracked for CPU-only or library execution paths.
                  * 
                  * @param meta Definitions containing the operation type and properties.
                  * @param read_access Memory pointers that this operation reads.
                  * @param write_access Memory pointers that this operation overwrites or updates.
-                 * @param fallback_work A lambda function executed safely if the Operation is not fused by the optimizer.
+                 * @param device_work The actual SYCL handler body used in kernel mode.
+                 * @param fallback_work A lambda executed on the host queue when host execution is selected.
+                 * @param dependencies Additional explicit user dependencies.
+                 */
+                void add_task(const TaskMetadata& meta,
+                              const std::vector<void*>& read_access,
+                              const std::vector<void*>& write_access,
+                              TaskWork device_work,
+                              HostWork fallback_work,
+                              const std::vector<sycl::event>& dependencies = {});
+
+                /**
+                 * @brief Adds a semantic task into the graph with host-side fallback only.
+                 * 
+                 * This is the compatibility overload for host-executed semantic tasks.
+                 * Kernel-capable tasks should prefer the overload that also receives device_work.
+                 * 
+                 * @param meta Definitions containing the operation type and properties.
+                 * @param read_access Memory pointers that this operation reads.
+                 * @param write_access Memory pointers that this operation overwrites or updates.
+                 * @param fallback_work A lambda function executed safely on host execution.
                  * @param dependencies Additional explicit user dependencies.
                  */
                 void add_task(const TaskMetadata& meta,
@@ -111,10 +137,15 @@ namespace SushiRuntime
                               const std::vector<sycl::event>& dependencies = {});
 
                 /**
-                 * @brief Analyzes, optimizes, and submits the graph to hardware queues.
-                 * @return sycl::event Event indicating the completion of the graph.
+                 * @brief Analyzes dependencies and compiles the graph for execution.
+                 * 
+                 * This process links leaves to a sentinel completion node, finds roots,
+                 * and transfers ownership to a CompiledGraph. It does NOT submit tasks
+                 * to the hardware or block execution.
+                 * 
+                 * @return CompiledGraph The compiled graph ready to run.
                  */
-                sycl::event execute();
+                SushiRuntime::Execution::CompiledGraph compile();
 
             private:
                 struct Impl;

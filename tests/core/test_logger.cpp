@@ -31,7 +31,8 @@ TEST(LoggerTest, BasicInfoLog)
     // but we can at least verify that the format doesn't throw and it runs.
     SR_LOGGER_SET_SYNC_MODE(true);
     
-    EXPECT_NO_THROW({
+    EXPECT_NO_THROW(
+        {
         SR_LOG_INFO("Testing logger: {}", "Success");
     });
 }

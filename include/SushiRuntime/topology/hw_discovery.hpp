@@ -59,6 +59,16 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Configuration for filtering the hardware topology discovery.
+         */
+        struct HardwareFilterConfig 
+        {
+            bool include_cpu = true;
+            bool include_gpu = true;
+            bool include_accelerator = true;
+        };
+
+        /**
          * @brief Class to find all hardware in the system.
          */
         class SUSHIRUNTIME_API HardwareDiscovery 
@@ -70,11 +80,11 @@ namespace SushiRuntime
                  * @brief Scans for all SYCL devices and returns a list of hardware nodes.
                  * @return std::vector<HardwareNode> List of found hardware.
                  */
-                std::vector<HardwareNode> probe_all_devices();
+                std::vector<HardwareNode> probe_all_devices(const HardwareFilterConfig& config = {});
 
             private:
                 /** @brief Scans SYCL platforms to find devices. */
-                void discover_sycl_devices(std::vector<HardwareNode>& nodes);
+                void discover_sycl_devices(std::vector<HardwareNode>& nodes, const HardwareFilterConfig& config);
         };
 
     } // namespace Topology

@@ -19,6 +19,8 @@
 /**************************************************************************/
 
 #include <future>
+#include <memory>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 #include <sycl/sycl.hpp>
@@ -43,6 +45,8 @@ namespace SushiRuntime
         {
             /** @brief Storage for all nodes in the graph. */
             std::vector<sushi_ptr<Node>> nodes;
+            /** @brief Mutex to protect nodes vector from concurrent access. */
+            std::mutex nodes_mutex;
             /** @brief Tracker to handle automatic dependencies. */
             DependencyTracker tracker;
             /** @brief Reference to the runtime context. */
@@ -69,6 +73,8 @@ namespace SushiRuntime
             node->sycl_deps = dependencies;
             
             SR_LOG_DEBUG("Node added with {} manual dependencies.", dependencies.size());
+
+            std::lock_guard<std::mutex> lock(impl_->nodes_mutex);
             impl_->nodes.push_back(std::move(node));
         }
 
@@ -90,32 +96,50 @@ namespace SushiRuntime
 
             SR_LOG_DEBUG("Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
             
+            std::lock_guard<std::mutex> lock(impl_->nodes_mutex);
             impl_->nodes.push_back(std::move(node));
         }
 
         /**
-         * @brief Adds a semantic task into the graph with full profiler and optimization metadata.
+         * @brief Adds a semantic task into the graph with explicit device and host fallback work.
          */
         void TaskGraph::add_task(const TaskMetadata& meta,
                                  const std::vector<void*>& read_access,
                                  const std::vector<void*>& write_access,
+                                 TaskWork device_work,
                                  HostWork fallback_work,
                                  const std::vector<sycl::event>& dependencies)
         {
             auto node = make_sushi<Node>();
             node->metadata = meta;
-            // Differentiating execution mode based on TaskType
-            if (meta.task_type == TaskType::MATH_OP || meta.task_type == TaskType::CUSTOM_HOST) 
+            node->work = std::move(device_work);
+            node->host_work = std::move(fallback_work);
+            node->sycl_deps = dependencies;
+
+            const bool has_device_work = static_cast<bool>(node->work);
+            const bool has_host_work = static_cast<bool>(node->host_work);
+
+            if (meta.task_type == TaskType::CUSTOM_HOST) 
             {
                 node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
-                node->host_work = std::move(fallback_work);
-            } 
-            else 
+            }
+            else if (has_device_work)
             {
                 node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::KERNEL;
-                node->host_work = std::move(fallback_work); // Even kernel falbacks can be packaged loosely for now
             }
-            node->sycl_deps = dependencies;
+            else
+            {
+                node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+                if (meta.task_type != TaskType::CUSTOM_HOST)
+                {
+                    SR_LOG_WARN("Semantic task '{}' has no device work; falling back to host execution.", meta.name);
+                }
+            }
+
+            if (!has_device_work && !has_host_work)
+            {
+                SR_LOG_WARN("Semantic task '{}' has neither device work nor host fallback.", meta.name);
+            }
             
             // Resolve USM dependencies for reads and writes
             for(void* ptr : read_access) 
@@ -131,37 +155,46 @@ namespace SushiRuntime
                          meta.name, static_cast<int>(meta.task_type), 
                          read_access.size(), write_access.size());
             
+            std::lock_guard<std::mutex> lock(impl_->nodes_mutex);
             impl_->nodes.push_back(std::move(node));
         }
 
         /**
-         * @brief Executes the entire graph using the task scheduler.
+         * @brief Adds a semantic task into the graph with host-side fallback only.
          */
-        // TODO: refactor this function to be non-blocking and return a future immediately.
-        sycl::event TaskGraph::execute() 
+        void TaskGraph::add_task(const TaskMetadata& meta,
+                                 const std::vector<void*>& read_access,
+                                 const std::vector<void*>& write_access,
+                                 HostWork fallback_work,
+                                 const std::vector<sycl::event>& dependencies)
         {
-            SR_LOG_INFO("Executing DAG with {} nodes.", impl_->nodes.size());
+            add_task(meta,
+                     read_access,
+                     write_access,
+                     TaskWork{},
+                     std::move(fallback_work),
+                     dependencies);
+        }
 
-            if(impl_->nodes.empty()) return sycl::event{};
+        /**
+         * @brief Analyzes dependencies and compiles the graph for execution.
+         * 
+         * This process links leaves to a sentinel completion node, finds roots,
+         * and transfers ownership to a CompiledGraph. It does NOT submit tasks
+         * to the hardware or block execution.
+         * 
+         * @return CompiledGraph The compiled graph ready to run.
+         */
+        SushiRuntime::Execution::CompiledGraph TaskGraph::compile() 
+        {
+            SR_LOG_INFO("Compiling DAG with {} nodes.", impl_->nodes.size());
 
-            /** @brief Establish completion primitives first so they outlive the scheduler. */
-            std::promise<void> promise;
-            auto future = promise.get_future();
-
-            std::vector<Node*> roots;
-            auto sentinel = make_sushi<Node>();
-
-            /** @brief Setup local scheduler for this execution. Scheduler must be destroyed before sentinel and promise. */
-            SushiRuntime::Scheduler::TaskScheduler scheduler(ctx_);
-            auto* sched_ptr = &scheduler;
+            SushiRuntime::Execution::CompiledGraph graph;
             
-            sentinel->work = [sched_ptr, &promise](sycl::handler& h) 
-            {
-                h.host_task([sched_ptr, &promise](){
-                   sched_ptr->running.store(false, std::memory_order_release);
-                   promise.set_value();
-                });
-            };
+            std::lock_guard<std::mutex> lock(impl_->nodes_mutex);
+            if(impl_->nodes.empty()) return graph;
+
+            auto sentinel = make_sushi<Node>();
 
             for (auto& node : impl_->nodes) 
             {
@@ -169,39 +202,31 @@ namespace SushiRuntime
                 // find graph roots (nodes with no incoming dependencies)
                 if (node->in_degree.load(std::memory_order_relaxed) == 0) 
                 {
-                    roots.push_back(node.get());
+                    graph.roots.push_back(node.get());
                 }
                 
                 // link graph leaves to the sentinel node
-                if (node->successor_list.load(std::memory_order_relaxed) == nullptr) 
+                if (node->inline_successor_count.load(std::memory_order_relaxed) == 0) 
                 {
                     impl_->tracker.add_dependency(node.get(), sentinel.get());
                 }
             }
 
-            /** @brief Submit all root nodes to start execution. */
-            for(auto* root : roots) 
+            if (graph.roots.empty())
             {
-                scheduler.submit(root);
+                SR_LOG_ERROR("Task graph has no root nodes. The graph may contain a cycle or unresolved dependencies.");
+                throw std::runtime_error("Task graph has no root nodes.");
             }
 
-            /** @brief Start the workers after safely queueing roots. */
-            scheduler.start();
+            // Transfer ownership to CompiledGraph
+            graph.sentinel = std::move(sentinel);
 
-            /** @brief Join execution loop on the main thread as worker 0. */
-            // FIX DEADLOCK: DO NOT call dispatch_loop(0) on the main thread, as
-            // worker thread 0 is already running it! This corrupts the lock-free deque.
-            // scheduler.dispatch_loop(0);
+            graph.all_nodes = std::move(impl_->nodes);
             
-            // Wait for the sentinel to signal completion
-            future.wait();
-
-            // Clear the graph completely to release memory and prevent "double execution" bugs
-            impl_->nodes.clear();
             impl_->tracker.reset();
 
-            SR_LOG_INFO("DAG execution completed.");
-            return sycl::event{};
+            SR_LOG_INFO("DAG compilation completed.");
+            return graph;
         }
 
     } // namespace Graph

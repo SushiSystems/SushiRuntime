@@ -20,7 +20,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
+#include <thread>
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/graph/node.hpp>
@@ -39,11 +41,40 @@ namespace SushiRuntime
         class EventPolling 
         {
             public:
-                /** @brief Structure to link a SYCL event with a graph node. */
+                /** @brief Structure to link a SYCL event with a graph node or task. */
                 struct PolledEvent 
                 {
                     sycl::event event;
-                    void* node_ptr; 
+                    SushiRuntime::Scheduler::Task* task = nullptr; 
+                };
+
+                struct ActiveEventList 
+                {
+                    static constexpr size_t MAX_EVENTS = 256;
+                    PolledEvent events[MAX_EVENTS];
+                    size_t count = 0;
+
+                    bool is_empty() const { return count == 0; }
+                    
+                    bool push(const PolledEvent& pe) 
+                    {
+                        if (count < MAX_EVENTS) 
+                        {
+                            events[count++] = pe;
+                            return true;
+                        }
+                        
+                        return false;
+                    }
+
+                    void remove_at(size_t index) 
+                    {
+                        if (index < count) 
+                        {
+                            events[index] = events[count - 1];
+                            count--;
+                        }
+                    }
                 };
 
             private:
@@ -55,67 +86,84 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Checks for completed events and triggers successors.
-                 * 
+                 *
                  * Uses adaptive backoff to reduce CPU and driver load.
-                 * 
-                 * // TODO: Replace active_events vector with a fixed-size buffer or span to reduce allocations.
+                 *
                  * @param active_events List of events currently being monitored.
                  * @param local_queue Current thread's task queue.
                  */
                 template<typename QueueType>
-                void poll_events(std::vector<PolledEvent>& active_events, QueueType& local_queue) 
+                void poll_events(ActiveEventList& active_events, QueueType& local_queue) 
                 {
-                    if (active_events.empty()) return;
+                    if (active_events.is_empty()) return;
 
                     // skip checks if backoff is active to reduce overhead
                     if (backoff_counter > 0) 
                     {
-                        if (backoff_counter > 16) {
+                        if (backoff_counter > 16)
                             std::this_thread::yield();
-                        }
+
                         backoff_counter--;
                         return;
                     }
 
                     bool progress = false;
-                    for (auto it = active_events.begin(); it != active_events.end(); ) 
+                    for (size_t i = 0; i < active_events.count; ) 
                     {
-                        auto status = it->event.get_info<sycl::info::event::command_execution_status>();
+                        auto status = active_events.events[i].event.get_info<sycl::info::event::command_execution_status>();
                         if (status == sycl::info::event_command_status::complete) 
                         {
-                            trigger_successors(it->node_ptr, local_queue);
-                            it = active_events.erase(it); 
+                            trigger_successors(active_events.events[i].task, local_queue);
+
+                            if (active_events.events[i].task)
+                                active_events.events[i].task->release();
+
+                            active_events.remove_at(i); // O(1) Silme
                             progress = true;
+                            // i'yi artırma, çünkü son eleman bu index'e taşındı
                         } 
                         else 
-                        {
-                            ++it;
-                        }
+                            ++i;
                     }
 
                     // adjust backoff based on progress
                     if (progress) 
-                    {
                         backoff_counter = 0;
-                    }
                     else 
-                    {
                         backoff_counter = std::min(backoff_counter + 2, MAX_BACKOFF);
-                    }
                 }
 
             private:
                 /**
                  * @brief Activates next nodes in the graph when a task finishes.
-                 * @param node_void Pointer to the finished node.
+                 * @param task Finished task pointer.
                  * @param queue Current thread's task queue to push new ready nodes.
                  */
                 template<typename QueueType>
-                void trigger_successors(void* node_void, QueueType& queue) 
+                void trigger_successors(SushiRuntime::Scheduler::Task* task, QueueType& queue) 
                 {
-                    auto* node = static_cast<SushiRuntime::Graph::Node*>(node_void);
+                    if (!task || !task->is_graph_node())
+                    {
+                        return;
+                    }
+
+                    auto* node = static_cast<SushiRuntime::Graph::Node*>(task);
                     
-                    // iterate through successors in a lock-free way
+                    int32_t count = node->inline_successor_count.load(std::memory_order_acquire);
+                    int32_t max_idx = std::min(count, SushiRuntime::Graph::Node::MAX_INLINE_SUCCESSORS);
+                    
+                    // iterate through inline successors
+                    for (int32_t i = 0; i < max_idx; ++i)
+                    {
+                        auto* succ = node->inline_successors[i];
+                        if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1) 
+                        {
+                            succ->add_ref();
+                            queue.push(succ);
+                        }
+                    }
+
+                    // iterate through spillover successors in a lock-free way
                     auto* curr = node->successor_list.load(std::memory_order_acquire);
                     while(curr) 
                     {
@@ -124,7 +172,8 @@ namespace SushiRuntime
                         // if all dependencies are met, push the node to the queue
                         if(succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1) 
                         {
-                             queue.push(succ);
+                            succ->add_ref();
+                            queue.push(succ);
                         }
                         
                         curr = curr->next;

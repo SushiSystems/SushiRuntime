@@ -66,9 +66,9 @@ namespace SushiRuntime
                 return hash;
             }
 
-            constexpr bool operator==(const OpID& other) const { return value == other.value; }
-            constexpr bool operator!=(const OpID& other) const { return value != other.value; }
-            constexpr bool operator<(const OpID& other) const { return value < other.value; }
+            constexpr bool operator==(const OpID& other) const  { return value == other.value; }
+            constexpr bool operator!=(const OpID& other) const  { return value != other.value; }
+            constexpr bool operator<(const OpID& other) const   { return value < other.value; }
         };
 
         namespace Literals 
@@ -92,6 +92,12 @@ namespace SushiRuntime
             const char* name = "unnamed_task"; /**< Profiler identifier. */
             TaskType task_type = TaskType::NONE;
             OpID op_id = OpID(0);
+            
+            /** @brief Scheduling hint: higher number = higher priority. */
+            int priority = 0;
+            
+            /** @brief Hardware hint: preferred NUMA node for execution (-1 for any). */
+            int numa_affinity = -1;
             
             /** Storage for scalar parameters up to 64 bytes total (e.g., alphas, betas). */
             static constexpr size_t K_MAX_PARAMS = 8;

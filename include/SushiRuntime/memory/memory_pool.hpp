@@ -33,8 +33,7 @@ namespace SushiRuntime
     {
         /**
          * @brief Bitmask-based management for memory slots.
-         * 
-         * Each uint64_t bitmask represents 64 slots in a page.
+         * * Each uint64_t bitmask represents 64 slots in a page.
          */
         struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) MemoryPage 
         {
@@ -48,36 +47,62 @@ namespace SushiRuntime
             int numa_node_id;
             /** @brief Size of each slot in the page. */
             size_t slot_size;
+            /** @brief The bucket index this page belongs to (used for TLC). */
+            int bucket_idx;
         };
 
         /**
          * @brief Thread-local cache (TLC) for fast allocation.
-         * 
-         * Allows each thread to access local slots without using locks.
+         * * Allows each thread to access local slots without using locks.
+         * Separated into buckets to prevent memory size mismatch bugs.
          */
         struct ThreadLocalCache 
         {
-            /** @brief Number of slots stored in a single batch. */
-            static constexpr size_t BATCH_SIZE = 64;
-            /** @brief Array of available memory slots. */
-            void* slots[BATCH_SIZE];
-            /** @brief Number of slots currently in the cache. */
-            size_t count = 0;
-            
-            /** @brief Pops a slot from the local cache, or returns nullptr if empty. */
-            inline void* pop() 
+            /** @brief Number of slots stored in a single batch per bucket. */
+            static constexpr size_t BATCH_SIZE = 256;
+            /** @brief Number of bucket sizes (128, 256, 1024, 4096). */
+            static constexpr size_t NUM_BUCKETS = 4;
+
+            struct SlotInfo 
             {
-                if (count == 0) return nullptr;
-                return slots[--count];
+                void* ptr;
+                MemoryPage* owner;
+                uint64_t alloc_id;
+            };
+
+            /** @brief Array of available memory slots per bucket. */
+            SlotInfo slots[NUM_BUCKETS][BATCH_SIZE];
+            /** @brief Number of slots currently in the cache per bucket. */
+            size_t count[NUM_BUCKETS] = {0};
+            
+            /** @brief Pops a slot from the specific bucket cache, or returns nullptr. */
+            inline void* pop(int bucket_idx, uint64_t current_alloc_id)
+            {
+                if (bucket_idx < 0 || bucket_idx >= NUM_BUCKETS || count[bucket_idx] == 0) 
+                    return nullptr;
+
+                SlotInfo& info = slots[bucket_idx][count[bucket_idx] - 1];
+                
+                if (info.alloc_id != current_alloc_id)
+                {
+                    count[bucket_idx] = 0;
+                    return nullptr;
+                }
+
+                return slots[bucket_idx][--count[bucket_idx]].ptr;
             }
             
-            /** @brief Pushes a free slot back to the local cache, returns false if full. */
-            inline bool push(void* ptr) 
+            /** @brief Pushes a free slot back to the bucket cache, returns false if full. */
+            inline bool push(int bucket_idx, void* ptr, MemoryPage* owner, uint64_t current_alloc_id) 
             {
-                if (count >= BATCH_SIZE) return false;
-                slots[count++] = ptr;
+                if (bucket_idx < 0 || static_cast<size_t>(bucket_idx) >= NUM_BUCKETS || count[bucket_idx] >= BATCH_SIZE) 
+                    return false;
+                
+                slots[bucket_idx][count[bucket_idx]++] = {ptr, owner, current_alloc_id};
                 return true;
             }
+
+            ~ThreadLocalCache() { }
         };
 
         /** @brief Global thread-local storage for the cache. */
@@ -126,24 +151,7 @@ namespace SushiRuntime
                     return nullptr; // Entire pool chain is full
                 }
 
-                /**
-                 * @brief Batch allocates slots directly into a ThreadLocalCache.
-                 * @param root_page Top of the linked pool.
-                 * @param tlc The thread local cache object to fill.
-                 * @return size_t How many slots were successfully grabbed.
-                 */
-                size_t allocate_batch(MemoryPage* root_page, ThreadLocalCache& tlc)
-                {
-                    size_t grabbed = 0;
-                    while (grabbed < ThreadLocalCache::BATCH_SIZE)
-                    {
-                        void* ptr = allocate_from_pool(root_page);
-                        if (!ptr) break; // Pool empty
-                        tlc.slots[tlc.count++] = ptr;
-                        grabbed++;
-                    }
-                    return grabbed;
-                }
+
 
                 /**
                  * @brief Returns a memory slot back to its specific designated page.

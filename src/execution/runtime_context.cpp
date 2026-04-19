@@ -22,8 +22,9 @@
 #include <array>
 #include <atomic>
 #include <SushiRuntime/core/logger.hpp>
-#include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
+#include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime
@@ -52,14 +53,59 @@ namespace SushiRuntime
             /** @brief NUMA-local allocators using atomic storage. */
             std::atomic<SushiRuntime::Memory::USMAllocator*> numa_allocators[Core::MAX_NUMA_NODES];
 
-            Impl() 
+            /** @brief Round-robin cursor per NUMA node for queue selection. */
+            std::array<std::atomic<size_t>, Core::MAX_NUMA_NODES> numa_queue_rr_cursor;
+
+            /** @brief Fallback cursor used when a NUMA node is unavailable. */
+            std::atomic<size_t> global_queue_rr_cursor{0};
+
+            /**
+             * @brief Execution engine (owns persistent TaskScheduler).
+             *
+             * Stored as a raw pointer and initialised lazily after probe_hardware()
+             * so that the engine can receive a fully-initialised queue list.
+             * Lifetime is always shorter than the Impl itself — shutdown() is called
+             * in ~Impl before any other resource is released. [Madde 18 fix]
+             */
+            std::unique_ptr<ExecutionEngine> engine;
+
+            Impl()
             {
-                for (size_t i = 0; i < Core::MAX_NUMA_NODES; ++i) 
+                for (size_t i = 0; i < Core::MAX_NUMA_NODES; ++i)
+                {
                     numa_allocators[i].store(nullptr, std::memory_order_relaxed);
+                    numa_queue_rr_cursor[i].store(0, std::memory_order_relaxed);
+                }
+                global_queue_rr_cursor.store(0, std::memory_order_relaxed);
             }
 
             ~Impl() 
             {
+                // --------------------------------------------------------
+                // Destruction order is critical for correctness. [Madde 18]
+                //
+                //  1. Shut down the ExecutionEngine first. This joins all
+                //     worker threads, eliminating any dangling references
+                //     to queues, allocators, or other Impl members.
+                //
+                //  2. Drain remaining GPU work via wait_and_throw() so that
+                //     all hardware operations complete before SYCL objects
+                //     go out of scope.
+                //
+                //  3. Release NUMA allocators.
+                // --------------------------------------------------------
+
+                if (engine)
+                {
+                    engine->shutdown();
+                    engine.reset();
+                }
+
+                for (auto& q : all_queues) 
+                {
+                    q.wait_and_throw();
+                }
+
                 /** @brief Cleanup atomic pointers manually. */
                 for (size_t i = 0; i < Core::MAX_NUMA_NODES; ++i)
                 {
@@ -69,18 +115,19 @@ namespace SushiRuntime
                         ptr->release();
                     }
                 }
-
-                for (auto& q : all_queues) 
-                {
-                    q.wait_and_throw();
-                }
             }
         };
 
-        RuntimeContext::RuntimeContext() : impl_(make_sushi<Impl>()) 
+        RuntimeContext::RuntimeContext(const Topology::HardwareFilterConfig& config) : impl_(make_sushi<Impl>()) 
         {
             SR_LOG_INFO("Initializing compute stack...");
-            probe_hardware();
+            probe_hardware(config);
+
+            // Construct the ExecutionEngine after hardware is probed so the engine
+            // receives a fully-initialised context with all queues available.
+            // [Madde 7] Persistent scheduler is started here and lives for the
+            // entire lifetime of the RuntimeContext.
+            impl_->engine = std::make_unique<ExecutionEngine>(*this);
         }
 
         RuntimeContext::~RuntimeContext() = default;
@@ -88,13 +135,13 @@ namespace SushiRuntime
         /**
          * @brief Hardware discovery and topology mapping process.
          */
-        void RuntimeContext::probe_hardware() 
+        void RuntimeContext::probe_hardware(const Topology::HardwareFilterConfig& config) 
         {
             try 
             {
                 /** @brief Step 1: hardware discovery - probe SYCL devices. */
                 HardwareDiscovery discovery;
-                impl_->nodes = discovery.probe_all_devices();
+                impl_->nodes = discovery.probe_all_devices(config);
 
                 /** @brief Step 2: NUMA mapping - map devices to NUMA nodes. */
                 NUMAMapper mapper;
@@ -106,7 +153,12 @@ namespace SushiRuntime
 
                 for (const auto& node : impl_->nodes) 
                 {
-                    sycl::property_list props{ sycl::property::queue::in_order() };
+                    sycl::property_list props;
+                    if (!node.sycl_dev.is_cpu() && !node.sycl_dev.is_gpu()) 
+                    {
+                        // FPGAs or custom accelerators often execute better in-order or don't support full OOO queues natively.
+                        props = { sycl::property::queue::in_order() };
+                    }
                     
                     sycl::queue q(node.sycl_dev, [](sycl::exception_list elist) 
                     {
@@ -114,11 +166,21 @@ namespace SushiRuntime
                     }, props);
 
                     impl_->all_queues.push_back(q);
-                    impl_->numa_aware_queues[node.numa_node_id].push_back(q);
 
-                    SR_LOG_INFO("Device: {} | NUMA: {} | Memory: {} MB | Compute units: {}", 
-                               node.name, 
-                               node.numa_node_id,
+                    int effective_numa = node.numa_node_id;
+                    if (effective_numa < 0 || static_cast<size_t>(effective_numa) >= Core::MAX_NUMA_NODES)
+                    {
+                        SR_LOG_WARN("Device {} reported invalid NUMA {}. Falling back to NUMA 0 for queue mapping.",
+                                    node.name,
+                                    node.numa_node_id);
+                        effective_numa = 0;
+                    }
+
+                    impl_->numa_aware_queues[effective_numa].push_back(q);
+
+                    SR_LOG_INFO("Device: {} | NUMA: {} | Memory: {} MB | Compute units: {}",
+                               node.name,
+                               effective_numa,
                                node.global_mem_size / (1024 * 1024),
                                node.max_compute_units);
                 }
@@ -157,15 +219,24 @@ namespace SushiRuntime
          */
         sycl::queue& RuntimeContext::get_numa_local_queue(int numa_id)
         {
-             auto it = impl_->numa_aware_queues.find(numa_id);
-             if (it != impl_->numa_aware_queues.end() && !it->second.empty())
-             {
-                 // TODO: implement round-robin or least-loaded strategy for queue selection.
-                 return it->second[0];
-             }
-             
-             SR_LOG_WARN("No queue found for NUMA {}, falling back to default.", numa_id);
-             return get_queue(0);
+            auto it = impl_->numa_aware_queues.find(numa_id);
+            if (it != impl_->numa_aware_queues.end() && !it->second.empty())
+            {
+                auto& queues = it->second;
+                const size_t cursor = impl_->numa_queue_rr_cursor[static_cast<size_t>(numa_id)]
+                                          .fetch_add(1, std::memory_order_relaxed);
+                return queues[cursor % queues.size()];
+            }
+
+            if (!impl_->all_queues.empty())
+            {
+                const size_t cursor = impl_->global_queue_rr_cursor.fetch_add(1, std::memory_order_relaxed);
+                SR_LOG_WARN("No queue found for NUMA {}, falling back to round-robin global queue selection.", numa_id);
+                return impl_->all_queues[cursor % impl_->all_queues.size()];
+            }
+
+            SR_THROW_IF(true, "No SYCL queues are available in the runtime context.");
+            return impl_->all_queues[0];
         }
 
         /**
@@ -220,6 +291,20 @@ namespace SushiRuntime
             for (auto& q : impl_->all_queues) 
             {
                 q.wait_and_throw();
+            }
+        }
+
+        IExecutionEngine& RuntimeContext::get_execution_engine()
+        {
+            SR_THROW_IF(!impl_->engine, "ExecutionEngine is not initialized. Was probe_hardware() called?");
+            return *impl_->engine;
+        }
+
+        void RuntimeContext::shutdown()
+        {
+            if (impl_->engine)
+            {
+                impl_->engine->shutdown();
             }
         }
 

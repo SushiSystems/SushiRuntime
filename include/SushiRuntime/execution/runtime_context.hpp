@@ -28,6 +28,8 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
 
 namespace SushiRuntime
 {
@@ -42,8 +44,8 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API RuntimeContext 
         {
             public:
-                /** @brief Creates a new runtime context and scans for hardware. */
-                RuntimeContext();
+                /** @brief Creates a new runtime context and scans for hardware matching the config. */
+                explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {});
                 
                 /** @brief Destroys the context and frees all resources. */
                 ~RuntimeContext();
@@ -55,7 +57,7 @@ namespace SushiRuntime
                 /**
                  * @brief Finds and lists all available hardware (CPU, GPU, FPGA).
                  */
-                void probe_hardware();
+                void probe_hardware(const Topology::HardwareFilterConfig& config = {});
 
                 /**
                  * @brief Gets a SYCL queue for a specific device.
@@ -83,6 +85,25 @@ namespace SushiRuntime
                  * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> The NUMA-optimized allocator.
                  */
                 sushi_ptr<SushiRuntime::Memory::USMAllocator> get_allocator(int numa_id);
+
+                /**
+                 * @brief Returns the execution engine owned by this context.
+                 *
+                 * TaskGraph::execute() delegates to this engine so that thread
+                 * orchestration is separated from DAG construction. [Madde 26]
+                 *
+                 * @return IExecutionEngine& Reference to the active engine.
+                 */
+                IExecutionEngine& get_execution_engine();
+
+                /**
+                 * @brief Explicitly shuts down the execution engine and its worker pool.
+                 *
+                 * Calling this before the RuntimeContext destructor is optional but
+                 * allows controlled, ordered teardown in sensitive environments.
+                 * The destructor will call this automatically if not done explicitly.
+                 */
+                void shutdown();
 
                 /**
                  * @brief Waits for all async operations to finish (global sync).

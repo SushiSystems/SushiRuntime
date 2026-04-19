@@ -1,0 +1,180 @@
+/**************************************************************************/
+/* execution_engine.cpp                                                   */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                        https://sushisystems.io                         */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/* All Rights Reserved.                                                   */
+/*                                                                        */
+/* CONFIDENTIAL: This software is the proprietary information of          */
+/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
+/* via any medium is strictly prohibited.                                 */
+/*                                                                        */
+/* This source code and the intellectual property contained herein        */
+/* is confidential and may not be disclosed, copied, or used without      */
+/* explicit written permission from the copyright holders.                */
+/**************************************************************************/
+
+#include <future>
+#include <memory>
+#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
+
+namespace SushiRuntime
+{
+    namespace Execution
+    {
+        // ------------------------------------------------------------------ //
+        //  ExecutionEngine::Impl                                              //
+        // ------------------------------------------------------------------ //
+
+        /**
+         * @brief Private implementation of ExecutionEngine (Pimpl).
+         *
+         * Owns a single persistent TaskScheduler. The scheduler is started
+         * once in the constructor and stopped exactly once in shutdown().
+         *
+         * Madde 7: The scheduler is no longer re-created per graph execution.
+         * Madde 18: Shutdown is explicitly ordered via RuntimeContext::Impl::~Impl,
+         *           so the scheduler is always stopped before queues are torn down.
+         */
+        struct ExecutionEngine::Impl : public Core::RefCounted
+        {
+            /** @brief Persistent scheduler that survives multiple graph executions. */
+            SushiRuntime::Scheduler::TaskScheduler scheduler;
+
+            /** @brief Guards against double-shutdown. */
+            std::atomic<bool> is_shutdown{false};
+
+            explicit Impl(RuntimeContext& ctx) : scheduler(ctx)
+            {
+                scheduler.start();
+                SR_LOG_INFO("Persistent worker pool started ({} workers).", scheduler.num_workers);
+            }
+
+            ~Impl() override
+            {
+                // Ensure workers are stopped even if shutdown() was never explicitly called.
+                do_shutdown();
+            }
+
+            void do_shutdown()
+            {
+                bool expected = false;
+                if (!is_shutdown.compare_exchange_strong(expected, true,
+                                                         std::memory_order_acq_rel))
+                {
+                    return; // Already shut down – idempotent.
+                }
+
+                SR_LOG_INFO("Shutting down worker pool.");
+                scheduler.stop();
+                SR_LOG_INFO("All workers joined.");
+            }
+        };
+
+        // ------------------------------------------------------------------ //
+        //  ExecutionEngine public interface                                   //
+        // ------------------------------------------------------------------ //
+
+        ExecutionEngine::ExecutionEngine(RuntimeContext& ctx)
+            : impl_(make_sushi<Impl>(ctx))
+        {}
+
+        ExecutionEngine::~ExecutionEngine()
+        {
+            // Pimpl destructor will call do_shutdown() if not already done.
+        }
+
+        void ExecutionEngine::shutdown()
+        {
+            impl_->do_shutdown();
+        }
+
+        /**
+         * @brief Executes a compiled graph on the persistent worker pool.
+         *
+         * Responsibility split (Madde 26 / SRP fix):
+         *  - TaskGraph::compile() builds the DAG and the root list.
+         *  - ExecutionEngine::execute() handles thread orchestration, the
+         *    sentinel node setup, promise/future signalling, and graph cleanup.
+         *
+         * The persistent scheduler is "re-armed" for this execution round via
+         * arm_for_execution() instead of being destroyed and recreated (Madde 7).
+         */
+        sycl::event ExecutionEngine::execute(CompiledGraph graph)
+        {
+            SR_THROW_IF(impl_->is_shutdown.load(std::memory_order_acquire), "Execute called after shutdown.");
+            SR_THROW_IF(graph.roots.empty(), "Received a compiled graph with no root nodes.");
+
+            SR_LOG_INFO("Executing graph ({} root nodes).", graph.roots.size());
+
+            // -----------------------------------------------------------------
+            // Step 1: Wire the sentinel node's host_work before submitting roots.
+            //         The sentinel captures the promises and the scheduler pointer
+            //         so it can signal completion from inside the worker thread.
+            // -----------------------------------------------------------------
+            auto completion_signal        = std::make_shared<std::promise<void>>();
+            auto completion_signal_future = completion_signal->get_future();
+            auto completion_event_promise = std::make_shared<std::promise<sycl::event>>();
+            auto completion_event_future  = completion_event_promise->get_future();
+
+            auto* sched_ptr = &impl_->scheduler;
+
+            graph.sentinel->metadata.name = "graph_completion_sentinel";
+            graph.sentinel->mode          = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+            graph.sentinel->host_work     =
+                [sched_ptr, completion_signal, completion_event_promise]
+                (sycl::queue& q, const std::vector<sycl::event>& deps) -> sycl::event
+                {
+                    sycl::event completion = q.submit([&](sycl::handler& h)
+                    {
+                        if (!deps.empty())
+                        {
+                            h.depends_on(deps);
+                        }
+
+                        // host_task runs on the SYCL runtime thread — safe to set_value here.
+                        h.host_task([sched_ptr, completion_signal]()
+                        {
+                            // Signal the execution round as done so execute() can unblock.
+                            // The scheduler itself stays alive for the next graph.
+                            sched_ptr->arm_for_execution(); // re-arm for the NEXT round
+                            completion_signal->set_value();
+                        });
+                    });
+
+                    completion_event_promise->set_value(completion);
+                    return completion;
+                };
+
+            // -----------------------------------------------------------------
+            // Step 2: Arm the scheduler for this execution round, then submit roots.
+            //         arm_for_execution() resets the internal "done" state without
+            //         touching the live worker threads.
+            // -----------------------------------------------------------------
+            impl_->scheduler.arm_for_execution();
+
+            for (auto* root : graph.roots)
+            {
+                impl_->scheduler.submit(root);
+            }
+
+            // -----------------------------------------------------------------
+            // Step 3: Block the calling thread until the sentinel fires.
+            // -----------------------------------------------------------------
+            completion_signal_future.wait();
+            sycl::event completion_event = completion_event_future.get();
+
+            SR_LOG_INFO("Graph execution completed.");
+            return completion_event;
+        }
+
+    } // namespace Execution
+} // namespace SushiRuntime
