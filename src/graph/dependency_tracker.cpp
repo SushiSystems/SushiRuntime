@@ -19,85 +19,86 @@
 /**************************************************************************/
 
 #include <thread>
-#include <immintrin.h>
+#include <algorithm>
 #include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/graph/dependency_tracker.hpp>
 
 namespace SushiRuntime 
 {
     namespace Graph
     {
-        DependencyTracker::DependencyTracker() 
-        {
-            /** @brief Initializing resources. */
-        }
-
         void DependencyTracker::reset()
         {
+            // Clean up the lock-free access history for all shards
+            // Safe to run because reset() is called when the graph compilation is completely done.
             for (auto& state : registry)
             {
-                while(state.lock.test_and_set(std::memory_order_acquire)) 
+                AccessNode* curr = state.tail.exchange(nullptr, std::memory_order_acquire);
+                while (curr) 
                 {
-                    _mm_pause(); 
+                    AccessNode* prev = curr->prev;
+                    SushiRuntime::Memory::EpochManager::instance().retire(curr);
+                    curr = prev;
                 }
-                state.last_writer = nullptr;
-                state.readers.clear();
-                state.lock.clear(std::memory_order_release);
             }
         }
 
         /**
          * @brief Resolves memory dependencies for a task node.
-         * 
-         * Handles RAW, WAR, and WAW dependencies using a sharded spinlock.
-         * 
-         * @param node The task node to check.
-         * @param ptr The memory address being accessed.
-         * @param is_write True if the task writes to the memory.
+         * * Inserts the access into the lock-free history and traverses backwards
+         * to automatically resolve RAW, WAR, and WAW hazards.
          */
         void DependencyTracker::resolve(Node* node, void* ptr, bool is_write) 
         {
+            SushiRuntime::Memory::EpochGuard guard;
+            
             size_t idx = get_shard_idx(ptr);
             auto& state = registry[idx];
 
-            /** @brief Busy-wait loop for the sharded spinlock. */
-            while(state.lock.test_and_set(std::memory_order_acquire)) 
+            AccessNode* current = new AccessNode{node, is_write, nullptr};
+            AccessNode* old_tail = state.tail.load(std::memory_order_relaxed);
+            
+            // 1. Lock-Free Push to the chronologic access history
+            do 
             {
-                _mm_pause(); 
-            }
+                current->prev = old_tail;
+            } 
+            while (!state.tail.compare_exchange_weak(old_tail, current, 
+                                                     std::memory_order_acq_rel, 
+                                                     std::memory_order_relaxed));
+
+            // 2. Lock-Free Traversal to build the dependency edges
+            AccessNode* cursor = current->prev;
 
             if (is_write) 
             {
-                // waw: track dependency from previous writer to this node
-                if (state.last_writer && state.last_writer != node) 
-                    add_dependency(state.last_writer, node);
-
-                // war: track dependency from all readers to this writer
-                for (size_t i = 0; i < state.readers.static_count; ++i) 
+                // WAW and WAR: Depend on all previous reads until we hit the first previous write.
+                while (cursor) 
                 {
-                    Node* reader = state.readers.static_data[i];
-                    if(reader != node) 
-                        add_dependency(reader, node);
+                    if (cursor->task != node)
+                        add_dependency(cursor->task, node);
+                    
+                    if (cursor->is_write) break; // Found the preceding writer, stop traversing.
+                    
+                    cursor = cursor->prev;
                 }
-                for (Node* reader : state.readers.dynamic_data) 
-                {
-                    if(reader != node) 
-                        add_dependency(reader, node);
-                }
-                
-                state.readers.clear();
-                state.last_writer = node;
             } 
             else 
             {
-                // raw: track dependency from the last writer to this reader
-                if (state.last_writer && state.last_writer != node) 
-                    add_dependency(state.last_writer, node);
-                
-                state.readers.push_back(node);
-            }
+                // RAW: Depend only on the most recent write. Skip all previous reads.
+                while (cursor) 
+                {
+                    if (cursor->is_write) 
+                    {
+                        if (cursor->task != node) 
+                            add_dependency(cursor->task, node);
 
-            state.lock.clear(std::memory_order_release);
+                        break; // Found the preceding writer, stop traversing.
+                    }
+                    cursor = cursor->prev;
+                }
+            }
         }
 
         void DependencyTracker::add_dependency(Node* from, Node* to)
@@ -107,10 +108,9 @@ namespace SushiRuntime
                 // Check inline list to avoid duplicates
                 int32_t count = from->inline_successor_count.load(std::memory_order_relaxed);
                 int32_t max_idx = std::min(count, Node::MAX_INLINE_SUCCESSORS);
+                
                 for (int32_t i = 0; i < max_idx; ++i) 
-                {
                     if (from->inline_successors[i] == to) return;
-                }
 
                 // Check spillover list for duplicates
                 SuccessorNode* curr = from->successor_list.load(std::memory_order_relaxed);

@@ -22,6 +22,8 @@
 #include <memory>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/scheduler/workload_coordinator.hpp>
+        #include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
@@ -30,10 +32,6 @@ namespace SushiRuntime
 {
     namespace Execution
     {
-        // ------------------------------------------------------------------ //
-        //  ExecutionEngine::Impl                                              //
-        // ------------------------------------------------------------------ //
-
         /**
          * @brief Private implementation of ExecutionEngine (Pimpl).
          *
@@ -44,34 +42,44 @@ namespace SushiRuntime
          * Madde 18: Shutdown is explicitly ordered via RuntimeContext::Impl::~Impl,
          *           so the scheduler is always stopped before queues are torn down.
          */
-        struct ExecutionEngine::Impl : public Core::RefCounted
+struct ExecutionEngine::Impl : public Core::RefCounted
         {
             /** @brief Persistent scheduler that survives multiple graph executions. */
             SushiRuntime::Scheduler::TaskScheduler scheduler;
+            std::unique_ptr<SushiRuntime::Scheduler::WorkloadCoordinator> rebalancer;
 
             /** @brief Guards against double-shutdown. */
             std::atomic<bool> is_shutdown{false};
 
-            explicit Impl(RuntimeContext& ctx) : scheduler(ctx)
+            // DÜZELTME: 'context(ctx),' kısmı silindi, sadece scheduler başlatılıyor.
+            Impl(RuntimeContext& ctx) : scheduler(ctx)
             {
                 scheduler.start();
-                SR_LOG_INFO("Persistent worker pool started ({} workers).", scheduler.num_workers);
+                
+                // Rebalancer'ı ayağa kaldır
+                rebalancer = std::make_unique<SushiRuntime::Scheduler::WorkloadCoordinator>(
+                    scheduler, 
+                    scheduler, 
+                    std::make_unique<SushiRuntime::Scheduler::ThermalProxyStrategy>()
+                );
+                rebalancer->start();
+                
+                SR_LOG_INFO("Workload Rebalancer started.");
             }
 
             ~Impl() override
             {
-                // Ensure workers are stopped even if shutdown() was never explicitly called.
                 do_shutdown();
             }
 
             void do_shutdown()
             {
+                if (rebalancer) rebalancer->stop();
+                
                 bool expected = false;
                 if (!is_shutdown.compare_exchange_strong(expected, true,
                                                          std::memory_order_acq_rel))
-                {
-                    return; // Already shut down – idempotent.
-                }
+                    return;
 
                 SR_LOG_INFO("Shutting down worker pool.");
                 scheduler.stop();
@@ -127,6 +135,18 @@ namespace SushiRuntime
 
             auto* sched_ptr = &impl_->scheduler;
 
+            impl_->scheduler.set_error_callback([completion_signal](std::exception_ptr ep) 
+            {
+                try 
+                {
+                    completion_signal->set_exception(ep);
+                } 
+                catch (const std::future_error&) 
+                {
+                    // If the sentinel is already completed (set_value called), this will throw an error; ignore it.
+                }
+            });
+
             graph.sentinel->metadata.name = "graph_completion_sentinel";
             graph.sentinel->mode          = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
             graph.sentinel->host_work     =
@@ -136,9 +156,7 @@ namespace SushiRuntime
                     sycl::event completion = q.submit([&](sycl::handler& h)
                     {
                         if (!deps.empty())
-                        {
                             h.depends_on(deps);
-                        }
 
                         // host_task runs on the SYCL runtime thread — safe to set_value here.
                         h.host_task([sched_ptr, completion_signal]()
@@ -162,14 +180,23 @@ namespace SushiRuntime
             impl_->scheduler.arm_for_execution();
 
             for (auto* root : graph.roots)
-            {
                 impl_->scheduler.submit(root);
-            }
 
             // -----------------------------------------------------------------
             // Step 3: Block the calling thread until the sentinel fires.
             // -----------------------------------------------------------------
-            completion_signal_future.wait();
+
+            try 
+            {
+                completion_signal_future.wait(); // Hala bloklar, ama artık error_callback ile de açılabilir.
+                completion_signal_future.get();  // Eğer exception set edilmişse, BURADA fırlatılır!
+            }
+            catch (const std::exception& e)
+            {
+                SR_LOG_ERROR("Graph execution aborted due to an internal error: {}", e.what());
+                throw; // Kullanıcı koduna hatayı taşı (Deadlock engellendi)
+            }
+
             sycl::event completion_event = completion_event_future.get();
 
             SR_LOG_INFO("Graph execution completed.");

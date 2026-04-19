@@ -136,14 +136,17 @@ namespace SushiRuntime
                               HostWork fallback_work,
                               const std::vector<sycl::event>& dependencies = {});
 
-                /**
+/**
                  * @brief Analyzes dependencies and compiles the graph for execution.
-                 * 
-                 * This process links leaves to a sentinel completion node, finds roots,
+                 * * @warning PHASE 1 & PHASE 2 CONCURRENCY DISCLAIMER:
+                 * Graph construction methods like add_node() and add_task() (Phase 1) 
+                 * and the compile() method (Phase 2) are NOT thread-safe when executed 
+                 * concurrently. You MUST ensure that all nodes are fully inserted 
+                 * into the graph (Phase 1 completion) before invoking compile().
+                 * * This process links leaves to a sentinel completion node, finds roots,
                  * and transfers ownership to a CompiledGraph. It does NOT submit tasks
                  * to the hardware or block execution.
-                 * 
-                 * @return CompiledGraph The compiled graph ready to run.
+                 * * @return CompiledGraph The compiled graph ready to run.
                  */
                 SushiRuntime::Execution::CompiledGraph compile();
 

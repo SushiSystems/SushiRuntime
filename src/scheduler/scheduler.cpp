@@ -1,18 +1,18 @@
 /**************************************************************************/
 /* scheduler.cpp                                                          */
 /**************************************************************************/
-/* This file is part of:                         */
-/* SushiRuntime                              */
-/* https://github.com/SushiSystems/SushiRuntime              */
-/* https://sushisystems.io                         */
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
 /* All Rights Reserved.                                                   */
-/* */
+/*                                                                        */
 /* CONFIDENTIAL: This software is the proprietary information of          */
 /* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
 /* via any medium is strictly prohibited.                                 */
-/* */
+/*                                                                        */
 /* This source code and the intellectual property contained herein        */
 /* is confidential and may not be disclosed, copied, or used without      */
 /* explicit written permission from the copyright holders.                */
@@ -23,10 +23,12 @@
 #include <optional>
 #include <mutex>
 #include <deque>
-#include <atomic> // Required for std::atomic_ref
+#include <atomic>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
+#include <SushiRuntime/topology/affinity.hpp>
+#include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -68,6 +70,15 @@ namespace SushiRuntime
             {
                 delete[] items;
             }
+
+            inline size_t size() const 
+            {
+                int64_t b = bottom.load(std::memory_order_relaxed);
+                int64_t t = top.load(std::memory_order_relaxed);
+                
+                return (b >= t) ? static_cast<size_t>(b - t) : 0;
+            }
+
 
             /** @brief Pushes a task into the deque. */
             void push(Task* task) 
@@ -186,8 +197,16 @@ namespace SushiRuntime
             running.store(false, std::memory_order_release);
             pending_cv.notify_all();
             for (size_t i = 0; i < num_workers; ++i)
+                if (workers[i].joinable()) workers[i].join();   
+
+
+            for (size_t i = 0; i < num_workers; ++i)
             {
-                if (workers[i].joinable()) workers[i].join();
+                if (worker_queues[i])
+                {
+                    while (Task* task = worker_queues[i]->pop())
+                        task->release();
+                }
             }
 
             // Release any submissions that never made it into execution.
@@ -197,9 +216,7 @@ namespace SushiRuntime
                 Task* task = pending_submissions.front();
                 pending_submissions.pop_front();
                 if (task)
-                {
                     task->release();
-                }
             }
 
             while (!priority_submissions.empty())
@@ -207,9 +224,7 @@ namespace SushiRuntime
                 Task* task = priority_submissions.top();
                 priority_submissions.pop();
                 if (task)
-                {
                     task->release();
-                }
             }
         }
 
@@ -282,8 +297,9 @@ namespace SushiRuntime
             }
 
             auto& my_queue = worker_queues[thread_id];
-            
             EventPolling::ActiveEventList active_events;
+
+            SushiRuntime::Topology::pin_current_thread_to_core(thread_id);
 
             int spin_count = 0;
 
@@ -309,63 +325,53 @@ namespace SushiRuntime
 
                 // ACTIVE / DRAIN phase: process whatever work is available.
                 drain_pending_submissions(thread_id);
-                event_poller.poll_events(active_events, *my_queue);
-
                 Task* task = nullptr;
-                
-                {
-                    std::lock_guard<std::mutex> lock(pending_mutex);
-                    if (!priority_submissions.empty())
-                    {
-                        task = priority_submissions.top();
-                        priority_submissions.pop();
-                    }
-                }
 
-                if (!task)
                 {
-                    task = my_queue->pop();
+                    SushiRuntime::Memory::EpochGuard epoch_guard;
+
+                    event_poller.poll_events(active_events, *my_queue);
+                    
+                    {
+                        std::lock_guard<std::mutex> lock(pending_mutex);
+                        if (!priority_submissions.empty())
+                        {
+                            task = priority_submissions.top();
+                            priority_submissions.pop();
+                        }
+                    }
+
+                    if (!task)
+                        task = my_queue->pop();
+
+                    if (!task) 
+                        task = find_task_to_steal(thread_id);
+
+                    if (task) 
+                    {
+                        spin_count = 0; 
+                        if (task->is_splittable())
+                        {
+                            if (auto split_chunk = task->split())
+                                my_queue->push(split_chunk.value().leak());
+                        }
+
+                        execute_task(task, active_events);
+                    } 
                 }
 
                 if (!task) 
                 {
-                    task = find_task_to_steal(thread_id);
-                }
+                    if (is_shutdown && active_events.is_empty() && !has_pending_submissions())
+                        break;
 
-                if (task) 
-                {
-                    spin_count = 0; // Reset backoff
-
-                    // If the task is heavily parallelizable, split a chunk off and throw it
-                    // back into our deque so idle worker threads can steal and help us execute it.
-                    if (task->is_splittable())
-                    {
-                        if (auto split_chunk = task->split())
-                            my_queue->push(split_chunk.value().leak());
-                    }
-
-                    execute_task(task, active_events);
-                } 
-                else if (is_shutdown && active_events.is_empty() && !has_pending_submissions())
-                {
-                    // DRAIN complete: shutdown requested, nothing left to process.
-                    // This is the exit condition for the stop() path.
-                    break;
-                }
-                else
-                {
-                    // Adaptive backoff to reduce 100% CPU usage
+                    // It is extremely important for the thread to be outside the Epoch while in the Backoff (Yield/Sleep) phase,
+                    // so that a sleeping thread does not stall the global memory reclamation process.
                     spin_count++;
                     if (spin_count < 100) 
-                    {
-                        // Active spinning (pause instructions via yield)
                         std::this_thread::yield();
-                    } 
                     else 
-                    {
-                        // Heavy backoff when completely starved of work
                         std::this_thread::sleep_for(std::chrono::microseconds(100));
-                    }
                 }
             }
         }
@@ -373,56 +379,57 @@ namespace SushiRuntime
         /** @brief Executes a single task and tracks its events. */
         void TaskScheduler::execute_task(Task* task, EventPolling::ActiveEventList& events) 
         {
-            if (!task)
-            {
-                return;
-            }
+            if (!task) return;
 
-            SR_LOG_DEBUG("Executing task: {}", task->get_name());
-            
-            int target_numa_id = 0;
-            std::vector<sycl::event> deps;
-            
-            if (auto* node = dynamic_cast<SushiRuntime::Graph::Node*>(task))
+            auto& tls_state = SushiRuntime::Memory::Detail::get_tls_state(); 
+            if (tls_state.id >= 0 && tls_state.id < Core::MAX_WORKER_THREADS) 
+                worker_completed_tasks[tls_state.id].fetch_add(1, std::memory_order_relaxed);
+
+            try 
             {
-                if (node->metadata.numa_affinity >= 0)
-                    target_numa_id = node->metadata.numa_affinity;
+                SR_LOG_DEBUG("Executing task: {}", task->get_name());
                 
-                deps = node->sycl_deps.to_vector();
-            }
-
-            auto& q = context.get_numa_local_queue(target_numa_id);
-            sycl::event e;
-
-            if (task->get_execution_mode() == Task::ExecutionMode::HOST)
-            {
-                // Execute directly on the queue (library calls)
-                e = task->execute_host(q, deps);
-            }
-            else
-            {
-                // Execute as kernel lambda
-                e = q.submit([&](sycl::handler& h) 
+                int target_numa_id = 0;
+                std::vector<sycl::event> deps;
+                
+                if (auto* node = dynamic_cast<SushiRuntime::Graph::Node*>(task))
                 {
-                    if (!deps.empty())
-                    {
-                        h.depends_on(deps);
-                    }
-                    task->execute(h);
-                });
-            }
-            
-            // Prevent dummy sycl events from crashing the polling loop
-            if (e == sycl::event{})
-            {
-                e = q.submit([&](sycl::handler& h) {
-                    h.host_task([]() {});
-                });
-            }
+                    if (node->metadata.numa_affinity >= 0)
+                        target_numa_id = node->metadata.numa_affinity;
+                    
+                    deps = node->sycl_deps.to_vector();
+                }
 
-            if (!events.push({e, task})) 
+                auto& q = context.get_numa_local_queue(target_numa_id);
+                sycl::event e;
+
+                if (task->get_execution_mode() == Task::ExecutionMode::HOST)
+                    e = task->execute_host(q, deps);
+                else
+                {
+                    e = q.submit([&](sycl::handler& h) 
+                    {
+                        if (!deps.empty()) h.depends_on(deps);
+                        task->execute(h);
+                    });
+                }
+                
+                if (e == sycl::event{})
+                    e = q.submit([&](sycl::handler& h) { h.host_task([]() {}); });
+
+                if (!events.push({e, task})) 
+                    SR_LOG_WARN("ActiveEventList capacity is full, events cannot be polled!");
+            } 
+            catch (...) 
             {
-                SR_LOG_WARN("ActiveEventList capacity is full, events cannot be polled!");
+                SR_LOG_ERROR("Critical exception caught during task execution: {}", task->get_name());
+                
+                if (error_callback) 
+                    error_callback(std::current_exception());
+                
+                // Diğer worker'ların durması için acil durum sinyali
+                shutdown_requested.store(true, std::memory_order_release);
+                running.store(false, std::memory_order_release);
             }
         }
 
@@ -448,10 +455,7 @@ namespace SushiRuntime
         /** @brief Submits a new task to the main thread's queue. */
         void TaskScheduler::submit(Task* task) 
         {
-            if (!task)
-            {
-                return;
-            }
+            if (!task) return;
 
             task->add_ref();
 
@@ -460,17 +464,62 @@ namespace SushiRuntime
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);
                 if (task->get_priority() > 0)
-                {
                     priority_submissions.push(task);
-                }
                 else
-                {
                     pending_submissions.push_back(task);
-                }
             }
             
             // Wake a worker up if they are heavily sleeping
             pending_cv.notify_one();
+        }
+
+        size_t TaskScheduler::get_worker_count() const 
+        {
+            return num_workers;
+        }
+
+        size_t TaskScheduler::get_queue_size(int worker_id) const 
+        {
+            if (worker_id < 0 || worker_id >= static_cast<int>(num_workers)) return 0;
+            if (worker_queues[worker_id]) return worker_queues[worker_id]->size();
+            return 0;
+        }
+
+        size_t TaskScheduler::get_completion_rate(int worker_id) const 
+        {
+            if (worker_id < 0 || worker_id >= static_cast<int>(num_workers)) return 0;
+            return worker_completed_tasks[worker_id].load(std::memory_order_relaxed);
+        }
+
+        void TaskScheduler::migrate_tasks(int from_worker_id, int /*to_worker_id*/, size_t count) 
+        {
+            if (from_worker_id < 0 || from_worker_id >= static_cast<int>(num_workers)) return;
+            if (!worker_queues[from_worker_id]) return;
+
+            // 1. Darboğazdaki (ısınmış) worker'dan lock-free olarak görevleri çal
+            std::vector<Task*> rescued_tasks;
+            rescued_tasks.reserve(count);
+
+            for (size_t i = 0; i < count; ++i) 
+            {
+                Task* t = worker_queues[from_worker_id]->steal();
+                if (t) rescued_tasks.push_back(t);
+                else break; // Kuyruk boşalmışsa dur
+            }
+
+            // 2. Çalınan görevleri soğuk worker'ların kapması için Global Öncelikli Kuyruğa at
+            if (!rescued_tasks.empty()) 
+            {
+                {
+                    std::lock_guard<std::mutex> lock(pending_mutex);
+                    for (Task* t : rescued_tasks) 
+                    {
+                        priority_submissions.push(t);
+                    }
+                }
+                // Uyuyan / boşta bekleyen tüm soğuk worker'ları uyandır
+                pending_cv.notify_all(); 
+            }
         }
 
     } // namespace Scheduler

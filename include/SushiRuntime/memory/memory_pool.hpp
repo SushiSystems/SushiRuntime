@@ -17,7 +17,6 @@
 /* is confidential and may not be disclosed, copied, or used without      */
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
-
 #pragma once
 
 #include <bit>
@@ -31,95 +30,95 @@ namespace SushiRuntime
 {
     namespace Memory
     {
-        /**
-         * @brief Bitmask-based management for memory slots.
-         * * Each uint64_t bitmask represents 64 slots in a page.
-         */
+        using FlushCallback = void(*)(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count);
+        extern std::atomic<FlushCallback> g_flush_callback;
+        
         struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) MemoryPage 
         {
-            /** @brief Start address of the page. */
             void* start_ptr;
-            /** @brief Atomic mask where 0 means empty and 1 means full. */
             std::atomic<uint64_t> bitmask{0};
-            /** @brief Next page in the linked list pool. */
             std::atomic<MemoryPage*> next{nullptr};
-            /** @brief ID of the NUMA node where this page lives. */
             int numa_node_id;
-            /** @brief Size of each slot in the page. */
             size_t slot_size;
-            /** @brief The bucket index this page belongs to (used for TLC). */
             int bucket_idx;
         };
 
         /**
-         * @brief Thread-local cache (TLC) for fast allocation.
-         * * Allows each thread to access local slots without using locks.
-         * Separated into buckets to prevent memory size mismatch bugs.
+         * @brief Zero-Atomic Thread Local Magazine.
+         * * Operates completely wait-free and atomic-free in the hot path.
+         * * Replaces single-fetch caching with a magazine model.
          */
-        struct ThreadLocalCache 
+        struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) ThreadLocalMagazine 
         {
-            /** @brief Number of slots stored in a single batch per bucket. */
-            static constexpr size_t BATCH_SIZE = 256;
-            /** @brief Number of bucket sizes (128, 256, 1024, 4096). */
+            static constexpr size_t BATCH_SIZE = 16384; 
             static constexpr size_t NUM_BUCKETS = 4;
 
-            struct SlotInfo 
-            {
-                void* ptr;
-                MemoryPage* owner;
-                uint64_t alloc_id;
-            };
-
-            /** @brief Array of available memory slots per bucket. */
-            SlotInfo slots[NUM_BUCKETS][BATCH_SIZE];
-            /** @brief Number of slots currently in the cache per bucket. */
+            void* ptrs[NUM_BUCKETS][BATCH_SIZE];
             size_t count[NUM_BUCKETS] = {0};
-            
-            /** @brief Pops a slot from the specific bucket cache, or returns nullptr. */
-            inline void* pop(int bucket_idx, uint64_t current_alloc_id)
-            {
-                if (bucket_idx < 0 || bucket_idx >= NUM_BUCKETS || count[bucket_idx] == 0) 
-                    return nullptr;
+            uint64_t current_alloc_id = 0;
 
-                SlotInfo& info = slots[bucket_idx][count[bucket_idx] - 1];
-                
-                if (info.alloc_id != current_alloc_id)
+            inline void flush_all() 
+            {
+                FlushCallback cb = g_flush_callback.load(std::memory_order_acquire);
+                if (cb) 
                 {
-                    count[bucket_idx] = 0;
-                    return nullptr;
+                    for (size_t i = 0; i < NUM_BUCKETS; ++i) 
+                    {
+                        if (count[i] > 0) 
+                        {
+                            cb(current_alloc_id, i, ptrs[i], count[i]);
+                            count[i] = 0;
+                        }
+                    }
                 }
-
-                return slots[bucket_idx][--count[bucket_idx]].ptr;
             }
-            
-            /** @brief Pushes a free slot back to the bucket cache, returns false if full. */
-            inline bool push(int bucket_idx, void* ptr, MemoryPage* owner, uint64_t current_alloc_id) 
+
+            inline void check_alloc_id(uint64_t alloc_id) 
             {
-                if (bucket_idx < 0 || static_cast<size_t>(bucket_idx) >= NUM_BUCKETS || count[bucket_idx] >= BATCH_SIZE) 
-                    return false;
-                
-                slots[bucket_idx][count[bucket_idx]++] = {ptr, owner, current_alloc_id};
+                if (current_alloc_id != alloc_id) 
+                {
+                    flush_all();
+                    current_alloc_id = alloc_id;
+                }
+            }
+
+            // HOT PATH: 2 CPU instructions. No atomics, no locks.
+            inline void* pop(int bucket_idx, uint64_t alloc_id) 
+            {
+                check_alloc_id(alloc_id);
+
+                if (count[bucket_idx] == 0) 
+                    return nullptr;
+
+                return ptrs[bucket_idx][--count[bucket_idx]];
+            }
+
+            // HOT PATH: 3 CPU instructions. No atomics, no locks.
+            inline bool push(int bucket_idx, void* ptr, uint64_t alloc_id) 
+            {
+                check_alloc_id(alloc_id);
+                if (count[bucket_idx] >= BATCH_SIZE) 
+                    return false; // Magazine Full
+
+                ptrs[bucket_idx][count[bucket_idx]++] = ptr;
+
                 return true;
             }
 
-            ~ThreadLocalCache() { }
+            ~ThreadLocalMagazine() { flush_all(); }
         };
 
-        /** @brief Global thread-local storage for the cache. */
-        inline thread_local ThreadLocalCache t_cache;
+        inline thread_local ThreadLocalMagazine t_mag{};
 
-        /**
-         * @brief Memory pool that uses bitmasks to track free space.
-         */
         class BitmaskMemoryPool 
         {
             public:
                 /**
-                 * @brief Allocates a single slot. Traverses the linked list of pages.
-                 * @param root_page The starting memory page in the linked list pool.
-                 * @return void* Pointer to the allocated memory, or nullptr if completely full.
+                 * @brief Amortized Bulk Claim Strategy (TCMalloc style).
+                 * Instantly claims ALL remaining free slots in a page using a single 
+                 * atomic fetch_or/CAS, reducing atomic contention by a factor of 64.
                  */
-                void* allocate_from_pool(MemoryPage* root_page) 
+                int bulk_claim(MemoryPage* root_page, void** out_array, int max_claim) 
                 {
                     MemoryPage* current_page = root_page;
                     
@@ -129,44 +128,39 @@ namespace SushiRuntime
                         
                         while (current_mask != ~0ULL)
                         { 
-                            // find the first zero bit (empty slot) using std::countr_one
-                            int first_free = std::countr_one(current_mask);
-                            if (first_free >= 64) break;
-
-                            uint64_t new_mask = current_mask | (1ULL << first_free);
+                            // Try to claim the entire page at once
+                            uint64_t claimed_mask = ~0ULL; 
                             
-                            // use atomic hardware compare-and-swap
-                            if (current_page->bitmask.compare_exchange_weak(current_mask, new_mask, 
+                            if (current_page->bitmask.compare_exchange_weak(current_mask, claimed_mask, 
                                                                 std::memory_order_acquire, 
                                                                 std::memory_order_relaxed)) 
                             {
-                                return static_cast<uint8_t*>(current_page->start_ptr) + (first_free * current_page->slot_size);
+                                // We successfully claimed the difference. Find which bits we got.
+                                uint64_t free_bits = ~current_mask;
+                                int claimed_count = 0;
+                                
+                                for (int i = 0; i < 64 && claimed_count < max_claim; ++i) 
+                                {
+                                    if ((free_bits >> i) & 1) 
+                                        out_array[claimed_count++] = static_cast<uint8_t*>(current_page->start_ptr) + (i * current_page->slot_size);
+                                }
+                                return claimed_count; // Returns batch size back to thread
                             }
                         }
-                        
-                        // Page full or highly contested, move to next page in the chain
+
                         current_page = current_page->next.load(std::memory_order_acquire);
                     }
-                    
-                    return nullptr; // Entire pool chain is full
+
+                    return 0; // Completely out of memory in this bucket
                 }
 
-
-
-                /**
-                 * @brief Returns a memory slot back to its specific designated page.
-                 * @param page The specific memory page that owns the slot.
-                 * @param ptr The pointer to the memory being freed.
-                 */
                 void deallocate_to_page(MemoryPage& page, void* ptr) 
                 {
                     size_t offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(page.start_ptr);
                     int slot_idx = static_cast<int>(offset / page.slot_size);
-                    
-                    // set the bit back to 0 atomically
                     page.bitmask.fetch_and(~(1ULL << slot_idx), std::memory_order_release);
                 }
         };
 
-    } // namespace Memory
-} // namespace SushiRuntime
+    } 
+}

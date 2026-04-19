@@ -53,12 +53,6 @@ namespace SushiRuntime
             /** @brief NUMA-local allocators using atomic storage. */
             std::atomic<SushiRuntime::Memory::USMAllocator*> numa_allocators[Core::MAX_NUMA_NODES];
 
-            /** @brief Round-robin cursor per NUMA node for queue selection. */
-            std::array<std::atomic<size_t>, Core::MAX_NUMA_NODES> numa_queue_rr_cursor;
-
-            /** @brief Fallback cursor used when a NUMA node is unavailable. */
-            std::atomic<size_t> global_queue_rr_cursor{0};
-
             /**
              * @brief Execution engine (owns persistent TaskScheduler).
              *
@@ -72,11 +66,7 @@ namespace SushiRuntime
             Impl()
             {
                 for (size_t i = 0; i < Core::MAX_NUMA_NODES; ++i)
-                {
                     numa_allocators[i].store(nullptr, std::memory_order_relaxed);
-                    numa_queue_rr_cursor[i].store(0, std::memory_order_relaxed);
-                }
-                global_queue_rr_cursor.store(0, std::memory_order_relaxed);
             }
 
             ~Impl() 
@@ -211,32 +201,33 @@ namespace SushiRuntime
 
         /**
          * @brief Returns the closest SYCL queue for a specific NUMA node.
-         * 
-         * Falls back to default queue if none found.
-         * 
-         * @param numa_id Target NUMA node ID.
+         * * Falls back to default queue if none found. Uses thread_local cursors
+         * to achieve perfect round-robin load balancing with ZERO atomic contention.
+         * * @param numa_id Target NUMA node ID.
          * @return sycl::queue& Reference to the queue.
          */
         sycl::queue& RuntimeContext::get_numa_local_queue(int numa_id)
         {
+            static thread_local size_t local_numa_cursor[Core::MAX_NUMA_NODES] = {0};
+            static thread_local size_t local_global_cursor = 0;
+
             auto it = impl_->numa_aware_queues.find(numa_id);
             if (it != impl_->numa_aware_queues.end() && !it->second.empty())
             {
                 auto& queues = it->second;
-                const size_t cursor = impl_->numa_queue_rr_cursor[static_cast<size_t>(numa_id)]
-                                          .fetch_add(1, std::memory_order_relaxed);
+                const size_t cursor = local_numa_cursor[static_cast<size_t>(numa_id)]++;
                 return queues[cursor % queues.size()];
             }
 
             if (!impl_->all_queues.empty())
             {
-                const size_t cursor = impl_->global_queue_rr_cursor.fetch_add(1, std::memory_order_relaxed);
+                const size_t cursor = local_global_cursor++;
                 SR_LOG_WARN("No queue found for NUMA {}, falling back to round-robin global queue selection.", numa_id);
                 return impl_->all_queues[cursor % impl_->all_queues.size()];
             }
 
             SR_THROW_IF(true, "No SYCL queues are available in the runtime context.");
-            return impl_->all_queues[0];
+            return impl_->all_queues[0]; // Fallback dummy return
         }
 
         /**

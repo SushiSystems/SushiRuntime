@@ -32,6 +32,7 @@
 #include <condition_variable>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -62,7 +63,7 @@ namespace SushiRuntime
         /**
          * @brief Work-stealing scheduler loop.
          */
-        class SUSHIRUNTIME_API TaskScheduler 
+        class SUSHIRUNTIME_API TaskScheduler : public ITelemetryProvider, public ITaskMigrator
         {
             friend class SushiRuntime::Graph::TaskGraph;
 
@@ -96,6 +97,10 @@ namespace SushiRuntime
                 SushiRuntime::Execution::RuntimeContext& context;
                 /** @brief Worker threads. */
                 std::array<std::thread, Core::MAX_WORKER_THREADS> workers;
+                /** @brief Callback for error handling. */
+                std::function<void(std::exception_ptr)> error_callback;
+                /** @brief Cache-line aligned atomic counters for tracking completed tasks per worker. */
+                alignas(Core::CACHE_LINE_SIZE) std::atomic<size_t> worker_completed_tasks[Core::MAX_WORKER_THREADS];
 
                 /** @brief Executes a single task and tracks its events. */
                 void execute_task(Task* task, EventPolling::ActiveEventList& events);
@@ -145,6 +150,16 @@ namespace SushiRuntime
 
                 /** @brief Submits a new task to the injector queue. */
                 void submit(Task* task);
+
+                /** @brief Sets the error callback. */
+                void set_error_callback(std::function<void(std::exception_ptr)> cb) 
+                { error_callback = cb; }
+
+                size_t get_worker_count() const override;
+                size_t get_queue_size(int worker_id) const override;
+                size_t get_completion_rate(int worker_id) const override;
+
+                void migrate_tasks(int from_worker_id, int to_worker_id, size_t count) override;
         };
 
     } // namespace Scheduler

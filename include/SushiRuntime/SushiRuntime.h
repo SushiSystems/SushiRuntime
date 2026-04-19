@@ -29,12 +29,15 @@
 // Hardware Topology & Discovery
 #include "topology/hw_discovery.hpp"
 #include "topology/numa_mapper.hpp"
+#include "topology/affinity.hpp"
 
 // Memory Management
+#include "memory/epoch_reclamation.hpp"
 #include "memory/usm_allocator.hpp"
 #include "memory/memory_pool.hpp"
 
 // Execution & Context
+#include "execution/execution_engine.hpp"
 #include "execution/runtime_context.hpp"
 
 // Task Graph & Scheduling
@@ -46,3 +49,4 @@
 #include "scheduler/task_scheduler.hpp"
 #include "scheduler/task.hpp"
 #include "scheduler/event_polling.hpp"
+#include "scheduler/rebalancer_interface.hpp"

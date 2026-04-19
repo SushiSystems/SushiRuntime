@@ -1,18 +1,18 @@
 /**************************************************************************/
 /* usm_allocator.cpp                                                      */
 /**************************************************************************/
-/* This file is part of:                         */
-/* SushiRuntime                              */
-/* https://github.com/SushiSystems/SushiRuntime              */
-/* https://sushisystems.io                         */
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
 /* All Rights Reserved.                                                   */
-/* */
+/*                                                                        */
 /* CONFIDENTIAL: This software is the proprietary information of          */
 /* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
 /* via any medium is strictly prohibited.                                 */
-/* */
+/*                                                                        */
 /* This source code and the intellectual property contained herein        */
 /* is confidential and may not be disclosed, copied, or used without      */
 /* explicit written permission from the copyright holders.                */
@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/memory_pool.hpp>
 #include <SushiRuntime/core/logger.hpp>
@@ -33,6 +34,13 @@ namespace SushiRuntime
         using namespace SushiRuntime::Core;
 
         static std::atomic<uint64_t> g_allocator_id_counter{1};
+
+        std::atomic<FlushCallback> g_flush_callback{nullptr};
+
+        class USMManagerImpl;
+        static std::atomic<USMManagerImpl*> g_allocator_registry[256];
+
+        void global_flush_magazine(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count);
 
         /**
          * @brief Lock-Free 3-Level Radix Tree (PageMap) for O(1) pointer-to-page resolution.
@@ -53,12 +61,14 @@ namespace SushiRuntime
             static constexpr size_t L2_SIZE = 1ULL << L2_BITS; // 4096
             static constexpr size_t L3_SIZE = 1ULL << L3_BITS; // 4096
 
-            struct Leaf {
+            struct Leaf 
+            {
                 std::atomic<MemoryPage*> entries[L3_SIZE];
                 Leaf() { for (auto& e : entries) e.store(nullptr, std::memory_order_relaxed); }
             };
 
-            struct Node {
+            struct Node 
+            {
                 std::atomic<Leaf*> entries[L2_SIZE];
                 Node() { for (auto& e : entries) e.store(nullptr, std::memory_order_relaxed); }
             };
@@ -114,9 +124,10 @@ namespace SushiRuntime
                         Node* expected = nullptr;
                         if (root_[i1].compare_exchange_strong(expected, new_node, 
                                                               std::memory_order_acq_rel, 
-                                                              std::memory_order_acquire)) {
-                            node = new_node;
-                        } else {
+                                                              std::memory_order_acquire))
+                            node = new_node; 
+                        else 
+                        {
                             delete new_node;
                             node = expected;
                         }
@@ -129,9 +140,10 @@ namespace SushiRuntime
                         Leaf* expected = nullptr;
                         if (node->entries[i2].compare_exchange_strong(expected, new_leaf, 
                                                                       std::memory_order_acq_rel, 
-                                                                      std::memory_order_acquire)) {
+                                                                      std::memory_order_acquire))
                             leaf = new_leaf;
-                        } else {
+                        else 
+                        {
                             delete new_leaf;
                             leaf = expected;
                         }
@@ -168,6 +180,11 @@ namespace SushiRuntime
                 explicit USMManagerImpl(sycl::queue& q, int numa_id) 
                     : queue_(q), numa_id_(numa_id), allocator_id_(g_allocator_id_counter.fetch_add(1, std::memory_order_relaxed)) 
                 {
+                    g_allocator_registry[allocator_id_ % 256].store(this, std::memory_order_release);
+                    
+                    FlushCallback expected = nullptr;
+                    g_flush_callback.compare_exchange_strong(expected, global_flush_magazine);
+
                     for (int i = 0; i < NUM_BUCKETS; ++i) 
                     {
                         root_pages_[i].store(nullptr, std::memory_order_relaxed);
@@ -180,6 +197,8 @@ namespace SushiRuntime
                 {
                     for (int i = 0; i < NUM_BUCKETS; ++i) 
                     {
+                        g_allocator_registry[allocator_id_ % 256].store(nullptr, std::memory_order_release);
+
                         MemoryPage* curr = root_pages_[i].load(std::memory_order_relaxed);
                         while (curr)
                         {
@@ -193,6 +212,16 @@ namespace SushiRuntime
                     }
                 }
 
+                void flush_batch(int /*bucket_idx*/, void** ptrs, size_t count)
+                {
+                    for (size_t i = 0; i < count; ++i)
+                    {
+                        MemoryPage* owner = page_map_.get(ptrs[i]);
+                        if (owner)
+                            pool_.deallocate_to_page(*owner, ptrs[i]);
+                    }
+                }
+
                 void* allocate(size_t bytes, 
                             const IAllocatorStrategy& strategy = Strategies::Shared::instance(),
                             size_t alignment = DEFAULT_ALIGNMENT) override 
@@ -201,20 +230,35 @@ namespace SushiRuntime
                     {
                         int bucket_idx = get_bucket_index(bytes);
 
-                        if (void* ptr = t_cache.pop(bucket_idx, allocator_id_)) 
+                        if (void* ptr = t_mag.pop(bucket_idx, allocator_id_)) 
                             return ptr;
 
+                        
                         MemoryPage* root = root_pages_[bucket_idx].load(std::memory_order_acquire);
-                        if (root)
-                        {
-                            void* ptr = pool_.allocate_from_pool(root);
-                            if (ptr) return ptr;
+                        void* batch[64];
+                        int claimed = pool_.bulk_claim(root, batch, 64);
 
-                            if (allocate_new_page(bucket_idx))
+                        if (claimed > 0)
+                        {
+                            // Put the remainder in the magazine for the next (claimed - 1) allocations
+                            for (int i = 1; i < claimed; ++i) 
+                                t_mag.push(bucket_idx, batch[i], allocator_id_);
+
+                            return batch[0];
+                        }
+
+                        // 3. SLOW PATH: Allocate a new global page and try bulk claiming again
+                        if (allocate_new_page(bucket_idx))
+                        {
+                            root = root_pages_[bucket_idx].load(std::memory_order_acquire);
+                            claimed = pool_.bulk_claim(root, batch, 64);
+                            
+                            if (claimed > 0)
                             {
-                                root = root_pages_[bucket_idx].load(std::memory_order_acquire);
-                                ptr = pool_.allocate_from_pool(root);
-                                if (ptr) return ptr;
+                                for (int i = 1; i < claimed; ++i) 
+                                    t_mag.push(bucket_idx, batch[i], allocator_id_);
+
+                                return batch[0];
                             }
                         }
                     }
@@ -235,13 +279,20 @@ namespace SushiRuntime
                 {
                     if (!ptr) return;
 
-                    // O(1) Radix Tree Lock-Free Lookup - Zero Contention!
                     MemoryPage* owner = page_map_.get(ptr);
                     
                     if (owner)
                     {
-                        if (t_cache.push(owner->bucket_idx, ptr, owner, allocator_id_)) return;
-                        pool_.deallocate_to_page(*owner, ptr);
+                        if (t_mag.push(owner->bucket_idx, ptr, allocator_id_)) return;
+                        
+                        for (int i = 0; i < 64; ++i) 
+                        {
+                            void* flushed_ptr = t_mag.pop(owner->bucket_idx, allocator_id_);
+                            MemoryPage* flushed_owner = page_map_.get(flushed_ptr);
+                            pool_.deallocate_to_page(*flushed_owner, flushed_ptr);
+                        }
+
+                        t_mag.push(owner->bucket_idx, ptr, allocator_id_);
                         return;
                     }
 
@@ -336,6 +387,12 @@ namespace SushiRuntime
                     return true;
                 }
         };
+
+        void global_flush_magazine(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count) 
+        {
+            USMManagerImpl* mgr = g_allocator_registry[alloc_id % 256].load(std::memory_order_acquire);
+            if (mgr) mgr->flush_batch(bucket_idx, ptrs, count);
+        }
 
         sushi_ptr<USMAllocator> create_allocator(sycl::queue& q, int numa_id) 
         {
