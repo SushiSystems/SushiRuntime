@@ -382,7 +382,7 @@ namespace SushiRuntime
             if (!task) return;
 
             auto& tls_state = SushiRuntime::Memory::Detail::get_tls_state(); 
-            if (tls_state.id >= 0 && static_cast<size_t>(tls_state.id) < Core::MAX_WORKER_THREADS) 
+            if (tls_state.id >= 0 && tls_state.id < Core::MAX_WORKER_THREADS) 
                 worker_completed_tasks[tls_state.id].fetch_add(1, std::memory_order_relaxed);
 
             try 

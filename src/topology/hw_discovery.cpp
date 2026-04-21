@@ -18,9 +18,7 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-#ifndef NOMINMAX
 #define NOMINMAX
-#endif
 #include <cstdio>
 #include <hwloc.h>
 #include <regex>

@@ -275,8 +275,8 @@ namespace
         workers.reserve(static_cast<size_t>(thread_count));
 
         // Wall-clock measured by main thread after all workers finish.
-        [[maybe_unused]] std::atomic<Clock::time_point> t_begin;
-        [[maybe_unused]] std::atomic<Clock::time_point> t_end_last;
+        std::atomic<Clock::time_point> t_begin;
+        std::atomic<Clock::time_point> t_end_last;
         // Use per-thread end times; take the max.
         std::vector<Clock::time_point> t_ends(static_cast<size_t>(thread_count));
 
@@ -289,7 +289,7 @@ namespace
                 barrier_ready.arrive_and_wait(); // signal: ready
                 barrier_go.arrive_and_wait();    // wait for go
 
-                [[maybe_unused]] const auto begin = Clock::now();
+                const auto begin = Clock::now();
                 for (size_t i = 0; i < iterations_per_thread; ++i)
                 {
                     ptrs[i] = allocate(alloc_size);

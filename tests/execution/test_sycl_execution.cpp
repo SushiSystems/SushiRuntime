@@ -46,7 +46,7 @@ TEST(SycleExecutionTest, EndToEndVectorAddition)
     sycl::queue& q = ctx.get_numa_local_queue(0);
     
     constexpr size_t VECTOR_SIZE = 1024;
-    [[maybe_unused]] constexpr size_t MEMORY_SIZE = VECTOR_SIZE * sizeof(float);
+    constexpr size_t MEMORY_SIZE = VECTOR_SIZE * sizeof(float);
 
     // 1. Allocate USM Shared Memory (Accessible by both Host and Device)
     float* usm_A = sycl::malloc_shared<float>(VECTOR_SIZE, q);

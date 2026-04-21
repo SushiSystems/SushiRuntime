@@ -38,13 +38,9 @@ namespace SushiRuntime
 
                 pthread_t current_thread = pthread_self();    
                 if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0) 
-                {
                     SR_LOG_WARN("Failed to set thread affinity for core {} on POSIX system.", core_id);
-                } 
-                else 
-                {
+                else
                     SR_LOG_DEBUG("Thread successfully pinned to core {}", core_id);
-                }
             #endif
         }
     }

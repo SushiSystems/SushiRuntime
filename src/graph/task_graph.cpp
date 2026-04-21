@@ -149,7 +149,7 @@ namespace SushiRuntime
             }
         };
 
-        TaskGraph::TaskGraph(RuntimeContext& ctx) : impl_(make_sushi<Impl>(ctx)) 
+        TaskGraph::TaskGraph(RuntimeContext& ctx) : impl_(make_sushi<Impl>(ctx)), ctx_(ctx) 
         {
             SR_LOG_DEBUG("Lock-Free O(1) TaskGraph initialized.");
         }

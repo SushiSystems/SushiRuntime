@@ -1,7 +1,0 @@
-USE_VCPKG=false
-VCPKG_ROOT=$HOME/vcpkg
-ONEAPI_ROOT=/opt/intel/oneapi
-TARGET_BIN=sushiruntime_tests
-CC=icx
-CXX=icpx
-CMAKE_GENERATOR=Ninja

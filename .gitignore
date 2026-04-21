@@ -2,17 +2,13 @@
 bin/
 lib/
 out/
-docs/html
+docs/
 
 # IDEs
 .vscode/
 .vs/
 *.swp
 *.swo
-
-# Configuration files (Local only)
-.tools/config.ini
-.tools/config.cfg
 
 # CMake
 CMakeFiles/
