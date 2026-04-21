@@ -19,9 +19,12 @@ target_include_directories(sushiruntime PUBLIC
 
 
 # --- Link Libraries ---
+target_link_libraries(sushiruntime PUBLIC
+    IntelSYCL::SYCL_CXX
+)
+
 target_link_libraries(sushiruntime PRIVATE
     PkgConfig::HWLOC
-    IntelSYCL::SYCL_CXX
 )
 
 # --- Compile Definitions ---

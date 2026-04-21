@@ -5,19 +5,26 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd "$SCRIPT_DIR"
 
 # 1. Load configuration
-if [ -f "config.cfg" ]; then
-    while IFS='=' read -r key value; do
-        # Skip comments, empty lines, and INI-style headers
-        [[ $key =~ ^#.* ]] || [[ $key =~ ^\[.* ]] || [[ -z $key ]] && continue
-        export "$key=$value"
-    done < config.cfg
+if [ ! -f "../config.cfg" ]; then
+    echo "[ERROR] config.cfg not found in .tools/ folder!"
+    echo "[HINT] Please copy config.cfg.template to config.cfg in .tools/ and edit it."
+    exit 1
 fi
+
+while IFS='=' read -r key value; do
+    # Skip comments, empty lines, and INI-style headers
+    [[ $key =~ ^#.* ]] || [[ $key =~ ^\[.* ]] || [[ -z $key ]] && continue
+    # Strip carriage return and whitespace
+    key=$(echo "$key" | tr -d '\r' | xargs)
+    value=$(echo "$value" | tr -d '\r' | xargs)
+    export "$key=$value"
+done < ../config.cfg
 
 # 2. Environment Setup
 if [ -f "$ONEAPI_ROOT/setvars.sh" ]; then
     source "$ONEAPI_ROOT/setvars.sh" --force > /dev/null 2>&1
 fi
-export LD_LIBRARY_PATH="$SCRIPT_DIR/../../build/src:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$SCRIPT_DIR/../../build/src:$SCRIPT_DIR/../../build/examples:$LD_LIBRARY_PATH"
 
 BUILD_ROOT="../../build"
 SELECTED_EXE=""
