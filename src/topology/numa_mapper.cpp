@@ -21,7 +21,6 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#define NOMINMAX
 #include <thread>
 #include <hwloc.h>
 #include <hwloc/distances.h>

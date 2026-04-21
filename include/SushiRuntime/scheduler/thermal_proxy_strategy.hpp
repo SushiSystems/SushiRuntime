@@ -30,7 +30,7 @@ namespace SushiRuntime
                 size_t max_queue = 0;
                 size_t min_queue = SIZE_MAX;
 
-                for (int i = 0; i < num_workers; ++i) 
+                for (size_t i = 0; i < num_workers; ++i) 
                 {
                     size_t q_size = telemetry.get_queue_size(i);
                     size_t total_completed = telemetry.get_completion_rate(i); // Aslında total

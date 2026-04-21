@@ -155,7 +155,7 @@ namespace SushiRuntime
                 /** @brief Pimpl handle for internal implementation details. */
                 sushi_ptr<Impl> impl_;
                 /** @brief Reference to the runtime context. */
-                SushiRuntime::Execution::RuntimeContext& ctx_;
+                // SushiRuntime::Execution::RuntimeContext& ctx_; // Not used in implementation
         };
     
     } // namespace Graph

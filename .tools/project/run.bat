@@ -5,16 +5,21 @@ setlocal enabledelayedexpansion
 pushd %~dp0
 
 :: 1. Load configuration from config.ini
-if not exist "config.ini" (
-    echo [ERROR] config.ini not found in %CD%
+if not exist "..\config.ini" (
+    echo [ERROR] config.ini not found in .tools/ folder!
+    echo [HINT] Please copy config.ini.template to config.ini in .tools/ and edit it.
     goto end
 )
 
-for /f "usebackq tokens=1,2 delims==" %%A in ("config.ini") do (
+for /f "usebackq tokens=1,2 delims==" %%A in ("..\config.ini") do (
     if "%%A"=="ONEAPI_ROOT" set "ONEAPI_ROOT=%%B"
     if "%%A"=="VCPKG_ROOT" set "VCPKG_ROOT=%%B"
     if "%%A"=="TARGET_BIN" set "DEFAULT_BIN=%%B"
+    if "%%A"=="VCPKG_TRIPLET" set "VCPKG_TRIPLET=%%B"
 )
+
+:: Set default triplet if not found
+if not defined VCPKG_TRIPLET set "VCPKG_TRIPLET=x64-windows"
 
 :: 2. Setup Intel oneAPI environment if needed
 if exist "%ONEAPI_ROOT%\setvars.bat" (
@@ -22,7 +27,7 @@ if exist "%ONEAPI_ROOT%\setvars.bat" (
 )
 
 :: Add build artifact paths and vcpkg binaries to PATH
-set "PATH=%~dp0..\..\build\src;%VCPKG_ROOT%\installed\x64-windows\bin;%PATH%"
+set "PATH=%~dp0..\..\build\src;%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\bin;%PATH%"
 
 set "BUILD_ROOT=..\..\build"
 set "SELECTED_EXE="

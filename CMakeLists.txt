@@ -2,14 +2,15 @@ cmake_minimum_required(VERSION 3.20)
 
 # --- Force Authoritative vcpkg Path (Fixes VS Hijacking) ---
 if(WIN32)
-    set(VCPKG_ROOT "C:/vcpkg" CACHE PATH "" FORCE)
-    set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "" FORCE)
-    message(STATUS ">>> Forced VCPKG_ROOT to: ${VCPKG_ROOT}")
+    if(NOT DEFINED VCPKG_ROOT OR VCPKG_ROOT STREQUAL "")
+        set(VCPKG_ROOT "C:/vcpkg" CACHE PATH "Path to vcpkg root")
+    endif()
+    set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "vcpkg toolchain file")
+    message(STATUS ">>> Using VCPKG_ROOT: ${VCPKG_ROOT}")
 endif()
 
-# --- vcpkg Classic Mode ---
-if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-    set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "vcpkg toolchain file")
 endif()
 
 # --- Compiler Selection ---
@@ -38,7 +39,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # --- Compiler Flags (Production Ready) ---
-if(MSVC OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+if(MSVC OR (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM"))
     # Windows / MSVC / Intel icx-cl
     add_compile_options(/W4 /permissive- /EHsc)
     
