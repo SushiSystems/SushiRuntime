@@ -43,6 +43,13 @@ namespace SushiRuntime
         void global_flush_magazine(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count);
 
         /**
+         * @brief Per-thread pool slot ID. Assigned once on first allocation.
+         * Eliminates cross-thread contention on pool expansion entirely.
+         */
+        static std::atomic<int> g_pool_slot_counter{0};
+        thread_local int t_pool_slot{-1};
+
+        /**
          * @brief Lock-Free 3-Level Radix Tree (PageMap) for O(1) pointer-to-page resolution.
          * Modeled after TCMalloc. Replaces all global locks and binary searches.
          * Maps a 50-bit virtual address space down to 4KB granular chunks.
@@ -185,29 +192,29 @@ namespace SushiRuntime
                     FlushCallback expected = nullptr;
                     g_flush_callback.compare_exchange_strong(expected, global_flush_magazine);
 
-                    for (int i = 0; i < NUM_BUCKETS; ++i) 
-                    {
-                        root_pages_[i].store(nullptr, std::memory_order_relaxed);
-                        expansion_locks_[i].store(false, std::memory_order_relaxed);
-                        allocate_new_page(i);
-                    }
+                    // thread_slots_[i] kendi ThreadPoolSlot() constructor'ında başlatılır.
+                    // Per-thread model sayesinde warmup çağrısına gerek yok:
+                    // her thread ilk allocate() çağrısında kendi slotunu expand eder.
                 }
 
                 ~USMManagerImpl() override
                 {
-                    for (int i = 0; i < NUM_BUCKETS; ++i) 
+                    g_allocator_registry[allocator_id_ % 256].store(nullptr, std::memory_order_release);
+
+                    // Tüm thread slotlarındaki sayfaları temizle
+                    for (int t = 0; t < MAX_THREAD_SLOTS; ++t)
                     {
-                        g_allocator_registry[allocator_id_ % 256].store(nullptr, std::memory_order_release);
-
-                        MemoryPage* curr = root_pages_[i].load(std::memory_order_relaxed);
-                        while (curr)
+                        for (int i = 0; i < NUM_BUCKETS; ++i)
                         {
-                            MemoryPage* next = curr->next.load(std::memory_order_relaxed);
-                            if (curr->start_ptr)
-                                sycl::free(curr->start_ptr, queue_);
-
-                            delete curr;
-                            curr = next;
+                            MemoryPage* curr = thread_slots_[t].root_pages[i].load(std::memory_order_relaxed);
+                            while (curr)
+                            {
+                                MemoryPage* next = curr->next.load(std::memory_order_relaxed);
+                                if (curr->start_ptr)
+                                    sycl::free(curr->start_ptr, queue_);
+                                delete curr;
+                                curr = next;
+                            }
                         }
                     }
                 }
@@ -230,39 +237,50 @@ namespace SushiRuntime
                     {
                         int bucket_idx = get_bucket_index(bytes);
 
+                        // ── HOT PATH: thread-local magazine ──────────────────────────────
+                        // Atomic yok, lock yok. Saf TLS erişimi.
                         if (void* ptr = t_mag.pop(bucket_idx, allocator_id_)) 
                             return ptr;
 
-                        
-                        MemoryPage* root = root_pages_[bucket_idx].load(std::memory_order_acquire);
-                        void* batch[64];
-                        int claimed = pool_.bulk_claim(root, batch, 64);
+                        // ── SLOT ATAMASI (thread başına bir kez) ─────────────────────────
+                        // Her thread benzersiz bir pool slot'una sahip olur.
+                        // Farklı thread'ler farklı slotlarda çalıştığı için hiçbir
+                        // lock/atomic paylaşımı yoktur.
+                        if (t_pool_slot < 0)
+                            t_pool_slot = g_pool_slot_counter.fetch_add(1, std::memory_order_relaxed) % MAX_THREAD_SLOTS;
+                        const int slot = t_pool_slot;
+
+                        // ── MEDIUM PATH: bu thread'in kendi sayfalarından bulk_claim ─────
+                        void* batch[BATCH_SIZE];
+                        MemoryPage* root = thread_slots_[slot].root_pages[bucket_idx].load(std::memory_order_acquire);
+                        int claimed = pool_.bulk_claim(root, batch, BATCH_SIZE);
 
                         if (claimed > 0)
                         {
-                            // Put the remainder in the magazine for the next (claimed - 1) allocations
                             for (int i = 1; i < claimed; ++i) 
                                 t_mag.push(bucket_idx, batch[i], allocator_id_);
-
                             return batch[0];
                         }
 
-                        // 3. SLOW PATH: Allocate a new global page and try bulk claiming again
-                        if (allocate_new_page(bucket_idx))
+                        // ── SLOW PATH: bu thread'in kendi slotunu genişlet ───────────────
+                        // DİĞER THREAD'LER ETKİLENMEZ — her thread bağımsız expand eder.
+                        // Eski mimaride: 12 thread tek bir expansion_lock için yarışıyor.
+                        // Yeni mimaride: her thread kendi slotunu beklemeksizin expand eder.
+                        if (allocate_new_page(slot, bucket_idx))
                         {
-                            root = root_pages_[bucket_idx].load(std::memory_order_acquire);
-                            claimed = pool_.bulk_claim(root, batch, 64);
-                            
+                            root    = thread_slots_[slot].root_pages[bucket_idx].load(std::memory_order_acquire);
+                            claimed = pool_.bulk_claim(root, batch, BATCH_SIZE);
+
                             if (claimed > 0)
                             {
-                                for (int i = 1; i < claimed; ++i) 
+                                for (int i = 1; i < claimed; ++i)
                                     t_mag.push(bucket_idx, batch[i], allocator_id_);
-
                                 return batch[0];
                             }
                         }
                     }
 
+                    // ── FALLBACK: havuz kapsamı dışındaki allocasyon ─────────────────────
                     void* ptr = nullptr;
                     try 
                     {
@@ -313,16 +331,49 @@ namespace SushiRuntime
                 static constexpr int NUM_BUCKETS = 4;
                 static constexpr size_t BUCKET_SIZES[NUM_BUCKETS] = {128, 256, 1024, 4096};
                 static constexpr size_t MAX_POOL_ALLOC_SIZE = 4096;
-                
-                std::array<std::atomic<MemoryPage*>, NUM_BUCKETS> root_pages_;
-                std::array<std::atomic<bool>, NUM_BUCKETS> expansion_locks_;
+                static constexpr int SLOTS_PER_PAGE = 64;  // uint64_t bitmask sınırı
+                static constexpr int BATCH_SIZE = 64;
+                static constexpr int PAGES_PER_EXPANSION = 8;
 
-                // TCMalloc style Radix Tree replaces global mutex and sorted arrays
+                // ----------------------------------------------------------------
+                // Per-thread pool slots: çekişmeyi kökte keser.
+                //
+                // Eski mimari: root_pages_[NUM_BUCKETS] tüm thread'ler tarafından
+                //   paylaşılıyordu. expansion_locks_[bucket_idx] için 12 thread yarışıyor,
+                //   sycl::malloc_shared sıralı çağrılıyordu → thread artışıyla throughput düşüyordu.
+                //
+                // Yeni mimari: her thread kendi ThreadPoolSlot'una yazar/okur.
+                //   expansion sırasında başka thread'ler beklemek zorunda değil;
+                //   kendi slotlarını bağımsız olarak genişletebilirler.
+                //   sycl::malloc_shared çağrıları artık paralel yapılabilir.
+                //
+                // Slot sayısı 64: Ryzen 7600X 12 thread'e karşı 5.3× fazladan marj.
+                // ----------------------------------------------------------------
+                static constexpr int MAX_THREAD_SLOTS = 64;
+
+                struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) ThreadPoolSlot
+                {
+                    std::atomic<MemoryPage*> root_pages[NUM_BUCKETS];
+                    std::atomic<bool>        expanding[NUM_BUCKETS];
+
+                    ThreadPoolSlot()
+                    {
+                        for (int i = 0; i < NUM_BUCKETS; ++i)
+                        {
+                            root_pages[i].store(nullptr, std::memory_order_relaxed);
+                            expanding[i].store(false,   std::memory_order_relaxed);
+                        }
+                    }
+                };
+
+                ThreadPoolSlot thread_slots_[MAX_THREAD_SLOTS];
+
+                // TCMalloc style Radix Tree: O(1) pointer → sayfa çözümlemesi
                 LockFreePageMap page_map_;
 
                 static constexpr size_t MAX_PAGES = 4096;
                 std::atomic<MemoryPage*> global_pages_[MAX_PAGES] = {nullptr};
-                std::atomic<int> global_page_count_{0};
+                std::atomic<int>         global_page_count_{0};
 
                 int get_bucket_index(size_t size)
                 {
@@ -332,59 +383,61 @@ namespace SushiRuntime
                     return 3;
                 }
 
-                bool allocate_new_page(int bucket_idx)
+                bool allocate_new_page(int slot, int bucket_idx)
                 {
                     size_t slot_size = BUCKET_SIZES[bucket_idx];
-                    
+
+                    // Per-thread expanding flag: normalde başka thread bu slot'a dokunmaz.
+                    // Try-lock yeterli; çekişme pratikte sıfır.
                     bool expected = false;
-                    while (!expansion_locks_[bucket_idx].compare_exchange_weak(expected, 
-                                                                                true, 
-                                                                                std::memory_order_acquire))
-                    {
-                        std::this_thread::yield();
-                        expected = false;
-                    }
-                    
-                    size_t pool_size = 64 * slot_size;
-                    void* raw = nullptr;
-                    try 
-                    {
-                        raw = sycl::malloc_shared(pool_size, queue_);
-                    } 
-                    catch(...) {}
-
-                    if (!raw)
-                    {
-                        SR_LOG_ERROR("Failed to allocate new memory pool page for bucket {}", bucket_idx);
-                        expansion_locks_[bucket_idx].store(false, std::memory_order_release);
+                    if (!thread_slots_[slot].expanding[bucket_idx].compare_exchange_strong(
+                            expected, true,
+                            std::memory_order_acquire,
+                            std::memory_order_relaxed))
                         return false;
+
+                    const size_t page_size = SLOTS_PER_PAGE * slot_size;
+                    int pages_opened = 0;
+
+                    for (int p = 0; p < PAGES_PER_EXPANSION; ++p)
+                    {
+                        void* raw = nullptr;
+                        try { raw = sycl::malloc_shared(page_size, queue_); } catch (...) {}
+
+                        if (!raw)
+                        {
+                            SR_LOG_ERROR("Pool expansion failed at page {}/{} for slot {} bucket {}",
+                                         p + 1, PAGES_PER_EXPANSION, slot, bucket_idx);
+                            break;
+                        }
+
+                        MemoryPage* new_page = new MemoryPage();
+                        new_page->start_ptr    = raw;
+                        new_page->bitmask.store(0, std::memory_order_relaxed);
+                        new_page->numa_node_id = numa_id_;
+                        new_page->slot_size    = slot_size;
+                        new_page->bucket_idx   = bucket_idx;
+
+                        MemoryPage* old_root = thread_slots_[slot].root_pages[bucket_idx].load(std::memory_order_relaxed);
+                        do
+                        {
+                            new_page->next.store(old_root, std::memory_order_relaxed);
+                        }
+                        while (!thread_slots_[slot].root_pages[bucket_idx].compare_exchange_weak(
+                                   old_root, new_page,
+                                   std::memory_order_release,
+                                   std::memory_order_relaxed));
+
+                        int p_idx = global_page_count_.fetch_add(1, std::memory_order_relaxed);
+                        if (static_cast<size_t>(p_idx) < MAX_PAGES)
+                            global_pages_[p_idx].store(new_page, std::memory_order_release);
+
+                        page_map_.set(raw, page_size, new_page);
+                        ++pages_opened;
                     }
 
-                    MemoryPage* new_page = new MemoryPage();
-                    new_page->start_ptr = raw;
-                    new_page->bitmask.store(0, std::memory_order_relaxed);
-                    new_page->numa_node_id = numa_id_;
-                    new_page->slot_size = slot_size;
-                    new_page->bucket_idx = bucket_idx; 
-
-                    MemoryPage* old_root = root_pages_[bucket_idx].load(std::memory_order_relaxed);
-                    do 
-                    {
-                        new_page->next.store(old_root, std::memory_order_relaxed);
-                    } 
-                    while (!root_pages_[bucket_idx].compare_exchange_weak(old_root, new_page, 
-                                                            std::memory_order_release, 
-                                                            std::memory_order_relaxed));
-
-                    int p_idx = global_page_count_.fetch_add(1, std::memory_order_relaxed);
-                    if (static_cast<size_t>(p_idx) < MAX_PAGES) 
-                        global_pages_[p_idx].store(new_page, std::memory_order_release);
-
-                    // Register the newly allocated chunk in the Radix Tree
-                    page_map_.set(raw, pool_size, new_page);
-
-                    expansion_locks_[bucket_idx].store(false, std::memory_order_release);
-                    return true;
+                    thread_slots_[slot].expanding[bucket_idx].store(false, std::memory_order_release);
+                    return pages_opened > 0;
                 }
         };
 

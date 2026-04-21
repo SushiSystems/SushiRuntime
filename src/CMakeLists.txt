@@ -25,7 +25,11 @@ target_link_libraries(sushiruntime PRIVATE
 )
 
 # --- Compile Definitions ---
-target_compile_definitions(sushiruntime PRIVATE SUSHIRUNTIME_EXPORTS)
+target_compile_definitions(sushiruntime PRIVATE 
+    SUSHIRUNTIME_EXPORTS 
+    NOMINMAX 
+    WIN32_LEAN_AND_MEAN
+)
 
 
 # --- Apply SYCL to specific source files ---

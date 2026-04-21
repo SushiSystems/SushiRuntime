@@ -42,7 +42,7 @@ namespace SushiRuntime
          * Madde 18: Shutdown is explicitly ordered via RuntimeContext::Impl::~Impl,
          *           so the scheduler is always stopped before queues are torn down.
          */
-struct ExecutionEngine::Impl : public Core::RefCounted
+        struct ExecutionEngine::Impl : public Core::RefCounted
         {
             /** @brief Persistent scheduler that survives multiple graph executions. */
             SushiRuntime::Scheduler::TaskScheduler scheduler;
