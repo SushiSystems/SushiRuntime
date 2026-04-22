@@ -1,8 +1,0 @@
-build/
-bin/
-*.user
-*.suo
-*.pdb
-.git/
-.vscode/
-.gemini/

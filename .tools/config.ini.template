@@ -1,11 +1,11 @@
 [Paths]
-ONEAPI_ROOT=C:/Program Files (x86)/Intel/oneAPI
+VS_ROOT=C:/Program Files/Microsoft Visual Studio/2022/Community
+NINJA_EXE=C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe
 VCPKG_ROOT=C:/vcpkg
-VS_ROOT=C:/Program Files (x86)/Microsoft Visual Studio/2019/Community
-NINJA_EXE=C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe
-VCVARS_BAT=C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Auxiliary/Build/vcvars64.bat
-ICX_COMPILER=C:/Program Files (x86)/Intel/oneAPI/compiler/latest/bin/icx-cl.exe
+VCVARS_BAT=C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat
+ONEAPI_ROOT=C:/Program Files (x86)/Intel/oneAPI
 PKGCONF_EXE=C:/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe
+ICX_COMPILER=C:/Program Files (x86)/Intel/oneAPI/compiler/latest/bin/icx-cl.exe
 VCPKG_TRIPLET=x64-windows
 
 [App]

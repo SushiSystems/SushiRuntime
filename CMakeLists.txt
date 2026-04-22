@@ -97,5 +97,4 @@ enable_testing()
 # Find GTest
 find_package(GTest CONFIG REQUIRED)
 
-add_subdirectory(examples)
 add_subdirectory(tests)
