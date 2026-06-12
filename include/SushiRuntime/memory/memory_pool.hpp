@@ -33,6 +33,20 @@ namespace SushiRuntime
         using FlushCallback = void(*)(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count);
         extern std::atomic<FlushCallback> g_flush_callback;
         
+        /**
+         * @brief A page of fixed-size slots managed by the bitmask pool.
+         *
+         * Each MemoryPage belongs to exactly one ThreadPoolSlot at construction
+         * time, indicated by owning_slot. This identity is permanent: a page
+         * is only ever expanded into the slot that allocated it from SYCL,
+         * and pages do not migrate between slots.
+         *
+         * The owning_slot field exists so that deallocate() can route a free
+         * back to the slot that owns the page, even when the freeing thread
+         * is not the slot owner. This enables the per-slot remote-free MPSC
+         * mechanism that eliminates the "consumer magazine fills with foreign
+         * pointers, triggers full-magazine flush spike" pathology.
+         */
         struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) MemoryPage 
         {
             void* start_ptr;
@@ -41,17 +55,54 @@ namespace SushiRuntime
             int numa_node_id;
             size_t slot_size;
             int bucket_idx;
+
+            /**
+             * @brief Identity of the ThreadPoolSlot that owns this page.
+             *
+             * Set once when the page is allocated by allocate_new_page() and
+             * never changes thereafter. Used by deallocate() to dispatch
+             * free operations to the correct slot's remote-free queue.
+             */
+            int owning_slot = -1;
         };
 
         /**
          * @brief Zero-Atomic Thread Local Magazine.
-         * * Operates completely wait-free and atomic-free in the hot path.
-         * * Replaces single-fetch caching with a magazine model.
+         *
+         * Operates completely wait-free and atomic-free in the hot path.
+         * Replaces single-fetch caching with a magazine model.
+         *
+         * @note Multi-allocator flush cliff: the magazine tracks the most
+         *       recently used USMAllocator instance via current_alloc_id.
+         *       When a thread allocates from a different allocator than the
+         *       one cached in the magazine, the entire magazine is flushed
+         *       through g_flush_callback before the new allocation proceeds.
+         *       This is acceptable for single-allocator workloads (the typical
+         *       case) but represents a hidden cost for workloads that
+         *       interleave allocations across multiple USMAllocator instances
+         *       (e.g., multi-GPU systems, multi-context workloads). Such
+         *       workloads should batch their allocations per-allocator to
+         *       avoid repeated flushes, or use distinct worker threads per
+         *       allocator instance.
          */
         struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) ThreadLocalMagazine 
         {
-            static constexpr size_t BATCH_SIZE = 16384; 
+            static constexpr size_t BATCH_SIZE = 256; 
             static constexpr size_t NUM_BUCKETS = 4;
+
+            /**
+             * @brief Low-watermark threshold for proactive refill.
+             *
+             * When a bucket's count drops below this value, is_low() returns
+             * true. Callers (typically the USMAllocator) may use this signal
+             * to trigger an early refill from BitmaskMemoryPool, smoothing
+             * out the worst-case latency spike that occurs when a bucket
+             * empties completely and must refill on the critical path.
+             *
+             * Set to 25% of BATCH_SIZE. Lower values delay refill (more
+             * spikes); higher values refill too eagerly (wasted work).
+             */
+            static constexpr size_t LOW_WATERMARK = BATCH_SIZE / 4;
 
             void* ptrs[NUM_BUCKETS][BATCH_SIZE];
             size_t count[NUM_BUCKETS] = {0};
@@ -105,6 +156,40 @@ namespace SushiRuntime
                 return true;
             }
 
+            /**
+             * @brief Returns true if a bucket is below the low-watermark.
+             *
+             * Used by callers to decide whether to trigger a proactive
+             * refill from BitmaskMemoryPool. A "low" bucket is not yet
+             * empty (pop will still succeed) but is approaching exhaustion.
+             *
+             * Refilling while pop is still serviceable hides the refill
+             * cost from the critical path of subsequent allocations.
+             *
+             * @param bucket_idx The bucket to query.
+             * @return true if count[bucket_idx] < LOW_WATERMARK.
+             */
+            inline bool is_low(int bucket_idx) const 
+            {
+                return count[bucket_idx] < LOW_WATERMARK;
+            }
+
+            /**
+             * @brief Returns the number of free slots in a bucket.
+             *
+             * Used by BitmaskMemoryPool::bulk_claim_capped to size a partial
+             * page claim, so that a thread does not greedily claim all 64
+             * slots of a page when its magazine can only absorb a few.
+             *
+             * @param bucket_idx The bucket to query.
+             * @return Number of slots that can still be pushed before the
+             *         magazine bucket is full.
+             */
+            inline size_t free_capacity(int bucket_idx) const 
+            {
+                return BATCH_SIZE - count[bucket_idx];
+            }
+
             ~ThreadLocalMagazine() { flush_all(); }
         };
 
@@ -115,10 +200,76 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Amortized Bulk Claim Strategy (TCMalloc style).
-                 * Instantly claims ALL remaining free slots in a page using a single 
-                 * atomic fetch_or/CAS, reducing atomic contention by a factor of 64.
+                 *
+                 * Atomically claims ALL remaining free slots in a page using a
+                 * single CAS, reducing atomic contention by a factor of 64.
+                 *
+                 * @warning Under high concurrency, calling this on a partially
+                 *          free page means only one thread can succeed per
+                 *          retry round. If multiple threads are simultaneously
+                 *          refilling magazines, prefer bulk_claim_capped so
+                 *          that each thread takes only what it needs and
+                 *          leaves the rest for siblings.
+                 *
+                 * @param root_page Head of the page list for this bucket.
+                 * @param out_array Output array for claimed pointers.
+                 * @param max_claim Maximum pointers to write to out_array.
+                 * @return Number of slots actually claimed (0 if exhausted).
                  */
                 int bulk_claim(MemoryPage* root_page, void** out_array, int max_claim) 
+                {
+                    return bulk_claim_impl(root_page, out_array, max_claim, /*claim_all=*/true);
+                }
+
+                /**
+                 * @brief Capped variant of bulk_claim that respects caller capacity.
+                 *
+                 * Differs from bulk_claim by claiming only up to max_claim
+                 * slots per page, leaving any remaining free slots for other
+                 * threads. This reduces CAS contention in the
+                 * many-threads-refilling-simultaneously scenario by avoiding
+                 * the "winner takes all" page-claim semantics of bulk_claim.
+                 *
+                 * Use this when refilling a magazine that has limited free
+                 * capacity (e.g., the magazine is partially full and only
+                 * needs a few pointers, not 64). Use bulk_claim instead when
+                 * you genuinely want the entire page (cold start, dedicated
+                 * thread refill, etc.).
+                 *
+                 * @param root_page Head of the page list for this bucket.
+                 * @param out_array Output array for claimed pointers.
+                 * @param max_claim Maximum pointers to claim. Should equal
+                 *                  the magazine's free_capacity() to avoid
+                 *                  wasting page slots.
+                 * @return Number of slots actually claimed (0 if exhausted).
+                 */
+                int bulk_claim_capped(MemoryPage* root_page, void** out_array, int max_claim) 
+                {
+                    return bulk_claim_impl(root_page, out_array, max_claim, /*claim_all=*/false);
+                }
+
+                void deallocate_to_page(MemoryPage& page, void* ptr) 
+                {
+                    size_t offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(page.start_ptr);
+                    int slot_idx = static_cast<int>(offset / page.slot_size);
+                    page.bitmask.fetch_and(~(1ULL << slot_idx), std::memory_order_release);
+                }
+
+            private:
+                /**
+                 * @brief Shared implementation for bulk_claim and bulk_claim_capped.
+                 *
+                 * When claim_all is true: claims every free slot in the page
+                 * via a single CAS to ~0ULL (the original bulk_claim behavior).
+                 *
+                 * When claim_all is false: builds a target bitmask that flips
+                 * only up to max_claim of the currently free bits, leaving
+                 * the remainder for other threads. This is more contention-
+                 * friendly under producer/consumer-style workloads where
+                 * many threads refill simultaneously.
+                 */
+                int bulk_claim_impl(MemoryPage* root_page, void** out_array, 
+                                    int max_claim, bool claim_all) 
                 {
                     MemoryPage* current_page = root_page;
                     
@@ -128,37 +279,59 @@ namespace SushiRuntime
                         
                         while (current_mask != ~0ULL)
                         { 
-                            // Try to claim the entire page at once
-                            uint64_t claimed_mask = ~0ULL; 
-                            
-                            if (current_page->bitmask.compare_exchange_weak(current_mask, claimed_mask, 
-                                                                std::memory_order_acquire, 
-                                                                std::memory_order_relaxed)) 
+                            uint64_t free_bits = ~current_mask;
+                            uint64_t target_mask;
+                            int will_claim;
+
+                            if (claim_all)
                             {
-                                // We successfully claimed the difference. Find which bits we got.
-                                uint64_t free_bits = ~current_mask;
+                                // Original behavior: take the whole page.
+                                target_mask = ~0ULL;
+                                will_claim = std::min(std::popcount(free_bits), max_claim);
+                            }
+                            else
+                            {
+                                // Capped: take only up to max_claim free bits.
+                                int available = std::popcount(free_bits);
+                                will_claim = std::min(available, max_claim);
+
+                                // Build a mask of just the lowest will_claim free bits.
+                                uint64_t take_bits = 0;
+                                uint64_t remaining_free = free_bits;
+                                for (int taken = 0; taken < will_claim; ++taken)
+                                {
+                                    int bit = std::countr_zero(remaining_free);
+                                    take_bits |= (1ULL << bit);
+                                    remaining_free &= ~(1ULL << bit);
+                                }
+                                target_mask = current_mask | take_bits;
+                            }
+
+                            if (current_page->bitmask.compare_exchange_weak(
+                                    current_mask, target_mask, 
+                                    std::memory_order_acquire, 
+                                    std::memory_order_relaxed)) 
+                            {
+                                // We claimed exactly the bits in (target_mask & ~current_mask).
+                                uint64_t claimed_bits = target_mask & ~current_mask;
                                 int claimed_count = 0;
                                 
-                                for (int i = 0; i < 64 && claimed_count < max_claim; ++i) 
+                                for (int i = 0; i < 64 && claimed_count < will_claim; ++i) 
                                 {
-                                    if ((free_bits >> i) & 1) 
-                                        out_array[claimed_count++] = static_cast<uint8_t*>(current_page->start_ptr) + (i * current_page->slot_size);
+                                    if ((claimed_bits >> i) & 1) 
+                                        out_array[claimed_count++] = 
+                                            static_cast<uint8_t*>(current_page->start_ptr) 
+                                            + (i * current_page->slot_size);
                                 }
-                                return claimed_count; // Returns batch size back to thread
+                                return claimed_count;
                             }
+                            // CAS failed: current_mask was reloaded, loop and retry.
                         }
 
                         current_page = current_page->next.load(std::memory_order_acquire);
                     }
 
                     return 0; // Completely out of memory in this bucket
-                }
-
-                void deallocate_to_page(MemoryPage& page, void* ptr) 
-                {
-                    size_t offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(page.start_ptr);
-                    int slot_idx = static_cast<int>(offset / page.slot_size);
-                    page.bitmask.fetch_and(~(1ULL << slot_idx), std::memory_order_release);
                 }
         };
 

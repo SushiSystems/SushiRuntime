@@ -1,12 +1,12 @@
 #!/bin/bash
-
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-cd "$SCRIPT_DIR/../.."
+# SushiRuntime Build Cleaning Script
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+BUILD_DIR="$DIR/../../build"
 
 echo "[INFO] Removing build directory..."
 
-if [ -d "build" ]; then
-    rm -rf build
+if [ -d "$BUILD_DIR" ]; then
+    rm -rf "$BUILD_DIR"
     echo "[SUCCESS] Build directory removed."
 else
     echo "[INFO] No build directory found."

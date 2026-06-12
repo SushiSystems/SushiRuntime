@@ -1,2 +1,4 @@
 #!/bin/bash
-python3 "$(dirname "$0")/sushiruntime.py" "$@"
+# SushiRuntime wrapper script
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+python3 "$DIR/sushiruntime.py" "$@"

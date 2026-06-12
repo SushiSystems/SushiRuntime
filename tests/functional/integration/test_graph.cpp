@@ -29,25 +29,12 @@
 #include <SushiRuntime/graph/task_types.hpp>
 #include <SushiRuntime/graph/node.hpp>
 
+#include "../../common/test_helpers.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
-
-/**
- * @brief Helper function to create a dummy host task that records its execution order.
- */
-HostWork create_tracker_task(int task_id, std::vector<int>& execution_order, std::mutex& order_mutex)
-{
-    return [task_id, &execution_order, &order_mutex](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event 
-    {
-        // Simulate some computational delay
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        
-        std::lock_guard<std::mutex> lock(order_mutex);
-        execution_order.push_back(task_id);
-        return {};
-    };
-}
+using SushiRuntime::Test::make_order_recorder;
 
 /**
  * @test SequentialUSMDependency
@@ -58,32 +45,32 @@ TEST(TaskGraphTest, SequentialUSMDependency)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);
-    
-    // Shared memory pointer for tracking
+
     int dummy_data = 0;
     void* usm_ptr = &dummy_data;
 
     std::vector<int> execution_order;
     std::mutex order_mutex;
 
+    constexpr auto delay = std::chrono::milliseconds(5);
+
     // Node 1: Writes to USM (Expected 1st)
     TaskMetadata meta1{"Writer1"};
-    graph.add_task(meta1, {}, {usm_ptr}, create_tracker_task(1, execution_order, order_mutex));
+    graph.add_task(meta1, {}, {usm_ptr}, make_order_recorder(1, execution_order, order_mutex, delay));
 
     // Node 2: Reads from USM (Expected 2nd - RAW Dependency)
     TaskMetadata meta2{"Reader1"};
-    graph.add_task(meta2, {usm_ptr}, {}, create_tracker_task(2, execution_order, order_mutex));
+    graph.add_task(meta2, {usm_ptr}, {}, make_order_recorder(2, execution_order, order_mutex, delay));
 
     // Node 3: Writes to USM (Expected 3rd - WAR/WAW Dependency)
     TaskMetadata meta3{"Writer2"};
-    graph.add_task(meta3, {}, {usm_ptr}, create_tracker_task(3, execution_order, order_mutex));
+    graph.add_task(meta3, {}, {usm_ptr}, make_order_recorder(3, execution_order, order_mutex, delay));
 
     auto compiled_graph = graph.compile();
     EXPECT_EQ(compiled_graph.roots.size(), 1) << "Graph should only have 1 root due to linear dependency.";
 
     ctx.get_execution_engine().execute(std::move(compiled_graph));
 
-    // Verify strict sequential execution
     std::lock_guard<std::mutex> lock(order_mutex);
     ASSERT_EQ(execution_order.size(), 3);
     EXPECT_EQ(execution_order[0], 1);
@@ -104,13 +91,12 @@ TEST(TaskGraphTest, IndependentRootsExecution)
     constexpr int NUM_TASKS = 10;
     std::atomic<int> completed_tasks{0};
 
-    auto host_task = [&completed_tasks](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event 
+    auto host_task = [&completed_tasks](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
         completed_tasks.fetch_add(1, std::memory_order_relaxed);
         return {};
     };
 
-    // Add 10 totally independent nodes (no shared pointers)
     for (int i = 0; i < NUM_TASKS; ++i)
     {
         TaskMetadata meta{"IndependentNode"};
@@ -118,8 +104,7 @@ TEST(TaskGraphTest, IndependentRootsExecution)
     }
 
     auto compiled_graph = graph.compile();
-    
-    // All 10 nodes should be identified as roots
+
     EXPECT_EQ(compiled_graph.roots.size(), NUM_TASKS);
 
     ctx.get_execution_engine().execute(std::move(compiled_graph));
@@ -146,19 +131,18 @@ TEST(TaskGraphTest, FanOutFanInDiamond)
 
     // Phase 1: Node A (Writer)
     TaskMetadata metaA{"Node_A"};
-    graph.add_task(metaA, {}, {ptr}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event 
+    graph.add_task(metaA, {}, {ptr}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
         current_phase.store(1, std::memory_order_release);
         return {};
     });
 
     // Phase 2: Node B & C (Readers - Can run in parallel)
-    auto reader_task = [&current_phase, &fan_out_success](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event 
+    auto reader_task = [&current_phase, &fan_out_success](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
-        // Must happen after Phase 1
-        if (current_phase.load(std::memory_order_acquire) < 1) 
+        if (current_phase.load(std::memory_order_acquire) < 1)
             fan_out_success = false;
-            
+
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         return {};
     };
@@ -170,7 +154,7 @@ TEST(TaskGraphTest, FanOutFanInDiamond)
 
     // Phase 3: Node D (Writer - Must wait for both readers due to WAR hazard)
     TaskMetadata metaD{"Node_D"};
-    graph.add_task(metaD, {}, {ptr}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event 
+    graph.add_task(metaD, {}, {ptr}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
         current_phase.store(3, std::memory_order_release);
         return {};

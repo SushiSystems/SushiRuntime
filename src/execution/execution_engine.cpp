@@ -23,7 +23,7 @@
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/scheduler/workload_coordinator.hpp>
-        #include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
+#include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>

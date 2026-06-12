@@ -1,0 +1,71 @@
+name: CI
+
+# Functional suite on every push / PR (fast, deterministic, benchmarks skipped).
+# Heavy benchmark suite only on the nightly schedule.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC nightly
+
+jobs:
+  functional:
+    name: Functional tests
+    runs-on: ubuntu-latest
+    # Intel oneAPI base image provides SYCL/DPC++ (icx/icpx), matching the dev
+    # Dockerfile's base. We build against the checked-out tree directly rather
+    # than rebuilding the dev image.
+    container:
+      image: intel/oneapi-basekit:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config git libhwloc-dev libgtest-dev
+
+      - name: Configure, build, and run functional suite
+        shell: bash
+        run: |
+          set -e
+          source /opt/intel/oneapi/setvars.sh --force
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx \
+            -DCMAKE_CXX_FLAGS=-fsycl \
+            -DSUSHI_BUILD_BENCHMARKS=OFF        # fast lane: skip heavy benchmarks
+          cmake --build build
+          ctest --test-dir build -L functional --output-on-failure
+
+  benchmark:
+    name: Benchmark suite (nightly)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    container:
+      image: intel/oneapi-basekit:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config git libhwloc-dev libgtest-dev
+
+      - name: Configure, build, and run benchmark suite
+        shell: bash
+        run: |
+          set -e
+          source /opt/intel/oneapi/setvars.sh --force
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx \
+            -DCMAKE_CXX_FLAGS=-fsycl \
+            -DSUSHI_BUILD_BENCHMARKS=ON
+          cmake --build build
+          # Benchmarks self-gate via sanity_gate(); they assert no deadlock /
+          # forward progress, not a latency threshold.
+          ctest --test-dir build -L benchmark --output-on-failure

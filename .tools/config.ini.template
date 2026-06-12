@@ -9,4 +9,4 @@ ICX_COMPILER=C:/Program Files (x86)/Intel/oneAPI/compiler/latest/bin/icx-cl.exe
 VCPKG_TRIPLET=x64-windows
 
 [App]
-TARGET_BIN=sushiruntime_tests.exe
+TARGET_BIN=sr_functional_tests.exe

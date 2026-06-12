@@ -13,16 +13,36 @@ if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "vcpkg toolchain file")
 endif()
 
-# --- Compiler Selection ---
-if(WIN32 AND NOT DEFINED CMAKE_CXX_COMPILER)
-    set(INTEL_ONEAPI_DIR "C:/Program Files (x86)/Intel/oneAPI/compiler/latest")
-    set(CMAKE_CXX_COMPILER "${INTEL_ONEAPI_DIR}/bin/icx-cl.exe" CACHE FILEPATH "CXX compiler")
-    # Intel runtime libs (fixes LNK1104 during compiler check)
-    set(INTEL_LIB_PATH "${INTEL_ONEAPI_DIR}/lib")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LIBPATH:\"${INTEL_LIB_PATH}\"")
-    
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
-    list(APPEND CMAKE_PREFIX_PATH "${INTEL_ONEAPI_DIR}/lib/cmake/IntelSYCL")
+# --- Compiler Selection & Setup ---
+if(WIN32)
+    if(NOT DEFINED CMAKE_CXX_COMPILER OR CMAKE_CXX_COMPILER STREQUAL "")
+        set(INTEL_ONEAPI_DIR "C:/Program Files (x86)/Intel/oneAPI/compiler/latest")
+        set(CMAKE_CXX_COMPILER "${INTEL_ONEAPI_DIR}/bin/icx-cl.exe" CACHE FILEPATH "CXX compiler")
+    endif()
+
+    # Automatically resolve Intel compiler lib paths if using icx-cl
+    if(CMAKE_CXX_COMPILER MATCHES "icx-cl")
+        get_filename_component(COMPILER_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        get_filename_component(INTEL_COMPILER_DIR "${COMPILER_DIR}" DIRECTORY)
+        
+        # Add Intel runtime lib paths to avoid LNK1104 during compiler checks
+        set(INTEL_LIB_PATHS
+            "${INTEL_COMPILER_DIR}/lib"
+            "${INTEL_COMPILER_DIR}/lib/intel64"
+        )
+        
+        foreach(LIB_PATH IN LISTS INTEL_LIB_PATHS)
+            if(EXISTS "${LIB_PATH}")
+                # Pass via linker flags using icx-cl compatible syntax
+                set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /Qoption,link,/LIBPATH:\"${LIB_PATH}\"")
+                set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /Qoption,link,/LIBPATH:\"${LIB_PATH}\"")
+                set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} /Qoption,link,/LIBPATH:\"${LIB_PATH}\"")
+            endif()
+        endforeach()
+        
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
+        list(APPEND CMAKE_PREFIX_PATH "${INTEL_COMPILER_DIR}/lib/cmake/IntelSYCL")
+    endif()
 endif()
 
 project(SushiRuntime VERSION 0.1.0 LANGUAGES CXX C)
@@ -58,6 +78,7 @@ else()
         -Wextra 
         -Werror 
         -pedantic
+        -ftls-model=initial-exec
     )
     
     # Sanitizers (Optional - Enabled for Debug/RelWithDebInfo)
@@ -83,10 +104,53 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(HWLOC REQUIRED IMPORTED_TARGET hwloc)
 message(STATUS "Found hwloc: ${HWLOC_INCLUDEDIR}")
 
-# 2. SYCL (Intel DPC++ or DataC++)
-# Intel oneAPI DPC++ compiler is required for SYCL support.
-# IntelSYCL is the modern replacement for IntelDPCPP.
-find_package(IntelSYCL REQUIRED)
+# 2. SYCL — supports two toolchains:
+#   a) Intel oneAPI commercial release  → icpx / icx-cl  → FindIntelSYCL
+#   b) intel/llvm open-source build     → clang++ -fsycl → no FindIntelSYCL needed
+#
+# Detect which toolchain is active by checking the compiler executable name.
+# intel/llvm's clang++ already has -fsycl baked in; we just need the flag.
+if(CMAKE_CXX_COMPILER MATCHES "icpx|icx-cl|icx")
+    find_package(IntelSYCL REQUIRED)
+    message(STATUS "SYCL toolchain: Intel oneAPI commercial (${CMAKE_CXX_COMPILER})")
+elseif(CMAKE_CXX_COMPILER MATCHES "clang\\+\\+")
+    # intel/llvm open-source path: enable SYCL via compiler flag only.
+    # Ubuntu 22.04 ships GCC 11 (no <format>); point clang++ at GCC 13 toolchain
+    # which has full C++20 stdlib support.
+    # --gcc-toolchain points to the GCC install prefix (where bin/lib/include live).
+    # Explicit C++13 include dirs are added as fallback in case toolchain discovery
+    # still misses them under -fsycl's modified search order.
+    add_compile_options(-fsycl
+        --gcc-toolchain=/usr
+        -I/usr/include/c++/13
+        -I/usr/include/x86_64-linux-gnu/c++/13)
+    add_link_options(-fsycl --gcc-toolchain=/usr)
+    # Stub out IntelSYCL::SYCL_CXX so src/CMakeLists.txt links without changes
+    if(NOT TARGET IntelSYCL::SYCL_CXX)
+        add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED)
+    endif()
+    # Stub out add_sycl_to_target() — flags already applied globally above
+    if(NOT COMMAND add_sycl_to_target)
+        function(add_sycl_to_target)
+        endfunction()
+    endif()
+    message(STATUS "SYCL toolchain: intel/llvm open-source clang++ (${CMAKE_CXX_COMPILER})")
+else()
+    message(FATAL_ERROR "No supported SYCL compiler found. Use icpx (oneAPI) or clang++ (intel/llvm).")
+endif()
+
+# NVIDIA CUDA backend for SYCL (requires Codeplay oneAPI for NVIDIA plugin)
+# GTX 1060 is Pascal architecture = sm_61
+# Enable with: cmake -DSUSHI_ENABLE_CUDA=ON
+option(SUSHI_ENABLE_CUDA "Enable SYCL CUDA backend for NVIDIA GPUs" OFF)
+if(SUSHI_ENABLE_CUDA)
+    message(STATUS "CUDA backend enabled — targeting nvptx64 (sm_61 for GTX 1060)")
+    # Append CUDA target to SYCL compilation; sm_61 = Pascal (GTX 1060/1070/1080)
+    add_compile_options(-fsycl-targets=spir64,nvptx64-nvidia-cuda
+                        -Xsycl-target-backend=nvptx64-nvidia-cuda --cuda-gpu-arch=sm_61)
+    add_link_options(-fsycl-targets=spir64,nvptx64-nvidia-cuda
+                     -Xsycl-target-backend=nvptx64-nvidia-cuda --cuda-gpu-arch=sm_61)
+endif()
 
 # --- Subdirectories ---
 add_subdirectory(src)

@@ -21,13 +21,88 @@ namespace SushiRuntime
                 RetiredNode* next;
             };
 
+            /**
+             * @brief Thread-local state for epoch-based reclamation.
+             *
+             * In addition to the retire list, this struct now owns a
+             * thread-local pool of RetiredNode objects (free_node_pool).
+             * Without the pool, every call to EpochManager::retire would
+             * invoke the global operator new, which (a) is itself an
+             * allocation cost in the very mechanism that exists to manage
+             * allocations, and (b) introduces a hidden interaction with
+             * the system allocator on the hot path of any data structure
+             * using EBR (e.g., the dependency tracker's access history).
+             *
+             * The pool is bounded by FREE_POOL_CAP. When reclamation would
+             * push beyond the cap, the excess node is delete'd via global
+             * operator delete. This keeps memory bounded under workloads
+             * that retire faster than they reclaim.
+             */
             struct EpochThreadLocalState 
             {
                 int id = -1;
                 RetiredNode* retire_list = nullptr;
                 size_t retire_count = 0;
-                // Eşik değerini senin isteğin üzerine 128 yaptık, bu CPU'yu rahatlatacaktır.
                 static constexpr size_t RETIRE_THRESHOLD = 128; 
+
+                /** @brief Maximum pooled RetiredNodes per thread. */
+                static constexpr size_t FREE_POOL_CAP = 512;
+
+                /** @brief Singly-linked freelist of reusable RetiredNode storage. */
+                RetiredNode* free_node_pool = nullptr;
+                size_t free_node_pool_count = 0;
+
+                /**
+                 * @brief Acquires a RetiredNode, preferring the pool over heap.
+                 *
+                 * Pop is O(1) and does not touch the global allocator. Falls
+                 * back to operator new only when the pool is empty.
+                 */
+                inline RetiredNode* acquire_node() 
+                {
+                    if (free_node_pool) 
+                    {
+                        RetiredNode* node = free_node_pool;
+                        free_node_pool = node->next;
+                        --free_node_pool_count;
+                        return node;
+                    }
+                    return new RetiredNode;
+                }
+
+                /**
+                 * @brief Releases a RetiredNode back to the pool, or to heap if full.
+                 *
+                 * The caller has already invoked the deleter on the underlying
+                 * payload. This call only manages the RetiredNode storage itself.
+                 */
+                inline void release_node(RetiredNode* node) noexcept 
+                {
+                    if (free_node_pool_count < FREE_POOL_CAP) 
+                    {
+                        node->next = free_node_pool;
+                        free_node_pool = node;
+                        ++free_node_pool_count;
+                    } 
+                    else 
+                    {
+                        delete node;
+                    }
+                }
+
+                /**
+                 * @brief Drains the free pool entirely. Called from the destructor.
+                 */
+                inline void drain_free_pool() noexcept 
+                {
+                    while (free_node_pool) 
+                    {
+                        RetiredNode* next = free_node_pool->next;
+                        delete free_node_pool;
+                        free_node_pool = next;
+                    }
+                    free_node_pool_count = 0;
+                }
                 
                 ~EpochThreadLocalState(); 
             };
@@ -126,7 +201,9 @@ namespace SushiRuntime
                         curr = curr->next;
                         if (prev) prev->next = curr;
                         else tls_state.retire_list = curr;
-                        delete to_delete;
+                        // Recycle the RetiredNode storage instead of delete'ing it.
+                        // This eliminates the hidden new/delete pair on every retire/reclaim.
+                        tls_state.release_node(to_delete);
                         tls_state.retire_count--;
                     } 
                     else 
@@ -177,12 +254,13 @@ namespace SushiRuntime
                 auto& tls_state = Detail::get_tls_state();
                 if (tls_state.id == -1) tls_state.id = register_thread();
 
-                Detail::RetiredNode* node = new Detail::RetiredNode{
-                    ptr,
-                    [](void* p) { delete static_cast<T*>(p); }, 
-                    global_epoch_.load(std::memory_order_acquire),
-                    tls_state.retire_list
-                };
+                // Acquire a RetiredNode from the thread-local pool when available,
+                // falling back to operator new only when the pool is empty.
+                Detail::RetiredNode* node = tls_state.acquire_node();
+                node->ptr = ptr;
+                node->deleter = [](void* p) { delete static_cast<T*>(p); };
+                node->epoch = global_epoch_.load(std::memory_order_acquire);
+                node->next = tls_state.retire_list;
                 
                 tls_state.retire_list = node;
                 tls_state.retire_count++;
@@ -233,6 +311,10 @@ namespace SushiRuntime
                 retire_list = nullptr;
                 retire_count = 0;
             }
+            // Free pool storage belongs to this thread alone; release it directly.
+            // Orphaned retire_list nodes are now owned by the EpochManager and may
+            // come from any thread's pool, so they cannot go back to this pool.
+            drain_free_pool();
         }
 
     } // namespace Memory

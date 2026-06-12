@@ -25,19 +25,19 @@
 
 using namespace SushiRuntime;
 
-TEST(LoggerTest, BasicInfoLog) 
+TEST(LoggerTest, BasicInfoLog)
 {
     // We can't easily capture stdout/stderr from GTest without some redirection,
     // but we can at least verify that the format doesn't throw and it runs.
     SR_LOGGER_SET_SYNC_MODE(true);
-    
+
     EXPECT_NO_THROW(
         {
         SR_LOG_INFO("Testing logger: {}", "Success");
     });
 }
 
-TEST(LoggerTest, ThrowIfMacro) 
+TEST(LoggerTest, ThrowIfMacro)
 {
     EXPECT_THROW({
         SR_THROW_IF(true, "Expected failure {}", 404);

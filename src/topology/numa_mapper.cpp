@@ -43,11 +43,14 @@ namespace SushiRuntime
             hwloc_topology_t topology;
             
             /** @brief Step 1: initialize and load the topology. */
-            if (hwloc_topology_init(&topology) < 0) 
+            if (hwloc_topology_init(&topology) < 0)
             {
                 SR_LOG_ERROR("Failed to initialize hwloc topology.");
                 return;
             }
+            // hwloc 2.x does not include PCI/IO devices by default.
+            // KEEP_ALL is required for hwloc_get_pcidev_by_busid() to find the GPU.
+            hwloc_topology_set_io_types_filter(topology, HWLOC_TYPE_FILTER_KEEP_ALL);
             hwloc_topology_load(topology);
             hwloc_initialized = true;
 

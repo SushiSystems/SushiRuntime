@@ -201,6 +201,26 @@ namespace SushiRuntime
                 {
                     g_allocator_registry[allocator_id_ % 256].store(nullptr, std::memory_order_release);
 
+                    // Drain any remote-free queues into the page bitmasks before
+                    // releasing the underlying SYCL allocations. Skipping this
+                    // would leak pointers that are still on a remote-free stack.
+                    for (int t = 0; t < MAX_THREAD_SLOTS; ++t)
+                    {
+                        for (int i = 0; i < NUM_BUCKETS; ++i)
+                        {
+                            void* head = thread_slots_[t].remote_free_head[i].exchange(
+                                nullptr, std::memory_order_acquire);
+                            while (head)
+                            {
+                                void* next = *static_cast<void**>(head);
+                                MemoryPage* owner = page_map_.get(head);
+                                if (owner)
+                                    pool_.deallocate_to_page(*owner, head);
+                                head = next;
+                            }
+                        }
+                    }
+
                     // Tüm thread slotlarındaki sayfaları temizle
                     for (int t = 0; t < MAX_THREAD_SLOTS; ++t)
                     {
@@ -229,6 +249,23 @@ namespace SushiRuntime
                     }
                 }
 
+                /**
+                 * @brief Allocate a single object of the requested size.
+                 *
+                 * Hot path for poolable allocations:
+                 *   1. Pop from the magazine (zero-atomic fast path). Serves a
+                 *      full BATCH_SIZE run of allocates before missing.
+                 *   2. On miss: lazily drain this slot's remote-free stack
+                 *      (memory reclaimed from cross-thread frees) and retry the
+                 *      pop. Draining here rather than on every allocate amortizes
+                 *      the contended atomics over the magazine batch.
+                 *   3. Still empty: bulk_claim_capped from this slot's pages,
+                 *      sized to the magazine's free capacity so no slots wasted.
+                 *   4. On page exhaustion: expand this slot's pages by
+                 *      requesting more memory from SYCL.
+                 *   5. Fallback: route directly to the strategy's raw allocator
+                 *      for non-poolable strategies or oversized requests.
+                 */
                 void* allocate(size_t bytes, 
                             const IAllocatorStrategy& strategy = Strategies::Shared::instance(),
                             size_t alignment = DEFAULT_ALIGNMENT) override 
@@ -237,23 +274,51 @@ namespace SushiRuntime
                     {
                         int bucket_idx = get_bucket_index(bytes);
 
-                        // ── HOT PATH: thread-local magazine ──────────────────────────────
-                        // Atomic yok, lock yok. Saf TLS erişimi.
-                        if (void* ptr = t_mag.pop(bucket_idx, allocator_id_)) 
-                            return ptr;
-
                         // ── SLOT ATAMASI (thread başına bir kez) ─────────────────────────
-                        // Her thread benzersiz bir pool slot'una sahip olur.
-                        // Farklı thread'ler farklı slotlarda çalıştığı için hiçbir
-                        // lock/atomic paylaşımı yoktur.
+                        // Slot assignment must precede remote-queue drain because
+                        // the queue we drain is keyed by t_pool_slot.
                         if (t_pool_slot < 0)
                             t_pool_slot = g_pool_slot_counter.fetch_add(1, std::memory_order_relaxed) % MAX_THREAD_SLOTS;
                         const int slot = t_pool_slot;
 
-                        // ── MEDIUM PATH: bu thread'in kendi sayfalarından bulk_claim ─────
+                        // ── (1) HOT PATH: thread-local magazine ──────────────────────
+                        // In steady state this serves a full BATCH_SIZE run of
+                        // allocates with zero atomics and zero coherence traffic --
+                        // the magazine acting as the batching buffer it is meant to
+                        // be. Only on a miss do we touch shared state, below.
+                        if (void* ptr = t_mag.pop(bucket_idx, allocator_id_))
+                            return ptr;
+
+                        // Magazine empty: refill. Prefer memory reclaimed from
+                        // cross-thread frees (bounded, no new pages) over claiming
+                        // fresh page slots.
+
+                        // ── (2) LAZY DRAIN of the remote-free stack ─────────────────
+                        // Draining only here (on a miss) rather than on every
+                        // allocate is the key producer/consumer win: it amortizes the
+                        // contended exchange and the coherence-missing head load over
+                        // the whole magazine batch instead of paying them per op. The
+                        // freed-block chain walk itself is unavoidable (one cross-core
+                        // read per reclaimed pointer), but it now happens once per
+                        // ~BATCH_SIZE allocates, not every one.
+                        if (thread_slots_[slot].remote_free_head[bucket_idx].load(
+                                std::memory_order_relaxed) != nullptr)
+                        {
+                            drain_remote_free_into_magazine(slot, bucket_idx);
+                            if (void* ptr = t_mag.pop(bucket_idx, allocator_id_))
+                                return ptr;
+                        }
+
+                        // ── (3) MEDIUM PATH: capped bulk_claim from this slot ───────
+                        // Phase 1 wire-up: bulk_claim_capped sizes the claim to the
+                        // magazine's free capacity. This avoids wasting slots when
+                        // the magazine could only absorb a few of the page's 64
+                        // available pointers.
                         void* batch[BATCH_SIZE];
                         MemoryPage* root = thread_slots_[slot].root_pages[bucket_idx].load(std::memory_order_acquire);
-                        int claimed = pool_.bulk_claim(root, batch, BATCH_SIZE);
+                        size_t cap = t_mag.free_capacity(bucket_idx);
+                        if (cap > BATCH_SIZE) cap = BATCH_SIZE;
+                        int claimed = pool_.bulk_claim_capped(root, batch, static_cast<int>(cap));
 
                         if (claimed > 0)
                         {
@@ -262,14 +327,16 @@ namespace SushiRuntime
                             return batch[0];
                         }
 
-                        // ── SLOW PATH: bu thread'in kendi slotunu genişlet ───────────────
-                        // DİĞER THREAD'LER ETKİLENMEZ — her thread bağımsız expand eder.
-                        // Eski mimaride: 12 thread tek bir expansion_lock için yarışıyor.
-                        // Yeni mimaride: her thread kendi slotunu beklemeksizin expand eder.
+                        // ── (4) SLOW PATH: expand this slot's pages ───────────────────
                         if (allocate_new_page(slot, bucket_idx))
                         {
                             root    = thread_slots_[slot].root_pages[bucket_idx].load(std::memory_order_acquire);
-                            claimed = pool_.bulk_claim(root, batch, BATCH_SIZE);
+                            // After expansion, the magazine is still empty so we can
+                            // safely take the full page worth via bulk_claim. Use the
+                            // capped variant anyway for consistency; cap is unchanged.
+                            cap = t_mag.free_capacity(bucket_idx);
+                            if (cap > BATCH_SIZE) cap = BATCH_SIZE;
+                            claimed = pool_.bulk_claim_capped(root, batch, static_cast<int>(cap));
 
                             if (claimed > 0)
                             {
@@ -293,6 +360,27 @@ namespace SushiRuntime
                     return ptr;
                 }
 
+                /**
+                 * @brief Deallocate a previously-allocated pointer.
+                 *
+                 * The dispatch is determined by which slot owns the page:
+                 *
+                 *  - Local free (the freeing thread's slot owns the page):
+                 *    push onto the local magazine. On magazine-full, drain
+                 *    a partial flush back to the page bitmask (the existing
+                 *    fast path).
+                 *
+                 *  - Remote free (another slot owns the page): push onto the
+                 *    owning slot's remote-free intrusive stack. The push is
+                 *    a single CAS on the stack head, with the next-pointer
+                 *    embedded in the freed memory itself (no node allocation).
+                 *    The owning slot drains this stack on its next allocate,
+                 *    converting the pointers back into magazine entries.
+                 *
+                 *  - Out-of-pool (page_map miss): straight to sycl::free.
+                 *    These are oversized allocations or non-poolable strategy
+                 *    allocations that bypassed the pool entirely.
+                 */
                 void deallocate(void* ptr) override 
                 {
                     if (!ptr) return;
@@ -301,16 +389,38 @@ namespace SushiRuntime
                     
                     if (owner)
                     {
-                        if (t_mag.push(owner->bucket_idx, ptr, allocator_id_)) return;
-                        
-                        for (int i = 0; i < 64; ++i) 
+                        // Determine whether this is a local or remote free.
+                        // owning_slot is set at page creation and never changes,
+                        // so this read is race-free without any synchronization.
+                        const int my_slot = t_pool_slot;
+                        const int page_slot = owner->owning_slot;
+
+                        if (my_slot == page_slot)
                         {
-                            void* flushed_ptr = t_mag.pop(owner->bucket_idx, allocator_id_);
-                            MemoryPage* flushed_owner = page_map_.get(flushed_ptr);
-                            pool_.deallocate_to_page(*flushed_owner, flushed_ptr);
+                            // ── LOCAL FREE: existing magazine fast path ────────
+                            if (t_mag.push(owner->bucket_idx, ptr, allocator_id_)) return;
+
+                            // Magazine full: do a partial drain so that the
+                            // current ptr has a place to go. This is the same
+                            // emergency-flush path as the original code.
+                            for (int i = 0; i < 64; ++i) 
+                            {
+                                void* flushed_ptr = t_mag.pop(owner->bucket_idx, allocator_id_);
+                                if (!flushed_ptr) break;
+                                MemoryPage* flushed_owner = page_map_.get(flushed_ptr);
+                                if (flushed_owner)
+                                    pool_.deallocate_to_page(*flushed_owner, flushed_ptr);
+                            }
+
+                            t_mag.push(owner->bucket_idx, ptr, allocator_id_);
+                            return;
                         }
 
-                        t_mag.push(owner->bucket_idx, ptr, allocator_id_);
+                        // ── REMOTE FREE: push to owning slot's remote stack ────
+                        // Treiber-stack push using the freed memory itself as
+                        // the next-pointer storage. Bucket size is at least
+                        // 128 bytes so 8 bytes for next is always safe.
+                        push_remote_free(page_slot, owner->bucket_idx, ptr);
                         return;
                     }
 
@@ -335,6 +445,9 @@ namespace SushiRuntime
                 static constexpr int BATCH_SIZE = 64;
                 static constexpr int PAGES_PER_EXPANSION = 8;
 
+                /** @brief Per-allocate cap on remote-free drain to bound worst-case latency. */
+                static constexpr int REMOTE_DRAIN_CAP = 256;
+
                 // ----------------------------------------------------------------
                 // Per-thread pool slots: çekişmeyi kökte keser.
                 //
@@ -348,6 +461,14 @@ namespace SushiRuntime
                 //   sycl::malloc_shared çağrıları artık paralel yapılabilir.
                 //
                 // Slot sayısı 64: Ryzen 7600X 12 thread'e karşı 5.3× fazladan marj.
+                //
+                // Phase 2: ThreadPoolSlot now also holds remote_free_head[], an
+                // intrusive Treiber stack of pointers that other threads have
+                // freed but which belong to pages owned by this slot. The slot
+                // owner drains this stack on its next allocate; remote freers
+                // pay only one CAS per free. This eliminates the producer/
+                // consumer p999 spike where the consumer's magazine fills with
+                // foreign pointers and triggers full-magazine flush storms.
                 // ----------------------------------------------------------------
                 static constexpr int MAX_THREAD_SLOTS = 64;
 
@@ -356,12 +477,26 @@ namespace SushiRuntime
                     std::atomic<MemoryPage*> root_pages[NUM_BUCKETS];
                     std::atomic<bool>        expanding[NUM_BUCKETS];
 
+                    /**
+                     * @brief Head of the per-bucket remote-free intrusive stack.
+                     *
+                     * Producers (other threads freeing into this slot) push onto
+                     * this stack via CAS; the next-pointer is stored in the
+                     * freed memory itself. The slot owner drains the entire
+                     * stack with one exchange() on its next allocate.
+                     *
+                     * Padding via the surrounding alignas keeps this off the
+                     * cache lines used by root_pages and expanding.
+                     */
+                    std::atomic<void*> remote_free_head[NUM_BUCKETS];
+
                     ThreadPoolSlot()
                     {
                         for (int i = 0; i < NUM_BUCKETS; ++i)
                         {
                             root_pages[i].store(nullptr, std::memory_order_relaxed);
                             expanding[i].store(false,   std::memory_order_relaxed);
+                            remote_free_head[i].store(nullptr, std::memory_order_relaxed);
                         }
                     }
                 };
@@ -375,12 +510,125 @@ namespace SushiRuntime
                 std::atomic<MemoryPage*> global_pages_[MAX_PAGES] = {nullptr};
                 std::atomic<int>         global_page_count_{0};
 
-                int get_bucket_index(size_t size)
+                inline int get_bucket_index(size_t size)
                 {
-                    if (size <= 128) return 0;
-                    if (size <= 256) return 1;
-                    if (size <= 1024) return 2;
-                    return 3;
+                    // Use hardware-accelerated 'Count Leading Zeros' to find the bucket index in O(1).
+                    // (size-1)|127 ensures all sizes <= 128 map to bit 6, simplifying the LUT.
+                    // The ternary handles size=0 to avoid underflow.
+                    uint64_t val = (size > 0 ? static_cast<uint64_t>(size - 1) : 0) | 127;
+                    int bit = 63 - __builtin_clzll(val);
+                    
+                    // bit 6  (size <= 128)  -> index 0
+                    // bit 7  (size <= 256)  -> index 1
+                    // bit 8-9 (size <= 1024) -> index 2
+                    // bit 10-11 (size <= 4096) -> index 3
+                    // Clamp bit to avoid out-of-bounds if size > 4096
+                    int idx = bit - 6;
+                    if (idx > 5) idx = 5;
+                    
+                    static constexpr int8_t bucket_map[] = {0, 1, 2, 2, 3, 3};
+                    return bucket_map[idx];
+                }
+
+                /**
+                 * @brief Push a pointer onto another slot's remote-free stack.
+                 *
+                 * The freed memory's first 8 bytes are repurposed as the next-
+                 * pointer of the intrusive stack node. This is safe because:
+                 *   1. The minimum bucket size is 128 bytes, so 8 bytes for
+                 *      the next-pointer is always available.
+                 *   2. The freed memory will not be read by the user again
+                 *      until it is reclaimed and re-allocated, at which point
+                 *      the user gets a fresh pointer with no expectation of
+                 *      its prior contents.
+                 *
+                 * Producers (the freeing thread) only do one CAS per free.
+                 * The release ordering on the CAS ensures that any writes to
+                 * the freed memory by the user before deallocate() are visible
+                 * to the slot owner before it observes the new head.
+                 */
+                inline void push_remote_free(int slot, int bucket_idx, void* ptr) noexcept
+                {
+                    auto& head = thread_slots_[slot].remote_free_head[bucket_idx];
+                    void* old_head = head.load(std::memory_order_relaxed);
+                    do {
+                        *static_cast<void**>(ptr) = old_head;
+                    } while (!head.compare_exchange_weak(
+                        old_head, ptr,
+                        std::memory_order_release,
+                        std::memory_order_relaxed));
+                }
+
+                /**
+                 * @brief Drain the slot's own remote-free stack into the magazine.
+                 *
+                 * Called only by the slot owner, on its own slot, so there is
+                 * no contention with other consumers. Producers may continue
+                 * pushing during the drain; their pushes either land on the
+                 * fresh empty stack (post-exchange) or on whatever new head
+                 * exists then. We process exactly the snapshot we exchanged.
+                 *
+                 * Capped at REMOTE_DRAIN_CAP to bound the worst case: a slot
+                 * that has accumulated thousands of remote frees should not
+                 * pay all of them on a single allocate.
+                 */
+                inline void drain_remote_free_into_magazine(int slot, int bucket_idx) noexcept
+                {
+                    void* head = thread_slots_[slot].remote_free_head[bucket_idx].exchange(
+                        nullptr, std::memory_order_acquire);
+
+                    int processed = 0;
+                    while (head && processed < REMOTE_DRAIN_CAP)
+                    {
+                        void* next = *static_cast<void**>(head);
+                        if (!t_mag.push(bucket_idx, head, allocator_id_))
+                        {
+                            // Magazine filled mid-drain. Re-stash the rest
+                            // (including head) on this slot's own remote
+                            // stack so it is picked up by the next allocate
+                            // after the magazine is drained by pops.
+                            requeue_remote_chain(slot, bucket_idx, head);
+                            return;
+                        }
+                        head = next;
+                        ++processed;
+                    }
+
+                    // If we hit REMOTE_DRAIN_CAP with more left, requeue the
+                    // remainder so we don't lose pointers.
+                    if (head)
+                    {
+                        requeue_remote_chain(slot, bucket_idx, head);
+                    }
+                }
+
+                /**
+                 * @brief Push an entire chain back onto the remote-free stack.
+                 *
+                 * Used when drain cannot consume the full snapshot (magazine
+                 * full or drain cap reached). Walks to the tail of the chain
+                 * to splice it onto whatever the current head is.
+                 *
+                 * O(N) in chain length; only called on overflow paths. The
+                 * common case (drain succeeds entirely) does not invoke this.
+                 */
+                inline void requeue_remote_chain(int slot, int bucket_idx, void* chain_head) noexcept
+                {
+                    if (!chain_head) return;
+
+                    // Find tail of the chain we are putting back.
+                    void* tail = chain_head;
+                    while (*static_cast<void**>(tail) != nullptr)
+                        tail = *static_cast<void**>(tail);
+
+                    auto& head_atomic = thread_slots_[slot].remote_free_head[bucket_idx];
+                    void* old_head = head_atomic.load(std::memory_order_relaxed);
+                    do {
+                        *static_cast<void**>(tail) = old_head;
+                    } while (!head_atomic.compare_exchange_weak(
+                        old_head, chain_head,
+                        std::memory_order_release,
+                        std::memory_order_relaxed));
                 }
 
                 bool allocate_new_page(int slot, int bucket_idx)
@@ -417,6 +665,9 @@ namespace SushiRuntime
                         new_page->numa_node_id = numa_id_;
                         new_page->slot_size    = slot_size;
                         new_page->bucket_idx   = bucket_idx;
+                        // Permanently bind the page to its owning slot. This
+                        // identity drives remote-free dispatch in deallocate().
+                        new_page->owning_slot  = slot;
 
                         MemoryPage* old_root = thread_slots_[slot].root_pages[bucket_idx].load(std::memory_order_relaxed);
                         do

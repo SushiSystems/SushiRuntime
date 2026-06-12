@@ -39,6 +39,8 @@ if exist "%CFG_ONEAPI%\setvars.bat" (
 
 set "VCPKG_ROOT=%CFG_VCPKG%"
 set "PATH=%CFG_VCPKG%\installed\%CFG_TRIPLET%\tools\pkgconf;%CFG_VCPKG%;%PATH%"
+set "LIB=%CFG_VCPKG%\..\..\lib;%LIB%"
+set "INCLUDE=%CFG_VCPKG%\..\..\include;%CFG_VCPKG%\..\..\..\include;%INCLUDE%"
 set "CMAKE_TOOLCHAIN_FILE=%CFG_VCPKG%\scripts\buildsystems\vcpkg.cmake"
 
 cd ..\..
@@ -57,7 +59,8 @@ if not exist "build\build.ninja" (
         -DCMAKE_C_COMPILER="%CFG_ICX%" ^
         -DCMAKE_CXX_FLAGS="-fsycl" ^
         -DPKG_CONFIG_EXECUTABLE="%CFG_PKGCONF%" ^
-        -DCMAKE_PREFIX_PATH="%CFG_VCPKG%\installed\%CFG_TRIPLET%"
+        -DCMAKE_PREFIX_PATH="%CFG_VCPKG%\installed\%CFG_TRIPLET%" ^
+        -DSYCL_LIB_SUFFIX=9
 )
 
 echo [INFO] Building...

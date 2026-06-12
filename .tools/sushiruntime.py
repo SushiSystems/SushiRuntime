@@ -49,11 +49,20 @@ class SRPythonManager:
         print(f"\n{Colors.HEADER}--- Docker Build ---{Colors.ENDC}")
         return self._run_command("docker build -t sushiruntime .")
 
-    def docker_run(self):
+    def docker_run(self, admin=False):
         print(f"\n{Colors.HEADER}--- Docker Run ---{Colors.ENDC}")
-        root_path = str(self.root_dir)
-        v_mount = f"{root_path}:/workspace/sushiruntime"
-        return self._run_command(f"docker run -it --rm -v \"{v_mount}\" sushiruntime /bin/bash")
+        script_ext = "bat" if self.os_name == "windows" else "sh"
+        script_path = self.tools_dir / "docker" / f"run.{script_ext}"
+
+        if not script_path.exists():
+            self._print_error(f"Could not find {script_path}")
+            return False
+
+        cmd = f"\"{script_path}\"" if self.os_name == "windows" else f"bash \"{script_path}\""
+        if admin:
+            cmd += " --admin"
+
+        return self._run_command(cmd)
 
     def project_clean(self):
         if self.build_dir.exists():
@@ -81,18 +90,21 @@ class SRPythonManager:
         cmd = f"\"{script_path}\"" if self.os_name == "windows" else f"bash \"{script_path}\""
         return self._run_command(cmd)
 
-    def project_run(self, target=None, sort=False):
+    def project_run(self, target=None, sort=False, extra=None):
         print(f"\n{Colors.HEADER}--- Project Run ---{Colors.ENDC}")
         script_ext = "bat" if self.os_name == "windows" else "sh"
         script_path = self.tools_dir / "project" / f"run.{script_ext}"
-        
+
         cmd = f"\"{script_path}\"" if self.os_name == "windows" else f"bash \"{script_path}\""
-            
+
         if sort:
             cmd += " --sort"
         elif target:
             cmd += f" {target}"
-            
+            # Forward extra args (e.g. --gtest_filter=...) to the executable.
+            if extra:
+                cmd += " " + " ".join(extra)
+
         return self._run_command(cmd)
 
     def project_doxygen(self):
@@ -122,6 +134,7 @@ def main():
     # Docker commands
     docker_parser = subparsers.add_parser("docker", help="Docker environment management")
     docker_parser.add_argument("action", choices=["build", "run"], help="Choose: build | run")
+    docker_parser.add_argument("--admin", action="store_true", help="Run with --privileged and --cap-add=SYS_ADMIN for profiling")
 
     # Project commands
     project_parser = subparsers.add_parser("project", help="C++ code management and execution")
@@ -134,14 +147,16 @@ def main():
         parser.print_help()
         sys.exit(0)
 
-    args = parser.parse_args()
+    # parse_known_args so trailing flags (e.g. --gtest_filter=...) can be
+    # forwarded to the executable instead of being rejected by argparse.
+    args, extra_args = parser.parse_known_args()
 
     if args.category == "docker":
         if args.action == "build": manager.docker_build()
-        elif args.action == "run": manager.docker_run()
+        elif args.action == "run": manager.docker_run(admin=args.admin)
     elif args.category == "project":
         if args.action == "build": manager.project_build(clean=args.clean)
-        elif args.action == "run": manager.project_run(target=args.target, sort=args.sort)
+        elif args.action == "run": manager.project_run(target=args.target, sort=args.sort, extra=extra_args)
         elif args.action == "doxygen": manager.project_doxygen()
         elif args.action == "clean": manager.project_clean()
     else:

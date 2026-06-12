@@ -21,13 +21,14 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/logger.hpp>
 
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
-    // Force logs to stream synchronously during testing to avoid overlap with GTest output.
-    SR_LOGGER_SET_SYNC_MODE(false);
-    
+    // Force logs to stream synchronously during testing to avoid overlap with
+    // GTest output (and the benchmark tables printed to stdout).
+    SR_LOGGER_SET_SYNC_MODE(true);
+
     ::testing::InitGoogleTest(&argc, argv);
-    
+
     int res = RUN_ALL_TESTS();
     SR_LOG_INFO("All tests finished with result: {}", res);
     return res;

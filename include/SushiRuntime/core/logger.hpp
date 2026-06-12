@@ -70,6 +70,24 @@ namespace SushiRuntime
          */
         namespace Detail 
         {
+            /**
+             * @brief Asynchronous log writer with worker thread.
+             *
+             * Shutdown protocol (race-free):
+             *   1. Destructor acquires the mutex.
+             *   2. Sets running_ = false WHILE HOLDING the mutex.
+             *   3. Releases the mutex and notifies the condvar.
+             *   4. Joins the worker.
+             *
+             * Without holding the mutex during the store, the worker could
+             * evaluate its wait-predicate (queue empty AND running_ == true),
+             * decide to sleep, and then park on the condvar AFTER the
+             * destructor's notify_one fires. The notify is then lost and the
+             * worker sleeps forever, deadlocking the join. Holding the mutex
+             * during the store closes that window: the worker is either
+             * still inside the predicate (will re-check and exit), or
+             * already parked (will be woken by the post-unlock notify).
+             */
             class AsyncLogger 
             {
                 private:
@@ -77,23 +95,30 @@ namespace SushiRuntime
                     std::mutex mutex_;
                     std::condition_variable cv_;
                     std::thread worker_;
-                    std::atomic<bool> running_;
+                    bool running_;  // Guarded by mutex_. Was atomic; the atomic
+                                    // gave a false sense of safety because the
+                                    // store/notify pair was not synchronized
+                                    // with the worker's wait predicate.
 
                     void process_logs() 
                     {
-                        while (running_.load(std::memory_order_relaxed)) 
+                        while (true) 
                         {
                             std::unique_lock<std::mutex> lock(mutex_);
                             cv_.wait(lock, [this]() 
                             { 
-                                return !queue_.empty() || !running_.load(std::memory_order_relaxed); 
+                                return !queue_.empty() || !running_; 
                             });
 
+                            // Drain the queue regardless of running_ state, so
+                            // that messages enqueued just before shutdown are
+                            // still flushed. Only exit once the queue is empty
+                            // AND shutdown has been requested.
                             while (!queue_.empty()) 
                             {
                                 auto log_entry = std::move(queue_.front());
                                 queue_.pop();
-                                lock.unlock(); // Unlock while writing to file/terminal
+                                lock.unlock();
 
                                 FILE* stream = (log_entry.first <= LogType::ERR) ? stderr : stdout;
 
@@ -108,8 +133,10 @@ namespace SushiRuntime
                                     fflush(stream);
                                     funlockfile(stream);
                                 #endif
-                                lock.lock(); // Lock again before checking queue
+                                lock.lock();
                             }
+
+                            if (!running_) return;
                         }
                     }
 
@@ -121,7 +148,18 @@ namespace SushiRuntime
 
                     ~AsyncLogger() 
                     {
-                        running_.store(false, std::memory_order_relaxed);
+                        // Set the shutdown flag while holding the mutex. This
+                        // guarantees that when we notify below, any worker
+                        // currently inside cv_.wait is either already parked
+                        // (and the notify will wake it) or has not yet re-
+                        // evaluated the predicate (and will see running_ ==
+                        // false on the next check). Without the lock, the
+                        // store could land between the predicate check and
+                        // the park, and the notify would be lost.
+                        {
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            running_ = false;
+                        }
                         cv_.notify_one();
 
                         if (worker_.joinable()) 
