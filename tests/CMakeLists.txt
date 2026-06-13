@@ -51,15 +51,19 @@ add_executable(sr_functional_tests
 
     functional/unit/test_logger.cpp
     functional/unit/test_topology.cpp
+    functional/unit/test_topology_abstraction.cpp
     functional/unit/test_nvidia_topology.cpp
     functional/unit/test_memory_pool.cpp
     functional/unit/test_affinity.cpp
+    functional/unit/test_numa_steal.cpp
     functional/unit/test_epoch_reclamation.cpp
 
     functional/regression/test_regression.cpp
 
     functional/integration/test_graph.cpp
     functional/integration/test_sycl_execution.cpp
+    functional/integration/test_async_execution.cpp
+    functional/integration/test_heterogeneous_pipeline.cpp
     functional/integration/test_scheduler_integration.cpp
     functional/integration/test_workload_coordinator.cpp
 )
@@ -82,6 +86,8 @@ if(SUSHI_BUILD_BENCHMARKS)
         benchmark/stress/test_epoch_stress.cpp
 
         benchmark/performance/test_allocator_perf.cpp
+        benchmark/performance/test_async_overlap_perf.cpp
+        benchmark/performance/test_steal_locality_perf.cpp
     )
     sushi_configure_test_target(sr_benchmark_tests)
 

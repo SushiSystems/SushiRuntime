@@ -215,26 +215,31 @@ namespace SushiRuntime
             const bool has_device_work = static_cast<bool>(node->work);
             const bool has_host_work = static_cast<bool>(node->host_work);
 
-            if (meta.task_type == TaskType::CUSTOM_HOST) 
-            {
-                node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
-            }
-            else if (has_device_work)
+            // Execution mode is decided by capability + explicit intent:
+            //   * KERNEL — a device_work lambda is present and the task is not
+            //              explicitly marked host-only (CUSTOM_HOST).
+            //   * HOST   — otherwise. A host_work lambda is fully valid, intentional
+            //              work and may itself submit device kernels; the runtime
+            //              cannot introspect the std::function, so choosing host
+            //              mode here is NOT an error and must not warn.
+            if (has_device_work && meta.task_type != TaskType::CUSTOM_HOST)
             {
                 node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::KERNEL;
             }
             else
             {
                 node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
-                if (meta.task_type != TaskType::CUSTOM_HOST)
-                {
-                    SR_LOG_WARN("Semantic task '{}' has no device work; falling back to host execution.", meta.name);
-                }
             }
 
+            // The only genuine defect is a task that carries no executable work at
+            // all. Everything else is a deliberate, supported configuration.
             if (!has_device_work && !has_host_work)
             {
-                SR_LOG_WARN("Semantic task '{}' has neither device work nor host fallback.", meta.name);
+                SR_LOG_WARN("Semantic task '{}' has neither device work nor host fallback — it will be a no-op.", meta.name);
+            }
+            else if (!has_device_work)
+            {
+                SR_LOG_DEBUG("Semantic task '{}' scheduled as host execution (its host_work may still submit device kernels).", meta.name);
             }
             
             // Resolve USM dependencies utilizing Lock-Free Access History

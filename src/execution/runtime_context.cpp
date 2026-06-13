@@ -21,9 +21,12 @@
 #include <map>
 #include <array>
 #include <atomic>
+#include <memory>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -41,8 +44,17 @@ namespace SushiRuntime
          */
         struct RuntimeContext::Impl : public Core::RefCounted
         {
+            /** @brief Injected topology source (discovery + NUMA mapping). [DIP] */
+            std::shared_ptr<Topology::ITopologyProvider> provider;
+
+            /** @brief Injected NUMA distance (SLIT) model. [DIP] */
+            std::shared_ptr<Topology::INumaDistanceModel> distance_model;
+
             /** @brief Hardware inventory. */
             std::vector<HardwareNode> nodes;
+
+            /** @brief Cached logical-core -> NUMA node map (from the provider). */
+            std::vector<int> core_to_numa;
             
             /** @brief Device discovery units: NUMA ID -> queue list. */
             std::map<int, std::vector<sycl::queue>> numa_aware_queues;
@@ -108,9 +120,23 @@ namespace SushiRuntime
             }
         };
 
-        RuntimeContext::RuntimeContext(const Topology::HardwareFilterConfig& config) : impl_(make_sushi<Impl>()) 
+        RuntimeContext::RuntimeContext(const Topology::HardwareFilterConfig& config,
+                                       std::shared_ptr<Topology::ITopologyProvider> provider,
+                                       std::shared_ptr<Topology::INumaDistanceModel> distance_model)
+            : impl_(make_sushi<Impl>())
         {
             SR_LOG_INFO("Initializing compute stack...");
+
+            // Fall back to the real hwloc-backed defaults when nothing is injected.
+            impl_->provider = provider ? std::move(provider)
+                                       : std::make_shared<Topology::HwlocTopologyProvider>();
+            impl_->distance_model = distance_model ? std::move(distance_model)
+                                                   : std::make_shared<Topology::HwlocDistanceModel>();
+
+            // Cache the CPU->NUMA map once; the scheduler reads it to build
+            // hierarchical steal victim orders.
+            impl_->core_to_numa = impl_->provider->cpu_core_to_numa();
+
             probe_hardware(config);
 
             // Construct the ExecutionEngine after hardware is probed so the engine
@@ -129,13 +155,8 @@ namespace SushiRuntime
         {
             try 
             {
-                /** @brief Step 1: hardware discovery - probe SYCL devices. */
-                HardwareDiscovery discovery;
-                impl_->nodes = discovery.probe_all_devices(config);
-
-                /** @brief Step 2: NUMA mapping - map devices to NUMA nodes. */
-                NUMAMapper mapper;
-                mapper.map_distances(impl_->nodes);
+                /** @brief Step 1+2: discovery + NUMA mapping via the injected provider. */
+                impl_->nodes = impl_->provider->enumerate(config);
 
                 /** @brief Step 3: queue configuration - create SYCL queues. */
                 impl_->all_queues.clear();
@@ -277,7 +298,17 @@ namespace SushiRuntime
             }
         }
 
-        void RuntimeContext::wait_all() 
+        int RuntimeContext::numa_distance(int numa_a, int numa_b) const
+        {
+            return impl_->distance_model->distance(numa_a, numa_b);
+        }
+
+        const std::vector<int>& RuntimeContext::cpu_core_to_numa() const
+        {
+            return impl_->core_to_numa;
+        }
+
+        void RuntimeContext::wait_all()
         {
             for (auto& q : impl_->all_queues) 
             {

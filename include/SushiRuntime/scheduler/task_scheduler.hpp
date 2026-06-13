@@ -102,6 +102,22 @@ namespace SushiRuntime
                 /** @brief Cache-line aligned atomic counters for tracking completed tasks per worker. */
                 alignas(Core::CACHE_LINE_SIZE) std::atomic<size_t> worker_completed_tasks[Core::MAX_WORKER_THREADS];
 
+                // --- NUMA-aware hierarchical stealing (built once at construction) ---
+                /** @brief NUMA node of each worker (= node of the core it is pinned to). */
+                std::vector<int> worker_numa_;
+                /** @brief Per-worker steal victim ids ordered by ascending NUMA distance. */
+                std::vector<std::vector<int>> victim_order_;
+                /** @brief Number of leading entries in victim_order_[i] that are node-local. */
+                std::vector<int> local_tier_len_;
+
+                /** @brief Precomputes worker_numa_, victim_order_ and local_tier_len_. */
+                void build_steal_topology();
+
+                /** @brief Successful steals from a node-local victim. */
+                std::atomic<size_t> local_steals_{0};
+                /** @brief Successful steals from a remote-node victim. */
+                std::atomic<size_t> remote_steals_{0};
+
                 /** @brief Executes a single task and tracks its events. */
                 void execute_task(Task* task, EventPolling::ActiveEventList& events);
                 /** @brief Looks for a task to steal from another thread's queue. */
@@ -160,6 +176,18 @@ namespace SushiRuntime
                 size_t get_completion_rate(int worker_id) const override;
 
                 void migrate_tasks(int from_worker_id, int to_worker_id, size_t count) override;
+
+                /**
+                 * @brief Introspection hook (tests): the distance-ordered steal
+                 * victim list for a worker. Leading entries are node-local.
+                 * @return Victim worker ids in the order find_task_to_steal() walks.
+                 */
+                std::vector<int> steal_victim_order(int worker_id) const;
+
+                /** @brief Count of successful steals from a node-local victim. */
+                size_t get_local_steal_count() const  { return local_steals_.load(std::memory_order_relaxed); }
+                /** @brief Count of successful steals that had to cross to a remote node. */
+                size_t get_remote_steal_count() const { return remote_steals_.load(std::memory_order_relaxed); }
         };
 
     } // namespace Scheduler

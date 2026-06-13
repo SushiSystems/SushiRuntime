@@ -24,6 +24,8 @@
 #include <mutex>
 #include <deque>
 #include <atomic>
+#include <random>
+#include <algorithm>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
@@ -167,8 +169,70 @@ namespace SushiRuntime
             {
                 worker_queues[i] = make_sushi<Deque>();
             }
-            
+
+            build_steal_topology();
+
             SR_LOG_INFO("Task scheduler initialized with {} worker queues and threads.", num_workers);
+        }
+
+        /**
+         * @brief Builds the NUMA-aware steal victim table once, at construction.
+         *
+         * For each worker, all other workers are ordered by ascending NUMA
+         * distance from that worker's node (ties broken randomly to spread
+         * contention). Node-local victims therefore lead every list, and
+         * local_tier_len_ records how many of them there are. find_task_to_steal()
+         * then walks the list in order, exhausting the local tier before touching
+         * any remote node. If the provider exposes no CPU topology, every worker
+         * maps to node 0 → a single flat tier == the original NUMA-blind behaviour.
+         */
+        void TaskScheduler::build_steal_topology()
+        {
+            const std::vector<int>& core_to_numa = context.cpu_core_to_numa();
+
+            worker_numa_.assign(num_workers, 0);
+            for (size_t i = 0; i < num_workers; ++i)
+            {
+                // Worker i is pinned to core i (see dispatch_loop), so its node is
+                // the node of core i. Unknown/out-of-range cores fall back to 0.
+                if (i < core_to_numa.size())
+                    worker_numa_[i] = core_to_numa[i];
+            }
+
+            victim_order_.assign(num_workers, {});
+            local_tier_len_.assign(num_workers, 0);
+
+            std::mt19937 rng(0x51515151u);
+            for (size_t th = 0; th < num_workers; ++th)
+            {
+                const int my_node = worker_numa_[th];
+
+                struct Victim { int id; int dist; uint64_t key; };
+                std::vector<Victim> victims;
+                victims.reserve(num_workers > 0 ? num_workers - 1 : 0);
+
+                int local = 0;
+                for (size_t j = 0; j < num_workers; ++j)
+                {
+                    if (j == th) continue;
+                    const int dist = context.numa_distance(my_node, worker_numa_[j]);
+                    victims.push_back({ static_cast<int>(j), dist, rng() });
+                    if (worker_numa_[j] == my_node) ++local;
+                }
+
+                std::sort(victims.begin(), victims.end(),
+                          [](const Victim& a, const Victim& b)
+                          {
+                              if (a.dist != b.dist) return a.dist < b.dist;
+                              return a.key < b.key; // random, stable tie-break
+                          });
+
+                auto& order = victim_order_[th];
+                order.reserve(victims.size());
+                for (const auto& v : victims) order.push_back(v.id);
+
+                local_tier_len_[th] = local;
+            }
         }
 
         void TaskScheduler::start() 
@@ -433,23 +497,60 @@ namespace SushiRuntime
             }
         }
 
-        /** @brief Attempts to find a task to steal from a different thread. */
-        Task* TaskScheduler::find_task_to_steal(int th_id) 
+        /**
+         * @brief Attempts to steal a task, preferring NUMA-local victims.
+         *
+         * Walks the precomputed, distance-ordered victim list for this worker:
+         *   1. Node-local tier first, with a rotating start so idle workers don't
+         *      all hammer the same victim (intra-tier load spreading).
+         *   2. Remote tiers next, in ascending NUMA-distance order, only reached
+         *      once the local tier is exhausted (strict locality policy).
+         * This keeps a task on the node where its data lives, avoiding the remote
+         * memory hop that NUMA-blind stealing would incur.
+         */
+        Task* TaskScheduler::find_task_to_steal(int th_id)
         {
-            // Stealing strategy: Start at a random victim and wrap around.
-            // This spreads the load and reduces contention compared to always starting at 0.
-            static thread_local size_t steal_cursor = static_cast<size_t>(th_id);
-            steal_cursor = (steal_cursor + 1) % num_workers;
-            
-            for (size_t i = 0; i < num_workers; ++i) 
+            if (th_id < 0 || static_cast<size_t>(th_id) >= num_workers)
+                return nullptr;
+
+            const std::vector<int>& order = victim_order_[th_id];
+            const int total = static_cast<int>(order.size());
+            const int local = local_tier_len_[th_id];
+
+            // 1. Local tier with rotating start (only meaningful when local > 0).
+            if (local > 0)
             {
-                size_t victim_id = (steal_cursor + i) % num_workers;
-                if (static_cast<int>(victim_id) == th_id) continue;
-                
-                Task* stolen = worker_queues[victim_id]->steal();
-                if (stolen) return stolen;
+                static thread_local size_t local_cursor = 0;
+                const int start = static_cast<int>(local_cursor++ % static_cast<size_t>(local));
+                for (int k = 0; k < local; ++k)
+                {
+                    const int victim_id = order[(start + k) % local];
+                    if (Task* stolen = worker_queues[victim_id]->steal())
+                    {
+                        local_steals_.fetch_add(1, std::memory_order_relaxed);
+                        return stolen;
+                    }
+                }
             }
+
+            // 2. Remote tiers, already sorted by ascending distance — sequential.
+            for (int k = local; k < total; ++k)
+            {
+                if (Task* stolen = worker_queues[order[k]]->steal())
+                {
+                    remote_steals_.fetch_add(1, std::memory_order_relaxed);
+                    return stolen;
+                }
+            }
+
             return nullptr;
+        }
+
+        std::vector<int> TaskScheduler::steal_victim_order(int worker_id) const
+        {
+            if (worker_id < 0 || static_cast<size_t>(worker_id) >= victim_order_.size())
+                return {};
+            return victim_order_[worker_id];
         }
 
         /** @brief Submits a new task to the main thread's queue. */

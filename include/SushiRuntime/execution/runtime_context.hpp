@@ -29,6 +29,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 
 namespace SushiRuntime
@@ -44,8 +45,24 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API RuntimeContext 
         {
             public:
-                /** @brief Creates a new runtime context and scans for hardware matching the config. */
-                explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {});
+                /**
+                 * @brief Creates a new runtime context and scans for hardware matching the config.
+                 *
+                 * Topology discovery and NUMA distances are injected behind interfaces
+                 * [DIP]. When left null, production defaults are used:
+                 *   - provider       → Topology::HwlocTopologyProvider
+                 *   - distance_model → Topology::HwlocDistanceModel
+                 *
+                 * Tests inject RemappingTopologyProvider / MatrixDistanceModel to
+                 * exercise multi-node behaviour on single-node hardware.
+                 *
+                 * @param config         Device-class filter for discovery.
+                 * @param provider       Topology source (null → Hwloc default).
+                 * @param distance_model NUMA distance source (null → Hwloc default).
+                 */
+                explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {},
+                                        std::shared_ptr<Topology::ITopologyProvider> provider = nullptr,
+                                        std::shared_ptr<Topology::INumaDistanceModel> distance_model = nullptr);
                 
                 /** @brief Destroys the context and frees all resources. */
                 ~RuntimeContext();
@@ -72,6 +89,22 @@ namespace SushiRuntime
                  * @return sycl::queue& Reference to the closest device queue.
                  */
                 sycl::queue& get_numa_local_queue(int numa_id);
+
+                /**
+                 * @brief NUMA latency cost between two nodes, via the injected model.
+                 * @return 10 for local, > 10 for remote (ACPI SLIT convention).
+                 */
+                int numa_distance(int numa_a, int numa_b) const;
+
+                /**
+                 * @brief Logical CPU (core) to NUMA node map, from the topology provider.
+                 *
+                 * Index = logical core id (as used by thread pinning). Used by the
+                 * scheduler to build NUMA-aware steal victim orders. May be empty if
+                 * the provider exposes no CPU topology → callers fall back to a flat
+                 * single-tier policy.
+                 */
+                const std::vector<int>& cpu_core_to_numa() const;
 
                 /**
                  * @brief Returns the main USM allocator for this context.
