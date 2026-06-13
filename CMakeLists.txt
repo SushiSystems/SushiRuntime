@@ -152,6 +152,15 @@ if(SUSHI_ENABLE_CUDA)
                      -Xsycl-target-backend=nvptx64-nvidia-cuda --cuda-gpu-arch=sm_61)
 endif()
 
+# Distributed master-worker layer. OFF by default: when off, none of the
+# distributed sources, headers, or third-party transport deps are compiled, so
+# the standalone single-machine build is completely unaffected (zero overhead,
+# zero extra dependencies). Mirrors the SUSHI_ENABLE_CUDA pattern above.
+option(SUSHI_ENABLE_DISTRIBUTED "Build the master-worker distributed execution layer" OFF)
+if(SUSHI_ENABLE_DISTRIBUTED)
+    message(STATUS "Distributed layer enabled (master-worker offload).")
+endif()
+
 # --- Subdirectories ---
 add_subdirectory(src)
 

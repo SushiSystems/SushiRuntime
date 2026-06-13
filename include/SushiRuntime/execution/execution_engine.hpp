@@ -32,6 +32,10 @@ namespace SushiRuntime
         struct Node;
     }
 
+#ifdef SUSHI_DISTRIBUTED
+    namespace Scheduler { class TaskScheduler; }
+#endif
+
     namespace Execution
     {
         class RuntimeContext;
@@ -136,6 +140,11 @@ struct CompiledGraph
              * Idempotent — safe to call multiple times.
              */
             void shutdown() override;
+
+#ifdef SUSHI_DISTRIBUTED
+            /** @brief Access to the persistent scheduler, so Master mode can attach the coordinator. */
+            SushiRuntime::Scheduler::TaskScheduler& scheduler_ref();
+#endif
 
         private:
             struct Impl;

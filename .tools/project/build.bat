@@ -45,10 +45,22 @@ set "CMAKE_TOOLCHAIN_FILE=%CFG_VCPKG%\scripts\buildsystems\vcpkg.cmake"
 
 cd ..\..
 
-if not exist "build\build.ninja" (
-    echo [INFO] Configuring CMake...
+REM Distributed layer toggle (default OFF), passed in via the SUSHI_ENABLE_DISTRIBUTED
+REM env var by the Python CLI's --distributed flag. It alters Graph::Node's layout
+REM (PUBLIC compile def), so flipping it forces a fresh configure via a stamp file.
+if "%SUSHI_ENABLE_DISTRIBUTED%"=="" set "SUSHI_ENABLE_DISTRIBUTED=OFF"
+set "DIST=%SUSHI_ENABLE_DISTRIBUTED%"
+
+set "NEED_CONFIG=0"
+if not exist "build\build.ninja" set "NEED_CONFIG=1"
+set "PREV_DIST="
+if exist "build\.sushi_dist" set /p PREV_DIST=<"build\.sushi_dist"
+if not "%PREV_DIST%"=="%DIST%" set "NEED_CONFIG=1"
+
+if "%NEED_CONFIG%"=="1" (
+    echo [INFO] Configuring CMake... ^(distributed=%DIST%^)
     if exist build rmdir /s /q build
-    
+
     cmake -B build -G Ninja ^
         -DCMAKE_BUILD_TYPE=Release ^
         -DCMAKE_TOOLCHAIN_FILE="%CMAKE_TOOLCHAIN_FILE%" ^
@@ -60,7 +72,10 @@ if not exist "build\build.ninja" (
         -DCMAKE_CXX_FLAGS="-fsycl" ^
         -DPKG_CONFIG_EXECUTABLE="%CFG_PKGCONF%" ^
         -DCMAKE_PREFIX_PATH="%CFG_VCPKG%\installed\%CFG_TRIPLET%" ^
+        -DSUSHI_ENABLE_DISTRIBUTED=%DIST% ^
         -DSYCL_LIB_SUFFIX=9
+    if not exist build mkdir build
+    echo %DIST%>"build\.sushi_dist"
 )
 
 echo [INFO] Building...

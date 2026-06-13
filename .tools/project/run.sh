@@ -68,7 +68,7 @@ if [[ "$1" == "--sort" ]]; then
     exes=()
     while IFS= read -r line; do
         exes+=("$line")
-    done < <(find "$BUILD_ROOT" -maxdepth 4 -type f -executable ! -path "*/CMakeFiles/*" ! -path "*/vcpkg_installed/*" ! -name "*.cmake" ! -name "*.ninja" ! -name "*.log" ! -name "*.txt" ! -name "*.json" ! -name "*.so*" ! -name "*.a" 2>/dev/null)
+    done < <(find "$BUILD_ROOT" -maxdepth 4 -type f -executable ! -path "*/CMakeFiles/*" ! -name ".*" ! -path "*/vcpkg_installed/*" ! -name "*.cmake" ! -name "*.ninja" ! -name "*.log" ! -name "*.txt" ! -name "*.json" ! -name "*.so*" ! -name "*.a" 2>/dev/null)
     
     if [ ${#exes[@]} -eq 0 ]; then
         echo "[ERROR] No executables found. Please build the project first."
@@ -92,11 +92,11 @@ elif [ -n "$1" ]; then
     # User provided a specific binary name
     QUERY="$1"
     # Search for exact match
-    SELECTED_EXE=$(find "$BUILD_ROOT" -maxdepth 4 -type f -executable ! -path "*/CMakeFiles/*" ! -name "*.cmake" ! -name "*.ninja" ! -name "*.log" ! -name "*.txt" ! -name "*.json" ! -name "*.so*" ! -name "*.a" -name "$QUERY" | head -n 1)
+    SELECTED_EXE=$(find "$BUILD_ROOT" -maxdepth 4 -type f -executable ! -path "*/CMakeFiles/*" ! -name ".*" ! -name "*.cmake" ! -name "*.ninja" ! -name "*.log" ! -name "*.txt" ! -name "*.json" ! -name "*.so*" ! -name "*.a" -name "$QUERY" | head -n 1)
 
     # Fallback to substring search if not found
     if [ -z "$SELECTED_EXE" ]; then
-        SELECTED_EXE=$(find "$BUILD_ROOT" -maxdepth 4 -type f -executable ! -path "*/CMakeFiles/*" ! -name "*.cmake" ! -name "*.ninja" ! -name "*.log" ! -name "*.txt" ! -name "*.json" ! -name "*.so*" ! -name "*.a" -name "*$QUERY*" | head -n 1)
+        SELECTED_EXE=$(find "$BUILD_ROOT" -maxdepth 4 -type f -executable ! -path "*/CMakeFiles/*" ! -name ".*" ! -name "*.cmake" ! -name "*.ninja" ! -name "*.log" ! -name "*.txt" ! -name "*.json" ! -name "*.so*" ! -name "*.a" -name "*$QUERY*" | head -n 1)
     fi
     
     if [ -z "$SELECTED_EXE" ]; then
@@ -110,7 +110,7 @@ else
         exit 1
     fi
     
-    SELECTED_EXE=$(find "$BUILD_ROOT" -maxdepth 4 -type f -executable ! -path "*/CMakeFiles/*" ! -name "*.cmake" ! -name "*.ninja" ! -name "*.log" ! -name "*.txt" ! -name "*.json" ! -name "*.so*" ! -name "*.a" -name "$DEFAULT_BIN" | head -n 1)
+    SELECTED_EXE=$(find "$BUILD_ROOT" -maxdepth 4 -type f -executable ! -path "*/CMakeFiles/*" ! -name ".*" ! -name "*.cmake" ! -name "*.ninja" ! -name "*.log" ! -name "*.txt" ! -name "*.json" ! -name "*.so*" ! -name "*.a" -name "$DEFAULT_BIN" | head -n 1)
 fi
 
 # 4. Final Execution

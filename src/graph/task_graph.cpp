@@ -149,7 +149,52 @@ namespace SushiRuntime
             }
         };
 
-        TaskGraph::TaskGraph(RuntimeContext& ctx) : impl_(make_sushi<Impl>(ctx)) 
+#ifdef SUSHI_DISTRIBUTED
+        /**
+         * @brief Flags nodes that may run on a remote worker (Master mode only).
+         *
+         * A node is offloadable iff it carries a registered OpID the cluster can
+         * run AND every buffer it touches has a serializable handle. Anything
+         * else — and every node in Standalone/Worker mode — stays local, so the
+         * scheduler's offload branch is a no-op for it.
+         */
+        static void stamp_offloadable(SushiRuntime::Execution::CompiledGraph& graph, RuntimeContext& ctx)
+        {
+            if (ctx.distributed_role() != RuntimeContext::RuntimeRole::Master)
+                return;
+
+            for (auto& np : graph.all_nodes)
+            {
+                Node* n = np.get();
+                if (!n || n->metadata.op_id.value == 0) continue;
+                if (!ctx.distributed_supports(n->metadata.op_id)) continue;
+
+                std::vector<SushiRuntime::Distributed::BufferHandle> ins, outs;
+                bool ok = true;
+
+                for (void* p : n->dist_reads_)
+                {
+                    auto h = ctx.distributed_buffer(p);
+                    if (!h) { ok = false; break; }
+                    ins.push_back(*h);
+                }
+                if (ok) for (void* p : n->dist_writes_)
+                {
+                    auto h = ctx.distributed_buffer(p);
+                    if (!h) { ok = false; break; }
+                    outs.push_back(*h);
+                }
+                if (!ok) continue;
+
+                n->offloadable_  = true;
+                n->remote_op_    = n->metadata.op_id;
+                n->in_handles_   = std::move(ins);
+                n->out_handles_  = std::move(outs);
+            }
+        }
+#endif
+
+        TaskGraph::TaskGraph(RuntimeContext& ctx) : impl_(make_sushi<Impl>(ctx))
         {
             SR_LOG_DEBUG("Lock-Free O(1) TaskGraph initialized.");
         }
@@ -243,13 +288,21 @@ namespace SushiRuntime
             }
             
             // Resolve USM dependencies utilizing Lock-Free Access History
-            for(void* ptr : read_access) 
+            for(void* ptr : read_access)
                 if (ptr) impl_->tracker.resolve(node.get(), ptr, false);
-            
-            for(void* ptr : write_access) 
+
+            for(void* ptr : write_access)
                 if (ptr) impl_->tracker.resolve(node.get(), ptr, true);
 
-            SR_LOG_DEBUG("Semantic Node '{}' (Type: {}) added (R: {}, W: {}).", 
+#ifdef SUSHI_DISTRIBUTED
+            // Retain the access lists so compile() can resolve them to serializable
+            // buffer handles for potential offload. The tracker consumes them above
+            // for dependency analysis but does not keep them on the node.
+            node->dist_reads_  = read_access;
+            node->dist_writes_ = write_access;
+#endif
+
+            SR_LOG_DEBUG("Semantic Node '{}' (Type: {}) added (R: {}, W: {}).",
                          meta.name, static_cast<int>(meta.task_type), 
                          read_access.size(), write_access.size());
             
@@ -338,6 +391,10 @@ namespace SushiRuntime
 
             graph.sentinel = std::move(sentinel);
             impl_->tracker.reset(); // Safely clear the lock-free history
+
+#ifdef SUSHI_DISTRIBUTED
+            stamp_offloadable(graph, impl_->context);
+#endif
 
             SR_LOG_INFO("DAG compilation completed successfully.");
             return graph;

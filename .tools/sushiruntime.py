@@ -75,11 +75,18 @@ class SRPythonManager:
         else:
             self._print_info("Build directory does not exist, nothing to clean.")
 
-    def project_build(self, clean=False):
+    def project_build(self, clean=False, distributed=False):
         print(f"\n{Colors.HEADER}--- Project Build ---{Colors.ENDC}")
         if clean:
             self.project_clean()
-            
+
+        # The build scripts read SUSHI_ENABLE_DISTRIBUTED and reconfigure when it
+        # changes (the option alters the Graph::Node ABI). Always set it explicitly
+        # so toggling back to standalone also triggers a clean reconfigure.
+        os.environ["SUSHI_ENABLE_DISTRIBUTED"] = "ON" if distributed else "OFF"
+        if distributed:
+            self._print_info("Distributed master-worker layer: ON")
+
         script_ext = "bat" if self.os_name == "windows" else "sh"
         script_path = self.tools_dir / "project" / f"build.{script_ext}"
         
@@ -142,6 +149,10 @@ def main():
     project_parser.add_argument("target", nargs='?', help="Specific executable name to run (optional)")
     project_parser.add_argument("--clean", action="store_true", help="Delete build folder before build")
     project_parser.add_argument("--sort", action="store_true", help="Show interactive menu to select executable")
+    project_parser.add_argument(
+        "--distributed", nargs="?", const="on", default=None, metavar="ROLE",
+        help="build: enable the distributed master-worker layer. "
+             "run: also forward a role to the app, e.g. --distributed=master | worker.")
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -155,8 +166,16 @@ def main():
         if args.action == "build": manager.docker_build()
         elif args.action == "run": manager.docker_run(admin=args.admin)
     elif args.category == "project":
-        if args.action == "build": manager.project_build(clean=args.clean)
-        elif args.action == "run": manager.project_run(target=args.target, sort=args.sort, extra=extra_args)
+        if args.action == "build":
+            manager.project_build(clean=args.clean, distributed=(args.distributed is not None))
+        elif args.action == "run":
+            # Forward the role (master/worker) to the application itself; the app's
+            # main() decides which RuntimeRole to construct. A bare --distributed
+            # carries no role, so nothing extra is forwarded in that case.
+            run_extra = list(extra_args)
+            if args.distributed is not None and args.distributed != "on":
+                run_extra.append(f"--distributed={args.distributed}")
+            manager.project_run(target=args.target, sort=args.sort, extra=run_extra)
         elif args.action == "doxygen": manager.project_doxygen()
         elif args.action == "clean": manager.project_clean()
     else:

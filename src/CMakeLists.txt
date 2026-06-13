@@ -3,10 +3,21 @@ cmake_minimum_required(VERSION 3.20)
 # --- Gather Sources ---
 # Note: Recursive GLOB is convenient for development but explicit listing is preferred for production stability.
 # For now, GLOB is used to capture new files automatically.
-file(GLOB_RECURSE SRC_FILES 
-    CONFIGURE_DEPENDS 
+file(GLOB_RECURSE SRC_FILES
+    CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 )
+
+# The distributed layer is opt-in. Drop its sources from the default build so
+# the standalone library carries no distributed code unless explicitly enabled.
+file(GLOB_RECURSE DIST_SRC_FILES
+    CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/distributed/*.cpp"
+)
+list(REMOVE_ITEM SRC_FILES ${DIST_SRC_FILES})
+if(SUSHI_ENABLE_DISTRIBUTED)
+    list(APPEND SRC_FILES ${DIST_SRC_FILES})
+endif()
 
 # --- Define Library ---
 add_library(sushiruntime SHARED ${SRC_FILES})
@@ -28,21 +39,39 @@ target_link_libraries(sushiruntime PRIVATE
 )
 
 # --- Compile Definitions ---
-target_compile_definitions(sushiruntime PRIVATE 
-    SUSHIRUNTIME_EXPORTS 
-    NOMINMAX 
+target_compile_definitions(sushiruntime PRIVATE
+    SUSHIRUNTIME_EXPORTS
+    NOMINMAX
     WIN32_LEAN_AND_MEAN
 )
+
+# SUSHI_DISTRIBUTED must be PUBLIC: it changes the layout of Graph::Node (adds
+# offload fields), so the library and every consumer (tests, apps) must agree.
+if(SUSHI_ENABLE_DISTRIBUTED)
+    target_compile_definitions(sushiruntime PUBLIC SUSHI_DISTRIBUTED)
+endif()
 
 
 # --- Apply SYCL to specific source files ---
 # Only files that use SYCL need special compilation flags
+set(SUSHI_SYCL_SOURCES
+    memory/usm_allocator.cpp
+    graph/task_graph.cpp
+    execution/runtime_context.cpp
+)
+if(SUSHI_ENABLE_DISTRIBUTED)
+    # These distributed TUs pull in <sycl/sycl.hpp> (kernels, worker execution,
+    # Node/Task headers) and need SYCL compilation flags under the oneAPI path.
+    list(APPEND SUSHI_SYCL_SOURCES
+        distributed/kernel_registry.cpp
+        distributed/worker_agent.cpp
+        distributed/distributed_coordinator.cpp
+    )
+endif()
+
 add_sycl_to_target(
     TARGET sushiruntime
-    SOURCES
-        memory/usm_allocator.cpp
-        graph/task_graph.cpp
-        execution/runtime_context.cpp
+    SOURCES ${SUSHI_SYCL_SOURCES}
 )
 
 # --- Properties ---

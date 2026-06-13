@@ -31,6 +31,16 @@
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
+#ifdef SUSHI_DISTRIBUTED
+#include <optional>
+#include <SushiRuntime/graph/task_types.hpp>
+#include <SushiRuntime/distributed/protocol.hpp>
+#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/kernel_registry.hpp>
+#include <SushiRuntime/distributed/buffer_registry.hpp>
+#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/distributed_coordinator.hpp>
+#endif
 
 namespace SushiRuntime
 {
@@ -142,6 +152,45 @@ namespace SushiRuntime
                  * @brief Waits for all async operations to finish (global sync).
                  */
                 void wait_all();
+
+#ifdef SUSHI_DISTRIBUTED
+                /**
+                 * @brief Deployment role. Standalone is the default — the runtime
+                 * is a fully offline, single-machine library unless a cluster mode
+                 * is explicitly requested.
+                 */
+                enum class RuntimeRole { Standalone, Master, Worker };
+
+                /**
+                 * @brief Promotes this context to Master mode and wires the cluster.
+                 *
+                 * Creates the buffer registry and the coordinator, installs the
+                 * scheduler completion hook, and starts the transport. Until this is
+                 * called the context behaves exactly as Standalone (zero overhead).
+                 *
+                 * @param transport Connected master-side transport (one peer per worker).
+                 * @param kernels   Registry shared with this binary's kernels.
+                 * @param policy    Offload policy (null → LeastLoadedOffloadPolicy).
+                 */
+                void enable_distributed_master(std::shared_ptr<Distributed::ITransport> transport,
+                                               sushi_ptr<Distributed::KernelRegistry>   kernels,
+                                               std::shared_ptr<Distributed::IOffloadPolicy> policy = nullptr);
+
+                /** @brief Registers a USM buffer as distributable (Master mode). */
+                Distributed::BufferHandle register_distributed_buffer(void* usm_ptr, uint64_t size_bytes);
+
+                /** @brief Bumps a buffer's version after a local write (invalidates remote caches). */
+                void bump_distributed_buffer(void* usm_ptr);
+
+                /** @brief Current handle for a registered pointer (used by compile()). */
+                std::optional<Distributed::BufferHandle> distributed_buffer(void* usm_ptr) const;
+
+                /** @brief True if the cluster can run this OpID (used by compile()). */
+                bool distributed_supports(Graph::OpID op) const;
+
+                /** @brief Current deployment role. */
+                RuntimeRole distributed_role() const;
+#endif
 
             private:
                 struct Impl;

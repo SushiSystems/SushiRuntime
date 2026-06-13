@@ -88,7 +88,7 @@ You can forward GoogleTest flags through the runner, e.g. `... project run sr_be
 
 ### Continuous integration
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the functional suite on every push/PR and the benchmark suite on a nightly schedule, both on Ubuntu with the intel/llvm toolchain.
+GitHub Actions (`.github/workflows/ci.yml`) runs the functional suite on every push/PR and the benchmark suite on a nightly schedule, both on Ubuntu inside the `intel/oneapi-basekit` image (the Intel oneAPI DPC++ `icx`/`icpx` toolchain). The local Docker image (`Dockerfile`) instead uses an intel/llvm open-source build — both SYCL toolchains are supported.
 
 ## How it works
 
@@ -147,6 +147,8 @@ Discovers and describes the machine:
 - `HardwareDiscovery` — enumerates SYCL devices and records name, memory size, compute units, GPU flag, and PCI address for each.
 - `NUMAMapper` — uses hwloc to map each device to its nearest NUMA node and report distances between nodes.
 - `affinity` — pins a thread to a specific CPU core (Windows and POSIX).
+- `ITopologyProvider` / `INumaDistanceModel` — the topology source and the NUMA distance source are injected into `RuntimeContext` behind interfaces. Left null, it uses the production defaults `HwlocTopologyProvider` and `HwlocDistanceModel`.
+- `MatrixDistanceModel` / `RemappingTopologyProvider` — test/diagnostic implementations that let multi-NUMA routing and NUMA-aware work stealing be exercised deterministically on single-node hardware: a hand-built distance matrix plus a decorator that spreads the real devices across a synthetic NUMA layout.
 
 ### Memory (`memory/`)
 Allocation tuned for parallel, heterogeneous workloads:
@@ -180,7 +182,7 @@ Ties hardware and graphs together:
 ```
 include/SushiRuntime/   Public headers (this is the API surface)
   core/                 Ref counting, smart pointer, logger, constants
-  topology/             Hardware discovery, NUMA mapping, thread affinity
+  topology/             Hardware discovery, NUMA mapping, thread affinity, injectable topology/distance providers
   memory/               USM allocator, memory pool, epoch reclamation
   graph/                Task graph, nodes, dependency tracker, task types
   scheduler/            Work-stealing scheduler, tasks, event polling, rebalancer

@@ -29,6 +29,9 @@
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
+#ifdef SUSHI_DISTRIBUTED
+#include <SushiRuntime/distributed/protocol.hpp>
+#endif
 
 namespace SushiRuntime 
 {
@@ -124,6 +127,25 @@ namespace SushiRuntime
             
             /** @brief Flag to indicate if the node is fused with others. */
             bool is_fused = false;
+
+#ifdef SUSHI_DISTRIBUTED
+            /**
+             * @brief Distributed offload metadata, stamped by TaskGraph::compile().
+             *
+             * Only meaningful in Master mode. offloadable_ stays false for the
+             * vast majority of (small, local) tasks, so the scheduler's hot path
+             * pays just a single bool load before falling through to local exec.
+             */
+            bool offloadable_ = false;
+            /** @brief Remote kernel id used when offloading (valid iff offloadable_). */
+            OpID remote_op_;
+            /** @brief Serializable handles for the buffers this node reads / writes. */
+            std::vector<SushiRuntime::Distributed::BufferHandle> in_handles_;
+            std::vector<SushiRuntime::Distributed::BufferHandle> out_handles_;
+            /** @brief Raw read/write USM pointers retained so compile() can resolve handles. */
+            std::vector<void*> dist_reads_;
+            std::vector<void*> dist_writes_;
+#endif
 
             /**
              * @brief Adds a successor node in a lock-free way.

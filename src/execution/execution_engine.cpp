@@ -105,6 +105,13 @@ namespace SushiRuntime
             impl_->do_shutdown();
         }
 
+#ifdef SUSHI_DISTRIBUTED
+        SushiRuntime::Scheduler::TaskScheduler& ExecutionEngine::scheduler_ref()
+        {
+            return impl_->scheduler;
+        }
+#endif
+
         /**
          * @brief Executes a compiled graph on the persistent worker pool.
          *

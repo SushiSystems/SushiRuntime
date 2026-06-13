@@ -33,6 +33,10 @@
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#ifdef SUSHI_DISTRIBUTED
+#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/distributed/distributed_coordinator.hpp>
+#endif
 
 namespace SushiRuntime
 {
@@ -411,17 +415,36 @@ namespace SushiRuntime
                     if (!task) 
                         task = find_task_to_steal(thread_id);
 
-                    if (task) 
+                    if (task)
                     {
-                        spin_count = 0; 
+                        spin_count = 0;
                         if (task->is_splittable())
                         {
                             if (auto split_chunk = task->split())
                                 my_queue->push(split_chunk.value().leak());
                         }
 
+#ifdef SUSHI_DISTRIBUTED
+                        // Offload branch: a single bool load for the overwhelming
+                        // majority of (local) tasks. Only nodes that compile()
+                        // stamped offloadable, in Master mode, ever reach the
+                        // coordinator. On a successful offload the scheduling ref
+                        // is transferred to the coordinator (released when the
+                        // remote result fires complete_offloaded_node), so we must
+                        // neither execute nor release it here.
+                        bool offloaded = false;
+                        if (coordinator_ && task->is_graph_node())
+                        {
+                            auto* gnode = static_cast<SushiRuntime::Graph::Node*>(task);
+                            if (gnode->offloadable_) [[unlikely]]
+                                offloaded = coordinator_->try_offload(gnode);
+                        }
+                        if (!offloaded)
+                            execute_task(task, active_events);
+#else
                         execute_task(task, active_events);
-                    } 
+#endif
+                    }
                 }
 
                 if (!task) 
@@ -622,6 +645,38 @@ namespace SushiRuntime
                 pending_cv.notify_all(); 
             }
         }
+
+#ifdef SUSHI_DISTRIBUTED
+        void TaskScheduler::complete_offloaded_node(Graph::Node* node, bool /*success*/)
+        {
+            if (!node) return;
+
+            // Mirror EventPolling::trigger_successors, but route ready successors
+            // through submit() (thread-safe injector) since this runs on the
+            // coordinator's transport thread, not a worker thread.
+            int32_t count   = node->inline_successor_count.load(std::memory_order_acquire);
+            int32_t max_idx = std::min(count, SushiRuntime::Graph::Node::MAX_INLINE_SUCCESSORS);
+            for (int32_t i = 0; i < max_idx; ++i)
+            {
+                auto* succ = node->inline_successors[i];
+                if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                    submit(succ);
+            }
+
+            auto* curr = node->successor_list.load(std::memory_order_acquire);
+            while (curr)
+            {
+                auto* succ = curr->target;
+                if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                    submit(succ);
+                curr = curr->next;
+            }
+
+            // Drop the scheduling reference that was transferred to the
+            // coordinator when the node was offloaded.
+            node->release();
+        }
+#endif
 
     } // namespace Scheduler
 } // namespace SushiRuntime

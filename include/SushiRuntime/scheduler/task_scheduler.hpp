@@ -36,13 +36,18 @@
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
-namespace SushiRuntime 
+namespace SushiRuntime
 {
     /** @brief Forward declaration to allow friend access without full include. */
-    namespace Graph 
-    { 
-        class TaskGraph; 
+    namespace Graph
+    {
+        class TaskGraph;
+        struct Node;
     }
+
+#ifdef SUSHI_DISTRIBUTED
+    namespace Distributed { class DistributedCoordinator; }
+#endif
 
     namespace Scheduler 
     {
@@ -188,6 +193,31 @@ namespace SushiRuntime
                 size_t get_local_steal_count() const  { return local_steals_.load(std::memory_order_relaxed); }
                 /** @brief Count of successful steals that had to cross to a remote node. */
                 size_t get_remote_steal_count() const { return remote_steals_.load(std::memory_order_relaxed); }
+
+#ifdef SUSHI_DISTRIBUTED
+                /**
+                 * @brief Attaches the master-side coordinator (Master mode only).
+                 *
+                 * Null in Standalone/Worker mode → the dispatch loop never takes the
+                 * offload branch, so the local hot path is unchanged.
+                 */
+                void set_coordinator(Distributed::DistributedCoordinator* c) { coordinator_ = c; }
+
+                /**
+                 * @brief Releases an offloaded node's successors once its remote
+                 * result arrives — the network equivalent of EventPolling firing.
+                 *
+                 * Installed as the coordinator's completion hook. Uses submit() so
+                 * it is safe to invoke from the transport thread.
+                 */
+                void complete_offloaded_node(Graph::Node* node, bool success);
+#endif
+
+            private:
+#ifdef SUSHI_DISTRIBUTED
+                /** @brief Master-side offload brain; null unless in Master mode. */
+                Distributed::DistributedCoordinator* coordinator_ = nullptr;
+#endif
         };
 
     } // namespace Scheduler

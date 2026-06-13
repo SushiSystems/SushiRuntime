@@ -152,7 +152,7 @@ namespace SushiRuntime
                     if (mid <= s || (end_ - mid) < 1024) return std::nullopt;
 
                     if (start_.compare_exchange_strong(s, mid, std::memory_order_acq_rel)) 
-                        return make_sushi<RangeTask>(mid, end_, kernel_func_);
+                        return make_sushi<RangeTask>(s, mid, kernel_func_);
                     
                     return std::nullopt;
                 }

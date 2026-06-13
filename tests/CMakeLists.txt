@@ -57,6 +57,10 @@ add_executable(sr_functional_tests
     functional/unit/test_affinity.cpp
     functional/unit/test_numa_steal.cpp
     functional/unit/test_epoch_reclamation.cpp
+    functional/unit/test_ref_counted.cpp
+    functional/unit/test_range_task.cpp
+    functional/unit/test_dependency_tracker.cpp
+    functional/unit/test_thermal_rebalance.cpp
 
     functional/regression/test_regression.cpp
 
@@ -66,7 +70,17 @@ add_executable(sr_functional_tests
     functional/integration/test_heterogeneous_pipeline.cpp
     functional/integration/test_scheduler_integration.cpp
     functional/integration/test_workload_coordinator.cpp
+    functional/integration/test_device_pipeline.cpp
 )
+# Distributed layer tests only exist when the layer is built. They are
+# hardware-free (protocol / in-process transport / registries), so they stay in
+# the fast functional lane.
+if(SUSHI_ENABLE_DISTRIBUTED)
+    target_sources(sr_functional_tests PRIVATE
+        functional/unit/test_distributed.cpp
+    )
+endif()
+
 sushi_configure_test_target(sr_functional_tests)
 
 gtest_discover_tests(sr_functional_tests

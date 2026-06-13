@@ -29,6 +29,9 @@
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#ifdef SUSHI_DISTRIBUTED
+#include <SushiRuntime/scheduler/task_scheduler.hpp>
+#endif
 
 namespace SushiRuntime
 {
@@ -75,6 +78,15 @@ namespace SushiRuntime
              */
             std::unique_ptr<ExecutionEngine> engine;
 
+#ifdef SUSHI_DISTRIBUTED
+            /** @brief Deployment role; Standalone unless explicitly promoted. */
+            RuntimeContext::RuntimeRole role = RuntimeContext::RuntimeRole::Standalone;
+            /** @brief Master-side buffer id registry (created in Master mode). */
+            std::unique_ptr<Distributed::BufferRegistry> buffers;
+            /** @brief Master-side offload coordinator (created in Master mode). */
+            std::unique_ptr<Distributed::DistributedCoordinator> coordinator;
+#endif
+
             Impl()
             {
                 for (size_t i = 0; i < Core::MAX_NUMA_NODES; ++i)
@@ -96,6 +108,16 @@ namespace SushiRuntime
                 //
                 //  3. Release NUMA allocators.
                 // --------------------------------------------------------
+
+#ifdef SUSHI_DISTRIBUTED
+                // Stop the network first so no late remote completion can touch the
+                // scheduler while/after it is being torn down.
+                if (coordinator)
+                {
+                    coordinator->stop();
+                    coordinator.reset();
+                }
+#endif
 
                 if (engine)
                 {
@@ -329,6 +351,68 @@ namespace SushiRuntime
                 impl_->engine->shutdown();
             }
         }
+
+#ifdef SUSHI_DISTRIBUTED
+        void RuntimeContext::enable_distributed_master(
+            std::shared_ptr<Distributed::ITransport> transport,
+            sushi_ptr<Distributed::KernelRegistry>   kernels,
+            std::shared_ptr<Distributed::IOffloadPolicy> policy)
+        {
+            SR_THROW_IF(!transport, "enable_distributed_master requires a transport.");
+            SR_THROW_IF(!impl_->engine, "ExecutionEngine must be initialized before Master mode.");
+
+            if (!policy)
+                policy = std::make_shared<Distributed::LeastLoadedOffloadPolicy>();
+
+            impl_->buffers = std::make_unique<Distributed::BufferRegistry>();
+            impl_->coordinator = std::make_unique<Distributed::DistributedCoordinator>(
+                std::move(kernels), *impl_->buffers, std::move(transport), std::move(policy));
+
+            // Wire the completion hook to the persistent scheduler, then attach
+            // the coordinator so the dispatch loop's offload branch goes live.
+            auto& sched = impl_->engine->scheduler_ref();
+            impl_->coordinator->set_completion_hook(
+                [&sched](Graph::Node* node, bool success)
+                {
+                    sched.complete_offloaded_node(node, success);
+                });
+
+            impl_->coordinator->start();
+            sched.set_coordinator(impl_->coordinator.get());
+            impl_->role = RuntimeRole::Master;
+
+            SR_LOG_INFO("RuntimeContext promoted to distributed Master mode.");
+        }
+
+        Distributed::BufferHandle RuntimeContext::register_distributed_buffer(void* usm_ptr, uint64_t size_bytes)
+        {
+            SR_THROW_IF(!impl_->buffers, "register_distributed_buffer requires Master mode.");
+            return impl_->buffers->register_buffer(usm_ptr, size_bytes);
+        }
+
+        void RuntimeContext::bump_distributed_buffer(void* usm_ptr)
+        {
+            if (impl_->buffers)
+                impl_->buffers->bump_version(usm_ptr);
+        }
+
+        std::optional<Distributed::BufferHandle> RuntimeContext::distributed_buffer(void* usm_ptr) const
+        {
+            if (!impl_->buffers)
+                return std::nullopt;
+            return impl_->buffers->lookup(usm_ptr);
+        }
+
+        bool RuntimeContext::distributed_supports(Graph::OpID op) const
+        {
+            return impl_->coordinator && impl_->coordinator->supports(op);
+        }
+
+        RuntimeContext::RuntimeRole RuntimeContext::distributed_role() const
+        {
+            return impl_->role;
+        }
+#endif
 
     } // namespace Execution
 } // namespace SushiRuntime
