@@ -78,6 +78,7 @@ add_executable(sr_functional_tests
 if(SUSHI_ENABLE_DISTRIBUTED)
     target_sources(sr_functional_tests PRIVATE
         functional/unit/test_distributed.cpp
+        functional/integration/test_distributed_e2e.cpp
     )
 endif()
 

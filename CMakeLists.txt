@@ -164,6 +164,10 @@ endif()
 # --- Subdirectories ---
 add_subdirectory(src)
 
+# Example apps (currently the distributed master/worker demo). The subdir only
+# adds targets when SUSHI_ENABLE_DISTRIBUTED is on, so standalone is unaffected.
+add_subdirectory(examples)
+
 # --- Testing ---
 enable_testing()
 

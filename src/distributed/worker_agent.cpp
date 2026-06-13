@@ -178,6 +178,25 @@ namespace SushiRuntime
                 sycl::event e = (*kernel)(ctx.get_queue(0), in_ptrs, out_ptrs, msg.meta);
                 e.wait();
                 result.outputs = msg.outputs; // new versions now live on this worker
+
+                // Eager result writeback (v1): push each output's bytes back to
+                // the master so leaf results are visible without a later pull.
+                // (A lazy, pull-when-needed path is a future optimization.)
+                for (const auto& h : msg.outputs)
+                {
+                    BufferPushMsg push;
+                    push.handle = h;
+                    {
+                        std::lock_guard<std::mutex> lk(cache_mtx);
+                        auto it = cache.find(h.id.value);
+                        if (it != cache.end() && it->second.ptr)
+                        {
+                            push.data.resize(it->second.size);
+                            std::memcpy(push.data.data(), it->second.ptr, it->second.size);
+                        }
+                    }
+                    transport->send(0, MsgType::BUFFER_PUSH, push.serialize());
+                }
             }
             catch (...)
             {

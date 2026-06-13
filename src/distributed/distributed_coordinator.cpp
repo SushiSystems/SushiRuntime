@@ -51,6 +51,10 @@ namespace SushiRuntime
             std::unordered_map<uint64_t, Graph::Node*> pending; // task_id -> node
             std::atomic<uint64_t>            next_task_id{1};
 
+            // "ran where" telemetry, so silent local fallback is observable.
+            std::atomic<uint64_t>            offloaded_count{0};
+            std::atomic<uint64_t>            declined_count{0};
+
             void handle_message(int peer, MsgType type, std::span<const std::byte> payload);
         };
 
@@ -93,6 +97,19 @@ namespace SushiRuntime
                         std::memcpy(push.data.data(), e->ptr, e->handle.size_bytes);
                         auto bytes = push.serialize();
                         transport->send(peer, MsgType::BUFFER_PUSH, bytes);
+                    }
+                    break;
+                }
+                case MsgType::BUFFER_PUSH:
+                {
+                    // Worker writing an output result back into the master's
+                    // authoritative buffer (eager writeback on completion).
+                    auto push = BufferPushMsg::deserialize(payload);
+                    if (auto e = buffers->lookup_by_id(push.handle.id))
+                    {
+                        uint64_t n = push.data.size();
+                        if (n > e->handle.size_bytes) n = e->handle.size_bytes;
+                        std::memcpy(e->ptr, push.data.data(), n);
                     }
                     break;
                 }
@@ -146,6 +163,24 @@ namespace SushiRuntime
         void DistributedCoordinator::set_completion_hook(CompletionHook hook)
         {
             impl_->on_complete = std::move(hook);
+        }
+
+        uint64_t DistributedCoordinator::offloaded_count() const
+        {
+            return impl_->offloaded_count.load(std::memory_order_relaxed);
+        }
+
+        uint64_t DistributedCoordinator::declined_count() const
+        {
+            return impl_->declined_count.load(std::memory_order_relaxed);
+        }
+
+        int DistributedCoordinator::alive_worker_count() const
+        {
+            std::lock_guard<std::mutex> lk(impl_->mtx);
+            int n = 0;
+            for (const auto& w : impl_->workers) if (w.alive) ++n;
+            return n;
         }
 
         bool DistributedCoordinator::supports(Graph::OpID op) const
@@ -202,7 +237,11 @@ namespace SushiRuntime
             {
                 std::lock_guard<std::mutex> lk(impl_->mtx);
                 auto pick = impl_->policy->pick_worker(*node, impl_->workers, est_bytes);
-                if (!pick) return false; // transparent local fallback
+                if (!pick)
+                {
+                    impl_->declined_count.fetch_add(1, std::memory_order_relaxed);
+                    return false; // transparent local fallback
+                }
                 chosen = *pick;
 
                 msg.task_id = impl_->next_task_id.fetch_add(1, std::memory_order_relaxed);
@@ -213,6 +252,9 @@ namespace SushiRuntime
 
             auto bytes = msg.serialize();
             impl_->transport->send(chosen, MsgType::TASK_DISPATCH, bytes);
+            impl_->offloaded_count.fetch_add(1, std::memory_order_relaxed);
+            SR_LOG_INFO("Task {} ({}) offloaded to worker {}.",
+                        msg.task_id, node->metadata.name, chosen);
             return true;
         }
 

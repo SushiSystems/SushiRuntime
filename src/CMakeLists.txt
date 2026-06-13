@@ -49,6 +49,10 @@ target_compile_definitions(sushiruntime PRIVATE
 # offload fields), so the library and every consumer (tests, apps) must agree.
 if(SUSHI_ENABLE_DISTRIBUTED)
     target_compile_definitions(sushiruntime PUBLIC SUSHI_DISTRIBUTED)
+    # The raw-socket TCP transport needs Winsock on Windows.
+    if(WIN32)
+        target_link_libraries(sushiruntime PRIVATE ws2_32)
+    endif()
 endif()
 
 

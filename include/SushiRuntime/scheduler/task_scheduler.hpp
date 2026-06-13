@@ -201,7 +201,7 @@ namespace SushiRuntime
                  * Null in Standalone/Worker mode → the dispatch loop never takes the
                  * offload branch, so the local hot path is unchanged.
                  */
-                void set_coordinator(Distributed::DistributedCoordinator* c) { coordinator_ = c; }
+                void set_coordinator(Distributed::DistributedCoordinator* c);
 
                 /**
                  * @brief Releases an offloaded node's successors once its remote

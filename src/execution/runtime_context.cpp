@@ -412,6 +412,21 @@ namespace SushiRuntime
         {
             return impl_->role;
         }
+
+        uint64_t RuntimeContext::distributed_offloaded_count() const
+        {
+            return impl_->coordinator ? impl_->coordinator->offloaded_count() : 0;
+        }
+
+        uint64_t RuntimeContext::distributed_declined_count() const
+        {
+            return impl_->coordinator ? impl_->coordinator->declined_count() : 0;
+        }
+
+        int RuntimeContext::distributed_alive_workers() const
+        {
+            return impl_->coordinator ? impl_->coordinator->alive_worker_count() : 0;
+        }
 #endif
 
     } // namespace Execution

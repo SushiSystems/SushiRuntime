@@ -7,6 +7,7 @@ It is built around three ideas:
 - **Automatic dependency tracking.** You don't wire up dependencies by hand. Tasks declare their memory accesses, and the runtime detects read-after-write, write-after-read, and write-after-write hazards for you.
 - **Topology awareness.** The runtime discovers your hardware (CPUs, GPUs, NUMA nodes) and maps devices to the NUMA nodes they are physically attached to, so work and memory can stay close together.
 - **Lock-free hot paths.** Scheduling, dependency resolution, reference counting, and memory reclamation use atomics instead of mutexes wherever it matters, to keep contention and latency low under heavy load.
+- **Optional distributed offload.** An opt-in master-worker layer can offload individual tasks to remote machines over a thin TCP layer (no MPI). It is off by default — the runtime is a fully offline, single-machine library unless you explicitly turn it on. See [Distributed execution](#distributed-execution-optional).
 
 ## Requirements
 
@@ -56,6 +57,8 @@ cmake --build build --config Release
 On Windows, also pass the vcpkg toolchain file and the `icx-cl` compiler. The `CMakeLists.txt` will try to auto-detect a vcpkg install at `C:/vcpkg` and Intel oneAPI under `C:/Program Files (x86)/Intel/oneAPI` if you don't override them.
 
 To target NVIDIA GPUs through SYCL's CUDA backend, configure with `-DSUSHI_ENABLE_CUDA=ON` (currently tuned for Pascal / `sm_61`).
+
+To build the optional distributed master-worker layer, configure with `-DSUSHI_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the wrapper (`sr project build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
 
 ### Docker
 
@@ -177,6 +180,15 @@ Ties hardware and graphs together:
 - `RuntimeContext` — the top-level owner. Holds devices, queues, USM allocators, and the execution engine. Uses the Pimpl pattern for a stable ABI. Gives you queues by index or by NUMA node, and tears everything down in the right order on shutdown.
 - `IExecutionEngine` / `ExecutionEngine` — the execution strategy. The default engine drives a persistent `TaskScheduler`: it injects the graph's root nodes, runs until a sentinel completion node fires, and blocks until the whole graph is done. The interface makes it possible to plug in alternative strategies (dry-run, profiling, replay) without touching `TaskGraph` or `RuntimeContext`.
 
+### Distributed (`distributed/`, optional — `SUSHI_ENABLE_DISTRIBUTED`)
+An opt-in master-worker layer that offloads individual tasks to remote workers. It is guarded so a standalone build compiles none of it.
+- The key idea: **compiled code can't travel the wire**, so nothing is serialized except references. A task ships its `OpID` (a kernel already compiled into every node) plus `GlobalBufferID`+version handles; each worker resolves those to its own local USM. Closures and pointers never cross the network.
+- `ITransport` abstracts the wire: `InProcessTransport` runs the full multi-node protocol on a single machine (the network analogue of `RemappingTopologyProvider`), and `TcpTransport` is a dependency-free raw-socket transport (POSIX + Winsock) for a real cluster.
+- `DistributedCoordinator` (master) decides what to offload via a swappable `IOffloadPolicy`, serves a stateful, pull-based, master-authoritative buffer cache (a write auto-bumps a version, so stale worker caches re-pull), and releases a node's successors when its remote result arrives. `WorkerAgent` (worker) is a thin network shell around a normal local `RuntimeContext`, so the existing NUMA-aware scheduler runs the offloaded work.
+- Integration with the core is minimal and guarded: `TaskGraph::compile()` stamps which nodes are offloadable, and the scheduler's hot path adds a single `[[unlikely]]` branch — non-offloaded tasks pay nothing. An offloadable task whose policy declines falls back to local execution transparently.
+
+See [Distributed execution](#distributed-execution-optional) for how to run it, and `Idea.md` for the feature tracker.
+
 ## Project layout
 
 ```
@@ -187,7 +199,9 @@ include/SushiRuntime/   Public headers (this is the API surface)
   graph/                Task graph, nodes, dependency tracker, task types
   scheduler/            Work-stealing scheduler, tasks, event polling, rebalancer
   execution/            Runtime context, execution engine
+  distributed/          Optional master-worker offload (protocol, transports, registries, coordinator, worker agent)
 src/                    Implementations of the above
+examples/               Sample apps (distributed master/worker demo; distributed builds only)
 tests/
   common/               Shared GoogleTest entry point and helpers
   functional/           unit / regression / integration (fast, CI)
@@ -196,12 +210,35 @@ tests/
 .github/workflows/      CI: functional tests per push, benchmarks nightly
 docs/                   Changelog, TODO, and guides
 Dockerfile              CUDA + intel/llvm SYCL build environment
-Idea.md                 Design notes for a future distributed (master-worker) mode
+Idea.md                 Distributed master-worker feature tracker (status + remaining work)
+```
+
+## Distributed execution (optional)
+
+A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSUSHI_ENABLE_DISTRIBUTED=ON` / `sr project build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design, and `Idea.md` for the feature tracker and remaining hardening work.
+
+The same binary runs in either role; the `sr` CLI forwards `--distributed=master|worker` to your application's `main()`, which constructs the `RuntimeContext` accordingly. A runnable demo (`examples/distributed_demo.cpp` → `sr_distributed_demo`) offloads a vector-add across one or more workers:
+
+```bash
+sr project build --distributed
+
+# Two processes on one host (worker retries until the master is up):
+sr project run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555 &
+sr project run sr_distributed_demo --distributed=master --port=5555 --workers=1
+
+# Across machines: run the master on one box and point each worker's
+# --master at the master's IP.
+```
+
+The distributed tests (protocol, transports, buffer coherence, and SYCL end-to-end offload including multi-worker fan-out and TCP loopback) are part of the functional suite when the layer is enabled:
+
+```bash
+sr project run sr_functional_tests --gtest_filter='Distributed*'
 ```
 
 ## Roadmap
 
-`Idea.md` sketches a planned distributed execution mode: a lightweight master-worker design that offloads individual tasks to remote workers over a thin network layer (ZeroMQ or Asio) when local resources are saturated, without pulling in a heavyweight dependency like MPI. This is a design proposal, not yet implemented.
+The core distributed layer is implemented and verified; remaining work is production hardening (worker-death resilience, reconnect, pipelining, and running offloaded work through the worker's own NUMA-aware scheduler). `Idea.md` tracks the full status and the prioritized remaining items.
 
 ## License
 

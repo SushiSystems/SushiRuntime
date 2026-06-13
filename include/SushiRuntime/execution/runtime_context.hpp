@@ -190,6 +190,15 @@ namespace SushiRuntime
 
                 /** @brief Current deployment role. */
                 RuntimeRole distributed_role() const;
+
+                /** @brief Tasks shipped to workers so far (Master mode telemetry; 0 otherwise). */
+                uint64_t distributed_offloaded_count() const;
+
+                /** @brief Offloadable tasks the policy kept local (Master mode telemetry). */
+                uint64_t distributed_declined_count() const;
+
+                /** @brief Number of live (registered) workers in the cluster. */
+                int distributed_alive_workers() const;
 #endif
 
             private:

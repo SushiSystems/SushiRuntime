@@ -647,9 +647,39 @@ namespace SushiRuntime
         }
 
 #ifdef SUSHI_DISTRIBUTED
+        void TaskScheduler::set_coordinator(Distributed::DistributedCoordinator* c)
+        {
+            coordinator_ = c;
+
+            // In Master mode, bump the version of every registered buffer a
+            // locally-completed node wrote. Combined with the DAG ordering, this
+            // means any dependent task (notably an offloaded reader) is dispatched
+            // only after the version reflects the write — so a stale worker cache
+            // is forced to re-pull. Offloaded writers are handled symmetrically in
+            // complete_offloaded_node(). This is the automatic counterpart to the
+            // manual bump_distributed_buffer() API.
+            if (c)
+            {
+                event_poller.set_completion_observer(
+                    [this](Task* t)
+                    {
+                        if (!t || !t->is_graph_node()) return;
+                        auto* n = static_cast<SushiRuntime::Graph::Node*>(t);
+                        for (void* p : n->dist_writes_)
+                            context.bump_distributed_buffer(p);
+                    });
+            }
+        }
+
         void TaskScheduler::complete_offloaded_node(Graph::Node* node, bool /*success*/)
         {
             if (!node) return;
+
+            // The offloaded write landed back in the master's authoritative buffer
+            // (eager writeback) before this fired; advance its version so later
+            // dependents re-pull, mirroring the local-completion observer.
+            for (void* p : node->dist_writes_)
+                context.bump_distributed_buffer(p);
 
             // Mirror EventPolling::trigger_successors, but route ready successors
             // through submit() (thread-safe injector) since this runs on the

@@ -24,6 +24,7 @@
 #include <atomic>
 #include <thread>
 #include <vector>
+#include <functional>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/core/export.hpp>
@@ -77,7 +78,24 @@ namespace SushiRuntime
                     }
                 };
 
+#ifdef SUSHI_DISTRIBUTED
+                /**
+                 * @brief Installs an observer fired for each completed task.
+                 *
+                 * Used in Master mode to bump the versions of any registered
+                 * buffers the completed node wrote, keeping remote caches coherent.
+                 */
+                void set_completion_observer(std::function<void(SushiRuntime::Scheduler::Task*)> cb)
+                {
+                    on_node_complete_ = std::move(cb);
+                }
+#endif
+
             private:
+#ifdef SUSHI_DISTRIBUTED
+                /** @brief Optional per-completion observer (Master mode only). */
+                std::function<void(SushiRuntime::Scheduler::Task*)> on_node_complete_;
+#endif
                 /** @brief Counter for adaptive backoff strategy. */
                 size_t backoff_counter = 0;
                 /** @brief Maximum value for the backoff counter. */
@@ -111,8 +129,15 @@ namespace SushiRuntime
                     for (size_t i = 0; i < active_events.count; ) 
                     {
                         auto status = active_events.events[i].event.get_info<sycl::info::event::command_execution_status>();
-                        if (status == sycl::info::event_command_status::complete) 
+                        if (status == sycl::info::event_command_status::complete)
                         {
+#ifdef SUSHI_DISTRIBUTED
+                            // Observe completion before releasing successors, so a
+                            // write's version bump is visible to any dependent task
+                            // (e.g. an offloaded reader) by the time it is dispatched.
+                            if (on_node_complete_)
+                                on_node_complete_(active_events.events[i].task);
+#endif
                             trigger_successors(active_events.events[i].task, local_queue);
 
                             if (active_events.events[i].task)

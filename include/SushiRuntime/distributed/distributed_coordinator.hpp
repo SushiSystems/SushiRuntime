@@ -105,6 +105,14 @@ namespace SushiRuntime
                  */
                 bool try_offload(Graph::Node* node);
 
+                /** @brief Tasks actually shipped to a worker (telemetry). */
+                uint64_t offloaded_count() const;
+                /** @brief Offloadable tasks the policy kept local (telemetry). */
+                uint64_t declined_count() const;
+
+                /** @brief Number of workers that have registered (HELLO) and are live. */
+                int alive_worker_count() const;
+
             private:
                 struct Impl;
                 sushi_ptr<Impl> impl_;
