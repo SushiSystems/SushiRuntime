@@ -80,7 +80,7 @@ static bool cuda_device_available()
  * @brief HardwareDiscovery must enumerate the GTX 1060 as a GPU HardwareNode
  *        when the CUDA backend is active.
  */
-TEST(NvidiaTopologyTest, NvidiaGpuDiscovered)
+TEST(Unit_NvidiaTopologyTest, NvidiaGpuDiscovered)
 {
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -103,7 +103,7 @@ TEST(NvidiaTopologyTest, NvidiaGpuDiscovered)
  * @brief After discovery the GTX 1060 must have a valid NUMA node id (>= 0)
  *        assigned by NUMAMapper via hwloc PCI topology walk.
  */
-TEST(NvidiaTopologyTest, NvidiaGpuHasNUMAMapping)
+TEST(Unit_NvidiaTopologyTest, NvidiaGpuHasNUMAMapping)
 {
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -140,7 +140,7 @@ TEST(NvidiaTopologyTest, NvidiaGpuHasNUMAMapping)
  * @brief RuntimeContext must provide a valid SYCL queue backed by the CUDA device
  *        and the queue must successfully execute a trivial host_task.
  */
-TEST(NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
+TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
 {
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -181,7 +181,7 @@ TEST(NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
  *        on the GTX 1060 via the CUDA SYCL backend, verify results on host.
  *        This confirms the full pipeline: CUDA backend → kernel dispatch → USM.
  */
-TEST(NvidiaTopologyTest, NvidiaGpuVectorAdd)
+TEST(Unit_NvidiaTopologyTest, NvidiaGpuVectorAdd)
 {
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";

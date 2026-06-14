@@ -88,7 +88,9 @@ namespace SushiRuntime
             BUFFER_REQUEST,     /**< worker -> master: I lack {id,version}; send bytes. */
             BUFFER_PUSH,        /**< master -> worker: raw bytes for a handle. */
             TASK_RESULT,        /**< worker -> master: task done; output handles ready. */
-            HEARTBEAT           /**< liveness ping. */
+            HEARTBEAT,          /**< worker -> master: unsolicited liveness ping. */
+            PING,               /**< master -> worker: RTT probe carrying a master token. */
+            PONG                /**< worker -> master: echoes the token + reports free_mem. */
         };
 
         /**
@@ -305,6 +307,64 @@ namespace SushiRuntime
                 BufferRequestMsg m;
                 m.id.value = r.get<uint64_t>();
                 m.version  = r.get<uint32_t>();
+                return m;
+            }
+        };
+
+        /**
+         * @brief master -> worker RTT probe.
+         *
+         * The token is the master's own steady-clock value at send time. The
+         * worker echoes it verbatim in a PongMsg; the master computes the round
+         * trip purely from its own clock, so worker/master clock skew never enters
+         * the measurement.
+         */
+        struct PingMsg
+        {
+            uint64_t token = 0; /**< opaque to the worker; master steady-clock ticks. */
+
+            std::vector<std::byte> serialize() const
+            {
+                ByteWriter w;
+                w.put(token);
+                return w.take();
+            }
+
+            static PingMsg deserialize(std::span<const std::byte> bytes)
+            {
+                ByteReader r(bytes);
+                PingMsg m;
+                m.token = r.get<uint64_t>();
+                return m;
+            }
+        };
+
+        /**
+         * @brief worker -> master RTT reply + live device-memory headroom.
+         *
+         * Carries the PingMsg token unchanged (so the master can derive RTT) plus
+         * the worker's current free device memory, which the offload policy uses as
+         * a headroom gate before dispatching a payload to that worker.
+         */
+        struct PongMsg
+        {
+            uint64_t token    = 0; /**< echoed from the PingMsg. */
+            uint64_t free_mem = 0; /**< worker device memory headroom (bytes), 0 = unknown. */
+
+            std::vector<std::byte> serialize() const
+            {
+                ByteWriter w;
+                w.put(token);
+                w.put(free_mem);
+                return w.take();
+            }
+
+            static PongMsg deserialize(std::span<const std::byte> bytes)
+            {
+                ByteReader r(bytes);
+                PongMsg m;
+                m.token    = r.get<uint64_t>();
+                m.free_mem = r.get<uint64_t>();
                 return m;
             }
         };

@@ -79,7 +79,7 @@ namespace
  * main thread drains, the destroyed count must dominate and live objects must
  * not have run away (bounded backlog).
  */
-TEST(EpochStress, HighChurnNoLeak)
+TEST(Stress_EpochStress, HighChurnNoLeak)
 {
     CountersPtr c = make_counters();
 
@@ -121,7 +121,7 @@ TEST(EpochStress, HighChurnNoLeak)
  * orphan-list handoff path on every join. A long-lived drainer thread keeps
  * advancing epochs. No crash and a growing destroyed count is the pass bar.
  */
-TEST(EpochStress, ThreadSpawnExitHandoff)
+TEST(Stress_EpochStress, ThreadSpawnExitHandoff)
 {
     CountersPtr c = make_counters();
 

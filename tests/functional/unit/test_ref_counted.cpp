@@ -75,7 +75,7 @@ namespace
  * @brief make_sushi() produces exactly one owner (count 1); dropping that owner
  * destroys the object exactly once.
  */
-TEST(RefCountedTest, MakeSushiOwnsAndReleasesOnce)
+TEST(Unit_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
 {
     std::atomic<int> destroyed{0};
     {
@@ -92,7 +92,7 @@ TEST(RefCountedTest, MakeSushiOwnsAndReleasesOnce)
  * @brief Copy increments the shared count; move transfers ownership and leaves
  * the source empty without changing the count.
  */
-TEST(RefCountedTest, CopyBumpsMoveTransfers)
+TEST(Unit_RefCountedTest, CopyBumpsMoveTransfers)
 {
     std::atomic<int> destroyed{0};
     auto a = make_sushi<Tracked>(destroyed);
@@ -118,7 +118,7 @@ TEST(RefCountedTest, CopyBumpsMoveTransfers)
  * altering the refcount, so the caller now owns the outstanding reference and is
  * responsible for one matching release().
  */
-TEST(RefCountedTest, LeakDetachesWithoutChangingCount)
+TEST(Unit_RefCountedTest, LeakDetachesWithoutChangingCount)
 {
     std::atomic<int> destroyed{0};
     auto p = make_sushi<Tracked>(destroyed);
@@ -138,7 +138,7 @@ TEST(RefCountedTest, LeakDetachesWithoutChangingCount)
  * @brief A sushi_ptr<Derived> converts to sushi_ptr<Base>, dispatches virtually,
  * and triggers a single polymorphic destruction through the base.
  */
-TEST(RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
+TEST(Unit_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
 {
     std::atomic<int> destroyed{0};
     {
@@ -157,7 +157,7 @@ TEST(RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
  * premature destruction — the guarantee that makes the atomic count usable on
  * the scheduler's hot path.
  */
-TEST(RefCountedTest, ConcurrentRefCountingIsAtomic)
+TEST(Unit_RefCountedTest, ConcurrentRefCountingIsAtomic)
 {
     std::atomic<int> destroyed{0};
     auto root = make_sushi<Tracked>(destroyed);

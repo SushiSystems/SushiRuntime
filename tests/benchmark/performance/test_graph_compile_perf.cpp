@@ -1,0 +1,232 @@
+/**************************************************************************/
+/* test_graph_compile_perf.cpp                                            */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                        https://sushisystems.io                         */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/* All Rights Reserved.                                                   */
+/*                                                                        */
+/* CONFIDENTIAL: This software is the proprietary information of          */
+/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
+/* via any medium is strictly prohibited.                                 */
+/*                                                                        */
+/* This source code and the intellectual property contained herein        */
+/* is confidential and may not be disclosed, copied, or used without      */
+/* explicit written permission from the copyright holders.                */
+/**************************************************************************/
+
+/**
+ * @file test_graph_compile_perf.cpp
+ * @brief Two performance gaps the suite was missing: (1) how TaskGraph::compile()
+ *        scales with graph size, and (2) whether overlapping H2D/D2H transfers
+ *        with compute helps — the case test_async_overlap_perf explicitly excludes.
+ *
+ * FAIRNESS.
+ *  * Compile scaling builds graphs over a fixed rolling set of buffers (so the
+ *    DependencyTracker does real RAW/WAR/WAW work), times *only* compile() (graph
+ *    construction is excluded), best-of-N, and reports us/node so super-linear
+ *    blow-up is visible. It asserts the graph actually compiled, not a hard time
+ *    bound (which would be machine-specific).
+ *  * Transfer overlap does identical total work on both sides — same elements,
+ *    same per-element compute — differing only in scheduling (one blocking
+ *    sequence vs chunks pipelined across two in-order queues). Results are copied
+ *    back and verified, so a fast wrong answer fails. It prints the speedup but
+ *    does NOT assert one: real overlap needs a discrete GPU with copy engines;
+ *    on an OpenCL CPU device or under WSL the transfer is a memcpy with nothing
+ *    to hide behind, so ~1x is the honest expected outcome there.
+ */
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <functional>
+#include <memory>
+#include <vector>
+#include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
+
+#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/graph/task_types.hpp>
+#include <SushiRuntime/graph/node.hpp> // CompiledGraph holds sushi_ptr<Node>; its dtor needs the full type
+
+using namespace SushiRuntime;
+using namespace SushiRuntime::Execution;
+using namespace SushiRuntime::Graph;
+
+namespace
+{
+    constexpr int ROUNDS = 3;
+
+    double min_compile_us(RuntimeContext& ctx, size_t nodes)
+    {
+        // A small rolling buffer set so consecutive tasks form real dependencies
+        // (task t reads buf[t%M], writes buf[(t+1)%M]) — exercises the tracker.
+        constexpr size_t M = 16;
+        std::vector<int> bufs(M, 0);
+
+        double best = 1e300;
+        for (int r = 0; r < ROUNDS; ++r)
+        {
+            TaskGraph graph(ctx);
+            for (size_t t = 0; t < nodes; ++t)
+            {
+                void* in  = &bufs[t % M];
+                void* out = &bufs[(t + 1) % M];
+                TaskMetadata meta{"n"};
+                graph.add_task(meta, {in}, {out},
+                    [](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event { return {}; });
+            }
+
+            const auto t0 = std::chrono::steady_clock::now();
+            auto compiled = graph.compile();
+            const double us = std::chrono::duration<double, std::micro>(
+                std::chrono::steady_clock::now() - t0).count();
+            EXPECT_GE(compiled.roots.size(), 1u); // consume: compile must produce a DAG
+            best = std::min(best, us);
+        }
+        return best;
+    }
+}
+
+/**
+ * @test CompileScaling
+ * @brief Reports compile() latency and us/node across increasing graph sizes.
+ */
+TEST(Performance_GraphCompileBench, CompileScaling)
+{
+    RuntimeContext ctx;
+    const size_t sizes[] = { 64, 256, 1024, 4096, 16384 };
+
+    std::printf("\n=== TaskGraph::compile() scaling ===\n");
+    std::printf("  %8s | %12s | %10s\n", "nodes", "compile (us)", "us/node");
+    for (size_t n : sizes)
+    {
+        const double us = min_compile_us(ctx, n);
+        std::printf("  %8zu | %12.1f | %10.3f\n", n, us, us / double(n));
+        EXPECT_GT(us, 0.0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// H2D / D2H transfer-compute overlap
+// ---------------------------------------------------------------------------
+namespace
+{
+    constexpr size_t ELEMS  = 1u << 20; // 4 MiB of floats
+    constexpr int    INNER  = 64;       // per-element compute weight
+    constexpr int    CHUNKS = 8;
+
+    // Reference compute applied per element, matching the device kernel below.
+    float expected(float x)
+    {
+        for (int k = 0; k < INNER; ++k) x = x * 1.001f + 0.5f;
+        return x;
+    }
+
+    double best_of(const std::function<double()>& fn)
+    {
+        double best = 1e300;
+        for (int r = 0; r < ROUNDS; ++r) best = std::min(best, fn());
+        return best;
+    }
+}
+
+/**
+ * @test TransferComputeOverlapSpeedup
+ * @brief Sequential (copy→compute→copy) vs chunked pipeline across two queues.
+ */
+TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
+{
+    std::unique_ptr<RuntimeContext> ctx;
+    try { ctx = std::make_unique<RuntimeContext>(); }
+    catch (const std::exception& e) { GTEST_SKIP() << "No SYCL device: " << e.what(); }
+
+    sycl::queue& base = ctx->get_queue(0);
+    sycl::device dev  = base.get_device();
+    sycl::context cxt = base.get_context();
+    sycl::queue qa(cxt, dev, sycl::property::queue::in_order{});
+    sycl::queue qb(cxt, dev, sycl::property::queue::in_order{});
+
+    const size_t bytes = ELEMS * sizeof(float);
+    float* host_in  = sycl::malloc_host<float>(ELEMS, qa);
+    float* host_out = sycl::malloc_host<float>(ELEMS, qa);
+    float* d        = sycl::malloc_device<float>(ELEMS, qa);
+    ASSERT_NE(host_in, nullptr);
+    ASSERT_NE(host_out, nullptr);
+    ASSERT_NE(d, nullptr);
+    for (size_t i = 0; i < ELEMS; ++i) host_in[i] = float(i % 97);
+
+    auto compute = [](sycl::queue& q, float* p, size_t off, size_t n, sycl::event dep) -> sycl::event
+    {
+        return q.parallel_for(sycl::range<1>(n), dep, [=](sycl::id<1> i)
+        {
+            float x = p[off + i];
+            for (int k = 0; k < INNER; ++k) x = x * 1.001f + 0.5f;
+            p[off + i] = x;
+        });
+    };
+
+    // --- sequential: one blocking copy → compute → copy ----------------------
+    auto run_sequential = [&]() -> double
+    {
+        const auto t0 = std::chrono::steady_clock::now();
+        qa.memcpy(d, host_in, bytes).wait();
+        compute(qa, d, 0, ELEMS, {}).wait();
+        qa.memcpy(host_out, d, bytes).wait();
+        return std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count();
+    };
+
+    // --- overlapped: chunks pipelined across two in-order queues -------------
+    auto run_overlapped = [&]() -> double
+    {
+        const size_t chunk = (ELEMS + CHUNKS - 1) / CHUNKS;
+        const auto t0 = std::chrono::steady_clock::now();
+        std::vector<sycl::event> tail;
+        for (int c = 0; c < CHUNKS; ++c)
+        {
+            const size_t off = size_t(c) * chunk;
+            if (off >= ELEMS) break;
+            const size_t n = std::min(chunk, ELEMS - off);
+            sycl::queue& q = (c & 1) ? qb : qa;
+            auto e1 = q.memcpy(d + off, host_in + off, n * sizeof(float));
+            auto e2 = compute(q, d, off, n, e1);
+            auto e3 = q.memcpy(host_out + off, d + off, n * sizeof(float), e2);
+            tail.push_back(e3);
+        }
+        for (auto& e : tail) e.wait();
+        return std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count();
+    };
+
+    const double seq = best_of(run_sequential);
+    // verify correctness from the sequential pass output
+    bool ok = true;
+    for (size_t i = 0; i < ELEMS; ++i)
+        if (std::fabs(host_out[i] - expected(host_in[i])) > 1e-1f) { ok = false; break; }
+
+    const double ovl = best_of(run_overlapped);
+    bool ok2 = true;
+    for (size_t i = 0; i < ELEMS; ++i)
+        if (std::fabs(host_out[i] - expected(host_in[i])) > 1e-1f) { ok2 = false; break; }
+
+    const double speedup = ovl > 0 ? seq / ovl : 0.0;
+    std::printf("\n=== H2D/D2H transfer-compute overlap (%zu elems, %d chunks) ===\n",
+                ELEMS, CHUNKS);
+    std::printf("  Sequential : %.3f ms\n", seq);
+    std::printf("  Overlapped : %.3f ms\n", ovl);
+    std::printf("  Speedup    : %.3fx (>1 needs a discrete GPU w/ copy engines)\n", speedup);
+
+    EXPECT_TRUE(ok)  << "Sequential transfer/compute produced a wrong result.";
+    EXPECT_TRUE(ok2) << "Overlapped transfer/compute produced a wrong result.";
+    EXPECT_GT(speedup, 0.0);
+
+    sycl::free(host_in, qa);
+    sycl::free(host_out, qa);
+    sycl::free(d, qa);
+}

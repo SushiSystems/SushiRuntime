@@ -38,7 +38,7 @@ using namespace SushiRuntime::Topology;
  * @test PinToValidCore
  * @brief Pinning a worker thread to core 0 (always present) must not throw.
  */
-TEST(AffinityTest, PinToValidCore)
+TEST(Unit_AffinityTest, PinToValidCore)
 {
     bool threw = false;
     std::thread worker([&threw]()
@@ -56,7 +56,7 @@ TEST(AffinityTest, PinToValidCore)
  * @brief An out-of-range core id is a best-effort failure: it logs a warning
  * but must not throw or crash the process.
  */
-TEST(AffinityTest, PinToInvalidCoreIsGraceful)
+TEST(Unit_AffinityTest, PinToInvalidCoreIsGraceful)
 {
     bool threw = false;
     std::thread worker([&threw]()
@@ -74,7 +74,7 @@ TEST(AffinityTest, PinToInvalidCoreIsGraceful)
  * @brief Repeated pinning on the same thread must remain stable (no leaked
  * handles, no accumulated failure state).
  */
-TEST(AffinityTest, PinIsRepeatable)
+TEST(Unit_AffinityTest, PinIsRepeatable)
 {
     bool threw = false;
     std::thread worker([&threw]()

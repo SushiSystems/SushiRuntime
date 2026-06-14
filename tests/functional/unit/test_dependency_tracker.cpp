@@ -56,7 +56,7 @@ namespace
  * @brief writer(W) then reader(R) on the same buffer: the reader gains one
  * incoming edge (read-after-write), the writer none.
  */
-TEST(DependencyTrackerTest, RawCreatesEdge)
+TEST(Unit_DependencyTrackerTest, RawCreatesEdge)
 {
     DependencyTracker tracker;
     auto writer = make_sushi<Node>();
@@ -79,7 +79,7 @@ TEST(DependencyTrackerTest, RawCreatesEdge)
  * @brief W1 -> R -> W2 on one buffer. R depends on W1 (RAW). W2 depends on BOTH
  * R (write-after-read) and W1 (write-after-write), so its in_degree is 2.
  */
-TEST(DependencyTrackerTest, WarAndWawChain)
+TEST(Unit_DependencyTrackerTest, WarAndWawChain)
 {
     DependencyTracker tracker;
     auto w1 = make_sushi<Node>();
@@ -106,7 +106,7 @@ TEST(DependencyTrackerTest, WarAndWawChain)
  * but NOT on each other, so they can run concurrently. A naive tracker that
  * serialized reads would give the second reader in_degree 2.
  */
-TEST(DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
+TEST(Unit_DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
 {
     DependencyTracker tracker;
     auto writer = make_sushi<Node>();
@@ -131,7 +131,7 @@ TEST(DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
  * @brief A writer and a reader that share TWO buffers must be linked by only one
  * dependency edge, not one per shared buffer (duplicate-link dedup).
  */
-TEST(DependencyTrackerTest, SharedBuffersCreateSingleEdge)
+TEST(Unit_DependencyTrackerTest, SharedBuffersCreateSingleEdge)
 {
     DependencyTracker tracker;
     auto writer = make_sushi<Node>();
@@ -156,7 +156,7 @@ TEST(DependencyTrackerTest, SharedBuffersCreateSingleEdge)
  * @brief A node that writes the same buffer twice must never create an edge to
  * itself (which would deadlock it: it could never reach in_degree 0).
  */
-TEST(DependencyTrackerTest, NoSelfDependency)
+TEST(Unit_DependencyTrackerTest, NoSelfDependency)
 {
     DependencyTracker tracker;
     auto node = make_sushi<Node>();

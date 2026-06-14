@@ -41,7 +41,7 @@ using SushiRuntime::Test::make_order_recorder;
  * @brief Tests if DependencyTracker correctly resolves RAW, WAR, and WAW hazards
  * by forcing tasks that share the same pointer into a strict sequential order.
  */
-TEST(TaskGraphTest, SequentialUSMDependency)
+TEST(Integration_TaskGraphTest, SequentialUSMDependency)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);
@@ -83,7 +83,7 @@ TEST(TaskGraphTest, SequentialUSMDependency)
  * @brief Ensures that tasks with no memory dependencies are recognized as independent
  * roots and executed concurrently.
  */
-TEST(TaskGraphTest, IndependentRootsExecution)
+TEST(Integration_TaskGraphTest, IndependentRootsExecution)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);
@@ -118,7 +118,7 @@ TEST(TaskGraphTest, IndependentRootsExecution)
  * A (Writes X) -> B (Reads X), C (Reads X) -> D (Writes X)
  * B and C should run in parallel after A, and D must wait for both B and C.
  */
-TEST(TaskGraphTest, FanOutFanInDiamond)
+TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);

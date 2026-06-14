@@ -52,7 +52,7 @@ using SushiRuntime::Test::AtomicCounterTask;
  * single fast deterministic round so any regression in the drain logic trips
  * here on every CI run.
  */
-TEST(Regression, Scheduler_AbruptStopDrains)
+TEST(Regression_Sentinel, Scheduler_AbruptStopDrains)
 {
     RuntimeContext ctx;
     TaskScheduler scheduler(ctx);
@@ -76,7 +76,7 @@ TEST(Regression, Scheduler_AbruptStopDrains)
  * A prior bug returned orphaned nodes to the wrong thread-local free pool; this
  * sentinel proves orphans are actually deleted (no leak / no cross-pool reuse).
  */
-TEST(Regression, Epoch_OrphanedNodesReclaimed)
+TEST(Regression_Sentinel, Epoch_OrphanedNodesReclaimed)
 {
     // The counter is owned by shared_ptr, not a raw pointer to a stack atomic.
     // EBR reclamation is deferred: a tail of retired objects can outlive this

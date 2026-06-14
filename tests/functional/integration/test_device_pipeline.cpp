@@ -92,7 +92,7 @@ namespace
  * fan-in (doubleA, incA -> combine), and produces correct results across every
  * intermediate and final buffer.
  */
-TEST(DevicePipelineTest, DiamondAllKernelNodes)
+TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
 {
     RuntimeContext ctx;
 

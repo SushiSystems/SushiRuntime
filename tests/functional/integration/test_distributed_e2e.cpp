@@ -92,7 +92,7 @@ namespace
  * @brief One offloaded vector-add task: data goes master→worker, the kernel
  *        runs on the worker, results come back, and the graph completes.
  */
-TEST(DistributedE2ETest, OffloadVectorAddRoundTrip)
+TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
 {
     // The runtime needs at least one SYCL device. On CI (intel/llvm + OpenCL CPU)
     // this is present; skip cleanly if a device is unavailable.
@@ -194,7 +194,7 @@ TEST(DistributedE2ETest, OffloadVectorAddRoundTrip)
  *        Proves the multi-node core of the "5 machines" goal: the policy spreads
  *        load and each worker actually runs its share.
  */
-TEST(DistributedE2ETest, FanOutAcrossTwoWorkers)
+TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
 {
     std::unique_ptr<RuntimeContext> master_ctx, w0_ctx, w1_ctx;
     try
@@ -312,7 +312,7 @@ TEST(DistributedE2ETest, FanOutAcrossTwoWorkers)
  *        so the worker pulls fresh data, and (2) the offloaded result reflects
  *        the locally-written values.
  */
-TEST(DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloadedRead)
+TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloadedRead)
 {
     std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
     try
@@ -417,7 +417,7 @@ TEST(DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloadedRead)
  *        on 127.0.0.1. Proves the wire path that the 5-machine lab will use; the
  *        coordinator and worker agent are byte-for-byte the same as in-process.
  */
-TEST(DistributedE2ETest, OffloadOverTcpLoopback)
+TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
 {
     std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
     try
@@ -506,7 +506,7 @@ TEST(DistributedE2ETest, OffloadOverTcpLoopback)
  * side) makes the timing deterministic: it heartbeats until it receives the
  * dispatch, then falls permanently silent.
  */
-TEST(DistributedE2ETest, WorkerDeathFallsBackToLocal)
+TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
 {
     std::unique_ptr<RuntimeContext> master_ctx;
     try

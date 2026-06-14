@@ -84,7 +84,7 @@ namespace
  * throttled-core signature — while worker 1 is idle. The strategy must migrate
  * half the imbalance from 0 to 1.
  */
-TEST(ThermalRebalanceTest, RescuesThrottledWorker)
+TEST(Unit_ThermalRebalanceTest, RescuesThrottledWorker)
 {
     FakeTelemetry telemetry;
     telemetry.queue     = {100, 0};
@@ -107,7 +107,7 @@ TEST(ThermalRebalanceTest, RescuesThrottledWorker)
  * but is completing fast (high delta), so it is keeping up and must be left
  * untouched — no migration.
  */
-TEST(ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
+TEST(Unit_ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
 {
     FakeTelemetry telemetry;
     telemetry.queue     = {100,  0};
@@ -127,7 +127,7 @@ TEST(ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
  * @brief Shallow, comparable queues below the imbalance threshold must produce
  * no migration regardless of completion rate.
  */
-TEST(ThermalRebalanceTest, NoMigrationWhenBalanced)
+TEST(Unit_ThermalRebalanceTest, NoMigrationWhenBalanced)
 {
     FakeTelemetry telemetry;
     telemetry.queue     = {5,  5};
@@ -146,7 +146,7 @@ TEST(ThermalRebalanceTest, NoMigrationWhenBalanced)
  * @brief With fewer than two workers there is nowhere to migrate to; the
  * strategy must return without touching the migrator.
  */
-TEST(ThermalRebalanceTest, SingleWorkerIsNoOp)
+TEST(Unit_ThermalRebalanceTest, SingleWorkerIsNoOp)
 {
     FakeTelemetry telemetry;
     telemetry.queue     = {1000};
