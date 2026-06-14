@@ -20,8 +20,10 @@
 
 #include <map>
 #include <array>
+#include <mutex>
 #include <atomic>
 #include <memory>
+#include <unordered_map>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
@@ -64,6 +66,19 @@ namespace SushiRuntime
             
             /** @brief Flat list for fast access to all queues. */
             std::vector<sycl::queue> all_queues;
+
+            /**
+             * @brief USM pointer -> owning queue index (into all_queues).
+             *
+             * Populated by RuntimeContext::malloc_* so the scheduler can run a
+             * task on the exact queue/context its data was allocated on. Pointer
+             * introspection (get_pointer_type/device) is unreliable for picking
+             * an owner when one platform's USM is visible (as a different kind)
+             * in sibling contexts, so this authoritative map is the source of
+             * truth; introspection remains only as a best-effort fallback.
+             */
+            std::mutex usm_owner_mtx;
+            std::unordered_map<void*, size_t> usm_owner;
 
             /** @brief NUMA-local allocators using atomic storage. */
             std::atomic<SushiRuntime::Memory::USMAllocator*> numa_allocators[Core::MAX_NUMA_NODES];
@@ -273,6 +288,122 @@ namespace SushiRuntime
             return impl_->all_queues[0]; // Fallback dummy return
         }
 
+        void* RuntimeContext::malloc_shared(size_t bytes, int numa_id)
+        {
+            sycl::queue& q = get_numa_local_queue(numa_id);
+            void* p = sycl::malloc_shared(bytes, q);
+            if (p)
+            {
+                // Record the owning queue by its index in all_queues so the
+                // scheduler can later dispatch onto the exact same context.
+                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
+                for (size_t i = 0; i < impl_->all_queues.size(); ++i)
+                {
+                    if (impl_->all_queues[i] == q) { impl_->usm_owner[p] = i; break; }
+                }
+            }
+            return p;
+        }
+
+        void* RuntimeContext::malloc_device(size_t bytes, int numa_id)
+        {
+            sycl::queue& q = get_numa_local_queue(numa_id);
+            void* p = sycl::malloc_device(bytes, q);
+            if (p)
+            {
+                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
+                for (size_t i = 0; i < impl_->all_queues.size(); ++i)
+                {
+                    if (impl_->all_queues[i] == q) { impl_->usm_owner[p] = i; break; }
+                }
+            }
+            return p;
+        }
+
+        void RuntimeContext::free_usm(void* ptr)
+        {
+            if (!ptr) return;
+            size_t idx = SIZE_MAX;
+            {
+                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
+                auto it = impl_->usm_owner.find(ptr);
+                if (it != impl_->usm_owner.end())
+                {
+                    idx = it->second;
+                    impl_->usm_owner.erase(it);
+                }
+            }
+            // Free against the owning queue's context (required for correctness).
+            if (idx < impl_->all_queues.size())
+                sycl::free(ptr, impl_->all_queues[idx]);
+            else if (!impl_->all_queues.empty())
+                sycl::free(ptr, impl_->all_queues[0]); // best effort
+        }
+
+        sycl::queue& RuntimeContext::get_queue_for_ptr(void* ptr, int fallback_numa)
+        {
+            if (ptr)
+            {
+                // 1) Authoritative: a pointer allocated through this context's
+                //    malloc_* carries an exact owning-queue record. This is the
+                //    reliable path and avoids fragile pointer introspection.
+                {
+                    std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
+                    auto it = impl_->usm_owner.find(ptr);
+                    if (it != impl_->usm_owner.end() && it->second < impl_->all_queues.size())
+                        return impl_->all_queues[it->second];
+                }
+            }
+            if (ptr)
+            {
+                // Find the queue whose CONTEXT allocated this USM. On a single
+                // platform (e.g. CUDA) a malloc_shared/malloc_device pointer is
+                // valid in sibling contexts too, but only the owning context
+                // reports it as exactly the allocation kind it created:
+                //   * device  USM -> get_pointer_type == device  in its context
+                //   * shared  USM -> get_pointer_type == shared  in its context
+                // A non-owning context typically reports a *different* kind (we
+                // observed CUDA shared USM showing up as `device` in the CPU
+                // context), so we must match device/shared against the queue's
+                // device via get_pointer_device, never trust type alone.
+                //
+                // Strategy: prefer a queue that both (a) reports device-or-shared
+                // and (b) whose own device equals get_pointer_device(). That pair
+                // uniquely identifies the allocating queue. Host USM (or anything
+                // we cannot pin) falls through to the NUMA-local fallback.
+                // 2) Best-effort fallback for USM not allocated via this context
+                //    (e.g. a test calling bare sycl::malloc_shared). A shared
+                //    allocation's true owner is the context that reports it as
+                //    exactly 'shared'; sibling contexts report a different kind.
+                sycl::queue* best = nullptr;
+                for (auto& q : impl_->all_queues)
+                {
+                    try
+                    {
+                        const sycl::context ctx = q.get_context();
+                        const auto t = sycl::get_pointer_type(ptr, ctx);
+                        if (t == sycl::usm::alloc::unknown || t == sycl::usm::alloc::host)
+                            continue;
+                        if (sycl::get_pointer_device(ptr, ctx) == q.get_device())
+                        {
+                            best = &q;
+                            if (t == sycl::usm::alloc::shared)
+                                return q;
+                        }
+                    }
+                    catch (const sycl::exception&)
+                    {
+                        // Not owned by / not resolvable in this context; skip.
+                    }
+                }
+                if (best)
+                    return *best;
+            }
+            // Pointer-less (e.g. host task) or host-allocated data: keep the
+            // existing NUMA-local round-robin behaviour.
+            return get_numa_local_queue(fallback_numa);
+        }
+
         /**
          * @brief Returns a NUMA-aware USM allocator (lazy initialization).
          * 
@@ -377,8 +508,11 @@ namespace SushiRuntime
                     sched.complete_offloaded_node(node, success);
                 });
 
-            impl_->coordinator->start();
+            // Install the coordinator (and, with it, the resubmit hook) BEFORE the
+            // monitor thread starts. Otherwise a worker reaped in the first liveness
+            // window could fire on_resubmit while it is still null.
             sched.set_coordinator(impl_->coordinator.get());
+            impl_->coordinator->start();
             impl_->role = RuntimeRole::Master;
 
             SR_LOG_INFO("RuntimeContext promoted to distributed Master mode.");
@@ -421,6 +555,17 @@ namespace SushiRuntime
         uint64_t RuntimeContext::distributed_declined_count() const
         {
             return impl_->coordinator ? impl_->coordinator->declined_count() : 0;
+        }
+
+        uint64_t RuntimeContext::distributed_redispatched_count() const
+        {
+            return impl_->coordinator ? impl_->coordinator->redispatched_count() : 0;
+        }
+
+        void RuntimeContext::distributed_set_liveness_timeout(std::chrono::milliseconds timeout)
+        {
+            if (impl_->coordinator)
+                impl_->coordinator->set_liveness_timeout(timeout);
         }
 
         int RuntimeContext::distributed_alive_workers() const

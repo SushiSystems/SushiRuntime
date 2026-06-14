@@ -2,6 +2,12 @@
 # SushiRuntime Runner Script
 set -e
 
+# CUDA_LAUNCH_BLOCKING=1 forces every GPU kernel to run synchronously. That quietly
+# breaks our async/overlap tests: submit() looks like it blocks until the kernel is
+# done, so no concurrency is ever observed. A container we ran in had it set globally
+# and burned us for a while. Clear it here so a stray value can never poison a run.
+unset CUDA_LAUNCH_BLOCKING
+
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CONFIG_FILE="$DIR/../config.cfg"
 
@@ -29,9 +35,26 @@ if [ -d "$ONEAPI_ROOT" ] && [ -f "$ONEAPI_ROOT/setvars.sh" ]; then
     source "$ONEAPI_ROOT/setvars.sh" --force > /dev/null 2>&1 || true
 fi
 
+# AddressSanitizer run mode (SUSHI_ASAN=ON, set by the CLI's --addsanitizer).
+# The ASan binaries live in build-asan/ and were built with CUDA OFF. The SYCL
+# runtime would still try to load the installed CUDA UR adapter, whose
+# urVirtualMemReserve collides with ASan's reserved VA — so we pin the backend to
+# the OpenCL CPU device, which loads only the OpenCL adapter (CUDA never inits).
+ASAN="${SUSHI_ASAN:-OFF}"
+if [ "$ASAN" == "ON" ]; then
+    BUILD_NAME="build-asan"
+    export ONEAPI_DEVICE_SELECTOR="${ONEAPI_DEVICE_SELECTOR:-opencl:cpu}"
+    # Leak detection off by default (SYCL/UR hold pools to process exit, which
+    # ASan would report as leaks); the use-after-free/overflow checks stay on.
+    export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0:abort_on_error=1}"
+    echo "[INFO] AddressSanitizer run: tree=build-asan, ONEAPI_DEVICE_SELECTOR=$ONEAPI_DEVICE_SELECTOR"
+else
+    BUILD_NAME="build"
+fi
+
 # Add build artifact paths to PATH
-export PATH="$DIR/../../build/src:$PATH"
-BUILD_ROOT="$DIR/../../build"
+export PATH="$DIR/../../$BUILD_NAME/src:$PATH"
+BUILD_ROOT="$DIR/../../$BUILD_NAME"
 SELECTED_EXE=""
 
 # 3. Process Arguments

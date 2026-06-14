@@ -32,6 +32,12 @@ RUN wget -q \
 ENV PATH="/opt/intel-llvm/bin:$PATH"
 ENV LD_LIBRARY_PATH="/opt/intel-llvm/lib:$LD_LIBRARY_PATH"
 
+# Keep GPU kernel launches ASYNC. With CUDA_LAUNCH_BLOCKING=1 every launch runs
+# synchronously, which makes our async/overlap tests fail (submit looks blocking).
+# It bit us once, so we pin it off in the image. Override at `docker run` only if
+# you are deliberately debugging a kernel.
+ENV CUDA_LAUNCH_BLOCKING=0
+
 RUN echo "alias sushiruntime='/workspace/sushiruntime/.tools/sushiruntime.sh'" >> ~/.bashrc && \
     echo "alias sr='/workspace/sushiruntime/.tools/sushiruntime.sh'" >> ~/.bashrc
 

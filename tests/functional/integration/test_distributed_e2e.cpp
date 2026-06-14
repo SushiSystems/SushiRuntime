@@ -493,3 +493,118 @@ TEST(DistributedE2ETest, OffloadOverTcpLoopback)
     sycl::free(b, mq);
     sycl::free(out, mq);
 }
+
+/**
+ * @test WorkerDeathFallsBackToLocal
+ * @brief A worker accepts an offloaded task and then dies (stops heartbeating)
+ *        without ever replying. The master must NOT hang: the liveness monitor
+ *        declares the worker dead, re-dispatches the orphaned task, and — with no
+ *        survivor — runs it locally, so the graph still completes with the right
+ *        result. This is the core worker-death-resilience guarantee.
+ *
+ * A controllable fake worker (a bare transport endpoint, no SYCL needed on its
+ * side) makes the timing deterministic: it heartbeats until it receives the
+ * dispatch, then falls permanently silent.
+ */
+TEST(DistributedE2ETest, WorkerDeathFallsBackToLocal)
+{
+    std::unique_ptr<RuntimeContext> master_ctx;
+    try
+    {
+        master_ctx = std::make_unique<RuntimeContext>();
+    }
+    catch (const std::exception& e)
+    {
+        GTEST_SKIP() << "No SYCL device available: " << e.what();
+    }
+
+    constexpr size_t N = 1024;
+    sycl::queue& mq = master_ctx->get_queue(0);
+    float* a   = sycl::malloc_shared<float>(N, mq);
+    float* b   = sycl::malloc_shared<float>(N, mq);
+    float* out = sycl::malloc_shared<float>(N, mq);
+    ASSERT_NE(a, nullptr); ASSERT_NE(b, nullptr); ASSERT_NE(out, nullptr);
+    for (size_t i = 0; i < N; ++i) { a[i] = float(i); b[i] = float(2 * i); out[i] = -1.0f; }
+
+    InProcessFabric fabric(1);
+    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
+    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+
+    // Fake worker: advertises VEC_ADD, heartbeats until it gets a dispatch, then
+    // goes silent forever (never sends TASK_RESULT) — i.e. crashes mid-task.
+    std::atomic<bool> got_dispatch{false};
+    std::atomic<bool> hb_running{true};
+    worker_transport->on_message(
+        [&](int, MsgType type, std::span<const std::byte>)
+        {
+            if (type == MsgType::TASK_DISPATCH)
+                got_dispatch.store(true, std::memory_order_relaxed);
+        });
+
+    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
+    master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
+    master_ctx->distributed_set_liveness_timeout(std::chrono::milliseconds(300));
+
+    worker_transport->start();
+    {
+        ByteWriter w;
+        w.put<uint32_t>(1);
+        w.put<uint32_t>(VEC_ADD.value);
+        worker_transport->send(0, MsgType::REGISTER_HELLO, w.view());
+    }
+
+    // Keep the worker "alive" only until the dispatch lands, then fall silent.
+    std::thread heartbeat([&]
+    {
+        while (hb_running.load() && !got_dispatch.load(std::memory_order_relaxed))
+        {
+            worker_transport->send(0, MsgType::HEARTBEAT, {});
+            std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        }
+    });
+
+    bool supported = false;
+    for (int i = 0; i < 300 && !supported; ++i)
+    {
+        supported = master_ctx->distributed_supports(VEC_ADD);
+        if (!supported) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(supported) << "Fake worker never registered the kernel.";
+
+    master_ctx->register_distributed_buffer(a,   N * sizeof(float));
+    master_ctx->register_distributed_buffer(b,   N * sizeof(float));
+    master_ctx->register_distributed_buffer(out, N * sizeof(float));
+
+    TaskGraph graph(*master_ctx);
+    TaskMetadata meta{};
+    meta.name  = "vec_add_death";
+    meta.op_id = VEC_ADD;
+    meta.set_param<uint64_t>(0, N);
+    graph.add_task(meta, {a, b}, {out},
+        [a, b, out](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
+        {
+            return q.submit([&](sycl::handler& h)
+            { h.host_task([=] { for (size_t i = 0; i < N; ++i) out[i] = a[i] + b[i]; }); });
+        });
+
+    // The key assertion is implicit: this call must RETURN (not deadlock) even
+    // though the worker the task was offloaded to never answered.
+    master_ctx->get_execution_engine().execute(graph.compile());
+
+    EXPECT_TRUE(got_dispatch.load(std::memory_order_relaxed))
+        << "Task should have been offloaded before the worker died.";
+    EXPECT_GE(master_ctx->distributed_redispatched_count(), 1u)
+        << "The dead worker's task should have been re-dispatched.";
+
+    bool correct = true;
+    for (size_t i = 0; i < N; ++i)
+        if (out[i] != a[i] + b[i]) { correct = false; break; }
+    EXPECT_TRUE(correct) << "Local fallback after worker death produced a wrong result.";
+
+    hb_running.store(false);
+    if (heartbeat.joinable()) heartbeat.join();
+    worker_transport->stop();
+    sycl::free(a, mq);
+    sycl::free(b, mq);
+    sycl::free(out, mq);
+}

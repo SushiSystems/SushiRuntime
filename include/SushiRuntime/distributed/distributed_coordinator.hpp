@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <functional>
 #include <SushiRuntime/core/export.hpp>
@@ -60,6 +61,18 @@ namespace SushiRuntime
                 /** @brief Invoked (off the hot path) when an offloaded node finishes. */
                 using CompletionHook = std::function<void(Graph::Node* node, bool success)>;
 
+                /**
+                 * @brief Re-injects a node into the scheduler's ready queue.
+                 *
+                 * Installed by the scheduler. The coordinator calls it when a
+                 * worker dies (or returns failure) with the orphaned node: the
+                 * dispatch loop then re-offloads it to a surviving worker, or —
+                 * if none remain or the retry cap is hit — runs it locally. This
+                 * is what turns a lost worker into a transparent fallback rather
+                 * than a permanent stall.
+                 */
+                using ResubmitHook = std::function<void(Graph::Node* node)>;
+
                 DistributedCoordinator(sushi_ptr<KernelRegistry> kernels,
                                        BufferRegistry&           buffers,
                                        std::shared_ptr<ITransport>     transport,
@@ -91,6 +104,18 @@ namespace SushiRuntime
                  */
                 void set_completion_hook(CompletionHook hook);
 
+                /** @brief Installs the hook used to re-inject an orphaned node (see ResubmitHook). */
+                void set_resubmit_hook(ResubmitHook hook);
+
+                /**
+                 * @brief Sets how long a worker may go silent before it is
+                 * declared dead and its in-flight tasks re-dispatched (default 5s).
+                 *
+                 * Any inbound message (heartbeat, result, buffer request) refreshes
+                 * liveness, so this only fires on a genuinely crashed or hung peer.
+                 */
+                void set_liveness_timeout(std::chrono::milliseconds timeout);
+
                 /**
                  * @brief Attempts to offload one ready, offloadable node.
                  *
@@ -109,6 +134,8 @@ namespace SushiRuntime
                 uint64_t offloaded_count() const;
                 /** @brief Offloadable tasks the policy kept local (telemetry). */
                 uint64_t declined_count() const;
+                /** @brief Tasks re-injected after a worker death or remote failure (telemetry). */
+                uint64_t redispatched_count() const;
 
                 /** @brief Number of workers that have registered (HELLO) and are live. */
                 int alive_worker_count() const;

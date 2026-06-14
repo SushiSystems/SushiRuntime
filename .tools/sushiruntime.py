@@ -75,7 +75,7 @@ class SRPythonManager:
         else:
             self._print_info("Build directory does not exist, nothing to clean.")
 
-    def project_build(self, clean=False, distributed=False):
+    def project_build(self, clean=False, distributed=False, addsanitizer=False):
         print(f"\n{Colors.HEADER}--- Project Build ---{Colors.ENDC}")
         if clean:
             self.project_clean()
@@ -87,6 +87,13 @@ class SRPythonManager:
         if distributed:
             self._print_info("Distributed master-worker layer: ON")
 
+        # --addsanitizer builds an isolated AddressSanitizer tree (build-asan):
+        # CUDA forced OFF, Release + -fsanitize=address. The build script reads
+        # SUSHI_ASAN; set it explicitly so toggling it off also reconfigures.
+        os.environ["SUSHI_ASAN"] = "ON" if addsanitizer else "OFF"
+        if addsanitizer:
+            self._print_info("AddressSanitizer: ON (isolated build-asan tree, CUDA OFF)")
+
         script_ext = "bat" if self.os_name == "windows" else "sh"
         script_path = self.tools_dir / "project" / f"build.{script_ext}"
         
@@ -97,8 +104,16 @@ class SRPythonManager:
         cmd = f"\"{script_path}\"" if self.os_name == "windows" else f"bash \"{script_path}\""
         return self._run_command(cmd)
 
-    def project_run(self, target=None, sort=False, extra=None):
+    def project_run(self, target=None, sort=False, extra=None, addsanitizer=False):
         print(f"\n{Colors.HEADER}--- Project Run ---{Colors.ENDC}")
+
+        # --addsanitizer runs the build-asan binaries; the run script reads
+        # SUSHI_ASAN to pick that tree and pin the SYCL backend to opencl:cpu
+        # (so the CUDA adapter, which collides with ASan, is never loaded).
+        os.environ["SUSHI_ASAN"] = "ON" if addsanitizer else "OFF"
+        if addsanitizer:
+            self._print_info("AddressSanitizer: ON (running build-asan on opencl:cpu)")
+
         script_ext = "bat" if self.os_name == "windows" else "sh"
         script_path = self.tools_dir / "project" / f"run.{script_ext}"
 
@@ -153,6 +168,11 @@ def main():
         "--distributed", nargs="?", const="on", default=None, metavar="ROLE",
         help="build: enable the distributed master-worker layer. "
              "run: also forward a role to the app, e.g. --distributed=master | worker.")
+    project_parser.add_argument(
+        "--addsanitizer", action="store_true",
+        help="build: configure an isolated AddressSanitizer tree (build-asan, "
+             "CUDA OFF, -fsanitize=address). run: execute the build-asan binaries "
+             "pinned to the OpenCL CPU device (CUDA adapter collides with ASan).")
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -167,7 +187,8 @@ def main():
         elif args.action == "run": manager.docker_run(admin=args.admin)
     elif args.category == "project":
         if args.action == "build":
-            manager.project_build(clean=args.clean, distributed=(args.distributed is not None))
+            manager.project_build(clean=args.clean, distributed=(args.distributed is not None),
+                                  addsanitizer=args.addsanitizer)
         elif args.action == "run":
             # Forward the role (master/worker) to the application itself; the app's
             # main() decides which RuntimeRole to construct. A bare --distributed
@@ -175,7 +196,8 @@ def main():
             run_extra = list(extra_args)
             if args.distributed is not None and args.distributed != "on":
                 run_extra.append(f"--distributed={args.distributed}")
-            manager.project_run(target=args.target, sort=args.sort, extra=run_extra)
+            manager.project_run(target=args.target, sort=args.sort, extra=run_extra,
+                                addsanitizer=args.addsanitizer)
         elif args.action == "doxygen": manager.project_doxygen()
         elif args.action == "clean": manager.project_clean()
     else:

@@ -128,6 +128,19 @@ namespace SushiRuntime
             /** @brief Flag to indicate if the node is fused with others. */
             bool is_fused = false;
 
+            /**
+             * @brief Raw USM read/write pointers this node touches.
+             *
+             * Retained on every build (not just distributed) so the scheduler
+             * can route a KERNEL submit to the queue whose context actually owns
+             * the data. USM is pinned to the device/context it was allocated on;
+             * running the kernel on a sibling device's queue (e.g. CPU USM on a
+             * CUDA queue) is an illegal cross-context access. See
+             * TaskScheduler::execute_task.
+             */
+            std::vector<void*> io_reads_;
+            std::vector<void*> io_writes_;
+
 #ifdef SUSHI_DISTRIBUTED
             /**
              * @brief Distributed offload metadata, stamped by TaskGraph::compile().
@@ -145,6 +158,15 @@ namespace SushiRuntime
             /** @brief Raw read/write USM pointers retained so compile() can resolve handles. */
             std::vector<void*> dist_reads_;
             std::vector<void*> dist_writes_;
+            /**
+             * @brief How many times this node has been (re)dispatched to a worker.
+             *
+             * Incremented on every offload. After a worker death or a failed
+             * remote result, the node is re-dispatched; once attempts exceed a
+             * cap the coordinator pins it local (offloadable_ cleared) so a kernel
+             * that consistently fails remotely cannot loop forever.
+             */
+            std::atomic<uint32_t> offload_attempts_{0};
 #endif
 
             /**

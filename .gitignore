@@ -1,4 +1,7 @@
 [Bb]uild/
+# Sanitizer build trees (sr project build --addsanitizer)
+build-asan/
+build-tsan/
 bin/
 lib/
 out/

@@ -30,6 +30,7 @@
  */
 
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <gtest/gtest.h>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -77,32 +78,40 @@ TEST(Regression, Scheduler_AbruptStopDrains)
  */
 TEST(Regression, Epoch_OrphanedNodesReclaimed)
 {
+    // The counter is owned by shared_ptr, not a raw pointer to a stack atomic.
+    // EBR reclamation is deferred: a tail of retired objects can outlive this
+    // test's return and is freed only during a later test's reclamation. A raw
+    // pointer to a stack atomic would then be written after the frame is gone —
+    // a stack-use-after-return that corrupts whatever later test occupies that
+    // region. shared_ptr keeps the counter alive as long as any Tracked refers
+    // to it, so the late dtor write always lands in valid memory.
+    using Counter = std::shared_ptr<std::atomic<int>>;
     struct Tracked
     {
-        std::atomic<int>* destroyed;
-        explicit Tracked(std::atomic<int>* d) : destroyed(d) {}
+        Counter destroyed;
+        explicit Tracked(Counter d) : destroyed(std::move(d)) {}
         ~Tracked() { destroyed->fetch_add(1, std::memory_order_relaxed); }
     };
 
-    std::atomic<int> destroyed{0};
+    Counter destroyed = std::make_shared<std::atomic<int>>(0);
 
-    std::thread producer([&destroyed]()
+    std::thread producer([destroyed]()
     {
         for (int i = 0; i < 300; ++i)
         {
             EpochGuard guard;
-            EpochManager::instance().retire(new Tracked(&destroyed));
+            EpochManager::instance().retire(new Tracked(destroyed));
         }
     });
     producer.join();
 
-    std::atomic<int> sink{0};
+    Counter sink = std::make_shared<std::atomic<int>>(0);
     for (int i = 0; i < 1024; ++i)
     {
         EpochGuard guard;
-        EpochManager::instance().retire(new Tracked(&sink));
+        EpochManager::instance().retire(new Tracked(sink));
     }
 
-    EXPECT_GT(destroyed.load(), 0)
+    EXPECT_GT(destroyed->load(), 0)
         << "Orphaned nodes from an exited thread were not reclaimed (leak regression).";
 }

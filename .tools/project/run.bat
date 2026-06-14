@@ -26,10 +26,24 @@ if exist "%ONEAPI_ROOT%\setvars.bat" (
     call "%ONEAPI_ROOT%\setvars.bat" intel64 >nul 2>&1
 )
 
-:: Add build artifact paths and vcpkg binaries to PATH
-set "PATH=%~dp0..\..\build\src;%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\bin;%PATH%"
+:: AddressSanitizer run mode (SUSHI_ASAN=ON, set by the CLI's --addsanitizer).
+:: ASan binaries live in build-asan (built with CUDA OFF). Pin the SYCL backend
+:: to the OpenCL CPU device so the CUDA UR adapter (which collides with ASan's
+:: reserved VA) is never loaded.
+if "%SUSHI_ASAN%"=="" set "SUSHI_ASAN=OFF"
+if "%SUSHI_ASAN%"=="ON" (
+    set "BUILD_NAME=build-asan"
+    if not defined ONEAPI_DEVICE_SELECTOR set "ONEAPI_DEVICE_SELECTOR=opencl:cpu"
+    if not defined ASAN_OPTIONS set "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1"
+    echo [INFO] AddressSanitizer run: tree=build-asan, ONEAPI_DEVICE_SELECTOR=!ONEAPI_DEVICE_SELECTOR!
+) else (
+    set "BUILD_NAME=build"
+)
 
-set "BUILD_ROOT=..\..\build"
+:: Add build artifact paths and vcpkg binaries to PATH
+set "PATH=%~dp0..\..\%BUILD_NAME%\src;%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\bin;%PATH%"
+
+set "BUILD_ROOT=..\..\%BUILD_NAME%"
 set "SELECTED_EXE="
 
 :: 3. Process Arguments

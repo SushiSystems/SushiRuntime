@@ -478,8 +478,9 @@ namespace SushiRuntime
                 
                 int target_numa_id = 0;
                 std::vector<sycl::event> deps;
-                
-                if (auto* node = dynamic_cast<SushiRuntime::Graph::Node*>(task))
+                SushiRuntime::Graph::Node* node = nullptr;
+
+                if ((node = dynamic_cast<SushiRuntime::Graph::Node*>(task)))
                 {
                     if (node->metadata.numa_affinity >= 0)
                         target_numa_id = node->metadata.numa_affinity;
@@ -487,11 +488,28 @@ namespace SushiRuntime
                     deps = node->sycl_deps.to_vector();
                 }
 
-                auto& q = context.get_numa_local_queue(target_numa_id);
-                sycl::event e;
+                // Both paths must run on the queue whose context owns the node's
+                // USM. A HOST task is just as dangerous as a KERNEL one here: its
+                // host_work lambda commonly does its own queue.submit() of a device
+                // kernel using exactly the queue we hand it, so giving it a sibling
+                // device's queue (round-robin) causes a cross-context illegal
+                // access (e.g. CPU-allocated USM dispatched onto a CUDA queue).
+                // Route by the data pointer; fall back to NUMA-local round-robin
+                // only when the node carries no USM to anchor on.
+                void* anchor = nullptr;
+                if (node)
+                {
+                    if (!node->io_writes_.empty())     anchor = node->io_writes_.front();
+                    else if (!node->io_reads_.empty()) anchor = node->io_reads_.front();
+                }
+                auto& q = anchor ? context.get_queue_for_ptr(anchor, target_numa_id)
+                                 : context.get_numa_local_queue(target_numa_id);
 
+                sycl::event e;
                 if (task->get_execution_mode() == Task::ExecutionMode::HOST)
+                {
                     e = task->execute_host(q, deps);
+                }
                 else
                 {
                     e = q.submit([&](sycl::handler& h) 
@@ -502,7 +520,12 @@ namespace SushiRuntime
                 }
                 
                 if (e == sycl::event{})
+                {
+                    // An empty event means the work produced nothing to wait on
+                    // (e.g. a pure-host task). Emit a trivial host_task barrier so
+                    // the poller still has something to track.
                     e = q.submit([&](sycl::handler& h) { h.host_task([]() {}); });
+                }
 
                 if (!events.push({e, task})) 
                     SR_LOG_WARN("ActiveEventList capacity is full, events cannot be polled!");
@@ -668,12 +691,38 @@ namespace SushiRuntime
                         for (void* p : n->dist_writes_)
                             context.bump_distributed_buffer(p);
                     });
+
+                // Lets the coordinator re-inject a node orphaned by a dead worker
+                // (or a failed remote result). submit() is the thread-safe injector,
+                // so this is safe from the coordinator's transport/monitor thread.
+                //
+                // Ref accounting: the orphaned node still carries the scheduling ref
+                // that was transferred to the coordinator at offload time. submit()
+                // takes its own ref (add_ref), so we drop the transferred one right
+                // after — mirroring complete_offloaded_node()'s release. Net effect:
+                // exactly one scheduling ref lives on, owned by the ready queue, and
+                // event polling releases it when the node finally completes.
+                c->set_resubmit_hook([this](Graph::Node* n) { submit(n); n->release(); });
             }
         }
 
-        void TaskScheduler::complete_offloaded_node(Graph::Node* node, bool /*success*/)
+        void TaskScheduler::complete_offloaded_node(Graph::Node* node, bool success)
         {
             if (!node) return;
+
+            // A failed remote result is treated like a lost worker: re-inject the
+            // node so it runs on a survivor or, once the retry cap is hit, locally.
+            // We must NOT bump versions or release successors on failure — the
+            // authoritative buffers were not validly produced.
+            if (!success)
+            {
+                SR_LOG_WARN("Offloaded node '{}' failed remotely; re-dispatching.", node->metadata.name);
+                // submit() takes its own scheduling ref; drop the transferred one
+                // (same release the success path performs at the end of this fn).
+                submit(node);
+                node->release();
+                return;
+            }
 
             // The offloaded write landed back in the master's authoritative buffer
             // (eager writeback) before this fired; advance its version so later

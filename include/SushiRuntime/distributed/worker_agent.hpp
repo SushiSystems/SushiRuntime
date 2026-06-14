@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
@@ -62,6 +63,16 @@ namespace SushiRuntime
 
                 WorkerAgent(const WorkerAgent&) = delete;
                 WorkerAgent& operator=(const WorkerAgent&) = delete;
+
+                /**
+                 * @brief Sets the liveness heartbeat period (default 1s).
+                 *
+                 * The agent sends a HEARTBEAT to the master every interval so a
+                 * crash or hang is detectable as missed beats. A zero duration
+                 * disables heartbeats (used by tests to simulate a dead worker).
+                 * Must be called before start().
+                 */
+                void set_heartbeat_interval(std::chrono::milliseconds interval);
 
                 /** @brief Starts the transport and the message-processing loop. */
                 void start();

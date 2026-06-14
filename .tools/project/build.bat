@@ -51,17 +51,36 @@ REM (PUBLIC compile def), so flipping it forces a fresh configure via a stamp fi
 if "%SUSHI_ENABLE_DISTRIBUTED%"=="" set "SUSHI_ENABLE_DISTRIBUTED=OFF"
 set "DIST=%SUSHI_ENABLE_DISTRIBUTED%"
 
+REM AddressSanitizer toggle (default OFF), passed via the SUSHI_ASAN env var by
+REM the Python CLI's --addsanitizer flag. ASan uses an isolated build tree
+REM (build-asan), forces CUDA OFF (the CUDA UR adapter collides with ASan's
+REM reserved VA; run under ONEAPI_DEVICE_SELECTOR=opencl:cpu), stays a Release
+REM build (so the auto-TSan block never fires), and injects -fsanitize=address.
+if "%SUSHI_ASAN%"=="" set "SUSHI_ASAN=OFF"
+set "ASAN_FLAGS="
+if "%SUSHI_ASAN%"=="ON" (
+    set "BUILD_DIR=build-asan"
+    set "CUDA_OPT=OFF"
+    set "ASAN_FLAGS=-fsanitize=address -fno-omit-frame-pointer -g -O1"
+    echo [INFO] AddressSanitizer build: ON ^(CUDA forced OFF, tree=build-asan^)
+) else (
+    REM Windows builds have always defaulted to CUDA OFF (no Codeplay nvptx
+    REM toolchain on the Windows host); keep that behavior.
+    set "BUILD_DIR=build"
+    set "CUDA_OPT=OFF"
+)
+
 set "NEED_CONFIG=0"
-if not exist "build\build.ninja" set "NEED_CONFIG=1"
+if not exist "%BUILD_DIR%\build.ninja" set "NEED_CONFIG=1"
 set "PREV_DIST="
-if exist "build\.sushi_dist" set /p PREV_DIST=<"build\.sushi_dist"
+if exist "%BUILD_DIR%\.sushi_dist" set /p PREV_DIST=<"%BUILD_DIR%\.sushi_dist"
 if not "%PREV_DIST%"=="%DIST%" set "NEED_CONFIG=1"
 
 if "%NEED_CONFIG%"=="1" (
-    echo [INFO] Configuring CMake... ^(distributed=%DIST%^)
-    if exist build rmdir /s /q build
+    echo [INFO] Configuring CMake... ^(distributed=%DIST%, asan=%SUSHI_ASAN%^)
+    if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 
-    cmake -B build -G Ninja ^
+    cmake -B "%BUILD_DIR%" -G Ninja ^
         -DCMAKE_BUILD_TYPE=Release ^
         -DCMAKE_TOOLCHAIN_FILE="%CMAKE_TOOLCHAIN_FILE%" ^
         -DVCPKG_ROOT="%VCPKG_ROOT%" ^
@@ -69,17 +88,19 @@ if "%NEED_CONFIG%"=="1" (
         -DCMAKE_MAKE_PROGRAM="%CFG_NINJA%" ^
         -DCMAKE_CXX_COMPILER="%CFG_ICX%" ^
         -DCMAKE_C_COMPILER="%CFG_ICX%" ^
-        -DCMAKE_CXX_FLAGS="-fsycl" ^
+        -DCMAKE_CXX_FLAGS="-fsycl %ASAN_FLAGS%" ^
+        -DCMAKE_C_FLAGS="%ASAN_FLAGS%" ^
         -DPKG_CONFIG_EXECUTABLE="%CFG_PKGCONF%" ^
         -DCMAKE_PREFIX_PATH="%CFG_VCPKG%\installed\%CFG_TRIPLET%" ^
+        -DSUSHI_ENABLE_CUDA=%CUDA_OPT% ^
         -DSUSHI_ENABLE_DISTRIBUTED=%DIST% ^
         -DSYCL_LIB_SUFFIX=9
-    if not exist build mkdir build
-    echo %DIST%>"build\.sushi_dist"
+    if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
+    echo %DIST%>"%BUILD_DIR%\.sushi_dist"
 )
 
 echo [INFO] Building...
-cmake --build build --config Release
+cmake --build "%BUILD_DIR%" --config Release
 
 if %ERRORLEVEL% EQU 0 (
     echo [SUCCESS] Build completed successfully!

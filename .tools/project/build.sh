@@ -46,12 +46,30 @@ cd "$DIR/../.."
 # `--distributed` flag. It changes Graph::Node's layout (PUBLIC compile def), so
 # flipping it requires a fresh configure — we track the last value in a stamp.
 DIST="${SUSHI_ENABLE_DISTRIBUTED:-OFF}"
-STAMP="build/.sushi_dist"
+
+# AddressSanitizer toggle (default OFF), passed in via the SUSHI_ASAN env var by
+# the Python CLI's `--addsanitizer` flag. ASan needs an isolated build tree
+# because: (1) it forces CUDA OFF — the CUDA UR adapter's urVirtualMemReserve
+# collides with ASan's reserved address space (run under ONEAPI_DEVICE_SELECTOR=
+# opencl:cpu instead); (2) it stays a Release build so CMakeLists' Debug/RelWith
+# DebInfo auto-TSan block never fires (TSan and ASan cannot coexist); (3) the
+# -fsanitize=address flags are injected manually. We keep it in `build-asan/` so
+# the normal CUDA `build/` is never clobbered.
+ASAN="${SUSHI_ASAN:-OFF}"
+if [ "$ASAN" == "ON" ]; then
+    BUILD_DIR="build-asan"
+    CUDA_OPT="OFF"
+    echo "[INFO] AddressSanitizer build: ON (CUDA forced OFF, tree=build-asan)"
+else
+    BUILD_DIR="build"
+    CUDA_OPT="ON"
+fi
+STAMP="$BUILD_DIR/.sushi_dist"
 
 NEED_CONFIG=false
-[ ! -d "build" ] && NEED_CONFIG=true
-[ "$CFG_GEN" == "Ninja" ] && [ ! -f "build/build.ninja" ] && NEED_CONFIG=true
-[ "$CFG_GEN" != "Ninja" ] && [ ! -f "build/Makefile" ] && NEED_CONFIG=true
+[ ! -d "$BUILD_DIR" ] && NEED_CONFIG=true
+[ "$CFG_GEN" == "Ninja" ] && [ ! -f "$BUILD_DIR/build.ninja" ] && NEED_CONFIG=true
+[ "$CFG_GEN" != "Ninja" ] && [ ! -f "$BUILD_DIR/Makefile" ] && NEED_CONFIG=true
 if [ -f "$STAMP" ]; then
     [ "$(cat "$STAMP" 2>/dev/null)" != "$DIST" ] && NEED_CONFIG=true
 elif [ "$DIST" != "OFF" ]; then
@@ -60,11 +78,11 @@ fi
 
 # Configure if needed
 if [ "$NEED_CONFIG" = true ]; then
-    echo "[INFO] Configuring CMake... (distributed=$DIST)"
+    echo "[INFO] Configuring CMake... (distributed=$DIST, asan=$ASAN)"
 
     # If build exists but is invalid, recreate it
-    if [ -d "build" ]; then
-        rm -rf build
+    if [ -d "$BUILD_DIR" ]; then
+        rm -rf "$BUILD_DIR"
     fi
 
     # In Docker (intel/llvm), override icpx/icx with clang++/clang if not found
@@ -74,11 +92,19 @@ if [ "$NEED_CONFIG" = true ]; then
         echo "[INFO] icpx not found, using intel/llvm clang++ instead."
     fi
 
-    CMAKE_ARGS=("-B" "build" "-G" "$CFG_GEN" "-DCMAKE_BUILD_TYPE=Release")
+    CMAKE_ARGS=("-B" "$BUILD_DIR" "-G" "$CFG_GEN" "-DCMAKE_BUILD_TYPE=Release")
     CMAKE_ARGS+=("-DCMAKE_C_COMPILER=$CFG_CC")
     CMAKE_ARGS+=("-DCMAKE_CXX_COMPILER=$CFG_CXX")
-    CMAKE_ARGS+=("-DSUSHI_ENABLE_CUDA=ON")
+    CMAKE_ARGS+=("-DSUSHI_ENABLE_CUDA=$CUDA_OPT")
     CMAKE_ARGS+=("-DSUSHI_ENABLE_DISTRIBUTED=$DIST")
+
+    if [ "$ASAN" == "ON" ]; then
+        ASAN_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g -O1"
+        CMAKE_ARGS+=("-DCMAKE_C_FLAGS=$ASAN_CFLAGS")
+        CMAKE_ARGS+=("-DCMAKE_CXX_FLAGS=$ASAN_CFLAGS")
+        CMAKE_ARGS+=("-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address")
+        CMAKE_ARGS+=("-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address")
+    fi
 
     if [ "$CFG_USE_VCPKG" == "true" ]; then
         CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=$CFG_VCPKG/scripts/buildsystems/vcpkg.cmake")
@@ -86,12 +112,12 @@ if [ "$NEED_CONFIG" = true ]; then
     fi
 
     cmake "${CMAKE_ARGS[@]}"
-    mkdir -p build
+    mkdir -p "$BUILD_DIR"
     echo "$DIST" > "$STAMP"
 fi
 
 echo "[INFO] Building..."
-cmake --build build --config Release
+cmake --build "$BUILD_DIR" --config Release
 
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] Build completed successfully!"

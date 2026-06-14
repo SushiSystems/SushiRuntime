@@ -31,6 +31,7 @@
  */
 
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <vector>
 #include <gtest/gtest.h>
@@ -40,18 +41,34 @@ using namespace SushiRuntime::Memory;
 
 namespace
 {
+    // Counters live on the heap, owned by shared_ptr. EBR reclamation is
+    // deferred: a tail of retired objects can outlive the test's return and is
+    // freed only during a later test's reclamation activity. Raw pointers to
+    // stack atomics would then be written after the frame is gone — a
+    // stack-use-after-return that silently corrupts whatever later test occupies
+    // that stack region (it manifested as a crash in an unrelated test in the
+    // full suite). Owning the counters by shared_ptr keeps them alive as long as
+    // any Tracked still references them, so late dtor writes stay valid.
+    struct Counters
+    {
+        std::atomic<long> live{0};       // net live objects (constructed - destroyed)
+        std::atomic<long> destroyed{0};
+    };
+    using CountersPtr = std::shared_ptr<Counters>;
+
+    inline CountersPtr make_counters() { return std::make_shared<Counters>(); }
+
     struct Tracked
     {
-        std::atomic<long>* live;     // net live objects (constructed - destroyed)
-        std::atomic<long>* destroyed;
-        explicit Tracked(std::atomic<long>* l, std::atomic<long>* d) : live(l), destroyed(d)
+        CountersPtr c;
+        explicit Tracked(CountersPtr counters) : c(std::move(counters))
         {
-            live->fetch_add(1, std::memory_order_relaxed);
+            c->live.fetch_add(1, std::memory_order_relaxed);
         }
         ~Tracked()
         {
-            live->fetch_sub(1, std::memory_order_relaxed);
-            destroyed->fetch_add(1, std::memory_order_relaxed);
+            c->live.fetch_sub(1, std::memory_order_relaxed);
+            c->destroyed.fetch_add(1, std::memory_order_relaxed);
         }
     };
 }
@@ -64,8 +81,7 @@ namespace
  */
 TEST(EpochStress, HighChurnNoLeak)
 {
-    std::atomic<long> live{0};
-    std::atomic<long> destroyed{0};
+    CountersPtr c = make_counters();
 
     constexpr int THREADS = 8;
     constexpr int PER_THREAD = 20'000;
@@ -73,31 +89,30 @@ TEST(EpochStress, HighChurnNoLeak)
     std::vector<std::thread> workers;
     for (int t = 0; t < THREADS; ++t)
     {
-        workers.emplace_back([&live, &destroyed]()
+        workers.emplace_back([c]()
         {
             for (int i = 0; i < PER_THREAD; ++i)
             {
                 EpochGuard guard;
-                EpochManager::instance().retire(new Tracked(&live, &destroyed));
+                EpochManager::instance().retire(new Tracked(c));
             }
         });
     }
     for (auto& w : workers) w.join();
 
     // Drain on the main thread: advance epochs and pull in orphaned nodes.
-    std::atomic<long> sink_live{0};
-    std::atomic<long> sink_destroyed{0};
+    CountersPtr sink = make_counters();
     for (int i = 0; i < 4096; ++i)
     {
         EpochGuard guard;
-        EpochManager::instance().retire(new Tracked(&sink_live, &sink_destroyed));
+        EpochManager::instance().retire(new Tracked(sink));
     }
 
     const long total = static_cast<long>(THREADS) * PER_THREAD;
-    EXPECT_GT(destroyed.load(), total / 2)
+    EXPECT_GT(c->destroyed.load(), total / 2)
         << "Most retired objects should have been reclaimed.";
     // Live count can never go negative (would mean a double-free).
-    EXPECT_GE(live.load(), 0) << "Negative live count indicates a double-free.";
+    EXPECT_GE(c->live.load(), 0) << "Negative live count indicates a double-free.";
 }
 
 /**
@@ -108,32 +123,30 @@ TEST(EpochStress, HighChurnNoLeak)
  */
 TEST(EpochStress, ThreadSpawnExitHandoff)
 {
-    std::atomic<long> live{0};
-    std::atomic<long> destroyed{0};
+    CountersPtr c = make_counters();
 
     constexpr int ROUNDS = 64;
     constexpr int PER_ROUND = 1000;
 
     std::atomic<bool> draining{true};
-    std::atomic<long> drain_live{0};
-    std::atomic<long> drain_destroyed{0};
-    std::thread drainer([&]()
+    CountersPtr drain = make_counters();
+    std::thread drainer([&draining, drain]()
     {
         while (draining.load(std::memory_order_relaxed))
         {
             EpochGuard guard;
-            EpochManager::instance().retire(new Tracked(&drain_live, &drain_destroyed));
+            EpochManager::instance().retire(new Tracked(drain));
         }
     });
 
     for (int r = 0; r < ROUNDS; ++r)
     {
-        std::thread shortlived([&live, &destroyed]()
+        std::thread shortlived([c]()
         {
             for (int i = 0; i < PER_ROUND; ++i)
             {
                 EpochGuard guard;
-                EpochManager::instance().retire(new Tracked(&live, &destroyed));
+                EpochManager::instance().retire(new Tracked(c));
             }
             // Thread exits here -> TLS dtor donates remaining nodes to orphans.
         });
@@ -143,7 +156,7 @@ TEST(EpochStress, ThreadSpawnExitHandoff)
     draining.store(false, std::memory_order_relaxed);
     drainer.join();
 
-    EXPECT_GT(destroyed.load(), 0)
+    EXPECT_GT(c->destroyed.load(), 0)
         << "Short-lived threads' orphaned retirees were never reclaimed.";
-    EXPECT_GE(live.load(), 0) << "Negative live count indicates a double-free.";
+    EXPECT_GE(c->live.load(), 0) << "Negative live count indicates a double-free.";
 }

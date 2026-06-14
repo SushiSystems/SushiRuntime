@@ -21,8 +21,11 @@
 #include <SushiRuntime/distributed/distributed_coordinator.hpp>
 
 #include <mutex>
+#include <chrono>
+#include <thread>
 #include <vector>
 #include <atomic>
+#include <condition_variable>
 #include <unordered_map>
 #include <unordered_set>
 #include <SushiRuntime/core/logger.hpp>
@@ -33,6 +36,14 @@ namespace SushiRuntime
 {
     namespace Distributed
     {
+        namespace
+        {
+            using Clock = std::chrono::steady_clock;
+            // After this many failed remote dispatches a node is pinned local so a
+            // kernel that always fails on workers cannot ping-pong forever.
+            constexpr uint32_t MAX_OFFLOAD_ATTEMPTS = 2;
+        }
+
         struct DistributedCoordinator::Impl : public Core::RefCounted
         {
             sushi_ptr<KernelRegistry>        kernels;
@@ -41,26 +52,56 @@ namespace SushiRuntime
             std::shared_ptr<IOffloadPolicy>  policy;
 
             CompletionHook                   on_complete;
+            ResubmitHook                     on_resubmit;
 
             std::mutex                       mtx;
             std::vector<WorkerStats>         workers;
+            // Per-worker bookkeeping kept parallel to `workers` so the policy-facing
+            // WorkerStats stays clean: last inbound message time (liveness) and the
+            // op set the worker advertised at HELLO (to undo op_support on death).
+            std::vector<Clock::time_point>      last_seen;
+            std::vector<std::vector<uint32_t>>  worker_ops;
             // op_id -> how many workers expose it; an op is offloadable only when
             // every live worker can run it (the negotiated common kernel set).
             std::unordered_map<uint32_t, int> op_support;
 
-            std::unordered_map<uint64_t, Graph::Node*> pending; // task_id -> node
+            struct PendingTask { Graph::Node* node = nullptr; int worker = -1; };
+            std::unordered_map<uint64_t, PendingTask> pending; // task_id -> {node, worker}
             std::atomic<uint64_t>            next_task_id{1};
 
             // "ran where" telemetry, so silent local fallback is observable.
             std::atomic<uint64_t>            offloaded_count{0};
             std::atomic<uint64_t>            declined_count{0};
+            std::atomic<uint64_t>            redispatched_count{0};
+
+            // --- liveness monitor: declares a silent worker dead and re-injects
+            //     its in-flight tasks so the master never stalls on a lost peer --
+            //     (atomic: the public setter may race the running monitor thread)
+            std::atomic<int64_t>             liveness_timeout_ms{5000};
+            std::thread                      monitor_thread;
+            std::mutex                       monitor_mtx;
+            std::condition_variable          monitor_cv;
+            std::atomic<bool>                monitor_running{false};
 
             void handle_message(int peer, MsgType type, std::span<const std::byte> payload);
+            void monitor_loop();
+            // Collects tasks orphaned by a now-dead worker (under mtx); the caller
+            // re-injects them via on_resubmit outside the lock.
+            std::vector<Graph::Node*> reap_dead_workers();
         };
 
         void DistributedCoordinator::Impl::handle_message(int peer, MsgType type,
                                                           std::span<const std::byte> payload)
         {
+            // Any inbound traffic proves the peer is alive — refresh its liveness
+            // before dispatching on type, so heavy workers (busy pulling buffers)
+            // are never falsely reaped.
+            {
+                std::lock_guard<std::mutex> lk(mtx);
+                if (peer >= 0 && peer < static_cast<int>(last_seen.size()))
+                    last_seen[peer] = Clock::now();
+            }
+
             switch (type)
             {
                 case MsgType::REGISTER_HELLO:
@@ -78,6 +119,7 @@ namespace SushiRuntime
                             if (!w.alive)
                             {
                                 w.alive = true;
+                                worker_ops[peer] = ops;
                                 for (uint32_t op : ops) op_support[op]++;
                             }
                         }
@@ -121,13 +163,15 @@ namespace SushiRuntime
                         std::lock_guard<std::mutex> lk(mtx);
                         if (auto it = pending.find(res.task_id); it != pending.end())
                         {
-                            node = it->second;
+                            node = it->second.node;
                             pending.erase(it);
                         }
                         if (peer >= 0 && peer < static_cast<int>(workers.size()) &&
                             workers[peer].inflight > 0)
                             workers[peer].inflight--;
                     }
+                    // A stale result for a task we already re-dispatched (the worker
+                    // was slow, not dead) finds nothing in `pending` and is dropped.
                     if (node && on_complete)
                         on_complete(node, res.success);
                     break;
@@ -151,6 +195,8 @@ namespace SushiRuntime
 
             const int n = impl_->transport->peer_count();
             impl_->workers.resize(static_cast<size_t>(n));
+            impl_->last_seen.assign(static_cast<size_t>(n), Clock::now());
+            impl_->worker_ops.resize(static_cast<size_t>(n));
             for (int i = 0; i < n; ++i)
                 impl_->workers[i].worker_id = i;
         }
@@ -165,6 +211,19 @@ namespace SushiRuntime
             impl_->on_complete = std::move(hook);
         }
 
+        void DistributedCoordinator::set_resubmit_hook(ResubmitHook hook)
+        {
+            impl_->on_resubmit = std::move(hook);
+        }
+
+        void DistributedCoordinator::set_liveness_timeout(std::chrono::milliseconds timeout)
+        {
+            impl_->liveness_timeout_ms.store(timeout.count(), std::memory_order_relaxed);
+            // Wake the monitor so it recomputes its poll period against the new
+            // timeout instead of finishing a sleep sized to the old (default) one.
+            impl_->monitor_cv.notify_all();
+        }
+
         uint64_t DistributedCoordinator::offloaded_count() const
         {
             return impl_->offloaded_count.load(std::memory_order_relaxed);
@@ -173,6 +232,11 @@ namespace SushiRuntime
         uint64_t DistributedCoordinator::declined_count() const
         {
             return impl_->declined_count.load(std::memory_order_relaxed);
+        }
+
+        uint64_t DistributedCoordinator::redispatched_count() const
+        {
+            return impl_->redispatched_count.load(std::memory_order_relaxed);
         }
 
         int DistributedCoordinator::alive_worker_count() const
@@ -199,17 +263,117 @@ namespace SushiRuntime
                     raw->handle_message(peer, type, payload);
                 });
             impl_->transport->start();
+
+            bool expected = false;
+            if (impl_->monitor_running.compare_exchange_strong(expected, true))
+                impl_->monitor_thread = std::thread([raw] { raw->monitor_loop(); });
         }
 
         void DistributedCoordinator::stop()
         {
-            if (impl_ && impl_->transport)
+            if (!impl_)
+                return;
+
+            bool expected = true;
+            if (impl_->monitor_running.compare_exchange_strong(expected, false))
+            {
+                impl_->monitor_cv.notify_all();
+                if (impl_->monitor_thread.joinable())
+                    impl_->monitor_thread.join();
+            }
+
+            if (impl_->transport)
                 impl_->transport->stop();
+        }
+
+        std::vector<Graph::Node*> DistributedCoordinator::Impl::reap_dead_workers()
+        {
+            std::vector<Graph::Node*> orphans;
+            const auto now = Clock::now();
+            const auto timeout = std::chrono::milliseconds(
+                liveness_timeout_ms.load(std::memory_order_relaxed));
+
+            std::lock_guard<std::mutex> lk(mtx);
+            for (size_t i = 0; i < workers.size(); ++i)
+            {
+                auto& w = workers[i];
+                if (!w.alive)
+                    continue;
+                if (now - last_seen[i] < timeout)
+                    continue;
+
+                // Declare the worker dead: drop it from the common kernel set and
+                // reset its load so the policy stops choosing it immediately.
+                w.alive    = false;
+                w.inflight = 0;
+                for (uint32_t op : worker_ops[i])
+                {
+                    auto it = op_support.find(op);
+                    if (it != op_support.end() && --it->second <= 0)
+                        op_support.erase(it);
+                }
+                worker_ops[i].clear();
+                SR_LOG_WARN("Worker {} missed heartbeats; declaring it dead and "
+                            "re-dispatching its tasks.", static_cast<int>(i));
+
+                // Hand back every task still owned by this worker.
+                for (auto it = pending.begin(); it != pending.end(); )
+                {
+                    if (it->second.worker == static_cast<int>(i))
+                    {
+                        orphans.push_back(it->second.node);
+                        it = pending.erase(it);
+                    }
+                    else ++it;
+                }
+            }
+            return orphans;
+        }
+
+        void DistributedCoordinator::Impl::monitor_loop()
+        {
+            while (monitor_running.load())
+            {
+                {
+                    std::unique_lock<std::mutex> lk(monitor_mtx);
+                    // Poll at a fraction of the timeout so detection latency is
+                    // bounded without busy-spinning.
+                    auto period = std::chrono::milliseconds(
+                        liveness_timeout_ms.load(std::memory_order_relaxed) / 2);
+                    if (period.count() < 50) period = std::chrono::milliseconds(50);
+                    // Plain wait (no predicate) so set_liveness_timeout()'s notify
+                    // wakes us to recompute `period` against the new timeout rather
+                    // than sleeping out a stale, longer interval.
+                    monitor_cv.wait_for(lk, period);
+                }
+                if (!monitor_running.load())
+                    break;
+
+                auto orphans = reap_dead_workers();
+                for (Graph::Node* node : orphans)
+                {
+                    redispatched_count.fetch_add(1, std::memory_order_relaxed);
+                    if (on_resubmit)
+                        on_resubmit(node);          // re-offload to a survivor, or run local
+                    else if (on_complete)
+                        on_complete(node, false);   // no resubmit wired: at least don't stall
+                }
+            }
         }
 
         bool DistributedCoordinator::try_offload(Graph::Node* node)
         {
             if (!node) return false;
+
+            // A node that has already failed remotely too many times (dead worker
+            // or kernel error) is pinned local: clear its offload flag so this and
+            // future dispatch attempts run it on the home machine.
+            if (node->offload_attempts_.load(std::memory_order_relaxed) >= MAX_OFFLOAD_ATTEMPTS)
+            {
+                node->offloadable_ = false;
+                impl_->declined_count.fetch_add(1, std::memory_order_relaxed);
+                return false;
+            }
 
             // Refresh input handle versions: the master is authoritative, so a
             // buffer written since compile() carries a newer version, which is
@@ -245,10 +409,12 @@ namespace SushiRuntime
                 chosen = *pick;
 
                 msg.task_id = impl_->next_task_id.fetch_add(1, std::memory_order_relaxed);
-                impl_->pending[msg.task_id] = node; // takes over the scheduling ref
+                impl_->pending[msg.task_id] = Impl::PendingTask{ node, chosen }; // takes over the scheduling ref
                 if (chosen >= 0 && chosen < static_cast<int>(impl_->workers.size()))
                     impl_->workers[chosen].inflight++;
             }
+
+            node->offload_attempts_.fetch_add(1, std::memory_order_relaxed);
 
             auto bytes = msg.serialize();
             impl_->transport->send(chosen, MsgType::TASK_DISPATCH, bytes);

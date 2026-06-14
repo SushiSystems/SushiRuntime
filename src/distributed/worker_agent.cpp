@@ -22,6 +22,7 @@
 
 #include <queue>
 #include <mutex>
+#include <chrono>
 #include <thread>
 #include <atomic>
 #include <vector>
@@ -56,7 +57,16 @@ namespace SushiRuntime
             std::thread                   exec_thread;
             std::atomic<bool>             running{false};
 
+            // --- liveness: a periodic HEARTBEAT so the master can detect a dead
+            //     or hung worker and re-dispatch its tasks ----------------------
+            std::chrono::milliseconds     heartbeat_interval{1000};
+            std::thread                   heartbeat_thread;
+            std::mutex                    heartbeat_mtx;
+            std::condition_variable       heartbeat_cv;
+
             Impl(Execution::RuntimeContext& c) : ctx(c) {}
+
+            void heartbeat_loop();
 
             void on_message(int peer, MsgType type, std::span<const std::byte> payload);
             void exec_loop();
@@ -207,6 +217,18 @@ namespace SushiRuntime
             transport->send(0, MsgType::TASK_RESULT, result.serialize());
         }
 
+        void WorkerAgent::Impl::heartbeat_loop()
+        {
+            while (running.load())
+            {
+                std::unique_lock<std::mutex> lk(heartbeat_mtx);
+                heartbeat_cv.wait_for(lk, heartbeat_interval, [&] { return !running.load(); });
+                if (!running.load()) return;
+                lk.unlock();
+                transport->send(0, MsgType::HEARTBEAT, {});
+            }
+        }
+
         void WorkerAgent::Impl::exec_loop()
         {
             for (;;)
@@ -246,6 +268,11 @@ namespace SushiRuntime
             stop();
         }
 
+        void WorkerAgent::set_heartbeat_interval(std::chrono::milliseconds interval)
+        {
+            impl_->heartbeat_interval = interval;
+        }
+
         void WorkerAgent::start()
         {
             bool expected = false;
@@ -268,6 +295,10 @@ namespace SushiRuntime
             impl_->transport->send(0, MsgType::REGISTER_HELLO, w.view());
 
             impl_->exec_thread = std::thread([raw] { raw->exec_loop(); });
+
+            // A zero interval disables heartbeats (tests use this to feign death).
+            if (impl_->heartbeat_interval.count() > 0)
+                impl_->heartbeat_thread = std::thread([raw] { raw->heartbeat_loop(); });
         }
 
         void WorkerAgent::run()
@@ -285,6 +316,9 @@ namespace SushiRuntime
 
             impl_->job_cv.notify_all();
             impl_->cache_cv.notify_all();
+            impl_->heartbeat_cv.notify_all();
+            if (impl_->heartbeat_thread.joinable())
+                impl_->heartbeat_thread.join();
             if (impl_->exec_thread.joinable())
                 impl_->exec_thread.join();
 

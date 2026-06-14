@@ -30,6 +30,7 @@
  */
 
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <vector>
 #include <gtest/gtest.h>
@@ -39,17 +40,30 @@ using namespace SushiRuntime::Memory;
 
 namespace
 {
+    using Counter = std::shared_ptr<std::atomic<int>>;
+
+    inline Counter make_counter() { return std::make_shared<std::atomic<int>>(0); }
+
     /**
      * @brief Heap payload that bumps a shared atomic counter on destruction.
      *
      * Lets a test observe reclamation (delete actually ran) without reaching
-     * into EpochManager internals. The counter is external so the count
-     * survives the object's own destruction.
+     * into EpochManager internals.
+     *
+     * The counter is held by shared_ptr, NOT a raw pointer to a test-local
+     * atomic. EBR reclamation is deferred and a tail of retired objects can
+     * linger in the current epoch past the test's return; they are only freed
+     * later (during a subsequent test's reclamation activity). A raw pointer to
+     * a stack `atomic<int>` would then be written after the test frame is gone —
+     * a stack-use-after-return that, in the full suite, silently corrupts
+     * whatever later test now occupies that stack region. Owning the counter via
+     * shared_ptr keeps it alive exactly as long as any Tracked still references
+     * it, so the late dtor write always lands in valid memory.
      */
     struct Tracked
     {
-        std::atomic<int>* destroyed;
-        explicit Tracked(std::atomic<int>* d) : destroyed(d) {}
+        Counter destroyed;
+        explicit Tracked(Counter d) : destroyed(std::move(d)) {}
         ~Tracked() { destroyed->fetch_add(1, std::memory_order_relaxed); }
     };
 
@@ -62,20 +76,20 @@ namespace
      * object; the threshold-driven check_and_reclaim then collects objects from
      * earlier epochs.
      */
-    int retire_and_drain(std::atomic<int>& destroyed, int count)
+    int retire_and_drain(const Counter& destroyed, int count)
     {
         for (int i = 0; i < count; ++i)
         {
             EpochGuard guard;
-            EpochManager::instance().retire(new Tracked(&destroyed));
+            EpochManager::instance().retire(new Tracked(destroyed));
         }
         // Extra guarded passes to advance the epoch and let pending nodes drain.
         for (int i = 0; i < 512; ++i)
         {
             EpochGuard guard;
-            EpochManager::instance().retire(new Tracked(&destroyed));
+            EpochManager::instance().retire(new Tracked(destroyed));
         }
-        return destroyed.load(std::memory_order_relaxed);
+        return destroyed->load(std::memory_order_relaxed);
     }
 }
 
@@ -102,7 +116,7 @@ TEST(EpochReclamationTest, GuardEnterExitBalanced)
  */
 TEST(EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
 {
-    std::atomic<int> destroyed{0};
+    Counter destroyed = make_counter();
     constexpr int RETIRED = 1024;
 
     int reclaimed = retire_and_drain(destroyed, RETIRED);
@@ -121,15 +135,15 @@ TEST(EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
  */
 TEST(EpochReclamationTest, ThreadExitHandsOffOrphans)
 {
-    std::atomic<int> destroyed{0};
+    Counter destroyed = make_counter();
     constexpr int RETIRED = 300;
 
-    std::thread producer([&destroyed]()
+    std::thread producer([destroyed]()
     {
         for (int i = 0; i < RETIRED; ++i)
         {
             EpochGuard guard;
-            EpochManager::instance().retire(new Tracked(&destroyed));
+            EpochManager::instance().retire(new Tracked(destroyed));
         }
         // Thread exits here -> EpochThreadLocalState dtor donates remaining
         // retire_list to the global orphan list.
@@ -138,14 +152,14 @@ TEST(EpochReclamationTest, ThreadExitHandsOffOrphans)
 
     // Main thread drains: each guarded retire triggers check_and_reclaim, which
     // pulls in the orphaned nodes and frees those past the safe epoch.
-    std::atomic<int> drain_sink{0};
+    Counter drain_sink = make_counter();
     for (int i = 0; i < 1024; ++i)
     {
         EpochGuard guard;
-        EpochManager::instance().retire(new Tracked(&drain_sink));
+        EpochManager::instance().retire(new Tracked(drain_sink));
     }
 
-    EXPECT_GT(destroyed.load(), 0)
+    EXPECT_GT(destroyed->load(), 0)
         << "Orphaned nodes from an exited thread were never reclaimed (leak).";
 }
 
@@ -156,23 +170,23 @@ TEST(EpochReclamationTest, ThreadExitHandsOffOrphans)
  */
 TEST(EpochReclamationTest, ConcurrentRetireNoCrash)
 {
-    std::atomic<int> destroyed{0};
+    Counter destroyed = make_counter();
     constexpr int THREADS = 8;
     constexpr int PER_THREAD = 500;
 
     std::vector<std::thread> workers;
     for (int t = 0; t < THREADS; ++t)
     {
-        workers.emplace_back([&destroyed]()
+        workers.emplace_back([destroyed]()
         {
             for (int i = 0; i < PER_THREAD; ++i)
             {
                 EpochGuard guard;
-                EpochManager::instance().retire(new Tracked(&destroyed));
+                EpochManager::instance().retire(new Tracked(destroyed));
             }
         });
     }
     for (auto& w : workers) w.join();
 
-    EXPECT_GT(destroyed.load(), 0) << "No objects reclaimed under concurrent retire.";
+    EXPECT_GT(destroyed->load(), 0) << "No objects reclaimed under concurrent retire.";
 }

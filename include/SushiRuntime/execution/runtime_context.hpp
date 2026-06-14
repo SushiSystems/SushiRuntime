@@ -32,6 +32,7 @@
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #ifdef SUSHI_DISTRIBUTED
+#include <chrono>
 #include <optional>
 #include <SushiRuntime/graph/task_types.hpp>
 #include <SushiRuntime/distributed/protocol.hpp>
@@ -99,6 +100,62 @@ namespace SushiRuntime
                  * @return sycl::queue& Reference to the closest device queue.
                  */
                 sycl::queue& get_numa_local_queue(int numa_id);
+
+                /**
+                 * @brief Returns the queue whose context owns @p ptr (USM data).
+                 *
+                 * USM is pinned to the device/context it was allocated on, so a
+                 * kernel touching it must run on a queue sharing that context;
+                 * running it elsewhere (e.g. CPU USM on a CUDA queue) is an
+                 * illegal cross-context access. If @p ptr is null or not found in
+                 * any queue's context, falls back to get_numa_local_queue(@p
+                 * fallback_numa) — preserving round-robin for pointer-less tasks.
+                 *
+                 * @param ptr           A USM pointer the task reads or writes.
+                 * @param fallback_numa NUMA hint used when @p ptr can't be located.
+                 * @return The owning queue, or the NUMA-local fallback.
+                 */
+                sycl::queue& get_queue_for_ptr(void* ptr, int fallback_numa = 0);
+
+                /**
+                 * @brief Allocates shared USM and records its owning queue.
+                 *
+                 * Prefer this over a bare sycl::malloc_shared when the data will
+                 * be touched by graph tasks: the runtime remembers which queue
+                 * (device + context) the allocation belongs to, so the scheduler
+                 * can dispatch the task to that exact queue and never trigger a
+                 * cross-context illegal access. The allocation is pinned to the
+                 * NUMA-local compute queue for @p numa_id.
+                 *
+                 * @param bytes Allocation size in bytes.
+                 * @param numa_id Target NUMA node (selects the owning queue).
+                 * @return USM pointer, or nullptr on failure.
+                 */
+                void* malloc_shared(size_t bytes, int numa_id = 0);
+
+                /**
+                 * @brief Allocates device USM and records its owning queue.
+                 * @see malloc_shared
+                 */
+                void* malloc_device(size_t bytes, int numa_id = 0);
+
+                /**
+                 * @brief Frees USM obtained from malloc_shared/malloc_device and
+                 *        drops its owner record. Safe to call with nullptr.
+                 */
+                void free_usm(void* ptr);
+
+                /**
+                 * @brief Typed convenience wrapper over malloc_shared.
+                 * @tparam T Element type.
+                 * @param count Number of elements.
+                 * @param numa_id Target NUMA node.
+                 */
+                template <typename T>
+                T* malloc_shared(size_t count, int numa_id = 0)
+                {
+                    return static_cast<T*>(malloc_shared(count * sizeof(T), numa_id));
+                }
 
                 /**
                  * @brief NUMA latency cost between two nodes, via the injected model.
@@ -196,6 +253,17 @@ namespace SushiRuntime
 
                 /** @brief Offloadable tasks the policy kept local (Master mode telemetry). */
                 uint64_t distributed_declined_count() const;
+
+                /** @brief Tasks re-injected after a worker death / remote failure (Master mode telemetry). */
+                uint64_t distributed_redispatched_count() const;
+
+                /**
+                 * @brief Sets the worker liveness timeout (Master mode).
+                 *
+                 * A worker silent for longer than this is declared dead and its
+                 * in-flight tasks are re-dispatched to a survivor or run locally.
+                 */
+                void distributed_set_liveness_timeout(std::chrono::milliseconds timeout);
 
                 /** @brief Number of live (registered) workers in the cluster. */
                 int distributed_alive_workers() const;

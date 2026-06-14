@@ -115,18 +115,15 @@ TEST(SyclExecutionTest, MultiStageChain)
     RuntimeContext ctx;
     TaskGraph graph(ctx);
 
-    sycl::queue& q = ctx.get_numa_local_queue(0);
-
     constexpr size_t N = 2048;
     constexpr float SCALE = 3.0f;
 
-    UsmShared<float> usm_data(q, N);
-    UsmShared<double> usm_sum(q, 1);
-    ASSERT_TRUE(usm_data);
-    ASSERT_TRUE(usm_sum);
-
-    float* data = usm_data.get();
-    double* sum = usm_sum.get();
+    // Allocate through the runtime so the scheduler knows which queue/context
+    // owns the USM and dispatches the device kernel there (no cross-context).
+    float*  data = ctx.malloc_shared<float>(N);
+    double* sum  = ctx.malloc_shared<double>(1);
+    ASSERT_NE(data, nullptr);
+    ASSERT_NE(sum, nullptr);
 
     // Stage 1: init data[i] = i (host write).
     TaskMetadata meta_init{"Init"};
@@ -169,4 +166,7 @@ TEST(SyclExecutionTest, MultiStageChain)
 
     EXPECT_NEAR(*sum, expected, expected * 1e-6)
         << "Multi-stage pipeline produced an incorrect reduction.";
+
+    ctx.free_usm(data);
+    ctx.free_usm(sum);
 }

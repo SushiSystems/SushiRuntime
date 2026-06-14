@@ -294,10 +294,15 @@ namespace SushiRuntime
             for(void* ptr : write_access)
                 if (ptr) impl_->tracker.resolve(node.get(), ptr, true);
 
+            // Retain the access lists on the node (every build). The scheduler
+            // uses them to route a KERNEL submit to the queue that owns the USM
+            // (avoiding a cross-context illegal access on heterogeneous setups).
+            node->io_reads_  = read_access;
+            node->io_writes_ = write_access;
+
 #ifdef SUSHI_DISTRIBUTED
-            // Retain the access lists so compile() can resolve them to serializable
-            // buffer handles for potential offload. The tracker consumes them above
-            // for dependency analysis but does not keep them on the node.
+            // The distributed layer resolves these to serializable buffer handles
+            // for potential offload; same pointers, kept under the existing names.
             node->dist_reads_  = read_access;
             node->dist_writes_ = write_access;
 #endif
