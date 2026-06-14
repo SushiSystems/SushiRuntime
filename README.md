@@ -26,7 +26,7 @@ On Windows, dependencies are resolved through **vcpkg**. On Linux they can come 
 The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. The easiest install is the helper script (Windows → pipx, Linux/macOS → pip into the current environment):
 
 ```bash
-python install_cli.py                 # add --editable for a dev install
+python cli/install.py                 # add --editable for a dev install
 ```
 
 Or install the package directly:
