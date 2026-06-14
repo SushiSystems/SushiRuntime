@@ -64,7 +64,7 @@ namespace
  * @test ExecutesExactlySubmitted
  * @brief A modest batch of host tasks must all run exactly once.
  */
-TEST(SchedulerIntegration, ExecutesExactlySubmitted)
+TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
 {
     RuntimeContext ctx;
     TaskScheduler scheduler(ctx);
@@ -90,7 +90,7 @@ TEST(SchedulerIntegration, ExecutesExactlySubmitted)
  * @brief A late-submitted high-priority task must run among the first.
  * Deterministic small-scale mirror of the stress-suite bypass test.
  */
-TEST(SchedulerIntegration, PriorityBypass)
+TEST(Integration_SchedulerIntegration, PriorityBypass)
 {
     RuntimeContext ctx;
     TaskScheduler scheduler(ctx);
@@ -136,7 +136,7 @@ TEST(SchedulerIntegration, PriorityBypass)
  * @brief A single arm/submit/stop round with no inflight work left must shut
  * down cleanly and report a fully drained queue.
  */
-TEST(SchedulerIntegration, CleanLifecycleRound)
+TEST(Integration_SchedulerIntegration, CleanLifecycleRound)
 {
     RuntimeContext ctx;
     TaskScheduler scheduler(ctx);

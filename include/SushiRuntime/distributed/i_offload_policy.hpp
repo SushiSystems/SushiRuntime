@@ -42,19 +42,19 @@ namespace SushiRuntime
             int      worker_id    = -1;
             bool     alive        = false;
             uint32_t inflight     = 0;   /**< tasks currently dispatched to it. */
-            uint64_t free_mem     = 0;   /**< reported device memory headroom (bytes). */
-            uint32_t rtt_micros   = 0;   /**< last measured round-trip latency. */
+            uint64_t free_mem     = 0;   /**< device memory headroom (bytes), from the worker's last PONG. */
+            uint32_t rtt_micros   = 0;   /**< round-trip latency (us), refreshed by the master's PING/PONG probe. */
         };
 
         /**
          * @brief Decides whether (and where) a ready task should be offloaded. [swappable]
          *
-         * Same plug-in shape as the scheduler's ThermalProxyStrategy: the default
-         * implements the Idea.md heuristic
-         *
-         *     offload iff  local_queue_wait > rtt + transfer_time + remote_exec
-         *
-         * but it can be replaced at runtime without touching the coordinator.
+         * Same plug-in shape as the scheduler's ThermalProxyStrategy, and the same
+         * locality intuition: a worker is the most distant tier of the cost
+         * hierarchy. The default (LeastLoadedOffloadPolicy) ranks live workers by an
+         * estimated completion cost built from telemetry — round-trip latency, data
+         * transfer time, and queue backlog — and keeps tiny payloads local. It can
+         * be replaced at runtime without touching the coordinator.
          *
          * Returning std::nullopt means "run it locally" — the safe default that
          * keeps the 8-of-10 small jobs on the home machine.
@@ -77,9 +77,10 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Default policy: pick the live worker with the fewest inflight
-         * tasks and enough free memory; bail out (local) if none qualifies or the
-         * payload is tiny enough that the network would only add latency.
+         * @brief Default policy: pick the live worker with the lowest estimated
+         * completion cost (rtt + transfer_time + queue backlog) among those with
+         * enough free memory; bail out (local) if none qualifies or the payload is
+         * tiny enough that the network would only add latency.
          */
         class SUSHIRUNTIME_API LeastLoadedOffloadPolicy final : public IOffloadPolicy
         {

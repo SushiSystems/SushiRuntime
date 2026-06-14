@@ -25,6 +25,7 @@
 #include <thread>
 #include <vector>
 #include <atomic>
+#include <cstdint>
 #include <condition_variable>
 #include <unordered_map>
 #include <unordered_set>
@@ -85,6 +86,9 @@ namespace SushiRuntime
 
             void handle_message(int peer, MsgType type, std::span<const std::byte> payload);
             void monitor_loop();
+            // Sends a fresh RTT probe to every live worker. Snapshots peer ids
+            // under mtx, then sends outside the lock (the reply arrives as PONG).
+            void send_rtt_pings();
             // Collects tasks orphaned by a now-dead worker (under mtx); the caller
             // re-injects them via on_resubmit outside the lock.
             std::vector<Graph::Node*> reap_dead_workers();
@@ -174,6 +178,27 @@ namespace SushiRuntime
                     // was slow, not dead) finds nothing in `pending` and is dropped.
                     if (node && on_complete)
                         on_complete(node, res.success);
+                    break;
+                }
+                case MsgType::PONG:
+                {
+                    // RTT is computed entirely on the master clock: the worker
+                    // echoed the steady-clock token we stamped into the PING, so
+                    // (now - token) is the round trip free of any clock skew.
+                    auto pong = PongMsg::deserialize(payload);
+                    auto sent = Clock::time_point(Clock::duration(
+                        static_cast<Clock::rep>(pong.token)));
+                    auto rtt_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                        Clock::now() - sent).count();
+                    if (rtt_us < 0) rtt_us = 0;
+
+                    std::lock_guard<std::mutex> lk(mtx);
+                    if (peer >= 0 && peer < static_cast<int>(workers.size()))
+                    {
+                        workers[peer].rtt_micros = static_cast<uint32_t>(
+                            rtt_us > UINT32_MAX ? UINT32_MAX : rtt_us);
+                        workers[peer].free_mem   = pong.free_mem;
+                    }
                     break;
                 }
                 case MsgType::HEARTBEAT:
@@ -330,6 +355,24 @@ namespace SushiRuntime
             return orphans;
         }
 
+        void DistributedCoordinator::Impl::send_rtt_pings()
+        {
+            std::vector<int> alive_peers;
+            {
+                std::lock_guard<std::mutex> lk(mtx);
+                for (size_t i = 0; i < workers.size(); ++i)
+                    if (workers[i].alive)
+                        alive_peers.push_back(static_cast<int>(i));
+            }
+            for (int peer : alive_peers)
+            {
+                PingMsg ping;
+                ping.token = static_cast<uint64_t>(
+                    Clock::now().time_since_epoch().count());
+                transport->send(peer, MsgType::PING, ping.serialize());
+            }
+        }
+
         void DistributedCoordinator::Impl::monitor_loop()
         {
             while (monitor_running.load())
@@ -348,6 +391,10 @@ namespace SushiRuntime
                 }
                 if (!monitor_running.load())
                     break;
+
+                // Refresh per-worker RTT / free_mem telemetry the offload policy
+                // reasons over, then reap anyone who has gone silent.
+                send_rtt_pings();
 
                 auto orphans = reap_dead_workers();
                 for (Graph::Node* node : orphans)

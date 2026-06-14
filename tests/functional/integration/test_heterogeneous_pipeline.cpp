@@ -64,7 +64,7 @@ using SushiRuntime::Test::UsmShared;
  *        task mix in one graph. Every chain's result must match the closed-form
  *        expectation ((i + c) * SCALE + BIAS).
  */
-TEST(HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
+TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);

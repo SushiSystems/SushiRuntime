@@ -40,7 +40,7 @@ using SushiRuntime::Test::PriorityTrackingTask;
  * @brief Tests stability and deque resizing by submitting 1 million tasks
  * simultaneously to check worker thread performance under heavy load.
  */
-TEST(TaskSchedulerStress, OneMillionTaskBomb)
+TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
 {
     RuntimeContext ctx;
     TaskScheduler scheduler(ctx);
@@ -72,7 +72,7 @@ TEST(TaskSchedulerStress, OneMillionTaskBomb)
  * @brief Tests submission logic under heavy contention by submitting tasks
  * from 8 different threads simultaneously.
  */
-TEST(TaskSchedulerStress, MultiProducerContention)
+TEST(Stress_TaskSchedulerStress, MultiProducerContention)
 {
     RuntimeContext ctx;
     TaskScheduler scheduler(ctx);
@@ -115,7 +115,7 @@ TEST(TaskSchedulerStress, MultiProducerContention)
  * @brief Tests scheduler lifecycle by repeatedly arming and stopping,
  * checking for races, deadlocks, or memory leaks.
  */
-TEST(TaskSchedulerStress, RapidArmAndStopThrashing)
+TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
 {
     RuntimeContext ctx;
 
@@ -143,7 +143,7 @@ TEST(TaskSchedulerStress, RapidArmAndStopThrashing)
  * @brief Verifies that high-priority tasks bypass the normal queue even when
  * many low-priority tasks are already queued.
  */
-TEST(TaskSchedulerStress, PriorityBypassUnderLoad)
+TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
 {
     RuntimeContext ctx;
     TaskScheduler scheduler(ctx);

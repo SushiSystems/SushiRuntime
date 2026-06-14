@@ -40,7 +40,7 @@ using SushiRuntime::Test::UsmShared;
  * dispatches a SYCL device kernel for vector addition, and finally
  * verifies the results on the host.
  */
-TEST(SyclExecutionTest, EndToEndVectorAddition)
+TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);
@@ -110,7 +110,7 @@ TEST(SyclExecutionTest, EndToEndVectorAddition)
  * output via shared USM, so the dependency tracker must serialize them and the
  * final host-side sum must match the closed-form expectation.
  */
-TEST(SyclExecutionTest, MultiStageChain)
+TEST(Integration_SyclExecutionTest, MultiStageChain)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);

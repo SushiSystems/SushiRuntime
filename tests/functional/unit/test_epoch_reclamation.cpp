@@ -98,7 +98,7 @@ namespace
  * @brief Constructing and destroying an EpochGuard must be safe and balanced,
  * even when nested.
  */
-TEST(EpochReclamationTest, GuardEnterExitBalanced)
+TEST(Unit_EpochReclamationTest, GuardEnterExitBalanced)
 {
     EXPECT_NO_THROW({
         EpochGuard outer;
@@ -114,7 +114,7 @@ TEST(EpochReclamationTest, GuardEnterExitBalanced)
  * deleted. We retire well past the RETIRE_THRESHOLD and assert that a strong
  * majority were reclaimed (a tail may linger in the current epoch).
  */
-TEST(EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
+TEST(Unit_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
 {
     Counter destroyed = make_counter();
     constexpr int RETIRED = 1024;
@@ -133,7 +133,7 @@ TEST(EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
  * threads' check_and_reclaim. We prove this by retiring on a short-lived thread
  * and then doing draining work on the main thread until they are deleted.
  */
-TEST(EpochReclamationTest, ThreadExitHandsOffOrphans)
+TEST(Unit_EpochReclamationTest, ThreadExitHandsOffOrphans)
 {
     Counter destroyed = make_counter();
     constexpr int RETIRED = 300;
@@ -168,7 +168,7 @@ TEST(EpochReclamationTest, ThreadExitHandsOffOrphans)
  * @brief Many threads retiring simultaneously must not corrupt the manager.
  * Success is the absence of a crash plus a non-trivial reclamation count.
  */
-TEST(EpochReclamationTest, ConcurrentRetireNoCrash)
+TEST(Unit_EpochReclamationTest, ConcurrentRetireNoCrash)
 {
     Counter destroyed = make_counter();
     constexpr int THREADS = 8;

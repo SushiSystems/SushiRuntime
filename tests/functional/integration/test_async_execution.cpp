@@ -70,7 +70,7 @@ namespace
  *        without waiting in between, then joins both. Both results must be
  *        correct, proving concurrent cross-device dispatch is race-free.
  */
-TEST(AsyncExecutionTest, CpuGpuConcurrentVectorAdd)
+TEST(Integration_AsyncExecutionTest, CpuGpuConcurrentVectorAdd)
 {
     size_t cpu_idx = 0, gpu_idx = 0;
     if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
@@ -138,7 +138,7 @@ TEST(AsyncExecutionTest, CpuGpuConcurrentVectorAdd)
  *        heavy kernel and assert the submit call returns while it is still
  *        in-flight (status != complete) at least once across a few attempts.
  */
-TEST(AsyncExecutionTest, AsyncDispatchDoesNotBlock)
+TEST(Integration_AsyncExecutionTest, AsyncDispatchDoesNotBlock)
 {
     size_t cpu_idx = 0, gpu_idx = 0;
     if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))

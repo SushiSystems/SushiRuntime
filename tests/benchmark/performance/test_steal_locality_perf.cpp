@@ -76,7 +76,7 @@ namespace
  * @brief Under a heavy host-task load on real multi-NUMA hardware, the scheduler
  *        must satisfy most steals from node-local victims.
  */
-TEST(StealLocalityBench, StealStaysNodeLocal)
+TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
 {
     RuntimeContext ctx;
 

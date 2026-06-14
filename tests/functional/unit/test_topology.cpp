@@ -42,7 +42,7 @@ using namespace SushiRuntime::Topology;
  * @brief Ensures that the hardware discovery module correctly identifies
  * at least one compute device (usually the Host CPU) in the system.
  */
-TEST(TopologyTest, HardwareDiscoveryProbe)
+TEST(Unit_TopologyTest, HardwareDiscoveryProbe)
 {
     HardwareDiscovery discovery;
     HardwareFilterConfig config;
@@ -70,7 +70,7 @@ TEST(TopologyTest, HardwareDiscoveryProbe)
  * @brief Tests the hwloc NUMA mapper to ensure it correctly calculates
  * ACPI SLIT distances. Local nodes must cost 10, remote nodes > 10.
  */
-TEST(TopologyTest, NUMAMatrixDistances)
+TEST(Unit_TopologyTest, NUMAMatrixDistances)
 {
     NUMAMapper mapper;
 
@@ -88,7 +88,7 @@ TEST(TopologyTest, NUMAMatrixDistances)
  * @brief Tests the resilience of the RuntimeContext. If a user requests a queue
  * for a non-existent NUMA node, it must gracefully fallback without crashing.
  */
-TEST(TopologyTest, InvalidNUMAFallbackQueue)
+TEST(Unit_TopologyTest, InvalidNUMAFallbackQueue)
 {
     RuntimeContext ctx;
 
@@ -113,7 +113,7 @@ TEST(TopologyTest, InvalidNUMAFallbackQueue)
  * @brief Tests the resilience of the Memory Pool. Requesting a USM Allocator
  * for an invalid NUMA node must safely fallback to the default (NUMA 0) allocator.
  */
-TEST(TopologyTest, InvalidNUMAFallbackAllocator)
+TEST(Unit_TopologyTest, InvalidNUMAFallbackAllocator)
 {
     RuntimeContext ctx;
 

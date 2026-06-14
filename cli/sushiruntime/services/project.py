@@ -32,8 +32,15 @@ class BuildType(str, enum.Enum):
 
 
 class Suite(str, enum.Enum):
-    functional = "functional"
-    benchmark = "benchmark"
+    # Fine-grained CTest labels (assigned in tests/CMakeLists.txt from the GTest
+    # suite-name prefix convention). Each value is passed verbatim to `ctest -L`.
+    unit = "unit"
+    regression = "regression"
+    integration = "integration"
+    functional = "functional"   # umbrella: unit + regression + integration
+    stress = "stress"
+    performance = "performance"
+    benchmark = "benchmark"     # umbrella: stress + performance
     all = "all"
 
 
@@ -186,7 +193,7 @@ def build(build_type: BuildType, distributed: bool = False,
 
 
 def test(suite: Suite, distributed: bool = False, filter: str | None = None,
-         asan: bool = False) -> int:
+         asan: bool = False, repeat: int = 0) -> int:
     console.header("Project Test")
     root = find_project_root()
     cfg = load_config()
@@ -205,6 +212,11 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
         # gtest_discover_tests registers tests as "Suite.Case"; ctest -R filters
         # those names directly (a richer alternative to --gtest_filter).
         cmd += ["-R", filter]
+    if repeat > 0:
+        # Re-run each selected test until it fails or N runs pass — the native
+        # ctest way to flush out flakiness.
+        cmd += ["--repeat", f"until-fail:{repeat}"]
+        console.info(f"Repeating each test up to {repeat}x (stop on first failure).")
     return _run(cmd, env, cwd=build_dir)
 
 

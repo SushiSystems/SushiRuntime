@@ -47,7 +47,7 @@ using namespace SushiRuntime::Memory;
  * @brief Tests if the memory pool successfully expands by allocating a new page
  * when the first page (64 slots) is completely filled.
  */
-TEST(USMAllocatorTest, BasicPoolExpansion)
+TEST(Unit_USMAllocatorTest, BasicPoolExpansion)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
@@ -79,7 +79,7 @@ TEST(USMAllocatorTest, BasicPoolExpansion)
  * @brief Ensures that requests larger than the maximum pool bucket (4096 bytes)
  * safely bypass the lock-free pool and use the direct SYCL allocation fallback.
  */
-TEST(USMAllocatorTest, LargeAllocationBypass)
+TEST(Unit_USMAllocatorTest, LargeAllocationBypass)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
@@ -104,7 +104,7 @@ TEST(USMAllocatorTest, LargeAllocationBypass)
  * first size just above the pool ceiling. Every class must return a usable,
  * writable, distinct allocation.
  */
-TEST(USMAllocatorTest, SizeClassBoundaries)
+TEST(Unit_USMAllocatorTest, SizeClassBoundaries)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
@@ -129,7 +129,7 @@ TEST(USMAllocatorTest, SizeClassBoundaries)
  * @brief A zero-byte request must not crash. Whatever the policy (null or a
  * valid minimal pointer), deallocation of the result must be safe.
  */
-TEST(USMAllocatorTest, ZeroByteAllocation)
+TEST(Unit_USMAllocatorTest, ZeroByteAllocation)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
@@ -145,7 +145,7 @@ TEST(USMAllocatorTest, ZeroByteAllocation)
  * @test NullDeallocation
  * @brief Deallocating a null pointer is a documented no-op and must never fault.
  */
-TEST(USMAllocatorTest, NullDeallocation)
+TEST(Unit_USMAllocatorTest, NullDeallocation)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
@@ -159,7 +159,7 @@ TEST(USMAllocatorTest, NullDeallocation)
  * serviceable (pool recycles rather than growing unboundedly). We allocate,
  * free, and re-allocate in a tight loop and assert every result is valid.
  */
-TEST(USMAllocatorTest, ReusedSlotAfterFree)
+TEST(Unit_USMAllocatorTest, ReusedSlotAfterFree)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
@@ -194,7 +194,7 @@ TEST(USMAllocatorTest, ReusedSlotAfterFree)
  * owning slot is the only one that drains its remote-free stack -- hence the
  * barriers rather than two short-lived threads.
  */
-TEST(USMAllocatorTest, CrossThreadFreeIsReclaimed)
+TEST(Unit_USMAllocatorTest, CrossThreadFreeIsReclaimed)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();

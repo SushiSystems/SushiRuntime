@@ -4,8 +4,9 @@ Lightweight, opt-in **master-worker task offloading**, no MPI. The runtime stays
 a fully offline single-machine library by default; cluster mode is engaged
 explicitly, one command, only for the heavy jobs that benefit.
 
-**Status:** core complete and verified (8 distributed tests green + a live
-two-process TCP demo). What remains is production hardening — see *Remaining*.
+**Status:** core complete and verified (distributed unit + SYCL e2e tests green,
+incl. the offload-policy cost model, + a live two-process TCP demo). What remains
+is production hardening — see *Remaining*.
 
 ---
 
@@ -41,7 +42,8 @@ sr project run sr_distributed_demo --distributed=master --port=5555 --workers=1
 
 # Across machines: one master; on each worker box point --master at its IP.
 
-sr project run sr_functional_tests --gtest_filter='Distributed*'
+sr project test --suite unit --filter Distributed   # Unit_DistributedTest.*
+sr project test --suite integration --filter Distributed  # Integration_DistributedE2ETest.*
 ```
 
 CMake: `-DSUSHI_ENABLE_DISTRIBUTED=ON`. `SUSHI_DISTRIBUTED` is a **PUBLIC**
@@ -60,15 +62,22 @@ toggle flips (stamp: `build/.sushi_dist`).
   `LeastLoadedOffloadPolicy`.
 - **Coordinator** (master): HELLO/common-set, `try_offload`, buffer serving,
   result→successor release, "ran where" telemetry (offloaded/declined/alive).
+- **Worker-death resilience**: worker HEARTBEAT + master liveness monitor declares
+  a silent worker dead, drops it from the common-kernel set, and re-injects its
+  in-flight tasks (`redispatched` telemetry) so the master never stalls on a lost peer.
+- **RTT / free-mem telemetry + cost-based policy**: master PING → worker PONG
+  refreshes per-worker `rtt_micros` and `free_mem`; `LeastLoadedOffloadPolicy` now
+  ranks workers by estimated completion cost (rtt + transfer_time + queue backlog)
+  with a headroom gate, instead of raw inflight count.
 - **Worker agent**: HELLO, dedicated exec thread (no pull/pump deadlock),
   `{id,version}` cache w/ pull-on-miss, eager result writeback.
 - **Integration** (guarded): Node offload fields; `compile()` stamping; scheduler
   dispatch branch + `complete_offloaded_node`; auto version-bump via EventPolling
   observer; `RuntimeContext::enable_distributed_master()` + ordered teardown.
 - **Tooling/demo**: CLI `--distributed` build+run; `examples/distributed_demo.cpp`.
-- **Tests** (8, green): protocol/transport/registry units; SYCL e2e — single
-  offload, auto version-bump (local write → offloaded read), 2-worker fan-out,
-  offload over TCP loopback.
+- **Tests** (green): protocol/transport/registry **and offload-policy cost-model**
+  units; SYCL e2e — single offload, auto version-bump (local write → offloaded
+  read), 2-worker fan-out, offload over TCP loopback.
 
 ---
 
@@ -76,20 +85,18 @@ toggle flips (stamp: `build/.sushi_dist`).
 
 In rough priority order:
 
-1. **Worker-death resilience.** Heartbeat to detect a dead/slow worker; treat its
-   loss like a steal-tier event — re-dispatch its in-flight tasks to another
-   worker or fall back to local. Today a dropped worker strands its tasks.
-2. **Reconnect.** Worker re-establishes the connection if it drops mid-run
+1. **Reconnect.** Worker re-establishes the connection if it drops mid-run
    (currently connect-retry only happens at startup).
-3. **Shutdown robustness.** Unblock a master `accept()` still waiting on absent
+2. **Shutdown robustness.** Unblock a master `accept()` still waiting on absent
    workers at stop (self-pipe / non-blocking accept). Today shutdown is clean
    only once all expected workers have connected.
-4. **Pipelining.** Overlap comms with compute — transmit task N+1 while the
+3. **Pipelining.** Overlap comms with compute — transmit task N+1 while the
    worker runs N — to hide network latency.
-5. **Worker uses its full scheduler.** Run offloaded work through the worker's
+4. **Worker uses its full scheduler.** Run offloaded work through the worker's
    own TaskGraph/NUMA-aware scheduler instead of directly on `get_queue(0)`, so
-   intra-node stealing applies to remote work too.
-6. **Lazy result fetch (optional).** Replace eager output writeback with
+   intra-node stealing applies to remote work too. (Today `execute_dispatch`
+   submits straight to `get_queue(0)`.)
+5. **Lazy result fetch (optional).** Replace eager output writeback with
    pull-when-needed for non-leaf outputs, to cut backhaul traffic.
 
 ### Known smaller gaps

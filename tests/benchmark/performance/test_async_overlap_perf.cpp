@@ -143,7 +143,7 @@ namespace
  * @brief Auto-balances CPU/GPU work, then measures the wall-clock saving from
  *        running the two devices concurrently versus serially.
  */
-TEST(AsyncOverlapBench, CpuGpuOverlapSpeedup)
+TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
 {
     size_t cpu_idx = 0, gpu_idx = 0;
     if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))

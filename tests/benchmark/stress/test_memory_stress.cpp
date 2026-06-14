@@ -41,7 +41,7 @@ using namespace SushiRuntime::Memory;
  * @brief Creates a high-contention environment where multiple threads aggressively
  * allocate and deallocate from the exact same bucket, testing the atomic bitmasks.
  */
-TEST(USMAllocatorStress, ConcurrentAllocationContention)
+TEST(Stress_USMAllocatorStress, ConcurrentAllocationContention)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
@@ -85,7 +85,7 @@ TEST(USMAllocatorStress, ConcurrentAllocationContention)
  * @brief Tests the work-stealing edge case. Thread A allocates memory, but Thread B
  * frees it. This bypasses Thread B's local cache and tests the global page resolution.
  */
-TEST(USMAllocatorStress, CrossThreadDeallocation)
+TEST(Stress_USMAllocatorStress, CrossThreadDeallocation)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();

@@ -59,6 +59,18 @@ RUN /usr/bin/python3 -m pip install --no-cache-dir --upgrade pip setuptools whee
 # Build through the CLI (exercises `sr` end-to-end). On linux the config's
 # icx/icpx defaults auto-fall back to the intel/llvm clang++, and CUDA defaults
 # ON — matching the previous manual cmake invocation.
-RUN /usr/bin/python3 -m sushiruntime project build --type release
+#
+# Two pre-builds so the image validates BOTH compile configurations and ships all
+# test/benchmark binaries:
+#   1. standalone  — the offline-first default path (SUSHI_DISTRIBUTED off): the
+#                    functional suite + the non-distributed benchmarks.
+#   2. distributed — the master-worker layer (SUSHI_DISTRIBUTED on): adds the
+#                    distributed unit/e2e tests and the offload benchmark. This
+#                    reconfigures build/ in place (stamp .sushi_dist), so build/
+#                    ends in distributed state — a superset of binaries. The
+#                    runtime role still defaults to Standalone; the build flag
+#                    only governs which code is compiled in, not how it runs.
+RUN /usr/bin/python3 -m sushiruntime project build --type release && \
+    /usr/bin/python3 -m sushiruntime project build --type release --distributed
 
 CMD ["/bin/bash"]

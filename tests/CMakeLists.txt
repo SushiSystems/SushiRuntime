@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.22) # gtest_discover_tests(TEST_FILTER ...)
 
 # ============================================================================
 # SushiRuntime test pipeline
@@ -84,9 +84,25 @@ endif()
 
 sushi_configure_test_target(sr_functional_tests)
 
+# Sub-suite labels come from the GTest suite-name prefix convention
+# (Unit_* / Integration_* / Regression_*), so a category filter is robust and
+# new tests are picked up automatically as long as they follow the convention.
+# Every group also carries the umbrella "functional" label, so `ctest -L
+# functional` still runs the whole suite.
 gtest_discover_tests(sr_functional_tests
     DISCOVERY_MODE PRE_TEST
-    PROPERTIES LABELS "functional"
+    TEST_FILTER "Unit_*"
+    PROPERTIES LABELS "unit;functional"
+)
+gtest_discover_tests(sr_functional_tests
+    DISCOVERY_MODE PRE_TEST
+    TEST_FILTER "Integration_*"
+    PROPERTIES LABELS "integration;functional"
+)
+gtest_discover_tests(sr_functional_tests
+    DISCOVERY_MODE PRE_TEST
+    TEST_FILTER "Regression_*"
+    PROPERTIES LABELS "regression;functional"
 )
 
 # ----------------------------------------------------------------------------
@@ -103,11 +119,27 @@ if(SUSHI_BUILD_BENCHMARKS)
         benchmark/performance/test_allocator_perf.cpp
         benchmark/performance/test_async_overlap_perf.cpp
         benchmark/performance/test_steal_locality_perf.cpp
+        benchmark/performance/test_scheduler_dispatch_perf.cpp
+        benchmark/performance/test_steal_numa_effect_perf.cpp
+        benchmark/performance/test_graph_compile_perf.cpp
     )
+    # Distributed offload benchmark only exists when the layer is built.
+    if(SUSHI_ENABLE_DISTRIBUTED)
+        target_sources(sr_benchmark_tests PRIVATE
+            benchmark/performance/test_distributed_offload_perf.cpp
+        )
+    endif()
     sushi_configure_test_target(sr_benchmark_tests)
 
+    # Same prefix convention: Stress_* / Performance_*, both under "benchmark".
     gtest_discover_tests(sr_benchmark_tests
         DISCOVERY_MODE PRE_TEST
-        PROPERTIES LABELS "benchmark"
+        TEST_FILTER "Stress_*"
+        PROPERTIES LABELS "stress;benchmark"
+    )
+    gtest_discover_tests(sr_benchmark_tests
+        DISCOVERY_MODE PRE_TEST
+        TEST_FILTER "Performance_*"
+        PROPERTIES LABELS "performance;benchmark"
     )
 endif()

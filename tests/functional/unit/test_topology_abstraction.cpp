@@ -42,7 +42,7 @@ using namespace SushiRuntime::Topology;
  * @brief A hand-built 2-node matrix yields exact, deterministic distances —
  *        no hardware, no hwloc, no SLIT table required.
  */
-TEST(TopologyAbstractionTest, MatrixDistanceModelObeysAcpiConvention)
+TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelObeysAcpiConvention)
 {
     MatrixDistanceModel model{{{10, 21},
                                {21, 10}}};
@@ -59,7 +59,7 @@ TEST(TopologyAbstractionTest, MatrixDistanceModelObeysAcpiConvention)
  * @brief Real interconnects (e.g. 4-node EPYC) are not uniform; the model must
  *        faithfully return whatever asymmetric costs we program in.
  */
-TEST(TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
+TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
 {
     // 3-node layout: 0<->1 cheap, 0<->2 expensive (2 hops).
     MatrixDistanceModel model{{{10, 16, 32},
@@ -76,7 +76,7 @@ TEST(TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
  * @brief RuntimeContext reports distances from the *injected* model [DIP],
  *        proving the consumer no longer depends on concrete hwloc.
  */
-TEST(TopologyAbstractionTest, InjectedDistanceModelDrivesRuntimeContext)
+TEST(Unit_TopologyAbstractionTest, InjectedDistanceModelDrivesRuntimeContext)
 {
     auto provider = std::make_shared<HwlocTopologyProvider>();
     auto distance = std::make_shared<MatrixDistanceModel>(
@@ -95,7 +95,7 @@ TEST(TopologyAbstractionTest, InjectedDistanceModelDrivesRuntimeContext)
  *        a synthetic NUMA layout, so multi-node routing can be tested on a
  *        single-node machine. We assert every device lands in range [0, N).
  */
-TEST(TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeNodes)
+TEST(Unit_TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeNodes)
 {
     constexpr int FAKE_NODES = 4;
 
@@ -124,7 +124,7 @@ TEST(TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeNodes)
  *        real work on them — on single-node hardware. This is the scenario the
  *        bare hwloc path can never reach on a 1-socket desktop.
  */
-TEST(TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNuma)
+TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNuma)
 {
     constexpr int FAKE_NODES = 2;
 

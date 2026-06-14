@@ -95,7 +95,7 @@ namespace
  * @brief Once started, the coordinator must repeatedly evaluate the strategy
  * (the ~5ms heartbeat), and stop() must cleanly join the loop.
  */
-TEST(WorkloadCoordinatorTest, HeartbeatInvokesStrategy)
+TEST(Integration_WorkloadCoordinatorTest, HeartbeatInvokesStrategy)
 {
     FakeTelemetry telemetry;
     FakeMigrator migrator;
@@ -122,7 +122,7 @@ TEST(WorkloadCoordinatorTest, HeartbeatInvokesStrategy)
  * @brief A strategy that asks for migration must reach the migrator through the
  * coordinator's loop.
  */
-TEST(WorkloadCoordinatorTest, StrategyDrivesMigration)
+TEST(Integration_WorkloadCoordinatorTest, StrategyDrivesMigration)
 {
     FakeTelemetry telemetry;
     FakeMigrator migrator;
@@ -142,7 +142,7 @@ TEST(WorkloadCoordinatorTest, StrategyDrivesMigration)
  * @test SetStrategySwapsAtRuntime
  * @brief set_strategy must redirect subsequent evaluations to the new strategy.
  */
-TEST(WorkloadCoordinatorTest, SetStrategySwapsAtRuntime)
+TEST(Integration_WorkloadCoordinatorTest, SetStrategySwapsAtRuntime)
 {
     FakeTelemetry telemetry;
     FakeMigrator migrator;
@@ -168,7 +168,7 @@ TEST(WorkloadCoordinatorTest, SetStrategySwapsAtRuntime)
  * @brief Calling start() twice must not spawn a second thread or leave the
  * coordinator unable to stop cleanly.
  */
-TEST(WorkloadCoordinatorTest, DoubleStartIsIdempotent)
+TEST(Integration_WorkloadCoordinatorTest, DoubleStartIsIdempotent)
 {
     FakeTelemetry telemetry;
     FakeMigrator migrator;

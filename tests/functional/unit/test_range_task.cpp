@@ -63,7 +63,7 @@ namespace
  * grain (1024). At or below the grain it must report not-splittable, so the
  * scheduler stops subdividing tiny ranges.
  */
-TEST(RangeTaskTest, SplittableOnlyAboveGrain)
+TEST(Unit_RangeTaskTest, SplittableOnlyAboveGrain)
 {
     RangeTask big(size_t{0}, size_t{4096}, noop_kernel());
     EXPECT_TRUE(big.is_splittable()) << "A range well above the grain must be splittable.";
@@ -88,7 +88,7 @@ TEST(RangeTaskTest, SplittableOnlyAboveGrain)
  * split() returns nullopt. This is exactly the loop a worker drives to rebalance
  * a divisible task.
  */
-TEST(RangeTaskTest, SplitHandsOffDistinctChunksUntilExhausted)
+TEST(Unit_RangeTaskTest, SplitHandsOffDistinctChunksUntilExhausted)
 {
     sushi_ptr<Task> owner = make_sushi<RangeTask>(size_t{0}, size_t{1u << 16}, noop_kernel());
     ASSERT_TRUE(owner->is_splittable());

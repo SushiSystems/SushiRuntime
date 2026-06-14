@@ -72,6 +72,11 @@ namespace SushiRuntime
             void exec_loop();
             void execute_dispatch(const TaskDispatchMsg& msg);
 
+            // Current device-memory headroom (bytes) reported back to the master on
+            // every PONG. Prefers the Intel free-memory query; falls back to total
+            // global memory where that aspect is unavailable, and 0 on any error.
+            uint64_t device_free_mem() const;
+
             // Returns a local USM pointer holding {id} at >= the required version,
             // pulling it from the master if the cache misses or is stale.
             void* resolve_input(const BufferHandle& h);
@@ -136,6 +141,17 @@ namespace SushiRuntime
                         jobs.push(std::move(msg));
                     }
                     job_cv.notify_one();
+                    break;
+                }
+                case MsgType::PING:
+                {
+                    // Echo the master's token back and piggyback our free-memory
+                    // headroom so the master can refresh both RTT and free_mem.
+                    auto ping = PingMsg::deserialize(payload);
+                    PongMsg pong;
+                    pong.token    = ping.token;
+                    pong.free_mem = device_free_mem();
+                    transport->send(0, MsgType::PONG, pong.serialize());
                     break;
                 }
                 case MsgType::BUFFER_PUSH:
@@ -215,6 +231,28 @@ namespace SushiRuntime
             }
 
             transport->send(0, MsgType::TASK_RESULT, result.serialize());
+        }
+
+        uint64_t WorkerAgent::Impl::device_free_mem() const
+        {
+            try
+            {
+                auto dev = ctx.get_queue(0).get_device();
+                // free_memory landed at version 5 of the Intel device-info
+                // extension; guard on the exact feature-test value so the symbol
+                // is only referenced where it is guaranteed to exist.
+#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
+                if (dev.has(sycl::aspect::ext_intel_free_memory))
+                    return dev.get_info<sycl::ext::intel::info::device::free_memory>();
+#endif
+                // No free-memory query on this device: fall back to total capacity
+                // as a coarse headroom proxy (better than reporting "unknown").
+                return dev.get_info<sycl::info::device::global_mem_size>();
+            }
+            catch (...)
+            {
+                return 0; // unknown -> the policy treats 0 as "no headroom info".
+            }
         }
 
         void WorkerAgent::Impl::heartbeat_loop()

@@ -69,7 +69,7 @@ namespace
  *        worker's steal order must list all same-node victims before any
  *        cross-node victim.
  */
-TEST(NumaStealTest, LocalVictimsPrecedeRemote)
+TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
 {
     constexpr int NODES = 2;
     auto ctx = make_synthetic_ctx(NODES);
@@ -110,7 +110,7 @@ TEST(NumaStealTest, LocalVictimsPrecedeRemote)
  *        the steal order must still contain every other worker (NUMA-blind
  *        single tier == original behaviour, no regression).
  */
-TEST(NumaStealTest, FlatTopologyKeepsAllVictims)
+TEST(Unit_NumaStealTest, FlatTopologyKeepsAllVictims)
 {
     RuntimeContext ctx; // default Hwloc provider/model.
     TaskScheduler sched(ctx);

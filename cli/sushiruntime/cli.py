@@ -13,6 +13,7 @@ from typing import List, Optional
 import typer
 
 from . import console
+from .services import diag as diag_svc
 from .services import docker as docker_svc
 from .services import project as project_svc
 from .services.project import BuildType, Suite
@@ -29,8 +30,14 @@ project_app = typer.Typer(help="C++ project build / test / run management.",
                           no_args_is_help=True)
 docker_app = typer.Typer(help="Docker environment management.",
                          no_args_is_help=True)
+config_app = typer.Typer(help="Inspect resolved configuration.",
+                         no_args_is_help=True)
+env_app = typer.Typer(help="Inspect the build environment.",
+                      no_args_is_help=True)
 app.add_typer(project_app, name="project")
 app.add_typer(docker_app, name="docker")
+app.add_typer(config_app, name="config")
+app.add_typer(env_app, name="env")
 
 
 class DockerAction(str, enum.Enum):
@@ -69,9 +76,17 @@ def project_test(
         help="ctest -R regex over 'Suite.Case' test names."),
     asan: bool = typer.Option(
         False, "--asan", help="Run the build-asan tree instead of build."),
+    repeat: int = typer.Option(
+        0, "--repeat", "-r", min=0,
+        help="Re-run each test up to N times, stopping on the first failure "
+             "(ctest --repeat until-fail). Handy for hunting flaky tests."),
 ):
-    """Run the test suite via CTest labels."""
-    raise typer.Exit(project_svc.test(suite, distributed, filter, asan))
+    """Run the test suite via CTest labels.
+
+    For GTest-level knobs (shuffle, break-on-failure) run the binary directly:
+    sr project run sr_functional_tests -- --gtest_shuffle --gtest_break_on_failure
+    """
+    raise typer.Exit(project_svc.test(suite, distributed, filter, asan, repeat))
 
 
 @project_app.command(
@@ -119,9 +134,13 @@ def project_doxygen():
 # docker
 # --------------------------------------------------------------------------- #
 @docker_app.command("build")
-def docker_build():
+def docker_build(
+    no_cache: bool = typer.Option(
+        False, "--no-cache",
+        help="Rebuild every layer from scratch (ignore Docker's cache)."),
+):
     """Build the sushiruntime Docker image."""
-    raise typer.Exit(docker_svc.build())
+    raise typer.Exit(docker_svc.build(no_cache=no_cache))
 
 
 @docker_app.command("run")
@@ -132,6 +151,26 @@ def docker_run(
 ):
     """Start the developer container with the repo mounted."""
     raise typer.Exit(docker_svc.run(admin=admin))
+
+
+# --------------------------------------------------------------------------- #
+# config / env (diagnostics)
+# --------------------------------------------------------------------------- #
+@config_app.command("show")
+def config_show():
+    """Print the resolved config and where each value came from."""
+    raise typer.Exit(diag_svc.config_show())
+
+
+@env_app.command("dump")
+def env_dump(
+    all: bool = typer.Option(
+        False, "--all", help="Show every variable, not just build-relevant ones."),
+    asan: bool = typer.Option(
+        False, "--asan", help="Inspect the build-asan tree's environment."),
+):
+    """Print the environment cmake/ctest/run subprocesses execute under."""
+    raise typer.Exit(diag_svc.env_dump(show_all=all, asan=asan))
 
 
 if __name__ == "__main__":

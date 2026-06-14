@@ -641,7 +641,7 @@ namespace
     }
 }
 
-class AllocatorBench : public ::testing::Test
+class Performance_AllocatorBench : public ::testing::Test
 {
 protected:
     SushiRuntime::Execution::RuntimeContext ctx;
@@ -799,7 +799,7 @@ protected:
 // Same-thread workload: magazine best case
 // ============================================================================
 
-TEST_F(AllocatorBench, SameThread_Shared_AllSizes)
+TEST_F(Performance_AllocatorBench, SameThread_Shared_AllSizes)
 {
     auto cs = contestants_for(Strategies::Shared::instance(), "Shared");
     cs.push_back(malloc_floor());
@@ -815,7 +815,7 @@ TEST_F(AllocatorBench, SameThread_Shared_AllSizes)
     }
 }
 
-TEST_F(AllocatorBench, SameThread_Shared_MaxThreads)
+TEST_F(Performance_AllocatorBench, SameThread_Shared_MaxThreads)
 {
     auto cs = contestants_for(Strategies::Shared::instance(), "Shared");
     cs.push_back(malloc_floor());
@@ -838,7 +838,7 @@ TEST_F(AllocatorBench, SameThread_Shared_MaxThreads)
 // Producer/consumer: realistic task-graph pattern, magazine worst case
 // ============================================================================
 
-TEST_F(AllocatorBench, ProducerConsumer_Shared)
+TEST_F(Performance_AllocatorBench, ProducerConsumer_Shared)
 {
     auto cs = contestants_for(Strategies::Shared::instance(), "Shared");
     cs.push_back(malloc_floor());

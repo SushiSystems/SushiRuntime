@@ -15,10 +15,15 @@ def _run(cmd: list[str], cwd) -> int:
     return subprocess.run(cmd, cwd=str(cwd)).returncode
 
 
-def build() -> int:
+def build(no_cache: bool = False) -> int:
     console.header("Docker Build")
     root = find_project_root()
-    return _run(["docker", "build", "-t", IMAGE, "."], cwd=root)
+    cmd = ["docker", "build", "-t", IMAGE]
+    if no_cache:
+        console.info("Building without the layer cache (--no-cache).")
+        cmd.append("--no-cache")
+    cmd.append(".")
+    return _run(cmd, cwd=root)
 
 
 def run(admin: bool = False) -> int:

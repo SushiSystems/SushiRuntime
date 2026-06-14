@@ -38,6 +38,8 @@
 #include <SushiRuntime/distributed/protocol.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/buffer_registry.hpp>
+#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/graph/node.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -58,7 +60,7 @@ namespace
  *        a compiled-in kernel reference (OpID) and data references (handles)
  *        cross the wire while the code and pointers never do.
  */
-TEST(DistributedTest, ProtocolRoundTrip)
+TEST(Unit_DistributedTest, ProtocolRoundTrip)
 {
     TaskDispatchMsg msg;
     msg.task_id = 42;
@@ -89,7 +91,7 @@ TEST(DistributedTest, ProtocolRoundTrip)
  * @test BufferPushRoundTrip
  * @brief The raw-bytes payload (the actual data pull) preserves its blob.
  */
-TEST(DistributedTest, BufferPushRoundTrip)
+TEST(Unit_DistributedTest, BufferPushRoundTrip)
 {
     BufferPushMsg push;
     push.handle = BufferHandle{ GlobalBufferID{9}, 5, 4 };
@@ -110,7 +112,7 @@ TEST(DistributedTest, BufferPushRoundTrip)
  *        handler with the correct peer id, proving the switchboard routes a real
  *        multi-node protocol on a single machine.
  */
-TEST(DistributedTest, InProcessTransportDeliversBothDirections)
+TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
 {
     InProcessFabric fabric(/*worker_count=*/1);
     InProcessTransport master(fabric, /*node_id=*/-1);
@@ -153,7 +155,7 @@ TEST(DistributedTest, InProcessTransportDeliversBothDirections)
  * @brief Registration is stable per pointer; a write bumps the version (the
  *        invalidation signal); lookup_by_id round-trips id -> pointer.
  */
-TEST(DistributedTest, BufferRegistryVersioning)
+TEST(Unit_DistributedTest, BufferRegistryVersioning)
 {
     BufferRegistry reg;
     int storage = 0;
@@ -178,4 +180,130 @@ TEST(DistributedTest, BufferRegistryVersioning)
     EXPECT_EQ(by_id->handle.version, 2u);
 
     EXPECT_FALSE(reg.lookup(nullptr).has_value());
+}
+
+// ---------------------------------------------------------------------------
+// Offload policy (LeastLoadedOffloadPolicy)
+//
+// These drive pick_worker() directly with synthetic WorkerStats — the same
+// hardware-free style the transport tests use — so the cost model (rtt +
+// transfer + queue backlog) and its gates are validated without a live cluster.
+// ---------------------------------------------------------------------------
+namespace
+{
+    WorkerStats live_worker(int id, uint32_t inflight, uint64_t free_mem, uint32_t rtt_us)
+    {
+        WorkerStats w;
+        w.worker_id  = id;
+        w.alive      = true;
+        w.inflight   = inflight;
+        w.free_mem   = free_mem;
+        w.rtt_micros = rtt_us;
+        return w;
+    }
+
+    constexpr uint64_t BIG_PAYLOAD = 1u << 20; // 1 MiB, well over the 64 KiB gate
+    constexpr uint64_t AMPLE_MEM   = 1ull << 30; // 1 GiB headroom
+}
+
+/**
+ * @test PolicyKeepsTinyPayloadLocal
+ * @brief A payload below min_offload_bytes never offloads — the network would
+ *        only add latency — even with an idle, healthy worker available.
+ */
+TEST(Unit_DistributedTest, PolicyKeepsTinyPayloadLocal)
+{
+    LeastLoadedOffloadPolicy policy; // default 64 KiB gate
+    Graph::Node node;
+    std::vector<WorkerStats> workers{ live_worker(0, /*inflight=*/0, AMPLE_MEM, /*rtt=*/50) };
+
+    auto pick = policy.pick_worker(node, workers, /*est_bytes=*/1024);
+    EXPECT_FALSE(pick.has_value());
+}
+
+/**
+ * @test PolicyPicksLowerRttWorker
+ * @brief With equal load and headroom, the nearer (lower-RTT) worker wins —
+ *        proving rtt_micros is actually consumed by the cost model.
+ */
+TEST(Unit_DistributedTest, PolicyPicksLowerRttWorker)
+{
+    LeastLoadedOffloadPolicy policy;
+    Graph::Node node;
+    std::vector<WorkerStats> workers{
+        live_worker(0, /*inflight=*/0, AMPLE_MEM, /*rtt=*/50000), // far
+        live_worker(1, /*inflight=*/0, AMPLE_MEM, /*rtt=*/100),   // near
+    };
+
+    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
+    ASSERT_TRUE(pick.has_value());
+    EXPECT_EQ(*pick, 1);
+}
+
+/**
+ * @test PolicyPrefersLessLoadedWhenEquallyNear
+ * @brief Equal RTT and headroom: the emptier queue wins (the "least loaded"
+ *        intent survives inside the richer cost model).
+ */
+TEST(Unit_DistributedTest, PolicyPrefersLessLoadedWhenEquallyNear)
+{
+    LeastLoadedOffloadPolicy policy;
+    Graph::Node node;
+    std::vector<WorkerStats> workers{
+        live_worker(0, /*inflight=*/5, AMPLE_MEM, /*rtt=*/200),
+        live_worker(1, /*inflight=*/1, AMPLE_MEM, /*rtt=*/200),
+    };
+
+    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
+    ASSERT_TRUE(pick.has_value());
+    EXPECT_EQ(*pick, 1);
+}
+
+/**
+ * @test PolicyRejectsInsufficientHeadroom
+ * @brief A worker reporting less free_mem than the payload is excluded; with no
+ *        other candidate the task falls back to local (nullopt).
+ */
+TEST(Unit_DistributedTest, PolicyRejectsInsufficientHeadroom)
+{
+    LeastLoadedOffloadPolicy policy;
+    Graph::Node node;
+    std::vector<WorkerStats> workers{
+        live_worker(0, /*inflight=*/0, /*free_mem=*/BIG_PAYLOAD / 2, /*rtt=*/100),
+    };
+
+    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
+    EXPECT_FALSE(pick.has_value());
+}
+
+/**
+ * @test PolicyFallsBackLocalWhenNoLiveWorker
+ * @brief No live worker -> transparent local fallback, regardless of payload.
+ */
+TEST(Unit_DistributedTest, PolicyFallsBackLocalWhenNoLiveWorker)
+{
+    LeastLoadedOffloadPolicy policy;
+    Graph::Node node;
+    WorkerStats dead = live_worker(0, 0, AMPLE_MEM, 100);
+    dead.alive = false;
+    std::vector<WorkerStats> workers{ dead };
+
+    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
+    EXPECT_FALSE(pick.has_value());
+}
+
+/**
+ * @test PolicyTreatsZeroFreeMemAsUnknown
+ * @brief free_mem == 0 means "no headroom info" (e.g. the device lacks a
+ *        free-memory query), so the worker stays eligible rather than excluded.
+ */
+TEST(Unit_DistributedTest, PolicyTreatsZeroFreeMemAsUnknown)
+{
+    LeastLoadedOffloadPolicy policy;
+    Graph::Node node;
+    std::vector<WorkerStats> workers{ live_worker(0, /*inflight=*/0, /*free_mem=*/0, /*rtt=*/100) };
+
+    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
+    ASSERT_TRUE(pick.has_value());
+    EXPECT_EQ(*pick, 0);
 }
