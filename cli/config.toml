@@ -1,0 +1,35 @@
+# SushiRuntime CLI configuration.
+#
+# Layering (lowest -> highest precedence):
+#   built-in defaults  ->  this file  ->  config.local.toml  ->  SUSHI_* env vars  ->  CLI flags
+#
+# This file is committed and holds shared / portable defaults. Machine-specific
+# absolute paths (compiler locations, oneAPI/VS roots, vcpkg) belong in a
+# gitignored `config.local.toml` next to this file, using the SAME section
+# layout. The active platform's `[tool.<platform>]` section is merged over the
+# common `[tool]` section automatically.
+
+[tool]
+# Default executable for `sr project run` with no target.
+target_bin = "sr_functional_tests"
+
+[tool.linux]
+cc = "icx"
+cxx = "icpx"
+generator = "Ninja"
+use_vcpkg = false
+vcpkg_root = "~/vcpkg"
+oneapi_root = "/opt/intel/oneapi"
+
+[tool.windows]
+generator = "Ninja"
+use_vcpkg = true
+vcpkg_triplet = "x64-windows"
+target_bin = "sr_functional_tests.exe"
+# The following are machine-specific; override in config.local.toml.
+# vs_vcvars    = "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat"
+# oneapi_root  = "C:/Program Files (x86)/Intel/oneAPI"
+# ninja_exe    = "C:/Users/<you>/.conda/envs/sushiruntime/Library/bin/ninja.exe"
+# vcpkg_root   = "C:/Users/<you>/.conda/envs/sushiruntime/Library/share/vcpkg"
+# icx_compiler = "C:/Users/<you>/.conda/envs/sushiruntime/Library/bin/icx-cl.exe"
+# pkgconf_exe  = "C:/Users/<you>/.conda/envs/sushiruntime/Library/bin/pkg-config.exe"

@@ -1,8 +1,0 @@
-CC=icx
-CXX=icpx
-USE_VCPKG=false
-VCPKG_ROOT=$HOME/vcpkg
-ONEAPI_ROOT=/opt/intel/oneapi
-CMAKE_GENERATOR=Ninja
-
-TARGET_BIN=sr_functional_tests
