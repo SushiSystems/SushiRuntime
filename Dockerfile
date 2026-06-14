@@ -5,7 +5,7 @@ FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 RUN apt-get update && apt-get install -y software-properties-common && \
     add-apt-repository -y ppa:ubuntu-toolchain-r/test && \
     apt-get update && apt-get install -y \
-    python3 build-essential cmake ninja-build git \
+    python3 python3-pip build-essential cmake ninja-build git \
     pkg-config libhwloc-dev libgtest-dev \
     dos2unix linux-tools-generic wget \
     gcc-13 g++-13 ocl-icd-opencl-dev ocl-icd-libopencl1 \
@@ -38,22 +38,27 @@ ENV LD_LIBRARY_PATH="/opt/intel-llvm/lib:$LD_LIBRARY_PATH"
 # you are deliberately debugging a kernel.
 ENV CUDA_LAUNCH_BLOCKING=0
 
-RUN echo "alias sushiruntime='/workspace/sushiruntime/.tools/sushiruntime.sh'" >> ~/.bashrc && \
-    echo "alias sr='/workspace/sushiruntime/.tools/sushiruntime.sh'" >> ~/.bashrc
-
 WORKDIR /workspace/sushiruntime
 COPY . /workspace/sushiruntime/
 
 RUN ln -sf /usr/lib/linux-tools/*/perf /usr/bin/perf 2>/dev/null || true
 
-RUN find . -type f -name "*.sh" -exec sed -i 's/\r$//' {} + && \
-    chmod +x .tools/*.sh
+# Normalize line endings on any shell helpers carried in from a Windows checkout.
+RUN find . -type f -name "*.sh" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
 
-RUN mkdir -p build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release \
-             -DCMAKE_CXX_COMPILER=clang++ \
-             -DCMAKE_C_COMPILER=clang \
-             -DSUSHI_ENABLE_CUDA=ON && \
-    make VERBOSE=1 -j$(nproc)
+# Install the `sr` CLI system-wide (the container is already isolated, so no venv
+# is needed). Pin /usr/bin/python3 explicitly: the intel/llvm bundle prepends its
+# own bin to PATH, and python3-pip belongs to the system python — installing and
+# running under the same interpreter avoids a split. Verify the import right after
+# so a bad build context fails loudly here instead of confusingly downstream.
+RUN /usr/bin/python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    /usr/bin/python3 -m pip install --no-cache-dir /workspace/sushiruntime/cli && \
+    /usr/bin/python3 -c "import sushiruntime.cli; print('sr CLI installed OK')" && \
+    printf "alias sr='/usr/bin/python3 -m sushiruntime'\nalias sushiruntime='/usr/bin/python3 -m sushiruntime'\n" >> ~/.bashrc
+
+# Build through the CLI (exercises `sr` end-to-end). On linux the config's
+# icx/icpx defaults auto-fall back to the intel/llvm clang++, and CUDA defaults
+# ON — matching the previous manual cmake invocation.
+RUN /usr/bin/python3 -m sushiruntime project build --type release
 
 CMD ["/bin/bash"]

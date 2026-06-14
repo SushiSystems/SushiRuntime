@@ -6,3 +6,9 @@ bin/
 .git/
 .vscode/
 .gemini/
+
+# Python build artifacts (confuse setuptools auto-discovery if copied in)
+**/build/
+**/__pycache__/
+**/*.egg-info/
+*.py[cod]

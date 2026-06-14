@@ -23,24 +23,29 @@ On Windows, dependencies are resolved through **vcpkg**. On Linux they can come 
 
 ## Building
 
-The fastest path is the bundled CLI wrapper, which loads your compiler/toolchain paths from a config file and then drives CMake.
-
-1. Copy the config template and fill in your local paths:
-   - Windows: copy `.tools/config.ini.template` to `.tools/config.ini`
-   - Linux/macOS: copy `.tools/config.cfg.template` to `.tools/config.cfg`
-2. Build:
+The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. The easiest install is the helper script (Windows → pipx, Linux/macOS → pip into the current environment):
 
 ```bash
-# Linux / macOS
-python3 .tools/sushiruntime.py project build
-
-# Windows
-python .tools\sushiruntime.py project build
+python install_cli.py                 # add --editable for a dev install
 ```
 
-Add `--clean` to wipe the `build/` directory first.
+Or install the package directly:
 
-You can also install a short `sr` command that wraps the same CLI: run `.tools/install.sh` (Linux/macOS) or `.tools/install.ps1` (Windows), optionally with `--permanent` to add it to your PATH via your shell profile. Then the commands above become e.g. `sr project build`. Use the matching `uninstall` script to remove it.
+```bash
+pipx install ./cli                    # or: pip install ./cli  inside a venv/conda env
+```
+
+Either way you get two equivalent commands on your PATH: **`sr`** (short) and **`sushiruntime`** (long). Toolchain paths are read from `cli/config.toml` (committed, shared defaults). Machine-specific absolute paths (oneAPI/VS roots, vcpkg, compiler locations) go in a gitignored `cli/config.local.toml` using the same `[tool.<platform>]` section layout — copy the commented Windows block from `config.toml` as a starting point.
+
+Then build:
+
+```bash
+sr project build                  # release (default)
+sr project build --type asan      # isolated build-asan tree, CUDA off
+sr project build --distributed    # enable the master-worker layer
+```
+
+Add `--clean` to wipe the build tree first. To uninstall: `pipx uninstall sushiruntime-cli`.
 
 ### Building with CMake directly
 
@@ -58,15 +63,15 @@ On Windows, also pass the vcpkg toolchain file and the `icx-cl` compiler. The `C
 
 To target NVIDIA GPUs through SYCL's CUDA backend, configure with `-DSUSHI_ENABLE_CUDA=ON` (currently tuned for Pascal / `sm_61`).
 
-To build the optional distributed master-worker layer, configure with `-DSUSHI_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the wrapper (`sr project build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
+To build the optional distributed master-worker layer, configure with `-DSUSHI_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr project build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
 
 ### Docker
 
-A `Dockerfile` based on `nvidia/cuda` (Ubuntu 22.04) with a pre-built **intel/llvm** nightly SYCL toolchain is provided, so you can build and run — including the CUDA backend — without installing a toolchain locally. It also installs the Intel OpenCL CPU runtime so the host CPU shows up as a SYCL device. For GPU passthrough you need the NVIDIA Container Toolkit (`.tools/install_nvidia_container_toolkit.sh` can set it up).
+A `Dockerfile` based on `nvidia/cuda` (Ubuntu 22.04) with a pre-built **intel/llvm** nightly SYCL toolchain is provided, so you can build and run — including the CUDA backend — without installing a toolchain locally. It also installs the Intel OpenCL CPU runtime so the host CPU shows up as a SYCL device. For GPU passthrough you need the NVIDIA Container Toolkit.
 
 ```bash
-python3 .tools/sushiruntime.py docker build
-python3 .tools/sushiruntime.py docker run
+sr docker build
+sr docker run            # add --admin for --privileged (profiling)
 ```
 
 ## Running the tests
@@ -76,18 +81,24 @@ The test suite is split into two binaries:
 - `sr_functional_tests` — fast, deterministic unit, regression, and integration tests. Run these on every change.
 - `sr_benchmark_tests` — heavier stress and performance tests (large task graphs, allocator latency probes). Built by default; the CI fast lane turns it off with `-DSUSHI_BUILD_BENCHMARKS=OFF`.
 
-Run them through the wrapper or with `ctest`:
+Run them through the CLI or with `ctest`:
 
 ```bash
-# via wrapper (runs the default target from your config)
-python3 .tools/sushiruntime.py project run sr_functional_tests
+# via CLI
+sr project test --suite functional
+sr project test --suite benchmark
+sr project test --suite all
+sr project test --suite functional --filter 'Steal.*'   # ctest -R over test names
+
+# or run a binary directly (default target from config)
+sr project run sr_functional_tests
 
 # via ctest, by label
 ctest --test-dir build -L functional
 ctest --test-dir build -L benchmark
 ```
 
-You can forward GoogleTest flags through the runner, e.g. `... project run sr_benchmark_tests --gtest_filter='AllocatorBench.*'`.
+You can forward GoogleTest flags to a binary after `--`, e.g. `sr project run sr_benchmark_tests -- --gtest_filter='AllocatorBench.*'`.
 
 ### Continuous integration
 
@@ -206,7 +217,7 @@ tests/
   common/               Shared GoogleTest entry point and helpers
   functional/           unit / regression / integration (fast, CI)
   benchmark/            stress / performance (heavy, nightly)
-.tools/                 Build, run, docker, and install scripts + Python CLI (`sr`)
+cli/                    Python `sr` / `sushiruntime` CLI package (Typer + rich)
 .github/workflows/      CI: functional tests per push, benchmarks nightly
 docs/                   Changelog, TODO, and guides
 Dockerfile              CUDA + intel/llvm SYCL build environment

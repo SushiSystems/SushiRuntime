@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sushiruntime-cli"
+version = "1.0.0"
+description = "SushiRuntime developer CLI (build / test / run / docker)"
+authors = [{ name = "Mustafa Garip", email = "mustafagarip@sushisystems.io" }]
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.0",
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.scripts]
+sr = "sushiruntime.cli:app"
+sushiruntime = "sushiruntime.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sushiruntime*"]
+
+# Ship the template config alongside the package so a fresh checkout has a
+# reference to copy into config.local.toml.
+[tool.setuptools.package-data]
+sushiruntime = ["py.typed"]
