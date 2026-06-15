@@ -7,34 +7,24 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_dependency_tracker.cpp
- * @brief Unit coverage for the lock-free DependencyTracker hazard resolution.
- *
- * The integration tests prove the tracker serializes a real graph; these unit
- * tests pin the exact edge semantics on raw nodes, deterministically and with
- * no hardware:
- *   - RAW / WAR / WAW each create the right edge (in_degree increments),
- *   - two readers of one buffer depend on the writer but NOT on each other
- *     (RAR must stay parallel — no false serialization between reads),
- *   - sharing several buffers between the same pair adds only ONE edge
- *     (dependency dedup, guards the duplicate-link fix),
- *   - a node accessing its own buffer twice never depends on itself.
- *
- * in_degree is the observable: it is the count of incoming edges the scheduler
- * decrements before a node becomes runnable.
- */
+// Unit coverage for the lock-free DependencyTracker hazard resolution. Pins the
+// edge semantics on raw nodes: RAW/WAR/WAW edges, two readers stay parallel
+// (RAR), shared buffers dedup to one edge, and no self-dependency. in_degree is
+// the observable — the count of incoming edges the scheduler decrements.
 
 #include <gtest/gtest.h>
 #include <SushiRuntime/graph/node.hpp>
@@ -51,11 +41,7 @@ namespace
     }
 }
 
-/**
- * @test RawCreatesEdge
- * @brief writer(W) then reader(R) on the same buffer: the reader gains one
- * incoming edge (read-after-write), the writer none.
- */
+// writer then reader on one buffer: the reader gains one incoming edge (RAW).
 TEST(Unit_DependencyTrackerTest, RawCreatesEdge)
 {
     DependencyTracker tracker;
@@ -65,8 +51,8 @@ TEST(Unit_DependencyTrackerTest, RawCreatesEdge)
     int buffer = 0;
     void* p = &buffer;
 
-    tracker.resolve(writer.get(), p, /*is_write=*/true);
-    tracker.resolve(reader.get(), p, /*is_write=*/false);
+    tracker.resolve(writer.get(), p, true);
+    tracker.resolve(reader.get(), p, false);
 
     EXPECT_EQ(in_degree_of(writer), 0);
     EXPECT_EQ(in_degree_of(reader), 1) << "Reader must depend on the preceding writer (RAW).";
@@ -74,11 +60,7 @@ TEST(Unit_DependencyTrackerTest, RawCreatesEdge)
     tracker.reset();
 }
 
-/**
- * @test WarAndWawChain
- * @brief W1 -> R -> W2 on one buffer. R depends on W1 (RAW). W2 depends on BOTH
- * R (write-after-read) and W1 (write-after-write), so its in_degree is 2.
- */
+// W1 -> R -> W2: R depends on W1 (RAW); W2 depends on both R (WAR) and W1 (WAW).
 TEST(Unit_DependencyTrackerTest, WarAndWawChain)
 {
     DependencyTracker tracker;
@@ -100,12 +82,7 @@ TEST(Unit_DependencyTrackerTest, WarAndWawChain)
     tracker.reset();
 }
 
-/**
- * @test ReadersDependOnWriterNotEachOther
- * @brief One writer followed by two readers: both readers depend on the writer,
- * but NOT on each other, so they can run concurrently. A naive tracker that
- * serialized reads would give the second reader in_degree 2.
- */
+// One writer, two readers: both depend on the writer but not on each other.
 TEST(Unit_DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
 {
     DependencyTracker tracker;
@@ -126,11 +103,7 @@ TEST(Unit_DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
     tracker.reset();
 }
 
-/**
- * @test SharedBuffersCreateSingleEdge
- * @brief A writer and a reader that share TWO buffers must be linked by only one
- * dependency edge, not one per shared buffer (duplicate-link dedup).
- */
+// A writer and reader sharing two buffers must be linked by only one edge.
 TEST(Unit_DependencyTrackerTest, SharedBuffersCreateSingleEdge)
 {
     DependencyTracker tracker;
@@ -151,11 +124,7 @@ TEST(Unit_DependencyTrackerTest, SharedBuffersCreateSingleEdge)
     tracker.reset();
 }
 
-/**
- * @test NoSelfDependency
- * @brief A node that writes the same buffer twice must never create an edge to
- * itself (which would deadlock it: it could never reach in_degree 0).
- */
+// A node writing the same buffer twice must never create an edge to itself.
 TEST(Unit_DependencyTrackerTest, NoSelfDependency)
 {
     DependencyTracker tracker;

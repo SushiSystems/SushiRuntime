@@ -7,30 +7,24 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_numa_steal.cpp
- * @brief Validates NUMA-aware hierarchical work stealing on single-node
- *        hardware by injecting a synthetic topology.
- *
- * A RemappingTopologyProvider spreads the real cores across N synthetic NUMA
- * nodes (round-robin: core i -> node i % N) and a MatrixDistanceModel supplies
- * the matching distance matrix. The scheduler then builds its steal victim
- * table from this fake topology, so we can assert the locality invariant —
- * node-local victims always precede remote ones — without real multi-socket
- * hardware. The actual latency benefit is only measurable on bare metal; this
- * test guards the ordering *logic*.
- */
+// Validates NUMA-aware hierarchical work stealing on single-node hardware by
+// injecting a synthetic topology: a RemappingTopologyProvider spreads cores
+// across N nodes (core i -> i % N) with a matching MatrixDistanceModel. We then
+// assert the locality invariant — node-local victims precede remote ones.
 
 #include <vector>
 #include <gtest/gtest.h>
@@ -47,28 +41,24 @@ using namespace SushiRuntime::Topology;
 
 namespace
 {
-    // Build a RuntimeContext whose topology is split into `nodes` synthetic NUMA
-    // nodes (core i -> i % nodes), with a matching symmetric distance matrix
-    // (10 local, 21 remote).
+    // RuntimeContext split into `nodes` synthetic NUMA nodes (core i -> i % nodes)
+    // with a symmetric distance matrix (10 local, 21 remote).
     std::shared_ptr<RuntimeContext> make_synthetic_ctx(int nodes)
     {
         auto provider = std::make_shared<RemappingTopologyProvider>(
             std::make_shared<HwlocTopologyProvider>(), nodes);
 
         std::vector<std::vector<int>> matrix(nodes, std::vector<int>(nodes, 21));
-        for (int i = 0; i < nodes; ++i) matrix[i][i] = 10;
+        for (int i = 0; i < nodes; ++i)
+            matrix[i][i] = 10;
         auto distance = std::make_shared<MatrixDistanceModel>(std::move(matrix));
 
         return std::make_shared<RuntimeContext>(Topology::HardwareFilterConfig{}, provider, distance);
     }
 }
 
-/**
- * @test LocalVictimsPrecedeRemote
- * @brief With cores split across 2 synthetic nodes (node = id % 2), every
- *        worker's steal order must list all same-node victims before any
- *        cross-node victim.
- */
+// With cores split across 2 nodes, every worker's steal order must list all
+// same-node victims before any cross-node victim.
 TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
 {
     constexpr int NODES = 2;
@@ -89,13 +79,13 @@ TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
         ASSERT_EQ(order.size(), static_cast<size_t>(workers - 1))
             << "Victim list for worker " << th << " has wrong size.";
 
-        // Invariant: once the first remote victim appears, no local victim may
-        // follow — i.e. the local tier is a strict prefix.
+        // Once the first remote victim appears, no local victim may follow.
         bool seen_remote = false;
         for (int victim : order)
         {
             const bool is_local = (victim % NODES) == my_node;
-            if (!is_local) seen_remote = true;
+            if (!is_local)
+                seen_remote = true;
             else
                 EXPECT_FALSE(seen_remote)
                     << "Worker " << th << ": local victim " << victim
@@ -104,12 +94,8 @@ TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
     }
 }
 
-/**
- * @test FlatTopologyKeepsAllVictims
- * @brief Default (real) topology collapses to a single node on this hardware;
- *        the steal order must still contain every other worker (NUMA-blind
- *        single tier == original behaviour, no regression).
- */
+// Default (real) topology collapses to one node here; the steal order must still
+// contain every other worker (single-tier == original behaviour).
 TEST(Unit_NumaStealTest, FlatTopologyKeepsAllVictims)
 {
     RuntimeContext ctx; // default Hwloc provider/model.

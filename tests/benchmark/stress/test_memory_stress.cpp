@@ -7,23 +7,22 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_memory_stress.cpp
- * @brief Concurrency stress for the bitmask pool: high-contention same-bucket
- * churn and cross-thread deallocation. Success criterion is "no deadlock, no
- * segfault, no double-hand-out" rather than any timing figure.
- */
+// Concurrency stress for the bitmask pool: high-contention same-bucket churn and
+// cross-thread deallocation. Pass = no deadlock, no segfault, no double-hand-out.
 
 #include <vector>
 #include <thread>
@@ -36,19 +35,15 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Memory;
 
-/**
- * @test ConcurrentAllocationContention
- * @brief Creates a high-contention environment where multiple threads aggressively
- * allocate and deallocate from the exact same bucket, testing the atomic bitmasks.
- */
+// Many threads hammering the same bucket exercise the atomic bitmasks.
 TEST(Stress_USMAllocatorStress, ConcurrentAllocationContention)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
 
-    constexpr int NUM_THREADS = 8;
+    constexpr int    NUM_THREADS       = 8;
     constexpr size_t ALLOCS_PER_THREAD = 5000;
-    constexpr size_t ALLOC_SIZE = 256; // Hits bucket index 1
+    constexpr size_t ALLOC_SIZE        = 256; // hits bucket index 1
 
     auto worker_func = [&allocator]()
     {
@@ -59,7 +54,8 @@ TEST(Stress_USMAllocatorStress, ConcurrentAllocationContention)
         {
             void* ptr = allocator->allocate(ALLOC_SIZE);
             EXPECT_NE(ptr, nullptr);
-            if (ptr != nullptr) local_ptrs.push_back(ptr);
+            if (ptr != nullptr)
+                local_ptrs.push_back(ptr);
         }
 
         std::this_thread::yield();
@@ -73,24 +69,22 @@ TEST(Stress_USMAllocatorStress, ConcurrentAllocationContention)
         threads.emplace_back(worker_func);
 
     for (auto& t : threads)
-        if (t.joinable()) t.join();
+        if (t.joinable())
+            t.join();
 
-    // If the test finishes without a deadlock or segfault, the atomic CAS operations
-    // within the BitmaskMemoryPool handled the contention correctly.
+    // Finishing without a deadlock or segfault means the bitmask CAS path
+    // handled the contention correctly.
     SUCCEED();
 }
 
-/**
- * @test CrossThreadDeallocation
- * @brief Tests the work-stealing edge case. Thread A allocates memory, but Thread B
- * frees it. This bypasses Thread B's local cache and tests the global page resolution.
- */
+// Thread A allocates, thread B frees — exercises the global page resolution that
+// routes a remote free back to the owning slot.
 TEST(Stress_USMAllocatorStress, CrossThreadDeallocation)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
 
-    constexpr size_t ALLOC_SIZE = 1024;
+    constexpr size_t ALLOC_SIZE    = 1024;
     constexpr size_t POINTER_COUNT = 500;
 
     std::vector<void*> shared_pointers;
@@ -112,7 +106,6 @@ TEST(Stress_USMAllocatorStress, CrossThreadDeallocation)
     });
     deallocator_thread.join();
 
-    // If this does not crash, the global binary search (find_owner_page)
-    // and lock-free deallocation logic worked properly across threads.
+    // Surviving this proves find_owner_page + lock-free cross-thread free work.
     SUCCEED();
 }

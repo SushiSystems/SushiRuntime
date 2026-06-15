@@ -7,27 +7,24 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_distributed.cpp
- * @brief Hardware-free tests for the distributed layer: wire-protocol
- *        serialization, the in-process transport switchboard (the single-machine
- *        simulation of a real cluster), and the master-side registries. These
- *        exercise the full master/worker message path without needing 5 machines
- *        or SYCL devices — the same role the RemappingTopologyProvider plays for
- *        NUMA. End-to-end kernel offload (which needs SYCL + a RuntimeContext) is
- *        covered separately as an integration test.
- */
+// Hardware-free tests for the distributed layer: wire-protocol serialization,
+// the in-process transport switchboard (single-machine cluster simulation), and
+// the master-side registries/policy. End-to-end kernel offload is covered by an
+// integration test.
 
 #include <future>
 #include <chrono>
@@ -53,19 +50,15 @@ namespace
     }
 }
 
-/**
- * @test ProtocolRoundTrip
- * @brief A TaskDispatchMsg carrying metadata and handle lists survives
- *        serialize -> deserialize byte-for-byte. This is the contract that lets
- *        a compiled-in kernel reference (OpID) and data references (handles)
- *        cross the wire while the code and pointers never do.
- */
+// A TaskDispatchMsg (metadata + handle lists) survives serialize/deserialize
+// byte-for-byte — the contract that lets OpID + handles cross the wire while the
+// code and pointers never do.
 TEST(Unit_DistributedTest, ProtocolRoundTrip)
 {
     TaskDispatchMsg msg;
-    msg.task_id = 42;
-    msg.op_id   = "blas.gemm"_op;
-    msg.meta.name = "gemm";
+    msg.task_id       = 42;
+    msg.op_id         = "blas.gemm"_op;
+    msg.meta.name     = "gemm";
     msg.meta.priority = 7;
     msg.meta.set_param<double>(0, 2.5);
     msg.inputs.push_back(BufferHandle{ GlobalBufferID{1}, 3, 256 });
@@ -87,10 +80,7 @@ TEST(Unit_DistributedTest, ProtocolRoundTrip)
     EXPECT_EQ(back.outputs[0].id.value, 3u);
 }
 
-/**
- * @test BufferPushRoundTrip
- * @brief The raw-bytes payload (the actual data pull) preserves its blob.
- */
+// The raw-bytes payload (the actual data pull) preserves its blob.
 TEST(Unit_DistributedTest, BufferPushRoundTrip)
 {
     BufferPushMsg push;
@@ -106,17 +96,13 @@ TEST(Unit_DistributedTest, BufferPushRoundTrip)
     EXPECT_EQ(back.data[3], std::byte{0xEF});
 }
 
-/**
- * @test InProcessTransportDeliversBothDirections
- * @brief master -> worker and worker -> master messages arrive on the peer's
- *        handler with the correct peer id, proving the switchboard routes a real
- *        multi-node protocol on a single machine.
- */
+// master->worker and worker->master messages arrive on the peer's handler with
+// the correct peer id — the switchboard routing a real protocol on one machine.
 TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
 {
-    InProcessFabric fabric(/*worker_count=*/1);
-    InProcessTransport master(fabric, /*node_id=*/-1);
-    InProcessTransport worker(fabric, /*node_id=*/0);
+    InProcessFabric fabric(1);
+    InProcessTransport master(fabric, -1);
+    InProcessTransport worker(fabric, 0);
 
     std::promise<std::pair<int, MsgType>> worker_got;
     std::promise<std::pair<int, MsgType>> master_got;
@@ -124,9 +110,13 @@ TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
     auto master_fut = master_got.get_future();
 
     worker.on_message([&](int peer, MsgType type, std::span<const std::byte>)
-                      { worker_got.set_value({ peer, type }); });
+    {
+        worker_got.set_value({ peer, type });
+    });
     master.on_message([&](int peer, MsgType type, std::span<const std::byte>)
-                      { master_got.set_value({ peer, type }); });
+    {
+        master_got.set_value({ peer, type });
+    });
 
     master.start();
     worker.start();
@@ -150,11 +140,8 @@ TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
     master.stop();
 }
 
-/**
- * @test BufferRegistryVersioning
- * @brief Registration is stable per pointer; a write bumps the version (the
- *        invalidation signal); lookup_by_id round-trips id -> pointer.
- */
+// Registration is stable per pointer; a write bumps the version; lookup_by_id
+// round-trips id -> pointer.
 TEST(Unit_DistributedTest, BufferRegistryVersioning)
 {
     BufferRegistry reg;
@@ -182,13 +169,9 @@ TEST(Unit_DistributedTest, BufferRegistryVersioning)
     EXPECT_FALSE(reg.lookup(nullptr).has_value());
 }
 
-// ---------------------------------------------------------------------------
-// Offload policy (LeastLoadedOffloadPolicy)
-//
-// These drive pick_worker() directly with synthetic WorkerStats — the same
-// hardware-free style the transport tests use — so the cost model (rtt +
-// transfer + queue backlog) and its gates are validated without a live cluster.
-// ---------------------------------------------------------------------------
+// Offload policy (LeastLoadedOffloadPolicy): drive pick_worker() with synthetic
+// WorkerStats so the cost model (rtt + transfer + queue backlog) and its gates
+// are validated without a live cluster.
 namespace
 {
     WorkerStats live_worker(int id, uint32_t inflight, uint64_t free_mem, uint32_t rtt_us)
@@ -202,37 +185,29 @@ namespace
         return w;
     }
 
-    constexpr uint64_t BIG_PAYLOAD = 1u << 20; // 1 MiB, well over the 64 KiB gate
+    constexpr uint64_t BIG_PAYLOAD = 1u << 20;   // 1 MiB, well over the 64 KiB gate
     constexpr uint64_t AMPLE_MEM   = 1ull << 30; // 1 GiB headroom
 }
 
-/**
- * @test PolicyKeepsTinyPayloadLocal
- * @brief A payload below min_offload_bytes never offloads — the network would
- *        only add latency — even with an idle, healthy worker available.
- */
+// A payload below min_offload_bytes never offloads, even with an idle worker.
 TEST(Unit_DistributedTest, PolicyKeepsTinyPayloadLocal)
 {
     LeastLoadedOffloadPolicy policy; // default 64 KiB gate
     Graph::Node node;
-    std::vector<WorkerStats> workers{ live_worker(0, /*inflight=*/0, AMPLE_MEM, /*rtt=*/50) };
+    std::vector<WorkerStats> workers{ live_worker(0, 0, AMPLE_MEM, 50) };
 
-    auto pick = policy.pick_worker(node, workers, /*est_bytes=*/1024);
+    auto pick = policy.pick_worker(node, workers, 1024);
     EXPECT_FALSE(pick.has_value());
 }
 
-/**
- * @test PolicyPicksLowerRttWorker
- * @brief With equal load and headroom, the nearer (lower-RTT) worker wins —
- *        proving rtt_micros is actually consumed by the cost model.
- */
+// With equal load and headroom, the nearer (lower-RTT) worker wins.
 TEST(Unit_DistributedTest, PolicyPicksLowerRttWorker)
 {
     LeastLoadedOffloadPolicy policy;
     Graph::Node node;
     std::vector<WorkerStats> workers{
-        live_worker(0, /*inflight=*/0, AMPLE_MEM, /*rtt=*/50000), // far
-        live_worker(1, /*inflight=*/0, AMPLE_MEM, /*rtt=*/100),   // near
+        live_worker(0, 0, AMPLE_MEM, 50000), // far
+        live_worker(1, 0, AMPLE_MEM, 100),   // near
     };
 
     auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
@@ -240,18 +215,14 @@ TEST(Unit_DistributedTest, PolicyPicksLowerRttWorker)
     EXPECT_EQ(*pick, 1);
 }
 
-/**
- * @test PolicyPrefersLessLoadedWhenEquallyNear
- * @brief Equal RTT and headroom: the emptier queue wins (the "least loaded"
- *        intent survives inside the richer cost model).
- */
+// Equal RTT and headroom: the emptier queue wins.
 TEST(Unit_DistributedTest, PolicyPrefersLessLoadedWhenEquallyNear)
 {
     LeastLoadedOffloadPolicy policy;
     Graph::Node node;
     std::vector<WorkerStats> workers{
-        live_worker(0, /*inflight=*/5, AMPLE_MEM, /*rtt=*/200),
-        live_worker(1, /*inflight=*/1, AMPLE_MEM, /*rtt=*/200),
+        live_worker(0, 5, AMPLE_MEM, 200),
+        live_worker(1, 1, AMPLE_MEM, 200),
     };
 
     auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
@@ -259,27 +230,20 @@ TEST(Unit_DistributedTest, PolicyPrefersLessLoadedWhenEquallyNear)
     EXPECT_EQ(*pick, 1);
 }
 
-/**
- * @test PolicyRejectsInsufficientHeadroom
- * @brief A worker reporting less free_mem than the payload is excluded; with no
- *        other candidate the task falls back to local (nullopt).
- */
+// A worker with less free_mem than the payload is excluded; no candidate -> local.
 TEST(Unit_DistributedTest, PolicyRejectsInsufficientHeadroom)
 {
     LeastLoadedOffloadPolicy policy;
     Graph::Node node;
     std::vector<WorkerStats> workers{
-        live_worker(0, /*inflight=*/0, /*free_mem=*/BIG_PAYLOAD / 2, /*rtt=*/100),
+        live_worker(0, 0, BIG_PAYLOAD / 2, 100),
     };
 
     auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
     EXPECT_FALSE(pick.has_value());
 }
 
-/**
- * @test PolicyFallsBackLocalWhenNoLiveWorker
- * @brief No live worker -> transparent local fallback, regardless of payload.
- */
+// No live worker -> transparent local fallback.
 TEST(Unit_DistributedTest, PolicyFallsBackLocalWhenNoLiveWorker)
 {
     LeastLoadedOffloadPolicy policy;
@@ -292,16 +256,12 @@ TEST(Unit_DistributedTest, PolicyFallsBackLocalWhenNoLiveWorker)
     EXPECT_FALSE(pick.has_value());
 }
 
-/**
- * @test PolicyTreatsZeroFreeMemAsUnknown
- * @brief free_mem == 0 means "no headroom info" (e.g. the device lacks a
- *        free-memory query), so the worker stays eligible rather than excluded.
- */
+// free_mem == 0 means "no headroom info", so the worker stays eligible.
 TEST(Unit_DistributedTest, PolicyTreatsZeroFreeMemAsUnknown)
 {
     LeastLoadedOffloadPolicy policy;
     Graph::Node node;
-    std::vector<WorkerStats> workers{ live_worker(0, /*inflight=*/0, /*free_mem=*/0, /*rtt=*/100) };
+    std::vector<WorkerStats> workers{ live_worker(0, 0, 0, 100) };
 
     auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
     ASSERT_TRUE(pick.has_value());

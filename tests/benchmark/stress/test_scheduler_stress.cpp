@@ -7,15 +7,18 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
 #include <atomic>
@@ -35,11 +38,7 @@ using namespace SushiRuntime::Scheduler;
 using SushiRuntime::Test::AtomicCounterTask;
 using SushiRuntime::Test::PriorityTrackingTask;
 
-/**
- * @test OneMillionTaskBomb
- * @brief Tests stability and deque resizing by submitting 1 million tasks
- * simultaneously to check worker thread performance under heavy load.
- */
+// One million tasks at once: stability and deque resizing under heavy load.
 TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
 {
     RuntimeContext ctx;
@@ -67,18 +66,14 @@ TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
     EXPECT_EQ(executed_count.load(), TOTAL_TASKS);
 }
 
-/**
- * @test MultiProducerContention
- * @brief Tests submission logic under heavy contention by submitting tasks
- * from 8 different threads simultaneously.
- */
+// Submission under contention: 8 producer threads submitting at once.
 TEST(Stress_TaskSchedulerStress, MultiProducerContention)
 {
     RuntimeContext ctx;
     TaskScheduler scheduler(ctx);
 
     std::atomic<size_t> executed_count{0};
-    constexpr int NUM_PRODUCERS = 8;
+    constexpr int    NUM_PRODUCERS      = 8;
     constexpr size_t TASKS_PER_PRODUCER = 50'000;
 
     scheduler.start();
@@ -95,7 +90,8 @@ TEST(Stress_TaskSchedulerStress, MultiProducerContention)
     }
 
     for (auto& t : producers)
-        if (t.joinable()) t.join();
+        if (t.joinable())
+            t.join();
 
     auto start_time = std::chrono::steady_clock::now();
     while (executed_count.load(std::memory_order_acquire) < (NUM_PRODUCERS * TASKS_PER_PRODUCER))
@@ -110,11 +106,7 @@ TEST(Stress_TaskSchedulerStress, MultiProducerContention)
     EXPECT_EQ(executed_count.load(), NUM_PRODUCERS * TASKS_PER_PRODUCER);
 }
 
-/**
- * @test RapidArmAndStopThrashing
- * @brief Tests scheduler lifecycle by repeatedly arming and stopping,
- * checking for races, deadlocks, or memory leaks.
- */
+// Repeatedly arm and stop to shake out races, deadlocks, and leaks.
 TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
 {
     RuntimeContext ctx;
@@ -130,19 +122,14 @@ TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
         for (int j = 0; j < 1000; ++j)
             scheduler.submit(new AtomicCounterTask(executed_count));
 
-        // Call stop abruptly without waiting for completion.
-        // This tests the drain mechanism in stop().
+        // Stop abruptly without waiting — exercises the drain in stop().
         scheduler.stop();
     }
 
     SUCCEED();
 }
 
-/**
- * @test PriorityBypassUnderLoad
- * @brief Verifies that high-priority tasks bypass the normal queue even when
- * many low-priority tasks are already queued.
- */
+// A high-priority task must bypass the queue even behind many low-priority ones.
 TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
 {
     RuntimeContext ctx;
@@ -152,7 +139,7 @@ TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
     std::mutex order_mutex;
 
     scheduler.start();
-    // Do NOT arm yet to ensure tasks stay in the injector
+    // Do NOT arm yet, so tasks stay in the injector.
 
     for (int i = 0; i < 50; ++i)
         scheduler.submit(new PriorityTrackingTask(0, execution_order, order_mutex));
@@ -166,10 +153,12 @@ TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
     {
         {
             std::lock_guard<std::mutex> lock(order_mutex);
-            if (execution_order.size() >= 51) break;
+            if (execution_order.size() >= 51)
+                break;
         }
         auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count() > 5) break;
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count() > 5)
+            break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
@@ -179,10 +168,17 @@ TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
 
     bool found_high_early = false;
     int check_window = static_cast<int>(scheduler.num_workers) * 2;
-    if (check_window > 51) check_window = 51;
+    if (check_window > 51)
+        check_window = 51;
 
     for (int i = 0; i < check_window; ++i)
-        if (execution_order[i] == 100) { found_high_early = true; break; }
+    {
+        if (execution_order[i] == 100)
+        {
+            found_high_early = true;
+            break;
+        }
+    }
 
     EXPECT_TRUE(found_high_early) << "High priority task was not executed in the first batch!";
 }

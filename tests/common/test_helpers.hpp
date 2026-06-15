@@ -7,26 +7,22 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_helpers.hpp
- * @brief Shared test utilities to remove duplication across the test suites.
- *
- * Collects the small building blocks that were previously copy-pasted into
- * individual test files: a host task that records execution order, a host task
- * that bumps an atomic counter, and an RAII wrapper for USM allocations so a
- * failing assertion never leaks device memory.
- */
+// Shared test building blocks: an order-recording host task, an atomic-counter
+// host task, and an RAII USM guard so a failing assertion never leaks memory.
 
 #pragma once
 
@@ -44,13 +40,8 @@ namespace SushiRuntime
 {
     namespace Test
     {
-        /**
-         * @brief Host work lambda that records its id into a shared order list.
-         *
-         * Used by graph/integration tests to assert a topological execution
-         * order. The optional delay widens the window for ordering bugs to
-         * surface when several tasks could otherwise appear simultaneous.
-         */
+        // Host task that records its id into a shared list. The optional delay
+        // widens the window for ordering bugs to surface.
         inline auto make_order_recorder(int task_id,
                                         std::vector<int>& execution_order,
                                         std::mutex& order_mutex,
@@ -68,12 +59,7 @@ namespace SushiRuntime
             };
         }
 
-        /**
-         * @brief Lightweight host task that increments an atomic counter.
-         *
-         * The canonical scheduler workload: no GPU involvement, so it isolates
-         * the scheduler's dispatch path from kernel execution cost.
-         */
+        // Canonical scheduler workload: bumps a counter, no GPU involvement.
         class AtomicCounterTask : public Scheduler::Task
         {
         public:
@@ -95,12 +81,7 @@ namespace SushiRuntime
             std::atomic<size_t>& counter_;
         };
 
-        /**
-         * @brief Host task that records its priority into a shared order list.
-         *
-         * Used by scheduler tests to verify high-priority tasks bypass the
-         * normal queue ordering.
-         */
+        // Records its priority, so scheduler tests can assert priority ordering.
         class PriorityTrackingTask : public Scheduler::Task
         {
         public:
@@ -127,12 +108,7 @@ namespace SushiRuntime
             std::mutex& order_mutex_;
         };
 
-        /**
-         * @brief RAII guard for a sycl::malloc_shared<T> allocation.
-         *
-         * Frees on scope exit, so a failing GTest assertion does not leak the
-         * device buffer. Move-only.
-         */
+        // Move-only RAII guard for a sycl::malloc_shared<T> buffer; frees on exit.
         template <typename T>
         class UsmShared
         {
@@ -164,10 +140,10 @@ namespace SushiRuntime
                 return *this;
             }
 
-            T* get() const noexcept       { return ptr_; }
-            T& operator[](size_t i) const { return ptr_[i]; }
-            size_t count() const noexcept { return count_; }
-            explicit operator bool() const noexcept { return ptr_ != nullptr; }
+            T* get() const noexcept                  { return ptr_; }
+            T& operator[](size_t i) const            { return ptr_[i]; }
+            size_t count() const noexcept            { return count_; }
+            explicit operator bool() const noexcept  { return ptr_ != nullptr; }
 
         private:
             void reset()

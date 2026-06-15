@@ -7,23 +7,22 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_nvidia_topology.cpp
- * @brief Validates that an NVIDIA GPU (GTX 1060 / sm_61) is discovered as a
- *        SYCL device via the CUDA backend and correctly mapped to a NUMA node
- *        by hwloc. Tests skip gracefully when no CUDA device is present.
- */
+// Validates that an NVIDIA GPU (GTX 1060 / sm_61) is discovered via the CUDA
+// SYCL backend and mapped to a NUMA node by hwloc. Skips when no CUDA device.
 
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -39,16 +38,14 @@ using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Topology;
 using SushiRuntime::Test::UsmShared;
 
-// ---------------------------------------------------------------------------
-// Helper: find any NVIDIA GPU among discovered HardwareNodes
-// ---------------------------------------------------------------------------
+// Find any NVIDIA GPU among discovered nodes (the CUDA backend may report
+// "GeForce"/"GTX"/"RTX" instead of "NVIDIA").
 static const HardwareNode* find_nvidia_node(const std::vector<HardwareNode>& nodes)
 {
     for (const auto& n : nodes)
     {
         if (n.is_gpu && n.name.find("NVIDIA") != std::string::npos)
             return &n;
-        // Codeplay CUDA backend may report "GeForce" without "NVIDIA" prefix
         if (n.is_gpu && (n.name.find("GeForce") != std::string::npos ||
                          n.name.find("GTX")     != std::string::npos ||
                          n.name.find("RTX")     != std::string::npos))
@@ -57,14 +54,11 @@ static const HardwareNode* find_nvidia_node(const std::vector<HardwareNode>& nod
     return nullptr;
 }
 
-// ---------------------------------------------------------------------------
-// Helper: find any CUDA SYCL device
-// ---------------------------------------------------------------------------
+// True if any GPU device sits on a CUDA platform.
 static bool cuda_device_available()
 {
     for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::gpu))
     {
-        // Codeplay CUDA backend reports backend as "cuda" in platform name
         std::string pname = dev.get_platform().get_info<sycl::info::platform::name>();
         if (pname.find("CUDA") != std::string::npos ||
             pname.find("cuda") != std::string::npos)
@@ -73,13 +67,7 @@ static bool cuda_device_available()
     return false;
 }
 
-// ---------------------------------------------------------------------------
-
-/**
- * @test NvidiaGpuDiscovered
- * @brief HardwareDiscovery must enumerate the GTX 1060 as a GPU HardwareNode
- *        when the CUDA backend is active.
- */
+// Discovery must enumerate the GTX 1060 as a GPU node when CUDA is active.
 TEST(Unit_NvidiaTopologyTest, NvidiaGpuDiscovered)
 {
     if (!cuda_device_available())
@@ -98,11 +86,7 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuDiscovered)
     EXPECT_FALSE(nvidia->name.empty());
 }
 
-/**
- * @test NvidiaGpuHasNUMAMapping
- * @brief After discovery the GTX 1060 must have a valid NUMA node id (>= 0)
- *        assigned by NUMAMapper via hwloc PCI topology walk.
- */
+// After discovery the GPU must have a valid NUMA id (>= 0), or skip on WSL.
 TEST(Unit_NvidiaTopologyTest, NvidiaGpuHasNUMAMapping)
 {
     if (!cuda_device_available())
@@ -117,13 +101,12 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuHasNUMAMapping)
     ASSERT_NE(nvidia, nullptr);
 
     NUMAMapper mapper;
-    // map_distances() mutates nodes in-place, filling numa_node_id
-    mapper.map_distances(nodes);
+    mapper.map_distances(nodes); // mutates nodes in-place, filling numa_node_id
 
     const HardwareNode* mapped_nvidia = find_nvidia_node(nodes);
     ASSERT_NE(mapped_nvidia, nullptr);
 
-    // -1 means "could not map" — acceptable in WSL without full ACPI passthrough
+    // -1 means "could not map" — acceptable in WSL without full ACPI passthrough.
     if (mapped_nvidia->numa_node_id == -1)
     {
         GTEST_SKIP() << "GTX 1060 found but hwloc could not resolve NUMA node "
@@ -135,11 +118,7 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuHasNUMAMapping)
         << "GTX 1060 must be assigned to a valid NUMA node.";
 }
 
-/**
- * @test RuntimeContextExposesNvidiaQueue
- * @brief RuntimeContext must provide a valid SYCL queue backed by the CUDA device
- *        and the queue must successfully execute a trivial host_task.
- */
+// RuntimeContext must expose a CUDA-backed queue that runs a trivial host_task.
 TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
 {
     if (!cuda_device_available())
@@ -147,8 +126,7 @@ TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
 
     RuntimeContext ctx;
 
-    // RuntimeContext exposes queues by index; find the CUDA-backed one by
-    // scanning SYCL devices directly (same order as ctx.get_queue(i)).
+    // Queues are exposed by index in the same order as the SYCL device list.
     auto all_devs = sycl::device::get_devices(sycl::info::device_type::all);
     bool found_cuda_queue = false;
     for (size_t i = 0; i < all_devs.size(); ++i)
@@ -163,7 +141,7 @@ TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
         EXPECT_NO_THROW({
             auto ev = q.submit([](sycl::handler& h)
             {
-                h.host_task([]{ /* no-op */ });
+                h.host_task([] {});
             });
             ev.wait();
         }) << "CUDA-backed SYCL queue threw during host_task submission.";
@@ -175,18 +153,12 @@ TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
         GTEST_SKIP() << "RuntimeContext found no CUDA-backed queue.";
 }
 
-/**
- * @test NvidiaGpuVectorAdd
- * @brief End-to-end smoke test: allocate USM shared memory, run a parallel_for
- *        on the GTX 1060 via the CUDA SYCL backend, verify results on host.
- *        This confirms the full pipeline: CUDA backend → kernel dispatch → USM.
- */
+// End-to-end smoke test: USM shared + a parallel_for on the GTX 1060.
 TEST(Unit_NvidiaTopologyTest, NvidiaGpuVectorAdd)
 {
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
 
-    // Find the CUDA queue from RuntimeContext
     RuntimeContext ctx;
     sycl::queue* cuda_q = nullptr;
     auto all_devs = sycl::device::get_devices(sycl::info::device_type::all);
@@ -206,16 +178,21 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuVectorAdd)
     UsmShared<float> usm_A(*cuda_q, N);
     UsmShared<float> usm_B(*cuda_q, N);
     UsmShared<float> usm_C(*cuda_q, N);
-    ASSERT_TRUE(usm_A); ASSERT_TRUE(usm_B); ASSERT_TRUE(usm_C);
+    ASSERT_TRUE(usm_A);
+    ASSERT_TRUE(usm_B);
+    ASSERT_TRUE(usm_C);
 
     float* A = usm_A.get();
     float* B = usm_B.get();
     float* C = usm_C.get();
 
-    // Initialize on host (USM shared = accessible from both sides)
-    for (size_t i = 0; i < N; ++i) { A[i] = float(i); B[i] = float(i) * 2.f; C[i] = 0.f; }
+    for (size_t i = 0; i < N; ++i)
+    {
+        A[i] = float(i);
+        B[i] = float(i) * 2.f;
+        C[i] = 0.f;
+    }
 
-    // Dispatch kernel to GTX 1060 via CUDA backend
     auto ev = cuda_q->submit([&](sycl::handler& h)
     {
         h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> idx)
@@ -229,7 +206,11 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuVectorAdd)
     for (size_t i = 0; i < N; ++i)
     {
         float expected = float(i) + float(i) * 2.f;
-        if (C[i] != expected) { ok = false; break; }
+        if (C[i] != expected)
+        {
+            ok = false;
+            break;
+        }
     }
     EXPECT_TRUE(ok) << "GTX 1060 vector addition produced wrong results.";
 }

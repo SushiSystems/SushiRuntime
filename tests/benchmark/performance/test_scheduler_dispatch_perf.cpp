@@ -7,39 +7,25 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_scheduler_dispatch_perf.cpp
- * @brief Measures the scheduler's per-task dispatch overhead honestly.
- *
- * FAIRNESS DESIGN. The two sides do the *identical* unit of work — a single
- * relaxed atomic increment — so the only difference being measured is the path
- * the work travels:
- *   * baseline : the increment called inline in a tight loop (the irreducible
- *                cost of the work itself; establishes the floor).
- *   * scheduler: the same increment wrapped in an AtomicCounterTask, submitted
- *                to the work-stealing scheduler and drained.
- * The delta (scheduler_per_task - baseline_per_task) is the amortized cost the
- * scheduler adds: submit + queueing + steal + dispatch.
- *
- * We deliberately do NOT assert "scheduler is faster": the baseline is single
- * threaded while the scheduler is parallel, so a speed comparison would be
- * apples-to-oranges. The benchmark reports the overhead number and only asserts
- * correctness (every task ran) and forward progress (non-zero throughput, no
- * hang) — the same philosophy as the stress suite. Each side is timed best-of-N
- * to strip OS jitter, and the counter is consumed (asserted) so neither loop can
- * be optimized away.
- */
+// Measures per-task dispatch overhead. Both sides do the identical work — one
+// relaxed atomic increment — so the only difference is the path it travels:
+// inline in a tight loop (the floor) vs wrapped in a task and run through the
+// work-stealing scheduler. The delta is the amortized submit+steal+dispatch
+// cost. We report it and assert only correctness + forward progress, not speed.
 
 #include <algorithm>
 #include <atomic>
@@ -60,8 +46,8 @@ using SushiRuntime::Test::AtomicCounterTask;
 
 namespace
 {
-    constexpr size_t TOTAL    = 500000; // tasks per timed run
-    constexpr int    ROUNDS   = 3;      // best-of-N to strip jitter
+    constexpr size_t TOTAL  = 500000; // tasks per timed run
+    constexpr int    ROUNDS = 3;      // best-of-N to strip jitter
 
     bool wait_for(const std::atomic<size_t>& value, size_t target,
                   std::chrono::seconds budget)
@@ -69,7 +55,8 @@ namespace
         auto deadline = std::chrono::steady_clock::now() + budget;
         while (value.load(std::memory_order_acquire) < target)
         {
-            if (std::chrono::steady_clock::now() > deadline) return false;
+            if (std::chrono::steady_clock::now() > deadline)
+                return false;
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         return true;
@@ -87,23 +74,20 @@ namespace
     }
 }
 
-/**
- * @test DispatchOverheadVsInlineBaseline
- * @brief Reports amortized per-task scheduler overhead against the inline floor.
- */
+// Report amortized per-task scheduler overhead against the inline floor.
 TEST(Performance_SchedulerDispatchBench, DispatchOverheadVsInlineBaseline)
 {
     RuntimeContext ctx;
     std::atomic<size_t> counter{0};
 
-    // --- baseline: inline work, best-of-N -----------------------------------
+    // Baseline: inline work, best-of-N.
     double best_base_ns = 1e300;
     for (int r = 0; r < ROUNDS; ++r)
         best_base_ns = std::min(best_base_ns, baseline_ns(counter));
     ASSERT_EQ(counter.load(), TOTAL); // consume: defeats dead-code elimination
     const double base_per_task_ns = best_base_ns / double(TOTAL);
 
-    // --- scheduler: same work through the dispatch path, best-of-N -----------
+    // Scheduler: same work through the dispatch path, best-of-N.
     double best_sched_ms = 1e300;
     int    workers       = 0;
     for (int r = 0; r < ROUNDS; ++r)
@@ -142,7 +126,6 @@ TEST(Performance_SchedulerDispatchBench, DispatchOverheadVsInlineBaseline)
                 overhead_ns);
     std::printf("  Throughput      : %10.0f tasks/s\n", thr);
 
-    // Honest assertions only: work happened and the pipeline made progress.
     EXPECT_EQ(counter.load(), TOTAL);
     EXPECT_GT(thr, 0.0);
 }

@@ -9,7 +9,7 @@
 #   bash install.sh [--gpu] [--dry-run]
 #
 # Usage (bare machine, no checkout yet):
-#   curl -fsSL https://raw.githubusercontent.com/<org>/sushiruntime/main/install.sh | bash -s -- --gpu
+#   curl -fsSL https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.sh | bash -s -- --gpu
 set -euo pipefail
 
 REPO_URL="${SUSHI_REPO_URL:-https://github.com/sushisystems/sushiruntime.git}"

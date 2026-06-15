@@ -43,11 +43,11 @@ powershell -ExecutionPolicy Bypass -File install.ps1   # add -Gpu / -DryRun
 Both also work straight from the web on a bare machine:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<org>/sushiruntime/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.sh | bash
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/<org>/sushiruntime/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.ps1 | iex
 ```
 
 The installer is a SOLID, dependency-injected pipeline
@@ -256,7 +256,7 @@ An opt-in master-worker layer that offloads individual tasks to remote workers. 
 - `DistributedCoordinator` (master) decides what to offload via a swappable `IOffloadPolicy`, serves a stateful, pull-based, master-authoritative buffer cache (a write auto-bumps a version, so stale worker caches re-pull), and releases a node's successors when its remote result arrives. `WorkerAgent` (worker) is a thin network shell around a normal local `RuntimeContext`, so the existing NUMA-aware scheduler runs the offloaded work.
 - Integration with the core is minimal and guarded: `TaskGraph::compile()` stamps which nodes are offloadable, and the scheduler's hot path adds a single `[[unlikely]]` branch — non-offloaded tasks pay nothing. An offloadable task whose policy declines falls back to local execution transparently.
 
-See [Distributed execution](#distributed-execution-optional) for how to run it, and `Idea.md` for the feature tracker.
+See [Distributed execution](#distributed-execution-optional) for how to run it.
 
 ## Project layout
 
@@ -279,12 +279,11 @@ cli/                    Python `sr` / `sushiruntime` CLI package (Typer + rich)
 .github/workflows/      CI: functional tests per push, benchmarks nightly
 docs/                   Changelog, TODO, and guides
 Dockerfile              CUDA + intel/llvm SYCL build environment
-Idea.md                 Distributed master-worker feature tracker (status + remaining work)
 ```
 
 ## Distributed execution (optional)
 
-A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSUSHI_ENABLE_DISTRIBUTED=ON` / `sr project build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design, and `Idea.md` for the feature tracker and remaining hardening work.
+A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSUSHI_ENABLE_DISTRIBUTED=ON` / `sr project build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design.
 
 The same binary runs in either role; the `sr` CLI forwards `--distributed=master|worker` to your application's `main()`, which constructs the `RuntimeContext` accordingly. A runnable demo (`examples/distributed_demo.cpp` → `sr_distributed_demo`) offloads a vector-add across one or more workers:
 
@@ -305,10 +304,6 @@ The distributed tests (protocol, transports, buffer coherence, and SYCL end-to-e
 sr project run sr_functional_tests --gtest_filter='Distributed*'
 ```
 
-## Roadmap
-
-The core distributed layer is implemented and verified; remaining work is production hardening (worker-death resilience, reconnect, pipelining, and running offloaded work through the worker's own NUMA-aware scheduler). `Idea.md` tracks the full status and the prioritized remaining items.
-
 ## License
 
-This software is the proprietary information of Mustafa Garip & Sushi Systems. All rights reserved. Unauthorized copying, disclosure, or use of this code is prohibited without explicit written permission from the copyright holders.
+This project is licensed under the Apache License, Version 2.0 - see the [LICENSE](LICENSE) file for details.

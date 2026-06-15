@@ -7,48 +7,25 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_async_overlap_perf.cpp
- * @brief Quantifies CPU/GPU concurrency: when heavy GPU and CPU work are
- *        dispatched without an intervening wait, the two devices run at the
- *        same time, so wall-clock approaches max(T_cpu, T_gpu) rather than the
- *        serial sum T_cpu + T_gpu.
- *
- * Overlap can only show up when the two devices have *comparable* runtimes:
- * if one finishes 14x faster (as a GTX 1060 does versus a CPU device on a
- * fixed-iteration kernel), hiding the short task inside the long one saves
- * almost nothing and the speedup ceiling is ~1.0x by construction. So the
- * benchmark first AUTO-CALIBRATES the GPU iteration count until the GPU kernel
- * takes roughly as long as the CPU kernel, then measures:
- *
- *   - T_gpu     : calibrated GPU kernel, submit + wait.
- *   - T_cpu     : CPU kernel, submit + wait.
- *   - T_serial  : GPU to completion, THEN CPU to completion.
- *   - T_overlap : submit GPU (no wait), submit CPU (no wait), then join both.
- *
- * With balanced loads, true overlap drives T_overlap toward max(T_gpu, T_cpu)
- * (~half of serial), so a ~1.5x+ speedup is the pass bar.
- *
- * SCOPE — read before extending: this benchmark measures DEVICE QUEUE overlap
- * ONLY. It submits kernels straight to two sycl::queue objects and never goes
- * through TaskGraph / ExecutionEngine / TaskScheduler. It therefore does NOT
- * exercise the work-stealing scheduler or NUMA-aware stealing (see
- * StealLocalityBench / NumaStealTest for that layer), and it does NOT cover
- * host<->device transfer (H2D/D2H) overlap — only compute concurrency. Keep the
- * two layers in separate tests; combine them only in a dedicated integration
- * test (HeterogeneousPipelineTest), never by widening this one.
- */
+// Quantifies CPU/GPU concurrency: dispatched without an intervening wait, the
+// two devices run together so wall-clock approaches max(T_cpu, T_gpu) instead of
+// the serial sum. Overlap only shows when runtimes are comparable, so the GPU
+// iteration count is auto-calibrated to the CPU first. This measures DEVICE
+// QUEUE overlap only — not the scheduler, not H2D/D2H transfer.
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -70,16 +47,15 @@ namespace
 {
     using Clock = std::chrono::steady_clock;
 
-    // True when the (shared) kernel reports a WSL2 host. The WSL2 CUDA backend
-    // adds non-trivial submit/dispatch latency and exposes no real PCI topology
-    // (numa_mapper logs "Could not find PCI device"), which inflates the overlap
-    // wall-clock enough to miss the strict speedup bar even when the CPU and GPU
-    // demonstrably run concurrently. Used to relax — not delete — the bar there.
+    // True on a WSL2 host. Its CUDA backend adds dispatch latency and exposes no
+    // PCI topology, inflating the overlap wall-clock enough to miss the strict
+    // bar even when the devices demonstrably overlap — used to relax, not delete.
     bool running_under_wsl()
     {
 #if defined(__linux__)
         std::ifstream f("/proc/version");
-        if (!f) return false;
+        if (!f)
+            return false;
         std::string v((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
         return v.find("microsoft") != std::string::npos ||
                v.find("Microsoft") != std::string::npos ||
@@ -94,8 +70,7 @@ namespace
         return std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
     }
 
-    // Run `fn` `reps` times and keep the fastest — strips scheduling/OS noise so
-    // the reported figure reflects steady-state device throughput.
+    // Run `fn` `reps` times and keep the fastest, stripping scheduling/OS noise.
     template <typename Fn>
     double best_of(int reps, Fn&& fn)
     {
@@ -112,17 +87,25 @@ namespace
     bool find_cpu_gpu_indices(size_t& cpu_idx, size_t& gpu_idx)
     {
         auto devs = sycl::device::get_devices(sycl::info::device_type::all);
-        bool fc = false, fg = false;
+        bool fc = false;
+        bool fg = false;
         for (size_t i = 0; i < devs.size(); ++i)
         {
-            if (!fc && devs[i].is_cpu()) { cpu_idx = i; fc = true; }
-            if (!fg && devs[i].is_gpu()) { gpu_idx = i; fg = true; }
+            if (!fc && devs[i].is_cpu())
+            {
+                cpu_idx = i;
+                fc = true;
+            }
+            if (!fg && devs[i].is_gpu())
+            {
+                gpu_idx = i;
+                fg = true;
+            }
         }
         return fc && fg;
     }
 
-    // A heavy, optimizer-resistant element kernel: each item runs an arithmetic
-    // loop so total runtime scales linearly with `iters`.
+    // Heavy, optimizer-resistant element kernel: runtime scales with `iters`.
     sycl::event launch_heavy(sycl::queue& q, float* in, float* out, size_t n, int iters)
     {
         return q.submit([&](sycl::handler& h)
@@ -138,14 +121,12 @@ namespace
     }
 }
 
-/**
- * @test CpuGpuOverlapSpeedup
- * @brief Auto-balances CPU/GPU work, then measures the wall-clock saving from
- *        running the two devices concurrently versus serially.
- */
+// Auto-balance CPU/GPU work, then measure the wall-clock saving of running the
+// two devices concurrently versus serially.
 TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
 {
-    size_t cpu_idx = 0, gpu_idx = 0;
+    size_t cpu_idx = 0;
+    size_t gpu_idx = 0;
     if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
         GTEST_SKIP() << "Need both a CPU and a GPU SYCL device for overlap benchmark.";
 
@@ -159,18 +140,26 @@ TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
 
     UsmShared<float> g_in(gpu_q, N), g_out(gpu_q, N);
     UsmShared<float> c_in(cpu_q, N), c_out(cpu_q, N);
-    ASSERT_TRUE(g_in); ASSERT_TRUE(g_out);
-    ASSERT_TRUE(c_in); ASSERT_TRUE(c_out);
+    ASSERT_TRUE(g_in);
+    ASSERT_TRUE(g_out);
+    ASSERT_TRUE(c_in);
+    ASSERT_TRUE(c_out);
 
-    for (size_t i = 0; i < N; ++i) { g_in[i] = float(i % 97); c_in[i] = float(i % 89); }
-    float* gi = g_in.get(); float* go = g_out.get();
-    float* ci = c_in.get(); float* co = c_out.get();
+    for (size_t i = 0; i < N; ++i)
+    {
+        g_in[i] = float(i % 97);
+        c_in[i] = float(i % 89);
+    }
+    float* gi = g_in.get();
+    float* go = g_out.get();
+    float* ci = c_in.get();
+    float* co = c_out.get();
 
     // Warmup (JIT compile + first-touch paging) before any timing.
     launch_heavy(gpu_q, gi, go, N, gpu_iters).wait();
     launch_heavy(cpu_q, ci, co, N, CPU_ITERS).wait();
 
-    // --- Calibration: scale GPU iters so its runtime matches the CPU kernel ---
+    // Calibration: scale GPU iters so its runtime matches the CPU kernel.
     const double cpu_base = best_of(3, [&] { launch_heavy(cpu_q, ci, co, N, CPU_ITERS).wait(); });
     const double gpu_base = best_of(3, [&] { launch_heavy(gpu_q, gi, go, N, gpu_iters).wait(); });
 
@@ -181,18 +170,18 @@ TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
     }
     launch_heavy(gpu_q, gi, go, N, gpu_iters).wait(); // re-warm at calibrated size
 
-    // --- Isolated, balanced device timings ---
+    // Isolated, balanced device timings.
     const double t_gpu = best_of(3, [&] { launch_heavy(gpu_q, gi, go, N, gpu_iters).wait(); });
     const double t_cpu = best_of(3, [&] { launch_heavy(cpu_q, ci, co, N, CPU_ITERS).wait(); });
 
-    // --- Serial: GPU fully, then CPU fully ---
+    // Serial: GPU fully, then CPU fully.
     const double t_serial = best_of(3, [&]
     {
         launch_heavy(gpu_q, gi, go, N, gpu_iters).wait();
         launch_heavy(cpu_q, ci, co, N, CPU_ITERS).wait();
     });
 
-    // --- Overlap: dispatch both, then join ---
+    // Overlap: dispatch both, then join.
     const double t_overlap = best_of(3, [&]
     {
         sycl::event ge = launch_heavy(gpu_q, gi, go, N, gpu_iters);
@@ -217,25 +206,22 @@ TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
     std::printf("  Ideal max(G,C): %8.2f ms\n", ideal);
     std::printf("  Speedup       : %8.2fx\n", speedup);
 
-    // With balanced loads, real overlap pulls the concurrent time well below the
-    // serial sum. 0.75 leaves slack for dispatch overhead, imperfect calibration
-    // and CPU/GPU contention while still failing if work serializes (~1.0x).
+    // 0.75 leaves slack for dispatch overhead and contention while still failing
+    // if work serializes (~1.0x).
     const double overlap_bar       = t_serial * 0.75;  // healthy concurrency
     const double serialization_top = t_serial * 0.95;  // essentially no overlap
 
-    // A genuine serialization bug (overlap buys almost nothing) is a hard failure
-    // everywhere — this also catches the case CUDA_LAUNCH_BLOCKING=1 would cause,
-    // where every launch runs synchronously and speedup collapses to ~1.0x.
+    // A genuine serialization bug is a hard failure everywhere (also catches
+    // CUDA_LAUNCH_BLOCKING=1, where every launch runs synchronously).
     EXPECT_LT(t_overlap, serialization_top)
         << "CPU and GPU are not overlapping at all — work is serializing "
            "(check that CUDA_LAUNCH_BLOCKING is not set to 1).";
 
     if (t_overlap >= overlap_bar && t_overlap < serialization_top && running_under_wsl())
     {
-        // Overlap is clearly happening (e.g. ~1.27x) but doesn't clear the strict
-        // 0.75 bar. On WSL2 + Pascal the CUDA dispatch overhead and missing PCI
-        // topology inflate the overlap wall-clock past the bar. Treat as
-        // inconclusive here rather than failing; bare-metal CI still enforces it.
+        // Overlap is clearly happening but doesn't clear the strict bar; on
+        // WSL2 + Pascal the dispatch overhead inflates it. Inconclusive here;
+        // bare-metal CI still enforces the bar.
         GTEST_SKIP() << "Overlap present (" << speedup << "x) but below the 0.75 bar; "
                         "async overlap is not reliably measurable on WSL2/Pascal.";
     }

@@ -7,28 +7,24 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_epoch_stress.cpp
- * @brief High-churn stress for epoch-based reclamation.
- *
- * Many threads enter/exit critical sections and retire heap objects at speed,
- * with threads continuously spawning and exiting to exercise the orphan-list
- * handoff path. The invariants checked are leak/UAF oriented: every object that
- * was retired is destroyed exactly once, and a large majority is reclaimed
- * before the test ends (the remainder may sit in the final epoch). Run under a
- * sanitizer (ASan/TSan) this also surfaces races and use-after-free.
- */
+// High-churn stress for epoch-based reclamation: many threads enter/exit
+// critical sections and retire objects, with threads spawning and exiting to
+// exercise the orphan handoff. Every retired object must be destroyed once and
+// most reclaimed. Under ASan/TSan this also surfaces races and use-after-free.
 
 #include <atomic>
 #include <memory>
@@ -41,17 +37,13 @@ using namespace SushiRuntime::Memory;
 
 namespace
 {
-    // Counters live on the heap, owned by shared_ptr. EBR reclamation is
-    // deferred: a tail of retired objects can outlive the test's return and is
-    // freed only during a later test's reclamation activity. Raw pointers to
-    // stack atomics would then be written after the frame is gone — a
-    // stack-use-after-return that silently corrupts whatever later test occupies
-    // that stack region (it manifested as a crash in an unrelated test in the
-    // full suite). Owning the counters by shared_ptr keeps them alive as long as
-    // any Tracked still references them, so late dtor writes stay valid.
+    // Counters are heap-owned by shared_ptr: EBR reclamation is deferred, so a
+    // tail of retired objects outlives the test and is freed later. Raw pointers
+    // to stack atomics would then be written after the frame is gone — a
+    // stack-use-after-return. shared_ptr keeps them alive while any Tracked refers.
     struct Counters
     {
-        std::atomic<long> live{0};       // net live objects (constructed - destroyed)
+        std::atomic<long> live{0};       // net live (constructed - destroyed)
         std::atomic<long> destroyed{0};
     };
     using CountersPtr = std::shared_ptr<Counters>;
@@ -73,17 +65,13 @@ namespace
     };
 }
 
-/**
- * @test HighChurnNoLeak
- * @brief Sustained multi-thread retire churn. After all threads join and the
- * main thread drains, the destroyed count must dominate and live objects must
- * not have run away (bounded backlog).
- */
+// Sustained multi-thread churn: after all threads join and the main thread
+// drains, the destroyed count must dominate and live must stay bounded.
 TEST(Stress_EpochStress, HighChurnNoLeak)
 {
     CountersPtr c = make_counters();
 
-    constexpr int THREADS = 8;
+    constexpr int THREADS    = 8;
     constexpr int PER_THREAD = 20'000;
 
     std::vector<std::thread> workers;
@@ -98,7 +86,8 @@ TEST(Stress_EpochStress, HighChurnNoLeak)
             }
         });
     }
-    for (auto& w : workers) w.join();
+    for (auto& w : workers)
+        w.join();
 
     // Drain on the main thread: advance epochs and pull in orphaned nodes.
     CountersPtr sink = make_counters();
@@ -109,23 +98,17 @@ TEST(Stress_EpochStress, HighChurnNoLeak)
     }
 
     const long total = static_cast<long>(THREADS) * PER_THREAD;
-    EXPECT_GT(c->destroyed.load(), total / 2)
-        << "Most retired objects should have been reclaimed.";
-    // Live count can never go negative (would mean a double-free).
+    EXPECT_GT(c->destroyed.load(), total / 2) << "Most retired objects should have been reclaimed.";
     EXPECT_GE(c->live.load(), 0) << "Negative live count indicates a double-free.";
 }
 
-/**
- * @test ThreadSpawnExitHandoff
- * @brief Repeatedly spawn short-lived threads that retire then exit, forcing the
- * orphan-list handoff path on every join. A long-lived drainer thread keeps
- * advancing epochs. No crash and a growing destroyed count is the pass bar.
- */
+// Repeatedly spawn short-lived threads that retire then exit, forcing the orphan
+// handoff on every join while a drainer keeps advancing epochs.
 TEST(Stress_EpochStress, ThreadSpawnExitHandoff)
 {
     CountersPtr c = make_counters();
 
-    constexpr int ROUNDS = 64;
+    constexpr int ROUNDS    = 64;
     constexpr int PER_ROUND = 1000;
 
     std::atomic<bool> draining{true};
@@ -156,7 +139,6 @@ TEST(Stress_EpochStress, ThreadSpawnExitHandoff)
     draining.store(false, std::memory_order_relaxed);
     drainer.join();
 
-    EXPECT_GT(c->destroyed.load(), 0)
-        << "Short-lived threads' orphaned retirees were never reclaimed.";
+    EXPECT_GT(c->destroyed.load(), 0) << "Short-lived threads' orphaned retirees were never reclaimed.";
     EXPECT_GE(c->live.load(), 0) << "Negative live count indicates a double-free.";
 }

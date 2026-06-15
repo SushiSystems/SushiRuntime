@@ -7,38 +7,27 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_heterogeneous_pipeline.cpp
- * @brief Integration test that combines the features the unit/perf tests cover
- *        in isolation: the work-stealing scheduler, host<->device mixed tasks,
- *        and concurrent device execution — all driven through the full
- *        TaskGraph -> ExecutionEngine -> TaskScheduler path.
- *
- * Many INDEPENDENT host->device->host chains are submitted at once. Independent
- * chains give the scheduler parallel work to distribute and steal, while each
- * chain's internal RAW dependencies force correct ordering. Chains are pinned
- * across the available devices (GPU and/or CPU), so on a GTX 1060 + Ryzen box
- * they genuinely fan out over both. The test asserts end-to-end correctness of
- * every chain — i.e. the combined path is race-free.
- *
- * IMPORTANT — shared USM is context-bound: RuntimeContext gives each device its
- * own SYCL queue/context, and get_numa_local_queue() round-robins GPU+CPU within
- * a node. A buffer allocated on one device's queue is NOT valid on another's, so
- * each chain pins its allocation AND its kernel to the SAME explicit device queue
- * (we submit to the captured queue, not the scheduler-provided one). Mixing them
- * trips a "CUDA unknown error" — a real constraint worth remembering.
- */
+// Combines the work-stealing scheduler, host<->device mixed tasks, and
+// concurrent device execution through the full TaskGraph -> ExecutionEngine ->
+// TaskScheduler path. Many independent host->device->host chains run at once.
+//
+// Shared USM is context-bound: a buffer allocated on one device's queue is not
+// valid on another's. So each chain pins both its allocation and its kernel to
+// the SAME explicit device queue, and a chain is either all-device or all-host.
 
 #include <cmath>
 #include <vector>
@@ -56,14 +45,9 @@ using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
 using SushiRuntime::Test::UsmShared;
 
-/**
- * @test ManyChainsHostDeviceHost
- * @brief 16 independent init -> scale -> bias chains run through the scheduler
- *        concurrently. Chains are split across devices: GPU chains run their
- *        three stages as device kernels, CPU chains as host work — a host/device
- *        task mix in one graph. Every chain's result must match the closed-form
- *        expectation ((i + c) * SCALE + BIAS).
- */
+// 16 independent init -> scale -> bias chains run concurrently, split across
+// devices (GPU chains as kernels, CPU chains as host work). Each result must
+// match ((i + c) * SCALE + BIAS).
 TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 {
     RuntimeContext ctx;
@@ -74,7 +58,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     constexpr float  SCALE  = 3.0f;
     constexpr float  BIAS   = 5.0f;
 
-    // Collect one explicit queue per device (discovery order == get_queue order).
+    // One explicit queue per device (discovery order == get_queue order).
     std::vector<sycl::queue*> device_queues;
     {
         auto devs = sycl::device::get_devices(sycl::info::device_type::all);
@@ -84,8 +68,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     }
     ASSERT_FALSE(device_queues.empty()) << "No CPU/GPU device queues available.";
 
-    // Each chain is pinned to one device queue (round-robin across devices) so its
-    // shared-USM buffer and kernel share a single context.
+    // Pin each chain to one device queue so its buffer and kernels share a context.
     std::vector<UsmShared<float>> buffers;
     buffers.reserve(CHAINS);
     for (int c = 0; c < CHAINS; ++c)
@@ -95,11 +78,6 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
         ASSERT_TRUE(buffers.back()) << "USM allocation failed for chain " << c;
     }
 
-    // A chain is either ALL-device (GPU) or ALL-host (CPU). We never let a host
-    // stage touch a GPU-allocated (CUDA managed) buffer while other GPU kernels
-    // run — that concurrent managed-memory access faults under WSL/CUDA
-    // (CUDA_ERROR_ILLEGAL_ADDRESS). Mixing the two chain kinds in one graph still
-    // exercises the scheduler with both host and device tasks side by side.
     for (int c = 0; c < CHAINS; ++c)
     {
         float* data = buffers[c].get();
@@ -108,7 +86,6 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 
         if (on_gpu)
         {
-            // init -> scale -> bias, all as device kernels on the chain's queue.
             TaskMetadata meta_init{"chain_init_dev"};
             graph.add_task(meta_init, {}, {data},
                 [data, c, dq](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
@@ -116,7 +93,9 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
                     return dq->submit([&](sycl::handler& h)
                     {
                         h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
-                        { data[i] = float(i) + float(c); });
+                        {
+                            data[i] = float(i) + float(c);
+                        });
                     });
                 });
 
@@ -128,7 +107,9 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
                     {
                         h.depends_on(deps);
                         h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
-                        { data[i] = data[i] * SCALE; });
+                        {
+                            data[i] = data[i] * SCALE;
+                        });
                     });
                 });
 
@@ -140,18 +121,20 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
                     {
                         h.depends_on(deps);
                         h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
-                        { data[i] = data[i] + BIAS; });
+                        {
+                            data[i] = data[i] + BIAS;
+                        });
                     });
                 });
         }
         else
         {
-            // CPU-device buffer is plain host memory — host stages are safe.
             TaskMetadata meta_init{"chain_init_host"};
             graph.add_task(meta_init, {}, {data},
                 [data, c](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
-                    for (size_t i = 0; i < N; ++i) data[i] = float(i) + float(c);
+                    for (size_t i = 0; i < N; ++i)
+                        data[i] = float(i) + float(c);
                     return {};
                 });
 
@@ -159,7 +142,8 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
             graph.add_task(meta_scale, {data}, {data},
                 [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
-                    for (size_t i = 0; i < N; ++i) data[i] = data[i] * SCALE;
+                    for (size_t i = 0; i < N; ++i)
+                        data[i] = data[i] * SCALE;
                     return {};
                 });
 
@@ -167,7 +151,8 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
             graph.add_task(meta_bias, {data}, {data},
                 [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
-                    for (size_t i = 0; i < N; ++i) data[i] = data[i] + BIAS;
+                    for (size_t i = 0; i < N; ++i)
+                        data[i] = data[i] + BIAS;
                     return {};
                 });
         }
@@ -175,9 +160,8 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 
     auto compiled = graph.compile();
     ctx.get_execution_engine().execute(std::move(compiled));
-    ctx.wait_all(); // ensure all device kernels are complete before host reads.
+    ctx.wait_all();
 
-    // Expected per chain c, element i: ((i + c) * SCALE) + BIAS
     for (int c = 0; c < CHAINS; ++c)
     {
         const float* data = buffers[c].get();
@@ -185,7 +169,11 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
         for (size_t i = 0; i < N; ++i)
         {
             const float expected = (float(i) + float(c)) * SCALE + BIAS;
-            if (std::abs(data[i] - expected) > 1e-3f) { ok = false; break; }
+            if (std::abs(data[i] - expected) > 1e-3f)
+            {
+                ok = false;
+                break;
+            }
         }
         EXPECT_TRUE(ok) << "Chain " << c << " produced incorrect results.";
     }
