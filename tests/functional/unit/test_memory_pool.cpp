@@ -7,28 +7,24 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_memory_pool.cpp
- * @brief Unit coverage for the USM allocator / bitmask pool.
- *
- * Mostly single-threaded, deterministic invariants: page expansion, large-
- * allocation bypass, size-class boundaries, degenerate sizes. The heavy,
- * high-contention churn lives in the benchmark/stress suite, but one
- * deterministic cross-thread free/reclaim test lives here too: it is the
- * correctness guard for the lock-free remote-free + lazy-drain path, and that
- * path is too important to be validated only in the nightly benchmark suite.
- */
+// Unit coverage for the USM allocator / bitmask pool: page expansion, large-
+// allocation bypass, size-class boundaries, degenerate sizes. Heavy churn lives
+// in benchmark/stress, but the lock-free remote-free + lazy-drain path gets one
+// deterministic guard here too.
 
 #include <vector>
 #include <thread>
@@ -42,19 +38,15 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Memory;
 
-/**
- * @test BasicPoolExpansion
- * @brief Tests if the memory pool successfully expands by allocating a new page
- * when the first page (64 slots) is completely filled.
- */
+// Filling the first page (64 slots) must grow the pool to a new page.
 TEST(Unit_USMAllocatorTest, BasicPoolExpansion)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
 
-    constexpr size_t ALLOC_SIZE = 128;
+    constexpr size_t ALLOC_SIZE     = 128;
     constexpr size_t SLOTS_PER_PAGE = 64;
-    constexpr size_t TARGET_ALLOCS = SLOTS_PER_PAGE + 10; // Force expansion
+    constexpr size_t TARGET_ALLOCS  = SLOTS_PER_PAGE + 10; // force expansion
 
     std::vector<void*> pointers;
 
@@ -65,7 +57,7 @@ TEST(Unit_USMAllocatorTest, BasicPoolExpansion)
         pointers.push_back(ptr);
     }
 
-    // Ensure that all pointers are unique (no overlapping memory segments)
+    // Every pointer must be unique (no overlapping segments).
     for (size_t i = 0; i < pointers.size(); ++i)
         for (size_t j = i + 1; j < pointers.size(); ++j)
             EXPECT_NE(pointers[i], pointers[j]) << "Duplicate memory pointer detected!";
@@ -74,17 +66,13 @@ TEST(Unit_USMAllocatorTest, BasicPoolExpansion)
         allocator->deallocate(ptr);
 }
 
-/**
- * @test LargeAllocationBypass
- * @brief Ensures that requests larger than the maximum pool bucket (4096 bytes)
- * safely bypass the lock-free pool and use the direct SYCL allocation fallback.
- */
+// Requests above the largest pool bucket (4096) bypass the pool and go to SYCL.
 TEST(Unit_USMAllocatorTest, LargeAllocationBypass)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
 
-    constexpr size_t LARGE_ALLOC_SIZE = 8192; // Exceeds MAX_POOL_ALLOC_SIZE (4096)
+    constexpr size_t LARGE_ALLOC_SIZE = 8192; // exceeds MAX_POOL_ALLOC_SIZE (4096)
 
     void* ptr1 = allocator->allocate(LARGE_ALLOC_SIZE);
     ASSERT_NE(ptr1, nullptr) << "Large allocation failed.";
@@ -98,18 +86,13 @@ TEST(Unit_USMAllocatorTest, LargeAllocationBypass)
     allocator->deallocate(ptr2);
 }
 
-/**
- * @test SizeClassBoundaries
- * @brief Walks every pooled size class boundary (64, 256, 1024, 4096) plus the
- * first size just above the pool ceiling. Every class must return a usable,
- * writable, distinct allocation.
- */
+// Every pooled size class (and the first size past the ceiling) returns a
+// usable, writable, distinct allocation.
 TEST(Unit_USMAllocatorTest, SizeClassBoundaries)
 {
     RuntimeContext ctx;
     auto allocator = ctx.get_allocator();
 
-    // Boundary sizes: exact class sizes, one below, one above the ceiling.
     for (size_t sz : {1u, 63u, 64u, 65u, 256u, 1024u, 4096u, 4097u})
     {
         void* p = allocator->allocate(sz);
@@ -117,18 +100,14 @@ TEST(Unit_USMAllocatorTest, SizeClassBoundaries)
 
         // Shared USM is host-writable; touch first and last byte to confirm.
         auto* bytes = static_cast<volatile char*>(p);
-        bytes[0] = 1;
+        bytes[0]      = 1;
         bytes[sz - 1] = 1;
 
         allocator->deallocate(p);
     }
 }
 
-/**
- * @test ZeroByteAllocation
- * @brief A zero-byte request must not crash. Whatever the policy (null or a
- * valid minimal pointer), deallocation of the result must be safe.
- */
+// A zero-byte request must not crash, and freeing the result must be safe.
 TEST(Unit_USMAllocatorTest, ZeroByteAllocation)
 {
     RuntimeContext ctx;
@@ -136,15 +115,10 @@ TEST(Unit_USMAllocatorTest, ZeroByteAllocation)
 
     void* p = nullptr;
     EXPECT_NO_THROW({ p = allocator->allocate(0); });
-
-    // Freeing whatever came back (including nullptr) must be safe.
     EXPECT_NO_THROW({ allocator->deallocate(p); });
 }
 
-/**
- * @test NullDeallocation
- * @brief Deallocating a null pointer is a documented no-op and must never fault.
- */
+// Deallocating null is a documented no-op.
 TEST(Unit_USMAllocatorTest, NullDeallocation)
 {
     RuntimeContext ctx;
@@ -153,12 +127,8 @@ TEST(Unit_USMAllocatorTest, NullDeallocation)
     EXPECT_NO_THROW({ allocator->deallocate(nullptr); });
 }
 
-/**
- * @test ReusedSlotAfterFree
- * @brief After freeing a slot, the very next same-size allocation should be
- * serviceable (pool recycles rather than growing unboundedly). We allocate,
- * free, and re-allocate in a tight loop and assert every result is valid.
- */
+// Freeing then re-allocating the same size in a tight loop must keep working
+// (the pool recycles instead of growing unboundedly).
 TEST(Unit_USMAllocatorTest, ReusedSlotAfterFree)
 {
     RuntimeContext ctx;
@@ -173,27 +143,11 @@ TEST(Unit_USMAllocatorTest, ReusedSlotAfterFree)
     }
 }
 
-/**
- * @test CrossThreadFreeIsReclaimed
- * @brief Deterministic guard for the lock-free remote-free + lazy-drain path.
- *
- * A producer thread (which owns the pages, i.e. the pool slot) allocates a wave
- * of distinct blocks. A *different* thread frees them all -- these are remote
- * frees, pushed onto the owning slot's intrusive stack. The producer then
- * allocates a second wave on the same slot, which must lazily drain that stack
- * and hand the freed blocks back.
- *
- * Two invariants a broken drain would violate:
- *   1. No live aliasing: within each wave every pointer is distinct (the pool
- *      never hands out a block that is still in use).
- *   2. Reclamation, not growth: the second wave reuses cross-thread-freed
- *      blocks rather than only minting fresh ones. A broken drain would leak
- *      the freed memory onto the stack and wave 2 would reuse none of it.
- *
- * Re-allocation must run on the *same* thread that owns the pages, because the
- * owning slot is the only one that drains its remote-free stack -- hence the
- * barriers rather than two short-lived threads.
- */
+// Deterministic guard for the lock-free remote-free + lazy-drain path. The
+// page-owning producer allocates wave 1; a different thread frees it (remote
+// frees onto the owning slot's stack); the producer's wave 2 must lazily drain
+// that stack and reuse the freed blocks. Re-allocation runs on the owning
+// thread (only it drains its stack), hence the barriers.
 TEST(Unit_USMAllocatorTest, CrossThreadFreeIsReclaimed)
 {
     RuntimeContext ctx;
@@ -208,17 +162,22 @@ TEST(Unit_USMAllocatorTest, CrossThreadFreeIsReclaimed)
     std::barrier allocated(2);   // wave 1 done -> consumer may free
     std::barrier freed(2);       // consumer done -> producer may re-allocate
 
-    std::thread producer([&] {
-        for (size_t i = 0; i < N; ++i) wave1[i] = allocator->allocate(ALLOC_SIZE);
+    std::thread producer([&]
+    {
+        for (size_t i = 0; i < N; ++i)
+            wave1[i] = allocator->allocate(ALLOC_SIZE);
         allocated.arrive_and_wait();
         freed.arrive_and_wait();
-        // Same slot as wave 1: this is where the remote-free stack gets drained.
-        for (size_t i = 0; i < N; ++i) wave2[i] = allocator->allocate(ALLOC_SIZE);
+        // Same slot as wave 1: where the remote-free stack gets drained.
+        for (size_t i = 0; i < N; ++i)
+            wave2[i] = allocator->allocate(ALLOC_SIZE);
     });
 
-    std::thread consumer([&] {
+    std::thread consumer([&]
+    {
         allocated.arrive_and_wait();
-        for (size_t i = 0; i < N; ++i) allocator->deallocate(wave1[i]);  // remote free
+        for (size_t i = 0; i < N; ++i)
+            allocator->deallocate(wave1[i]);  // remote free
         freed.arrive_and_wait();
     });
 
@@ -226,21 +185,26 @@ TEST(Unit_USMAllocatorTest, CrossThreadFreeIsReclaimed)
     consumer.join();
 
     // (1) No live aliasing within either wave.
-    for (void* p : wave1) ASSERT_NE(p, nullptr);
+    for (void* p : wave1)
+        ASSERT_NE(p, nullptr);
     std::unordered_set<void*> s1(wave1.begin(), wave1.end());
     ASSERT_EQ(s1.size(), N) << "Wave 1 returned aliased live pointers";
 
     std::unordered_set<void*> s2;
-    for (void* p : wave2) {
+    for (void* p : wave2)
+    {
         ASSERT_NE(p, nullptr);
         ASSERT_TRUE(s2.insert(p).second) << "Wave 2 returned aliased live pointers";
     }
 
     // (2) Reclamation: wave 2 must reuse cross-thread-freed blocks.
     size_t reused = 0;
-    for (void* p : wave2) if (s1.count(p)) ++reused;
+    for (void* p : wave2)
+        if (s1.count(p))
+            ++reused;
     EXPECT_GT(reused, 0u)
         << "No cross-thread-freed block was reclaimed -- remote-free drain is not working";
 
-    for (void* p : wave2) allocator->deallocate(p);
+    for (void* p : wave2)
+        allocator->deallocate(p);
 }

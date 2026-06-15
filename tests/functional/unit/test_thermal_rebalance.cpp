@@ -7,37 +7,25 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_thermal_rebalance.cpp
- * @brief Unit coverage for the REAL ThermalProxyStrategy decision logic.
- *
- * The WorkloadCoordinator tests drive the heartbeat loop with a fake strategy;
- * here we do the opposite and drive the real ThermalProxyStrategy directly with
- * fake telemetry/migrator so its decision rule is asserted deterministically.
- *
- * The rule it must encode: migrate work AWAY from a worker only when that worker
- * is *throttled* — its queue is backing up (large) yet its completion delta is
- * crawling (a slow / thermally-limited core) — and toward the least-loaded
- * worker. Crucially, a worker with a long queue that is still draining fast is
- * NOT a bottleneck and must be left alone; that distinction is the whole point
- * of the "thermal proxy" heuristic.
- *
- * Telemetry note: get_completion_rate() reports a CUMULATIVE completion total;
- * the strategy derives the per-tick delta itself against its own history. On the
- * first (and only) evaluate() here the prior history is zero, so the delta equals
- * the reported total.
- */
+// Drives the real ThermalProxyStrategy with fake telemetry/migrator. Its rule:
+// migrate work away from a throttled worker (queue backing up while completion
+// crawls) toward the least-loaded one — but leave a long queue that is still
+// draining fast alone. get_completion_rate() is cumulative; on the first
+// evaluate() the delta equals the reported total.
 
 #include <atomic>
 #include <vector>
@@ -49,19 +37,19 @@ using namespace SushiRuntime::Scheduler;
 
 namespace
 {
-    /** @brief Telemetry stub with per-worker queue sizes and cumulative totals. */
+    // Telemetry stub with per-worker queue depths and cumulative completion totals.
     class FakeTelemetry : public ITelemetryProvider
     {
     public:
         std::vector<size_t> queue;       // current queue depth per worker
         std::vector<size_t> completed;   // cumulative completed tasks per worker
 
-        size_t get_worker_count() const override { return queue.size(); }
-        size_t get_queue_size(int w) const override { return queue[static_cast<size_t>(w)]; }
-        size_t get_completion_rate(int w) const override { return completed[static_cast<size_t>(w)]; }
+        size_t get_worker_count() const override         { return queue.size(); }
+        size_t get_queue_size(int w) const override       { return queue[static_cast<size_t>(w)]; }
+        size_t get_completion_rate(int w) const override  { return completed[static_cast<size_t>(w)]; }
     };
 
-    /** @brief Migrator stub recording the most recent (and total) migrate calls. */
+    // Migrator stub recording the most recent (and total) migrate calls.
     class RecordingMigrator : public ITaskMigrator
     {
     public:
@@ -72,18 +60,16 @@ namespace
 
         void migrate_tasks(int f, int t, size_t c) override
         {
-            from = f; to = t; count = c;
+            from  = f;
+            to    = t;
+            count = c;
             calls.fetch_add(1, std::memory_order_relaxed);
         }
     };
 }
 
-/**
- * @test RescuesThrottledWorker
- * @brief Worker 0 has a deep queue (100) but a near-zero completion delta — the
- * throttled-core signature — while worker 1 is idle. The strategy must migrate
- * half the imbalance from 0 to 1.
- */
+// Worker 0 has a deep queue but a zero completion delta (throttled); worker 1 is
+// idle. The strategy must move half the imbalance from 0 to 1.
 TEST(Unit_ThermalRebalanceTest, RescuesThrottledWorker)
 {
     FakeTelemetry telemetry;
@@ -101,12 +87,7 @@ TEST(Unit_ThermalRebalanceTest, RescuesThrottledWorker)
     EXPECT_EQ(migrator.count, 50u) << "Should move half the (max-min) queue imbalance.";
 }
 
-/**
- * @test IgnoresFastWorkerWithLongQueue
- * @brief A long queue alone is not a bottleneck. Worker 0 has a deep queue (100)
- * but is completing fast (high delta), so it is keeping up and must be left
- * untouched — no migration.
- */
+// A long queue that is draining fast is not a bottleneck — leave it alone.
 TEST(Unit_ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
 {
     FakeTelemetry telemetry;
@@ -122,11 +103,7 @@ TEST(Unit_ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
         << "A fast-draining worker is not throttled; its long queue must not trigger migration.";
 }
 
-/**
- * @test NoMigrationWhenBalanced
- * @brief Shallow, comparable queues below the imbalance threshold must produce
- * no migration regardless of completion rate.
- */
+// Shallow, comparable queues below the threshold produce no migration.
 TEST(Unit_ThermalRebalanceTest, NoMigrationWhenBalanced)
 {
     FakeTelemetry telemetry;
@@ -141,11 +118,7 @@ TEST(Unit_ThermalRebalanceTest, NoMigrationWhenBalanced)
     EXPECT_EQ(migrator.calls.load(), 0) << "Balanced, shallow queues must not migrate.";
 }
 
-/**
- * @test SingleWorkerIsNoOp
- * @brief With fewer than two workers there is nowhere to migrate to; the
- * strategy must return without touching the migrator.
- */
+// With fewer than two workers there is nowhere to migrate to.
 TEST(Unit_ThermalRebalanceTest, SingleWorkerIsNoOp)
 {
     FakeTelemetry telemetry;

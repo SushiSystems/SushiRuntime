@@ -7,33 +7,25 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_steal_locality_perf.cpp
- * @brief Performance/behaviour benchmark for NUMA-aware hierarchical stealing.
- *
- * Drives the work-stealing scheduler with a large batch of host tasks and reports
- * throughput plus the local-vs-remote steal split. NUMA-aware stealing should keep
- * the vast majority of steals node-local; a high remote fraction means the locality
- * policy is not holding.
- *
- * SCOPE & SKIP: the locality benefit only exists across real NUMA nodes, and only
- * bare-metal multi-socket hardware exposes them. On a single-node box (e.g. the
- * Ryzen 7600X dev machine, or anything under WSL) every worker is on node 0, so the
- * split is meaningless — the test SKIPS. The synthetic-topology *logic* check that
- * runs everywhere lives in NumaStealTest; this benchmark is the real-hardware
- * counterpart.
- */
+// Real-hardware benchmark for NUMA-aware hierarchical stealing: drives the
+// scheduler with a large host-task batch and reports throughput plus the
+// local-vs-remote steal split. Locality only exists across real NUMA nodes, so
+// on a single-node box (or WSL) the test SKIPS; the logic check lives in
+// NumaStealTest.
 
 #include <atomic>
 #include <chrono>
@@ -58,7 +50,8 @@ namespace
         auto deadline = std::chrono::steady_clock::now() + budget;
         while (value.load(std::memory_order_acquire) < target)
         {
-            if (std::chrono::steady_clock::now() > deadline) return false;
+            if (std::chrono::steady_clock::now() > deadline)
+                return false;
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         return true;
@@ -71,11 +64,7 @@ namespace
     }
 }
 
-/**
- * @test StealStaysNodeLocal
- * @brief Under a heavy host-task load on real multi-NUMA hardware, the scheduler
- *        must satisfy most steals from node-local victims.
- */
+// Under heavy load on real multi-NUMA hardware, most steals must be node-local.
 TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
 {
     RuntimeContext ctx;
@@ -104,11 +93,11 @@ TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
 
     sched.stop();
 
-    const size_t local  = sched.get_local_steal_count();
-    const size_t remote = sched.get_remote_steal_count();
-    const size_t steals = local + remote;
+    const size_t local      = sched.get_local_steal_count();
+    const size_t remote     = sched.get_remote_steal_count();
+    const size_t steals     = local + remote;
     const double local_frac = steals ? double(local) / double(steals) : 1.0;
-    const double thr = ms > 0 ? (double(TOTAL) / (ms / 1000.0)) : 0.0;
+    const double thr        = ms > 0 ? (double(TOTAL) / (ms / 1000.0)) : 0.0;
 
     std::printf("\n=== Steal locality (%d NUMA nodes, %zu tasks) ===\n", nodes, TOTAL);
     std::printf("  Throughput   : %10.0f tasks/s  (%.2f ms)\n", thr, ms);

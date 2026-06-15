@@ -12,7 +12,7 @@
 
 .EXAMPLE
     # Bare machine, no checkout yet:
-    irm https://raw.githubusercontent.com/<org>/sushiruntime/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.ps1 | iex
 #>
 [CmdletBinding()]
 param(

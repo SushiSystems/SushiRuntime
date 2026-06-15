@@ -7,15 +7,18 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
 #include <atomic>
@@ -36,11 +39,7 @@ using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
 using SushiRuntime::Test::make_order_recorder;
 
-/**
- * @test SequentialUSMDependency
- * @brief Tests if DependencyTracker correctly resolves RAW, WAR, and WAW hazards
- * by forcing tasks that share the same pointer into a strict sequential order.
- */
+// Three tasks sharing one pointer must run strictly in order (RAW, then WAR/WAW).
 TEST(Integration_TaskGraphTest, SequentialUSMDependency)
 {
     RuntimeContext ctx;
@@ -54,15 +53,12 @@ TEST(Integration_TaskGraphTest, SequentialUSMDependency)
 
     constexpr auto delay = std::chrono::milliseconds(5);
 
-    // Node 1: Writes to USM (Expected 1st)
     TaskMetadata meta1{"Writer1"};
     graph.add_task(meta1, {}, {usm_ptr}, make_order_recorder(1, execution_order, order_mutex, delay));
 
-    // Node 2: Reads from USM (Expected 2nd - RAW Dependency)
     TaskMetadata meta2{"Reader1"};
     graph.add_task(meta2, {usm_ptr}, {}, make_order_recorder(2, execution_order, order_mutex, delay));
 
-    // Node 3: Writes to USM (Expected 3rd - WAR/WAW Dependency)
     TaskMetadata meta3{"Writer2"};
     graph.add_task(meta3, {}, {usm_ptr}, make_order_recorder(3, execution_order, order_mutex, delay));
 
@@ -78,11 +74,7 @@ TEST(Integration_TaskGraphTest, SequentialUSMDependency)
     EXPECT_EQ(execution_order[2], 3);
 }
 
-/**
- * @test IndependentRootsExecution
- * @brief Ensures that tasks with no memory dependencies are recognized as independent
- * roots and executed concurrently.
- */
+// Tasks with no shared memory are independent roots and run concurrently.
 TEST(Integration_TaskGraphTest, IndependentRootsExecution)
 {
     RuntimeContext ctx;
@@ -112,12 +104,8 @@ TEST(Integration_TaskGraphTest, IndependentRootsExecution)
     EXPECT_EQ(completed_tasks.load(), NUM_TASKS);
 }
 
-/**
- * @test FanOutFanInDiamond
- * @brief Tests complex DAG topology:
- * A (Writes X) -> B (Reads X), C (Reads X) -> D (Writes X)
- * B and C should run in parallel after A, and D must wait for both B and C.
- */
+// Diamond DAG: A(write X) -> B,C(read X) -> D(write X). B and C run in parallel
+// after A; D waits for both (WAR hazard).
 TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
 {
     RuntimeContext ctx;
@@ -129,7 +117,6 @@ TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
     std::atomic<int> current_phase{0};
     bool fan_out_success = true;
 
-    // Phase 1: Node A (Writer)
     TaskMetadata metaA{"Node_A"};
     graph.add_task(metaA, {}, {ptr}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
@@ -137,7 +124,6 @@ TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
         return {};
     });
 
-    // Phase 2: Node B & C (Readers - Can run in parallel)
     auto reader_task = [&current_phase, &fan_out_success](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
         if (current_phase.load(std::memory_order_acquire) < 1)
@@ -152,7 +138,6 @@ TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
     graph.add_task(metaB, {ptr}, {}, reader_task);
     graph.add_task(metaC, {ptr}, {}, reader_task);
 
-    // Phase 3: Node D (Writer - Must wait for both readers due to WAR hazard)
     TaskMetadata metaD{"Node_D"};
     graph.add_task(metaD, {}, {ptr}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {

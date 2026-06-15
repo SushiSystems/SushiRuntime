@@ -7,27 +7,24 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_epoch_reclamation.cpp
- * @brief Unit coverage for the epoch-based reclamation (EBR) machinery.
- *
- * EpochManager is a process-wide singleton, so these tests assert observable
- * contracts rather than internal counters: retired objects are eventually
- * deleted exactly once, EpochGuard enter/exit is balanced and non-throwing,
- * and a thread that retires then exits hands its outstanding nodes to the
- * global orphan list (proven by their deletion happening from another thread).
- */
+// Unit coverage for epoch-based reclamation (EBR). EpochManager is a process-
+// wide singleton, so these assert observable contracts: retired objects are
+// eventually deleted once, EpochGuard enter/exit is balanced, and a thread that
+// retires then exits hands its nodes to the global orphan list.
 
 #include <atomic>
 #include <memory>
@@ -44,22 +41,14 @@ namespace
 
     inline Counter make_counter() { return std::make_shared<std::atomic<int>>(0); }
 
-    /**
-     * @brief Heap payload that bumps a shared atomic counter on destruction.
-     *
-     * Lets a test observe reclamation (delete actually ran) without reaching
-     * into EpochManager internals.
-     *
-     * The counter is held by shared_ptr, NOT a raw pointer to a test-local
-     * atomic. EBR reclamation is deferred and a tail of retired objects can
-     * linger in the current epoch past the test's return; they are only freed
-     * later (during a subsequent test's reclamation activity). A raw pointer to
-     * a stack `atomic<int>` would then be written after the test frame is gone —
-     * a stack-use-after-return that, in the full suite, silently corrupts
-     * whatever later test now occupies that stack region. Owning the counter via
-     * shared_ptr keeps it alive exactly as long as any Tracked still references
-     * it, so the late dtor write always lands in valid memory.
-     */
+    // Heap payload that bumps a shared counter on destruction, so a test can
+    // observe reclamation without reaching into EpochManager internals.
+    //
+    // The counter is a shared_ptr, NOT a raw pointer to a stack atomic: EBR
+    // reclamation is deferred, so a tail of retired objects can be freed during a
+    // later test. A raw stack pointer would then be written after this frame is
+    // gone — a stack-use-after-return. shared_ptr keeps the counter alive as long
+    // as any Tracked references it.
     struct Tracked
     {
         Counter destroyed;
@@ -67,15 +56,8 @@ namespace
         ~Tracked() { destroyed->fetch_add(1, std::memory_order_relaxed); }
     };
 
-    /**
-     * @brief Retire many objects on the calling thread and spin until at least
-     * @p min_expected of them have been reclaimed (or a bound is hit).
-     *
-     * Reclamation is gated on epoch advancement, which requires re-entering the
-     * critical section. Each iteration enters/exits a guard and retires one
-     * object; the threshold-driven check_and_reclaim then collects objects from
-     * earlier epochs.
-     */
+    // Retire `count` objects, then run extra guarded passes to advance the epoch
+    // and drain pending nodes. Returns how many were reclaimed.
     int retire_and_drain(const Counter& destroyed, int count)
     {
         for (int i = 0; i < count; ++i)
@@ -83,7 +65,6 @@ namespace
             EpochGuard guard;
             EpochManager::instance().retire(new Tracked(destroyed));
         }
-        // Extra guarded passes to advance the epoch and let pending nodes drain.
         for (int i = 0; i < 512; ++i)
         {
             EpochGuard guard;
@@ -93,11 +74,7 @@ namespace
     }
 }
 
-/**
- * @test GuardEnterExitBalanced
- * @brief Constructing and destroying an EpochGuard must be safe and balanced,
- * even when nested.
- */
+// Constructing/destroying an EpochGuard must be safe and balanced, even nested.
 TEST(Unit_EpochReclamationTest, GuardEnterExitBalanced)
 {
     EXPECT_NO_THROW({
@@ -108,12 +85,7 @@ TEST(Unit_EpochReclamationTest, GuardEnterExitBalanced)
     });
 }
 
-/**
- * @test RetiredObjectsEventuallyReclaimed
- * @brief After enough guarded retire calls, the bulk of retired objects must be
- * deleted. We retire well past the RETIRE_THRESHOLD and assert that a strong
- * majority were reclaimed (a tail may linger in the current epoch).
- */
+// After enough guarded retire calls, the bulk of retired objects are deleted.
 TEST(Unit_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
 {
     Counter destroyed = make_counter();
@@ -121,18 +93,13 @@ TEST(Unit_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
 
     int reclaimed = retire_and_drain(destroyed, RETIRED);
 
-    // Most should be gone; the only survivors are those retired in the final,
-    // not-yet-advanced epoch. Bound is generous to stay non-flaky.
+    // Most should be gone; survivors are those retired in the final, not-yet-
+    // advanced epoch. The bound is generous to stay non-flaky.
     EXPECT_GT(reclaimed, RETIRED) << "Epoch reclamation did not collect retired objects.";
 }
 
-/**
- * @test ThreadExitHandsOffOrphans
- * @brief A thread that retires objects and then exits must not leak them: its
- * outstanding nodes are pushed to the global orphan list and reclaimed by other
- * threads' check_and_reclaim. We prove this by retiring on a short-lived thread
- * and then doing draining work on the main thread until they are deleted.
- */
+// A thread that retires then exits must not leak: its nodes go to the global
+// orphan list and are reclaimed by another thread's draining work.
 TEST(Unit_EpochReclamationTest, ThreadExitHandsOffOrphans)
 {
     Counter destroyed = make_counter();
@@ -145,8 +112,8 @@ TEST(Unit_EpochReclamationTest, ThreadExitHandsOffOrphans)
             EpochGuard guard;
             EpochManager::instance().retire(new Tracked(destroyed));
         }
-        // Thread exits here -> EpochThreadLocalState dtor donates remaining
-        // retire_list to the global orphan list.
+        // Thread exits here -> its dtor donates the remaining retire_list to the
+        // global orphan list.
     });
     producer.join();
 
@@ -163,15 +130,11 @@ TEST(Unit_EpochReclamationTest, ThreadExitHandsOffOrphans)
         << "Orphaned nodes from an exited thread were never reclaimed (leak).";
 }
 
-/**
- * @test ConcurrentRetireNoCrash
- * @brief Many threads retiring simultaneously must not corrupt the manager.
- * Success is the absence of a crash plus a non-trivial reclamation count.
- */
+// Many threads retiring at once must not corrupt the manager.
 TEST(Unit_EpochReclamationTest, ConcurrentRetireNoCrash)
 {
     Counter destroyed = make_counter();
-    constexpr int THREADS = 8;
+    constexpr int THREADS    = 8;
     constexpr int PER_THREAD = 500;
 
     std::vector<std::thread> workers;
@@ -186,7 +149,8 @@ TEST(Unit_EpochReclamationTest, ConcurrentRetireNoCrash)
             }
         });
     }
-    for (auto& w : workers) w.join();
+    for (auto& w : workers)
+        w.join();
 
     EXPECT_GT(destroyed->load(), 0) << "No objects reclaimed under concurrent retire.";
 }

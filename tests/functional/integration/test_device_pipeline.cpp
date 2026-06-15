@@ -7,50 +7,32 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_device_pipeline.cpp
- * @brief End-to-end test of the genuine DEVICE-KERNEL graph path.
- *
- * The other graph tests (SyclExecutionTest, HeterogeneousPipelineTest) submit
- * their kernels from inside a HostWork lambda that captures and drives its own
- * queue. That exercises ordering, but the kernel is launched by the test, not by
- * the runtime. This test instead uses TaskGraph::add_node(TaskWork, reads,
- * writes): the node carries a raw `void(sycl::handler&)` body and the
- * ExecutionEngine itself owns the submission — it picks the queue, wires the
- * predecessor SYCL events via handler.depends_on(), and runs the node in KERNEL
- * mode (TaskScheduler::execute_task -> q.submit -> node->execute(h)). So this is
- * the real device-kernel pipeline the public kernel API produces.
- *
- * Topology shape (a diamond, to cover ordering + fan-out + fan-in in one graph):
- *
- *        init (write A)
- *         /          \
- *   doubleA          incA          (both READ A -> parallel readers, RAR)
- *   (A->B)            (A->C)
- *         \          /
- *        combine (read B,C -> write D)
- *
- * Result invariant: D[i] = 2*A[i] + (A[i] + 1) with A[i] = i, i.e. D[i] = 3i+1.
- *
- * USM is context-bound. The engine routes KERNEL nodes through
- * get_numa_local_queue(0), which round-robins when NUMA node 0 exposes several
- * device queues (e.g. CPU + GPU). When that happens, consecutive nodes can land
- * on different contexts and a buffer allocated on one is invalid on another, so
- * the test SKIPS that configuration (CPU/GPU overlap is covered separately by
- * the heterogeneous and async-overlap suites). On a single-context node (e.g.
- * CPU-only CI) every node shares one queue and the pipeline runs fully.
- */
+// Exercises the genuine device-kernel path: add_node(TaskWork, reads, writes)
+// hands the engine a raw `void(sycl::handler&)` body, so the engine itself owns
+// the submission, queue choice, and event wiring. The graph is a diamond:
+//
+//        init (write A)
+//         /          \
+//   doubleA          incA      (both read A -> parallel readers)
+//   (A->B)            (A->C)
+//         \          /
+//        combine (read B,C -> write D)
+//
+// With A[i] = i the invariant is D[i] = 2*A[i] + (A[i] + 1) = 3i + 1.
 
 #include <cmath>
 #include <vector>
@@ -71,9 +53,8 @@ using SushiRuntime::Test::UsmShared;
 namespace
 {
     // True when NUMA node 0 maps to a single device queue. The engine round-robins
-    // KERNEL nodes across a node's queues via a per-thread cursor, so if more than
-    // one queue exists, nodes scatter across contexts and shared USM allocated on a
-    // single queue is no longer universally valid.
+    // KERNEL nodes across a node's queues, so with more than one queue the nodes
+    // scatter across contexts and shared USM is no longer universally valid.
     bool numa0_has_single_queue(RuntimeContext& ctx)
     {
         sycl::queue& first = ctx.get_numa_local_queue(0);
@@ -84,14 +65,9 @@ namespace
     }
 }
 
-/**
- * @test DiamondAllKernelNodes
- * @brief A four-stage diamond where EVERY node is a device kernel submitted by
- * the engine (not by the test). Verifies the engine resolves the RAW fan-out
- * (init -> doubleA, init -> incA), keeps the two readers parallel, joins the
- * fan-in (doubleA, incA -> combine), and produces correct results across every
- * intermediate and final buffer.
- */
+// Every node is a device kernel submitted by the engine. Verifies the engine
+// resolves the RAW fan-out, keeps the readers parallel, joins the fan-in, and
+// produces correct results across every buffer.
 TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
 {
     RuntimeContext ctx;
@@ -105,7 +81,10 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
 
     constexpr size_t N = 1024;
     UsmShared<float> A(q, N), B(q, N), C(q, N), D(q, N);
-    ASSERT_TRUE(A); ASSERT_TRUE(B); ASSERT_TRUE(C); ASSERT_TRUE(D);
+    ASSERT_TRUE(A);
+    ASSERT_TRUE(B);
+    ASSERT_TRUE(C);
+    ASSERT_TRUE(D);
 
     float* a = A.get();
     float* b = B.get();
@@ -114,51 +93,63 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
 
     TaskGraph graph(ctx);
 
-    // Stage 1 — init: A[i] = i  (device kernel, writes A)
+    // init: A[i] = i
     graph.add_node(
         [a](sycl::handler& h)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { a[i] = float(i); });
         },
-        /*reads*/{}, /*writes*/{a});
+        {}, {a});
 
-    // Stage 2a — doubleA: B[i] = A[i] * 2  (reads A, writes B)
+    // doubleA: B[i] = A[i] * 2
     graph.add_node(
         [a, b](sycl::handler& h)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { b[i] = a[i] * 2.0f; });
         },
-        /*reads*/{a}, /*writes*/{b});
+        {a}, {b});
 
-    // Stage 2b — incA: C[i] = A[i] + 1  (reads A, writes C) — parallel sibling of doubleA
+    // incA: C[i] = A[i] + 1  (parallel sibling of doubleA)
     graph.add_node(
         [a, c](sycl::handler& h)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { c[i] = a[i] + 1.0f; });
         },
-        /*reads*/{a}, /*writes*/{c});
+        {a}, {c});
 
-    // Stage 3 — combine: D[i] = B[i] + C[i]  (reads B and C, writes D) — fan-in
+    // combine: D[i] = B[i] + C[i]  (fan-in)
     graph.add_node(
         [b, c, d](sycl::handler& h)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { d[i] = b[i] + c[i]; });
         },
-        /*reads*/{b, c}, /*writes*/{d});
+        {b, c}, {d});
 
     auto compiled = graph.compile();
     EXPECT_EQ(compiled.roots.size(), 1u) << "Only the init node should be a root of the diamond.";
 
     ctx.get_execution_engine().execute(std::move(compiled));
-    ctx.wait_all(); // ensure all device kernels retired before host reads
+    ctx.wait_all();
 
     bool ok = true;
     for (size_t i = 0; i < N; ++i)
     {
         const float fi = float(i);
-        if (std::abs(b[i] - (fi * 2.0f))        > 1e-3f) { ok = false; break; } // doubleA
-        if (std::abs(c[i] - (fi + 1.0f))        > 1e-3f) { ok = false; break; } // incA
-        if (std::abs(d[i] - (3.0f * fi + 1.0f)) > 1e-3f) { ok = false; break; } // combine
+        if (std::abs(b[i] - (fi * 2.0f)) > 1e-3f)
+        {
+            ok = false;
+            break;
+        }
+        if (std::abs(c[i] - (fi + 1.0f)) > 1e-3f)
+        {
+            ok = false;
+            break;
+        }
+        if (std::abs(d[i] - (3.0f * fi + 1.0f)) > 1e-3f)
+        {
+            ok = false;
+            break;
+        }
     }
     EXPECT_TRUE(ok) << "Engine-driven device-kernel diamond produced incorrect results.";
 }

@@ -7,33 +7,24 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_range_task.cpp
- * @brief Unit coverage for the divisible-workload primitive (RangeTask::split).
- *
- * RangeTask is the splittable Task the work-stealing scheduler uses to rebalance
- * a large divisible range: an idle worker that picks up a splittable task carves
- * off a chunk (split()) and pushes it back for another worker to grab. These
- * tests pin the split CONTRACT, which is what the scheduler relies on:
- *   - the splittability threshold (a range must exceed the minimum grain),
- *   - split() yields a real, distinct sub-task while there is enough work,
- *   - repeated splitting strictly shrinks the owner and terminates,
- *   - once below the grain, split() reports "nothing to hand off" (nullopt).
- *
- * All checks are deterministic and host-only: split() is pure atomic bookkeeping
- * and never touches a device, so no RuntimeContext or SYCL queue is needed.
- */
+// Unit coverage for the divisible-workload primitive (RangeTask::split): the
+// grain threshold, that split() yields a distinct sub-task while work remains,
+// that repeated splitting shrinks the owner and terminates, and that it returns
+// nullopt below the grain. All deterministic and host-only.
 
 #include <cstddef>
 #include <optional>
@@ -49,20 +40,14 @@ using SushiRuntime::Scheduler::RangeTask;
 
 namespace
 {
-    // The split logic does no real compute; a no-op body keeps the test focused
-    // on the partitioning bookkeeping rather than any kernel behaviour.
+    // No-op body: the test is about partitioning bookkeeping, not compute.
     auto noop_kernel()
     {
         return [](size_t, size_t, sycl::handler&) {};
     }
 }
 
-/**
- * @test SplittableOnlyAboveGrain
- * @brief A range is splittable only when it is strictly larger than the minimum
- * grain (1024). At or below the grain it must report not-splittable, so the
- * scheduler stops subdividing tiny ranges.
- */
+// A range is splittable only when strictly larger than the grain (1024).
 TEST(Unit_RangeTaskTest, SplittableOnlyAboveGrain)
 {
     RangeTask big(size_t{0}, size_t{4096}, noop_kernel());
@@ -75,26 +60,19 @@ TEST(Unit_RangeTaskTest, SplittableOnlyAboveGrain)
     RangeTask tiny(size_t{0}, size_t{100}, noop_kernel());
     EXPECT_FALSE(tiny.is_splittable());
 
-    // A below-grain range must hand off nothing.
     EXPECT_FALSE(tiny.split().has_value())
         << "split() on a below-grain range must return nullopt (nothing to steal).";
 }
 
-/**
- * @test SplitHandsOffDistinctChunksUntilExhausted
- * @brief Repeatedly splitting a large range must keep producing real, distinct
- * sub-tasks while the owner stays above the grain, strictly shrink the owner on
- * every successful split, and finally converge to a non-splittable state where
- * split() returns nullopt. This is exactly the loop a worker drives to rebalance
- * a divisible task.
- */
+// Repeated splitting yields distinct sub-tasks, shrinks the owner each time, and
+// converges to a non-splittable state — the loop a worker drives to rebalance.
 TEST(Unit_RangeTaskTest, SplitHandsOffDistinctChunksUntilExhausted)
 {
     sushi_ptr<Task> owner = make_sushi<RangeTask>(size_t{0}, size_t{1u << 16}, noop_kernel());
     ASSERT_TRUE(owner->is_splittable());
 
-    // Keep every chunk alive so freed-then-reused addresses can't masquerade as
-    // duplicates; this lets us assert genuine distinctness.
+    // Keep every chunk alive so a freed-then-reused address can't look like a
+    // duplicate; this lets us assert genuine distinctness.
     std::vector<sushi_ptr<Task>> chunks;
     std::unordered_set<void*> seen;
 

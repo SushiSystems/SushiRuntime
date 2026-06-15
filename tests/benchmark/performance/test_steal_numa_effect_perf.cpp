@@ -7,39 +7,25 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_steal_numa_effect_perf.cpp
- * @brief Quantifies NUMA-aware vs NUMA-blind work stealing on the SAME hardware.
- *
- * test_steal_locality_perf reports the steal *fraction* but never quantifies the
- * benefit. This benchmark runs the identical workload twice on the same machine:
- *   * NUMA-blind : the real (flat) topology — every worker is one tier.
- *   * NUMA-aware : a synthetic 2-node topology (RemappingTopologyProvider, core
- *                  i -> i % 2) with a 10-local / 21-remote distance matrix, so
- *                  the scheduler builds a hierarchical victim order.
- * It reports both throughputs, the speedup, and the aware-side steal split.
- *
- * FAIRNESS / HONESTY. The workload, task type, task count and physical core
- * count are identical across the two runs — only the topology *model* changes.
- * Crucially, on a single physical NUMA node (the Ryzen dev box, anything under
- * WSL) memory latency is genuinely uniform, so the synthetic split cannot
- * produce a real speedup — and the benchmark does NOT pretend otherwise: it
- * prints the delta and asserts only correctness + that the aware path keeps its
- * steals node-local (the policy is doing what it claims). A real speedup is only
- * expected on bare-metal multi-socket hardware, where this same code measures it.
- * Each side is timed best-of-N; the counter is asserted so work can't be elided.
- */
+// Quantifies NUMA-aware vs NUMA-blind stealing on the SAME hardware: the same
+// workload runs once on the flat (real) topology and once on a synthetic 2-node
+// topology, reporting both throughputs and the aware-side steal split. On a UMA
+// box (single socket / WSL) there's no real speedup to claim, so it asserts only
+// correctness + that the aware path keeps steals node-local.
 
 #include <atomic>
 #include <chrono>
@@ -74,7 +60,8 @@ namespace
         auto deadline = std::chrono::steady_clock::now() + budget;
         while (value.load(std::memory_order_acquire) < target)
         {
-            if (std::chrono::steady_clock::now() > deadline) return false;
+            if (std::chrono::steady_clock::now() > deadline)
+                return false;
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         return true;
@@ -85,16 +72,22 @@ namespace
         auto provider = std::make_shared<RemappingTopologyProvider>(
             std::make_shared<HwlocTopologyProvider>(), nodes);
         std::vector<std::vector<int>> matrix(nodes, std::vector<int>(nodes, 21));
-        for (int i = 0; i < nodes; ++i) matrix[i][i] = 10;
+        for (int i = 0; i < nodes; ++i)
+            matrix[i][i] = 10;
         auto distance = std::make_shared<MatrixDistanceModel>(std::move(matrix));
         return std::make_shared<RuntimeContext>(
             Topology::HardwareFilterConfig{}, provider, distance);
     }
 
-    struct Result { double ms = 1e300; size_t local = 0; size_t remote = 0; };
+    struct Result
+    {
+        double ms = 1e300;
+        size_t local = 0;
+        size_t remote = 0;
+    };
 
-    // Drains TOTAL counter tasks through `ctx`'s scheduler, best-of-N for the
-    // time, accumulating the steal split from the fastest round.
+    // Drain TOTAL counter tasks through ctx's scheduler, best-of-N for the time,
+    // keeping the steal split from the fastest round.
     Result run_workload(RuntimeContext& ctx)
     {
         Result best;
@@ -124,11 +117,8 @@ namespace
     }
 }
 
-/**
- * @test NumaAwareVsBlindThroughput
- * @brief Same workload, same cores: report the throughput delta between the flat
- *        and the synthetic-NUMA-aware scheduler, plus the aware steal locality.
- */
+// Same workload, same cores: report the throughput delta between the flat and
+// the synthetic-NUMA-aware scheduler, plus the aware steal locality.
 TEST(Performance_StealNumaEffectBench, NumaAwareVsBlindThroughput)
 {
     RuntimeContext blind_ctx; // real (flat on single-socket) topology
@@ -136,7 +126,7 @@ TEST(Performance_StealNumaEffectBench, NumaAwareVsBlindThroughput)
     if (workers < 2)
         GTEST_SKIP() << "Need >= 2 worker threads to exercise stealing.";
 
-    auto aware_ctx = make_synthetic_ctx(/*nodes=*/2);
+    auto aware_ctx = make_synthetic_ctx(2);
 
     const Result blind = run_workload(blind_ctx);
     const Result aware = run_workload(*aware_ctx);
@@ -155,9 +145,7 @@ TEST(Performance_StealNumaEffectBench, NumaAwareVsBlindThroughput)
     std::printf("  Aware steal split: local=%zu remote=%zu (local frac %.3f)\n",
                 aware.local, aware.remote, a_localf);
 
-    // Honest assertions: both runs completed correctly and the aware path keeps
-    // its steals node-local. No speedup assertion — on a UMA box there is no
-    // real locality benefit to claim.
+    // No speedup assertion — on a UMA box there is no real locality benefit.
     EXPECT_GT(blind_thr, 0.0);
     EXPECT_GT(aware_thr, 0.0);
     if (a_steals > 1000)

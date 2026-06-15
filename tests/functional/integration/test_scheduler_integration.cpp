@@ -7,26 +7,23 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_scheduler_integration.cpp
- * @brief Fast, deterministic scheduler lifecycle/correctness checks.
- *
- * The heavy load variants (1M task bomb, 8-producer contention, 500x lifecycle
- * thrash) live in benchmark/stress. This file keeps a small, CI-friendly slice:
- * the scheduler must execute exactly the tasks submitted, honor priority
- * bypass, and survive a normal arm -> submit -> stop round.
- */
+// Fast, deterministic scheduler checks (heavy load lives in benchmark/stress):
+// it must run exactly the tasks submitted, honor priority bypass, and survive a
+// clean arm -> submit -> stop round.
 
 #include <atomic>
 #include <chrono>
@@ -46,24 +43,22 @@ using SushiRuntime::Test::PriorityTrackingTask;
 
 namespace
 {
-    /** @brief Block until @p value hits @p target, or fail past @p budget. */
+    // Block until value hits target, or fail past the budget.
     bool wait_for(const std::atomic<size_t>& value, size_t target,
                   std::chrono::seconds budget)
     {
         auto deadline = std::chrono::steady_clock::now() + budget;
         while (value.load(std::memory_order_acquire) < target)
         {
-            if (std::chrono::steady_clock::now() > deadline) return false;
+            if (std::chrono::steady_clock::now() > deadline)
+                return false;
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
         return true;
     }
 }
 
-/**
- * @test ExecutesExactlySubmitted
- * @brief A modest batch of host tasks must all run exactly once.
- */
+// A modest batch of host tasks must all run exactly once.
 TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
 {
     RuntimeContext ctx;
@@ -85,11 +80,7 @@ TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
     EXPECT_EQ(executed.load(), TOTAL);
 }
 
-/**
- * @test PriorityBypass
- * @brief A late-submitted high-priority task must run among the first.
- * Deterministic small-scale mirror of the stress-suite bypass test.
- */
+// A late high-priority task must run among the first.
 TEST(Integration_SchedulerIntegration, PriorityBypass)
 {
     RuntimeContext ctx;
@@ -111,9 +102,11 @@ TEST(Integration_SchedulerIntegration, PriorityBypass)
     {
         {
             std::lock_guard<std::mutex> lock(order_mutex);
-            if (order.size() >= 51) break;
+            if (order.size() >= 51)
+                break;
         }
-        if (std::chrono::steady_clock::now() > deadline) break;
+        if (std::chrono::steady_clock::now() > deadline)
+            break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
@@ -122,20 +115,23 @@ TEST(Integration_SchedulerIntegration, PriorityBypass)
     ASSERT_EQ(order.size(), 51u);
 
     int window = static_cast<int>(scheduler.num_workers) * 2;
-    if (window > 51) window = 51;
+    if (window > 51)
+        window = 51;
 
     bool found_high_early = false;
     for (int i = 0; i < window; ++i)
-        if (order[i] == 100) { found_high_early = true; break; }
+    {
+        if (order[i] == 100)
+        {
+            found_high_early = true;
+            break;
+        }
+    }
 
     EXPECT_TRUE(found_high_early) << "High priority task missed the first batch.";
 }
 
-/**
- * @test CleanLifecycleRound
- * @brief A single arm/submit/stop round with no inflight work left must shut
- * down cleanly and report a fully drained queue.
- */
+// A single arm/submit/stop round with no inflight work must shut down cleanly.
 TEST(Integration_SchedulerIntegration, CleanLifecycleRound)
 {
     RuntimeContext ctx;

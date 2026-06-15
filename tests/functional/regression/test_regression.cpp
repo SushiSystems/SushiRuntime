@@ -7,27 +7,22 @@
 /*                        https://sushisystems.io                         */
 /**************************************************************************/
 /* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/* All Rights Reserved.                                                   */
 /*                                                                        */
-/* CONFIDENTIAL: This software is the proprietary information of          */
-/* Mustafa Garip & Sushi Systems. Unauthorized copying of this file,      */
-/* via any medium is strictly prohibited.                                 */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
 /*                                                                        */
-/* This source code and the intellectual property contained herein        */
-/* is confidential and may not be disclosed, copied, or used without      */
-/* explicit written permission from the copyright holders.                */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-/**
- * @file test_regression.cpp
- * @brief Sentinels for previously fixed bugs. Each test guards one concrete
- * defect so a future change cannot silently reintroduce it.
- *
- * Convention: every test is tagged with a `// REGRESSION: <one-line summary>`
- * comment and a `Regression_<Area>` test-name prefix. Keep these small,
- * deterministic, and fast -- they run in the functional (CI) suite on every
- * commit. When you fix a new bug, add a sentinel here referencing it.
- */
+// Sentinels for previously fixed bugs — one fast, deterministic test per defect
+// so a future change cannot silently reintroduce it.
 
 #include <atomic>
 #include <memory>
@@ -44,14 +39,8 @@ using namespace SushiRuntime::Scheduler;
 using namespace SushiRuntime::Memory;
 using SushiRuntime::Test::AtomicCounterTask;
 
-/**
- * @test Regression_Scheduler_AbruptStopDrains
- * @brief REGRESSION: stop() called immediately after submit, without waiting for
- * completion, must drain/teardown cleanly instead of deadlocking or leaking
- * threads. Mirrors the abrupt-stop path that the stress suite hammers, but as a
- * single fast deterministic round so any regression in the drain logic trips
- * here on every CI run.
- */
+// stop() right after submit, without waiting, must drain cleanly instead of
+// deadlocking or leaking threads.
 TEST(Regression_Sentinel, Scheduler_AbruptStopDrains)
 {
     RuntimeContext ctx;
@@ -64,27 +53,19 @@ TEST(Regression_Sentinel, Scheduler_AbruptStopDrains)
     for (int i = 0; i < 1000; ++i)
         scheduler.submit(new AtomicCounterTask(executed));
 
-    // Abrupt stop: do NOT wait for executed == 1000 first.
     EXPECT_NO_THROW({ scheduler.stop(); })
         << "Abrupt stop() must drain without deadlock or throw.";
 }
 
-/**
- * @test Regression_Epoch_OrphanedNodesReclaimed
- * @brief REGRESSION: when a thread exits, its outstanding retire_list is donated
- * to the EpochManager's global orphan list and reclaimed by surviving threads.
- * A prior bug returned orphaned nodes to the wrong thread-local free pool; this
- * sentinel proves orphans are actually deleted (no leak / no cross-pool reuse).
- */
+// When a thread exits, its retire_list is donated to the global orphan list and
+// reclaimed by survivors. A prior bug returned orphans to the wrong free pool.
 TEST(Regression_Sentinel, Epoch_OrphanedNodesReclaimed)
 {
-    // The counter is owned by shared_ptr, not a raw pointer to a stack atomic.
-    // EBR reclamation is deferred: a tail of retired objects can outlive this
-    // test's return and is freed only during a later test's reclamation. A raw
-    // pointer to a stack atomic would then be written after the frame is gone —
-    // a stack-use-after-return that corrupts whatever later test occupies that
-    // region. shared_ptr keeps the counter alive as long as any Tracked refers
-    // to it, so the late dtor write always lands in valid memory.
+    // The counter is a shared_ptr, not a raw pointer to a stack atomic: EBR
+    // reclamation is deferred, so a tail of retired objects outlives this test
+    // and is freed during a later test. A raw stack pointer would then be written
+    // after the frame is gone (a stack-use-after-return). shared_ptr keeps the
+    // counter alive as long as any Tracked refers to it.
     using Counter = std::shared_ptr<std::atomic<int>>;
     struct Tracked
     {

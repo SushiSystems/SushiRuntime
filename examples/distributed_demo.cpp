@@ -18,23 +18,12 @@
 /* explicit written permission from the copyright holders.                */
 /**************************************************************************/
 
-/**
- * @file distributed_demo.cpp
- * @brief Runnable master/worker entry for the distributed layer.
- *
- * The same binary plays either role, selected by --distributed=master|worker
- * (the flag the `sr` CLI forwards). Workers connect to the master over TCP and
- * run a registered `vec.add` kernel; the master offloads a vector-add graph and
- * prints the result.
- *
- * Two terminals on one machine:
- *   sr project run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555
- *   sr project run sr_distributed_demo --distributed=master --port=5555 --workers=1
- *
- * Across the lab's 5 machines: run one master and start the agent on each
- * worker box, pointing --master at the master's IP. Roles, kernels, and the
- * graph are identical to what the unit/e2e tests exercise.
- */
+// Master/worker entry for the distributed layer. One binary plays either role,
+// selected by --distributed=master|worker. Workers connect over TCP and run a
+// registered "vec.add" kernel; the master offloads a vector-add and checks it.
+//
+//   sr project run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555
+//   sr project run sr_distributed_demo --distributed=master --port=5555 --workers=1
 
 #include <atomic>
 #include <chrono>
@@ -79,7 +68,13 @@ namespace
                 auto* o = static_cast<float*>(outs[0]);
                 const size_t n = meta.get_param<uint64_t>(0);
                 return q.submit([&](sycl::handler& h)
-                { h.host_task([=] { for (size_t i = 0; i < n; ++i) o[i] = a[i] + b[i]; }); });
+                {
+                    h.host_task([=]
+                    {
+                        for (size_t i = 0; i < n; ++i)
+                            o[i] = a[i] + b[i];
+                    });
+                });
             });
     }
 
@@ -90,15 +85,17 @@ namespace
         for (int i = 1; i < argc; ++i)
         {
             std::string a = argv[i];
-            if (a.rfind(pfx, 0) == 0) return a.substr(pfx.size());
-            if (a == key && i + 1 < argc) return argv[i + 1];
+            if (a.rfind(pfx, 0) == 0)
+                return a.substr(pfx.size());
+            if (a == key && i + 1 < argc)
+                return argv[i + 1];
         }
         return def;
     }
 
     int run_worker(const std::string& master_host, uint16_t port)
     {
-        RuntimeContext ctx; // worker's own NUMA-aware runtime
+        RuntimeContext ctx;
         auto transport = TcpTransport::make_worker(master_host, port);
         auto kernels   = make_sushi<KernelRegistry>();
         register_vec_add(*kernels);
@@ -144,7 +141,12 @@ namespace
         float* a   = sycl::malloc_shared<float>(n, q);
         float* b   = sycl::malloc_shared<float>(n, q);
         float* out = sycl::malloc_shared<float>(n, q);
-        for (size_t i = 0; i < n; ++i) { a[i] = float(i); b[i] = float(2 * i); out[i] = 0.0f; }
+        for (size_t i = 0; i < n; ++i)
+        {
+            a[i]   = float(i);
+            b[i]   = float(2 * i);
+            out[i] = 0.0f;
+        }
 
         ctx.register_distributed_buffer(a,   n * sizeof(float));
         ctx.register_distributed_buffer(b,   n * sizeof(float));
@@ -159,14 +161,26 @@ namespace
             [a, b, out, n](sycl::queue& qq, const std::vector<sycl::event>&) -> sycl::event
             {
                 return qq.submit([&](sycl::handler& h)
-                { h.host_task([=] { for (size_t i = 0; i < n; ++i) out[i] = a[i] + b[i]; }); });
+                {
+                    h.host_task([=]
+                    {
+                        for (size_t i = 0; i < n; ++i)
+                            out[i] = a[i] + b[i];
+                    });
+                });
             });
 
         ctx.get_execution_engine().execute(graph.compile());
 
         bool ok = true;
         for (size_t i = 0; i < n; ++i)
-            if (out[i] != a[i] + b[i]) { ok = false; break; }
+        {
+            if (out[i] != a[i] + b[i])
+            {
+                ok = false;
+                break;
+            }
+        }
 
         std::cout << "[master] result " << (ok ? "CORRECT" : "WRONG")
                   << " | offloaded=" << ctx.distributed_offloaded_count()
