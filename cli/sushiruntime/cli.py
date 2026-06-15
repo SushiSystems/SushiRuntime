@@ -16,6 +16,7 @@ from . import console
 from .services import diag as diag_svc
 from .services import docker as docker_svc
 from .services import project as project_svc
+from .services import setup as setup_svc
 from .services.project import BuildType, Suite
 
 app = typer.Typer(
@@ -34,10 +35,14 @@ config_app = typer.Typer(help="Inspect resolved configuration.",
                          no_args_is_help=True)
 env_app = typer.Typer(help="Inspect the build environment.",
                       no_args_is_help=True)
+setup_app = typer.Typer(
+    help="One-shot installer: detect, install deps, configure, verify.",
+    no_args_is_help=True)
 app.add_typer(project_app, name="project")
 app.add_typer(docker_app, name="docker")
 app.add_typer(config_app, name="config")
 app.add_typer(env_app, name="env")
+app.add_typer(setup_app, name="setup")
 
 
 class DockerAction(str, enum.Enum):
@@ -151,6 +156,52 @@ def docker_run(
 ):
     """Start the developer container with the repo mounted."""
     raise typer.Exit(docker_svc.run(admin=admin))
+
+
+# --------------------------------------------------------------------------- #
+# setup (one-shot installer)
+# --------------------------------------------------------------------------- #
+@setup_app.command("all")
+def setup_all(
+    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
+):
+    """Detect, install dependencies, write config, then build and smoke-test."""
+    raise typer.Exit(setup_svc.run("all", gpu=gpu, dry_run=dry_run))
+
+
+@setup_app.command("detect")
+def setup_detect(
+    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+):
+    """Inventory the machine: tools, compiler, dependencies, GPU."""
+    raise typer.Exit(setup_svc.run("detect", gpu=gpu, dry_run=False))
+
+
+@setup_app.command("install")
+def setup_install(
+    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
+):
+    """Install missing dependencies (apt on Linux, winget+vcpkg on Windows)."""
+    raise typer.Exit(setup_svc.run("install", gpu=gpu, dry_run=dry_run))
+
+
+@setup_app.command("configure")
+def setup_configure(
+    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
+):
+    """Generate config.local.toml from probed tool paths."""
+    raise typer.Exit(setup_svc.run("configure", gpu=gpu, dry_run=dry_run))
+
+
+@setup_app.command("verify")
+def setup_verify(
+    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+):
+    """Build the project and run the functional smoke test."""
+    raise typer.Exit(setup_svc.run("verify", gpu=gpu, dry_run=False))
 
 
 # --------------------------------------------------------------------------- #

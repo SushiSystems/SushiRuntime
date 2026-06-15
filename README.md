@@ -21,6 +21,64 @@ It is built around three ideas:
 
 On Windows, dependencies are resolved through **vcpkg**. On Linux they can come from the system package manager or vcpkg.
 
+## Quick start (one script)
+
+On a fresh machine you can go from nothing to a working build with a single
+command. The script bootstraps Python/Git, installs the `sr` CLI, then runs the
+installer pipeline (`sr setup all`) which installs every remaining dependency,
+generates `cli/config.local.toml`, and builds + smoke-tests the project.
+
+Linux (Debian/Ubuntu):
+
+```bash
+bash install.sh            # add --gpu for CUDA, --dry-run to preview
+```
+
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1   # add -Gpu / -DryRun
+```
+
+Both also work straight from the web on a bare machine:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<org>/sushiruntime/main/install.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/<org>/sushiruntime/main/install.ps1 | iex
+```
+
+The installer is a SOLID, dependency-injected pipeline
+(`detect -> install -> configure -> verify`). You can run any phase on its own:
+
+```bash
+sr setup detect       # inventory tools, compiler, dependencies, GPU
+sr setup install      # install missing deps (apt | winget + vcpkg)
+sr setup configure    # write config.local.toml from probed tool paths
+sr setup verify       # build + functional smoke test
+```
+
+### Adding a dependency
+
+All C++ library dependencies live in a single manifest, `cli/dependencies.toml`
+(the installer's source of truth). To add one, add a table:
+
+```toml
+[mylib]
+description   = "What it is"
+required      = true
+linux_apt     = ["libmylib-dev"]
+windows_vcpkg = ["mylib"]
+check_cmd     = ["pkg-config", "--exists", "mylib"]   # optional idempotency check
+```
+
+The installer picks it up automatically; no installer code changes. If the build
+itself needs it, also add the `find_package`/`pkg_check_modules` call in
+`CMakeLists.txt`, and if the Docker image needs it, add it to the `Dockerfile`
+apt line (those are build/image logic, intentionally outside the manifest).
+
 ## Building
 
 The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. The easiest install is the helper script (Windows → pipx, Linux/macOS → pip into the current environment):
