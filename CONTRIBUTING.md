@@ -96,6 +96,8 @@ The codebase has a deliberate, consistent style. Match the file you're editing.
   game; the code already relies on them.
 - **Comments are few and useful.** A short plain-English line that explains *why*,
   not a restatement of the code. Delete redundant narration.
+- **No separator comments.** Lines like `// <-----------`, `// =========`, or
+  `// --------` are forbidden everywhere in the codebase.
 - **Lock-free code carries its reasoning.** If you touch an atomic, name the
   memory order and say what it synchronizes with. These are the comments we keep.
 - **Naming.** Types `PascalCase`, functions/variables `snake_case`, members
