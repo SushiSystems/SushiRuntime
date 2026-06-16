@@ -108,6 +108,39 @@ The codebase has a deliberate, consistent style. Match the file you're editing.
 
 When in doubt, run [`/simplify`] mentally: prefer reuse and the smaller change.
 
+### Doxygen documentation
+
+Every public function carries a Doxygen comment that answers two questions in
+plain English: **why** the function exists (what problem it solves for the
+caller) and **how** it does it (the mechanism, in one or two technical lines).
+Then document **every** parameter and the return value — leave nothing open.
+
+Keep it tight. The rule is completeness, not length: technical, objective, plain
+English, no filler and no restating the obvious. If a `@param` only repeats the
+parameter name, the line is noise — say what the value *means* or constrains.
+
+- `@brief` — one sentence on *why* the function exists.
+- A following line (or two) on *how* it works, when the mechanism is not obvious.
+- `@param` for each parameter — its meaning, units, ownership, or valid range.
+- `@return` for the result — what it is and what each outcome signals.
+- `@throws` / `@warning` when a caller must know about failure or a precondition.
+
+```cpp
+/**
+ * @brief Routes a kernel to the queue that owns the memory it touches.
+ *
+ * USM is bound to the context it was allocated on, so a kernel must run on the
+ * device that owns its buffers. This looks up the owning queue recorded at
+ * allocation time and falls back to the default device queue when the pointer
+ * was not allocated through the runtime.
+ *
+ * @param ptr A USM pointer the kernel reads or writes. May be null.
+ * @return The queue whose context owns @p ptr, or the default queue if unknown.
+ * @throws SushiException If @p ptr belongs to a context that has been torn down.
+ */
+sycl::queue& queue_for(void* ptr);
+```
+
 ---
 
 ## 5. Commits and pull requests
