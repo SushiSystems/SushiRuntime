@@ -35,7 +35,7 @@ namespace SushiRuntime
         struct Node;
     }
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
     namespace Scheduler { class TaskScheduler; }
 #endif
 
@@ -144,7 +144,7 @@ struct CompiledGraph
              */
             void shutdown() override;
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
             /** @brief Access to the persistent scheduler, so Master mode can attach the coordinator. */
             SushiRuntime::Scheduler::TaskScheduler& scheduler_ref();
 #endif

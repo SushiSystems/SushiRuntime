@@ -34,7 +34,7 @@
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #endif
 
@@ -96,7 +96,7 @@ namespace SushiRuntime
              */
             std::unique_ptr<ExecutionEngine> engine;
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
             /** @brief Deployment role; Standalone unless explicitly promoted. */
             RuntimeContext::RuntimeRole role = RuntimeContext::RuntimeRole::Standalone;
             /** @brief Master-side buffer id registry (created in Master mode). */
@@ -127,7 +127,7 @@ namespace SushiRuntime
                 //  3. Release NUMA allocators.
                 // --------------------------------------------------------
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 // Stop the network first so no late remote completion can touch the
                 // scheduler while/after it is being torn down.
                 if (coordinator)
@@ -486,7 +486,7 @@ namespace SushiRuntime
             }
         }
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
         void RuntimeContext::enable_distributed_master(
             std::shared_ptr<Distributed::ITransport> transport,
             sushi_ptr<Distributed::KernelRegistry>   kernels,

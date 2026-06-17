@@ -12,7 +12,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.sh | bash -s -- --gpu
 set -euo pipefail
 
-REPO_URL="${SUSHI_REPO_URL:-https://github.com/sushisystems/sushiruntime.git}"
+REPO_URL="${SR_REPO_URL:-https://github.com/sushisystems/sushiruntime.git}"
 GPU_FLAG=""
 DRY_FLAG=""
 for arg in "$@"; do
@@ -52,7 +52,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/CMakeLists.txt" ]; then
   REPO_DIR="$SCRIPT_DIR"
 else
-  REPO_DIR="${SUSHI_REPO_DIR:-$HOME/sushiruntime}"
+  REPO_DIR="${SR_REPO_DIR:-$HOME/sushiruntime}"
   if [ ! -d "$REPO_DIR/.git" ]; then
     log "Cloning $REPO_URL -> $REPO_DIR"
     git clone "$REPO_URL" "$REPO_DIR"

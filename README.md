@@ -119,9 +119,9 @@ cmake --build build --config Release
 
 On Windows, also pass the vcpkg toolchain file and the `icx-cl` compiler. The `CMakeLists.txt` will try to auto-detect a vcpkg install at `C:/vcpkg` and Intel oneAPI under `C:/Program Files (x86)/Intel/oneAPI` if you don't override them.
 
-To target NVIDIA GPUs through SYCL's CUDA backend, configure with `-DSUSHI_ENABLE_CUDA=ON` (currently tuned for Pascal / `sm_61`).
+To target NVIDIA GPUs through SYCL's CUDA backend, configure with `-DSR_ENABLE_CUDA=ON` (currently tuned for Pascal / `sm_61`).
 
-To build the optional distributed master-worker layer, configure with `-DSUSHI_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr project build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
+To build the optional distributed master-worker layer, configure with `-DSR_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr project build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
 
 ### Docker
 
@@ -137,7 +137,7 @@ sr docker run            # add --admin for --privileged (profiling)
 The test suite is split into two binaries:
 
 - `sr_functional_tests` — fast, deterministic unit, regression, and integration tests. Run these on every change.
-- `sr_benchmark_tests` — heavier stress and performance tests (large task graphs, allocator latency probes). Built by default; the CI fast lane turns it off with `-DSUSHI_BUILD_BENCHMARKS=OFF`.
+- `sr_benchmark_tests` — heavier stress and performance tests (large task graphs, allocator latency probes). Built by default; the CI fast lane turns it off with `-DSR_BUILD_BENCHMARKS=OFF`.
 
 Run them through the CLI or with `ctest`:
 
@@ -249,7 +249,7 @@ Ties hardware and graphs together:
 - `RuntimeContext` — the top-level owner. Holds devices, queues, USM allocators, and the execution engine. Uses the Pimpl pattern for a stable ABI. Gives you queues by index or by NUMA node, and tears everything down in the right order on shutdown.
 - `IExecutionEngine` / `ExecutionEngine` — the execution strategy. The default engine drives a persistent `TaskScheduler`: it injects the graph's root nodes, runs until a sentinel completion node fires, and blocks until the whole graph is done. The interface makes it possible to plug in alternative strategies (dry-run, profiling, replay) without touching `TaskGraph` or `RuntimeContext`.
 
-### Distributed (`distributed/`, optional — `SUSHI_ENABLE_DISTRIBUTED`)
+### Distributed (`distributed/`, optional — `SR_ENABLE_DISTRIBUTED`)
 An opt-in master-worker layer that offloads individual tasks to remote workers. It is guarded so a standalone build compiles none of it.
 - The key idea: **compiled code can't travel the wire**, so nothing is serialized except references. A task ships its `OpID` (a kernel already compiled into every node) plus `GlobalBufferID`+version handles; each worker resolves those to its own local USM. Closures and pointers never cross the network.
 - `ITransport` abstracts the wire: `InProcessTransport` runs the full multi-node protocol on a single machine (the network analogue of `RemappingTopologyProvider`), and `TcpTransport` is a dependency-free raw-socket transport (POSIX + Winsock) for a real cluster.
@@ -283,7 +283,7 @@ Dockerfile              CUDA + intel/llvm SYCL build environment
 
 ## Distributed execution (optional)
 
-A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSUSHI_ENABLE_DISTRIBUTED=ON` / `sr project build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design.
+A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSR_ENABLE_DISTRIBUTED=ON` / `sr project build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design.
 
 The same binary runs in either role; the `sr` CLI forwards `--distributed=master|worker` to your application's `main()`, which constructs the `RuntimeContext` accordingly. A runnable demo (`examples/distributed_demo.cpp` → `sr_distributed_demo`) offloads a vector-add across one or more workers:
 

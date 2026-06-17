@@ -34,7 +34,7 @@
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
 #include <chrono>
 #include <optional>
 #include <SushiRuntime/graph/task_types.hpp>
@@ -213,7 +213,7 @@ namespace SushiRuntime
                  */
                 void wait_all();
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 /**
                  * @brief Deployment role. Standalone is the default — the runtime
                  * is a fully offline, single-machine library unless a cluster mode

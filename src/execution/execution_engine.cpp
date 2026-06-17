@@ -108,7 +108,7 @@ namespace SushiRuntime
             impl_->do_shutdown();
         }
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
         SushiRuntime::Scheduler::TaskScheduler& ExecutionEngine::scheduler_ref()
         {
             return impl_->scheduler;

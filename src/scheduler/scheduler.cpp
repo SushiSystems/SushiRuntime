@@ -36,7 +36,7 @@
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/distributed/distributed_coordinator.hpp>
 #endif
@@ -427,7 +427,7 @@ namespace SushiRuntime
                                 my_queue->push(split_chunk.value().leak());
                         }
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                         // Offload branch: a single bool load for the overwhelming
                         // majority of (local) tasks. Only nodes that compile()
                         // stamped offloadable, in Master mode, ever reach the
@@ -672,7 +672,7 @@ namespace SushiRuntime
             }
         }
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
         void TaskScheduler::set_coordinator(Distributed::DistributedCoordinator* c)
         {
             coordinator_ = c;

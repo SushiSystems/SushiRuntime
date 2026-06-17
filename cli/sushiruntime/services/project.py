@@ -74,10 +74,15 @@ def _needs_configure(build_dir: Path, generator: str, dist: str) -> bool:
 
 
 def _resolve_compiler(cfg: Config) -> tuple[str, str]:
-    """Inside the intel/llvm Docker image icpx/icx are absent; fall back to clang."""
-    cxx, cc = cfg.cxx, cfg.cc
+    """Resolve (cc, cxx) for the selected toolchain.
+
+    The pair is derived from the toolchain (or an explicit config override). If
+    the chosen C++ compiler is missing but clang++ is present, fall back to
+    clang — covers Docker images where icpx/icx or acpp are absent.
+    """
+    cc, cxx = cfg.resolved_compilers()
     if shutil.which(cxx) is None and shutil.which("clang++") is not None:
-        console.info("icpx not found; using intel/llvm clang++/clang instead.")
+        console.info(f"{cxx} not found; falling back to clang++/clang.")
         return "clang", "clang++"
     return cc, cxx
 
@@ -88,10 +93,11 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
     args = [
         "cmake", "-B", str(build_dir), "-G", cfg.generator,
         f"-DCMAKE_BUILD_TYPE={build_type}",
+        f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_C_COMPILER={cc}",
         f"-DCMAKE_CXX_COMPILER={cxx}",
-        f"-DSUSHI_ENABLE_CUDA={cuda}",
-        f"-DSUSHI_ENABLE_DISTRIBUTED={dist}",
+        f"-DSR_ENABLE_CUDA={cuda}",
+        f"-DSR_ENABLE_DISTRIBUTED={dist}",
     ]
     if asan:
         args += [
@@ -127,8 +133,8 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         f"-DCMAKE_C_FLAGS={asan_flags.strip()}",
         f"-DPKG_CONFIG_EXECUTABLE={cfg.expand(cfg.pkgconf_exe)}",
         f"-DCMAKE_PREFIX_PATH={vcpkg}/installed/{triplet}",
-        "-DSUSHI_ENABLE_CUDA=OFF",  # no nvptx toolchain on the Windows host
-        f"-DSUSHI_ENABLE_DISTRIBUTED={dist}",
+        "-DSR_ENABLE_CUDA=OFF",  # no nvptx toolchain on the Windows host
+        f"-DSR_ENABLE_DISTRIBUTED={dist}",
         "-DSYCL_LIB_SUFFIX=9",
     ]
     return args
