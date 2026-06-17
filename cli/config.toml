@@ -14,8 +14,9 @@
 target_bin = "sr_functional_tests"
 
 [tool.linux]
-cc = "icx"
-cxx = "icpx"
+# cc/cxx are intentionally unset: the compiler is derived from the selected
+# toolchain (acpp / clang++ / icpx). Pin them in config.local.toml only to
+# override that (e.g. a custom clang path).
 generator = "Ninja"
 use_vcpkg = false
 vcpkg_root = "~/vcpkg"
