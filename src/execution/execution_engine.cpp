@@ -108,9 +108,9 @@ namespace SushiRuntime
             impl_->do_shutdown();
         }
 
-        ExecMetrics ExecutionEngine::metrics() const
+        ExecutionMetrics ExecutionEngine::metrics() const
         {
-            ExecMetrics m;
+            ExecutionMetrics m;
             m.local_steals  = impl_->scheduler.get_local_steal_count();
             m.remote_steals = impl_->scheduler.get_remote_steal_count();
             const size_t workers = impl_->scheduler.get_worker_count();

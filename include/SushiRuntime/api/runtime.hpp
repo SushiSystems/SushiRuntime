@@ -49,10 +49,10 @@ namespace SushiRuntime
      * and is the surface users program against. It is header-only and template-
      * based, so it works identically across every supported SYCL toolchain.
      */
-    namespace Api
+    namespace API
     {
         // The lower-level graph builder this layer wraps. Spelled out fully to
-        // avoid clashing with the Api::Graph class name below.
+        // avoid clashing with the API::Graph class name below.
         using BackingGraph = ::SushiRuntime::Graph::TaskGraph;
 
         /**
@@ -232,7 +232,7 @@ namespace SushiRuntime
                     // targets, on its NUMA node. Per-task placement and the
                     // reserved steal/byte counters are filled in as the engine
                     // exposes them.
-                    Core::NumaNodeStats node;
+                    Core::NumaNodeStatistics node;
                     try
                     {
                         auto& q = ctx_->get_queue(0);
@@ -257,10 +257,10 @@ namespace SushiRuntime
                     node.tasks_stolen_inter_numa = stolen_inter;
                     const std::size_t stolen_total = stolen_intra + stolen_inter;
                     node.tasks_popped_local = (completed > stolen_total) ? (completed - stolen_total) : 0;
-                    report.numa_stats.push_back(node);
+                    report.numa_statistics.push_back(node);
 
 #ifdef SR_DISTRIBUTED
-                    auto& d = report.distributed_stats;
+                    auto& d = report.distributed_statistics;
                     d.tasks_offloaded_to_network = ctx_->distributed_offloaded_count();
                     d.remote_nodes_involved =
                         static_cast<std::size_t>(ctx_->distributed_alive_workers());
@@ -311,13 +311,13 @@ namespace SushiRuntime
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
         };
 
-    } // namespace Api
+    } // namespace API
 
     // Promote the entry points into the SushiRuntime namespace so users write
     // `Runtime::create()` after `using namespace SushiRuntime;`. The graph type
-    // stays Api::Graph (reached through auto) because the name Graph already
+    // stays API::Graph (reached through auto) because the name Graph already
     // denotes a namespace at this scope.
-    using Api::Runtime;
+    using API::Runtime;
     using Core::Error;
     using Core::Errc;
     using Core::RunReport;
