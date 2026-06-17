@@ -83,25 +83,12 @@ RUN /usr/bin/python3 -m pip install --no-cache-dir --upgrade pip setuptools whee
     /usr/bin/python3 -c "import sushiruntime.cli; print('sr CLI installed OK')" && \
     printf "alias sr='/usr/bin/python3 -m sushiruntime'\nalias sushiruntime='/usr/bin/python3 -m sushiruntime'\n" >> ~/.bashrc
 
-# Both toolchains are installed: AdaptiveCpp (acpp, primary/vendor-neutral) and
-# the Clang/LLVM bundle (llvm). The image's validation build below pins `llvm`
-# as the currently tested path; switch any time with `sr select adaptivecpp`.
-RUN /usr/bin/python3 -m sushiruntime select llvm
-
-# Build through the CLI (exercises `sr` end-to-end). The `llvm` toolchain uses
-# the bundled clang++ -fsycl, and CUDA defaults ON on Linux.
-#
-# Two pre-builds so the image validates BOTH compile configurations and ships all
-# test/benchmark binaries:
-#   1. standalone  — the offline-first default path (SR_DISTRIBUTED off): the
-#                    functional suite + the non-distributed benchmarks.
-#   2. distributed — the master-worker layer (SR_DISTRIBUTED on): adds the
-#                    distributed unit/e2e tests and the offload benchmark. This
-#                    reconfigures build/ in place (stamp .sushi_dist), so build/
-#                    ends in distributed state — a superset of binaries. The
-#                    runtime role still defaults to Standalone; the build flag
-#                    only governs which code is compiled in, not how it runs.
-RUN /usr/bin/python3 -m sushiruntime project build --type release && \
-    /usr/bin/python3 -m sushiruntime project build --type release --distributed
+# The image is a ready build/run *environment*, not a pre-built artifact: both
+# toolchains (AdaptiveCpp primary, Clang/LLVM bundle) plus the deps and the `sr`
+# CLI are installed. Build on demand inside the container — there is no point
+# baking a build into the image:
+#   sr select adaptivecpp   # or: llvm
+#   sr project build
+# The default toolchain is adaptivecpp; switch with `sr select`.
 
 CMD ["/bin/bash"]

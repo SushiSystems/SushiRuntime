@@ -73,7 +73,9 @@ if(WIN32 AND SR_SYCL_TOOLCHAIN STREQUAL "oneapi" AND CMAKE_CXX_COMPILER MATCHES 
     list(APPEND CMAKE_PREFIX_PATH "${INTEL_COMPILER_DIR}/lib/cmake/IntelSYCL")
 endif()
 
-project(SushiRuntime VERSION 0.1.0 LANGUAGES CXX C)
+# CXX only: the project has no C sources, and the AdaptiveCpp driver (acpp) is a
+# C++-only compiler — enabling C would make CMake's C-compiler probe fail there.
+project(SushiRuntime VERSION 0.1.0 LANGUAGES CXX)
 
 message(STATUS ">>> SYCL toolchain: ${SR_SYCL_TOOLCHAIN} (${CMAKE_CXX_COMPILER})")
 
