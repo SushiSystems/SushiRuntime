@@ -29,6 +29,8 @@
 #include <string>
 #include <utility>
 
+#include <SushiRuntime/core/run_report.hpp>
+
 namespace SushiRuntime
 {
     namespace Core
@@ -115,17 +117,8 @@ namespace SushiRuntime
                 Error err_; /**< Structured failure detail. */
         };
 
-        /**
-         * @brief Summary returned by a successful run.
-         *
-         * Populated by the fluent layer once a graph finishes. Kept minimal and
-         * stable; fields are added as the execution engine exposes more telemetry.
-         */
-        struct RunReport
-        {
-            std::uint64_t tasks_executed = 0;   /**< Number of tasks dispatched and completed. */
-            double duration_ms = 0.0;           /**< Wall-clock time of the run in milliseconds. */
-        };
+        // RunReport lives in core/run_report.hpp (included above); it is the
+        // value carried by the success side of try_run()'s std::expected.
 
     } // namespace Core
 } // namespace SushiRuntime

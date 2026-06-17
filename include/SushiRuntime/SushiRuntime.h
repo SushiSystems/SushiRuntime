@@ -61,4 +61,7 @@
 #include "scheduler/task_scheduler.hpp"
 #include "scheduler/task.hpp"
 #include "scheduler/event_polling.hpp"
-#include "scheduler/rebalancer_interface.hpp"
+#include "scheduler/rebalancer_interfaces.hpp"
+
+// Fluent v1 API (Runtime / graph()) — the surface most users program against.
+#include "api/runtime.hpp"
