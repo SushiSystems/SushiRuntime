@@ -13,7 +13,7 @@ every class, constant, and algorithm named here exists in the headers under
 
 ## 1. What SushiRuntime is
 
-SushiRuntime is a C++20 runtime library for **task-based parallel computing on
+SushiRuntime is a C++23 runtime library for **task-based parallel computing on
 heterogeneous hardware** (CPU + GPU) via SYCL. You describe work as a graph of
 tasks and declare the memory each task reads and writes; the runtime infers a
 safe execution order, then runs the independent parts in parallel across the
@@ -497,14 +497,19 @@ To make the layering concrete, here is one device task —
 
 | CMake option | Default | Effect |
 |--------------|---------|--------|
-| `SR_ENABLE_CUDA` | OFF | SYCL CUDA backend (tuned for Pascal / `sm_61`) |
+| `SR_SYCL_TOOLCHAIN` | adaptivecpp | SYCL toolchain: `adaptivecpp`, `llvm`, or `oneapi` |
+| `SR_CUDA_ARCH` | 61 | CUDA compute capability for the nvptx64 backend (e.g. 80, 86) |
+| `SR_ENABLE_CUDA` | OFF | SYCL CUDA backend (arch via `SR_CUDA_ARCH`) |
 | `SR_ENABLE_DISTRIBUTED` | OFF | compile the master-worker layer |
 | `SR_BUILD_BENCHMARKS` | ON | build the heavy `sr_benchmark_tests` binary |
 
-Two SYCL toolchains are supported: Intel oneAPI DPC++ (`icpx`/`icx-cl`) and an
-intel/llvm open-source `clang++ -fsycl` build (used by the Docker image). The
-`add_sycl_to_target` CMake helper applies SYCL flags under oneAPI and is a no-op
-stub elsewhere.
+Three SYCL toolchains are supported, selected by `SR_SYCL_TOOLCHAIN`:
+**AdaptiveCpp** (`acpp`, primary, vendor-neutral), **Clang/LLVM** (`clang++
+-fsycl`, vendor-neutral, used by the Docker image), and **Intel oneAPI DPC++**
+(`icpx`/`icx-cl`, secondary, for profiling). AdaptiveCpp and oneAPI both provide
+the `add_sycl_to_target` CMake helper, so the source list stays toolchain-neutral;
+on the bare-flag `llvm` path the helper is a no-op stub and `-fsycl` is applied
+globally.
 
 ---
 

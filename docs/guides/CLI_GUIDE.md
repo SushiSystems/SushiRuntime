@@ -60,10 +60,11 @@ see the final resolved values and where each one came from.
 
 ## Command overview
 
-Commands are grouped under five subcommands:
+Commands are grouped under these subcommands:
 
 | Group        | What it's for                                               |
 |--------------|-------------------------------------------------------------|
+| `sr select`  | Choose the SYCL toolchain (adaptivecpp / llvm / oneapi)     |
 | `sr setup`   | First-time install: detect, install deps, configure, verify |
 | `sr project` | Build, test, run, and document the C++ project              |
 | `sr docker`  | Build and run the development container                     |
@@ -72,6 +73,23 @@ Commands are grouped under five subcommands:
 
 Run any command with `--help` to see its options. Running a group with no
 subcommand (e.g. `sr project`) prints that group's help.
+
+## `sr select` — choose the SYCL toolchain
+
+SushiRuntime builds against one of three SYCL toolchains. `sr select` records
+your choice in `cli/config.local.toml`, and every later `sr project build`
+passes it to CMake as `-DSR_SYCL_TOOLCHAIN` and derives the matching compiler.
+
+```bash
+sr select                 # list the toolchains and show which one is active
+sr select adaptivecpp     # AdaptiveCpp (acpp) — primary, vendor-neutral (default)
+sr select llvm            # Clang/LLVM — clang++ -fsycl, vendor-neutral
+sr select oneapi          # Intel oneAPI — icpx/icx-cl, for VTune/Advisor profiling
+```
+
+After switching, reconfigure with `sr project build --clean` so CMake picks up
+the new toolchain. To override per-invocation without persisting, set the
+`SR_SYCL_TOOLCHAIN` environment variable.
 
 ## `sr setup` — first-time install
 
@@ -196,9 +214,9 @@ sr project doxygen     # generate the Doxygen API documentation
 
 ## `sr docker` — the development container
 
-A `Dockerfile` provides a complete SYCL toolchain (an intel/llvm nightly build)
-plus the Intel OpenCL CPU runtime, so you can build and run — including the CUDA
-backend — without installing a compiler on your host.
+A `Dockerfile` provides a complete SYCL toolchain (a Clang/LLVM nightly bundle,
+the `llvm` toolchain) plus the Intel OpenCL CPU runtime, so you can build and run
+— including the CUDA backend — without installing a compiler on your host.
 
 ```bash
 sr docker build              # build the image

@@ -1,6 +1,6 @@
 # SushiRuntime
 
-SushiRuntime is a C++20 runtime library for task-based parallel computing on heterogeneous hardware. You describe your work as a graph of tasks, declare which memory each task reads and writes, and the runtime figures out a safe execution order, then runs the independent parts in parallel across CPU and GPU devices using SYCL.
+SushiRuntime is a C++23 runtime library for task-based parallel computing on heterogeneous hardware. You describe your work as a graph of tasks, declare which memory each task reads and writes, and the runtime figures out a safe execution order, then runs the independent parts in parallel across CPU and GPU devices using SYCL.
 
 It is built around three ideas:
 
@@ -11,13 +11,17 @@ It is built around three ideas:
 
 ## Requirements
 
-- A SYCL compiler. Two toolchains are supported:
-  - **Intel oneAPI DPC++** (`icpx` on Linux, `icx-cl` on Windows), or
-  - an **intel/llvm** open-source build (`clang++ -fsycl`), which is what the Docker image uses.
+- A SYCL 2020 compiler. Three toolchains are supported, selected with
+  `SR_SYCL_TOOLCHAIN` (or `sr select`):
+  - **AdaptiveCpp** (`acpp`) — the primary, vendor-neutral toolchain. Recommended.
+  - **Clang/LLVM** (`clang++ -fsycl`) — vendor-neutral; what the Docker image uses.
+  - **Intel oneAPI DPC++** (`icpx` on Linux, `icx-cl` on Windows) — secondary,
+    kept for Intel profiling tools (VTune/Advisor).
 - **CMake** 3.20 or newer.
 - **hwloc** (hardware locality library) for topology discovery.
 - **GoogleTest** for the test suite.
-- A C++20 standard library (the code uses `<format>`, `<source_location>`, `<bit>`, `<concepts>`, etc.).
+- A C++23 standard library (the code uses `std::expected`, `<source_location>`,
+  `<format>`, `<bit>`, `<concepts>`, etc.).
 
 On Windows, dependencies are resolved through **vcpkg**. On Linux they can come from the system package manager or vcpkg.
 
@@ -95,7 +99,17 @@ pipx install ./cli                    # or: pip install ./cli  inside a venv/con
 
 Either way you get two equivalent commands on your PATH: **`sr`** (short) and **`sushiruntime`** (long). Toolchain paths are read from `cli/config.toml` (committed, shared defaults). Machine-specific absolute paths (oneAPI/VS roots, vcpkg, compiler locations) go in a gitignored `cli/config.local.toml` using the same `[tool.<platform>]` section layout — copy the commented Windows block from `config.toml` as a starting point.
 
-Then build:
+Pick which SYCL toolchain to build with (persisted to `cli/config.local.toml`):
+
+```bash
+sr select                 # list choices, show the active one
+sr select adaptivecpp     # primary, vendor-neutral (default)
+sr select llvm            # clang++ -fsycl
+sr select oneapi          # Intel oneAPI (icpx/icx-cl)
+```
+
+The selection flows to CMake as `-DSR_SYCL_TOOLCHAIN`, and the build derives the
+matching compiler unless you pin one in config. Then build:
 
 ```bash
 sr project build                  # release (default)
@@ -110,22 +124,28 @@ Add `--clean` to wipe the build tree first. To uninstall: `pipx uninstall sushir
 If you prefer to skip the wrapper:
 
 ```bash
+# AdaptiveCpp (primary). The acpp driver is picked up automatically.
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_CXX_COMPILER=icpx \
-  -DCMAKE_C_COMPILER=icx
+  -DSR_SYCL_TOOLCHAIN=adaptivecpp
 cmake --build build --config Release
 ```
 
-On Windows, also pass the vcpkg toolchain file and the `icx-cl` compiler. The `CMakeLists.txt` will try to auto-detect a vcpkg install at `C:/vcpkg` and Intel oneAPI under `C:/Program Files (x86)/Intel/oneAPI` if you don't override them.
+Use a CMake preset to switch toolchains: `cmake --preset adaptivecpp`, `--preset
+llvm` (`clang++ -fsycl`), or `--preset oneapi` (run the oneAPI `setvars` first).
+On Windows, vcpkg is discovered from the `VCPKG_ROOT` environment variable
+(falling back to `C:/vcpkg` only if it exists); the oneAPI compiler is resolved
+from `CMPLR_ROOT` — no paths are hardcoded.
 
-To target NVIDIA GPUs through SYCL's CUDA backend, configure with `-DSR_ENABLE_CUDA=ON` (currently tuned for Pascal / `sm_61`).
+To target NVIDIA GPUs through SYCL's CUDA backend, configure with
+`-DSR_ENABLE_CUDA=ON`. The architecture is configurable via `-DSR_CUDA_ARCH=<cc>`
+(default `61` for Pascal; e.g. `86` for Ampere).
 
 To build the optional distributed master-worker layer, configure with `-DSR_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr project build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
 
 ### Docker
 
-A `Dockerfile` based on `nvidia/cuda` (Ubuntu 22.04) with a pre-built **intel/llvm** nightly SYCL toolchain is provided, so you can build and run — including the CUDA backend — without installing a toolchain locally. It also installs the Intel OpenCL CPU runtime so the host CPU shows up as a SYCL device. For GPU passthrough you need the NVIDIA Container Toolkit.
+A `Dockerfile` based on `nvidia/cuda` (Ubuntu 22.04) with a pre-built **Clang/LLVM** nightly SYCL bundle is provided, so you can build and run — including the CUDA backend — without installing a toolchain locally. The image pins the `llvm` toolchain (`sr select llvm`) since that bundle is the tested path; AdaptiveCpp is the recommended toolchain for host development. It also installs the Intel OpenCL CPU runtime so the host CPU shows up as a SYCL device. For GPU passthrough you need the NVIDIA Container Toolkit.
 
 ```bash
 sr docker build
@@ -160,7 +180,7 @@ You can forward GoogleTest flags to a binary after `--`, e.g. `sr project run sr
 
 ### Continuous integration
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the functional suite on every push/PR and the benchmark suite on a nightly schedule, both on Ubuntu inside the `intel/oneapi-basekit` image (the Intel oneAPI DPC++ `icx`/`icpx` toolchain). The local Docker image (`Dockerfile`) instead uses an intel/llvm open-source build — both SYCL toolchains are supported.
+GitHub Actions (`.github/workflows/ci.yml`) runs the functional suite on every push/PR and the benchmark suite on a nightly schedule, both on Ubuntu inside the `intel/oneapi-basekit` image (the Intel oneAPI DPC++ `icx`/`icpx` toolchain). The local Docker image (`Dockerfile`) instead uses the vendor-neutral Clang/LLVM (`llvm`) toolchain. AdaptiveCpp is the primary toolchain for host development. All three are supported.
 
 ## How it works
 
@@ -278,7 +298,7 @@ tests/
 cli/                    Python `sr` / `sushiruntime` CLI package (Typer + rich)
 .github/workflows/      CI: functional tests per push, benchmarks nightly
 docs/                   Changelog, TODO, and guides
-Dockerfile              CUDA + intel/llvm SYCL build environment
+Dockerfile              CUDA + Clang/LLVM SYCL build environment
 ```
 
 ## Distributed execution (optional)
