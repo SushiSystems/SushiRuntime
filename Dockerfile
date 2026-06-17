@@ -41,7 +41,9 @@ ENV LD_LIBRARY_PATH="/opt/llvm-sycl/lib:$LD_LIBRARY_PATH"
 # clang/llvm so it stays pure open source; the CUDA backend uses the base image's
 # CUDA toolkit. Override the version with --build-arg ADAPTIVECPP_VERSION=...
 ARG ADAPTIVECPP_VERSION=v24.10.0
-ARG ACPP_LLVM=16
+# LLVM 15 is the newest stock clang in Ubuntu 22.04's repos (clang-16+ would need
+# the apt.llvm.org repo). AdaptiveCpp v24.10 builds fine against it.
+ARG ACPP_LLVM=15
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libboost-context-dev libboost-fiber-dev \
         clang-${ACPP_LLVM} llvm-${ACPP_LLVM}-dev libclang-${ACPP_LLVM}-dev \
