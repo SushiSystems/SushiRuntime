@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <hwloc.h>
 #include <regex>
+#include <unordered_set>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 
@@ -59,7 +60,14 @@ namespace SushiRuntime
             {
                 size_t logical_id_counter = 0;
 
-                for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::all)) 
+                // Some backends expose the same physical CPU twice — e.g. under
+                // AdaptiveCpp the host CPU appears both via the OpenCL backend and
+                // as the native "OpenMP host device" (which also reports a bogus
+                // global_mem_size). Keep at most one CPU per NUMA node so the
+                // scheduler does not build duplicate queues for one processor.
+                std::unordered_set<int> seen_cpu_numa;
+
+                for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::all))
                 {
                     if (dev.is_cpu() && !config.include_cpu) continue;
                     if (dev.is_gpu() && !config.include_gpu) continue;
@@ -76,13 +84,24 @@ namespace SushiRuntime
                     node.global_mem_size = dev.get_info<sycl::info::device::global_mem_size>();
                     node.max_compute_units = dev.get_info<sycl::info::device::max_compute_units>();
 
-                    if (dev.is_cpu()) 
+                    if (dev.is_cpu())
                     {
                         // Use HWLOC to find NUMA node for CPU
-                        hwloc_obj_t pu = hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, 0); 
+                        hwloc_obj_t pu = hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, 0);
                         if (pu) {
                             hwloc_obj_t numa = hwloc_get_ancestor_obj_by_type(topology, HWLOC_OBJ_NUMANODE, pu);
                             if (numa) node.numa_node_id = numa->os_index;
+                        }
+
+                        // Drop a second CPU on the same NUMA node (duplicate backend
+                        // view of one physical processor, e.g. AdaptiveCpp's OpenMP
+                        // host device alongside the OpenCL CPU).
+                        if (!seen_cpu_numa.insert(node.numa_node_id).second)
+                        {
+                            SR_LOG_INFO("Skipping duplicate CPU device [{}] on NUMA {} (already mapped).",
+                                        node.name, node.numa_node_id);
+                            --logical_id_counter;
+                            continue;
                         }
                     }
                     else if (node.is_gpu || dev.is_accelerator())
