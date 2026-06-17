@@ -173,27 +173,24 @@ namespace SushiRuntime
             graph.sentinel->mode          = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
             graph.sentinel->host_work     =
                 [sched_ptr, completion_signal, completion_event_promise]
-                (sycl::queue& q, const std::vector<sycl::event>& deps) -> sycl::event
+                (sycl::queue&, const std::vector<sycl::event>& deps) -> sycl::event
                 {
-                    sycl::event completion = q.submit([&](sycl::handler& h)
-                    {
-                        if (!deps.empty())
-                            h.depends_on(deps);
+                    // The sentinel is the final node: the DAG only dispatches it
+                    // once every predecessor's event has completed. Signal completion
+                    // directly in C++ rather than through a SYCL host operation —
+                    // AdaptiveCpp does not run a custom-operation callback until its
+                    // event is waited on, so a host-task-based sentinel would never
+                    // fire and execute() would block forever. Wait on the predecessor
+                    // events first so any device work is genuinely flushed (this also
+                    // drives AdaptiveCpp's queue to completion) before we report done.
+                    for (const auto& e : deps)
+                        if (e != sycl::event{})
+                            e.wait();
 
-                        // host_task runs on the SYCL runtime thread — safe to set_value here.
-                        // enqueue_host_task picks host_task or AdaptiveCpp's
-                        // custom-operation equivalent per toolchain.
-                        SushiRuntime::detail::enqueue_host_task(h, [sched_ptr, completion_signal]()
-                        {
-                            // Signal the execution round as done so execute() can unblock.
-                            // The scheduler itself stays alive for the next graph.
-                            sched_ptr->arm_for_execution(); // re-arm for the NEXT round
-                            completion_signal->set_value();
-                        });
-                    });
-
-                    completion_event_promise->set_value(completion);
-                    return completion;
+                    sched_ptr->arm_for_execution(); // re-arm for the NEXT round
+                    completion_event_promise->set_value(sycl::event{});
+                    completion_signal->set_value();
+                    return {};
                 };
 
             // -----------------------------------------------------------------
