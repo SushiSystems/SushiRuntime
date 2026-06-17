@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
@@ -50,7 +51,7 @@ namespace SushiRuntime
          * resolved root nodes and the sentinel node that signals graph completion.
          * The ExecutionEngine consumes it; TaskGraph only produces it.
          */
-struct CompiledGraph
+        struct CompiledGraph
         {
             /** @brief Nodes with no pending incoming dependencies (DAG entry points). */
             std::vector<SushiRuntime::Graph::Node*> roots;
@@ -73,10 +74,35 @@ struct CompiledGraph
          * (e.g., dry-run, profiling, replay) can be plugged in without touching
          * either of those classes. [OCP compliant]
          */
+        /**
+         * @brief Cumulative scheduler counters, snapshotted to report a run.
+         *
+         * Counts are lifetime totals of the persistent scheduler; callers take
+         * a before/after difference to attribute a single run. Steal counts split
+         * by NUMA distance (node-local vs cross-node), which the fluent RunReport
+         * surfaces as intra/inter-NUMA steals.
+         */
+        struct ExecMetrics
+        {
+            std::size_t local_steals = 0;       /**< Successful steals from a node-local victim. */
+            std::size_t remote_steals = 0;      /**< Successful steals that crossed NUMA nodes. */
+            std::size_t tasks_completed = 0;    /**< Tasks completed across all workers. */
+        };
+
         class SUSHIRUNTIME_API IExecutionEngine
         {
         public:
             virtual ~IExecutionEngine() = default;
+
+            /**
+             * @brief Cumulative scheduler counters for this engine.
+             *
+             * Default returns zeros so non-instrumented engines and test doubles
+             * need not implement it. The work-stealing engine overrides it.
+             *
+             * @return Lifetime totals; diff two snapshots to measure one run.
+             */
+            virtual ExecMetrics metrics() const { return {}; }
 
             /**
              * @brief Submits a compiled graph for execution and blocks until completion.
@@ -136,6 +162,9 @@ struct CompiledGraph
              * @return sycl::event The hardware event from the sentinel node.
              */
             sycl::event execute(CompiledGraph graph) override;
+
+            /** @brief Reads the live work-stealing counters from the scheduler. */
+            ExecMetrics metrics() const override;
 
             /**
              * @brief Drains inflight work and stops the worker pool.

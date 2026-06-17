@@ -34,9 +34,10 @@ namespace SushiRuntime
         /**
          * @brief Per-NUMA-node execution and work-stealing breakdown.
          *
-         * One entry per NUMA node that took part in a run. Fields marked
-         * "reserved" are part of the stable shape but read 0 until the scheduler
-         * exposes per-node instrumentation to the public surface.
+         * One entry per NUMA node that took part in a run. The steal counters are
+         * populated from the scheduler's work-stealing counters; in the current
+         * single-entry form they carry the run's aggregate totals. The byte
+         * field is reserved (reads 0 until allocations are tracked per node).
          */
         struct NumaNodeStats
         {
@@ -45,9 +46,9 @@ namespace SushiRuntime
             std::size_t cpu_tasks_executed = 0;     /**< Tasks run on CPU devices on this node. */
             std::size_t gpu_tasks_executed = 0;     /**< Tasks run on GPU devices attached to this node. */
 
-            std::size_t tasks_popped_local = 0;     /**< Reserved: tasks taken from the worker's own queue. */
-            std::size_t tasks_stolen_intra_numa = 0;/**< Reserved: steals from a victim on the same NUMA node. */
-            std::size_t tasks_stolen_inter_numa = 0;/**< Reserved: steals that crossed to another NUMA node. */
+            std::size_t tasks_popped_local = 0;     /**< Tasks taken from the worker's own queue. */
+            std::size_t tasks_stolen_intra_numa = 0;/**< Steals from a victim on the same NUMA node. */
+            std::size_t tasks_stolen_inter_numa = 0;/**< Steals that crossed to another NUMA node. */
 
             std::size_t local_memory_allocations_bytes = 0; /**< Reserved: USM bytes pinned to this node. */
         };

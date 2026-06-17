@@ -108,6 +108,17 @@ namespace SushiRuntime
             impl_->do_shutdown();
         }
 
+        ExecMetrics ExecutionEngine::metrics() const
+        {
+            ExecMetrics m;
+            m.local_steals  = impl_->scheduler.get_local_steal_count();
+            m.remote_steals = impl_->scheduler.get_remote_steal_count();
+            const size_t workers = impl_->scheduler.get_worker_count();
+            for (size_t i = 0; i < workers; ++i)
+                m.tasks_completed += impl_->scheduler.get_completion_rate(static_cast<int>(i));
+            return m;
+        }
+
 #ifdef SR_DISTRIBUTED
         SushiRuntime::Scheduler::TaskScheduler& ExecutionEngine::scheduler_ref()
         {
