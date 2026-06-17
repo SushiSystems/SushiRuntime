@@ -41,10 +41,17 @@ ENV LD_LIBRARY_PATH="/opt/llvm-sycl/lib:$LD_LIBRARY_PATH"
 # clang/llvm so it stays pure open source; the CUDA backend uses the base image's
 # CUDA toolkit. Override the version with --build-arg ADAPTIVECPP_VERSION=...
 ARG ADAPTIVECPP_VERSION=v24.10.0
-# LLVM 15 is the newest stock clang in Ubuntu 22.04's repos (clang-16+ would need
-# the apt.llvm.org repo). AdaptiveCpp v24.10 builds fine against it.
-ARG ACPP_LLVM=15
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# clang-17 from apt.llvm.org. Ubuntu 22.04's stock clang-15 is too old for
+# libstdc++ 13's C++23 <expected> (its feature-test gating only recognises
+# clang-16+), so the project's std::expected API would not compile. clang-17 +
+# libstdc++ 13 works.
+ARG ACPP_LLVM=17
+RUN apt-get update && apt-get install -y --no-install-recommends gnupg lsb-release && \
+    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+        | gpg --dearmor -o /usr/share/keyrings/llvm.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${ACPP_LLVM} main" \
+        > /etc/apt/sources.list.d/llvm.list && \
+    apt-get update && apt-get install -y --no-install-recommends \
         libboost-context-dev libboost-fiber-dev \
         clang-${ACPP_LLVM} llvm-${ACPP_LLVM}-dev libclang-${ACPP_LLVM}-dev \
         lld-${ACPP_LLVM} && \
