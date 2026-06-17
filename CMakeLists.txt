@@ -210,6 +210,16 @@ endif()
 # install *prefix* (portable, not a version-pinned include path); default /usr
 # fits standard Linux distros. Set it empty to rely purely on discovery.
 if(NOT WIN32 AND (SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp" OR SR_SYCL_TOOLCHAIN STREQUAL "llvm"))
+    # clang reports __cpp_concepts=201907L (the original C++20 value) while
+    # libstdc++'s C++23 <expected> gates on >= 202002L. clang's concepts are in
+    # fact at the 202002 level, so correct the feature-test macro; otherwise
+    # std::expected (the try_run() return type) is compiled out. -U then -D avoids
+    # a redefinition diagnostic, and -Wno-builtin-macro-redefined keeps -Werror
+    # from rejecting the -U of a builtin. Harmless on clangs that already report
+    # 202002L (the value is unchanged).
+    add_compile_options(-Wno-builtin-macro-redefined
+                        -U__cpp_concepts -D__cpp_concepts=202002L)
+
     set(SR_GCC_TOOLCHAIN "/usr" CACHE STRING
         "GCC install prefix for clang --gcc-toolchain (empty to disable)")
     if(SR_GCC_TOOLCHAIN)
