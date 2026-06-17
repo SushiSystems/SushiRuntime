@@ -183,7 +183,9 @@ namespace SushiRuntime
                     // fire and execute() would block forever. Wait on the predecessor
                     // events first so any device work is genuinely flushed (this also
                     // drives AdaptiveCpp's queue to completion) before we report done.
-                    for (const auto& e : deps)
+                    // Copy each event: AdaptiveCpp's event::wait() is non-const,
+                    // and deps is a const vector. sycl::event is a cheap handle.
+                    for (auto e : deps)
                         if (e != sycl::event{})
                             e.wait();
 
