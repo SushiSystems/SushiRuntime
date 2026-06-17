@@ -177,10 +177,42 @@ elseif(SR_SYCL_TOOLCHAIN STREQUAL "oneapi")
 elseif(SR_SYCL_TOOLCHAIN STREQUAL "llvm")
     # Vendor-neutral Clang/LLVM SYCL path: clang++ -fsycl. Works with any
     # SYCL-enabled clang (e.g. an intel/llvm-derived build) without binding to
-    # Intel tooling. Host stdlib left to toolchain discovery / CMakePresets
-    # rather than hardcoding GCC include paths.
+    # Intel tooling.
     add_compile_options(-fsycl)
     add_link_options(-fsycl)
+
+    # Point clang at a GCC install prefix for the host C++ stdlib. This is needed
+    # because -fsycl's modified header search can otherwise pick an older libstdc++
+    # that lacks C++23 <expected> (e.g. GCC 11 alongside GCC 13 on Ubuntu 22.04).
+    # SR_GCC_TOOLCHAIN is the install *prefix* (portable, not a version-pinned
+    # include path); default /usr fits standard Linux distros. Set it empty to
+    # rely purely on discovery.
+    if(NOT WIN32)
+        set(SR_GCC_TOOLCHAIN "/usr" CACHE STRING
+            "GCC install prefix for clang --gcc-toolchain (empty to disable)")
+        if(SR_GCC_TOOLCHAIN)
+            add_compile_options(--gcc-toolchain=${SR_GCC_TOOLCHAIN})
+            add_link_options(--gcc-toolchain=${SR_GCC_TOOLCHAIN})
+
+            # -fsycl's device pass can miss the host libstdc++ headers that
+            # --gcc-toolchain alone would supply, falling back to an older stdlib
+            # without C++23 <expected>. Discover the newest libstdc++ version dir
+            # under the prefix (no hardcoded version) and add it explicitly.
+            file(GLOB _sr_libstdcxx_dirs "${SR_GCC_TOOLCHAIN}/include/c++/*")
+            if(_sr_libstdcxx_dirs)
+                list(SORT _sr_libstdcxx_dirs COMPARE NATURAL)
+                list(GET _sr_libstdcxx_dirs -1 _sr_libstdcxx)
+                get_filename_component(_sr_gcc_ver "${_sr_libstdcxx}" NAME)
+                add_compile_options(-I${_sr_libstdcxx})
+                file(GLOB _sr_libstdcxx_triple
+                     "${SR_GCC_TOOLCHAIN}/include/*/c++/${_sr_gcc_ver}")
+                foreach(_d IN LISTS _sr_libstdcxx_triple)
+                    add_compile_options(-I${_d})
+                endforeach()
+                message(STATUS "llvm toolchain: using libstdc++ headers at ${_sr_libstdcxx}")
+            endif()
+        endif()
+    endif()
     if(SR_ENABLE_CUDA)
         message(STATUS "CUDA backend enabled — nvptx64 sm_${SR_CUDA_ARCH}")
         add_compile_options(-fsycl-targets=spir64,nvptx64-nvidia-cuda
