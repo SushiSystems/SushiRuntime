@@ -171,10 +171,29 @@ namespace SushiRuntime
                     }
 
                     // adjust backoff based on progress
-                    if (progress) 
+                    if (progress)
+                    {
                         backoff_counter = 0;
-                    else 
+                    }
+                    else
+                    {
                         backoff_counter = std::min(backoff_counter + 2, MAX_BACKOFF);
+
+                        // Some SYCL runtimes (AdaptiveCpp) use a lazy event model:
+                        // command_execution_status never advances to complete via
+                        // non-blocking polling — only an explicit wait() drives the
+                        // DAG. When we have stalled (backoff maxed with no progress),
+                        // block on the oldest pending event to force it forward; it
+                        // is reaped on the next pass. On runtimes whose status does
+                        // advance (Intel), polling completes first and this rarely
+                        // fires, so the hot path is unchanged.
+                        if (backoff_counter >= MAX_BACKOFF && !active_events.is_empty())
+                        {
+                            if (active_events.events[0].event != sycl::event{})
+                                active_events.events[0].event.wait();
+                            backoff_counter = 0;
+                        }
+                    }
                 }
 
             private:
