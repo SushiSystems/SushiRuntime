@@ -28,12 +28,34 @@ ARG INTEL_LLVM_DATE=2026-06-12
 RUN wget -q \
     https://github.com/intel/llvm/releases/download/nightly-${INTEL_LLVM_DATE}/sycl_linux.tar.gz \
     -O /tmp/sycl_linux.tar.gz && \
-    mkdir -p /opt/intel-llvm && \
-    tar -xzf /tmp/sycl_linux.tar.gz -C /opt/intel-llvm --strip-components=1 && \
+    mkdir -p /opt/llvm-sycl && \
+    tar -xzf /tmp/sycl_linux.tar.gz -C /opt/llvm-sycl --strip-components=1 && \
     rm /tmp/sycl_linux.tar.gz
 
-ENV PATH="/opt/intel-llvm/bin:$PATH"
-ENV LD_LIBRARY_PATH="/opt/intel-llvm/lib:$LD_LIBRARY_PATH"
+ENV PATH="/opt/llvm-sycl/bin:$PATH"
+ENV LD_LIBRARY_PATH="/opt/llvm-sycl/lib:$LD_LIBRARY_PATH"
+
+# AdaptiveCpp (acpp) — the project's primary, fully vendor-neutral SYCL toolchain,
+# built from source against stock open-source LLVM (not the intel/llvm fork). This
+# is the path with zero vendor compiler dependency. Built against the distro's
+# clang/llvm so it stays pure open source; the CUDA backend uses the base image's
+# CUDA toolkit. Override the version with --build-arg ADAPTIVECPP_VERSION=...
+ARG ADAPTIVECPP_VERSION=v24.10.0
+ARG ACPP_LLVM=16
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libboost-context-dev libboost-fiber-dev \
+        clang-${ACPP_LLVM} llvm-${ACPP_LLVM}-dev libclang-${ACPP_LLVM}-dev \
+        lld-${ACPP_LLVM} && \
+    git clone --depth 1 --branch ${ADAPTIVECPP_VERSION} \
+        https://github.com/AdaptiveCpp/AdaptiveCpp.git /tmp/acpp && \
+    cmake -S /tmp/acpp -B /tmp/acpp/build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/opt/adaptivecpp \
+        -DLLVM_DIR=/usr/lib/llvm-${ACPP_LLVM}/lib/cmake/llvm \
+        -DCLANG_INSTALL_PREFIX=/usr/lib/llvm-${ACPP_LLVM} && \
+    cmake --build /tmp/acpp/build --target install && \
+    rm -rf /tmp/acpp /var/lib/apt/lists/*
+ENV PATH="/opt/adaptivecpp/bin:$PATH"
 
 # Keep GPU kernel launches ASYNC. With CUDA_LAUNCH_BLOCKING=1 every launch runs
 # synchronously, which makes our async/overlap tests fail (submit looks blocking).
@@ -59,9 +81,9 @@ RUN /usr/bin/python3 -m pip install --no-cache-dir --upgrade pip setuptools whee
     /usr/bin/python3 -c "import sushiruntime.cli; print('sr CLI installed OK')" && \
     printf "alias sr='/usr/bin/python3 -m sushiruntime'\nalias sushiruntime='/usr/bin/python3 -m sushiruntime'\n" >> ~/.bashrc
 
-# Pin the toolchain to the LLVM SYCL bundle shipped above (the tested CI path).
-# Without this the default toolchain (adaptivecpp) would require AdaptiveCpp,
-# which is not installed in this image.
+# Both toolchains are installed: AdaptiveCpp (acpp, primary/vendor-neutral) and
+# the Clang/LLVM bundle (llvm). The image's validation build below pins `llvm`
+# as the currently tested path; switch any time with `sr select adaptivecpp`.
 RUN /usr/bin/python3 -m sushiruntime select llvm
 
 # Build through the CLI (exercises `sr` end-to-end). The `llvm` toolchain uses
