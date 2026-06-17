@@ -24,6 +24,7 @@
 #include <future>
 #include <memory>
 #include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/scheduler/workload_coordinator.hpp>
 #include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
@@ -180,7 +181,9 @@ namespace SushiRuntime
                             h.depends_on(deps);
 
                         // host_task runs on the SYCL runtime thread — safe to set_value here.
-                        h.host_task([sched_ptr, completion_signal]()
+                        // enqueue_host_task picks host_task or AdaptiveCpp's
+                        // custom-operation equivalent per toolchain.
+                        SushiRuntime::detail::enqueue_host_task(h, [sched_ptr, completion_signal]()
                         {
                             // Signal the execution round as done so execute() can unblock.
                             // The scheduler itself stays alive for the next graph.

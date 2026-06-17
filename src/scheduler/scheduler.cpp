@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/topology/affinity.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
@@ -527,7 +528,7 @@ namespace SushiRuntime
                     // An empty event means the work produced nothing to wait on
                     // (e.g. a pure-host task). Emit a trivial host_task barrier so
                     // the poller still has something to track.
-                    e = q.submit([&](sycl::handler& h) { h.host_task([]() {}); });
+                    e = q.submit([&](sycl::handler& h) { SushiRuntime::detail::enqueue_host_task(h, []() {}); });
                 }
 
                 if (!events.push({e, task})) 
