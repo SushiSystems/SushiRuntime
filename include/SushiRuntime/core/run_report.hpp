@@ -39,7 +39,7 @@ namespace SushiRuntime
          * single-entry form they carry the run's aggregate totals. The byte
          * field is reserved (reads 0 until allocations are tracked per node).
          */
-        struct NumaNodeStats
+        struct NumaNodeStatistics
         {
             int numa_id = -1;                       /**< NUMA node this row describes. */
 
@@ -60,7 +60,7 @@ namespace SushiRuntime
          * Master; otherwise every field is 0. The byte counters are reserved
          * until the transport reports them.
          */
-        struct DistributedStats
+        struct DistributedStatistics
         {
             std::size_t tasks_offloaded_to_network = 0;  /**< Tasks shipped to remote workers. */
             std::size_t tasks_received_from_network = 0; /**< Reserved: remote tasks executed locally. */
@@ -92,10 +92,10 @@ namespace SushiRuntime
             double network_latency_wait_ms = 0.0;       /**< Reserved: idle time awaiting remote results. */
 
             // C. NUMA topology breakdown
-            std::vector<NumaNodeStats> numa_stats;      /**< Per-node breakdown (one entry per active node). */
+            std::vector<NumaNodeStatistics> numa_statistics;      /**< Per-node breakdown (one entry per active node). */
 
             // D. Distributed breakdown
-            DistributedStats distributed_stats;         /**< Offload/network stats (Master mode). */
+            DistributedStatistics distributed_statistics;         /**< Offload/network stats (Master mode). */
 
             // E. PCIe / SYCL host-device transfers (reserved)
             std::size_t host_to_device_bytes = 0;       /**< Reserved: bytes copied host -> device. */

@@ -73,7 +73,7 @@ namespace SushiRuntime
          * by NUMA distance (node-local vs cross-node), which the fluent RunReport
          * surfaces as intra/inter-NUMA steals.
          */
-        struct ExecMetrics
+        struct ExecutionMetrics
         {
             std::size_t local_steals = 0;       /**< Successful steals from a node-local victim. */
             std::size_t remote_steals = 0;      /**< Successful steals that crossed NUMA nodes. */
@@ -102,7 +102,7 @@ namespace SushiRuntime
              *
              * @return Lifetime totals; diff two snapshots to measure one run.
              */
-            virtual ExecMetrics metrics() const { return {}; }
+            virtual ExecutionMetrics metrics() const { return {}; }
 
             /**
              * @brief Submits a compiled graph for execution and blocks until completion.
@@ -164,7 +164,7 @@ namespace SushiRuntime
             sycl::event execute(CompiledGraph graph) override;
 
             /** @brief Reads the live work-stealing counters from the scheduler. */
-            ExecMetrics metrics() const override;
+            ExecutionMetrics metrics() const override;
 
             /**
              * @brief Drains inflight work and stops the worker pool.
