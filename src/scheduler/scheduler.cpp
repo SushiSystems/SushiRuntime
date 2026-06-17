@@ -523,15 +523,13 @@ namespace SushiRuntime
                     });
                 }
                 
-                if (e == sycl::event{})
-                {
-                    // An empty event means the work produced nothing to wait on
-                    // (e.g. a pure-host task). Emit a trivial host_task barrier so
-                    // the poller still has something to track.
-                    e = q.submit([&](sycl::handler& h) { SushiRuntime::detail::enqueue_host_task(h, []() {}); });
-                }
-
-                if (!events.push({e, task})) 
+                // An empty event means the host work already ran inline (synchronous
+                // execute_host) — there is nothing to wait on. Route it through the
+                // poller flagged ready, so successors fire and the task is released
+                // uniformly, without fabricating a barrier event. The old barrier
+                // relied on host-op status polling, which AdaptiveCpp does not report.
+                const bool ready = (e == sycl::event{});
+                if (!events.push({e, task, ready}))
                     SR_LOG_WARN("ActiveEventList capacity is full, events cannot be polled!");
             } 
             catch (...) 

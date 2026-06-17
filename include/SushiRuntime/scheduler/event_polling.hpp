@@ -46,10 +46,21 @@ namespace SushiRuntime
         {
             public:
                 /** @brief Structure to link a SYCL event with a graph node or task. */
-                struct PolledEvent 
+                struct PolledEvent
                 {
                     sycl::event event;
-                    SushiRuntime::Scheduler::Task* task = nullptr; 
+                    SushiRuntime::Scheduler::Task* task = nullptr;
+                    /**
+                     * @brief Already-complete marker for synchronous host work.
+                     *
+                     * A host task whose execute_host() runs inline returns an empty
+                     * event — there is nothing to wait on. We still route it through
+                     * the poller (to trigger successors and release uniformly), but
+                     * flag it ready so completion is not gated on a SYCL event status
+                     * query. This also sidesteps toolchains (AdaptiveCpp) whose host
+                     * operations are not observable via command_execution_status.
+                     */
+                    bool ready = false;
                 };
 
                 struct ActiveEventList 
@@ -129,10 +140,15 @@ namespace SushiRuntime
                     }
 
                     bool progress = false;
-                    for (size_t i = 0; i < active_events.count; ) 
+                    for (size_t i = 0; i < active_events.count; )
                     {
-                        auto status = active_events.events[i].event.get_info<sycl::info::event::command_execution_status>();
-                        if (status == sycl::info::event_command_status::complete)
+                        bool done = active_events.events[i].ready;
+                        if (!done)
+                        {
+                            auto status = active_events.events[i].event.get_info<sycl::info::event::command_execution_status>();
+                            done = (status == sycl::info::event_command_status::complete);
+                        }
+                        if (done)
                         {
 #ifdef SR_DISTRIBUTED
                             // Observe completion before releasing successors, so a
