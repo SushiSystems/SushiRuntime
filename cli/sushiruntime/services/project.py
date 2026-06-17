@@ -73,23 +73,40 @@ def _needs_configure(build_dir: Path, generator: str, dist: str) -> bool:
     return dist != "OFF"
 
 
-def _resolve_compiler(cfg: Config) -> tuple[str, str]:
-    """Resolve (cc, cxx) for the selected toolchain.
+def _resolve_compiler(cfg: Config, force: bool) -> tuple[str, str] | None:
+    """Resolve (cc, cxx) for the selected toolchain, validating availability.
 
     The pair is derived from the toolchain (or an explicit config override). If
-    the chosen C++ compiler is missing but clang++ is present, fall back to
-    clang — covers Docker images where icpx/icx or acpp are absent.
+    the chosen C++ compiler is on PATH it is used as-is. If it is missing the
+    build stops with guidance — unless ``force`` is set, in which case it falls
+    back to clang++/clang (which CMake then treats as the 'llvm' toolchain).
+
+    Returns the (cc, cxx) pair, or None to signal the caller to abort.
     """
     cc, cxx = cfg.resolved_compilers()
-    if shutil.which(cxx) is None and shutil.which("clang++") is not None:
-        console.info(f"{cxx} not found; falling back to clang++/clang.")
+    if shutil.which(cxx) is not None:
+        return cc, cxx
+
+    if not force:
+        console.error(
+            f"Toolchain '{cfg.toolchain}' needs '{cxx}', which is not on PATH.\n"
+            f"  - install it, or\n"
+            f"  - switch toolchain with `sr select <adaptivecpp|llvm|oneapi>`, or\n"
+            f"  - re-run with --force to fall back to clang++/clang.")
+        return None
+
+    if shutil.which("clang++") is not None:
+        console.warn(f"--force: '{cxx}' not found; falling back to clang++/clang "
+                     f"(builds as the 'llvm' toolchain).")
         return "clang", "clang++"
-    return cc, cxx
+
+    console.error(f"--force: neither '{cxx}' nor clang++ found on PATH.")
+    return None
 
 
 def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
-                          cuda: str, dist: str, asan: bool) -> list[str]:
-    cc, cxx = _resolve_compiler(cfg)
+                          cuda: str, dist: str, asan: bool,
+                          cc: str, cxx: str) -> list[str]:
     args = [
         "cmake", "-B", str(build_dir), "-G", cfg.generator,
         f"-DCMAKE_BUILD_TYPE={build_type}",
@@ -141,7 +158,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
 
 
 def build(build_type: BuildType, distributed: bool = False,
-          no_cuda: bool = False, clean: bool = False) -> int:
+          no_cuda: bool = False, clean: bool = False, force: bool = False) -> int:
     console.header("Project Build")
     root = find_project_root()
     cfg = load_config()
@@ -180,7 +197,12 @@ def build(build_type: BuildType, distributed: bool = False,
         if cfg.is_windows:
             args = _configure_args_windows(cfg, build_dir, cmake_build_type, dist, asan)
         else:
-            args = _configure_args_linux(cfg, build_dir, cmake_build_type, cuda, dist, asan)
+            resolved = _resolve_compiler(cfg, force)
+            if resolved is None:
+                return 1
+            cc, cxx = resolved
+            args = _configure_args_linux(cfg, build_dir, cmake_build_type,
+                                         cuda, dist, asan, cc, cxx)
         rc = _run(args, env, cwd=root)
         if rc != 0:
             console.error("CMake configure failed.")
