@@ -1,7 +1,7 @@
 # Base: CUDA runtime (GTX 1060 = sm_61, Pascal)
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
-# GCC 13 for full C++20 stdlib + base tools
+# GCC 13 for full C++23 stdlib + base tools
 RUN apt-get update && apt-get install -y software-properties-common && \
     add-apt-repository -y ppa:ubuntu-toolchain-r/test && \
     apt-get update && apt-get install -y \
@@ -20,7 +20,10 @@ RUN apt-get update && apt-get install -y curl ca-certificates && \
     apt-get update && apt-get install -y intel-oneapi-runtime-opencl && \
     rm -rf /var/lib/apt/lists/*
 
-# intel/llvm nightly — pre-built SYCL toolchain with CUDA + OpenCL backends
+# Clang/LLVM SYCL bundle (intel/llvm nightly build) — a pre-built, vendor-neutral
+# clang++ -fsycl toolchain with CUDA + OpenCL backends. This is the `llvm`
+# toolchain the image builds with. AdaptiveCpp is the project's primary host
+# toolchain; the container pins `llvm` because this bundle is the tested CI path.
 ARG INTEL_LLVM_DATE=2026-06-12
 RUN wget -q \
     https://github.com/intel/llvm/releases/download/nightly-${INTEL_LLVM_DATE}/sycl_linux.tar.gz \
@@ -56,15 +59,19 @@ RUN /usr/bin/python3 -m pip install --no-cache-dir --upgrade pip setuptools whee
     /usr/bin/python3 -c "import sushiruntime.cli; print('sr CLI installed OK')" && \
     printf "alias sr='/usr/bin/python3 -m sushiruntime'\nalias sushiruntime='/usr/bin/python3 -m sushiruntime'\n" >> ~/.bashrc
 
-# Build through the CLI (exercises `sr` end-to-end). On linux the config's
-# icx/icpx defaults auto-fall back to the intel/llvm clang++, and CUDA defaults
-# ON — matching the previous manual cmake invocation.
+# Pin the toolchain to the LLVM SYCL bundle shipped above (the tested CI path).
+# Without this the default toolchain (adaptivecpp) would require AdaptiveCpp,
+# which is not installed in this image.
+RUN /usr/bin/python3 -m sushiruntime select llvm
+
+# Build through the CLI (exercises `sr` end-to-end). The `llvm` toolchain uses
+# the bundled clang++ -fsycl, and CUDA defaults ON on Linux.
 #
 # Two pre-builds so the image validates BOTH compile configurations and ships all
 # test/benchmark binaries:
-#   1. standalone  — the offline-first default path (SUSHI_DISTRIBUTED off): the
+#   1. standalone  — the offline-first default path (SR_DISTRIBUTED off): the
 #                    functional suite + the non-distributed benchmarks.
-#   2. distributed — the master-worker layer (SUSHI_DISTRIBUTED on): adds the
+#   2. distributed — the master-worker layer (SR_DISTRIBUTED on): adds the
 #                    distributed unit/e2e tests and the offload benchmark. This
 #                    reconfigures build/ in place (stamp .sushi_dist), so build/
 #                    ends in distributed state — a superset of binaries. The

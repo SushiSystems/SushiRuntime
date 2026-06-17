@@ -22,7 +22,7 @@
 /**************************************************************************/
 
 // Throughput / per-task latency of the master->worker offload path, plus the
-// policy's load split across two workers. Built only with SUSHI_ENABLE_DISTRIBUTED.
+// policy's load split across two workers. Built only with SR_ENABLE_DISTRIBUTED.
 // Uses InProcessTransport so the software round trip (encode -> pull -> remote
 // kernel -> writeback -> release) is measured deterministically. Every task does
 // verified vector-add work, and each worker bumps its own counter so the load

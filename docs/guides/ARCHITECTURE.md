@@ -58,7 +58,7 @@ layers never depend up.
         ├──────────────────────┴──────────────────────────────────┤
         │  core/   RefCounted · sushi_ptr · logger · common · OpID  │  foundations
         └─────────────────────────────────────────────────────────┘
-           distributed/ (optional, SUSHI_ENABLE_DISTRIBUTED) sits beside
+           distributed/ (optional, SR_ENABLE_DISTRIBUTED) sits beside
            execution/scheduler and is invisible when the flag is off.
 ```
 
@@ -430,7 +430,7 @@ A few cross-cutting rules the codebase follows consistently:
 
 ## 11. Distributed (`distributed/`, optional)
 
-Guarded entirely behind `SUSHI_ENABLE_DISTRIBUTED` (CMake) / `SUSHI_DISTRIBUTED`
+Guarded entirely behind `SR_ENABLE_DISTRIBUTED` (CMake) / `SR_DISTRIBUTED`
 (macro). When off, none of it compiles — zero code, zero dependencies, zero ABI.
 Full operational detail is in [`DISTRIBUTED_GUIDE.md`](DISTRIBUTED_GUIDE.md); the
 architectural essentials:
@@ -497,9 +497,9 @@ To make the layering concrete, here is one device task —
 
 | CMake option | Default | Effect |
 |--------------|---------|--------|
-| `SUSHI_ENABLE_CUDA` | OFF | SYCL CUDA backend (tuned for Pascal / `sm_61`) |
-| `SUSHI_ENABLE_DISTRIBUTED` | OFF | compile the master-worker layer |
-| `SUSHI_BUILD_BENCHMARKS` | ON | build the heavy `sr_benchmark_tests` binary |
+| `SR_ENABLE_CUDA` | OFF | SYCL CUDA backend (tuned for Pascal / `sm_61`) |
+| `SR_ENABLE_DISTRIBUTED` | OFF | compile the master-worker layer |
+| `SR_BUILD_BENCHMARKS` | ON | build the heavy `sr_benchmark_tests` binary |
 
 Two SYCL toolchains are supported: Intel oneAPI DPC++ (`icpx`/`icx-cl`) and an
 intel/llvm open-source `clang++ -fsycl` build (used by the Docker image). The

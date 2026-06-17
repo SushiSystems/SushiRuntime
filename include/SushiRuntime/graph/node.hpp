@@ -32,7 +32,7 @@
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
 #include <SushiRuntime/distributed/protocol.hpp>
 #endif
 
@@ -144,7 +144,7 @@ namespace SushiRuntime
             std::vector<void*> io_reads_;
             std::vector<void*> io_writes_;
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
             /**
              * @brief Distributed offload metadata, stamped by TaskGraph::compile().
              *

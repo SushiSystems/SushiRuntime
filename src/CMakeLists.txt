@@ -15,7 +15,7 @@ file(GLOB_RECURSE DIST_SRC_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/distributed/*.cpp"
 )
 list(REMOVE_ITEM SRC_FILES ${DIST_SRC_FILES})
-if(SUSHI_ENABLE_DISTRIBUTED)
+if(SR_ENABLE_DISTRIBUTED)
     list(APPEND SRC_FILES ${DIST_SRC_FILES})
 endif()
 
@@ -45,10 +45,10 @@ target_compile_definitions(sushiruntime PRIVATE
     WIN32_LEAN_AND_MEAN
 )
 
-# SUSHI_DISTRIBUTED must be PUBLIC: it changes the layout of Graph::Node (adds
+# SR_DISTRIBUTED must be PUBLIC: it changes the layout of Graph::Node (adds
 # offload fields), so the library and every consumer (tests, apps) must agree.
-if(SUSHI_ENABLE_DISTRIBUTED)
-    target_compile_definitions(sushiruntime PUBLIC SUSHI_DISTRIBUTED)
+if(SR_ENABLE_DISTRIBUTED)
+    target_compile_definitions(sushiruntime PUBLIC SR_DISTRIBUTED)
     # The raw-socket TCP transport needs Winsock on Windows.
     if(WIN32)
         target_link_libraries(sushiruntime PRIVATE ws2_32)
@@ -58,15 +58,15 @@ endif()
 
 # --- Apply SYCL to specific source files ---
 # Only files that use SYCL need special compilation flags
-set(SUSHI_SYCL_SOURCES
+set(SR_SYCL_SOURCES
     memory/usm_allocator.cpp
     graph/task_graph.cpp
     execution/runtime_context.cpp
 )
-if(SUSHI_ENABLE_DISTRIBUTED)
+if(SR_ENABLE_DISTRIBUTED)
     # These distributed TUs pull in <sycl/sycl.hpp> (kernels, worker execution,
     # Node/Task headers) and need SYCL compilation flags under the oneAPI path.
-    list(APPEND SUSHI_SYCL_SOURCES
+    list(APPEND SR_SYCL_SOURCES
         distributed/kernel_registry.cpp
         distributed/worker_agent.cpp
         distributed/distributed_coordinator.cpp
@@ -75,14 +75,14 @@ endif()
 
 add_sycl_to_target(
     TARGET sushiruntime
-    SOURCES ${SUSHI_SYCL_SOURCES}
+    SOURCES ${SR_SYCL_SOURCES}
 )
 
 # --- Properties ---
 set_target_properties(sushiruntime PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
-    CXX_STANDARD 20
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON
     WINDOWS_EXPORT_ALL_SYMBOLS ON

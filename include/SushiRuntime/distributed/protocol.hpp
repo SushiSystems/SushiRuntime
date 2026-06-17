@@ -26,8 +26,8 @@
 //
 // Distributed wire protocol.
 //
-// The whole distributed layer exists behind SUSHI_DISTRIBUTED (CMake option
-// SUSHI_ENABLE_DISTRIBUTED, default OFF). When the option is off this header is
+// The whole distributed layer exists behind SR_DISTRIBUTED (CMake option
+// SR_ENABLE_DISTRIBUTED, default OFF). When the option is off this header is
 // never compiled into the library, so the offline single-machine build carries
 // zero distributed code, zero extra dependencies, and zero ABI surface.
 //

@@ -33,6 +33,7 @@
 // Core Infrastructure
 #include "core/export.hpp"
 #include "core/common.hpp"
+#include "core/error.hpp"
 #include "core/sushi_ptr.hpp"
 #include "core/ref_counted.hpp"
 #include "core/logger.hpp"

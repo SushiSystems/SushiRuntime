@@ -58,7 +58,7 @@ body:
     id: env
     attributes:
       label: Environment
-      description: OS, SYCL toolchain (oneAPI / intel-llvm), CMake version, GPU, commit hash.
+      description: OS, SYCL toolchain (adaptivecpp / llvm / oneapi), CMake version, GPU, commit hash.
     validations:
       required: true
   - type: textarea

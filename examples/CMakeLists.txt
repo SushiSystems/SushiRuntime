@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.20)
 # add nothing here.
 # ============================================================================
 
-if(SUSHI_ENABLE_DISTRIBUTED)
+if(SR_ENABLE_DISTRIBUTED)
     add_executable(sr_distributed_demo distributed_demo.cpp)
     target_link_libraries(sr_distributed_demo PRIVATE sushiruntime)
     set_target_properties(sr_distributed_demo PROPERTIES

@@ -48,7 +48,7 @@ namespace SushiRuntime
         struct Node;
     }
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
     namespace Distributed { class DistributedCoordinator; }
 #endif
 
@@ -197,7 +197,7 @@ namespace SushiRuntime
                 /** @brief Count of successful steals that had to cross to a remote node. */
                 size_t get_remote_steal_count() const { return remote_steals_.load(std::memory_order_relaxed); }
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 /**
                  * @brief Attaches the master-side coordinator (Master mode only).
                  *
@@ -217,7 +217,7 @@ namespace SushiRuntime
 #endif
 
             private:
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 /** @brief Master-side offload brain; null unless in Master mode. */
                 Distributed::DistributedCoordinator* coordinator_ = nullptr;
 #endif

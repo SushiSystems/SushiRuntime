@@ -16,6 +16,7 @@ from . import console
 from .services import diag as diag_svc
 from .services import docker as docker_svc
 from .services import project as project_svc
+from .services import select as select_svc
 from .services import setup as setup_svc
 from .services.project import BuildType, Suite
 
@@ -48,6 +49,21 @@ app.add_typer(setup_app, name="setup")
 class DockerAction(str, enum.Enum):
     build = "build"
     run = "run"
+
+
+# --------------------------------------------------------------------------- #
+# select (SYCL toolchain)
+# --------------------------------------------------------------------------- #
+@app.command("select")
+def select(
+    toolchain: Optional[str] = typer.Argument(
+        None, help="SYCL toolchain: adaptivecpp | llvm | oneapi. "
+                   "Omit to list choices and show the active one."),
+):
+    """Choose the SYCL toolchain used for builds (persisted to config.local.toml)."""
+    if toolchain is None:
+        raise typer.Exit(select_svc.show())
+    raise typer.Exit(select_svc.select(toolchain))
 
 
 # --------------------------------------------------------------------------- #

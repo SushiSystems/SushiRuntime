@@ -91,10 +91,20 @@ namespace SushiRuntime
                         {
                             std::string pci_str = "";
 
-                            // Primary: Intel extension (works for Intel GPUs and Codeplay NVIDIA backend)
-                            if (dev.has(sycl::aspect::ext_intel_pci_address))
+                            // Primary: Intel device-info extension (Intel GPUs and the
+                            // Codeplay NVIDIA backend). Guarded because AdaptiveCpp and
+                            // other SYCL implementations do not expose this aspect; there
+                            // we fall straight through to the regex / hwloc fallbacks.
+#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
+                            const bool has_intel_pci = dev.has(sycl::aspect::ext_intel_pci_address);
+#else
+                            constexpr bool has_intel_pci = false;
+#endif
+                            if (has_intel_pci)
                             {
+#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
                                 pci_str = dev.get_info<sycl::ext::intel::info::device::pci_address>();
+#endif
                             }
                             else
                             {

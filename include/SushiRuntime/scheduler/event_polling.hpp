@@ -81,7 +81,7 @@ namespace SushiRuntime
                     }
                 };
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 /**
                  * @brief Installs an observer fired for each completed task.
                  *
@@ -95,7 +95,7 @@ namespace SushiRuntime
 #endif
 
             private:
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 /** @brief Optional per-completion observer (Master mode only). */
                 std::function<void(SushiRuntime::Scheduler::Task*)> on_node_complete_;
 #endif
@@ -134,7 +134,7 @@ namespace SushiRuntime
                         auto status = active_events.events[i].event.get_info<sycl::info::event::command_execution_status>();
                         if (status == sycl::info::event_command_status::complete)
                         {
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                             // Observe completion before releasing successors, so a
                             // write's version bump is visible to any dependent task
                             // (e.g. an offloaded reader) by the time it is dispatched.
