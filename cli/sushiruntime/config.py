@@ -51,7 +51,9 @@ TOOLCHAINS = ("adaptivecpp", "llvm", "oneapi")
 # Default compiler pair (cc, cxx) per toolchain. Used when the config does not
 # pin an explicit compiler, so `sr select <toolchain>` is enough to switch.
 TOOLCHAIN_COMPILERS = {
-    "adaptivecpp": ("acpp", "acpp"),
+    # (cc, cxx). acpp is C++-only, so the C slot uses a plain C compiler; the
+    # project builds CXX only, so cc is effectively unused but kept valid.
+    "adaptivecpp": ("gcc", "acpp"),
     "llvm": ("clang", "clang++"),
     "oneapi": ("icx", "icpx"),
 }
