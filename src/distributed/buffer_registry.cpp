@@ -32,7 +32,17 @@ namespace SushiRuntime
             std::lock_guard<std::mutex> lock(mutex_);
 
             if (auto it = by_ptr_.find(usm_ptr); it != by_ptr_.end())
+            {
+                // Re-registration of a known address. This is also how a fresh USM
+                // allocation that reused a freed address shows up (the registry is
+                // not told when USM is freed). Bump the version so any worker still
+                // caching the old buffer under this handle re-pulls the current
+                // bytes instead of serving stale data; the id (and its id->ptr
+                // mapping) stays valid.
+                ++it->second.version;
+                it->second.size_bytes = size_bytes;
                 return it->second;
+            }
 
             BufferHandle h;
             h.id.value    = next_id_++;
