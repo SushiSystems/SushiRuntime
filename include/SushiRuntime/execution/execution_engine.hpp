@@ -66,15 +66,6 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Abstract interface for graph execution strategies.
-         *
-         * Separates the "how to run a graph" decision from both TaskGraph (which
-         * is only responsible for building the DAG) and RuntimeContext (which is
-         * only responsible for hardware resources). New execution strategies
-         * (e.g., dry-run, profiling, replay) can be plugged in without touching
-         * either of those classes. [OCP compliant]
-         */
-        /**
          * @brief Cumulative scheduler counters, snapshotted to report a run.
          *
          * Counts are lifetime totals of the persistent scheduler; callers take
@@ -89,6 +80,15 @@ namespace SushiRuntime
             std::size_t tasks_completed = 0;    /**< Tasks completed across all workers. */
         };
 
+        /**
+         * @brief Abstract interface for graph execution strategies.
+         *
+         * Separates the "how to run a graph" decision from both TaskGraph (which
+         * is only responsible for building the DAG) and RuntimeContext (which is
+         * only responsible for hardware resources). New execution strategies
+         * (e.g., dry-run, profiling, replay) can be plugged in without touching
+         * either of those classes. [OCP compliant]
+         */
         class SUSHIRUNTIME_API IExecutionEngine
         {
         public:
