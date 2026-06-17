@@ -27,6 +27,7 @@
 
 #include <memory>
 #include <gtest/gtest.h>
+#include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
@@ -117,7 +118,7 @@ TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNuma)
     {
         EXPECT_NO_THROW({
             sycl::queue& q = ctx.get_numa_local_queue(numa);
-            auto ev = q.submit([](sycl::handler& h) { h.host_task([] {}); });
+            auto ev = q.submit([](sycl::handler& h) { SushiRuntime::detail::enqueue_host_task(h, [] {}); });
             ev.wait();
         }) << "Synthetic NUMA node " << numa << " produced no working queue.";
     }

@@ -37,6 +37,7 @@
 #include <vector>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
@@ -69,7 +70,7 @@ namespace
                 const size_t n = meta.get_param<uint64_t>(0);
                 return q.submit([&](sycl::handler& h)
                 {
-                    h.host_task([=]
+                    SushiRuntime::detail::enqueue_host_task(h, [=]
                     {
                         for (size_t i = 0; i < n; ++i)
                             o[i] = a[i] + b[i];
@@ -162,7 +163,7 @@ namespace
             {
                 return qq.submit([&](sycl::handler& h)
                 {
-                    h.host_task([=]
+                    SushiRuntime::detail::enqueue_host_task(h, [=]
                     {
                         for (size_t i = 0; i < n; ++i)
                             out[i] = a[i] + b[i];

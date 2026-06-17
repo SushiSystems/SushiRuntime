@@ -27,6 +27,7 @@
 
 #include <vector>
 #include <gtest/gtest.h>
+#include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
@@ -80,7 +81,7 @@ TEST(Unit_TopologyTest, InvalidNUMAFallbackQueue)
         // Confirm the returned queue is usable with a dummy host task.
         auto event = fallback_queue.submit([](sycl::handler& h)
         {
-            h.host_task([]() {});
+            SushiRuntime::detail::enqueue_host_task(h, []() {});
         });
         event.wait();
     }) << "Context crashed when an invalid NUMA ID was requested.";
