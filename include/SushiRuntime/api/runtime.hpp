@@ -206,11 +206,16 @@ namespace SushiRuntime
                 Core::RunReport run_impl()
                 {
                     using clock = std::chrono::steady_clock;
+                    auto& engine = ctx_->get_execution_engine();
+                    const auto before = engine.metrics();
+
                     const auto t0 = clock::now();
                     auto compiled = tg_->compile();
                     const auto t1 = clock::now();
-                    ctx_->get_execution_engine().execute(std::move(compiled));
+                    engine.execute(std::move(compiled));
                     const auto t2 = clock::now();
+
+                    const auto after = engine.metrics();
 
                     auto ms = [](clock::time_point a, clock::time_point b)
                     {
@@ -241,6 +246,17 @@ namespace SushiRuntime
                         node.cpu_tasks_executed = task_count_;
                         report.warnings.emplace_back("No SYCL queue available; task placement unknown.");
                     }
+
+                    // Work-stealing breakdown for this run, from the scheduler's
+                    // before/after counters. Intra/inter-NUMA map to node-local vs
+                    // cross-node steals; popped-local is what is left after steals.
+                    const std::size_t stolen_intra = after.local_steals  - before.local_steals;
+                    const std::size_t stolen_inter = after.remote_steals - before.remote_steals;
+                    const std::size_t completed    = after.tasks_completed - before.tasks_completed;
+                    node.tasks_stolen_intra_numa = stolen_intra;
+                    node.tasks_stolen_inter_numa = stolen_inter;
+                    const std::size_t stolen_total = stolen_intra + stolen_inter;
+                    node.tasks_popped_local = (completed > stolen_total) ? (completed - stolen_total) : 0;
                     report.numa_stats.push_back(node);
 
 #ifdef SR_DISTRIBUTED
