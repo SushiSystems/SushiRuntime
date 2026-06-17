@@ -113,7 +113,11 @@ namespace SushiRuntime
                 /** @brief Counter for adaptive backoff strategy. */
                 size_t backoff_counter = 0;
                 /** @brief Maximum value for the backoff counter. */
-                static constexpr size_t MAX_BACKOFF = 64; 
+                static constexpr size_t MAX_BACKOFF = 64;
+                /** @brief Consecutive no-progress polls, used to drive lazy events. */
+                size_t stall_polls_ = 0;
+                /** @brief No-progress polls before forcing a blocking wait. */
+                static constexpr size_t STALL_DRIVE_THRESHOLD = 4;
 
             public:
                 /**
@@ -174,6 +178,7 @@ namespace SushiRuntime
                     if (progress)
                     {
                         backoff_counter = 0;
+                        stall_polls_ = 0;
                     }
                     else
                     {
@@ -182,15 +187,19 @@ namespace SushiRuntime
                         // Some SYCL runtimes (AdaptiveCpp) use a lazy event model:
                         // command_execution_status never advances to complete via
                         // non-blocking polling — only an explicit wait() drives the
-                        // DAG. When we have stalled (backoff maxed with no progress),
-                        // block on the oldest pending event to force it forward; it
-                        // is reaped on the next pass. On runtimes whose status does
-                        // advance (Intel), polling completes first and this rarely
-                        // fires, so the hot path is unchanged.
-                        if (backoff_counter >= MAX_BACKOFF && !active_events.is_empty())
+                        // DAG. After a few consecutive no-progress polls, block on the
+                        // oldest pending event to force it forward and mark it ready so
+                        // it is reaped on the next pass regardless of how the runtime
+                        // reports status. On runtimes whose status advances on its own
+                        // (Intel), polling completes before the threshold, so this
+                        // rarely fires and the hot path is unchanged.
+                        if (++stall_polls_ >= STALL_DRIVE_THRESHOLD && !active_events.is_empty())
                         {
-                            if (active_events.events[0].event != sycl::event{})
-                                active_events.events[0].event.wait();
+                            auto& oldest = active_events.events[0];
+                            if (oldest.event != sycl::event{})
+                                oldest.event.wait();
+                            oldest.ready = true;
+                            stall_polls_ = 0;
                             backoff_counter = 0;
                         }
                     }
