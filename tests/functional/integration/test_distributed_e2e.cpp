@@ -36,6 +36,7 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
@@ -73,7 +74,7 @@ namespace
 
                 return q.submit([&](sycl::handler& h)
                 {
-                    h.host_task([=]
+                    SushiRuntime::detail::enqueue_host_task(h, [=]
                     {
                         for (size_t i = 0; i < n; ++i)
                             o[i] = a[i] + b[i];
@@ -161,7 +162,7 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
         {
             return q.submit([&](sycl::handler& h)
             {
-                h.host_task([=]
+                SushiRuntime::detail::enqueue_host_task(h, [=]
                 {
                     for (size_t i = 0; i < N; ++i)
                         out[i] = a[i] + b[i];
@@ -221,7 +222,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
             const size_t n = meta.get_param<uint64_t>(0);
             return q.submit([&](sycl::handler& h)
             {
-                h.host_task([=]
+                SushiRuntime::detail::enqueue_host_task(h, [=]
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(20));
                     for (size_t i = 0; i < n; ++i)
@@ -290,7 +291,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
             {
                 return q.submit([&](sycl::handler& h)
                 {
-                    h.host_task([=]
+                    SushiRuntime::detail::enqueue_host_task(h, [=]
                     {
                         for (size_t i = 0; i < N; ++i)
                             y[i] = in[i] + in[i];
@@ -392,7 +393,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
         {
             return q.submit([&](sycl::handler& h)
             {
-                h.host_task([=]
+                SushiRuntime::detail::enqueue_host_task(h, [=]
                 {
                     for (size_t i = 0; i < N; ++i)
                         x[i] = float(i + 1);
@@ -410,7 +411,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
         {
             return q.submit([&](sycl::handler& h)
             {
-                h.host_task([=]
+                SushiRuntime::detail::enqueue_host_task(h, [=]
                 {
                     for (size_t i = 0; i < N; ++i)
                         y[i] = x[i] + x[i];
@@ -513,7 +514,7 @@ TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
         {
             return q.submit([&](sycl::handler& h)
             {
-                h.host_task([=]
+                SushiRuntime::detail::enqueue_host_task(h, [=]
                 {
                     for (size_t i = 0; i < N; ++i)
                         out[i] = a[i] + b[i];
@@ -632,7 +633,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
         {
             return q.submit([&](sycl::handler& h)
             {
-                h.host_task([=]
+                SushiRuntime::detail::enqueue_host_task(h, [=]
                 {
                     for (size_t i = 0; i < N; ++i)
                         out[i] = a[i] + b[i];
