@@ -80,9 +80,13 @@ def project_build(
         False, "--no-cuda", help="Disable the SYCL CUDA backend (Linux only)."),
     clean: bool = typer.Option(
         False, "--clean", help="Delete the build tree before configuring."),
+    force: bool = typer.Option(
+        False, "--force",
+        help="If the selected toolchain's compiler is missing, fall back to "
+             "clang++/clang instead of stopping."),
 ):
     """Configure and build the project."""
-    raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean))
+    raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force))
 
 
 @project_app.command("test")

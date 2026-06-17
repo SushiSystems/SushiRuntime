@@ -29,8 +29,8 @@ int main()
     auto g  = rt.graph();
 
     // Per-element task (auto parallel_for) chained with a raw-handler kernel.
-    g.add(1024, [](std::size_t i) { (void)i; })
-     .add([](sycl::handler& h) { h.single_task([]() {}); });
+    g.add(1024, [](std::size_t i)   { (void)i; })
+     .add([](sycl::handler& h)      { h.single_task([]() {}); });
 
     auto report = g.try_run();     // std::expected<RunReport, Error>
     if (!report)
