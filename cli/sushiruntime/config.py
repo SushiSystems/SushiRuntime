@@ -45,16 +45,16 @@ def config_dir(root: Path | None = None) -> Path:
     return root / "cli"
 
 # The SYCL toolchains a user can select. Must match SR_SYCL_TOOLCHAIN in
-# CMakeLists.txt: adaptivecpp (primary), llvm and oneapi (secondary).
-TOOLCHAINS = ("adaptivecpp", "llvm", "oneapi")
+# CMakeLists.txt: intel-llvm (primary), adaptivecpp (secondary), oneapi (supported).
+TOOLCHAINS = ("intel-llvm", "adaptivecpp", "oneapi")
 
 # Default compiler pair (cc, cxx) per toolchain. Used when the config does not
-# pin an explicit compiler, so `sr select <toolchain>` is enough to switch.
+# pin an explicit compiler, so `sr toolchain <name>` is enough to switch.
 TOOLCHAIN_COMPILERS = {
     # (cc, cxx). acpp is C++-only, so the C slot uses a plain C compiler; the
     # project builds CXX only, so cc is effectively unused but kept valid.
     "adaptivecpp": ("gcc", "acpp"),
-    "llvm": ("clang", "clang++"),
+    "intel-llvm": ("clang", "clang++"),
     "oneapi": ("icx", "icpx"),
 }
 
@@ -79,9 +79,9 @@ _ENV_OVERRIDES = {
 class Config:
     """Resolved, platform-specific tool configuration."""
 
-    # SYCL toolchain selection (adaptivecpp | llvm | oneapi). Persisted by
-    # `sr select` and consumed as -DSR_SYCL_TOOLCHAIN at configure time.
-    toolchain: str = "adaptivecpp"
+    # SYCL toolchain selection (intel-llvm | adaptivecpp | oneapi). Persisted by
+    # `sr toolchain` and consumed as -DSR_SYCL_TOOLCHAIN at configure time.
+    toolchain: str = "intel-llvm"
 
     # Compilers / build. Empty cc/cxx means "derive from the toolchain".
     cc: str = ""
@@ -119,7 +119,7 @@ class Config:
         taken from TOOLCHAIN_COMPILERS so selecting a toolchain is sufficient.
         """
         default_cc, default_cxx = TOOLCHAIN_COMPILERS.get(
-            self.toolchain, TOOLCHAIN_COMPILERS["adaptivecpp"])
+            self.toolchain, TOOLCHAIN_COMPILERS["intel-llvm"])
         return (self.cc or default_cc, self.cxx or default_cxx)
 
 
@@ -165,7 +165,7 @@ def load_config() -> Config:
     cfg.platform = plat
     # Guard against a stale/typo'd toolchain leaking through from config or env.
     if cfg.toolchain not in TOOLCHAINS:
-        cfg.toolchain = "adaptivecpp"
+        cfg.toolchain = "intel-llvm"
     return cfg
 
 
@@ -188,7 +188,7 @@ def set_toolchain(toolchain: str) -> Path:
     tables = {k: v for k, v in tool.items() if isinstance(v, dict)}
 
     lines = [
-        "# Managed by the SushiRuntime CLI. `sr select` writes the toolchain key;",
+        "# Managed by the SushiRuntime CLI. `sr toolchain` writes the toolchain key;",
         "# `sr setup configure` writes the [tool.<platform>] tool paths.",
         "",
         "[tool]",

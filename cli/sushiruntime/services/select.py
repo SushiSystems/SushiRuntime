@@ -1,4 +1,4 @@
-"""SYCL toolchain selection (`sr select`).
+"""SYCL toolchain selection (`sr toolchain`).
 
 Persists the chosen toolchain into config.local.toml so every later build picks
 it up. The choice flows to CMake as -DSR_SYCL_TOOLCHAIN at configure time.
@@ -9,11 +9,11 @@ from __future__ import annotations
 from .. import console
 from ..config import TOOLCHAINS, load_config, set_toolchain
 
-# Short, user-facing description for each toolchain shown by `sr select`.
+# Short, user-facing description for each toolchain shown by `sr toolchain`.
 _DESCRIPTIONS = {
-    "adaptivecpp": "AdaptiveCpp (acpp) — primary, vendor-neutral. Recommended.",
-    "llvm": "Clang/LLVM SYCL (clang++ -fsycl) — secondary, vendor-neutral.",
-    "oneapi": "Intel oneAPI (icpx/icx-cl) — secondary, for VTune/Advisor profiling.",
+    "intel-llvm": "intel/llvm nightly (clang++ -fsycl) — primary, vendor-neutral. Recommended.",
+    "adaptivecpp": "AdaptiveCpp (acpp) — secondary, vendor-neutral.",
+    "oneapi": "Intel oneAPI (icpx/icx-cl) — supported, for VTune/Advisor profiling.",
 }
 
 
@@ -24,7 +24,7 @@ def show() -> int:
     for name in TOOLCHAINS:
         marker = "*" if name == cfg.toolchain else " "
         console.console.print(f" {marker} [bold]{name}[/bold] — {_DESCRIPTIONS[name]}")
-    console.info(f"Active: {cfg.toolchain} (change with `sr select <name>`)")
+    console.info(f"Active: {cfg.toolchain} (change with `sr toolchain <name>`)")
     return 0
 
 

@@ -28,6 +28,9 @@ def _cache_key(cfg: Config) -> str:
             "platform": cfg.platform,
             "vs_vcvars": cfg.vs_vcvars,
             "oneapi_root": cfg.oneapi_root,
+            # The toolchain gates whether oneAPI setvars is sourced, so it must
+            # key the cache: switching intel-llvm<->oneapi has to rebuild the snapshot.
+            "toolchain": cfg.toolchain,
         },
         sort_keys=True,
     )
@@ -50,11 +53,15 @@ def _snapshot_windows(cfg: Config) -> dict[str, str] | None:
     if vcvars and Path(vcvars).is_file():
         console.info("Loading Visual Studio environment (vcvars64)...")
         parts.append(f'call "{vcvars}"')
-    oneapi = cfg.expand(cfg.oneapi_root)
-    setvars = Path(oneapi) / "setvars.bat" if oneapi else None
-    if setvars and setvars.is_file():
-        console.info("Loading oneAPI environment (setvars)...")
-        parts.append(f'call "{setvars}" intel64 >nul 2>&1')
+    # oneAPI setvars only for the oneapi toolchain (see _snapshot_linux): mixing
+    # it into an llvm/adaptivecpp build pollutes the loader search path. vcvars
+    # above stays unconditional — MSVC's env is needed for every Windows build.
+    if cfg.toolchain == "oneapi":
+        oneapi = cfg.expand(cfg.oneapi_root)
+        setvars = Path(oneapi) / "setvars.bat" if oneapi else None
+        if setvars and setvars.is_file():
+            console.info("Loading oneAPI environment (setvars)...")
+            parts.append(f'call "{setvars}" intel64 >nul 2>&1')
     if not parts:
         return None
     parts.append("set")
@@ -69,6 +76,15 @@ def _snapshot_windows(cfg: Config) -> dict[str, str] | None:
 
 
 def _snapshot_linux(cfg: Config) -> dict[str, str] | None:
+    # Source oneAPI's setvars ONLY for the oneapi toolchain. Sourcing it for the
+    # intel-llvm/adaptivecpp toolchains prepends oneAPI's lib dir to LD_LIBRARY_PATH,
+    # so at runtime the binary loads oneAPI's libsycl/libur_loader while the CUDA
+    # backend still resolves the llvm-sycl libur_adapter_cuda — a Unified Runtime
+    # version mismatch that segfaults during SYCL device discovery
+    # (urVirtualMemMap). The intel-llvm/adaptivecpp toolchains ship on PATH and
+    # need no setvars at all, so returning None keeps their environment clean.
+    if cfg.toolchain != "oneapi":
+        return None
     oneapi = cfg.expand(cfg.oneapi_root)
     setvars = Path(oneapi) / "setvars.sh" if oneapi else None
     if not (setvars and setvars.is_file()):

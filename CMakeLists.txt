@@ -1,20 +1,19 @@
 cmake_minimum_required(VERSION 3.20)
 
 # --- SYCL toolchain selection -------------------------------------------------
-# SushiRuntime is compiler-agnostic SYCL 2020. Three toolchains are supported,
-# AdaptiveCpp being the primary/recommended one. The project deliberately leans
-# away from vendor lock-in: the default and llvm paths are vendor-neutral, while
-# oneAPI is kept only as a secondary path for Intel profiling tools.
-#   adaptivecpp  acpp driver + find_package(AdaptiveCpp)   (primary, vendor-neutral)
-#   llvm         Clang/LLVM SYCL: clang++ -fsycl           (secondary, vendor-neutral)
-#   oneapi       Intel oneAPI commercial icpx / icx-cl     (secondary, profiling)
+# SushiRuntime is compiler-agnostic SYCL 2020. Three toolchains are supported.
+# intel-llvm is the primary/recommended path; AdaptiveCpp is the secondary
+# vendor-neutral path; oneAPI is a supported path kept for Intel profiling tools.
+#   intel-llvm   intel/llvm nightly: clang++ -fsycl        (primary, vendor-neutral)
+#   adaptivecpp  acpp driver + find_package(AdaptiveCpp)   (secondary, vendor-neutral)
+#   oneapi       Intel oneAPI commercial icpx / icx-cl     (supported, profiling)
 #
 # Pick one explicitly with -DSR_SYCL_TOOLCHAIN=<name>. When left at the
 # default and a compiler is provided, the toolchain is inferred from the
-# compiler executable name so existing oneAPI/clang++ invocations keep working.
-set(SR_SYCL_TOOLCHAIN "adaptivecpp" CACHE STRING
-    "SYCL toolchain: adaptivecpp (primary), llvm, or oneapi")
-set_property(CACHE SR_SYCL_TOOLCHAIN PROPERTY STRINGS adaptivecpp llvm oneapi)
+# compiler executable name so existing oneAPI/acpp invocations keep working.
+set(SR_SYCL_TOOLCHAIN "intel-llvm" CACHE STRING
+    "SYCL toolchain: intel-llvm (primary), adaptivecpp, or oneapi")
+set_property(CACHE SR_SYCL_TOOLCHAIN PROPERTY STRINGS intel-llvm adaptivecpp oneapi)
 
 if(DEFINED CMAKE_CXX_COMPILER AND NOT CMAKE_CXX_COMPILER STREQUAL "")
     if(CMAKE_CXX_COMPILER MATCHES "acpp|syclcc")
@@ -22,7 +21,7 @@ if(DEFINED CMAKE_CXX_COMPILER AND NOT CMAKE_CXX_COMPILER STREQUAL "")
     elseif(CMAKE_CXX_COMPILER MATCHES "icpx|icx-cl|icx")
         set(SR_SYCL_TOOLCHAIN "oneapi" CACHE STRING "" FORCE)
     elseif(CMAKE_CXX_COMPILER MATCHES "clang\\+\\+")
-        set(SR_SYCL_TOOLCHAIN "llvm" CACHE STRING "" FORCE)
+        set(SR_SYCL_TOOLCHAIN "intel-llvm" CACHE STRING "" FORCE)
     endif()
 endif()
 
@@ -46,7 +45,12 @@ endif()
 
 # --- Default compiler per toolchain (only when the caller gave none) ----------
 if(NOT DEFINED CMAKE_CXX_COMPILER OR CMAKE_CXX_COMPILER STREQUAL "")
-    if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
+    if(SR_SYCL_TOOLCHAIN STREQUAL "intel-llvm")
+        find_program(SR_CLANGXX NAMES clang++)
+        if(SR_CLANGXX)
+            set(CMAKE_CXX_COMPILER "${SR_CLANGXX}" CACHE FILEPATH "CXX compiler")
+        endif()
+    elseif(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
         find_program(SR_ACPP_DRIVER NAMES acpp syclcc)
         if(SR_ACPP_DRIVER)
             set(CMAKE_CXX_COMPILER "${SR_ACPP_DRIVER}" CACHE FILEPATH "CXX compiler")
@@ -85,9 +89,11 @@ if(POLICY CMP0135)
 endif()
 
 # --- Configuration ---
-# C++23 is required for std::expected, std::source_location and std::println
-# used by the v1 error-handling channel and fluent API.
-set(CMAKE_CXX_STANDARD 23)
+# C++17. The v1 error-handling channel and fluent API are built on a hand-rolled
+# Result type and SFINAE rather than std::expected/concepts/std::format, so the
+# whole tree (including the SYCL CUDA/nvptx device pass) stays on a standard that
+# every supported toolchain compiles cleanly.
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -176,10 +182,9 @@ elseif(SR_SYCL_TOOLCHAIN STREQUAL "oneapi")
                          -Xsycl-target-backend=nvptx64-nvidia-cuda --cuda-gpu-arch=sm_${SR_CUDA_ARCH})
     endif()
 
-elseif(SR_SYCL_TOOLCHAIN STREQUAL "llvm")
-    # Vendor-neutral Clang/LLVM SYCL path: clang++ -fsycl. Works with any
-    # SYCL-enabled clang (e.g. an intel/llvm-derived build) without binding to
-    # Intel tooling.
+elseif(SR_SYCL_TOOLCHAIN STREQUAL "intel-llvm")
+    # intel/llvm nightly path: clang++ -fsycl. The project's primary toolchain.
+    # Works with any SYCL-enabled clang from the intel/llvm fork.
     add_compile_options(-fsycl)
     add_link_options(-fsycl)
     if(SR_ENABLE_CUDA)
@@ -197,50 +202,27 @@ elseif(SR_SYCL_TOOLCHAIN STREQUAL "llvm")
         function(add_sycl_to_target)
         endfunction()
     endif()
-    message(STATUS "SYCL toolchain: Clang/LLVM clang++ -fsycl (${CMAKE_CXX_COMPILER})")
+    message(STATUS "SYCL toolchain: intel/llvm clang++ -fsycl (${CMAKE_CXX_COMPILER})")
 
 else()
-    message(FATAL_ERROR "Unknown SR_SYCL_TOOLCHAIN='${SR_SYCL_TOOLCHAIN}'. Use adaptivecpp, llvm, or oneapi.")
+    message(FATAL_ERROR "Unknown SR_SYCL_TOOLCHAIN='${SR_SYCL_TOOLCHAIN}'. Use intel-llvm, adaptivecpp, or oneapi.")
 endif()
 
-# Both clang-based toolchains (AdaptiveCpp's acpp and the llvm clang++) need the
-# host C++ stdlib pointed at a recent GCC: clang's default / -fsycl's modified
-# header search can otherwise pick an older libstdc++ lacking C++23 <expected>
-# (e.g. GCC 11/12 alongside GCC 13 on Ubuntu 22.04). SR_GCC_TOOLCHAIN is the
-# install *prefix* (portable, not a version-pinned include path); default /usr
-# fits standard Linux distros. Set it empty to rely purely on discovery.
-if(NOT WIN32 AND (SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp" OR SR_SYCL_TOOLCHAIN STREQUAL "llvm"))
-    # clang reports __cpp_concepts=201907L (the original C++20 value) while
-    # libstdc++'s C++23 <expected> gates on >= 202002L. clang's concepts are in
-    # fact at the 202002 level, so correct the feature-test macro; otherwise
-    # std::expected (the try_run() return type) is compiled out. -U then -D avoids
-    # a redefinition diagnostic, and -Wno-builtin-macro-redefined keeps -Werror
-    # from rejecting the -U of a builtin. Harmless on clangs that already report
-    # 202002L (the value is unchanged).
-    add_compile_options(-Wno-builtin-macro-redefined
-                        -U__cpp_concepts -D__cpp_concepts=202002L)
-
+# The clang-based toolchains on Linux (AdaptiveCpp's acpp, intel-llvm clang++, and
+# oneAPI's icpx) let the host C++ stdlib follow the active GCC install. With C++17
+# there is no <expected>/feature-test-macro gating to work around, so only the
+# --gcc-toolchain prefix is pinned (portable, no hardcoded version) to keep
+# clang's -fsycl header search on a single libstdc++. SR_GCC_TOOLCHAIN is the
+# install *prefix*; default /usr fits standard Linux distros. Set it empty to rely
+# purely on discovery. Windows oneAPI (icx-cl) is excluded by the NOT WIN32 guard.
+if(NOT WIN32 AND (SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp"
+                  OR SR_SYCL_TOOLCHAIN STREQUAL "intel-llvm"
+                  OR SR_SYCL_TOOLCHAIN STREQUAL "oneapi"))
     set(SR_GCC_TOOLCHAIN "/usr" CACHE STRING
         "GCC install prefix for clang --gcc-toolchain (empty to disable)")
     if(SR_GCC_TOOLCHAIN)
         add_compile_options(--gcc-toolchain=${SR_GCC_TOOLCHAIN})
         add_link_options(--gcc-toolchain=${SR_GCC_TOOLCHAIN})
-
-        # Discover the newest libstdc++ version dir under the prefix (no hardcoded
-        # version) and add it explicitly, in case toolchain discovery still misses
-        # it under the SYCL device pass.
-        file(GLOB _sr_libstdcxx_dirs "${SR_GCC_TOOLCHAIN}/include/c++/*")
-        if(_sr_libstdcxx_dirs)
-            list(SORT _sr_libstdcxx_dirs COMPARE NATURAL)
-            list(GET _sr_libstdcxx_dirs -1 _sr_libstdcxx)
-            get_filename_component(_sr_gcc_ver "${_sr_libstdcxx}" NAME)
-            add_compile_options(-I${_sr_libstdcxx})
-            file(GLOB _sr_libstdcxx_triple "${SR_GCC_TOOLCHAIN}/include/*/c++/${_sr_gcc_ver}")
-            foreach(_d IN LISTS _sr_libstdcxx_triple)
-                add_compile_options(-I${_d})
-            endforeach()
-            message(STATUS "${SR_SYCL_TOOLCHAIN} toolchain: using libstdc++ headers at ${_sr_libstdcxx}")
-        endif()
     endif()
 endif()
 
@@ -268,9 +250,10 @@ add_subdirectory(src)
 add_subdirectory(examples)
 
 # --- Testing ---
-enable_testing()
+option(SR_BUILD_TESTS "Build the test suite (functional + benchmark)" OFF)
 
-# Find GTest
-find_package(GTest CONFIG REQUIRED)
-
-add_subdirectory(tests)
+if(SR_BUILD_TESTS)
+    enable_testing()
+    find_package(GTest CONFIG REQUIRED)
+    add_subdirectory(tests)
+endif()
