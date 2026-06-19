@@ -26,7 +26,7 @@
 #include <vector>
 #include <functional>
 #include <unordered_map>
-#include <span>
+#include <SushiRuntime/core/span.hpp>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
@@ -59,8 +59,8 @@ namespace SushiRuntime
                  */
                 using RemoteKernel = std::function<sycl::event(
                     sycl::queue&            queue,
-                    std::span<void* const>  inputs,
-                    std::span<void* const>  outputs,
+                    SushiRuntime::span<void* const>  inputs,
+                    SushiRuntime::span<void* const>  outputs,
                     const Graph::TaskMetadata& meta)>;
 
                 /** @brief Registers (or replaces) the kernel for an OpID. */

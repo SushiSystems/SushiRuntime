@@ -155,11 +155,11 @@ namespace SushiRuntime
                     if (len && !read_n(sock, payload.data(), len)) break;
 
                     if (handler && running.load())
-                        handler(peer, type, std::span<const std::byte>(payload.data(), payload.size()));
+                        handler(peer, type, SushiRuntime::span<const std::byte>(payload.data(), payload.size()));
                 }
             }
 
-            void send_to(socket_t sock, std::mutex& m, MsgType type, std::span<const std::byte> payload)
+            void send_to(socket_t sock, std::mutex& m, MsgType type, SushiRuntime::span<const std::byte> payload)
             {
                 if (sock == INVALID_SOCK) return;
                 unsigned char hdr[5];
@@ -327,7 +327,7 @@ namespace SushiRuntime
             }
         }
 
-        void TcpTransport::send(int peer_id, MsgType type, std::span<const std::byte> payload)
+        void TcpTransport::send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload)
         {
             if (!impl_->running.load()) return;
 

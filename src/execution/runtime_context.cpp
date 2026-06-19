@@ -255,6 +255,11 @@ namespace SushiRuntime
             return impl_->all_queues[index];
         }
 
+        size_t RuntimeContext::device_count() const
+        {
+            return impl_->all_queues.size();
+        }
+
         sushi_ptr<SushiRuntime::Memory::USMAllocator> RuntimeContext::get_allocator() 
         {
             return get_allocator(0);
@@ -326,6 +331,11 @@ namespace SushiRuntime
         void RuntimeContext::free_usm(void* ptr)
         {
             if (!ptr) return;
+
+#ifdef SR_DISTRIBUTED
+            unregister_distributed_buffer(ptr);
+#endif
+
             size_t idx = SIZE_MAX;
             {
                 std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
@@ -531,6 +541,12 @@ namespace SushiRuntime
         {
             if (impl_->buffers)
                 impl_->buffers->bump_version(usm_ptr);
+        }
+
+        void RuntimeContext::unregister_distributed_buffer(void* usm_ptr)
+        {
+            if (impl_->buffers)
+                impl_->buffers->unregister_buffer(usm_ptr);
         }
 
         std::optional<Distributed::BufferHandle> RuntimeContext::distributed_buffer(void* usm_ptr) const

@@ -24,16 +24,16 @@
 #pragma once
 
 #include <chrono>
-#include <concepts>
 #include <cstddef>
-#include <expected>
 #include <memory>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
@@ -55,28 +55,39 @@ namespace SushiRuntime
         // avoid clashing with the API::Graph class name below.
         using BackingGraph = ::SushiRuntime::Graph::TaskGraph;
 
+        // The three callable shapes the fluent add() overloads accept, expressed
+        // as C++17 SFINAE traits over std::is_invocable_v (the C++20 concepts they
+        // replace read the same, only as `requires`-clauses). enable_if on each
+        // add() selects exactly one. A wrong signature removes every overload, so
+        // the compiler reports "no matching call" — less pointed than a concept
+        // diagnostic but still naming the offending callable.
+
         /**
          * @brief A function callable once per element index: void(size_t).
          *
          * Submitted as a SYCL parallel_for over [0, n); the runtime picks the
-         * device and the work-group mapping.
+         * device and the work-group mapping. Excludes the range-kernel shape so the
+         * two add(size_t, F) overloads stay mutually exclusive.
          */
         template <class F>
-        concept PerElement = std::invocable<F, std::size_t> &&
-                             !std::invocable<F, std::size_t, std::size_t, sycl::handler&>;
+        inline constexpr bool is_per_element_v =
+            std::is_invocable_v<F, std::size_t> &&
+            !std::is_invocable_v<F, std::size_t, std::size_t, sycl::handler&>;
 
         /**
          * @brief A raw kernel that drives a sycl::handler directly: void(sycl::handler&).
          */
         template <class F>
-        concept RawKernel = std::invocable<F, sycl::handler&>;
+        inline constexpr bool is_raw_kernel_v =
+            std::is_invocable_v<F, sycl::handler&>;
 
         /**
          * @brief A range kernel that receives its bounds and a handler:
          *        void(size_t begin, size_t end, sycl::handler&).
          */
         template <class F>
-        concept RangeKernel = std::invocable<F, std::size_t, std::size_t, sycl::handler&>;
+        inline constexpr bool is_range_kernel_v =
+            std::is_invocable_v<F, std::size_t, std::size_t, sycl::handler&>;
 
         /**
          * @brief A chainable graph of tasks built fluently, then run.
@@ -100,7 +111,7 @@ namespace SushiRuntime
                  * @param fn Callable invoked as fn(i) for each index i.
                  * @return *this, for chaining.
                  */
-                template <PerElement F>
+                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(std::size_t n, F&& fn)
                 {
                     auto kernel = [fn = std::forward<F>(fn), n](sycl::handler& h)
@@ -119,7 +130,7 @@ namespace SushiRuntime
                  * @param fn Callable invoked as fn(begin, end, sycl::handler&).
                  * @return *this, for chaining.
                  */
-                template <RangeKernel F>
+                template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
                 Graph& add(std::size_t n, F&& fn)
                 {
                     auto kernel = [fn = std::forward<F>(fn), n](sycl::handler& h)
@@ -136,7 +147,7 @@ namespace SushiRuntime
                  * @param fn Callable invoked as fn(sycl::handler&).
                  * @return *this, for chaining.
                  */
-                template <RawKernel F>
+                template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
                 Graph& add(F&& fn)
                 {
                     tg_->add_node(std::forward<F>(fn));
@@ -169,26 +180,30 @@ namespace SushiRuntime
                  *
                  * @return The RunReport on success, or an Error on failure.
                  */
-                [[nodiscard]] std::expected<Core::RunReport, Core::Error> try_run() noexcept
+                [[nodiscard]] Core::Result<Core::RunReport, Core::Error> try_run() noexcept
                 {
                     if (task_count_ == 0)
-                        return std::unexpected(Core::Error{Core::Errc::invalid_graph,
-                                                           "Graph has no tasks to run."});
+                        return Core::make_error(Core::Error{Core::Errc::invalid_graph,
+                                                            "Graph has no tasks to run."});
                     try
                     {
                         return run_impl();
                     }
                     catch (const Core::SushiException& e)
                     {
-                        return std::unexpected(e.error());
+                        return Core::make_error(e.error());
                     }
                     catch (const sycl::exception& e)
                     {
-                        return std::unexpected(Core::Error{Core::Errc::kernel_failed, e.what()});
+                        return Core::make_error(Core::Error{Core::Errc::kernel_failed, e.what()});
                     }
                     catch (const std::exception& e)
                     {
-                        return std::unexpected(Core::Error{Core::Errc::compile_failed, e.what()});
+                        return Core::make_error(Core::Error{Core::Errc::compile_failed, e.what()});
+                    }
+                    catch (...)
+                    {
+                        return Core::make_error(Core::Error{Core::Errc::compile_failed, "unknown exception"});
                     }
                 }
 
@@ -198,8 +213,8 @@ namespace SushiRuntime
             private:
                 friend class Runtime;
 
-                explicit Graph(Execution::RuntimeContext& ctx)
-                    : ctx_(&ctx), tg_(std::make_unique<BackingGraph>(ctx))
+                explicit Graph(std::shared_ptr<Execution::RuntimeContext> ctx)
+                    : ctx_(std::move(ctx)), tg_(std::make_unique<BackingGraph>(*ctx_))
                 {
                 }
 
@@ -268,7 +283,7 @@ namespace SushiRuntime
                     return report;
                 }
 
-                Execution::RuntimeContext* ctx_;
+                std::shared_ptr<Execution::RuntimeContext> ctx_;
                 std::unique_ptr<BackingGraph> tg_;
                 std::size_t task_count_ = 0;
         };
@@ -297,7 +312,7 @@ namespace SushiRuntime
                  * @brief Starts a new, empty graph bound to this runtime.
                  * @return A fluent Graph; add tasks, then run() or try_run().
                  */
-                Graph graph() { return Graph(*ctx_); }
+                Graph graph() { return Graph(ctx_); }
 
                 /** @brief Access to the underlying context for advanced use. */
                 Execution::RuntimeContext& context() noexcept { return *ctx_; }

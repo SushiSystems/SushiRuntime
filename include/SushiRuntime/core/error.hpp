@@ -24,7 +24,6 @@
 #pragma once
 
 #include <cstdint>
-#include <source_location>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -77,18 +76,16 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief A single failure: its category, a human message, and its origin.
+         * @brief A single failure: its category and a human-readable message.
          *
          * This is the value carried by the non-throwing channel
-         * (std::expected<RunReport, Error>). The source location defaults to the
-         * point of construction so the failure records where it was raised.
+         * (Result<RunReport, Error>). Origin tracking via std::source_location was
+         * dropped with the move to C++17; the message carries any needed context.
          */
         struct Error
         {
-            Errc code = Errc::ok;                       /**< Failure category. */
-            std::string message;                        /**< Human-readable detail. */
-            std::source_location where =                /**< Where the error was raised. */
-                std::source_location::current();
+            Errc code = Errc::ok;   /**< Failure category. */
+            std::string message;    /**< Human-readable detail. */
         };
 
         /**
@@ -118,7 +115,7 @@ namespace SushiRuntime
         };
 
         // RunReport lives in core/run_report.hpp (included above); it is the
-        // value carried by the success side of try_run()'s std::expected.
+        // value carried by the success side of try_run()'s Result.
 
     } // namespace Core
 } // namespace SushiRuntime

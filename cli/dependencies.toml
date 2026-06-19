@@ -48,7 +48,7 @@ windows_vcpkg = ["pkgconf"]
 check_cmd     = ["pkg-config", "--version"]
 
 [adaptivecpp]
-description   = "AdaptiveCpp (acpp) — primary SYCL toolchain. Built from source / distro package; not in vcpkg."
+description   = "AdaptiveCpp (acpp) — secondary SYCL toolchain. Built from source / distro package; not in vcpkg."
 required      = false
 linux_apt     = []
 windows_vcpkg = []

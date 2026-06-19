@@ -53,19 +53,19 @@ namespace SushiRuntime
          * @brief Highly optimized lock-free Chase-Lev deque for task scheduling.
          * * Utilizes a fixed-capacity power-of-2 ring buffer to eliminate dynamic 
          * resizing overhead and memory reclamation (garbage collection) issues. 
-         * Accesses raw array memory atomically via C++20 std::atomic_ref.
+         * Each slot is a std::atomic<Task*> so the array is accessed atomically.
          * * The owner thread pushes and pops from the bottom (LIFO).
          * Stealer threads steal from the top (FIFO).
          */
         class alignas(SushiRuntime::Core::CACHE_LINE_SIZE) Deque : public Core::RefCounted 
         {
-        private:
+        public:
             /** @brief Fixed capacity to avoid runtime resizing. 256K is huge for DAG workloads. */
-            static constexpr int64_t CAPACITY = 262144; 
+            static constexpr int64_t CAPACITY = 262144;
             static constexpr int64_t MASK = CAPACITY - 1;
 
-            /** @brief Raw array managed atomically via std::atomic_ref. */
-            Task** items;
+            /** @brief Ring buffer of atomic slots (C++17 replacement for atomic_ref). */
+            std::atomic<Task*>* items;
 
             alignas(SushiRuntime::Core::CACHE_LINE_SIZE) std::atomic<int64_t> top;
             alignas(SushiRuntime::Core::CACHE_LINE_SIZE) std::atomic<int64_t> bottom;
@@ -73,7 +73,7 @@ namespace SushiRuntime
         public:
             Deque() : top(0), bottom(0) 
             {
-                items = new Task*[CAPACITY]();
+                items = new std::atomic<Task*>[CAPACITY]();
             }
 
             ~Deque() override
@@ -102,8 +102,7 @@ namespace SushiRuntime
                     return; 
                 }
 
-                // C++20 atomic_ref enables atomic access directly on the raw pointer array
-                std::atomic_ref<Task*>(items[b & MASK]).store(task, std::memory_order_relaxed);
+                items[b & MASK].store(task, std::memory_order_relaxed);
                 
                 std::atomic_thread_fence(std::memory_order_release);
                 bottom.store(b + 1, std::memory_order_relaxed);
@@ -120,7 +119,7 @@ namespace SushiRuntime
 
                 if (t <= b) 
                 {
-                    Task* task = std::atomic_ref<Task*>(items[b & MASK]).load(std::memory_order_relaxed);
+                    Task* task = items[b & MASK].load(std::memory_order_relaxed);
 
                     if (t == b) 
                     {
@@ -149,7 +148,7 @@ namespace SushiRuntime
 
                 if (t < b) 
                 {
-                    Task* task = std::atomic_ref<Task*>(items[t & MASK]).load(std::memory_order_relaxed);
+                    Task* task = items[t & MASK].load(std::memory_order_relaxed);
 
                     if (!top.compare_exchange_strong(t, 
                                                      t + 1, 
@@ -318,6 +317,13 @@ namespace SushiRuntime
             if (thread_id < 0 || static_cast<size_t>(thread_id) >= num_workers)
                 return;
 
+            auto& my_queue = worker_queues[thread_id];
+            
+            // Prevent Chase-Lev Deque overflow by refusing to pull more tasks 
+            // from the global queue if the local queue is already heavily loaded.
+            if (my_queue->size() >= Deque::CAPACITY / 2)
+                return;
+
             // Grab a reasonable batch to prevent local deque overflow 
             // and ensure fair load distribution among all workers.
             constexpr size_t BATCH_SIZE = 4096; 
@@ -341,8 +347,6 @@ namespace SushiRuntime
                     pending_cv.notify_one();
             }
 
-            auto& my_queue = worker_queues[thread_id];
-            
             for (Task* task : batch)
                 if (task) my_queue->push(task);
         }
@@ -440,7 +444,7 @@ namespace SushiRuntime
                         if (coordinator_ && task->is_graph_node())
                         {
                             auto* gnode = static_cast<SushiRuntime::Graph::Node*>(task);
-                            if (gnode->offloadable_) [[unlikely]]
+                            if (gnode->offloadable_)
                                 offloaded = coordinator_->try_offload(gnode);
                         }
                         if (!offloaded)

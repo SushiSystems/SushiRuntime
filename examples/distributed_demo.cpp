@@ -61,7 +61,7 @@ namespace
     void register_vec_add(KernelRegistry& reg)
     {
         reg.register_kernel(VEC_ADD,
-            [](sycl::queue& q, std::span<void* const> ins, std::span<void* const> outs,
+            [](sycl::queue& q, SushiRuntime::span<void* const> ins, SushiRuntime::span<void* const> outs,
                const TaskMetadata& meta) -> sycl::event
             {
                 auto* a = static_cast<const float*>(ins[0]);

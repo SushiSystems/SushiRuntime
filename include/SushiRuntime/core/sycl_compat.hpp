@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <type_traits>
 #include <utility>
 #include <sycl/sycl.hpp>
 
@@ -30,6 +31,25 @@ namespace SushiRuntime
 {
     namespace detail
     {
+        /**
+         * @brief Detects whether a handler exposes host_task(Fn).
+         *
+         * The C++17 void_t detection idiom replacing a C++20 requires-expression:
+         * the partial specialisation matches only when h.host_task(fn) is a valid
+         * expression, leaving has_host_task_v true for the Intel toolchains and
+         * false for AdaptiveCpp (which lacks the member).
+         */
+        template <class Handler, class Fn, class = void>
+        struct has_host_task : std::false_type {};
+
+        template <class Handler, class Fn>
+        struct has_host_task<Handler, Fn,
+            std::void_t<decltype(std::declval<Handler&>().host_task(std::declval<Fn>()))>>
+            : std::true_type {};
+
+        template <class Handler, class Fn>
+        inline constexpr bool has_host_task_v = has_host_task<Handler, Fn>::value;
+
         /**
          * @brief Enqueues a host-side callable into a SYCL command group, portably.
          *
@@ -49,7 +69,7 @@ namespace SushiRuntime
         template <class Handler, class Fn>
         inline void enqueue_host_task(Handler& h, Fn&& fn)
         {
-            if constexpr (requires { h.host_task(std::forward<Fn>(fn)); })
+            if constexpr (has_host_task_v<Handler, Fn>)
             {
                 h.host_task(std::forward<Fn>(fn));
             }
