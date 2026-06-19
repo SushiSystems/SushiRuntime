@@ -2,9 +2,21 @@
     "version": 3,
     "configurePresets": [
         {
+            "name": "intel-llvm",
+            "displayName": "intel/llvm SYCL nightly (primary, vendor-neutral)",
+            "description": "Vendor-neutral clang++ -fsycl from the intel/llvm nightly bundle, C++17. Primary supported toolchain.",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "SR_SYCL_TOOLCHAIN": "intel-llvm",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
             "name": "adaptivecpp",
-            "displayName": "AdaptiveCpp (primary)",
-            "description": "AdaptiveCpp acpp driver, C++23. Primary supported toolchain.",
+            "displayName": "AdaptiveCpp (secondary)",
+            "description": "AdaptiveCpp acpp driver, C++17. Secondary vendor-neutral toolchain.",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build",
             "cacheVariables": {
@@ -15,8 +27,8 @@
         },
         {
             "name": "oneapi",
-            "displayName": "Intel oneAPI + vcpkg (secondary)",
-            "description": "Intel oneAPI DPC++ (icx-cl) with vcpkg. Secondary path for VTune/Advisor profiling. Relies on VCPKG_ROOT and the oneAPI setvars environment.",
+            "displayName": "Intel oneAPI + vcpkg (supported)",
+            "description": "Intel oneAPI DPC++ (icx-cl) with vcpkg, C++17. Supported path for VTune/Advisor profiling. Relies on VCPKG_ROOT and the oneAPI setvars environment.",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build",
             "cacheVariables": {
@@ -26,18 +38,6 @@
             },
             "environment": {
                 "_comment": "Run oneAPI setvars.bat (or source setvars.sh) before configuring so CMPLR_ROOT/PATH/INCLUDE/LIB are populated. The build no longer hardcodes the oneAPI install path."
-            }
-        },
-        {
-            "name": "llvm",
-            "displayName": "Clang/LLVM SYCL (secondary, vendor-neutral)",
-            "description": "Vendor-neutral clang++ -fsycl, C++23. Works with any SYCL-enabled clang. Host stdlib left to toolchain discovery.",
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "SR_SYCL_TOOLCHAIN": "llvm",
-                "CMAKE_CXX_COMPILER": "clang++"
             }
         }
     ]

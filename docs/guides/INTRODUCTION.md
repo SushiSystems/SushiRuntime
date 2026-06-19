@@ -46,14 +46,14 @@ Install the CLI and build directly:
 
 ```bash
 python cli/install.py        # puts `sr` and `sushiruntime` on your PATH
-sr select adaptivecpp        # pick a SYCL toolchain (the default; or llvm / oneapi)
+sr toolchain intel-llvm      # pick a SYCL toolchain (the default; or adaptivecpp / oneapi)
 sr project build             # Release build (the default)
 sr project test              # run the fast functional test suite
 ```
 
-You'll need a SYCL 2020 compiler — AdaptiveCpp (`acpp`, primary), Clang/LLVM
-(`clang++ -fsycl`), or Intel oneAPI DPC++ — plus CMake 3.20+, hwloc, and
-GoogleTest. Pick the toolchain with `sr select`. The CLI reads your toolchain
+You'll need a SYCL 2020 compiler — intel-llvm (`clang++ -fsycl`, primary),
+AdaptiveCpp (`acpp`), or Intel oneAPI DPC++ — plus CMake 3.20+, hwloc, and
+GoogleTest. Pick the toolchain with `sr toolchain`. The CLI reads your toolchain
 paths from `cli/config.local.toml`; `sr setup configure` generates that file for you.
 See the [README](../../README.md) for the full requirements list and the CMake
 options if you want to skip the CLI.

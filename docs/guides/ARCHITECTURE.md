@@ -13,7 +13,7 @@ every class, constant, and algorithm named here exists in the headers under
 
 ## 1. What SushiRuntime is
 
-SushiRuntime is a C++23 runtime library for **task-based parallel computing on
+SushiRuntime is a C++17 runtime library for **task-based parallel computing on
 heterogeneous hardware** (CPU + GPU) via SYCL. You describe work as a graph of
 tasks and declare the memory each task reads and writes; the runtime infers a
 safe execution order, then runs the independent parts in parallel across the
@@ -33,6 +33,11 @@ Four design commitments shape every layer:
 4. **Zero-cost optionality.** The distributed offload layer and the CUDA backend
    are compile-time options that add nothing to a standalone build when off.
 
+The code targets C++17. Headers such as `bit.hpp`, `span.hpp`, `result.hpp`, and
+`sycl_compat.hpp` provide `<bit>`, `<span>`, `std::expected`-style results, and
+portable `host_task` invocation as compatibility shims; on a C++20/23 toolchain
+these thin out to standard aliases.
+
 ---
 
 ## 2. The layered architecture
@@ -43,8 +48,12 @@ layers never depend up.
 
 ```
         ┌─────────────────────────────────────────────────────────┐
+        │  api/         Runtime · API::Graph                        │  fluent entry point,
+        │               RunReport · Error · Errc                    │  error types
+        ├─────────────────────────────────────────────────────────┤
         │  execution/   RuntimeContext · IExecutionEngine           │  owns everything,
         │               ExecutionEngine · CompiledGraph             │  drives a run
+        │               ExecutionMetrics                            │
         ├─────────────────────────────────────────────────────────┤
         │  graph/       TaskGraph · Node · DependencyTracker        │  build + analyze DAG
         ├─────────────────────────────────────────────────────────┤
@@ -56,7 +65,8 @@ layers never depend up.
         │  BitmaskMemoryPool   │  ITopologyProvider                 │
         │  EpochManager (EBR)  │  INumaDistanceModel · affinity     │
         ├──────────────────────┴──────────────────────────────────┤
-        │  core/   RefCounted · sushi_ptr · logger · common · OpID  │  foundations
+        │  core/   RefCounted · sushi_ptr · logger · common         │  foundations
+        │          Error · Result · RunReport · compat shims        │
         └─────────────────────────────────────────────────────────┘
            distributed/ (optional, SR_ENABLE_DISTRIBUTED) sits beside
            execution/scheduler and is invisible when the flag is off.
@@ -72,7 +82,55 @@ exercised deterministically on a single desktop.
 
 ---
 
-## 3. The end-to-end execution model
+## 3. The public API layer (`api/`)
+
+`include/SushiRuntime/api/runtime.hpp` is the intended entry point for users who
+do not need to reach into the lower layers.
+
+- **`API::Runtime`** — owns a `RuntimeContext` and provides the graph factory.
+  `Runtime::create(config = {})` returns a `Runtime`; `runtime.graph()` returns
+  an `API::Graph`; `runtime.context()` gives a reference to the underlying
+  `RuntimeContext` for callers that need direct queue or allocator access.
+
+- **`API::Graph`** — chainable builder. Three overloads of `add()`:
+  - `add(n, per_element_fn)` — per-element kernel (receives one index, submitted
+    as a range kernel).
+  - `add(n, range_fn)` — explicit-range kernel (receives a `sycl::handler`
+    directly).
+  - `add(raw_kernel_fn)` — raw callback for full control.
+  - `run()` — compiles and executes the graph; returns a `RunReport`; throws
+    `SushiException` on error.
+  - `try_run()` — same but returns `Result<RunReport, Error>`; never throws.
+  - `size()` — node count.
+
+- **`RunReport`** — filled after each `run()` / `try_run()`:
+  - `is_successful`, `total_tasks_executed`, `total_duration_ms`,
+    `graph_analysis_duration_ms`.
+  - `numa_statistics` — `NumaNodeStatistics` per NUMA node: CPU/GPU task counts,
+    `intra_node_steals`, `inter_node_steals`.
+  - `distributed_statistics` — `DistributedStatistics`: offloaded task count,
+    `remote_nodes_involved`.
+  - Fields marked `[reserved]` (`scheduling_overhead_ms`,
+    `network_latency_wait_ms`, byte counters) are present in the struct but
+    always zero in v1.
+
+- **`Errc`** — error codes: `ok`, `invalid_graph`, `compile_failed`,
+  `allocation_failed`, `kernel_failed`, `device_lost`.
+
+- **`Error`** — carries an `Errc` plus a string message.
+
+- **`SushiException : std::runtime_error`** — thrown by `run()`.
+
+- **`Result<T, E>`** (`result.hpp`) — a C++17 stand-in for `std::expected<T,E>`,
+  used throughout the lower layers to return errors without exceptions.
+
+`API::Runtime`, `Core::Error`, `Core::Errc`, `Core::RunReport`, and
+`Core::SushiException` are promoted into the `SushiRuntime` namespace so callers
+need not qualify through `API::` or `Core::`.
+
+---
+
+## 4. The end-to-end execution model
 
 A program's lifecycle is always the same three phases, and they must not overlap:
 
@@ -81,17 +139,18 @@ A program's lifecycle is always the same three phases, and they must not overlap
    (Phase 1, single thread)      (Phase 2)         (Phase 3, blocks)
 ```
 
-1. **Construct a `RuntimeContext`.** It probes hardware, builds a `sycl::queue`
-   per device, sets up USM allocators, and starts a *persistent* worker pool
-   (the `ExecutionEngine`'s `TaskScheduler`).
-2. **Build a `TaskGraph`.** Each `add_task` / `add_node` call appends a `Node`
-   and runs it through the `DependencyTracker`, which wires hazard edges as nodes
-   arrive.
+1. **Construct a `RuntimeContext`** (or call `Runtime::create()`). It probes
+   hardware, builds a `sycl::queue` per device, sets up USM allocators, and
+   starts a *persistent* worker pool (the `ExecutionEngine`'s `TaskScheduler`).
+2. **Build a `TaskGraph`** (or use `API::Graph::add()`). Each `add_task` /
+   `add_node` call appends a `Node` and runs it through the `DependencyTracker`,
+   which wires hazard edges as nodes arrive.
 3. **`graph.compile()`.** Links leaf nodes to a sentinel completion node, finds
    the roots (in-degree 0), and transfers ownership into a `CompiledGraph`. It
    submits nothing to hardware.
-4. **`ctx.get_execution_engine().execute(compiled)`.** Injects the roots into the
-   scheduler, arms it, and blocks until the sentinel fires.
+4. **`ctx.get_execution_engine().execute(compiled)`** (or `API::Graph::run()`).
+   Injects the roots into the scheduler, arms it, and blocks until the sentinel
+   fires. Returns an `ExecutionMetrics` snapshot.
 
 > **Threading rule:** Phase 1 (`add_node`/`add_task`) and Phase 2 (`compile()`)
 > are **not** thread-safe relative to each other. Build the entire graph, then
@@ -99,7 +158,7 @@ A program's lifecycle is always the same three phases, and they must not overlap
 
 ---
 
-## 4. Core (`core/`)
+## 5. Core (`core/`)
 
 The foundations every other layer is built on.
 
@@ -130,7 +189,31 @@ is also defined here.
 An async, thread-safe logger (`SR_LOG_INFO`, `SR_LOG_ERROR`, …) with a synchronous
 mode (`SR_LOGGER_SET_SYNC_MODE(true)`, used by the test main so logs don't
 interleave with GoogleTest output) and a throwing assert macro (`SR_THROW_IF`).
-Log level is compile-time gated.
+Log level is compile-time gated. The format system is a custom `sr_format()`
+built on variadic templates, not `std::format`.
+
+### Error handling
+
+Three headers form the error layer:
+
+- **`error.hpp`**: `Errc` enum (`ok` / `invalid_graph` / `compile_failed` /
+  `allocation_failed` / `kernel_failed` / `device_lost`), `Error` struct (`Errc`
+  code + string message), `SushiException : std::runtime_error`.
+- **`result.hpp`**: `Result<T, E>` — a C++17 value-based error carrier modelled
+  on `std::expected`; `ErrorWrapper<E>`; `make_error()` factory. Used throughout
+  the stack so callers can choose between throwing and non-throwing call sites.
+- **`run_report.hpp`**: `RunReport` struct (see §3) plus `NumaNodeStatistics`
+  and `DistributedStatistics`.
+
+### Compatibility shims
+
+- **`sycl_compat.hpp`**: `detail::enqueue_host_task(handler, fn)` — selects
+  `host_task` on standard SYCL or `AdaptiveCpp_enqueue_custom_operation` on
+  AdaptiveCpp via C++17 `void_t` detection.
+- **`bit.hpp`**: `popcount_u64()` and `countr_zero_u64()` — wraps `__builtin_*`
+  or `std::popcount` / `std::countr_zero` depending on the standard level in use.
+- **`span.hpp`**: `SushiRuntime::span<T>` — aliases `std::span` on C++20,
+  provides a minimal stand-in on C++17.
 
 ### `OpID` — open, hashed operation identity
 
@@ -138,11 +221,11 @@ Log level is compile-time gated.
 computed at compile time via the `"..."_op` user-defined literal
 (`"blas.gemm"_op`). It replaces rigid enums so any compute domain can register
 named operations, and it is the *only* thing identifying a kernel across the wire
-in the distributed layer (see §11).
+in the distributed layer (see §12).
 
 ---
 
-## 5. Topology (`topology/`)
+## 6. Topology (`topology/`)
 
 Discovers and models the machine so the scheduler and allocators can keep work
 and memory close.
@@ -155,6 +238,9 @@ and memory close.
 - **`NUMAMapper`** uses **hwloc** to map each device to its nearest NUMA node by
   walking PCI topology, and reports inter-node distances on the ACPI SLIT
   convention: **10 = local, > 10 = remote** (typically 21).
+- **`HwlocDistanceModel`** loads the SLIT matrix from hwloc once at construction
+  into a flat array; `get_distance()` is then an O(1) array lookup. Earlier builds
+  did a per-call hwloc reload; the cached design is used now.
 - **Injection seam.** `RuntimeContext` takes an `ITopologyProvider` (device
   enumeration) and an `INumaDistanceModel` (distance source). Left null, it uses
   `HwlocTopologyProvider` + `HwlocDistanceModel`. The substitutes —
@@ -162,17 +248,17 @@ and memory close.
   core *i* → node *i % N*) and `MatrixDistanceModel` (a hand-built distance
   matrix) — let multi-NUMA routing and NUMA-aware stealing be tested on
   single-socket hardware. This is the same substitution pattern the distributed
-  layer uses for the network (`InProcessTransport`).
+  layer uses for the network (`InProcessFabric` / `InProcessTransport`).
 - **`affinity`** pins a thread to a logical core (Windows + POSIX), best-effort:
   an invalid core logs a warning rather than throwing.
 
 ---
 
-## 6. Memory (`memory/`)
+## 7. Memory (`memory/`)
 
 Allocation tuned for parallel, heterogeneous workloads. Three cooperating pieces.
 
-### 6.1 `USMAllocator` + strategies
+### 7.1 `USMAllocator` + strategies
 
 `USMAllocator` is the public allocation facade (`allocate`, `deallocate`,
 `get_device_of`). Allocation behavior is pluggable via `IAllocatorStrategy`
@@ -184,10 +270,15 @@ Allocation tuned for parallel, heterogeneous workloads. Three cooperating pieces
 - `Strategies::Host` → `sycl::aligned_alloc_host` — host-pinned, not pooled.
 
 `RuntimeContext::malloc_shared/malloc_device/free_usm` wrap this and additionally
-**record the owning queue** for each allocation (see §9), which is what lets the
+**record the owning queue** for each allocation (see §10), which is what lets the
 scheduler dispatch a kernel to the exact device/context that owns its data.
 
-### 6.2 `BitmaskMemoryPool` + `ThreadLocalMagazine` — the fast path
+A global `FlushCallback` (`g_flush_callback` atomic) can be installed by the
+runtime to flush thread magazines when a second `USMAllocator` instance is
+detected on the same thread — this prevents the "multi-allocator flush cliff"
+pathology without requiring per-call checks in the hot path.
+
+### 7.2 `BitmaskMemoryPool` + `ThreadLocalMagazine` — the fast path
 
 For poolable (Shared) allocations there is a two-tier, mostly lock-free pool:
 
@@ -195,16 +286,15 @@ For poolable (Shared) allocations there is a two-tier, mostly lock-free pool:
   size classes (**64, 256, 1024, 4096** bytes), each a stack of up to
   `BATCH_SIZE = 256` pointers. `pop` and `push` are 2–3 instructions with **no
   atomics and no locks**. A `LOW_WATERMARK` (BATCH_SIZE/4 = 64) lets the caller
-  refill proactively before a bucket empties on the critical path. A
-  `current_alloc_id` guards correctness when multiple `USMAllocator` instances are
-  interleaved (a mismatch flushes the magazine — the "multi-allocator flush
-  cliff", acceptable for the common single-allocator case).
+  refill proactively before a bucket empties on the critical path.
+  `free_capacity(bucket_idx)` returns how many slots the magazine can still
+  absorb, used by `bulk_claim_capped` to size the refill batch exactly.
 - **`BitmaskMemoryPool`** is the backing store. Memory is carved into
   `MemoryPage`s of 64 fixed-size slots tracked by a single `uint64_t` atomic
   `bitmask`. Refilling a magazine uses **bulk claim**: `bulk_claim` takes the
   whole page in one CAS to `~0ULL` (TCMalloc-style, 64× fewer atomics);
   `bulk_claim_capped` takes only as many free bits as the magazine can absorb
-  (using `std::countr_zero`/`std::popcount`), which reduces CAS contention when
+  (using `countr_zero_u64` / `popcount_u64`), which reduces CAS contention when
   many threads refill at once.
 - **Remote frees.** Every `MemoryPage` records its `owning_slot`. When a thread
   frees a pointer that belongs to *another* thread's slot, the free is routed
@@ -216,20 +306,24 @@ For poolable (Shared) allocations there is a two-tier, mostly lock-free pool:
 Requests larger than the top bucket (4096 B) bypass the pool entirely and go
 straight to SYCL.
 
-### 6.3 `EpochManager` — epoch-based reclamation (EBR)
+### 7.3 `EpochManager` — epoch-based reclamation (EBR)
 
 Lock-free data structures (the dependency tracker's access history, in
 particular) can't free a node the instant it's unlinked — another thread might
 still be reading it. EBR solves this:
 
 - A global epoch counter (`global_epoch_`) and one cache-line-aligned
-  `ThreadEpochSlot` per thread. `EpochGuard` (RAII) publishes the current epoch on
-  `enter()` and clears it on `exit()`.
+  `ThreadEpochSlot` per thread. Slot capacity is
+  `MAX_EPOCH_THREADS = MAX_WORKER_THREADS + 32 = 288` to cover the scheduler
+  workers plus auxiliary threads. `EpochGuard` (RAII) publishes the current epoch
+  on `enter()` and clears it on `exit()`.
 - `retire(ptr)` appends to a thread-local `retire_list`. Every
   `RETIRE_THRESHOLD = 128` retires, `check_and_reclaim()` computes the minimum
   epoch any thread is still in and frees everything retired in an earlier epoch.
 - `RetiredNode` storage is itself pooled per thread (`FREE_POOL_CAP = 512`) so
-  retire/reclaim doesn't hit the global allocator on the hot path.
+  retire/reclaim doesn't hit the global allocator on the hot path. The pool is
+  managed via `acquire_node()` / `release_node()` / `drain_free_pool()` on
+  `EpochThreadLocalState`.
 - **Thread-exit handoff:** when a thread dies, its outstanding `retire_list` is
   donated to a global orphan list (`global_orphan_list_`) and reclaimed by
   surviving threads — no leaks. (A subtle consequence, captured in a regression
@@ -239,16 +333,17 @@ still be reading it. EBR solves this:
 
 ---
 
-## 7. Graph (`graph/`)
+## 8. Graph (`graph/`)
 
 Builds and analyzes the task DAG.
 
-### 7.1 `Node` — one task
+### 8.1 `Node` — one task
 
 `Node` derives from `Scheduler::Task` and carries:
 
 - `TaskMetadata metadata` (name, `TaskType`, `OpID`, `priority`, `numa_affinity`,
-  and up to 8 inline scalar `params`);
+  and `K_MAX_PARAMS = 8` inline scalar `params` with `set_param<T>` /
+  `get_param<T>` template helpers);
 - the work: `TaskWork work` (`void(sycl::handler&)`, kernel mode) and/or
   `HostWork host_work` (`sycl::event(sycl::queue&, const std::vector<sycl::event>&)`,
   host mode), with an `ExecutionMode` (`KERNEL` / `HOST`);
@@ -258,12 +353,16 @@ Builds and analyzes the task DAG.
 - `io_reads_` / `io_writes_` — the raw USM pointers, retained on **every** build
   so the scheduler can route a kernel to the queue whose context owns the data;
 - `SmallEventVector sycl_deps` — SYCL event dependencies with `STATIC_CAP = 8`
-  inline before spilling to a vector.
+  inline before spilling to a vector;
+- `bool is_fused` — marks the node as the product of kernel fusion; set by the
+  API layer, reserved for a future fusion pass;
+- `uint32_t offload_attempts_` (atomic, distributed builds only) — how many times
+  this node has been offered to a remote worker; capped to prevent infinite retry.
 
 `add_successor` is lock-free: it bumps an atomic index into the inline array, and
 only on overflow allocates a `SuccessorNode` and CAS-pushes it onto the list.
 
-### 7.2 `DependencyTracker` — lock-free hazard resolution
+### 8.2 `DependencyTracker` — lock-free hazard resolution
 
 This is the heart of "implicit dependencies." It keeps a **per-pointer access
 history** with no locks:
@@ -289,7 +388,7 @@ successor of `from`. The observable is `in_degree`: the count the scheduler must
 drive to zero before a node is runnable. The history nodes are reclaimed via EBR
 on `reset()`.
 
-### 7.3 `TaskGraph` and `compile()`
+### 8.3 `TaskGraph` and `compile()`
 
 `TaskGraph` is the public builder (Pimpl). `add_node` adds raw kernel work with
 optional read/write tracking; `add_task` adds a semantic task with metadata and
@@ -302,15 +401,16 @@ either a host-work body or a device body + host fallback.
 - moves all `Node`s into a `CompiledGraph { roots, sentinel, all_nodes }`, which
   *owns* every node (`sushi_ptr`) to keep them alive for the whole run — internal
   dependencies use raw `Node*`, so premature destruction would be use-after-free;
-- in Master mode, also **stamps** which nodes are offloadable (see §11).
+- in Master mode (distributed builds), also **stamps** which nodes are offloadable
+  and initializes `offload_attempts_`.
 
 ---
 
-## 8. Scheduler (`scheduler/`)
+## 9. Scheduler (`scheduler/`)
 
 Runs the ready tasks. A work-stealing scheduler with a persistent worker pool.
 
-### 8.1 `TaskScheduler`
+### 9.1 `TaskScheduler`
 
 - One **work-stealing `Deque`** per worker (`worker_queues[MAX_WORKER_THREADS]`).
   A worker pushes/pops its own deque LIFO and **steals** from others' deque ends
@@ -320,12 +420,13 @@ Runs the ready tasks. A work-stealing scheduler with a persistent worker pool.
   high-`priority` task can jump ahead of a backlog (the `PriorityBypass` tests).
 - Worker threads are **persistent**: `start()` spawns them once;
   `arm_for_execution()` re-arms the `running` flag for each new graph run without
-  recreating threads; `stop()` drains and joins. (This is the "no thread churn
-  between runs" design.)
+  recreating threads; `stop()` sets `shutdown_requested` (separate from `running`,
+  for clean drain) then joins. (This is the "no thread churn between runs" design.)
 - Completed-task counters are per-worker and `alignas(CACHE_LINE_SIZE)` to avoid
-  false sharing.
+  false sharing. `get_local_steal_count()` / `get_remote_steal_count()` expose the
+  steal split for telemetry and benchmarks.
 
-### 8.2 NUMA-aware hierarchical stealing
+### 9.2 NUMA-aware hierarchical stealing
 
 Built once at construction (`build_steal_topology`):
 
@@ -336,22 +437,36 @@ Built once at construction (`build_steal_topology`):
 
 `find_task_to_steal` walks `victim_order_` in order, so a thief exhausts cheap
 same-node victims before reaching across nodes. `local_steals_` / `remote_steals_`
-counters expose the split (asserted in the steal-locality benchmarks).
-`steal_victim_order()` is a test introspection hook.
+counters expose the split (asserted in the steal-locality and NUMA-effect
+benchmarks). `steal_victim_order()` is a test introspection hook.
 
-### 8.3 `EventPolling` — turning device completion into readiness
+### 9.3 `EventPolling` — turning device completion into readiness
 
 The CPU side can't block on every GPU kernel. After a worker submits a kernel it
 records the `sycl::event` in an `ActiveEventList` (`MAX_EVENTS = 256`, O(1)
 swap-remove). `poll_events` checks statuses with **adaptive backoff** (a
 `backoff_counter` up to `MAX_BACKOFF = 64`, yielding past 16) so an idle poller
-doesn't spin. When an event completes, `trigger_successors` does the core release
-step: for each successor, `in_degree.fetch_sub(1, acq_rel)`; the worker that
-drives it to zero `add_ref`s the successor and pushes it onto its local queue.
-This is the exact same readiness logic the distributed completion hook mimics for
-remote results.
+doesn't spin.
 
-### 8.4 `Task` / `RangeTask` — divisible work
+Two completion paths exist within an `ActiveEventList` entry:
+
+- **Async events** (`ready = false`): status is queried each poll cycle; once
+  complete, `trigger_successors` fires.
+- **Synchronous host work** (`ready = true`): the host task returned an empty
+  event. The entry is immediately eligible; `trigger_successors` fires on the next
+  poll tick without a status query.
+
+**AdaptiveCpp lazy-event drive.** AdaptiveCpp's DAG is driven lazily — a `wait()`
+is needed to flush submitted work. `stall_polls_` counts consecutive poll cycles
+where no event made progress. When `stall_polls_` reaches
+`STALL_DRIVE_THRESHOLD = 32`, the poller forces a blocking `wait()` on the oldest
+outstanding event to break the stall, then resets the counter.
+
+`set_completion_observer()` (distributed builds only) installs a per-node callback
+fired by `trigger_successors`; the `DistributedCoordinator` uses this to bump
+buffer versions and release remote successors in sync with local ones.
+
+### 9.4 `Task` / `RangeTask` — divisible work
 
 `Task` is the scheduler's unit of work (kernel/host modes, `get_priority`,
 `split`/`is_splittable`). `RangeTask` is the divisible primitive: an idle worker
@@ -359,7 +474,7 @@ that picks up a splittable task carves off half via an atomic compare-exchange o
 the start index (`split()`), down to a minimum grain of **1024** elements, and
 pushes the carved chunk back for another worker. `Node` itself is not splittable.
 
-### 8.5 `WorkloadCoordinator` — optional thermal/throttle rebalancing
+### 9.5 `WorkloadCoordinator` — optional thermal/throttle rebalancing
 
 A background thread (a ~5 ms heartbeat) that drives a swappable
 `IRebalanceStrategy` over an `ITelemetryProvider` + `ITaskMigrator` (both
@@ -371,7 +486,7 @@ replaceable at runtime (`set_strategy`).
 
 ---
 
-## 9. Execution (`execution/`)
+## 10. Execution (`execution/`)
 
 Ties hardware and graphs together.
 
@@ -379,7 +494,9 @@ Ties hardware and graphs together.
 
 The top-level owner (Pimpl, for a stable ABI; non-copyable, non-movable). It:
 
-- probes hardware and builds a `sycl::queue` per device;
+- probes hardware and builds a `sycl::queue` per deduplicated device;
+  `device_count()` returns the count after deduplication — AdaptiveCpp may
+  expose an extra OpenMP host device that is folded in;
 - hands out queues by index (`get_queue`), by NUMA node (`get_numa_local_queue`,
   round-robin within a node), or **by the pointer that data lives on**
   (`get_queue_for_ptr`);
@@ -388,8 +505,19 @@ The top-level owner (Pimpl, for a stable ABI; non-copyable, non-movable). It:
   queue**;
 - exposes `numa_distance` and `cpu_core_to_numa` (used by the scheduler's steal
   topology);
+- provides `wait_all()` — a global barrier across all queues, used in tests and
+  teardown;
 - owns the `ExecutionEngine` and tears everything down in the correct order on
   `shutdown()` / destruction.
+
+When built with `SR_ENABLE_DISTRIBUTED`, `RuntimeContext` also carries a
+`RuntimeRole` enum (`Standalone` / `Master` / `Worker`) and exposes methods for
+buffer registration (`register_distributed_buffer`, `bump_distributed_buffer`,
+`unregister_distributed_buffer`, `distributed_buffer`), role query
+(`distributed_role`, `distributed_supports`), and telemetry
+(`distributed_offloaded_count`, `distributed_declined_count`,
+`distributed_redispatched_count`, `distributed_alive_workers`,
+`distributed_set_liveness_timeout`). These are all zero-cost when the macro is off.
 
 **The cross-context invariant.** USM is pinned to the device/context it was
 allocated on. Running a kernel on a sibling device's queue (e.g. CPU USM on a
@@ -403,13 +531,23 @@ owns its data. Allocating through `RuntimeContext` (not bare
 `IExecutionEngine` is the "how to run a graph" strategy seam, separate from
 `TaskGraph` (builds the DAG) and `RuntimeContext` (owns resources), so alternative
 strategies (dry-run, profiling, replay) can be added without touching either.
+
+`IExecutionEngine` exposes two virtual members: `execute(CompiledGraph)` and
+`metrics()`. **`ExecutionMetrics`** is the return type of `metrics()`:
+- `local_steals`, `remote_steals` — steal counts since the last
+  `arm_for_execution` call;
+- `tasks_completed` — total nodes executed in the last run.
+
+`API::Graph::run_impl()` calls `metrics()` after `execute()` to populate the
+`RunReport` steal counters.
+
 The default `ExecutionEngine` owns one persistent `TaskScheduler`: `execute()`
 injects the compiled graph's roots, arms the scheduler, and blocks on the
 sentinel's completion promise; it never recreates threads.
 
 ---
 
-## 10. Concurrency & memory-ordering principles
+## 11. Concurrency & memory-ordering principles
 
 A few cross-cutting rules the codebase follows consistently:
 
@@ -428,7 +566,7 @@ A few cross-cutting rules the codebase follows consistently:
 
 ---
 
-## 11. Distributed (`distributed/`, optional)
+## 12. Distributed (`distributed/`, optional)
 
 Guarded entirely behind `SR_ENABLE_DISTRIBUTED` (CMake) / `SR_DISTRIBUTED`
 (macro). When off, none of it compiles — zero code, zero dependencies, zero ABI.
@@ -438,82 +576,118 @@ architectural essentials:
 - **The core constraint:** compiled code can't travel the wire. So nothing is
   serialized except *references*: a task ships its `OpID` (a kernel already
   compiled into every node) plus `BufferHandle`s (`GlobalBufferID` + `version` +
-  size). Closures and pointers never cross the network.
-- **`ITransport`** abstracts the wire with a tiny `[4B length][1B type][payload]`
-  frame. `InProcessTransport` runs the full multi-node protocol in one process
-  (the network analogue of `RemappingTopologyProvider`); `TcpTransport` is a
-  dependency-free raw-socket transport (POSIX + Winsock).
-- **`DistributedCoordinator`** (master) is the only distributed object the
+  `size_bytes`). Closures and pointers never cross the network.
+
+- **`protocol.hpp`** defines the wire format: a `[4B length][1B type][payload]`
+  frame. `MsgType` enum: `REGISTER_HELLO` / `ACK` / `TASK_DISPATCH` /
+  `BUFFER_REQUEST` / `BUFFER_PUSH` / `TASK_RESULT` / `HEARTBEAT` / `PING` /
+  `PONG`. `ByteWriter` and `ByteReader` are the serializer/deserializer pair used
+  by all message encode/decode paths.
+
+- **`ITransport`** abstracts the wire with `send` / `on_message` / `start` /
+  `stop` / `peer_count`. Two implementations:
+  - `InProcessFabric` — a shared switchboard that owns N endpoints for a
+    same-process multi-node simulation. Each `InProcessTransport` holds a reference
+    to the fabric and a `node_id`; the fabric routes between them. This is the
+    network analogue of `RemappingTopologyProvider` — the same substitution pattern
+    used in topology for deterministic multi-NUMA testing.
+  - `TcpTransport` — a dependency-free raw-socket transport (POSIX + Winsock) for
+    real clusters. Factory: `TcpTransport::make_master(port)` /
+    `TcpTransport::make_worker(host, port)`.
+
+- **`KernelRegistry`** maps `OpID` to `RemoteKernel` — the local function that
+  executes when a dispatched task arrives. Workers register their kernels on
+  startup; the master sends only the `OpID`.
+
+- **`BufferRegistry`** is the master-authoritative versioned buffer cache. A write
+  bumps the `version`, so stale worker caches re-pull. `GlobalBufferID` + `version`
+  is what crosses the wire; workers resolve handles to local USM.
+
+- **`WorkerStats`** (`i_offload_policy.hpp`) carries per-worker live state for the
+  offload policy: `worker_id`, `alive`, `inflight` tasks, `free_mem` bytes,
+  `rtt_micros` (round-trip time estimate).
+
+- **`DistributedCoordinator`** (master, Pimpl) is the only distributed object the
   scheduler touches: for each node `compile()` flagged offloadable, the dispatch
-  loop calls `try_offload()` behind a single `[[unlikely]]` branch. It serves a
-  **pull-based, master-authoritative, versioned** buffer cache (a write bumps the
-  version, so stale worker caches re-pull), and on `TASK_RESULT` invokes the
-  scheduler's completion hook — the network equivalent of `EventPolling` firing.
-  A liveness monitor (default 5 s) re-dispatches a dead worker's tasks to a
-  survivor or runs them locally.
-- **`WorkerAgent`** (worker) is a thin shell around a normal local
-  `RuntimeContext`: HELLO with its OpID set, run dispatched kernels through the
-  existing NUMA-aware scheduler, reply with results.
+  loop calls `try_offload()` behind a single `[[unlikely]]` branch. It serves the
+  versioned `BufferRegistry`, and on `TASK_RESULT` fires the
+  `set_completion_observer()` callback registered on `EventPolling`, so the
+  scheduler releases successors in the same path as local completion. A liveness
+  monitor (default 5 s, configurable) triggers a `ResubmitHook` on a dead worker
+  — re-injecting orphaned nodes into the scheduler for local or re-remote
+  execution. Telemetry: `offloaded_count()`, `declined_count()`,
+  `redispatched_count()`, `alive_worker_count()`.
+
+- **`WorkerAgent`** (worker, Pimpl) is a thin shell around a normal local
+  `RuntimeContext`: HELLO with its `OpID` set, run dispatched kernels through the
+  existing NUMA-aware scheduler, reply with results. `set_heartbeat_interval()`
+  sets the PING period (default 1 s; pass 0 to disable for unit tests).
+
 - **`IOffloadPolicy`** decides where (or whether) to offload. The default
   `LeastLoadedOffloadPolicy` ranks live workers by estimated completion cost
-  (RTT + transfer time + queue backlog), gates on free device memory, and keeps
-  payloads below `min_offload_bytes` (default 64 KiB) local. Declining is always
-  safe: the task runs locally.
+  (RTT + transfer time + queue backlog via `WorkerStats`), gates on free device
+  memory, and keeps payloads below `min_offload_bytes` (default 64 KiB) local.
+  Declining is always safe: the task runs locally.
 
 A declined or failed offload is a transparent local fallback — the standalone
 execution path is never compromised by the distributed layer being present.
 
 ---
 
-## 12. A request traced through every layer
+## 13. A request traced through every layer
 
 To make the layering concrete, here is one device task —
 `graph.add_task(meta, {A,B}, {C}, kernel)` — from build to completion:
 
-1. **graph/** — `add_task` creates a `Node`, stores the kernel and
+1. **api/** — if using the fluent API, `API::Graph::add()` wraps this into an
+   `add_task` call and records pre/post `ExecutionMetrics` timestamps for the
+   `RunReport`.
+2. **graph/** — `add_task` creates a `Node`, stores the kernel and
    `io_reads_={A,B}`, `io_writes_={C}`. `DependencyTracker::resolve` is called for
    A, B (reads) and C (write): each pointer hashes (SplitMix64) to one of 1024
    shards; the history there yields the prior writers/readers; edges are added by
    incrementing this node's `in_degree` and registering it as their successor.
-2. **graph/** — `compile()` finds this node is a root only if nothing wrote A/B/C
+3. **graph/** — `compile()` finds this node is a root only if nothing wrote A/B/C
    before it; links it toward the sentinel; moves it into `CompiledGraph`.
-3. **execution/** — `execute()` injects roots; the `ExecutionEngine` arms the
+4. **execution/** — `execute()` injects roots; the `ExecutionEngine` arms the
    `TaskScheduler`.
-4. **scheduler/** — once `in_degree == 0`, a worker pops the node. Because it is a
+5. **scheduler/** — once `in_degree == 0`, a worker pops the node. Because it is a
    KERNEL node, it is submitted on the queue that **owns** A/B/C (via the
    context's owner record), and the returned `sycl::event` is recorded in that
    worker's `ActiveEventList`.
-5. **scheduler/** — `EventPolling` notices the event complete, calls
-   `trigger_successors`: each successor's `in_degree` is decremented; whoever hits
-   zero pushes that successor onto its local deque. If a worker is idle, it
+6. **scheduler/** — `EventPolling` notices the event complete (or, on AdaptiveCpp,
+   hits `STALL_DRIVE_THRESHOLD = 32` and forces a `wait()` to drive the lazy DAG),
+   calls `trigger_successors`: each successor's `in_degree` is decremented; whoever
+   hits zero pushes that successor onto its local deque. If a worker is idle, it
    **steals** — preferring node-local victims via `victim_order_`.
-6. **scheduler/** — when the sentinel's predecessors all complete, the sentinel
-   fires and `ExecutionEngine::execute` unblocks. Memory retired during the run is
-   reclaimed by EBR once no thread is still in an older epoch.
+7. **scheduler/** — when the sentinel's predecessors all complete, the sentinel
+   fires and `ExecutionEngine::execute` unblocks. `metrics()` returns the steal
+   counts for `RunReport`. Memory retired during the run is reclaimed by EBR once
+   no thread is still in an older epoch.
 
 ---
 
-## 13. Build-time configuration
+## 14. Build-time configuration
 
 | CMake option | Default | Effect |
 |--------------|---------|--------|
-| `SR_SYCL_TOOLCHAIN` | adaptivecpp | SYCL toolchain: `adaptivecpp`, `llvm`, or `oneapi` |
+| `SR_SYCL_TOOLCHAIN` | intel-llvm | SYCL toolchain: `intel-llvm`, `adaptivecpp`, or `oneapi` |
 | `SR_CUDA_ARCH` | 61 | CUDA compute capability for the nvptx64 backend (e.g. 80, 86) |
 | `SR_ENABLE_CUDA` | OFF | SYCL CUDA backend (arch via `SR_CUDA_ARCH`) |
 | `SR_ENABLE_DISTRIBUTED` | OFF | compile the master-worker layer |
 | `SR_BUILD_BENCHMARKS` | ON | build the heavy `sr_benchmark_tests` binary |
 
 Three SYCL toolchains are supported, selected by `SR_SYCL_TOOLCHAIN`:
-**AdaptiveCpp** (`acpp`, primary, vendor-neutral), **Clang/LLVM** (`clang++
--fsycl`, vendor-neutral, used by the Docker image), and **Intel oneAPI DPC++**
-(`icpx`/`icx-cl`, secondary, for profiling). AdaptiveCpp and oneAPI both provide
-the `add_sycl_to_target` CMake helper, so the source list stays toolchain-neutral;
-on the bare-flag `llvm` path the helper is a no-op stub and `-fsycl` is applied
-globally.
+**intel-llvm** (`clang++ -fsycl` from the intel/llvm nightly bundle, primary,
+vendor-neutral, used by the Docker image), **AdaptiveCpp** (`acpp`, secondary,
+vendor-neutral), and **Intel oneAPI DPC++** (`icpx`/`icx-cl`, supported, for
+profiling). AdaptiveCpp and oneAPI both provide the `add_sycl_to_target` CMake
+helper, so the source list stays toolchain-neutral; on the `intel-llvm` path the
+helper is a no-op stub and `-fsycl` is applied globally.
 
 ---
 
-## 14. Invariants worth never breaking
+## 15. Invariants worth never breaking
 
 1. **Build → compile → execute** are distinct phases; the first two are not
    thread-safe relative to each other.
@@ -529,20 +703,24 @@ globally.
 
 ---
 
-## 15. Directory map
+## 16. Directory map
 
 ```
 include/SushiRuntime/      Public API (the headers this document describes)
-  core/        RefCounted, sushi_ptr, logger, common constants, OpID, export macro
+  api/         Runtime (fluent entry point), API::Graph, RunReport, Error, Errc
+  core/        RefCounted, sushi_ptr, logger, common constants, OpID, export macro,
+               Error/Result/RunReport, compat shims (bit, span, sycl_compat)
   topology/    HardwareDiscovery, NUMAMapper, ITopologyProvider/INumaDistanceModel,
                Hwloc + Remapping/Matrix substitutes, affinity
   memory/      USMAllocator + strategies, BitmaskMemoryPool + magazine, EpochManager
   graph/       TaskGraph, Node, DependencyTracker, task_types (OpID/TaskMetadata)
   scheduler/   TaskScheduler, Task/RangeTask, EventPolling, WorkloadCoordinator,
                rebalancer_interfaces, ThermalProxyStrategy
-  execution/   RuntimeContext, IExecutionEngine/ExecutionEngine, CompiledGraph
-  distributed/ (optional) protocol, transports, registries, coordinator, worker agent,
-               offload policy
+  execution/   RuntimeContext, IExecutionEngine/ExecutionEngine, CompiledGraph,
+               ExecutionMetrics
+  distributed/ (optional) protocol, ByteWriter/ByteReader, transports
+               (InProcessFabric/InProcessTransport, TcpTransport), KernelRegistry,
+               BufferRegistry, coordinator, worker agent, IOffloadPolicy, WorkerStats
 src/                       Implementations of the above
 tests/                     functional/ (unit, integration, regression) + benchmark/
 examples/                  distributed_demo (distributed builds only)
