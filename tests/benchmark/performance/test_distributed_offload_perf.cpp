@@ -22,7 +22,7 @@
 /**************************************************************************/
 
 // Throughput / per-task latency of the master->worker offload path, plus the
-// policy's load split across two workers. Built only with SUSHI_ENABLE_DISTRIBUTED.
+// policy's load split across two workers. Built only with SR_ENABLE_DISTRIBUTED.
 // Uses InProcessTransport so the software round trip (encode -> pull -> remote
 // kernel -> writeback -> release) is measured deterministically. Every task does
 // verified vector-add work, and each worker bumps its own counter so the load
@@ -32,12 +32,13 @@
 #include <chrono>
 #include <cstdio>
 #include <memory>
-#include <span>
+#include <SushiRuntime/core/span.hpp>
 #include <thread>
 #include <vector>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
@@ -63,8 +64,8 @@ namespace
     void register_vec_add(KernelRegistry& reg, int worker_idx)
     {
         reg.register_kernel(VEC_ADD,
-            [worker_idx](sycl::queue& q, std::span<void* const> ins,
-                         std::span<void* const> outs, const TaskMetadata& meta) -> sycl::event
+            [worker_idx](sycl::queue& q, SushiRuntime::span<void* const> ins,
+                         SushiRuntime::span<void* const> outs, const TaskMetadata& meta) -> sycl::event
             {
                 auto* a = static_cast<const float*>(ins[0]);
                 auto* b = static_cast<const float*>(ins[1]);
@@ -72,7 +73,7 @@ namespace
                 const size_t n = meta.get_param<uint64_t>(0);
                 return q.submit([&](sycl::handler& h)
                 {
-                    h.host_task([=]
+                    SushiRuntime::detail::enqueue_host_task(h, [=]
                     {
                         for (size_t i = 0; i < n; ++i)
                             o[i] = a[i] + b[i];
@@ -106,13 +107,13 @@ namespace
             }
         }
 
-        void free(sycl::queue& q)
+        void free(RuntimeContext& ctx)
         {
             for (size_t t = 0; t < TASKS; ++t)
             {
-                sycl::free(a[t], q);
-                sycl::free(b[t], q);
-                sycl::free(out[t], q);
+                ctx.free_usm(a[t]);
+                ctx.free_usm(b[t]);
+                ctx.free_usm(out[t]);
             }
         }
     };
@@ -138,7 +139,7 @@ namespace
                 {
                     return q.submit([&](sycl::handler& h)
                     {
-                        h.host_task([=]
+                        SushiRuntime::detail::enqueue_host_task(h, [=]
                         {
                             for (size_t i = 0; i < N; ++i)
                                 o[i] = a[i] + b[i];
@@ -204,7 +205,7 @@ TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
         Workload warm;
         warm.alloc(mq);
         master_ctx->get_execution_engine().execute(build_graph(*master_ctx, warm));
-        warm.free(mq);
+        warm.free(*master_ctx);
     }
 
     // Timed run.
@@ -250,7 +251,7 @@ TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
     EXPECT_GT(thr, 0.0);
     EXPECT_GT(offloaded, 0) << "Nothing was offloaded — the path was not exercised.";
 
-    work.free(mq);
+    work.free(*master_ctx);
     a0.stop();
     a1.stop();
 }

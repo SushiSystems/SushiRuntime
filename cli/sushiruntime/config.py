@@ -1,7 +1,7 @@
 """Layered configuration loading for the SushiRuntime CLI.
 
 Precedence (lowest to highest):
-    built-in defaults -> config.toml -> config.local.toml -> SUSHI_* env vars
+    built-in defaults -> config.toml -> config.local.toml -> SR_* env vars
 
 The active platform's ``[tool.<platform>]`` table is merged over the common
 ``[tool]`` table, so a single file describes both Linux and Windows.
@@ -44,19 +44,34 @@ def config_dir(root: Path | None = None) -> Path:
             return root / name
     return root / "cli"
 
-# Maps a Config field to the SUSHI_* env var that overrides it.
+# The SYCL toolchains a user can select. Must match SR_SYCL_TOOLCHAIN in
+# CMakeLists.txt: intel-llvm (primary), adaptivecpp (secondary), oneapi (supported).
+TOOLCHAINS = ("intel-llvm", "adaptivecpp", "oneapi")
+
+# Default compiler pair (cc, cxx) per toolchain. Used when the config does not
+# pin an explicit compiler, so `sr toolchain <name>` is enough to switch.
+TOOLCHAIN_COMPILERS = {
+    # (cc, cxx). acpp is C++-only, so the C slot uses a plain C compiler; the
+    # project builds CXX only, so cc is effectively unused but kept valid.
+    "adaptivecpp": ("gcc", "acpp"),
+    "intel-llvm": ("clang", "clang++"),
+    "oneapi": ("icx", "icpx"),
+}
+
+# Maps a Config field to the SR_* env var that overrides it.
 _ENV_OVERRIDES = {
-    "cc": "SUSHI_CC",
-    "cxx": "SUSHI_CXX",
-    "generator": "SUSHI_CMAKE_GENERATOR",
-    "vcpkg_root": "SUSHI_VCPKG_ROOT",
-    "oneapi_root": "SUSHI_ONEAPI_ROOT",
-    "vs_vcvars": "SUSHI_VCVARS",
-    "ninja_exe": "SUSHI_NINJA",
-    "icx_compiler": "SUSHI_ICX",
-    "pkgconf_exe": "SUSHI_PKGCONF",
-    "vcpkg_triplet": "SUSHI_VCPKG_TRIPLET",
-    "target_bin": "SUSHI_TARGET_BIN",
+    "toolchain": "SR_SYCL_TOOLCHAIN",
+    "cc": "SR_CC",
+    "cxx": "SR_CXX",
+    "generator": "SR_CMAKE_GENERATOR",
+    "vcpkg_root": "SR_VCPKG_ROOT",
+    "oneapi_root": "SR_ONEAPI_ROOT",
+    "vs_vcvars": "SR_VCVARS",
+    "ninja_exe": "SR_NINJA",
+    "icx_compiler": "SR_ICX",
+    "pkgconf_exe": "SR_PKGCONF",
+    "vcpkg_triplet": "SR_VCPKG_TRIPLET",
+    "target_bin": "SR_TARGET_BIN",
 }
 
 
@@ -64,9 +79,13 @@ _ENV_OVERRIDES = {
 class Config:
     """Resolved, platform-specific tool configuration."""
 
-    # Compilers / build
-    cc: str = "icx"
-    cxx: str = "icpx"
+    # SYCL toolchain selection (intel-llvm | adaptivecpp | oneapi). Persisted by
+    # `sr toolchain` and consumed as -DSR_SYCL_TOOLCHAIN at configure time.
+    toolchain: str = "intel-llvm"
+
+    # Compilers / build. Empty cc/cxx means "derive from the toolchain".
+    cc: str = ""
+    cxx: str = ""
     generator: str = "Ninja"
     use_vcpkg: bool = False
 
@@ -92,6 +111,16 @@ class Config:
     def expand(self, value: str) -> str:
         """Expand ~ and env vars in a path-like config value."""
         return os.path.expandvars(os.path.expanduser(value)) if value else value
+
+    def resolved_compilers(self) -> tuple[str, str]:
+        """Return (cc, cxx), deriving them from the toolchain when not pinned.
+
+        An explicit cc/cxx in the config always wins; otherwise the pair is
+        taken from TOOLCHAIN_COMPILERS so selecting a toolchain is sufficient.
+        """
+        default_cc, default_cxx = TOOLCHAIN_COMPILERS.get(
+            self.toolchain, TOOLCHAIN_COMPILERS["intel-llvm"])
+        return (self.cc or default_cc, self.cxx or default_cxx)
 
 
 def _read_toml(path: Path) -> dict:
@@ -134,4 +163,49 @@ def load_config() -> Config:
     known = {f.name for f in fields(Config)}
     cfg = Config(**{k: v for k, v in values.items() if k in known})
     cfg.platform = plat
+    # Guard against a stale/typo'd toolchain leaking through from config or env.
+    if cfg.toolchain not in TOOLCHAINS:
+        cfg.toolchain = "intel-llvm"
     return cfg
+
+
+def set_toolchain(toolchain: str) -> Path:
+    """Persist the selected SYCL toolchain into config.local.toml.
+
+    Writes a top-level ``[tool] toolchain = "..."`` key, preserving any existing
+    ``[tool.<platform>]`` tables written by `sr setup configure`. Returns the
+    path that was written.
+    """
+    if toolchain not in TOOLCHAINS:
+        raise ValueError(f"Unknown toolchain '{toolchain}'. Choose one of {', '.join(TOOLCHAINS)}.")
+
+    target = config_dir() / "config.local.toml"
+    doc = _read_toml(target)
+    tool = dict(doc.get("tool", {}))
+    tool["toolchain"] = toolchain
+
+    scalars = {k: v for k, v in tool.items() if not isinstance(v, dict)}
+    tables = {k: v for k, v in tool.items() if isinstance(v, dict)}
+
+    lines = [
+        "# Managed by the SushiRuntime CLI. `sr toolchain` writes the toolchain key;",
+        "# `sr setup configure` writes the [tool.<platform>] tool paths.",
+        "",
+        "[tool]",
+    ]
+    for key in sorted(scalars):
+        val = scalars[key]
+        if isinstance(val, bool):
+            lines.append(f"{key} = {'true' if val else 'false'}")
+        else:
+            lines.append(f'{key} = "{val}"')
+    for tname in sorted(tables):
+        lines.append("")
+        lines.append(f"[tool.{tname}]")
+        for key in sorted(tables[tname]):
+            val = str(tables[tname][key]).replace("\\", "/")
+            lines.append(f'{key} = "{val}"')
+    lines.append("")
+
+    target.write_text("\n".join(lines), encoding="utf-8")
+    return target

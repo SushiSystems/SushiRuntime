@@ -31,8 +31,14 @@ namespace SushiRuntime
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
+            // Re-registering a live pointer means the USM address was handed back
+            // out (allocator reuse): keep the stable id but bump the version so any
+            // worker caching the old bytes treats its copy as stale.
             if (auto it = by_ptr_.find(usm_ptr); it != by_ptr_.end())
+            {
+                ++it->second.version;
                 return it->second;
+            }
 
             BufferHandle h;
             h.id.value    = next_id_++;
@@ -49,6 +55,16 @@ namespace SushiRuntime
             std::lock_guard<std::mutex> lock(mutex_);
             if (auto it = by_ptr_.find(usm_ptr); it != by_ptr_.end())
                 ++it->second.version;
+        }
+
+        void BufferRegistry::unregister_buffer(void* usm_ptr)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (auto it = by_ptr_.find(usm_ptr); it != by_ptr_.end())
+            {
+                ptr_by_id_.erase(it->second.id.value);
+                by_ptr_.erase(it);
+            }
         }
 
         std::optional<BufferHandle> BufferRegistry::lookup(void* usm_ptr) const

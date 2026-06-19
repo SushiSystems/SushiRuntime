@@ -28,9 +28,9 @@
 
 #include <vector>
 #include <thread>
-#include <barrier>
 #include <unordered_set>
 #include <gtest/gtest.h>
+#include "test_barrier.hpp"
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 
@@ -159,8 +159,8 @@ TEST(Unit_USMAllocatorTest, CrossThreadFreeIsReclaimed)
     std::vector<void*> wave1(N, nullptr);
     std::vector<void*> wave2(N, nullptr);
 
-    std::barrier allocated(2);   // wave 1 done -> consumer may free
-    std::barrier freed(2);       // consumer done -> producer may re-allocate
+    SushiRuntime::Test::Barrier allocated(2);   // wave 1 done -> consumer may free
+    SushiRuntime::Test::Barrier freed(2);       // consumer done -> producer may re-allocate
 
     std::thread producer([&]
     {

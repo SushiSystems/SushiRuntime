@@ -80,9 +80,13 @@ namespace SushiRuntime
                         if (ancestor) 
                         {
                             node.numa_node_id = ancestor->os_index;
-                            SR_LOG_INFO("Device [{}] (PCI {:02x}:{:02x}.{:x}) is hard-bound to NUMA node {}", 
-                                        node.name, node.pci_address.bus, node.pci_address.device, 
-                                        node.pci_address.function, node.numa_node_id);
+                            char pci_str[24];
+                            std::snprintf(pci_str, sizeof(pci_str), "%02x:%02x.%x",
+                                          static_cast<unsigned>(node.pci_address.bus),
+                                          static_cast<unsigned>(node.pci_address.device),
+                                          static_cast<unsigned>(node.pci_address.function));
+                            SR_LOG_INFO("Device [{}] (PCI {}) is hard-bound to NUMA node {}",
+                                        node.name, pci_str, node.numa_node_id);
                         } 
                         else
                         {

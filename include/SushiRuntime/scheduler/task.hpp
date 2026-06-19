@@ -129,8 +129,9 @@ namespace SushiRuntime
 
             public:
                 /** @brief Creates a new range task. */
-                RangeTask(size_t start, size_t end, auto func, const char* name = "range_task") 
-                    : Task(name), start_(start), end_(end), kernel_func_(func) {}
+                template <typename Func>
+                RangeTask(size_t start, size_t end, Func func, const char* name = "range_task")
+                    : Task(name), start_(start), end_(end), kernel_func_(std::move(func)) {}
 
                 /** @brief Executes the task for the current valid range. */
                 void execute(sycl::handler& h) override 

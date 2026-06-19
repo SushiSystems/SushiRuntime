@@ -1,6 +1,6 @@
 # SushiRuntime
 
-SushiRuntime is a C++20 runtime library for task-based parallel computing on heterogeneous hardware. You describe your work as a graph of tasks, declare which memory each task reads and writes, and the runtime figures out a safe execution order, then runs the independent parts in parallel across CPU and GPU devices using SYCL.
+SushiRuntime is a C++17 runtime library for task-based parallel computing on heterogeneous hardware. You describe your work as a graph of tasks, declare which memory each task reads and writes, and the runtime figures out a safe execution order, then runs the independent parts in parallel across CPU and GPU devices using SYCL.
 
 It is built around three ideas:
 
@@ -11,13 +11,20 @@ It is built around three ideas:
 
 ## Requirements
 
-- A SYCL compiler. Two toolchains are supported:
-  - **Intel oneAPI DPC++** (`icpx` on Linux, `icx-cl` on Windows), or
-  - an **intel/llvm** open-source build (`clang++ -fsycl`), which is what the Docker image uses.
+- A SYCL 2020 compiler. Three toolchains are supported, selected with
+  `SR_SYCL_TOOLCHAIN` (or `sr toolchain`):
+  - **intel-llvm** (`clang++ -fsycl` from the intel/llvm nightly bundle) — the
+    primary, vendor-neutral toolchain. Recommended; what the Docker image uses.
+  - **AdaptiveCpp** (`acpp`) — secondary, vendor-neutral.
+  - **Intel oneAPI DPC++** (`icpx` on Linux, `icx-cl` on Windows) — supported,
+    kept for Intel profiling tools (VTune/Advisor).
 - **CMake** 3.20 or newer.
 - **hwloc** (hardware locality library) for topology discovery.
 - **GoogleTest** for the test suite.
-- A C++20 standard library (the code uses `<format>`, `<source_location>`, `<bit>`, `<concepts>`, etc.).
+- A C++17 standard library. The codebase targets C++17 and ships its own shims
+  for `<bit>`, `<span>`, `std::expected`-style results, and portable SYCL
+  `host_task` invocation; on a C++20/23 toolchain these thin out to standard
+  aliases.
 
 On Windows, dependencies are resolved through **vcpkg**. On Linux they can come from the system package manager or vcpkg.
 
@@ -95,41 +102,79 @@ pipx install ./cli                    # or: pip install ./cli  inside a venv/con
 
 Either way you get two equivalent commands on your PATH: **`sr`** (short) and **`sushiruntime`** (long). Toolchain paths are read from `cli/config.toml` (committed, shared defaults). Machine-specific absolute paths (oneAPI/VS roots, vcpkg, compiler locations) go in a gitignored `cli/config.local.toml` using the same `[tool.<platform>]` section layout — copy the commented Windows block from `config.toml` as a starting point.
 
-Then build:
+Pick which SYCL toolchain to build with (persisted to `cli/config.local.toml`):
 
 ```bash
-sr project build                  # release (default)
-sr project build --type asan      # isolated build-asan tree, CUDA off
-sr project build --distributed    # enable the master-worker layer
+sr toolchain                  # list choices, show the active one
+sr toolchain intel-llvm       # clang++ -fsycl (intel/llvm nightly) — primary (default)
+sr toolchain adaptivecpp      # AdaptiveCpp (acpp) — secondary, vendor-neutral
+sr toolchain oneapi           # Intel oneAPI (icpx/icx-cl) — supported, profiling
 ```
 
-Add `--clean` to wipe the build tree first. To uninstall: `pipx uninstall sushiruntime-cli`.
+The selection flows to CMake as `-DSR_SYCL_TOOLCHAIN`, and the build derives the
+matching compiler unless you pin one in config. Then build:
+
+```bash
+sr project build                      # release (default)
+sr project build --type debug         # debug build
+sr project build --type relwithdebinfo
+sr project build --type asan          # isolated build-asan tree, CUDA off
+sr project build --distributed        # enable the master-worker layer
+sr project build --no-cuda            # disable CUDA backend (Linux)
+sr project build --no-test            # skip compiling the test suite
+sr project build --force              # fall back to clang++/clang when the
+                                      # selected toolchain compiler is missing
+```
+
+Add `--clean` to wipe the build tree first. `sr project clean` removes both
+`build/` and `build-asan/` trees entirely. To uninstall: `pipx uninstall sushiruntime-cli`.
 
 ### Building with CMake directly
 
 If you prefer to skip the wrapper:
 
 ```bash
+# intel-llvm (primary). A SYCL-enabled clang++ is picked up automatically.
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_CXX_COMPILER=icpx \
-  -DCMAKE_C_COMPILER=icx
+  -DSR_SYCL_TOOLCHAIN=intel-llvm
 cmake --build build --config Release
 ```
 
-On Windows, also pass the vcpkg toolchain file and the `icx-cl` compiler. The `CMakeLists.txt` will try to auto-detect a vcpkg install at `C:/vcpkg` and Intel oneAPI under `C:/Program Files (x86)/Intel/oneAPI` if you don't override them.
+Use a CMake preset to switch toolchains: `cmake --preset intel-llvm` (`clang++
+-fsycl`), `--preset adaptivecpp`, or `--preset oneapi` (run the oneAPI `setvars`
+first).
+On Windows, vcpkg is discovered from the `VCPKG_ROOT` environment variable
+(falling back to `C:/vcpkg` only if it exists); the oneAPI compiler is resolved
+from `CMPLR_ROOT` — no paths are hardcoded.
 
-To target NVIDIA GPUs through SYCL's CUDA backend, configure with `-DSUSHI_ENABLE_CUDA=ON` (currently tuned for Pascal / `sm_61`).
+To target NVIDIA GPUs through SYCL's CUDA backend, configure with
+`-DSR_ENABLE_CUDA=ON`. The architecture is configurable via `-DSR_CUDA_ARCH=<cc>`
+(default `61` for Pascal; e.g. `86` for Ampere).
 
-To build the optional distributed master-worker layer, configure with `-DSUSHI_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr project build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
+To build the optional distributed master-worker layer, configure with `-DSR_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr project build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
 
 ### Docker
 
-A `Dockerfile` based on `nvidia/cuda` (Ubuntu 22.04) with a pre-built **intel/llvm** nightly SYCL toolchain is provided, so you can build and run — including the CUDA backend — without installing a toolchain locally. It also installs the Intel OpenCL CPU runtime so the host CPU shows up as a SYCL device. For GPU passthrough you need the NVIDIA Container Toolkit.
+A `Dockerfile` based on `nvidia/cuda` (Ubuntu 22.04) with a pre-built **intel/llvm** nightly SYCL bundle is provided, so you can build and run — including the CUDA backend — without installing a toolchain locally. The image ships the `intel-llvm` (primary) and `adaptivecpp` toolchains; the `intel-llvm` path is the tested default (`sr toolchain intel-llvm`). It also installs the Intel OpenCL CPU runtime so the host CPU shows up as a SYCL device. For GPU passthrough you need the NVIDIA Container Toolkit.
 
 ```bash
 sr docker build
-sr docker run            # add --admin for --privileged (profiling)
+sr docker build --oneapi    # also install the Intel oneAPI DPC++ compiler (icpx; several GB)
+sr docker build --no-cache  # rebuild every layer from scratch
+sr docker run               # add --admin for --privileged (profiling)
+sr docker run --no-gpu      # omit --gpus all (headless / CI environments)
+```
+
+The `oneapi` toolchain is opt-in because `icpx` is large: build with `--oneapi`, then `sr toolchain oneapi && sr project build` works inside the container (the CLI sources oneAPI's `setvars.sh` automatically).
+
+### Other CLI commands
+
+```bash
+sr config show         # print resolved config with per-field source annotation
+sr env dump            # print the environment cmake/ctest/run subprocesses see
+sr env dump --asan     # same for the build-asan/ tree
+sr project doxygen     # generate Doxygen HTML docs (requires Doxyfile at repo root)
 ```
 
 ## Running the tests
@@ -137,39 +182,84 @@ sr docker run            # add --admin for --privileged (profiling)
 The test suite is split into two binaries:
 
 - `sr_functional_tests` — fast, deterministic unit, regression, and integration tests. Run these on every change.
-- `sr_benchmark_tests` — heavier stress and performance tests (large task graphs, allocator latency probes). Built by default; the CI fast lane turns it off with `-DSUSHI_BUILD_BENCHMARKS=OFF`.
+- `sr_benchmark_tests` — heavier stress and performance tests (large task graphs, allocator latency probes). Built by default; the CI fast lane turns it off with `-DSR_BUILD_BENCHMARKS=OFF`.
 
 Run them through the CLI or with `ctest`:
 
 ```bash
-# via CLI
-sr project test --suite functional
-sr project test --suite benchmark
+# via CLI — umbrella suites
+sr project test --suite functional           # unit + integration + regression
+sr project test --suite benchmark            # stress + performance
 sr project test --suite all
-sr project test --suite functional --filter 'Steal.*'   # ctest -R over test names
 
-# or run a binary directly (default target from config)
+# fine-grained suite labels (subset of functional or benchmark)
+sr project test --suite unit
+sr project test --suite integration
+sr project test --suite regression
+sr project test --suite stress
+sr project test --suite performance
+
+sr project test --suite functional --filter 'Steal.*'   # ctest -R over test names
+sr project test --suite functional --asan    # run against the build-asan/ tree
+sr project test --suite functional --repeat 5  # re-run until first failure (flaky hunt)
+
+# or run a binary directly
 sr project run sr_functional_tests
+sr project run sr_benchmark_tests -- --gtest_filter='AllocatorBench.*'
+sr project run --sort                        # pick an executable interactively
+sr project run sr_functional_tests --asan    # run from build-asan/, with ASAN env set
 
 # via ctest, by label
 ctest --test-dir build -L functional
 ctest --test-dir build -L benchmark
+ctest --test-dir build -L unit
+ctest --test-dir build -L integration
+ctest --test-dir build -L regression
 ```
-
-You can forward GoogleTest flags to a binary after `--`, e.g. `sr project run sr_benchmark_tests -- --gtest_filter='AllocatorBench.*'`.
 
 ### Continuous integration
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the functional suite on every push/PR and the benchmark suite on a nightly schedule, both on Ubuntu inside the `intel/oneapi-basekit` image (the Intel oneAPI DPC++ `icx`/`icpx` toolchain). The local Docker image (`Dockerfile`) instead uses an intel/llvm open-source build — both SYCL toolchains are supported.
+GitHub Actions (`.github/workflows/ci.yml`) runs the functional suite on every push/PR and the benchmark suite on a nightly schedule, both on Ubuntu inside the `intel/oneapi-basekit` image (the Intel oneAPI DPC++ `icx`/`icpx` toolchain). The local Docker image (`Dockerfile`) uses the `intel-llvm` toolchain (intel/llvm nightly bundle), the project's primary path for host development. AdaptiveCpp is the secondary toolchain. All three are supported.
 
 ## How it works
 
 A typical flow looks like this:
 
-1. Create a `RuntimeContext`. It probes the hardware, builds SYCL queues per device, sets up USM allocators, and starts the worker pool.
-2. Create a `TaskGraph` and add tasks. Each task declares its read and write pointers.
-3. Call `graph.compile()`. This resolves dependencies and produces a `CompiledGraph`.
-4. Hand the compiled graph to the execution engine, which runs it and blocks until completion.
+1. Create a `Runtime` (or a raw `RuntimeContext`). It probes hardware, builds SYCL queues per device, sets up USM allocators, and starts the worker pool.
+2. Add tasks to a graph. Each task declares the memory it reads and writes.
+3. Run the graph. Dependencies are resolved automatically; the runtime executes independent tasks in parallel.
+
+### Fluent API (`api/`)
+
+The `api/` layer is the intended entry point. `Runtime::create()` owns the
+context; `API::Graph::add()` adds work; `run()` compiles, executes, and returns a
+`RunReport` with timing and steal statistics. `try_run()` is the non-throwing
+alternative.
+
+```cpp
+#include <SushiRuntime/api/runtime.hpp>
+
+using namespace SushiRuntime;
+
+auto rt = Runtime::create();
+auto g  = rt.graph();
+
+int data = 0;
+void* ptr = &data;
+
+g.add(ptr, [&](std::size_t) { data = 42; });  // writer
+g.add(ptr, [&](std::size_t) { /* use data */ }); // reader — auto-ordered after writer
+
+auto report = g.run();   // throws SushiException on error
+// or: auto result = g.try_run();  // returns Result<RunReport, Error>
+
+// report.total_tasks_executed, report.total_duration_ms,
+// report.numa_statistics[i].intra_node_steals, etc.
+```
+
+### Low-level API
+
+The lower layers are available directly when you need full control:
 
 ```cpp
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -179,14 +269,12 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
 
-RuntimeContext ctx;          // discovers hardware, starts workers
+RuntimeContext ctx;
 TaskGraph graph(ctx);
 
 int data = 0;
 void* ptr = &data;
 
-// Writer runs first; the reader is automatically ordered after it
-// because they touch the same pointer (read-after-write hazard).
 graph.add_task(TaskMetadata{"writer"}, /*reads*/{}, /*writes*/{ptr},
     [&](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event {
         data = 42; return {};
@@ -207,11 +295,25 @@ Tasks come in two flavors: **kernel** tasks that submit work through a `sycl::ha
 
 The code is organized into layers under `include/SushiRuntime/` and `src/`.
 
+### Public API (`api/`)
+The fluent entry point that most users should start from:
+- `Runtime` — static `create()` factory; owns the `RuntimeContext` and exposes
+  `graph()` and `context()`.
+- `API::Graph` — chainable builder; `add()` / `run()` / `try_run()`.
+- `RunReport` — timing and steal statistics returned after each run.
+- `Errc` / `Error` / `SushiException` — the error type hierarchy. `run()`
+  throws; `try_run()` returns `Result<RunReport, Error>` without throwing.
+
 ### Core (`core/`)
 Foundational utilities used everywhere:
 - `RefCounted` + `sushi_ptr` — intrusive, atomic reference counting and a matching smart pointer. Cheaper than `shared_ptr` because the count lives inside the object.
 - `logger` — an async, thread-safe logger (`SR_LOG_INFO`, `SR_LOG_ERROR`, etc.) with a synchronous mode for tests. Log level is compile-time gated.
 - `common` — shared constants (cache line size, max workers, default alignment) and the `Backend` enum (SYCL, CUDA, HOST).
+- `error` / `result` / `run_report` — `Errc`, `Error`, `SushiException`,
+  `Result<T,E>`, and `RunReport` (see above; promoted into `SushiRuntime` namespace).
+- Compatibility shims — `bit.hpp` (`popcount_u64`, `countr_zero_u64`), `span.hpp`
+  (`SushiRuntime::span<T>`), `sycl_compat.hpp` (portable `host_task` invocation):
+  C++17 stand-ins that alias standard facilities on C++20/23.
 - `export` — the `SUSHIRUNTIME_API` macro for shared-library symbol visibility.
 
 ### Topology (`topology/`)
@@ -249,7 +351,7 @@ Ties hardware and graphs together:
 - `RuntimeContext` — the top-level owner. Holds devices, queues, USM allocators, and the execution engine. Uses the Pimpl pattern for a stable ABI. Gives you queues by index or by NUMA node, and tears everything down in the right order on shutdown.
 - `IExecutionEngine` / `ExecutionEngine` — the execution strategy. The default engine drives a persistent `TaskScheduler`: it injects the graph's root nodes, runs until a sentinel completion node fires, and blocks until the whole graph is done. The interface makes it possible to plug in alternative strategies (dry-run, profiling, replay) without touching `TaskGraph` or `RuntimeContext`.
 
-### Distributed (`distributed/`, optional — `SUSHI_ENABLE_DISTRIBUTED`)
+### Distributed (`distributed/`, optional — `SR_ENABLE_DISTRIBUTED`)
 An opt-in master-worker layer that offloads individual tasks to remote workers. It is guarded so a standalone build compiles none of it.
 - The key idea: **compiled code can't travel the wire**, so nothing is serialized except references. A task ships its `OpID` (a kernel already compiled into every node) plus `GlobalBufferID`+version handles; each worker resolves those to its own local USM. Closures and pointers never cross the network.
 - `ITransport` abstracts the wire: `InProcessTransport` runs the full multi-node protocol on a single machine (the network analogue of `RemappingTopologyProvider`), and `TcpTransport` is a dependency-free raw-socket transport (POSIX + Winsock) for a real cluster.
@@ -262,13 +364,18 @@ See [Distributed execution](#distributed-execution-optional) for how to run it.
 
 ```
 include/SushiRuntime/   Public headers (this is the API surface)
-  core/                 Ref counting, smart pointer, logger, constants
-  topology/             Hardware discovery, NUMA mapping, thread affinity, injectable topology/distance providers
+  api/                  Fluent entry point: Runtime, API::Graph, RunReport, Error, Errc
+  core/                 Ref counting, smart pointer, logger, constants,
+                        error/result/run_report types, compat shims (bit, span, sycl_compat)
+  topology/             Hardware discovery, NUMA mapping, thread affinity,
+                        injectable topology/distance providers
   memory/               USM allocator, memory pool, epoch reclamation
   graph/                Task graph, nodes, dependency tracker, task types
   scheduler/            Work-stealing scheduler, tasks, event polling, rebalancer
-  execution/            Runtime context, execution engine
-  distributed/          Optional master-worker offload (protocol, transports, registries, coordinator, worker agent)
+  execution/            Runtime context, execution engine, ExecutionMetrics
+  distributed/          Optional master-worker offload (protocol, ByteWriter/ByteReader,
+                        transports, KernelRegistry, BufferRegistry, coordinator, worker agent,
+                        IOffloadPolicy, WorkerStats)
 src/                    Implementations of the above
 examples/               Sample apps (distributed master/worker demo; distributed builds only)
 tests/
@@ -278,12 +385,12 @@ tests/
 cli/                    Python `sr` / `sushiruntime` CLI package (Typer + rich)
 .github/workflows/      CI: functional tests per push, benchmarks nightly
 docs/                   Changelog, TODO, and guides
-Dockerfile              CUDA + intel/llvm SYCL build environment
+Dockerfile              CUDA + Clang/LLVM SYCL build environment
 ```
 
 ## Distributed execution (optional)
 
-A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSUSHI_ENABLE_DISTRIBUTED=ON` / `sr project build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design.
+A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSR_ENABLE_DISTRIBUTED=ON` / `sr project build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design.
 
 The same binary runs in either role; the `sr` CLI forwards `--distributed=master|worker` to your application's `main()`, which constructs the `RuntimeContext` accordingly. A runnable demo (`examples/distributed_demo.cpp` → `sr_distributed_demo`) offloads a vector-add across one or more workers:
 

@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
@@ -35,7 +36,7 @@ namespace SushiRuntime
         struct Node;
     }
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
     namespace Scheduler { class TaskScheduler; }
 #endif
 
@@ -50,7 +51,7 @@ namespace SushiRuntime
          * resolved root nodes and the sentinel node that signals graph completion.
          * The ExecutionEngine consumes it; TaskGraph only produces it.
          */
-struct CompiledGraph
+        struct CompiledGraph
         {
             /** @brief Nodes with no pending incoming dependencies (DAG entry points). */
             std::vector<SushiRuntime::Graph::Node*> roots;
@@ -62,6 +63,21 @@ struct CompiledGraph
              * This prevents Use-After-Free bugs since internal dependencies rely on raw pointers.
              */
             std::vector<sushi_ptr<SushiRuntime::Graph::Node>> all_nodes;
+        };
+
+        /**
+         * @brief Cumulative scheduler counters, snapshotted to report a run.
+         *
+         * Counts are lifetime totals of the persistent scheduler; callers take
+         * a before/after difference to attribute a single run. Steal counts split
+         * by NUMA distance (node-local vs cross-node), which the fluent RunReport
+         * surfaces as intra/inter-NUMA steals.
+         */
+        struct ExecutionMetrics
+        {
+            std::size_t local_steals = 0;       /**< Successful steals from a node-local victim. */
+            std::size_t remote_steals = 0;      /**< Successful steals that crossed NUMA nodes. */
+            std::size_t tasks_completed = 0;    /**< Tasks completed across all workers. */
         };
 
         /**
@@ -79,10 +95,21 @@ struct CompiledGraph
             virtual ~IExecutionEngine() = default;
 
             /**
+             * @brief Cumulative scheduler counters for this engine.
+             *
+             * Default returns zeros so non-instrumented engines and test doubles
+             * need not implement it. The work-stealing engine overrides it.
+             *
+             * @return Lifetime totals; diff two snapshots to measure one run.
+             */
+            virtual ExecutionMetrics metrics() const { return {}; }
+
+            /**
              * @brief Submits a compiled graph for execution and blocks until completion.
              *
              * @param graph The pre-compiled graph produced by TaskGraph::compile().
-             * @return sycl::event Event signalling that the entire graph has finished.
+             * @return sycl::event Currently always sycl::event{}. Do not chain SYCL
+             *         dependencies on this value.
              */
             virtual sycl::event execute(CompiledGraph graph) = 0;
 
@@ -133,9 +160,14 @@ struct CompiledGraph
              * completion promise. Does NOT recreate any threads.
              *
              * @param graph Compiled graph to execute.
-             * @return sycl::event The hardware event from the sentinel node.
+             * @return sycl::event Always sycl::event{} — the sentinel runs inline
+             *         (not via a SYCL submission) so there is no hardware event to
+             *         return. Do not chain SYCL dependencies on this value.
              */
             sycl::event execute(CompiledGraph graph) override;
+
+            /** @brief Reads the live work-stealing counters from the scheduler. */
+            ExecutionMetrics metrics() const override;
 
             /**
              * @brief Drains inflight work and stops the worker pool.
@@ -144,7 +176,7 @@ struct CompiledGraph
              */
             void shutdown() override;
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
             /** @brief Access to the persistent scheduler, so Master mode can attach the coordinator. */
             SushiRuntime::Scheduler::TaskScheduler& scheduler_ref();
 #endif

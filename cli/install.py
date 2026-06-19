@@ -7,8 +7,7 @@ Usage:
     python cli/install.py --uninstall
 
 Strategy:
-  * Windows -> pipx (isolated, puts `sr` on PATH; pipx is bootstrapped if absent).
-  * Linux/macOS -> pip into the current interpreter (matches a conda/venv workflow).
+  * All platforms -> pipx (isolated, puts `sr` on PATH; pipx is bootstrapped if absent).
 
 The CLI package directory is located automatically (the folder holding
 pyproject.toml), so renaming the `cli/` folder later does not break this script.
@@ -17,7 +16,6 @@ pyproject.toml), so renaming the `cli/` folder later does not break this script.
 from __future__ import annotations
 
 import argparse
-import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -57,37 +55,25 @@ def ensure_pipx() -> str:
 
 def install(editable: bool) -> int:
 	pkg_dir = find_package_dir()
-	is_windows = platform.system().lower() == "windows"
 
-	if is_windows:
-		pipx = ensure_pipx().split()
-		cmd = [*pipx, "install", "--force", str(pkg_dir)]
-		if editable:
-			cmd.insert(cmd.index("install") + 1, "--editable")
-		rc = run(cmd)
-	else:
-		cmd = [sys.executable, "-m", "pip", "install", "--upgrade"]
-		if editable:
-			cmd.append("--editable")
-		cmd.append(str(pkg_dir))
-		rc = run(cmd)
+	pipx = ensure_pipx().split()
+	cmd = [*pipx, "install", "--force", str(pkg_dir)]
+	if editable:
+		cmd.insert(cmd.index("install") + 1, "--editable")
+	rc = run(cmd)
 
 	if rc == 0:
 		print("\n[SUCCESS] CLI installed. Try:  sr --help   (or: sushiruntime --help)")
-		if is_windows:
-			print("[NOTE] If `sr` is not found, open a new terminal "
-			      "(pipx may have just added it to PATH).")
+		print("[NOTE] If `sr` is not found, open a new terminal "
+		      "(pipx may have just added it to PATH).")
 	else:
 		print("\n[ERROR] Installation failed.")
 	return rc
 
 
 def uninstall() -> int:
-	is_windows = platform.system().lower() == "windows"
-	if is_windows:
-		pipx = ensure_pipx().split()
-		return run([*pipx, "uninstall", PACKAGE_NAME])
-	return run([sys.executable, "-m", "pip", "uninstall", "-y", PACKAGE_NAME])
+	pipx = ensure_pipx().split()
+	return run([*pipx, "uninstall", PACKAGE_NAME])
 
 
 def main() -> None:

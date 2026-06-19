@@ -45,8 +45,8 @@ the policy opts into, not the rule.
 
 ## 3. Building with the distributed layer
 
-It is guarded by the CMake option `SUSHI_ENABLE_DISTRIBUTED` (default **OFF**),
-which defines the `SUSHI_DISTRIBUTED` macro. Turn it on via the CLI:
+It is guarded by the CMake option `SR_ENABLE_DISTRIBUTED` (default **OFF**),
+which defines the `SR_DISTRIBUTED` macro. Turn it on via the CLI:
 
 ```bash
 sr project build --distributed
@@ -55,7 +55,7 @@ sr project build --distributed
 or with CMake directly:
 
 ```bash
-cmake -B build -G Ninja -DSUSHI_ENABLE_DISTRIBUTED=ON ...
+cmake -B build -G Ninja -DSR_ENABLE_DISTRIBUTED=ON ...
 cmake --build build
 ```
 

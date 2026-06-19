@@ -47,8 +47,15 @@ linux_apt     = ["pkg-config"]
 windows_vcpkg = ["pkgconf"]
 check_cmd     = ["pkg-config", "--version"]
 
+[adaptivecpp]
+description   = "AdaptiveCpp (acpp) — secondary SYCL toolchain. Built from source / distro package; not in vcpkg."
+required      = false
+linux_apt     = []
+windows_vcpkg = []
+check_cmd     = ["acpp", "--version"]
+
 [cuda]
-description   = "NVIDIA CUDA toolkit (SYCL nvptx64 backend, sm_61)"
+description   = "NVIDIA CUDA toolkit (SYCL nvptx64 backend; arch via SR_CUDA_ARCH, default 61)"
 required      = false
 gpu_only      = true
 linux_apt     = ["nvidia-cuda-toolkit"]

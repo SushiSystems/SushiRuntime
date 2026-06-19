@@ -16,6 +16,7 @@ from . import console
 from .services import diag as diag_svc
 from .services import docker as docker_svc
 from .services import project as project_svc
+from .services import select as select_svc
 from .services import setup as setup_svc
 from .services.project import BuildType, Suite
 
@@ -51,6 +52,21 @@ class DockerAction(str, enum.Enum):
 
 
 # --------------------------------------------------------------------------- #
+# toolchain (SYCL toolchain)
+# --------------------------------------------------------------------------- #
+@app.command("toolchain")
+def toolchain(
+    name: Optional[str] = typer.Argument(
+        None, help="SYCL toolchain: intel-llvm | adaptivecpp | oneapi. "
+                   "Omit to list choices and show the active one."),
+):
+    """Choose the SYCL toolchain used for builds (persisted to config.local.toml)."""
+    if name is None:
+        raise typer.Exit(select_svc.show())
+    raise typer.Exit(select_svc.select(name))
+
+
+# --------------------------------------------------------------------------- #
 # project
 # --------------------------------------------------------------------------- #
 @project_app.command("build")
@@ -64,9 +80,16 @@ def project_build(
         False, "--no-cuda", help="Disable the SYCL CUDA backend (Linux only)."),
     clean: bool = typer.Option(
         False, "--clean", help="Delete the build tree before configuring."),
+    force: bool = typer.Option(
+        False, "--force",
+        help="If the selected toolchain's compiler is missing, fall back to "
+             "clang++/clang instead of stopping."),
+    no_test: bool = typer.Option(
+        False, "--no-test",
+        help="Skip compiling the test suite (SR_BUILD_TESTS=OFF). Tests are built by default."),
 ):
     """Configure and build the project."""
-    raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean))
+    raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force, tests=not no_test))
 
 
 @project_app.command("test")
@@ -143,9 +166,13 @@ def docker_build(
     no_cache: bool = typer.Option(
         False, "--no-cache",
         help="Rebuild every layer from scratch (ignore Docker's cache)."),
+    oneapi: bool = typer.Option(
+        False, "--oneapi",
+        help="Also install the Intel oneAPI DPC++ compiler (icpx) in the image "
+             "(several GB; needed only for the 'oneapi' toolchain)."),
 ):
     """Build the sushiruntime Docker image."""
-    raise typer.Exit(docker_svc.build(no_cache=no_cache))
+    raise typer.Exit(docker_svc.build(no_cache=no_cache, oneapi=oneapi))
 
 
 @docker_app.command("run")
@@ -153,9 +180,12 @@ def docker_run(
     admin: bool = typer.Option(
         False, "--admin",
         help="Run with --privileged --cap-add=SYS_ADMIN (for profiling)."),
+    no_gpu: bool = typer.Option(
+        False, "--no-gpu",
+        help="Omit --gpus all (useful when CUDA is disabled or no GPU is available)."),
 ):
     """Start the developer container with the repo mounted."""
-    raise typer.Exit(docker_svc.run(admin=admin))
+    raise typer.Exit(docker_svc.run(admin=admin, no_gpu=no_gpu))
 
 
 # --------------------------------------------------------------------------- #
