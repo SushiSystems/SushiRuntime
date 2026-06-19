@@ -71,7 +71,7 @@ namespace SushiRuntime
 
             void heartbeat_loop();
 
-            void on_message(int peer, MsgType type, std::span<const std::byte> payload);
+            void on_message(int peer, MsgType type, SushiRuntime::span<const std::byte> payload);
             void exec_loop();
             void execute_dispatch(const TaskDispatchMsg& msg);
 
@@ -128,7 +128,7 @@ namespace SushiRuntime
             return e.ptr;
         }
 
-        void WorkerAgent::Impl::on_message(int /*peer*/, MsgType type, std::span<const std::byte> payload)
+        void WorkerAgent::Impl::on_message(int /*peer*/, MsgType type, SushiRuntime::span<const std::byte> payload)
         {
             switch (type)
             {
@@ -322,7 +322,7 @@ namespace SushiRuntime
 
             Impl* raw = impl_.get();
             impl_->transport->on_message(
-                [raw](int peer, MsgType type, std::span<const std::byte> payload)
+                [raw](int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
                 {
                     raw->on_message(peer, type, payload);
                 });

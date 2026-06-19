@@ -7,6 +7,7 @@ invocations are issued directly via subprocess with the snapshotted build env.
 from __future__ import annotations
 
 import enum
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -61,6 +62,26 @@ def _run(cmd: list[str], env: dict[str, str], cwd: Path) -> int:
     return subprocess.run(cmd, cwd=str(cwd), env=env).returncode
 
 
+def _neutralize_runtime_ld(cfg: Config, env: dict[str, str]) -> None:
+    """Strip setvars' LD_LIBRARY_PATH from a *run-time* env for the oneAPI build.
+
+    The oneAPI binary needs setvars at BUILD time, but not at RUN time: its
+    build-tree RPATH already resolves the exact oneAPI libs it linked. Letting
+    setvars' LD_LIBRARY_PATH ride along prepends a second libur_loader/umf/tcm
+    set ahead of them, which mismatches the CUDA UR adapter and segfaults in
+    SYCL device discovery (urVirtualMemMap). Restore the parent shell's known-
+    good path instead of dropping it outright, so libcuda under nvidia/lib64
+    stays reachable.
+    """
+    if cfg.toolchain != "oneapi":
+        return
+    shell_ld = os.environ.get("LD_LIBRARY_PATH")
+    if shell_ld is not None:
+        env["LD_LIBRARY_PATH"] = shell_ld
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+
+
 def _needs_configure(build_dir: Path, generator: str, dist: str) -> bool:
     if not build_dir.is_dir():
         return True
@@ -73,25 +94,77 @@ def _needs_configure(build_dir: Path, generator: str, dist: str) -> bool:
     return dist != "OFF"
 
 
-def _resolve_compiler(cfg: Config) -> tuple[str, str]:
-    """Inside the intel/llvm Docker image icpx/icx are absent; fall back to clang."""
-    cxx, cc = cfg.cxx, cfg.cc
-    if shutil.which(cxx) is None and shutil.which("clang++") is not None:
-        console.info("icpx not found; using intel/llvm clang++/clang instead.")
+def _resolve_compiler(cfg: Config, force: bool,
+                      env: dict[str, str] | None = None,
+                      asan: bool = False) -> tuple[str, str] | None:
+    """Resolve (cc, cxx) for the selected toolchain, validating availability.
+
+    The pair is derived from the toolchain (or an explicit config override). If
+    the chosen C++ compiler is on PATH it is used as-is. If it is missing the
+    build stops with guidance — unless ``force`` is set, in which case it falls
+    back to clang++/clang (which CMake then treats as the 'intel-llvm' toolchain).
+
+    Availability is checked against the snapshotted build ``env`` PATH, not just
+    the parent process PATH: the oneAPI ``icpx`` only appears after setvars is
+    sourced (which ``load_build_env`` does), so the parent shell need not have it.
+
+    For ASan builds the oneapi toolchain (icpx) is not suitable: Intel's ASan
+    support is limited and icpx is absent outside the container. When asan=True
+    and the selected toolchain is oneapi, the resolver automatically tries
+    adaptivecpp (acpp) then intel-llvm (clang++) before giving up.
+
+    Returns the (cc, cxx) pair, or None to signal the caller to abort.
+    """
+    search_path = (env or {}).get("PATH")
+    cc, cxx = cfg.resolved_compilers()
+
+    # ASan + oneapi: icpx has limited sanitizer support; prefer clang-based compilers.
+    if asan and cfg.toolchain == "oneapi":
+        for fallback_cc, fallback_cxx in [("gcc", "acpp"), ("clang", "clang++")]:
+            if shutil.which(fallback_cxx, path=search_path) is not None:
+                console.info(
+                    f"ASan: toolchain 'oneapi' (icpx) does not support sanitizers; "
+                    f"using '{fallback_cxx}' instead.")
+                return fallback_cc, fallback_cxx
+        console.error(
+            "ASan requires a clang-based compiler (acpp or clang++), "
+            "but neither was found on PATH.\n"
+            "  - inside the container: run `sr docker run` first, or\n"
+            "  - switch toolchain: `sr toolchain adaptivecpp` or `sr toolchain intel-llvm`")
+        return None
+
+    if shutil.which(cxx, path=search_path) is not None:
+        return cc, cxx
+
+    if not force:
+        console.error(
+            f"Toolchain '{cfg.toolchain}' needs '{cxx}', which is not on PATH.\n"
+            f"  - install it, or\n"
+            f"  - switch toolchain with `sr toolchain <intel-llvm|adaptivecpp|oneapi>`, or\n"
+            f"  - re-run with --force to fall back to clang++/clang.")
+        return None
+
+    if shutil.which("clang++", path=search_path) is not None:
+        console.warn(f"--force: '{cxx}' not found; falling back to clang++/clang "
+                     f"(builds as the 'intel-llvm' toolchain).")
         return "clang", "clang++"
-    return cc, cxx
+
+    console.error(f"--force: neither '{cxx}' nor clang++ found on PATH.")
+    return None
 
 
 def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
-                          cuda: str, dist: str, asan: bool) -> list[str]:
-    cc, cxx = _resolve_compiler(cfg)
+                          cuda: str, dist: str, asan: bool, tests: bool,
+                          cc: str, cxx: str) -> list[str]:
     args = [
         "cmake", "-B", str(build_dir), "-G", cfg.generator,
         f"-DCMAKE_BUILD_TYPE={build_type}",
+        f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_C_COMPILER={cc}",
         f"-DCMAKE_CXX_COMPILER={cxx}",
-        f"-DSUSHI_ENABLE_CUDA={cuda}",
-        f"-DSUSHI_ENABLE_DISTRIBUTED={dist}",
+        f"-DSR_ENABLE_CUDA={cuda}",
+        f"-DSR_ENABLE_DISTRIBUTED={dist}",
+        f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
     ]
     if asan:
         args += [
@@ -110,7 +183,7 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
 
 
 def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
-                            dist: str, asan: bool) -> list[str]:
+                            dist: str, asan: bool, tests: bool) -> list[str]:
     vcpkg = cfg.expand(cfg.vcpkg_root)
     triplet = cfg.vcpkg_triplet
     asan_flags = f" {ASAN_FLAGS}" if asan else ""
@@ -127,15 +200,17 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         f"-DCMAKE_C_FLAGS={asan_flags.strip()}",
         f"-DPKG_CONFIG_EXECUTABLE={cfg.expand(cfg.pkgconf_exe)}",
         f"-DCMAKE_PREFIX_PATH={vcpkg}/installed/{triplet}",
-        "-DSUSHI_ENABLE_CUDA=OFF",  # no nvptx toolchain on the Windows host
-        f"-DSUSHI_ENABLE_DISTRIBUTED={dist}",
+        "-DSR_ENABLE_CUDA=OFF",  # no nvptx toolchain on the Windows host
+        f"-DSR_ENABLE_DISTRIBUTED={dist}",
+        f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
         "-DSYCL_LIB_SUFFIX=9",
     ]
     return args
 
 
 def build(build_type: BuildType, distributed: bool = False,
-          no_cuda: bool = False, clean: bool = False) -> int:
+          no_cuda: bool = False, clean: bool = False, force: bool = False,
+          tests: bool = True) -> int:
     console.header("Project Build")
     root = find_project_root()
     cfg = load_config()
@@ -151,6 +226,7 @@ def build(build_type: BuildType, distributed: bool = False,
         console.info("Distributed master-worker layer: ON")
     if asan:
         console.info("AddressSanitizer: ON (isolated build-asan tree, CUDA OFF)")
+    console.info(f"Tests: {'ON' if tests else 'OFF'}")
 
     # CUDA: Linux defaults ON (unless --no-cuda or ASan); Windows is always OFF.
     if cfg.is_windows:
@@ -172,9 +248,14 @@ def build(build_type: BuildType, distributed: bool = False,
         if build_dir.is_dir():
             shutil.rmtree(build_dir, ignore_errors=True)
         if cfg.is_windows:
-            args = _configure_args_windows(cfg, build_dir, cmake_build_type, dist, asan)
+            args = _configure_args_windows(cfg, build_dir, cmake_build_type, dist, asan, tests)
         else:
-            args = _configure_args_linux(cfg, build_dir, cmake_build_type, cuda, dist, asan)
+            resolved = _resolve_compiler(cfg, force, env, asan=asan)
+            if resolved is None:
+                return 1
+            cc, cxx = resolved
+            args = _configure_args_linux(cfg, build_dir, cmake_build_type,
+                                         cuda, dist, asan, tests, cc, cxx)
         rc = _run(args, env, cwd=root)
         if rc != 0:
             console.error("CMake configure failed.")
@@ -205,6 +286,9 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
         console.info("Note: distributed tests only exist if built with --distributed.")
 
     env = load_build_env(cfg, build_dir)
+    # ctest spawns the test binaries, so it hits the same run-time UR mismatch as
+    # `run`; neutralize setvars' LD_LIBRARY_PATH for the oneAPI build.
+    _neutralize_runtime_ld(cfg, env)
     cmd = ["ctest", "--test-dir", str(build_dir), "--output-on-failure"]
     if suite != Suite.all:
         cmd += ["-L", suite.value]
@@ -235,6 +319,7 @@ def run(target: str | None = None, sort: bool = False,
     # CUDA_LAUNCH_BLOCKING=1 serializes every kernel and silently kills the
     # async/overlap tests; clear any inherited value so a stray one can't poison us.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
+    _neutralize_runtime_ld(cfg, env)
     # ASan binaries were built CUDA-OFF; pin to the OpenCL CPU device so the SYCL
     # runtime never loads the CUDA UR adapter (which collides with ASan's VA).
     if asan:

@@ -34,7 +34,7 @@
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #endif
 
@@ -96,7 +96,7 @@ namespace SushiRuntime
              */
             std::unique_ptr<ExecutionEngine> engine;
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
             /** @brief Deployment role; Standalone unless explicitly promoted. */
             RuntimeContext::RuntimeRole role = RuntimeContext::RuntimeRole::Standalone;
             /** @brief Master-side buffer id registry (created in Master mode). */
@@ -127,7 +127,7 @@ namespace SushiRuntime
                 //  3. Release NUMA allocators.
                 // --------------------------------------------------------
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 // Stop the network first so no late remote completion can touch the
                 // scheduler while/after it is being torn down.
                 if (coordinator)
@@ -255,6 +255,11 @@ namespace SushiRuntime
             return impl_->all_queues[index];
         }
 
+        size_t RuntimeContext::device_count() const
+        {
+            return impl_->all_queues.size();
+        }
+
         sushi_ptr<SushiRuntime::Memory::USMAllocator> RuntimeContext::get_allocator() 
         {
             return get_allocator(0);
@@ -326,6 +331,11 @@ namespace SushiRuntime
         void RuntimeContext::free_usm(void* ptr)
         {
             if (!ptr) return;
+
+#ifdef SR_DISTRIBUTED
+            unregister_distributed_buffer(ptr);
+#endif
+
             size_t idx = SIZE_MAX;
             {
                 std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
@@ -486,7 +496,7 @@ namespace SushiRuntime
             }
         }
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
         void RuntimeContext::enable_distributed_master(
             std::shared_ptr<Distributed::ITransport> transport,
             sushi_ptr<Distributed::KernelRegistry>   kernels,
@@ -531,6 +541,12 @@ namespace SushiRuntime
         {
             if (impl_->buffers)
                 impl_->buffers->bump_version(usm_ptr);
+        }
+
+        void RuntimeContext::unregister_distributed_buffer(void* usm_ptr)
+        {
+            if (impl_->buffers)
+                impl_->buffers->unregister_buffer(usm_ptr);
         }
 
         std::optional<Distributed::BufferHandle> RuntimeContext::distributed_buffer(void* usm_ptr) const

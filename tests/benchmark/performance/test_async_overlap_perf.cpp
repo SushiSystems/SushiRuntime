@@ -106,6 +106,13 @@ namespace
     }
 
     // Heavy, optimizer-resistant element kernel: runtime scales with `iters`.
+    //
+    // The body must be a genuinely non-linear recurrence. A plain
+    // `acc = acc * c + d` is a linear recurrence with a closed form, and some
+    // backends (notably oneAPI's nvptx JIT) collapse the whole loop into it —
+    // GPU time then stays flat regardless of `iters`, so calibration can never
+    // balance the two devices and the overlap measurement becomes meaningless.
+    // A transcendental per iteration has no closed form, forcing the loop to run.
     sycl::event launch_heavy(sycl::queue& q, float* in, float* out, size_t n, int iters)
     {
         return q.submit([&](sycl::handler& h)
@@ -114,7 +121,7 @@ namespace
             {
                 float acc = in[i];
                 for (int k = 0; k < iters; ++k)
-                    acc = acc * 1.0000001f + 0.5f;
+                    acc = sycl::sin(acc) * 1.0000001f + 0.5f;
                 out[i] = acc;
             });
         });

@@ -33,7 +33,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <barrier>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -45,6 +44,8 @@
 #include <cstdint>
 #include <thread>
 #include <vector>
+
+#include "test_barrier.hpp"
 
 #if defined(_MSC_VER)
 #  include <intrin.h>
@@ -270,9 +271,9 @@ namespace
 
         std::vector<std::vector<double>> block_means(thread_count);
         std::vector<std::vector<double>> per_op(thread_count);
-        std::barrier go(thread_count + 1);
-        std::barrier mid(thread_count + 1);
-        std::barrier done(thread_count + 1);
+        SushiRuntime::Test::Barrier go(thread_count + 1);
+        SushiRuntime::Test::Barrier mid(thread_count + 1);
+        SushiRuntime::Test::Barrier done(thread_count + 1);
         std::vector<std::thread> workers;
         workers.reserve(thread_count);
 
@@ -369,9 +370,9 @@ namespace
         std::vector<std::vector<double>> per_op(pair_count * 2);
 
         size_t threads = pair_count * 2;
-        std::barrier go(threads + 1);
-        std::barrier mid(threads + 1);
-        std::barrier done(threads + 1);
+        SushiRuntime::Test::Barrier go(threads + 1);
+        SushiRuntime::Test::Barrier mid(threads + 1);
+        SushiRuntime::Test::Barrier done(threads + 1);
         std::vector<std::thread> workers;
         workers.reserve(threads);
 

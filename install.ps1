@@ -26,7 +26,7 @@ function Info($m)  { Write-Host "[INFO] $m"  -ForegroundColor Cyan }
 function Warn($m)  { Write-Host "[WARN] $m"  -ForegroundColor Yellow }
 function Fail($m)  { Write-Host "[ERROR] $m" -ForegroundColor Red; exit 1 }
 
-$RepoUrl = if ($env:SUSHI_REPO_URL) { $env:SUSHI_REPO_URL } else { "https://github.com/sushisystems/sushiruntime.git" }
+$RepoUrl = if ($env:SR_REPO_URL) { $env:SR_REPO_URL } else { "https://github.com/sushisystems/sushiruntime.git" }
 
 # 1. winget is the bootstrap package source.
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
@@ -54,7 +54,7 @@ $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { $null }
 if ($ScriptDir -and (Test-Path (Join-Path $ScriptDir "CMakeLists.txt"))) {
     $RepoDir = $ScriptDir
 } else {
-    $RepoDir = if ($env:SUSHI_REPO_DIR) { $env:SUSHI_REPO_DIR } else { Join-Path $HOME "sushiruntime" }
+    $RepoDir = if ($env:SR_REPO_DIR) { $env:SR_REPO_DIR } else { Join-Path $HOME "sushiruntime" }
     if (-not (Test-Path (Join-Path $RepoDir ".git"))) {
         Info "Cloning $RepoUrl -> $RepoDir"
         git clone $RepoUrl $RepoDir

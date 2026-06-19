@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
@@ -141,7 +142,7 @@ TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
         EXPECT_NO_THROW({
             auto ev = q.submit([](sycl::handler& h)
             {
-                h.host_task([] {});
+                SushiRuntime::detail::enqueue_host_task(h, [] {});
             });
             ev.wait();
         }) << "CUDA-backed SYCL queue threw during host_task submission.";

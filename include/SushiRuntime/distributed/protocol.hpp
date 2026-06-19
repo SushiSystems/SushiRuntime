@@ -26,8 +26,8 @@
 //
 // Distributed wire protocol.
 //
-// The whole distributed layer exists behind SUSHI_DISTRIBUTED (CMake option
-// SUSHI_ENABLE_DISTRIBUTED, default OFF). When the option is off this header is
+// The whole distributed layer exists behind SR_DISTRIBUTED (CMake option
+// SR_ENABLE_DISTRIBUTED, default OFF). When the option is off this header is
 // never compiled into the library, so the offline single-machine build carries
 // zero distributed code, zero extra dependencies, and zero ABI surface.
 //
@@ -41,7 +41,7 @@
 #include <cstdint>
 #include <vector>
 #include <cstring>
-#include <span>
+#include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
 
@@ -134,7 +134,7 @@ namespace SushiRuntime
                     buf_.insert(buf_.end(), p, p + bytes);
                 }
 
-                std::span<const std::byte> view() const { return { buf_.data(), buf_.size() }; }
+                SushiRuntime::span<const std::byte> view() const { return { buf_.data(), buf_.size() }; }
                 std::vector<std::byte> take() { return std::move(buf_); }
 
             private:
@@ -145,7 +145,7 @@ namespace SushiRuntime
         class ByteReader
         {
             public:
-                explicit ByteReader(std::span<const std::byte> data) : data_(data) {}
+                explicit ByteReader(SushiRuntime::span<const std::byte> data) : data_(data) {}
 
                 template<typename T>
                 T get()
@@ -165,7 +165,7 @@ namespace SushiRuntime
                 }
 
                 /** @brief Reads a length-prefixed blob; returned span aliases the input buffer. */
-                std::span<const std::byte> get_blob()
+                SushiRuntime::span<const std::byte> get_blob()
                 {
                     uint64_t bytes = get<uint64_t>();
                     if (!ok_ || pos_ + bytes > data_.size())
@@ -182,7 +182,7 @@ namespace SushiRuntime
                 bool eof() const { return pos_ >= data_.size(); }
 
             private:
-                std::span<const std::byte> data_;
+                SushiRuntime::span<const std::byte> data_;
                 size_t pos_ = 0;
                 bool   ok_  = true;
         };
@@ -221,7 +221,7 @@ namespace SushiRuntime
                 return w.take();
             }
 
-            static TaskDispatchMsg deserialize(std::span<const std::byte> bytes)
+            static TaskDispatchMsg deserialize(SushiRuntime::span<const std::byte> bytes)
             {
                 ByteReader r(bytes);
                 TaskDispatchMsg m;
@@ -253,7 +253,7 @@ namespace SushiRuntime
                 return w.take();
             }
 
-            static TaskResultMsg deserialize(std::span<const std::byte> bytes)
+            static TaskResultMsg deserialize(SushiRuntime::span<const std::byte> bytes)
             {
                 ByteReader r(bytes);
                 TaskResultMsg m;
@@ -279,7 +279,7 @@ namespace SushiRuntime
                 return w.take();
             }
 
-            static BufferPushMsg deserialize(std::span<const std::byte> bytes)
+            static BufferPushMsg deserialize(SushiRuntime::span<const std::byte> bytes)
             {
                 ByteReader r(bytes);
                 BufferPushMsg m;
@@ -304,7 +304,7 @@ namespace SushiRuntime
                 return w.take();
             }
 
-            static BufferRequestMsg deserialize(std::span<const std::byte> bytes)
+            static BufferRequestMsg deserialize(SushiRuntime::span<const std::byte> bytes)
             {
                 ByteReader r(bytes);
                 BufferRequestMsg m;
@@ -333,7 +333,7 @@ namespace SushiRuntime
                 return w.take();
             }
 
-            static PingMsg deserialize(std::span<const std::byte> bytes)
+            static PingMsg deserialize(SushiRuntime::span<const std::byte> bytes)
             {
                 ByteReader r(bytes);
                 PingMsg m;
@@ -362,7 +362,7 @@ namespace SushiRuntime
                 return w.take();
             }
 
-            static PongMsg deserialize(std::span<const std::byte> bytes)
+            static PongMsg deserialize(SushiRuntime::span<const std::byte> bytes)
             {
                 ByteReader r(bytes);
                 PongMsg m;

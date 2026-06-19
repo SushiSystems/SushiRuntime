@@ -44,7 +44,7 @@ using namespace SushiRuntime::Graph::Literals;
 
 namespace
 {
-    std::span<const std::byte> as_bytes(const std::vector<std::byte>& v)
+    SushiRuntime::span<const std::byte> as_bytes(const std::vector<std::byte>& v)
     {
         return { v.data(), v.size() };
     }
@@ -109,11 +109,11 @@ TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
     auto worker_fut = worker_got.get_future();
     auto master_fut = master_got.get_future();
 
-    worker.on_message([&](int peer, MsgType type, std::span<const std::byte>)
+    worker.on_message([&](int peer, MsgType type, SushiRuntime::span<const std::byte>)
     {
         worker_got.set_value({ peer, type });
     });
-    master.on_message([&](int peer, MsgType type, std::span<const std::byte>)
+    master.on_message([&](int peer, MsgType type, SushiRuntime::span<const std::byte>)
     {
         master_got.set_value({ peer, type });
     });
@@ -140,7 +140,8 @@ TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
     master.stop();
 }
 
-// Registration is stable per pointer; a write bumps the version; lookup_by_id
+// Registration is stable per pointer; re-registration bumps the version (USM
+// address reuse detection); a write bump increments further; lookup_by_id
 // round-trips id -> pointer.
 TEST(Unit_DistributedTest, BufferRegistryVersioning)
 {
@@ -152,19 +153,21 @@ TEST(Unit_DistributedTest, BufferRegistryVersioning)
     EXPECT_TRUE(h1.id.valid());
     EXPECT_EQ(h1.version, 1u);
 
-    // Re-registering the same pointer is idempotent.
+    // Re-registering the same pointer bumps the version (stale-handle detection
+    // for USM address reuse) but preserves the existing id.
     auto h1b = reg.register_buffer(p, sizeof(storage));
     EXPECT_EQ(h1b.id.value, h1.id.value);
+    EXPECT_EQ(h1b.version, 2u);
 
     reg.bump_version(p);
     auto looked = reg.lookup(p);
     ASSERT_TRUE(looked.has_value());
-    EXPECT_EQ(looked->version, 2u);
+    EXPECT_EQ(looked->version, 3u);
 
     auto by_id = reg.lookup_by_id(h1.id);
     ASSERT_TRUE(by_id.has_value());
     EXPECT_EQ(by_id->ptr, p);
-    EXPECT_EQ(by_id->handle.version, 2u);
+    EXPECT_EQ(by_id->handle.version, 3u);
 
     EXPECT_FALSE(reg.lookup(nullptr).has_value());
 }

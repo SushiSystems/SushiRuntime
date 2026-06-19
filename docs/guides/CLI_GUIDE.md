@@ -60,10 +60,11 @@ see the final resolved values and where each one came from.
 
 ## Command overview
 
-Commands are grouped under five subcommands:
+Commands are grouped under these subcommands:
 
 | Group        | What it's for                                               |
 |--------------|-------------------------------------------------------------|
+| `sr toolchain` | Choose the SYCL toolchain (intel-llvm / adaptivecpp / oneapi) |
 | `sr setup`   | First-time install: detect, install deps, configure, verify |
 | `sr project` | Build, test, run, and document the C++ project              |
 | `sr docker`  | Build and run the development container                     |
@@ -72,6 +73,23 @@ Commands are grouped under five subcommands:
 
 Run any command with `--help` to see its options. Running a group with no
 subcommand (e.g. `sr project`) prints that group's help.
+
+## `sr toolchain` — choose the SYCL toolchain
+
+SushiRuntime builds against one of three SYCL toolchains. `sr toolchain` records
+your choice in `cli/config.local.toml`, and every later `sr project build`
+passes it to CMake as `-DSR_SYCL_TOOLCHAIN` and derives the matching compiler.
+
+```bash
+sr toolchain                  # list the toolchains and show which one is active
+sr toolchain intel-llvm       # intel/llvm nightly (clang++ -fsycl) — primary (default)
+sr toolchain adaptivecpp      # AdaptiveCpp (acpp) — secondary, vendor-neutral
+sr toolchain oneapi           # Intel oneAPI — icpx/icx-cl, supported, for VTune/Advisor profiling
+```
+
+After switching, reconfigure with `sr project build --clean` so CMake picks up
+the new toolchain. To override per-invocation without persisting, set the
+`SR_SYCL_TOOLCHAIN` environment variable.
 
 ## `sr setup` — first-time install
 
@@ -113,6 +131,7 @@ sr project build --type debug     # Debug build
 sr project build --type asan      # AddressSanitizer — built in a separate build-asan/ tree, CUDA off
 sr project build --distributed    # also compile the optional master-worker layer
 sr project build --no-cuda        # Linux only: turn the SYCL CUDA backend off
+sr project build --no-test        # skip compiling the test suite (SR_BUILD_TESTS=OFF)
 sr project build --clean          # delete the build tree first, then build from scratch
 ```
 
@@ -120,6 +139,10 @@ The `--type` (`-t`) option accepts `release`, `debug`, `relwithdebinfo`, or
 `asan`. The `asan` type is special: it builds into an isolated `build-asan/`
 directory with CUDA disabled, so it never collides with your normal `build/`
 tree. Flags can be combined, e.g. `sr project build --type debug --clean`.
+
+The test suite is compiled by default. Pass `--no-test` to skip it
+(`SR_BUILD_TESTS=OFF`) for a faster, library-only build — useful when you only
+need the runtime to profile or to debug a kernel under `compute-sanitizer`.
 
 ### `sr project test`
 
@@ -196,17 +219,23 @@ sr project doxygen     # generate the Doxygen API documentation
 
 ## `sr docker` — the development container
 
-A `Dockerfile` provides a complete SYCL toolchain (an intel/llvm nightly build)
-plus the Intel OpenCL CPU runtime, so you can build and run — including the CUDA
-backend — without installing a compiler on your host.
+A `Dockerfile` provides a complete SYCL toolchain (an intel/llvm nightly bundle,
+the `intel-llvm` toolchain) plus the Intel OpenCL CPU runtime, so you can build
+and run — including the CUDA backend — without installing a compiler on your host.
 
 ```bash
-sr docker build              # build the image
+sr docker build              # build the image (intel-llvm + adaptivecpp toolchains)
 sr docker build --no-cache   # rebuild every layer from scratch, ignoring Docker's cache
-
+sr docker build --oneapi     # also install the Intel oneAPI DPC++ compiler (icpx; several GB)
 sr docker run                # start the container with the repo mounted
 sr docker run --admin        # run with --privileged --cap-add=SYS_ADMIN (needed for profiling)
+sr docker run --no-gpu       # omit --gpus all (headless / CI environments)
 ```
+
+By default the image ships the `intel-llvm` (primary) and `adaptivecpp`
+toolchains. The `oneapi` toolchain (`icpx`) is large, so it is opt-in: build
+with `--oneapi`, then inside the container `sr toolchain oneapi && sr project
+build` just works — the CLI sources `/opt/intel/oneapi/setvars.sh` for you.
 
 For GPU passthrough you need the NVIDIA Container Toolkit installed on the host.
 

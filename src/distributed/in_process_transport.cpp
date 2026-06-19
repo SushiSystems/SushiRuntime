@@ -57,7 +57,7 @@ namespace SushiRuntime
             std::thread                pump;
             std::atomic<bool>          running{false};
 
-            void enqueue(int from_peer, MsgType type, std::span<const std::byte> payload)
+            void enqueue(int from_peer, MsgType type, SushiRuntime::span<const std::byte> payload)
             {
                 {
                     std::lock_guard<std::mutex> lk(q_mtx);
@@ -148,7 +148,7 @@ namespace SushiRuntime
                 impl_->pump.join();
         }
 
-        void InProcessTransport::send(int peer_id, MsgType type, std::span<const std::byte> payload)
+        void InProcessTransport::send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload)
         {
             auto fab = impl_->fabric;
             if (!fab)

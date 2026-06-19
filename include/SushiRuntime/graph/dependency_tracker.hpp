@@ -42,6 +42,7 @@ namespace SushiRuntime
         {
             Node* task;
             bool is_write;
+            void* ptr;
             AccessNode* prev; // Immutable once linked to the history
         };
 

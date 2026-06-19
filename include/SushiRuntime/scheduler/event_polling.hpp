@@ -46,10 +46,21 @@ namespace SushiRuntime
         {
             public:
                 /** @brief Structure to link a SYCL event with a graph node or task. */
-                struct PolledEvent 
+                struct PolledEvent
                 {
                     sycl::event event;
-                    SushiRuntime::Scheduler::Task* task = nullptr; 
+                    SushiRuntime::Scheduler::Task* task = nullptr;
+                    /**
+                     * @brief Already-complete marker for synchronous host work.
+                     *
+                     * A host task whose execute_host() runs inline returns an empty
+                     * event — there is nothing to wait on. We still route it through
+                     * the poller (to trigger successors and release uniformly), but
+                     * flag it ready so completion is not gated on a SYCL event status
+                     * query. This also sidesteps toolchains (AdaptiveCpp) whose host
+                     * operations are not observable via command_execution_status.
+                     */
+                    bool ready = false;
                 };
 
                 struct ActiveEventList 
@@ -81,7 +92,7 @@ namespace SushiRuntime
                     }
                 };
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 /**
                  * @brief Installs an observer fired for each completed task.
                  *
@@ -95,14 +106,18 @@ namespace SushiRuntime
 #endif
 
             private:
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 /** @brief Optional per-completion observer (Master mode only). */
                 std::function<void(SushiRuntime::Scheduler::Task*)> on_node_complete_;
 #endif
                 /** @brief Counter for adaptive backoff strategy. */
                 size_t backoff_counter = 0;
                 /** @brief Maximum value for the backoff counter. */
-                static constexpr size_t MAX_BACKOFF = 64; 
+                static constexpr size_t MAX_BACKOFF = 64;
+                /** @brief Consecutive no-progress polls, used to drive lazy events. */
+                size_t stall_polls_ = 0;
+                /** @brief No-progress polls before forcing a blocking wait. */
+                static constexpr size_t STALL_DRIVE_THRESHOLD = 32;
 
             public:
                 /**
@@ -129,12 +144,26 @@ namespace SushiRuntime
                     }
 
                     bool progress = false;
-                    for (size_t i = 0; i < active_events.count; ) 
+                    for (size_t i = 0; i < active_events.count; )
                     {
-                        auto status = active_events.events[i].event.get_info<sycl::info::event::command_execution_status>();
-                        if (status == sycl::info::event_command_status::complete)
+                        bool done = active_events.events[i].ready;
+                        if (!done)
                         {
-#ifdef SUSHI_DISTRIBUTED
+                            auto status = active_events.events[i].event.get_info<sycl::info::event::command_execution_status>();
+                            done = (status == sycl::info::event_command_status::complete);
+                        }
+                        if (done)
+                        {
+                            // In AdaptiveCpp (and some other SYCL implementations), get_info<complete> 
+                            // might return true before implicit USM data migrations are fully visible.
+                            // Since we already know it's complete, calling wait() is instantaneous 
+                            // but guarantees the SYCL runtime flushes memory visibility.
+                            if (active_events.events[i].event != sycl::event{})
+                            {
+                                active_events.events[i].event.wait();
+                            }
+
+#ifdef SR_DISTRIBUTED
                             // Observe completion before releasing successors, so a
                             // write's version bump is visible to any dependent task
                             // (e.g. an offloaded reader) by the time it is dispatched.
@@ -155,10 +184,37 @@ namespace SushiRuntime
                     }
 
                     // adjust backoff based on progress
-                    if (progress) 
+                    if (progress)
+                    {
                         backoff_counter = 0;
-                    else 
+                        stall_polls_ = 0;
+                    }
+                    else
+                    {
                         backoff_counter = std::min(backoff_counter + 2, MAX_BACKOFF);
+
+                        // Some SYCL runtimes (AdaptiveCpp) use a lazy event model:
+                        // command_execution_status never advances to complete via
+                        // non-blocking polling — only an explicit wait() drives the
+                        // DAG. After a few consecutive no-progress polls, block on the
+                        // oldest pending event to force it forward and mark it ready so
+                        // it is reaped on the next pass regardless of how the runtime
+                        // reports status. On runtimes whose status advances on its own
+                        // (Intel), polling completes before the threshold, so this
+                        // rarely fires and the hot path is unchanged.
+                        if (++stall_polls_ >= STALL_DRIVE_THRESHOLD && !active_events.is_empty())
+                        {
+                            auto& oldest = active_events.events[0];
+                            if (oldest.event != sycl::event{})
+                            {
+                                try { oldest.event.wait(); }
+                                catch (...) { SR_LOG_WARN("Stall-drive wait() threw; treating event as complete."); }
+                            }
+                            oldest.ready = true;
+                            stall_polls_ = 0;
+                            backoff_counter = 0;
+                        }
+                    }
                 }
 
             private:

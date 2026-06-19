@@ -51,7 +51,7 @@ namespace SushiRuntime
         }
 
         std::optional<int> LeastLoadedOffloadPolicy::pick_worker(const Graph::Node& /*node*/,
-                                                                 std::span<const WorkerStats> workers,
+                                                                 SushiRuntime::span<const WorkerStats> workers,
                                                                  uint64_t est_bytes)
         {
             // Tiny payloads: the network would only add latency. Keep local.

@@ -24,6 +24,7 @@
 #include <future>
 #include <memory>
 #include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/scheduler/workload_coordinator.hpp>
 #include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
@@ -108,7 +109,18 @@ namespace SushiRuntime
             impl_->do_shutdown();
         }
 
-#ifdef SUSHI_DISTRIBUTED
+        ExecutionMetrics ExecutionEngine::metrics() const
+        {
+            ExecutionMetrics m;
+            m.local_steals  = impl_->scheduler.get_local_steal_count();
+            m.remote_steals = impl_->scheduler.get_remote_steal_count();
+            const size_t workers = impl_->scheduler.get_worker_count();
+            for (size_t i = 0; i < workers; ++i)
+                m.tasks_completed += impl_->scheduler.get_completion_rate(static_cast<int>(i));
+            return m;
+        }
+
+#ifdef SR_DISTRIBUTED
         SushiRuntime::Scheduler::TaskScheduler& ExecutionEngine::scheduler_ref()
         {
             return impl_->scheduler;
@@ -161,25 +173,26 @@ namespace SushiRuntime
             graph.sentinel->mode          = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
             graph.sentinel->host_work     =
                 [sched_ptr, completion_signal, completion_event_promise]
-                (sycl::queue& q, const std::vector<sycl::event>& deps) -> sycl::event
+                (sycl::queue&, const std::vector<sycl::event>& deps) -> sycl::event
                 {
-                    sycl::event completion = q.submit([&](sycl::handler& h)
-                    {
-                        if (!deps.empty())
-                            h.depends_on(deps);
+                    // The sentinel is the final node: the DAG only dispatches it
+                    // once every predecessor's event has completed. Signal completion
+                    // directly in C++ rather than through a SYCL host operation —
+                    // AdaptiveCpp does not run a custom-operation callback until its
+                    // event is waited on, so a host-task-based sentinel would never
+                    // fire and execute() would block forever. Wait on the predecessor
+                    // events first so any device work is genuinely flushed (this also
+                    // drives AdaptiveCpp's queue to completion) before we report done.
+                    // Copy each event: AdaptiveCpp's event::wait() is non-const,
+                    // and deps is a const vector. sycl::event is a cheap handle.
+                    for (auto e : deps)
+                        if (e != sycl::event{})
+                            e.wait();
 
-                        // host_task runs on the SYCL runtime thread — safe to set_value here.
-                        h.host_task([sched_ptr, completion_signal]()
-                        {
-                            // Signal the execution round as done so execute() can unblock.
-                            // The scheduler itself stays alive for the next graph.
-                            sched_ptr->arm_for_execution(); // re-arm for the NEXT round
-                            completion_signal->set_value();
-                        });
-                    });
-
-                    completion_event_promise->set_value(completion);
-                    return completion;
+                    sched_ptr->arm_for_execution(); // re-arm for the NEXT round
+                    completion_event_promise->set_value(sycl::event{});
+                    completion_signal->set_value();
+                    return {};
                 };
 
             // -----------------------------------------------------------------

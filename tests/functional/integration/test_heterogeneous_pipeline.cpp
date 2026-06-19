@@ -58,13 +58,16 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     constexpr float  SCALE  = 3.0f;
     constexpr float  BIAS   = 5.0f;
 
-    // One explicit queue per device (discovery order == get_queue order).
+    // One explicit queue per device. Iterate ctx's own post-dedup queue set, not
+    // sycl::device::get_devices(): the latter can list more devices (e.g.
+    // AdaptiveCpp's duplicate OpenMP host device) than ctx exposes, so indexing
+    // get_queue() by the raw SYCL list overruns it ("Queue index out of bounds").
     std::vector<sycl::queue*> device_queues;
+    for (size_t i = 0; i < ctx.device_count(); ++i)
     {
-        auto devs = sycl::device::get_devices(sycl::info::device_type::all);
-        for (size_t i = 0; i < devs.size(); ++i)
-            if (devs[i].is_gpu() || devs[i].is_cpu())
-                device_queues.push_back(&ctx.get_queue(i));
+        sycl::queue& q = ctx.get_queue(i);
+        if (q.get_device().is_gpu() || q.get_device().is_cpu())
+            device_queues.push_back(&q);
     }
     ASSERT_FALSE(device_queues.empty()) << "No CPU/GPU device queues available.";
 

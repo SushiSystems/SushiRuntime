@@ -152,7 +152,7 @@ namespace SushiRuntime
             }
         };
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
         /**
          * @brief Flags nodes that may run on a remote worker (Master mode only).
          *
@@ -303,7 +303,7 @@ namespace SushiRuntime
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
             // The distributed layer resolves these to serializable buffer handles
             // for potential offload; same pointers, kept under the existing names.
             node->dist_reads_  = read_access;
@@ -400,7 +400,7 @@ namespace SushiRuntime
             graph.sentinel = std::move(sentinel);
             impl_->tracker.reset(); // Safely clear the lock-free history
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
             stamp_offloadable(graph, impl_->context);
 #endif
 

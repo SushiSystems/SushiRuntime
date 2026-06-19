@@ -1,6 +1,6 @@
 # Getting started with SushiRuntime
 
-SushiRuntime is a C++20 runtime library for **task-based parallel computing on
+SushiRuntime is a C++23 runtime library for **task-based parallel computing on
 heterogeneous hardware**. You describe your work as a graph of tasks, declare
 which memory each task reads and writes, and the runtime works out a safe order
 and runs the independent parts in parallel across your CPU and GPU using SYCL.
@@ -46,13 +46,15 @@ Install the CLI and build directly:
 
 ```bash
 python cli/install.py        # puts `sr` and `sushiruntime` on your PATH
+sr toolchain intel-llvm      # pick a SYCL toolchain (the default; or adaptivecpp / oneapi)
 sr project build             # Release build (the default)
 sr project test              # run the fast functional test suite
 ```
 
-You'll need a SYCL compiler (Intel oneAPI DPC++ or an intel/llvm `clang++
--fsycl`), CMake 3.20+, hwloc, and GoogleTest. The CLI reads your toolchain paths
-from `cli/config.local.toml`; `sr setup configure` generates that file for you.
+You'll need a SYCL 2020 compiler — intel-llvm (`clang++ -fsycl`, primary),
+AdaptiveCpp (`acpp`), or Intel oneAPI DPC++ — plus CMake 3.20+, hwloc, and
+GoogleTest. Pick the toolchain with `sr toolchain`. The CLI reads your toolchain
+paths from `cli/config.local.toml`; `sr setup configure` generates that file for you.
 See the [README](../../README.md) for the full requirements list and the CMake
 options if you want to skip the CLI.
 

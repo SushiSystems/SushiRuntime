@@ -34,7 +34,7 @@
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
 #include <chrono>
 #include <optional>
 #include <SushiRuntime/graph/task_types.hpp>
@@ -96,6 +96,17 @@ namespace SushiRuntime
                  * @return sycl::queue& Reference to the device queue.
                  */
                 sycl::queue& get_queue(size_t xpu_index = 0);
+
+                /**
+                 * @brief Number of device queues exposed by get_queue().
+                 *
+                 * Reflects SushiRuntime's own post-dedup device set (one CPU per
+                 * NUMA node, GPUs once each), which can differ from
+                 * sycl::device::get_devices(): valid indices are [0, count).
+                 *
+                 * @return The count of addressable device queues.
+                 */
+                size_t device_count() const;
 
                 /**
                  * @brief Selects a queue based on NUMA location.
@@ -213,7 +224,7 @@ namespace SushiRuntime
                  */
                 void wait_all();
 
-#ifdef SUSHI_DISTRIBUTED
+#ifdef SR_DISTRIBUTED
                 /**
                  * @brief Deployment role. Standalone is the default — the runtime
                  * is a fully offline, single-machine library unless a cluster mode
@@ -241,6 +252,9 @@ namespace SushiRuntime
 
                 /** @brief Bumps a buffer's version after a local write (invalidates remote caches). */
                 void bump_distributed_buffer(void* usm_ptr);
+
+                /** @brief Unregisters a buffer, used internally by free_usm. */
+                void unregister_distributed_buffer(void* usm_ptr);
 
                 /** @brief Current handle for a registered pointer (used by compile()). */
                 std::optional<Distributed::BufferHandle> distributed_buffer(void* usm_ptr) const;

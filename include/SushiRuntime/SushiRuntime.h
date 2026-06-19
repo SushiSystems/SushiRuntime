@@ -33,6 +33,7 @@
 // Core Infrastructure
 #include "core/export.hpp"
 #include "core/common.hpp"
+#include "core/error.hpp"
 #include "core/sushi_ptr.hpp"
 #include "core/ref_counted.hpp"
 #include "core/logger.hpp"
@@ -60,4 +61,7 @@
 #include "scheduler/task_scheduler.hpp"
 #include "scheduler/task.hpp"
 #include "scheduler/event_polling.hpp"
-#include "scheduler/rebalancer_interface.hpp"
+#include "scheduler/rebalancer_interfaces.hpp"
+
+// Fluent v1 API (Runtime / graph()) — the surface most users program against.
+#include "api/runtime.hpp"

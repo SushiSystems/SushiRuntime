@@ -9,23 +9,23 @@ cmake_minimum_required(VERSION 3.22) # gtest_discover_tests(TEST_FILTER ...)
 #                             commit in CI (ctest -L functional).
 #   * sr_benchmark_tests   -> benchmark/{stress,performance}
 #                             Heavy/slow (1M-task bomb, latency probes). Gated by
-#                             SUSHI_BUILD_BENCHMARKS, which defaults ON so local
+#                             SR_BUILD_BENCHMARKS, which defaults ON so local
 #                             dev gets the binary out of the box. The CI fast lane
-#                             passes -DSUSHI_BUILD_BENCHMARKS=OFF to skip building
+#                             passes -DSR_BUILD_BENCHMARKS=OFF to skip building
 #                             it and runs only `ctest -L functional`; the nightly
 #                             lane leaves it ON and runs `ctest -L benchmark`.
 #
 # Shared GTest entry point and helpers live in common/.
 # ============================================================================
 
-option(SUSHI_BUILD_BENCHMARKS "Build the heavy stress/performance test suite (CI fast lane sets OFF)" ON)
+option(SR_BUILD_BENCHMARKS "Build the heavy stress/performance test suite (CI fast lane sets OFF)" ON)
 
-set(SUSHI_TEST_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common")
+set(SR_TEST_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common")
 
 # Re-applies the cross-cutting target settings to a test binary: include dir for
 # the shared helpers, GTest + library links, and the Windows runtime-DLL copy.
 function(sushi_configure_test_target target)
-    target_include_directories(${target} PRIVATE ${SUSHI_TEST_COMMON_DIR})
+    target_include_directories(${target} PRIVATE ${SR_TEST_COMMON_DIR})
 
     target_link_libraries(${target} PRIVATE
         GTest::gtest
@@ -75,7 +75,7 @@ add_executable(sr_functional_tests
 # Distributed layer tests only exist when the layer is built. They are
 # hardware-free (protocol / in-process transport / registries), so they stay in
 # the fast functional lane.
-if(SUSHI_ENABLE_DISTRIBUTED)
+if(SR_ENABLE_DISTRIBUTED)
     target_sources(sr_functional_tests PRIVATE
         functional/unit/test_distributed.cpp
         functional/integration/test_distributed_e2e.cpp
@@ -108,7 +108,7 @@ gtest_discover_tests(sr_functional_tests
 # ----------------------------------------------------------------------------
 # Benchmark suite (nightly / manual)
 # ----------------------------------------------------------------------------
-if(SUSHI_BUILD_BENCHMARKS)
+if(SR_BUILD_BENCHMARKS)
     add_executable(sr_benchmark_tests
         common/test_main.cpp
 
@@ -124,7 +124,7 @@ if(SUSHI_BUILD_BENCHMARKS)
         benchmark/performance/test_graph_compile_perf.cpp
     )
     # Distributed offload benchmark only exists when the layer is built.
-    if(SUSHI_ENABLE_DISTRIBUTED)
+    if(SR_ENABLE_DISTRIBUTED)
         target_sources(sr_benchmark_tests PRIVATE
             benchmark/performance/test_distributed_offload_perf.cpp
         )
