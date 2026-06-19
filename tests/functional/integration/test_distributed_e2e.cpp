@@ -27,7 +27,7 @@
 // release, and graph completion. An atomic counter in the kernel proves the
 // work ran on the worker, not the local fallback.
 
-#include <span>
+#include <SushiRuntime/core/span.hpp>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -64,7 +64,7 @@ namespace
     void register_vec_add(KernelRegistry& reg)
     {
         reg.register_kernel(VEC_ADD,
-            [](sycl::queue& q, std::span<void* const> ins, std::span<void* const> outs,
+            [](sycl::queue& q, SushiRuntime::span<void* const> ins, SushiRuntime::span<void* const> outs,
                const TaskMetadata& meta) -> sycl::event
             {
                 auto* a = static_cast<const float*>(ins[0]);
@@ -214,7 +214,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     std::atomic<int> c0{0}, c1{0};
     auto make_kernel = [](std::atomic<int>* counter)
     {
-        return [counter](sycl::queue& q, std::span<void* const> ins, std::span<void* const> outs,
+        return [counter](sycl::queue& q, SushiRuntime::span<void* const> ins, SushiRuntime::span<void* const> outs,
                          const TaskMetadata& meta) -> sycl::event
         {
             auto* a = static_cast<const float*>(ins[0]);
@@ -582,7 +582,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     std::atomic<bool> got_dispatch{false};
     std::atomic<bool> hb_running{true};
     worker_transport->on_message(
-        [&](int, MsgType type, std::span<const std::byte>)
+        [&](int, MsgType type, SushiRuntime::span<const std::byte>)
         {
             if (type == MsgType::TASK_DISPATCH)
                 got_dispatch.store(true, std::memory_order_relaxed);

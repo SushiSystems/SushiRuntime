@@ -117,7 +117,7 @@ namespace SushiRuntime
                 /** @brief Consecutive no-progress polls, used to drive lazy events. */
                 size_t stall_polls_ = 0;
                 /** @brief No-progress polls before forcing a blocking wait. */
-                static constexpr size_t STALL_DRIVE_THRESHOLD = 4;
+                static constexpr size_t STALL_DRIVE_THRESHOLD = 32;
 
             public:
                 /**
@@ -154,6 +154,15 @@ namespace SushiRuntime
                         }
                         if (done)
                         {
+                            // In AdaptiveCpp (and some other SYCL implementations), get_info<complete> 
+                            // might return true before implicit USM data migrations are fully visible.
+                            // Since we already know it's complete, calling wait() is instantaneous 
+                            // but guarantees the SYCL runtime flushes memory visibility.
+                            if (active_events.events[i].event != sycl::event{})
+                            {
+                                active_events.events[i].event.wait();
+                            }
+
 #ifdef SR_DISTRIBUTED
                             // Observe completion before releasing successors, so a
                             // write's version bump is visible to any dependent task
@@ -197,7 +206,10 @@ namespace SushiRuntime
                         {
                             auto& oldest = active_events.events[0];
                             if (oldest.event != sycl::event{})
-                                oldest.event.wait();
+                            {
+                                try { oldest.event.wait(); }
+                                catch (...) { SR_LOG_WARN("Stall-drive wait() threw; treating event as complete."); }
+                            }
                             oldest.ready = true;
                             stall_polls_ = 0;
                             backoff_counter = 0;

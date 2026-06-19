@@ -69,6 +69,14 @@ namespace SushiRuntime
                  */
                 void bump_version(void* usm_ptr);
 
+                /**
+                 * @brief Unregisters a buffer.
+                 *
+                 * Called when a USM pointer is freed to prevent a future reallocation
+                 * at the same address from aliasing an old buffer ID.
+                 */
+                void unregister_buffer(void* usm_ptr);
+
                 /** @brief Current handle for a local pointer (used at compile time). */
                 std::optional<BufferHandle> lookup(void* usm_ptr) const;
 

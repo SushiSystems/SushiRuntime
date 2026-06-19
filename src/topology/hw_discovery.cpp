@@ -183,9 +183,13 @@ namespace SushiRuntime
                                     node.pci_address.device = std::stoul(match[3].str(), nullptr, 16);
                                     node.pci_address.function = std::stoul(match[4].str(), nullptr, 16);
 
-                                    SR_LOG_DEBUG("Device {} PCI: {:04x}:{:02x}:{:02x}.{:x}",
-                                                node.name, node.pci_address.domain, node.pci_address.bus,
-                                                node.pci_address.device, node.pci_address.function);
+                                    char pci_str[24];
+                                    std::snprintf(pci_str, sizeof(pci_str), "%04x:%02x:%02x.%x",
+                                                  static_cast<unsigned>(node.pci_address.domain),
+                                                  static_cast<unsigned>(node.pci_address.bus),
+                                                  static_cast<unsigned>(node.pci_address.device),
+                                                  static_cast<unsigned>(node.pci_address.function));
+                                    SR_LOG_DEBUG("Device {} PCI: {}", node.name, pci_str);
                                 }
                             }
                             else

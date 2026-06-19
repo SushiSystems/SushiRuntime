@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include <span>
+#include <SushiRuntime/core/span.hpp>
 #include <cstdint>
 #include <optional>
 #include <SushiRuntime/core/export.hpp>
@@ -75,7 +75,7 @@ namespace SushiRuntime
                  * @return Chosen worker id, or nullopt to keep it local.
                  */
                 virtual std::optional<int> pick_worker(const Graph::Node& node,
-                                                       std::span<const WorkerStats> workers,
+                                                       SushiRuntime::span<const WorkerStats> workers,
                                                        uint64_t est_bytes) = 0;
         };
 
@@ -93,7 +93,7 @@ namespace SushiRuntime
                     : min_offload_bytes_(min_offload_bytes) {}
 
                 std::optional<int> pick_worker(const Graph::Node& node,
-                                               std::span<const WorkerStats> workers,
+                                               SushiRuntime::span<const WorkerStats> workers,
                                                uint64_t est_bytes) override;
 
             private:

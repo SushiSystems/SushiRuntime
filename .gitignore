@@ -37,3 +37,7 @@ _deps/
 Doxyfile
 html/
 latex/
+cli/config.local.toml
+cli/config.local.toml
+cli/config.local.toml
+cli/config.local.toml

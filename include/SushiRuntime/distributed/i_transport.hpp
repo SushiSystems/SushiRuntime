@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include <span>
+#include <SushiRuntime/core/span.hpp>
 #include <functional>
 #include <cstddef>
 #include <SushiRuntime/core/export.hpp>
@@ -57,7 +57,7 @@ namespace SushiRuntime
             public:
                 /** @brief Callback signature for an inbound, fully-framed message. */
                 using MessageHandler =
-                    std::function<void(int peer, MsgType type, std::span<const std::byte> payload)>;
+                    std::function<void(int peer, MsgType type, SushiRuntime::span<const std::byte> payload)>;
 
                 virtual ~ITransport() = default;
 
@@ -67,7 +67,7 @@ namespace SushiRuntime
                  * @param type Message kind.
                  * @param payload Already-serialized body bytes.
                  */
-                virtual void send(int peer_id, MsgType type, std::span<const std::byte> payload) = 0;
+                virtual void send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload) = 0;
 
                 /** @brief Registers the handler invoked for every inbound message. */
                 virtual void on_message(MessageHandler handler) = 0;

@@ -108,7 +108,8 @@ namespace SushiRuntime
              * @brief Submits a compiled graph for execution and blocks until completion.
              *
              * @param graph The pre-compiled graph produced by TaskGraph::compile().
-             * @return sycl::event Event signalling that the entire graph has finished.
+             * @return sycl::event Currently always sycl::event{}. Do not chain SYCL
+             *         dependencies on this value.
              */
             virtual sycl::event execute(CompiledGraph graph) = 0;
 
@@ -159,7 +160,9 @@ namespace SushiRuntime
              * completion promise. Does NOT recreate any threads.
              *
              * @param graph Compiled graph to execute.
-             * @return sycl::event The hardware event from the sentinel node.
+             * @return sycl::event Always sycl::event{} — the sentinel runs inline
+             *         (not via a SYCL submission) so there is no hardware event to
+             *         return. Do not chain SYCL dependencies on this value.
              */
             sycl::event execute(CompiledGraph graph) override;
 

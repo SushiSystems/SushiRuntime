@@ -32,7 +32,7 @@
 #include <chrono>
 #include <cstdio>
 #include <memory>
-#include <span>
+#include <SushiRuntime/core/span.hpp>
 #include <thread>
 #include <vector>
 #include <gtest/gtest.h>
@@ -64,8 +64,8 @@ namespace
     void register_vec_add(KernelRegistry& reg, int worker_idx)
     {
         reg.register_kernel(VEC_ADD,
-            [worker_idx](sycl::queue& q, std::span<void* const> ins,
-                         std::span<void* const> outs, const TaskMetadata& meta) -> sycl::event
+            [worker_idx](sycl::queue& q, SushiRuntime::span<void* const> ins,
+                         SushiRuntime::span<void* const> outs, const TaskMetadata& meta) -> sycl::event
             {
                 auto* a = static_cast<const float*>(ins[0]);
                 auto* b = static_cast<const float*>(ins[1]);
@@ -107,13 +107,13 @@ namespace
             }
         }
 
-        void free(sycl::queue& q)
+        void free(RuntimeContext& ctx)
         {
             for (size_t t = 0; t < TASKS; ++t)
             {
-                sycl::free(a[t], q);
-                sycl::free(b[t], q);
-                sycl::free(out[t], q);
+                ctx.free_usm(a[t]);
+                ctx.free_usm(b[t]);
+                ctx.free_usm(out[t]);
             }
         }
     };
@@ -205,7 +205,7 @@ TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
         Workload warm;
         warm.alloc(mq);
         master_ctx->get_execution_engine().execute(build_graph(*master_ctx, warm));
-        warm.free(mq);
+        warm.free(*master_ctx);
     }
 
     // Timed run.
@@ -251,7 +251,7 @@ TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
     EXPECT_GT(thr, 0.0);
     EXPECT_GT(offloaded, 0) << "Nothing was offloaded — the path was not exercised.";
 
-    work.free(mq);
+    work.free(*master_ctx);
     a0.stop();
     a1.stop();
 }

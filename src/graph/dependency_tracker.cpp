@@ -59,7 +59,7 @@ namespace SushiRuntime
             size_t idx = get_shard_idx(ptr);
             auto& state = registry[idx];
 
-            AccessNode* current = new AccessNode{node, is_write, nullptr};
+            AccessNode* current = new AccessNode{node, is_write, ptr, nullptr};
             AccessNode* old_tail = state.tail.load(std::memory_order_relaxed);
             
             // 1. Lock-Free Push to the chronologic access history
@@ -79,11 +79,13 @@ namespace SushiRuntime
                 // WAW and WAR: Depend on all previous reads until we hit the first previous write.
                 while (cursor) 
                 {
-                    if (cursor->task != node)
-                        add_dependency(cursor->task, node);
-                    
-                    if (cursor->is_write) break; // Found the preceding writer, stop traversing.
-                    
+                    if (cursor->ptr == ptr) 
+                    {
+                        if (cursor->task != node)
+                            add_dependency(cursor->task, node);
+                        
+                        if (cursor->is_write) break; // Found the preceding writer, stop traversing.
+                    }
                     cursor = cursor->prev;
                 }
             } 
@@ -92,12 +94,15 @@ namespace SushiRuntime
                 // RAW: Depend only on the most recent write. Skip all previous reads.
                 while (cursor) 
                 {
-                    if (cursor->is_write) 
+                    if (cursor->ptr == ptr) 
                     {
-                        if (cursor->task != node) 
-                            add_dependency(cursor->task, node);
+                        if (cursor->is_write) 
+                        {
+                            if (cursor->task != node) 
+                                add_dependency(cursor->task, node);
 
-                        break; // Found the preceding writer, stop traversing.
+                            break; // Found the preceding writer, stop traversing.
+                        }
                     }
                     cursor = cursor->prev;
                 }

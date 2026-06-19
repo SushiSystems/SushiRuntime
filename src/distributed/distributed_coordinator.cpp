@@ -87,7 +87,7 @@ namespace SushiRuntime
             std::condition_variable          monitor_cv;
             std::atomic<bool>                monitor_running{false};
 
-            void handle_message(int peer, MsgType type, std::span<const std::byte> payload);
+            void handle_message(int peer, MsgType type, SushiRuntime::span<const std::byte> payload);
             void monitor_loop();
             // Sends a fresh RTT probe to every live worker. Snapshots peer ids
             // under mtx, then sends outside the lock (the reply arrives as PONG).
@@ -98,7 +98,7 @@ namespace SushiRuntime
         };
 
         void DistributedCoordinator::Impl::handle_message(int peer, MsgType type,
-                                                          std::span<const std::byte> payload)
+                                                          SushiRuntime::span<const std::byte> payload)
         {
             // Any inbound traffic proves the peer is alive — refresh its liveness
             // before dispatching on type, so heavy workers (busy pulling buffers)
@@ -286,7 +286,7 @@ namespace SushiRuntime
         {
             Impl* raw = impl_.get();
             impl_->transport->on_message(
-                [raw](int peer, MsgType type, std::span<const std::byte> payload)
+                [raw](int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
                 {
                     raw->handle_message(peer, type, payload);
                 });

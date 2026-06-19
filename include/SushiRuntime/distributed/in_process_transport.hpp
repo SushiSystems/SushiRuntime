@@ -71,7 +71,7 @@ namespace SushiRuntime
                 InProcessTransport(InProcessFabric& fabric, int node_id);
                 ~InProcessTransport() override;
 
-                void send(int peer_id, MsgType type, std::span<const std::byte> payload) override;
+                void send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload) override;
                 void on_message(MessageHandler handler) override;
                 void start() override;
                 void stop() override;

@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include <bit>
+#include <SushiRuntime/core/bit.hpp>
 #include <atomic>
 #include <cstddef>
 #include <SushiRuntime/core/export.hpp>
@@ -291,12 +291,12 @@ namespace SushiRuntime
                             {
                                 // Original behavior: take the whole page.
                                 target_mask = ~0ULL;
-                                will_claim = std::min(std::popcount(free_bits), max_claim);
+                                will_claim = std::min(Core::popcount_u64(free_bits), max_claim);
                             }
                             else
                             {
                                 // Capped: take only up to max_claim free bits.
-                                int available = std::popcount(free_bits);
+                                int available = Core::popcount_u64(free_bits);
                                 will_claim = std::min(available, max_claim);
 
                                 // Build a mask of just the lowest will_claim free bits.
@@ -304,7 +304,7 @@ namespace SushiRuntime
                                 uint64_t remaining_free = free_bits;
                                 for (int taken = 0; taken < will_claim; ++taken)
                                 {
-                                    int bit = std::countr_zero(remaining_free);
+                                    int bit = Core::countr_zero_u64(remaining_free);
                                     take_bits |= (1ULL << bit);
                                     remaining_free &= ~(1ULL << bit);
                                 }

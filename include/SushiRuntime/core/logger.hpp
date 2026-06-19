@@ -26,11 +26,10 @@
 #include <cstdio>
 #include <mutex>
 #include <chrono>
-#include <format>
+#include <sstream>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
-#include <source_location>
 #include <queue>
 #include <thread>
 #include <condition_variable>
@@ -243,51 +242,84 @@ namespace SushiRuntime
              * @brief Creates a timestamp with millisecond precision.
              * @return Formatted time string (HH:MM:SS.mmm).
              */
-            inline std::string get_timestamp() 
+            inline std::string get_timestamp()
             {
                 auto now = std::chrono::system_clock::now();
                 auto time = std::chrono::system_clock::to_time_t(now);
                 std::tm tm;
                 portable_localtime(&tm, &time);
-                
+
                 // add milliseconds for better tracking in async tasks
                 auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-                return std::format("{:02}:{:02}:{:02}.{:03}", tm.tm_hour, tm.tm_min, tm.tm_sec, ms.count());
+                char buf[16];
+                std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d",
+                              tm.tm_hour, tm.tm_min, tm.tm_sec,
+                              static_cast<int>(ms.count()));
+                return std::string(buf);
             }
 
             /**
-             * @brief Extracts or formats the function name.
-             * @param sv The string view to process.
-             * @return The processed function name.
+             * @brief Substitutes each {} placeholder with the next argument.
+             *
+             * A small std::format stand-in for C++17: it replaces positional {}
+             * markers left to right by streaming each argument with operator<<,
+             * and treats {{ and }} as literal braces. It intentionally supports no
+             * format specs ({:...}) — call sites needing width/hex pre-format the
+             * value before logging. Extra arguments and extra placeholders are
+             * ignored rather than diagnosed, mirroring a logger's best-effort role.
+             *
+             * @param fmt The format string holding {} markers.
+             * @return The fully substituted string (no trailing arguments left).
              */
-            constexpr std::string_view extract_function_name(std::string_view sv)
+            inline std::string sr_format(std::string_view fmt)
             {
-                return sv;
+                std::string out;
+                out.reserve(fmt.size());
+                for (std::size_t i = 0; i < fmt.size(); ++i)
+                {
+                    char c = fmt[i];
+                    if (c == '{' && i + 1 < fmt.size() && fmt[i + 1] == '{') { out += '{'; ++i; }
+                    else if (c == '}' && i + 1 < fmt.size() && fmt[i + 1] == '}') { out += '}'; ++i; }
+                    else out += c;
+                }
+                return out;
+            }
+
+            template<typename T, typename... Args>
+            std::string sr_format(std::string_view fmt, const T& value, const Args&... args)
+            {
+                std::string out;
+                for (std::size_t i = 0; i < fmt.size(); ++i)
+                {
+                    char c = fmt[i];
+                    if (c == '{' && i + 1 < fmt.size() && fmt[i + 1] == '{') { out += '{'; ++i; continue; }
+                    if (c == '}' && i + 1 < fmt.size() && fmt[i + 1] == '}') { out += '}'; ++i; continue; }
+                    if (c == '{' && i + 1 < fmt.size() && fmt[i + 1] == '}')
+                    {
+                        std::ostringstream os;
+                        os << value;
+                        out += os.str();
+                        out += sr_format(fmt.substr(i + 2), args...);
+                        return out;
+                    }
+                    out += c;
+                }
+                return out;
             }
 
             template<typename... Args>
-            void log_base(LogType level, std::string_view prefix, const std::source_location& loc, std::string_view fmt, Args&&... args) 
+            void log_base(LogType level, std::string_view prefix,
+                          const char* file, int line, const char* func,
+                          std::string_view fmt, const Args&... args)
             {
                 #if SR_ENABLE_LOGGING
-                    try 
-                    {
-                        std::string msg = std::vformat(fmt, std::make_format_args(args...));
-                        std::string_view func_name = extract_function_name(loc.function_name());
-                        
-                        auto output = std::format("[{}] [{}] [{}:{}] [{}] {}\n", 
-                            get_timestamp(), 
-                            prefix, 
-                            loc.file_name(),
-                            loc.line(),
-                            func_name, 
-                            msg);
-                        
-                        dispatch_log(level, std::move(output));
-                    } 
-                    catch (const std::format_error& e) 
-                    {
-                        std::cerr << "Log format error: " << e.what() << "\n";
-                    }
+                    std::string msg = sr_format(fmt, args...);
+                    std::ostringstream os;
+                    os << '[' << get_timestamp() << "] ["
+                       << prefix << "] ["
+                       << file << ':' << line << "] ["
+                       << func << "] " << msg << '\n';
+                    dispatch_log(level, os.str());
                 #endif
             }
         } // namespace Detail
@@ -296,30 +328,34 @@ namespace SushiRuntime
     /**
      * @brief Logs a message at error level.
      */
+    // The format string is folded into __VA_ARGS__ (so the macros take (...)
+    // rather than (fmt, ...)): this keeps a single, always-present variadic list
+    // and avoids __VA_OPT__/##__VA_ARGS__, neither of which is standard C++17.
+    // log_base's std::string_view fmt parameter then binds the first argument.
     #if SR_ENABLE_LOGGING
-        #define SR_LOG_ERROR(fmt, ...) \
+        #define SR_LOG_ERROR(...) \
             if constexpr (SushiRuntime::Core::ACTIVE_LOG_LEVEL >= SushiRuntime::Core::LogType::ERR) \
-                SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::ERR, "ERROR", std::source_location::current(), fmt __VA_OPT__(,) __VA_ARGS__)
+                SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::ERR, "ERROR", __FILE__, __LINE__, __func__, __VA_ARGS__)
 
         /** @brief Logs a message at warning level. */
-        #define SR_LOG_WARN(fmt, ...) \
+        #define SR_LOG_WARN(...) \
             if constexpr (SushiRuntime::Core::ACTIVE_LOG_LEVEL >= SushiRuntime::Core::LogType::WARN) \
-                SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::WARN, "WARN", std::source_location::current(), fmt __VA_OPT__(,) __VA_ARGS__)
+                SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::WARN, "WARN", __FILE__, __LINE__, __func__, __VA_ARGS__)
 
         /** @brief Logs a message at info level. */
-        #define SR_LOG_INFO(fmt, ...) \
+        #define SR_LOG_INFO(...) \
             if constexpr (SushiRuntime::Core::ACTIVE_LOG_LEVEL >= SushiRuntime::Core::LogType::INFO) \
-                SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::INFO, "INFO", std::source_location::current(), fmt __VA_OPT__(,) __VA_ARGS__)
+                SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::INFO, "INFO", __FILE__, __LINE__, __func__, __VA_ARGS__)
 
         /** @brief Logs a message at debug level. */
-        #define SR_LOG_DEBUG(fmt, ...) \
+        #define SR_LOG_DEBUG(...) \
             if constexpr (SushiRuntime::Core::ACTIVE_LOG_LEVEL >= SushiRuntime::Core::LogType::DEBUG) \
-                SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::DEBUG, "DEBUG", std::source_location::current(), fmt __VA_OPT__(,) __VA_ARGS__)
+                SushiRuntime::Core::Detail::log_base(SushiRuntime::Core::LogType::DEBUG, "DEBUG", __FILE__, __LINE__, __func__, __VA_ARGS__)
     #else
-        #define SR_LOG_ERROR(fmt, ...) ((void)0)
-        #define SR_LOG_WARN(fmt, ...)  ((void)0)
-        #define SR_LOG_INFO(fmt, ...)  ((void)0)
-        #define SR_LOG_DEBUG(fmt, ...) ((void)0)
+        #define SR_LOG_ERROR(...) ((void)0)
+        #define SR_LOG_WARN(...)  ((void)0)
+        #define SR_LOG_INFO(...)  ((void)0)
+        #define SR_LOG_DEBUG(...) ((void)0)
     #endif
 
     /** @brief Switches the logger to synchronous block-printing mode (useful for tests). */
@@ -332,10 +368,10 @@ namespace SushiRuntime
      * @param fmt The error message format.
      * @param ... The format arguments.
      */
-    #define SR_THROW_IF(condition, fmt, ...)                                        \
+    #define SR_THROW_IF(condition, ...)                                             \
         do {                                                                        \
             if (condition) {                                                        \
-                std::string msg_ = std::format(fmt __VA_OPT__(,) __VA_ARGS__);      \
+                std::string msg_ = SushiRuntime::Core::Detail::sr_format(__VA_ARGS__); \
                 SR_LOG_ERROR("Runtime exception: {}", msg_);                        \
                 throw std::runtime_error(msg_);                                     \
             }                                                                       \
