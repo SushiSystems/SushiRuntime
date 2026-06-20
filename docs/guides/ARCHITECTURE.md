@@ -87,21 +87,33 @@ exercised deterministically on a single desktop.
 `include/SushiRuntime/api/runtime.hpp` is the intended entry point for users who
 do not need to reach into the lower layers.
 
-- **`API::Runtime`** — owns a `RuntimeContext` and provides the graph factory.
-  `Runtime::create(config = {})` returns a `Runtime`; `runtime.graph()` returns
-  an `API::Graph`; `runtime.context()` gives a reference to the underlying
-  `RuntimeContext` for callers that need direct queue or allocator access.
+- **`API::Runtime`** — owns a `RuntimeContext` and provides the graph and data
+  factories. `Runtime::create(config = {})` returns a `Runtime`;
+  `runtime.graph()` returns an `API::Graph`; `runtime.buffer<T>(n)` /
+  `runtime.state<T>(n)` allocate typed handles; `runtime.context()` gives a
+  reference to the underlying `RuntimeContext` for direct queue or allocator
+  access.
 
-- **`API::Graph`** — chainable builder. Three overloads of `add()`:
-  - `add(n, per_element_fn)` — per-element kernel (receives one index, submitted
-    as a range kernel).
-  - `add(n, range_fn)` — range kernel; fn is called as `fn(0, n, handler)` and
-    drives the `sycl::handler` directly.
+- **`Buffer<T>` / `State<T>`** — owning handles to shared USM, pinned to one
+  device so co-allocated data shares a context. `State<T>` is double-buffered
+  (current/next) for stepped workloads. Passing a handle to `add()` registers the
+  task's reads and writes automatically.
+
+- **`API::Graph`** — chainable builder. `add()` overloads cover:
+  - `add(n, per_element_fn)` — per-element kernel (receives one index).
+  - `add(n, range_fn)` — range kernel; `fn(0, n, handler)` drives the handler.
   - `add(raw_kernel_fn)` — raw callback for full control.
-  - `run()` — compiles and executes the graph; returns a `RunReport`; throws
-    `SushiException` on error.
-  - `try_run()` — same but returns `Result<RunReport, Error>`; never throws.
-  - `size()` — node count.
+  - `add(state, fn)` — a stepped update rule; `fn(i, cur, next)` reads the
+    current field and writes the next, with the dependency tracked.
+  - `add(out, in0[, in1], fn)` — a coupled rule reading one or two other fields
+    (Jacobi: every read sees the previous step's data).
+  - `add(reads, writes, n, fn)` — per-element kernel with explicit access lists.
+  - `run()` / `run(n)` — compile (once) and replay 1 or `n` steps; returns a
+    `RunReport`; throws `SushiException` on error.
+  - `run_for(duration)` / `run_until(predicate)` — replay until a wall-clock
+    budget elapses or a condition holds.
+  - `try_run()` / `try_run(n)` — non-throwing; return `Result<RunReport, Error>`.
+  - `size()` — task count.
 
 - **`RunReport`** — filled after each `run()` / `try_run()`:
   - `is_successful`, `total_tasks_executed`, `total_duration_ms`,
@@ -148,9 +160,11 @@ A program's lifecycle is always the same three phases, and they must not overlap
 3. **`graph.compile()`.** Links leaf nodes to a sentinel completion node, finds
    the roots (in-degree 0), and transfers ownership into a `CompiledGraph`. It
    submits nothing to hardware.
-4. **`ctx.get_execution_engine().execute(compiled)`** (or `API::Graph::run()`).
-   Injects the roots into the scheduler, arms it, and blocks until the sentinel
-   fires. Returns an `ExecutionMetrics` snapshot.
+4. **`ctx.get_execution_engine().execute(compiled)`** (or the fluent `g.run()` /
+   `run(n)`). Injects the roots into the scheduler, arms it, and blocks until the
+   sentinel fires. The fluent layer compiles the graph once and replays the same
+   `CompiledGraph` for each step — resetting node in-degrees between steps — so a
+   multi-step run pays the build cost only once.
 
 > **Threading rule:** Phase 1 (`add_node`/`add_task`) and Phase 2 (`compile()`)
 > are **not** thread-safe relative to each other. Build the entire graph, then
@@ -529,16 +543,19 @@ owns its data. Allocating through `RuntimeContext` (not bare
 
 `IExecutionEngine` is the "how to run a graph" strategy seam, separate from
 `TaskGraph` (builds the DAG) and `RuntimeContext` (owns resources), so alternative
-strategies (dry-run, profiling, replay) can be added without touching either.
+strategies (dry-run, profiling, incremental update) can be added without touching
+either. Replay is already used by the fluent layer.
 
-`IExecutionEngine` exposes two virtual members: `execute(CompiledGraph)` and
-`metrics()`. **`ExecutionMetrics`** is the return type of `metrics()`:
+`IExecutionEngine` exposes `execute(CompiledGraph&)` — non-consuming, so one
+`CompiledGraph` can be run many times — plus an rvalue convenience overload for
+one-shot runs, and `metrics()`. **`ExecutionMetrics`** is the return type of
+`metrics()`:
 - `local_steals`, `remote_steals` — steal counts since the last
   `arm_for_execution` call;
 - `tasks_completed` — total nodes executed in the last run.
 
-`API::Graph::run_impl()` calls `metrics()` after `execute()` to populate the
-`RunReport` steal counters.
+The fluent run driver snapshots `metrics()` before and after a run to populate
+the `RunReport` steal counters.
 
 The default `ExecutionEngine` owns one persistent `TaskScheduler`: `execute()`
 injects the compiled graph's roots, arms the scheduler, and blocks on the
@@ -706,7 +723,8 @@ helper is a no-op stub and `-fsycl` is applied globally.
 
 ```
 include/SushiRuntime/      Public API (the headers this document describes)
-  api/         Runtime (fluent entry point), API::Graph, RunReport, Error, Errc
+  api/         Runtime (fluent entry point), Buffer/State handles, API::Graph,
+               RunReport, Error, Errc
   core/        RefCounted, sushi_ptr, logger, common constants, OpID, export macro,
                Error/Result/RunReport, compat shims (bit, span, sycl_compat)
   topology/    HardwareDiscovery, NUMAMapper, ITopologyProvider/INumaDistanceModel,
