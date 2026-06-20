@@ -226,32 +226,72 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the functional suite on every p
 A typical flow looks like this:
 
 1. Create a `Runtime` (or a raw `RuntimeContext`). It probes hardware, builds SYCL queues per device, sets up USM allocators, and starts the worker pool.
-2. Add tasks to a graph. Each task declares the memory it reads and writes.
-3. Run the graph. Dependencies are resolved automatically; the runtime executes independent tasks in parallel.
+2. Add work to a graph. Through the fluent API you allocate typed handles (`Buffer<T>` / `State<T>`) and the runtime tracks the memory each unit reads and writes; through the low-level API each task declares those accesses itself.
+3. Run the graph once or for many steps. Dependencies are resolved automatically; the runtime executes independent work in parallel and, for stepped runs, replays a graph it compiled once.
 
 ### Fluent API (`api/`)
 
-The `api/` layer is the intended entry point. `Runtime::create()` owns the
-context; `API::Graph::add()` adds work; `run()` compiles, executes, and returns a
-`RunReport` with timing and steal statistics. `try_run()` is the non-throwing
-alternative.
+The `api/` layer is the intended entry point. You allocate data as typed
+handles, describe each unit of work as plain C++ over those handles, and run the
+graph. The runtime tracks the reads and writes, places the work, and — for
+stepped workloads — compiles the graph once and replays it.
 
 ```cpp
-#include <SushiRuntime/api/runtime.hpp>
+#include <SushiRuntime/SushiRuntime.h>
 
 using namespace SushiRuntime;
 
 auto rt = Runtime::create();
-auto g  = rt.graph();
 
-g.add(1024, [](std::size_t i) { /* work on element i */ });   // per-element kernel
-g.add([](sycl::handler& h) { /* raw SYCL kernel */ });        // raw kernel
+// A time-evolving field; the runtime double-buffers it across steps.
+auto field = rt.state<float>(1024);
+for (std::size_t i = 0; i < field.size(); ++i) field[i] = 0.0f;
 
-auto report = g.run();   // throws SushiException on error
-// or: auto result = g.try_run();  // returns Result<RunReport, Error>
+auto sim = rt.graph();
+
+// One update rule: read the current field, write the next. The runtime
+// supplies the pointers, tracks the dependency, and swaps the buffers.
+sim.add(field, [](std::size_t i, const float* cur, float* next) {
+    next[i] = cur[i];   // a stencil over cur goes here
+});
+
+sim.run(1'000'000);                          // compile once, replay a million steps
+// sim.run_for(std::chrono::seconds(8));     // or run for a wall-clock budget
+// sim.run_until([&] { return converged(); }); // or until a condition holds
+// field.current() now holds the latest state
+```
+
+`run()` is a single step; `run(n)` replays `n` steps; `run_for` and `run_until`
+bound the run by wall-clock time or a predicate. The graph is compiled the first
+time it runs and after any change to it, then replayed without recompiling.
+
+Other ways to add work:
+
+```cpp
+auto g = rt.graph();
+g.add(1024, [](std::size_t i) { /* per-element kernel over [0, n) */ });
+g.add([](sycl::handler& h) { /* raw SYCL kernel */ });
+
+auto report = g.run();      // throws SushiException on error
+auto result = g.try_run();  // non-throwing: Result<RunReport, Error>
 
 // report.total_tasks_executed, report.total_duration_ms,
 // report.numa_statistics[i].tasks_stolen_intra_numa, etc.
+```
+
+Coupled fields read one another within a step. Every read sees the previous
+step's data (a Jacobi update): each field advances only after the whole step's
+kernels have run, so writing one field never changes what another reads in the
+same step.
+
+```cpp
+auto u = rt.state<float>(N);
+auto v = rt.state<float>(N);
+
+sim.add(v, [](std::size_t i, const float* vc, float* vn) { /* vn[i] = ... */ });
+sim.add(u, v, [](std::size_t i, const float* uc, float* un, const float* vc) {
+    /* un[i] = f(uc, vc) */
+});
 ```
 
 ### Low-level API
@@ -294,9 +334,16 @@ The code is organized into layers under `include/SushiRuntime/` and `src/`.
 
 ### Public API (`api/`)
 The fluent entry point that most users should start from:
-- `Runtime` — static `create()` factory; owns the `RuntimeContext` and exposes
-  `graph()` and `context()`.
-- `API::Graph` — chainable builder; `add()` / `run()` / `try_run()`.
+- `Runtime` — static `create()` factory; owns the `RuntimeContext`. Exposes
+  `graph()`, `context()`, and the typed data factories `buffer<T>()` /
+  `state<T>()`.
+- `Buffer<T>` / `State<T>` — owning handles to shared USM. `State<T>` is a
+  double-buffered field for stepped workloads. Passing a handle to `add()`
+  registers the task's reads and writes automatically.
+- `API::Graph` — chainable builder. `add()` overloads take per-element, range,
+  or raw kernels, or `State` / `Buffer` handles (including coupled multi-field
+  rules). `run()` / `run(n)` / `run_for()` / `run_until()` compile once and
+  replay; `try_run()` / `try_run(n)` are the non-throwing forms.
 - `RunReport` — timing and steal statistics returned after each run.
 - `Errc` / `Error` / `SushiException` — the error type hierarchy. `run()`
   throws; `try_run()` returns `Result<RunReport, Error>` without throwing.
@@ -361,7 +408,8 @@ See [Distributed execution](#distributed-execution-optional) for how to run it.
 
 ```
 include/SushiRuntime/   Public headers (this is the API surface)
-  api/                  Fluent entry point: Runtime, API::Graph, RunReport, Error, Errc
+  api/                  Fluent entry point: Runtime, Buffer/State handles,
+                        API::Graph, RunReport, Error, Errc
   core/                 Ref counting, smart pointer, logger, constants,
                         error/result/run_report types, compat shims (bit, span, sycl_compat)
   topology/             Hardware discovery, NUMA mapping, thread affinity,
