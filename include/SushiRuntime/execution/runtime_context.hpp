@@ -154,6 +154,22 @@ namespace SushiRuntime
                 void* malloc_device(size_t bytes, int numa_id = 0);
 
                 /**
+                 * @brief Allocates shared USM pinned to one specific device queue.
+                 *
+                 * Unlike malloc_shared(bytes, numa_id), which round-robins across the
+                 * queues on a NUMA node, this allocates on exactly @p device_index
+                 * and records that owner. Use it when several buffers must share one
+                 * context — a kernel touching USM from two different device contexts
+                 * is an illegal cross-context access. The fluent Buffer/State handles
+                 * allocate through this so a graph's data stays co-located.
+                 *
+                 * @param bytes        Allocation size in bytes.
+                 * @param device_index Target device queue index ([0, device_count())).
+                 * @return USM pointer, or nullptr on failure.
+                 */
+                void* malloc_shared_on(size_t bytes, size_t device_index);
+
+                /**
                  * @brief Frees USM obtained from malloc_shared/malloc_device and
                  *        drops its owner record. Safe to call with nullptr.
                  */

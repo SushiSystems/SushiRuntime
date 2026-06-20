@@ -296,6 +296,18 @@ namespace SushiRuntime
             return impl_->all_queues[0]; // Fallback dummy return
         }
 
+        void* RuntimeContext::malloc_shared_on(size_t bytes, size_t device_index)
+        {
+            sycl::queue& q = get_queue(device_index); // throws if out of bounds
+            void* p = sycl::malloc_shared(bytes, q);
+            if (p)
+            {
+                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
+                impl_->usm_owner[p] = device_index;
+            }
+            return p;
+        }
+
         void* RuntimeContext::malloc_shared(size_t bytes, int numa_id)
         {
             sycl::queue& q = get_numa_local_queue(numa_id);

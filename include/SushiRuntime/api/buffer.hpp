@@ -78,21 +78,24 @@ namespace SushiRuntime
                 Buffer() = default;
 
                 /**
-                 * @brief Allocates @p count elements of shared USM on a NUMA node.
+                 * @brief Allocates @p count elements of shared USM on one device.
                  *
-                 * Allocation goes through the context so the owning queue is
-                 * recorded; do not construct a Buffer over foreign USM.
+                 * Allocation is pinned to @p device_index and its owner recorded, so
+                 * buffers used together (e.g. a State's two fields) share a context
+                 * and a kernel touching them never makes a cross-context access. Do
+                 * not construct a Buffer over foreign USM.
                  *
-                 * @param ctx     The runtime context that owns the allocation.
-                 * @param count   Number of elements to allocate.
-                 * @param numa_id Target NUMA node; selects the owning queue.
+                 * @param ctx          The runtime context that owns the allocation.
+                 * @param count        Number of elements to allocate.
+                 * @param device_index Target device queue; selects the owning context.
                  */
                 Buffer(std::shared_ptr<Execution::RuntimeContext> ctx,
-                       std::size_t count, int numa_id = 0)
+                       std::size_t count, std::size_t device_index = 0)
                     : ctx_(std::move(ctx)),
-                      ptr_(ctx_->template malloc_shared<T>(count, numa_id)),
+                      ptr_(static_cast<T*>(
+                          ctx_->malloc_shared_on(count * sizeof(T), device_index))),
                       size_(count),
-                      numa_id_(numa_id)
+                      device_index_(device_index)
                 {
                 }
 
@@ -110,7 +113,7 @@ namespace SushiRuntime
                     : ctx_(std::move(other.ctx_)),
                       ptr_(other.ptr_),
                       size_(other.size_),
-                      numa_id_(other.numa_id_)
+                      device_index_(other.device_index_)
                 {
                     other.ptr_ = nullptr;
                     other.size_ = 0;
@@ -125,7 +128,7 @@ namespace SushiRuntime
                         ctx_ = std::move(other.ctx_);
                         ptr_ = other.ptr_;
                         size_ = other.size_;
-                        numa_id_ = other.numa_id_;
+                        device_index_ = other.device_index_;
                         other.ptr_ = nullptr;
                         other.size_ = 0;
                     }
@@ -141,8 +144,8 @@ namespace SushiRuntime
                 /** @brief True if the handle owns no allocation. */
                 bool empty() const noexcept { return ptr_ == nullptr; }
 
-                /** @brief NUMA node the allocation is pinned to. */
-                int numa_id() const noexcept { return numa_id_; }
+                /** @brief Device queue index the allocation is pinned to. */
+                std::size_t device_index() const noexcept { return device_index_; }
 
                 /** @brief Host-side element access (shared USM is host-addressable). */
                 T& operator[](std::size_t i) const noexcept { return ptr_[i]; }
@@ -170,7 +173,7 @@ namespace SushiRuntime
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
                 T* ptr_ = nullptr;
                 std::size_t size_ = 0;
-                int numa_id_ = 0;
+                std::size_t device_index_ = 0;
         };
 
         /**
@@ -193,15 +196,19 @@ namespace SushiRuntime
                 State() = default;
 
                 /**
-                 * @brief Allocates both buffers of @p count elements on a NUMA node.
-                 * @param ctx     The runtime context that owns the allocations.
-                 * @param count   Number of elements in each buffer.
-                 * @param numa_id Target NUMA node for both buffers.
+                 * @brief Allocates both buffers of @p count elements on one device.
+                 *
+                 * Both fields land on @p device_index, so a step kernel that reads
+                 * current and writes next stays within one context.
+                 *
+                 * @param ctx          The runtime context that owns the allocations.
+                 * @param count        Number of elements in each buffer.
+                 * @param device_index Target device queue for both buffers.
                  */
                 State(std::shared_ptr<Execution::RuntimeContext> ctx,
-                      std::size_t count, int numa_id = 0)
-                    : cur_(ctx, count, numa_id),
-                      next_(std::move(ctx), count, numa_id)
+                      std::size_t count, std::size_t device_index = 0)
+                    : cur_(ctx, count, device_index),
+                      next_(std::move(ctx), count, device_index)
                 {
                 }
 
