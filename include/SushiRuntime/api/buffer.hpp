@@ -33,6 +33,27 @@ namespace SushiRuntime
 {
     namespace API
     {
+        namespace detail
+        {
+            /**
+             * @brief Indirection a stepped kernel reads to find its data each step.
+             *
+             * A State kernel captures a shared_ptr to one of these instead of raw
+             * pointers. Because the kernel's host-side body runs once per step (at
+             * submit time), it reads cur/next fresh every step. The runtime updates
+             * these two fields when it swaps the State between steps, so one
+             * compiled node follows the double-buffer without being recompiled.
+             *
+             * @tparam T Element type of the buffers this view points into.
+             */
+            template <typename T>
+            struct StateView
+            {
+                T* cur = nullptr;   /**< Current-state base pointer for this step. */
+                T* next = nullptr;  /**< Next-state base pointer for this step. */
+            };
+        } // namespace detail
+
         /**
          * @brief Owning handle to a typed block of unified shared memory.
          *

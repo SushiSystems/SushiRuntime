@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -152,6 +153,85 @@ namespace SushiRuntime
                 Graph& add(F&& fn)
                 {
                     tg_->add_node(std::forward<F>(fn));
+                    ++task_count_;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds the per-step update rule for a time-evolving State.
+                 *
+                 * This is the canonical stepped task: it reads the state's current
+                 * field and writes its next field, with the dependency tracker
+                 * keying on those two buffers automatically. The runtime supplies
+                 * the current/next pointers to @p fn at execution time, so under
+                 * run(n) the same compiled node follows the double-buffer swap with
+                 * no recompilation. Provide exactly one update rule per State per
+                 * step.
+                 *
+                 * @tparam T  Element type of the State.
+                 * @param s   The state this rule evolves; must outlive the graph.
+                 * @param fn  Callable invoked as fn(i, const T* cur, T* next) for
+                 *            each index i in [0, s.size()).
+                 * @return *this, for chaining.
+                 */
+                template <typename T, class F,
+                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
+                                                               const T*, T*>, int> = 0>
+                Graph& add(State<T>& s, F&& fn)
+                {
+                    auto view = std::make_shared<detail::StateView<T>>();
+                    view->cur = s.current();
+                    view->next = s.next();
+                    const std::size_t n = s.size();
+
+                    auto kernel = [fn = std::forward<F>(fn), view, n](sycl::handler& h)
+                    {
+                        // Read fresh each submit (each step) so the swap is followed.
+                        const T* cur = view->cur;
+                        T* next = view->next;
+                        h.parallel_for(sycl::range<1>(n),
+                                       [=](sycl::id<1> i) { fn(i[0], cur, next); });
+                    };
+                    tg_->add_node(std::move(kernel), { s.read_key() }, { s.write_key() });
+
+                    // Registered now, driven by run(n) between steps: advance the
+                    // state, then point the view at the freshly swapped buffers.
+                    State<T>* sp = &s;
+                    step_advancers_.push_back([sp, view]()
+                    {
+                        sp->advance();
+                        view->cur = sp->current();
+                        view->next = sp->next();
+                    });
+                    ++task_count_;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a per-element task with explicit read/write tracking.
+                 *
+                 * The advanced escape hatch for callers who manage their own data
+                 * and want the dependency tracker to order this task against others
+                 * by the pointers it touches. Prefer the State/Buffer overloads;
+                 * reach for this only when handle-based tracking does not fit.
+                 *
+                 * @param reads  Base pointers this task reads (e.g. buffer keys).
+                 * @param writes Base pointers this task writes.
+                 * @param n      Iteration range; fn is called for each i in [0, n).
+                 * @param fn     Callable invoked as fn(i) for each index i.
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
+                Graph& add(const std::vector<void*>& reads,
+                           const std::vector<void*>& writes,
+                           std::size_t n, F&& fn)
+                {
+                    auto kernel = [fn = std::forward<F>(fn), n](sycl::handler& h)
+                    {
+                        h.parallel_for(sycl::range<1>(n),
+                                       [fn](sycl::id<1> i) { fn(i[0]); });
+                    };
+                    tg_->add_node(std::move(kernel), reads, writes);
                     ++task_count_;
                     return *this;
                 }
@@ -287,6 +367,11 @@ namespace SushiRuntime
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
                 std::unique_ptr<BackingGraph> tg_;
                 std::size_t task_count_ = 0;
+
+                // One per State update rule: advances the state and re-points its
+                // view at the swapped buffers. Inert under a single run(); driven
+                // once per step boundary by run(n) (added in the lifecycle slice).
+                std::vector<std::function<void()>> step_advancers_;
         };
 
         /**
