@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <type_traits>
@@ -38,6 +39,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
@@ -116,13 +118,16 @@ namespace SushiRuntime
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(std::size_t n, F&& fn)
                 {
-                    auto kernel = [fn = std::forward<F>(fn), n](sycl::handler& h)
+                    specs_.push_back([fn = std::forward<F>(fn), n](BackingGraph& bg)
                     {
-                        h.parallel_for(sycl::range<1>(n),
-                                       [fn](sycl::id<1> idx) { fn(idx[0]); });
-                    };
-                    tg_->add_node(std::move(kernel));
+                        bg.add_node([fn, n](sycl::handler& h)
+                        {
+                            h.parallel_for(sycl::range<1>(n),
+                                           [fn](sycl::id<1> idx) { fn(idx[0]); });
+                        });
+                    });
                     ++task_count_;
+                    dirty_ = true;
                     return *this;
                 }
 
@@ -135,12 +140,15 @@ namespace SushiRuntime
                 template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
                 Graph& add(std::size_t n, F&& fn)
                 {
-                    auto kernel = [fn = std::forward<F>(fn), n](sycl::handler& h)
+                    specs_.push_back([fn = std::forward<F>(fn), n](BackingGraph& bg)
                     {
-                        fn(std::size_t{0}, n, h);
-                    };
-                    tg_->add_node(std::move(kernel));
+                        bg.add_node([fn, n](sycl::handler& h)
+                        {
+                            fn(std::size_t{0}, n, h);
+                        });
+                    });
                     ++task_count_;
+                    dirty_ = true;
                     return *this;
                 }
 
@@ -152,8 +160,12 @@ namespace SushiRuntime
                 template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
                 Graph& add(F&& fn)
                 {
-                    tg_->add_node(std::forward<F>(fn));
+                    specs_.push_back([fn = std::forward<F>(fn)](BackingGraph& bg)
+                    {
+                        bg.add_node(fn);
+                    });
                     ++task_count_;
+                    dirty_ = true;
                     return *this;
                 }
 
@@ -179,24 +191,30 @@ namespace SushiRuntime
                                                                const T*, T*>, int> = 0>
                 Graph& add(State<T>& s, F&& fn)
                 {
+                    // The view is shared between the kernel (which reads it fresh at
+                    // each submit, on the host side) and the advancer (which repoints
+                    // it after each swap). It persists across recompiles so the
+                    // double-buffer keeps following the same indirection.
                     auto view = std::make_shared<detail::StateView<T>>();
-                    view->cur = s.current();
-                    view->next = s.next();
-                    const std::size_t n = s.size();
-
-                    auto kernel = [fn = std::forward<F>(fn), view, n](sycl::handler& h)
-                    {
-                        // Read fresh each submit (each step) so the swap is followed.
-                        const T* cur = view->cur;
-                        T* next = view->next;
-                        h.parallel_for(sycl::range<1>(n),
-                                       [=](sycl::id<1> i) { fn(i[0], cur, next); });
-                    };
-                    tg_->add_node(std::move(kernel), { s.read_key() }, { s.write_key() });
-
-                    // Registered now, driven by run(n) between steps: advance the
-                    // state, then point the view at the freshly swapped buffers.
                     State<T>* sp = &s;
+
+                    specs_.push_back([fn = std::forward<F>(fn), view, sp](BackingGraph& bg)
+                    {
+                        view->cur = sp->current();
+                        view->next = sp->next();
+                        const std::size_t n = sp->size();
+                        bg.add_node([fn, view, n](sycl::handler& h)
+                        {
+                            // Read fresh each submit (each step) to follow the swap.
+                            const T* cur = view->cur;
+                            T* next = view->next;
+                            h.parallel_for(sycl::range<1>(n),
+                                           [=](sycl::id<1> i) { fn(i[0], cur, next); });
+                        }, { sp->read_key() }, { sp->write_key() });
+                    });
+
+                    // Driven by run(n) between steps: advance the state, then point
+                    // the view at the freshly swapped buffers.
                     step_advancers_.push_back([sp, view]()
                     {
                         sp->advance();
@@ -204,6 +222,7 @@ namespace SushiRuntime
                         view->next = sp->next();
                     });
                     ++task_count_;
+                    dirty_ = true;
                     return *this;
                 }
 
@@ -226,49 +245,127 @@ namespace SushiRuntime
                            const std::vector<void*>& writes,
                            std::size_t n, F&& fn)
                 {
-                    auto kernel = [fn = std::forward<F>(fn), n](sycl::handler& h)
+                    specs_.push_back([fn = std::forward<F>(fn), n, reads, writes](BackingGraph& bg)
                     {
-                        h.parallel_for(sycl::range<1>(n),
-                                       [fn](sycl::id<1> i) { fn(i[0]); });
-                    };
-                    tg_->add_node(std::move(kernel), reads, writes);
+                        bg.add_node([fn, n](sycl::handler& h)
+                        {
+                            h.parallel_for(sycl::range<1>(n),
+                                           [fn](sycl::id<1> i) { fn(i[0]); });
+                        }, reads, writes);
+                    });
                     ++task_count_;
+                    dirty_ = true;
                     return *this;
                 }
 
+                /** @brief Number of update rules (tasks) added so far. */
+                std::size_t size() const noexcept { return task_count_; }
+
                 /**
-                 * @brief Compiles and runs the graph, blocking until it completes.
-                 *
-                 * Throws on failure. Use try_run() for the non-throwing channel.
-                 *
+                 * @brief Runs the graph once, blocking until it completes.
                  * @return A RunReport summarising the run.
                  * @throws Core::SushiException on any synchronous or device error.
                  */
-                Core::RunReport run()
+                Core::RunReport run() { return run(std::size_t{1}); }
+
+                /**
+                 * @brief Runs @p steps successive steps, blocking until done.
+                 *
+                 * The graph is compiled on the first run (and after any mutation),
+                 * then the compiled plan is replayed for each step: node dependency
+                 * state is reset, the plan re-executed, and every State advanced to
+                 * its next field. Compilation happens at most once per call.
+                 *
+                 * @param steps Number of steps to run.
+                 * @return A RunReport aggregating the whole run.
+                 * @throws Core::SushiException on any synchronous or device error.
+                 */
+                Core::RunReport run(std::size_t steps)
                 {
-                    auto result = try_run();
-                    if (!result)
-                        throw Core::SushiException(std::move(result.error()));
-                    return *result;
+                    return unwrap(try_run(steps));
                 }
 
                 /**
-                 * @brief Compiles and runs the graph without throwing.
-                 *
-                 * Synchronous failures (empty graph, compilation) and device
-                 * faults surfacing from the queue's async handler are both mapped
-                 * into the Error channel.
-                 *
+                 * @brief Runs steps until a wall-clock @p budget elapses.
+                 * @param budget Wall-clock limit; at least one step always runs.
+                 * @return A RunReport aggregating the steps that ran.
+                 * @throws Core::SushiException on any synchronous or device error.
+                 */
+                template <class Rep, class Period>
+                Core::RunReport run_for(std::chrono::duration<Rep, Period> budget)
+                {
+                    const auto deadline = std::chrono::steady_clock::now() + budget;
+                    return unwrap(drive([deadline](std::size_t k)
+                    {
+                        return k == 0 || std::chrono::steady_clock::now() < deadline;
+                    }));
+                }
+
+                /**
+                 * @brief Runs steps until @p done returns true.
+                 * @param done Stop condition checked before each step; the run ends
+                 *             the first time it returns true.
+                 * @return A RunReport aggregating the steps that ran.
+                 * @throws Core::SushiException on any synchronous or device error.
+                 */
+                template <class Predicate>
+                Core::RunReport run_until(Predicate done)
+                {
+                    return unwrap(drive([done](std::size_t) { return !done(); }));
+                }
+
+                /**
+                 * @brief Non-throwing single run.
                  * @return The RunReport on success, or an Error on failure.
                  */
                 [[nodiscard]] Core::Result<Core::RunReport, Core::Error> try_run() noexcept
+                {
+                    return try_run(std::size_t{1});
+                }
+
+                /**
+                 * @brief Non-throwing multi-step run.
+                 * @param steps Number of steps to run.
+                 * @return The RunReport on success, or an Error on failure.
+                 */
+                [[nodiscard]] Core::Result<Core::RunReport, Core::Error>
+                try_run(std::size_t steps) noexcept
+                {
+                    return drive([steps](std::size_t k) { return k < steps; });
+                }
+
+            private:
+                friend class Runtime;
+
+                explicit Graph(std::shared_ptr<Execution::RuntimeContext> ctx)
+                    : ctx_(std::move(ctx))
+                {
+                }
+
+                /** @brief Throws the carried error, or returns the report. */
+                static Core::RunReport unwrap(Core::Result<Core::RunReport, Core::Error> r)
+                {
+                    if (!r)
+                        throw Core::SushiException(std::move(r.error()));
+                    return *r;
+                }
+
+                /**
+                 * @brief Non-throwing run driver shared by every run/try_run entry.
+                 *
+                 * @param keep_going Called with the count of completed steps before
+                 *                   each step; the loop continues while it is true.
+                 * @return The aggregated RunReport, or a mapped Error on failure.
+                 */
+                template <class KeepGoing>
+                Core::Result<Core::RunReport, Core::Error> drive(KeepGoing keep_going) noexcept
                 {
                     if (task_count_ == 0)
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "Graph has no tasks to run."});
                     try
                     {
-                        return run_impl();
+                        return drive_impl(keep_going);
                     }
                     catch (const Core::SushiException& e)
                     {
@@ -284,68 +381,77 @@ namespace SushiRuntime
                     }
                     catch (...)
                     {
-                        return Core::make_error(Core::Error{Core::Errc::compile_failed, "unknown exception"});
+                        return Core::make_error(Core::Error{Core::Errc::compile_failed,
+                                                            "unknown exception"});
                     }
                 }
 
-                /** @brief Number of tasks added so far. */
-                std::size_t size() const noexcept { return task_count_; }
-
-            private:
-                friend class Runtime;
-
-                explicit Graph(std::shared_ptr<Execution::RuntimeContext> ctx)
-                    : ctx_(std::move(ctx)), tg_(std::make_unique<BackingGraph>(*ctx_))
-                {
-                }
-
-                Core::RunReport run_impl()
+                template <class KeepGoing>
+                Core::RunReport drive_impl(KeepGoing keep_going)
                 {
                     using clock = std::chrono::steady_clock;
-                    auto& engine = ctx_->get_execution_engine();
-                    const auto before = engine.metrics();
-
-                    const auto t0 = clock::now();
-                    auto compiled = tg_->compile();
-                    const auto t1 = clock::now();
-                    engine.execute(std::move(compiled));
-                    const auto t2 = clock::now();
-
-                    const auto after = engine.metrics();
-
                     auto ms = [](clock::time_point a, clock::time_point b)
                     {
                         return std::chrono::duration<double, std::milli>(b - a).count();
                     };
 
+                    double compile_ms = 0.0;
+                    if (dirty_)
+                    {
+                        const auto c0 = clock::now();
+                        build_plan();
+                        compile_ms = ms(c0, clock::now());
+                    }
+
+                    auto& engine = ctx_->get_execution_engine();
+                    const auto before = engine.metrics();
+                    const auto t0 = clock::now();
+
+                    std::size_t executed = 0;
+                    while (keep_going(executed))
+                    {
+                        reset_plan_state();
+                        engine.execute(plan_); // lvalue -> non-consuming replay
+
+                        // Advance every State after the step so its just-written
+                        // next field becomes current — both for the following step
+                        // and for the caller reading current() once the run ends.
+                        for (auto& advance : step_advancers_)
+                            advance();
+                        ++executed;
+                    }
+
+                    const auto t1 = clock::now();
+                    const auto after = engine.metrics();
+
+                    const std::size_t total_tasks = task_count_ * executed;
+
                     Core::RunReport report;
                     report.is_successful = true;
-                    report.total_tasks_executed = task_count_;
-                    report.graph_analysis_duration_ms = ms(t0, t1);
-                    report.total_duration_ms = ms(t0, t2);
+                    report.total_tasks_executed = total_tasks;
+                    report.graph_analysis_duration_ms = compile_ms;
+                    report.total_duration_ms = ms(t0, t1);
 
                     // Attribute the tasks to the device class the default queue
-                    // targets, on its NUMA node. Per-task placement and the
-                    // reserved steal/byte counters are filled in as the engine
-                    // exposes them.
+                    // targets. Per-task placement and the reserved steal/byte
+                    // counters are filled in as the engine exposes them.
                     Core::NumaNodeStatistics node;
                     try
                     {
                         auto& q = ctx_->get_queue(0);
                         if (q.get_device().is_gpu())
-                            node.gpu_tasks_executed = task_count_;
+                            node.gpu_tasks_executed = total_tasks;
                         else
-                            node.cpu_tasks_executed = task_count_;
+                            node.cpu_tasks_executed = total_tasks;
                     }
                     catch (...)
                     {
-                        node.cpu_tasks_executed = task_count_;
+                        node.cpu_tasks_executed = total_tasks;
                         report.warnings.emplace_back("No SYCL queue available; task placement unknown.");
                     }
 
-                    // Work-stealing breakdown for this run, from the scheduler's
-                    // before/after counters. Intra/inter-NUMA map to node-local vs
-                    // cross-node steals; popped-local is what is left after steals.
+                    // Work-stealing breakdown over the whole run, from the
+                    // scheduler's before/after counters.
                     const std::size_t stolen_intra = after.local_steals  - before.local_steals;
                     const std::size_t stolen_inter = after.remote_steals - before.remote_steals;
                     const std::size_t completed    = after.tasks_completed - before.tasks_completed;
@@ -364,14 +470,62 @@ namespace SushiRuntime
                     return report;
                 }
 
+                // Builds a fresh backing graph from the recorded specs, compiles it,
+                // caches the plan, and snapshots each node's compiled in-degree so a
+                // replay can restore it. compile() drains its builder, so a fresh
+                // BackingGraph is built whenever the topology changes.
+                void build_plan()
+                {
+                    BackingGraph bg(*ctx_);
+                    for (auto& spec : specs_)
+                        spec(bg);
+                    plan_ = bg.compile();
+
+                    base_in_degree_.clear();
+                    base_in_degree_.reserve(plan_.all_nodes.size());
+                    for (auto& n : plan_.all_nodes)
+                        base_in_degree_.push_back(n->in_degree.load(std::memory_order_relaxed));
+                    sentinel_in_degree_ = plan_.sentinel
+                        ? plan_.sentinel->in_degree.load(std::memory_order_relaxed) : 0;
+                    dirty_ = false;
+                }
+
+                // Restores every node's dependency counter to its compiled value so
+                // the cached plan can run again. The scheduler re-arms itself; this
+                // resets the DAG-side state a previous run consumed.
+                void reset_plan_state() noexcept
+                {
+                    const std::size_t count = plan_.all_nodes.size();
+                    for (std::size_t i = 0; i < count && i < base_in_degree_.size(); ++i)
+                        plan_.all_nodes[i]->in_degree.store(base_in_degree_[i],
+                                                            std::memory_order_relaxed);
+                    if (plan_.sentinel)
+                        plan_.sentinel->in_degree.store(sentinel_in_degree_,
+                                                        std::memory_order_relaxed);
+#ifdef SR_DISTRIBUTED
+                    for (auto& n : plan_.all_nodes)
+                        n->offload_attempts_.store(0, std::memory_order_relaxed);
+#endif
+                }
+
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
-                std::unique_ptr<BackingGraph> tg_;
-                std::size_t task_count_ = 0;
+
+                // Recorded task specifications: each replays one add() onto a fresh
+                // backing graph. The fluent Graph is the source of truth so it can
+                // rebuild and recompile when mutated.
+                std::vector<std::function<void(BackingGraph&)>> specs_;
 
                 // One per State update rule: advances the state and re-points its
-                // view at the swapped buffers. Inert under a single run(); driven
-                // once per step boundary by run(n) (added in the lifecycle slice).
+                // view at the swapped buffers, run once per step boundary by run(n).
                 std::vector<std::function<void()>> step_advancers_;
+
+                std::size_t task_count_ = 0;
+
+                // Cached compiled plan, valid while !dirty_; replayed across steps.
+                Execution::CompiledGraph plan_;
+                std::vector<std::int32_t> base_in_degree_;
+                std::int32_t sentinel_in_degree_ = 0;
+                bool dirty_ = true;
         };
 
         /**

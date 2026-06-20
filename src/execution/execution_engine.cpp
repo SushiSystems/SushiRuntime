@@ -138,7 +138,7 @@ namespace SushiRuntime
          * The persistent scheduler is "re-armed" for this execution round via
          * arm_for_execution() instead of being destroyed and recreated (Madde 7).
          */
-        sycl::event ExecutionEngine::execute(CompiledGraph graph)
+        sycl::event ExecutionEngine::execute(CompiledGraph& graph)
         {
             SR_THROW_IF(impl_->is_shutdown.load(std::memory_order_acquire), "Execute called after shutdown.");
             SR_THROW_IF(graph.roots.empty(), "Received a compiled graph with no root nodes.");

@@ -24,6 +24,7 @@
 #pragma once
 
 #include <cstddef>
+#include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
@@ -105,13 +106,37 @@ namespace SushiRuntime
             virtual ExecutionMetrics metrics() const { return {}; }
 
             /**
-             * @brief Submits a compiled graph for execution and blocks until completion.
+             * @brief Runs a compiled graph in place and blocks until completion.
              *
-             * @param graph The pre-compiled graph produced by TaskGraph::compile().
+             * Non-consuming: the engine reads @p graph's roots and sentinel and
+             * resets/re-arms its scheduler for the round, but does not take
+             * ownership of the nodes. This is what makes replay possible — the
+             * caller keeps one CompiledGraph and runs it many times, resetting node
+             * state between runs. The one-shot rvalue overload below delegates here.
+             *
+             * @param graph The compiled graph to run; left intact (nodes' per-run
+             *              state such as in_degree is consumed and must be reset by
+             *              the caller before the next run).
              * @return sycl::event Currently always sycl::event{}. Do not chain SYCL
              *         dependencies on this value.
              */
-            virtual sycl::event execute(CompiledGraph graph) = 0;
+            virtual sycl::event execute(CompiledGraph& graph) = 0;
+
+            /**
+             * @brief One-shot convenience: runs a temporary compiled graph.
+             *
+             * Binds rvalues (e.g. execute(graph.compile())) and delegates to the
+             * in-place overload. The moved-in graph is destroyed when the call
+             * returns, so this is the right entry point for a single run.
+             *
+             * @param graph A compiled graph to run once and discard.
+             * @return sycl::event As for the in-place overload.
+             */
+            sycl::event execute(CompiledGraph&& graph)
+            {
+                CompiledGraph local = std::move(graph);
+                return execute(local);
+            }
 
             /**
              * @brief Signals the engine to stop accepting new work and drain active tasks.
@@ -159,12 +184,14 @@ namespace SushiRuntime
              * running flag for this execution round, then blocks on the sentinel's
              * completion promise. Does NOT recreate any threads.
              *
-             * @param graph Compiled graph to execute.
+             * @param graph Compiled graph to run in place (not consumed).
              * @return sycl::event Always sycl::event{} — the sentinel runs inline
              *         (not via a SYCL submission) so there is no hardware event to
              *         return. Do not chain SYCL dependencies on this value.
              */
-            sycl::event execute(CompiledGraph graph) override;
+            sycl::event execute(CompiledGraph& graph) override;
+
+            using IExecutionEngine::execute; // keep the rvalue convenience overload visible
 
             /** @brief Reads the live work-stealing counters from the scheduler. */
             ExecutionMetrics metrics() const override;
