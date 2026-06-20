@@ -32,6 +32,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/buffer.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -313,6 +314,41 @@ namespace SushiRuntime
                  * @return A fluent Graph; add tasks, then run() or try_run().
                  */
                 Graph graph() { return Graph(ctx_); }
+
+                /**
+                 * @brief Allocates a typed shared-USM buffer owned by this runtime.
+                 *
+                 * The buffer borrows the runtime's context for allocation and
+                 * frees itself on destruction, so it must not outlive the Runtime.
+                 *
+                 * @tparam T      Element type (trivially copyable for device use).
+                 * @param count   Number of elements.
+                 * @param numa_id Target NUMA node; selects the owning queue.
+                 * @return An owning Buffer<T> handle.
+                 */
+                template <typename T>
+                Buffer<T> buffer(std::size_t count, int numa_id = 0)
+                {
+                    return Buffer<T>(ctx_, count, numa_id);
+                }
+
+                /**
+                 * @brief Allocates a double-buffered, time-evolving State field.
+                 *
+                 * Use this for data a stepped graph reads as "current" and writes
+                 * as "next"; the runtime swaps the two each step. Like buffer(),
+                 * it must not outlive the Runtime.
+                 *
+                 * @tparam T      Element type (trivially copyable for device use).
+                 * @param count   Number of elements in each of the two buffers.
+                 * @param numa_id Target NUMA node for both buffers.
+                 * @return An owning State<T> handle.
+                 */
+                template <typename T>
+                State<T> state(std::size_t count, int numa_id = 0)
+                {
+                    return State<T>(ctx_, count, numa_id);
+                }
 
                 /** @brief Access to the underlying context for advanced use. */
                 Execution::RuntimeContext& context() noexcept { return *ctx_; }
