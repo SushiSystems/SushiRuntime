@@ -109,13 +109,14 @@ Because every public header freezes, the following must be settled **before** th
 v1.0.0 tag — afterwards they can only be fixed if the fix is internal or additive.
 
 ### WP-A — Surface scoping (decide what actually freezes)
-- Review which headers are genuinely user-facing vs internal representation.
-  Candidates to move to a non-frozen `detail/` location **before** freeze:
-  `graph/node.hpp`, `graph/dependency_tracker.hpp`, `scheduler/event_polling.hpp`.
-  Recommendation: move internal representations out of the frozen set — locking
-  an internal layout forever is the most expensive part of D7. *(Open: confirm.)*
+- **Decided 2026-06-20: keep `node.hpp` where it is — do not move to `detail/`.**
+  The replay reset is done from the fluent layer (it reads/writes the public
+  `Node::in_degree`), so moving `Node` is not required for the lifecycle.
+  Relocating a header included by 18 files is broad and unverifiable without a
+  build, so the safe choice is to leave the layout in place; the same applies to
+  `dependency_tracker.hpp` and `event_polling.hpp`.
 - Final classification per header: **stable-public** / **stable-advanced** /
-  **detail (not frozen)**.
+  **detail (not frozen)** — still to be written down per header.
 
 ### WP-B — Correctness hardening (frozen guarantees must be real)
 - **#30 EventPolling 256-event cap:** verify the overflow path; fix the silent
@@ -127,15 +128,32 @@ v1.0.0 tag — afterwards they can only be fixed if the fix is internal or addit
   `src/scheduler/scheduler.cpp`; clean up via a virtual `on_complete()` if still
   present.
 
-### WP-C — The fluent lifecycle API (the actual surface, D1–D6)
-- `Runtime::create()` / `rt.graph()` (exist) + `rt.buffer<T>()` / `rt.state<T>()`.
+### WP-C — The fluent lifecycle API (the actual surface, D1–D6) — **implemented**
+- `Runtime::create()` / `rt.graph()` + `rt.buffer<T>()` / `rt.state<T>()`.
 - Handle-based `add(...)` overloads with automatic dependency registration (D5),
-  routed to `TaskGraph::add_task(meta, reads, writes, ...)`. Auto-generated `OpID`
-  when the user does not supply one (keeps the path JIT/offload-ready).
+  plus coupled multi-field rules `add(out, in0[, in1], fn)` (Jacobi semantics).
 - Explicit `reads/writes` overload kept as the advanced escape hatch.
-- `run()` / `run(n)` / `run_for` / `run_until` + `try_run*` mirror.
-- Cached `CompiledGraph` + per-node counter reset + `state` double-buffer swap.
-- `state<T>` / `buffer<T>` handle types over the existing `USMAllocator`.
+- `run()` / `run(n)` / `run_for` / `run_until` + `try_run()` / `try_run(n)`.
+- Cached `CompiledGraph` + per-node `in_degree` reset + `state` double-buffer.
+- `state<T>` / `buffer<T>` handle types over `RuntimeContext` allocation.
+
+As-built divergences from the original sketch, found during implementation:
+- **`compile()` is destructive** (it drains its builder), so the fluent `Graph`
+  retains *task specs* and rebuilds a fresh backing graph on mutation, rather
+  than re-compiling a persistent one.
+- **Non-consuming execute** is an overload pair: `execute(CompiledGraph&)` (the
+  replay path) plus an rvalue convenience that delegates — existing rvalue call
+  sites are unaffected, avoiding a breaking interface change.
+- **Double-buffering** uses a per-`State` shared `StateView` indirection the
+  kernel reads at submit time; the once-per-step advancer updates it. This is
+  also what makes coupled reads see the previous step (Jacobi).
+- **Device co-location:** handles allocate via `RuntimeContext::malloc_shared_on`
+  on one device, because the NUMA-local allocator round-robins and would
+  otherwise split a graph's buffers across contexts.
+- `add_node(work, reads, writes)` was fixed to retain its access lists (queue
+  routing), matching `add_task`.
+- `OpID` auto-generation for fluent tasks (for JIT/offload reach) is **not yet
+  wired**; it remains an additive follow-up behind the existing `OpID` seam.
 
 ### WP-D — Forever-type decisions
 - **`Core::Result<T,E>`:** declare it the *official forever type* (not a temporary
@@ -183,8 +201,14 @@ v1.0.0 tag — afterwards they can only be fixed if the fix is internal or addit
 3. **WP-D** (forever-type decisions).
 4. **WP-E** + **WP-F** — hygiene, then the freeze tag.
 
-## 8. Open items to confirm
+## 8. Status and open items
 
-- WP-A: move `node.hpp` / `dependency_tracker.hpp` / `event_polling.hpp` to
-  `detail/` (out of the frozen set)?
-- WP-D: declare `Core::Result` the official forever type?
+- **WP-C (fluent lifecycle API): implemented and tested** — handles, stepping,
+  coupling, replay, mutation-recompile (`tests/functional/integration/
+  test_fluent_lifecycle.cpp`).
+- **WP-A: resolved** — `node.hpp` stays public (not moved to `detail/`).
+- **WP-D: `Core::Result` as the official forever type — recommended, awaiting
+  confirmation.**
+- Remaining before the freeze tag: **WP-B** (hardening #30/#29/#33), **WP-E**
+  (version bump to 1.0.0, reserved-field `@note`s, remove the `task_graph.hpp`
+  orphan comment), **WP-F** (Doxygen sweep), and wiring `OpID` auto-generation.
