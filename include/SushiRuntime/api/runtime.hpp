@@ -29,6 +29,8 @@
 #include <functional>
 #include <memory>
 #include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -104,8 +106,8 @@ namespace SushiRuntime
         class Graph
         {
             public:
-                Graph(Graph&&) noexcept = default;
-                Graph& operator=(Graph&&) noexcept = default;
+                Graph(Graph&&) = default;
+                Graph& operator=(Graph&&) = default;
                 Graph(const Graph&) = delete;
                 Graph& operator=(const Graph&) = delete;
 
@@ -191,17 +193,11 @@ namespace SushiRuntime
                                                                const T*, T*>, int> = 0>
                 Graph& add(State<T>& s, F&& fn)
                 {
-                    // The view is shared between the kernel (which reads it fresh at
-                    // each submit, on the host side) and the advancer (which repoints
-                    // it after each swap). It persists across recompiles so the
-                    // double-buffer keeps following the same indirection.
-                    auto view = std::make_shared<detail::StateView<T>>();
+                    auto view = view_for(s);
                     State<T>* sp = &s;
 
                     specs_.push_back([fn = std::forward<F>(fn), view, sp](BackingGraph& bg)
                     {
-                        view->cur = sp->current();
-                        view->next = sp->next();
                         const std::size_t n = sp->size();
                         bg.add_node([fn, view, n](sycl::handler& h)
                         {
@@ -213,14 +209,102 @@ namespace SushiRuntime
                         }, { sp->read_key() }, { sp->write_key() });
                     });
 
-                    // Driven by run(n) between steps: advance the state, then point
-                    // the view at the freshly swapped buffers.
-                    step_advancers_.push_back([sp, view]()
+                    register_advance(s, view);
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a coupled update rule reading one other field.
+                 *
+                 * Writes @p out's next field from @p out's current field and the
+                 * current field of @p in0 — the building block for coupled systems
+                 * (e.g. reaction-diffusion). All reads see the previous step's data
+                 * (a Jacobi update): every State advances only after all of a step's
+                 * kernels have run, so writing one field never changes what another
+                 * reads in the same step. Each field must have exactly one update
+                 * rule per step.
+                 *
+                 * @tparam T   Element type of the written field.
+                 * @tparam A   Element type of the read field.
+                 * @param out  The field this rule writes; must outlive the graph.
+                 * @param in0  A field this rule reads; must outlive the graph.
+                 * @param fn   Invoked as fn(i, const T* cur, T* next, const A* a).
+                 * @return *this, for chaining.
+                 */
+                template <typename T, typename A, class F,
+                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
+                              const T*, T*, const A*>, int> = 0>
+                Graph& add(State<T>& out, State<A>& in0, F&& fn)
+                {
+                    auto ov = view_for(out);
+                    auto av = view_for(in0);
+                    State<T>* op = &out;
+                    State<A>* a0 = &in0;
+
+                    specs_.push_back([fn = std::forward<F>(fn), ov, av, op, a0](BackingGraph& bg)
                     {
-                        sp->advance();
-                        view->cur = sp->current();
-                        view->next = sp->next();
+                        const std::size_t n = op->size();
+                        bg.add_node([fn, ov, av, n](sycl::handler& h)
+                        {
+                            const T* cur = ov->cur;
+                            T* next = ov->next;
+                            const A* a = av->cur;
+                            h.parallel_for(sycl::range<1>(n),
+                                           [=](sycl::id<1> i) { fn(i[0], cur, next, a); });
+                        }, { op->read_key(), a0->read_key() }, { op->write_key() });
                     });
+
+                    register_advance(out, ov);
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a coupled update rule reading two other fields.
+                 *
+                 * As the single-input coupling overload, with two read fields.
+                 *
+                 * @tparam T   Element type of the written field.
+                 * @tparam A   Element type of the first read field.
+                 * @tparam B   Element type of the second read field.
+                 * @param out  The field this rule writes; must outlive the graph.
+                 * @param in0  First read field; must outlive the graph.
+                 * @param in1  Second read field; must outlive the graph.
+                 * @param fn   Invoked as fn(i, const T* cur, T* next, const A* a,
+                 *             const B* b).
+                 * @return *this, for chaining.
+                 */
+                template <typename T, typename A, typename B, class F,
+                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
+                              const T*, T*, const A*, const B*>, int> = 0>
+                Graph& add(State<T>& out, State<A>& in0, State<B>& in1, F&& fn)
+                {
+                    auto ov = view_for(out);
+                    auto av = view_for(in0);
+                    auto bv = view_for(in1);
+                    State<T>* op = &out;
+                    State<A>* a0 = &in0;
+                    State<B>* b1 = &in1;
+
+                    specs_.push_back([fn = std::forward<F>(fn), ov, av, bv, op, a0, b1](BackingGraph& bg)
+                    {
+                        const std::size_t n = op->size();
+                        bg.add_node([fn, ov, av, bv, n](sycl::handler& h)
+                        {
+                            const T* cur = ov->cur;
+                            T* next = ov->next;
+                            const A* a = av->cur;
+                            const B* b = bv->cur;
+                            h.parallel_for(sycl::range<1>(n),
+                                           [=](sycl::id<1> i) { fn(i[0], cur, next, a, b); });
+                        }, { op->read_key(), a0->read_key(), b1->read_key() },
+                           { op->write_key() });
+                    });
+
+                    register_advance(out, ov);
                     ++task_count_;
                     dirty_ = true;
                     return *this;
@@ -403,6 +487,12 @@ namespace SushiRuntime
                         compile_ms = ms(c0, clock::now());
                     }
 
+                    // Point every State view at its current/next buffers before the
+                    // first step. Covers both a fresh build and a replay continuing
+                    // from a previous run.
+                    for (auto& resync : view_resyncs_)
+                        resync();
+
                     auto& engine = ctx_->get_execution_engine();
                     const auto before = engine.metrics();
                     const auto t0 = clock::now();
@@ -470,6 +560,46 @@ namespace SushiRuntime
                     return report;
                 }
 
+                // Returns the shared view for a State, creating it (and registering
+                // its resync) on first use. Every kernel touching a State captures
+                // the same view, so one advancer keeps all references current — the
+                // basis for correct coupled (multi-field) updates.
+                template <typename T>
+                std::shared_ptr<detail::StateView<T>> view_for(State<T>& s)
+                {
+                    const void* key = &s;
+                    auto it = state_views_.find(key);
+                    if (it != state_views_.end())
+                        return std::static_pointer_cast<detail::StateView<T>>(it->second);
+
+                    auto view = std::make_shared<detail::StateView<T>>();
+                    state_views_.emplace(key, view);
+                    State<T>* sp = &s;
+                    view_resyncs_.push_back([sp, view]()
+                    {
+                        view->cur = sp->current();
+                        view->next = sp->next();
+                    });
+                    return view;
+                }
+
+                // Registers the once-per-step advance for a written State. Deduped so
+                // a State advances exactly once per step (one update rule per field).
+                template <typename T>
+                void register_advance(State<T>& s, std::shared_ptr<detail::StateView<T>> view)
+                {
+                    const void* key = &s;
+                    if (!advanced_states_.insert(key).second)
+                        return;
+                    State<T>* sp = &s;
+                    step_advancers_.push_back([sp, view]()
+                    {
+                        sp->advance();
+                        view->cur = sp->current();
+                        view->next = sp->next();
+                    });
+                }
+
                 // Builds a fresh backing graph from the recorded specs, compiles it,
                 // caches the plan, and snapshots each node's compiled in-degree so a
                 // replay can restore it. compile() drains its builder, so a fresh
@@ -518,6 +648,14 @@ namespace SushiRuntime
                 // One per State update rule: advances the state and re-points its
                 // view at the swapped buffers, run once per step boundary by run(n).
                 std::vector<std::function<void()>> step_advancers_;
+
+                // One shared StateView per State, captured by every kernel that
+                // touches it. Type-erased; view_for() casts back to the typed view.
+                std::unordered_map<const void*, std::shared_ptr<void>> state_views_;
+                // States that already have an advancer (one writer per State).
+                std::unordered_set<const void*> advanced_states_;
+                // Points each view at its state's current/next; run before each run.
+                std::vector<std::function<void()>> view_resyncs_;
 
                 std::size_t task_count_ = 0;
 
