@@ -3,9 +3,9 @@
     SushiRuntime one-script installer (Windows).
 
 .DESCRIPTION
-    Bootstraps Python + Git via winget if missing, installs the `sr` CLI, then
-    runs `sr setup all`, which installs the remaining dependencies (vcpkg ports +
-    toolchain), writes config.local.toml, and builds + smoke-tests.
+    Bootstraps Python, Git, CMake, and Ninja via winget if missing, installs the
+    `sr` CLI, then runs `sr setup all`, which installs the remaining dependencies
+    (vcpkg ports + toolchain), writes config.local.toml, and builds + smoke-tests.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File install.ps1 -Gpu
@@ -33,14 +33,16 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     Fail "winget not found. Install 'App Installer' from the Microsoft Store, then re-run."
 }
 
-# 2. Bootstrap Python + Git if missing.
+# 2. Bootstrap Python, Git, CMake, and Ninja via winget if missing.
 function Ensure-WingetPackage($id, $cmd) {
     if (Get-Command $cmd -ErrorAction SilentlyContinue) { return }
     Info "Installing $id via winget..."
     winget install --id $id -e --accept-package-agreements --accept-source-agreements
 }
 Ensure-WingetPackage "Python.Python.3.12" "python"
-Ensure-WingetPackage "Git.Git" "git"
+Ensure-WingetPackage "Git.Git"            "git"
+Ensure-WingetPackage "Kitware.CMake"      "cmake"
+Ensure-WingetPackage "Ninja-build.Ninja"  "ninja"
 
 # winget may have changed PATH only for new shells; refresh this session.
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +

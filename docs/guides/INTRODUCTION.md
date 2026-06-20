@@ -1,6 +1,6 @@
 # Getting started with SushiRuntime
 
-SushiRuntime is a C++23 runtime library for **task-based parallel computing on
+SushiRuntime is a C++17 runtime library for **task-based parallel computing on
 heterogeneous hardware**. You describe your work as a graph of tasks, declare
 which memory each task reads and writes, and the runtime works out a safe order
 and runs the independent parts in parallel across your CPU and GPU using SYCL.

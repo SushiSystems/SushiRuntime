@@ -95,8 +95,8 @@ do not need to reach into the lower layers.
 - **`API::Graph`** — chainable builder. Three overloads of `add()`:
   - `add(n, per_element_fn)` — per-element kernel (receives one index, submitted
     as a range kernel).
-  - `add(n, range_fn)` — explicit-range kernel (receives a `sycl::handler`
-    directly).
+  - `add(n, range_fn)` — range kernel; fn is called as `fn(0, n, handler)` and
+    drives the `sycl::handler` directly.
   - `add(raw_kernel_fn)` — raw callback for full control.
   - `run()` — compiles and executes the graph; returns a `RunReport`; throws
     `SushiException` on error.
@@ -107,7 +107,7 @@ do not need to reach into the lower layers.
   - `is_successful`, `total_tasks_executed`, `total_duration_ms`,
     `graph_analysis_duration_ms`.
   - `numa_statistics` — `NumaNodeStatistics` per NUMA node: CPU/GPU task counts,
-    `intra_node_steals`, `inter_node_steals`.
+    `tasks_stolen_intra_numa`, `tasks_stolen_inter_numa`.
   - `distributed_statistics` — `DistributedStatistics`: offloaded task count,
     `remote_nodes_involved`.
   - Fields marked `[reserved]` (`scheduling_overhead_ms`,
@@ -239,8 +239,7 @@ and memory close.
   walking PCI topology, and reports inter-node distances on the ACPI SLIT
   convention: **10 = local, > 10 = remote** (typically 21).
 - **`HwlocDistanceModel`** loads the SLIT matrix from hwloc once at construction
-  into a flat array; `get_distance()` is then an O(1) array lookup. Earlier builds
-  did a per-call hwloc reload; the cached design is used now.
+  into a flat array; `get_distance()` is then an O(1) array lookup.
 - **Injection seam.** `RuntimeContext` takes an `ITopologyProvider` (device
   enumeration) and an `INumaDistanceModel` (distance source). Left null, it uses
   `HwlocTopologyProvider` + `HwlocDistanceModel`. The substitutes —
@@ -579,7 +578,7 @@ architectural essentials:
   `size_bytes`). Closures and pointers never cross the network.
 
 - **`protocol.hpp`** defines the wire format: a `[4B length][1B type][payload]`
-  frame. `MsgType` enum: `REGISTER_HELLO` / `ACK` / `TASK_DISPATCH` /
+  frame. `MsgType` enum: `REGISTER_HELLO` / `REGISTER_ACK` / `TASK_DISPATCH` /
   `BUFFER_REQUEST` / `BUFFER_PUSH` / `TASK_RESULT` / `HEARTBEAT` / `PING` /
   `PONG`. `ByteWriter` and `ByteReader` are the serializer/deserializer pair used
   by all message encode/decode paths.

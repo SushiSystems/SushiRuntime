@@ -35,16 +35,18 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
-# 2. Bootstrap python3 + pip + git if missing.
+# 2. Bootstrap python3 + pip + git + cmake + ninja if missing.
+# cmake and ninja are needed by `sr project build`; install them here so the
+# full pipeline works on a bare machine without a separate manual step.
 need_bootstrap=0
-for tool in python3 git; do
+for tool in python3 git cmake ninja; do
   command -v "$tool" >/dev/null 2>&1 || need_bootstrap=1
 done
 python3 -m pip --version >/dev/null 2>&1 || need_bootstrap=1
 if [ "$need_bootstrap" -eq 1 ]; then
-  log "Installing bootstrap tools (python3, pip, git)..."
+  log "Installing bootstrap tools (python3, pip, git, cmake, ninja-build)..."
   $SUDO apt-get update
-  $SUDO apt-get install -y python3 python3-pip git
+  $SUDO apt-get install -y python3 python3-pip git cmake ninja-build
 fi
 
 # 3. Locate the repo: a checkout containing this script, else clone it.

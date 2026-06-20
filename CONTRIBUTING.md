@@ -92,10 +92,17 @@ The codebase has a deliberate, consistent style. Match the file you're editing.
   stay compact.
 - **Nested namespaces, Allman.** Write `namespace A\n{\n namespace B\n{` — not
   `namespace A::B`.
-- **C++20.** `<format>`, `<bit>`, `<concepts>`, `<source_location>`, etc. are fair
-  game; the code already relies on them.
+- **C++17.** The codebase targets C++17. Do not use `<format>`, `<concepts>`,
+  `<source_location>`, or other C++20/23 facilities. `<bit>`, `<span>`, and an
+  `std::expected`-style `Result<T, E>` are provided as shims under `core/`
+  (`bit.hpp`, `span.hpp`, `result.hpp`) — use those, not the standard headers.
 - **Comments are few and useful.** A short plain-English line that explains *why*,
   not a restatement of the code. Delete redundant narration.
+- **No historical references in comments or Doxygen.** Do not mention the PR,
+  issue, contributor, or past implementation that a change replaced — those belong
+  in the commit message. A comment that says "we used to do X" or "fixed in #123"
+  rots immediately and misleads future readers. If removing the sentence would not
+  confuse anyone reading the code cold, remove it.
 - **No separator comments.** Lines like `// <-----------`, `// =========`, or
   `// --------` are forbidden everywhere in the codebase.
 - **Lock-free code carries its reasoning.** If you touch an atomic, name the
