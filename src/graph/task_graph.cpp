@@ -232,14 +232,27 @@ namespace SushiRuntime
             node->sycl_deps = dependencies;
             
             // Resolve USM dependencies for reads and writes
-            for(void* ptr : read_access) 
+            for(void* ptr : read_access)
                 if (ptr) impl_->tracker.resolve(node.get(), ptr, false);
-            
-            for(void* ptr : write_access) 
+
+            for(void* ptr : write_access)
                 if (ptr) impl_->tracker.resolve(node.get(), ptr, true);
 
+            // Retain the access lists on the node, exactly as add_task does. The
+            // scheduler uses them to route a KERNEL submit to the queue that owns
+            // the USM; without them a kernel can run on a device whose context does
+            // not own the data — a cross-context illegal access on heterogeneous
+            // setups (e.g. a GPU kernel touching CPU-context USM).
+            node->io_reads_  = read_access;
+            node->io_writes_ = write_access;
+
+#ifdef SR_DISTRIBUTED
+            node->dist_reads_  = read_access;
+            node->dist_writes_ = write_access;
+#endif
+
             SR_LOG_DEBUG("Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
-            
+
             // O(1) Lock-Free insertion
             impl_->push_node_lock_free(std::move(node));
         }
