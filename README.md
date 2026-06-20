@@ -18,7 +18,7 @@ It is built around three ideas:
   - **AdaptiveCpp** (`acpp`) — secondary, vendor-neutral.
   - **Intel oneAPI DPC++** (`icpx` on Linux, `icx-cl` on Windows) — supported,
     kept for Intel profiling tools (VTune/Advisor).
-- **CMake** 3.20 or newer.
+- **CMake** 3.20 or newer (3.25 or newer required for the Intel oneAPI toolchain).
 - **hwloc** (hardware locality library) for topology discovery.
 - **GoogleTest** for the test suite.
 - A C++17 standard library. The codebase targets C++17 and ships its own shims
@@ -26,7 +26,7 @@ It is built around three ideas:
   `host_task` invocation; on a C++20/23 toolchain these thin out to standard
   aliases.
 
-On Windows, dependencies are resolved through **vcpkg**. On Linux they can come from the system package manager or vcpkg.
+On Windows, C++ library dependencies are resolved through **vcpkg**; CMake and Ninja are installed via winget by `install.ps1` if missing. On Linux they come from the system package manager (apt).
 
 ## Quick start (one script)
 
@@ -244,17 +244,14 @@ using namespace SushiRuntime;
 auto rt = Runtime::create();
 auto g  = rt.graph();
 
-int data = 0;
-void* ptr = &data;
-
-g.add(ptr, [&](std::size_t) { data = 42; });  // writer
-g.add(ptr, [&](std::size_t) { /* use data */ }); // reader — auto-ordered after writer
+g.add(1024, [](std::size_t i) { /* work on element i */ });   // per-element kernel
+g.add([](sycl::handler& h) { /* raw SYCL kernel */ });        // raw kernel
 
 auto report = g.run();   // throws SushiException on error
 // or: auto result = g.try_run();  // returns Result<RunReport, Error>
 
 // report.total_tasks_executed, report.total_duration_ms,
-// report.numa_statistics[i].intra_node_steals, etc.
+// report.numa_statistics[i].tasks_stolen_intra_numa, etc.
 ```
 
 ### Low-level API

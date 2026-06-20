@@ -21,6 +21,29 @@
 #   check_cmd      Optional command; exit 0 means "already installed" (idempotency).
 #                  Use "{name}" tokens? No — keep it a literal argv list.
 
+[build_tools]
+description   = "C++ compiler and core build tools (gcc, g++, make). Any GCC >= 9 suffices for the intel-llvm -fsycl host pass."
+required      = true
+linux_apt     = ["build-essential"]
+windows_vcpkg = []
+
+[cmake]
+# Windows: installed via winget (Kitware.CMake) by install.ps1 — cmake cannot
+# bootstrap itself through vcpkg, and vcpkg itself requires cmake to run.
+description   = "CMake build system. 3.20+ for intel-llvm / AdaptiveCpp; 3.25+ required for the oneAPI toolchain."
+required      = true
+linux_apt     = ["cmake"]
+windows_vcpkg = []
+check_cmd     = ["cmake", "--version"]
+
+[ninja]
+# Windows: installed via winget (Ninja-build.Ninja) by install.ps1.
+description   = "Ninja build generator (default generator on both platforms via config.toml)."
+required      = true
+linux_apt     = ["ninja-build"]
+windows_vcpkg = []
+check_cmd     = ["ninja", "--version"]
+
 [hwloc]
 description   = "Hardware locality library (topology / NUMA discovery)"
 required      = true
@@ -39,6 +62,7 @@ description   = "OpenCL ICD loader + dev headers (exposes CPU as a SYCL device)"
 required      = true
 linux_apt     = ["ocl-icd-opencl-dev", "ocl-icd-libopencl1"]
 windows_vcpkg = []
+check_cmd     = ["pkg-config", "--exists", "OpenCL"]
 
 [pkgconf]
 description   = "pkg-config implementation (CMake uses it to locate hwloc)"
@@ -55,8 +79,12 @@ windows_vcpkg = []
 check_cmd     = ["acpp", "--version"]
 
 [cuda]
-description   = "NVIDIA CUDA toolkit (SYCL nvptx64 backend; arch via SR_CUDA_ARCH, default 61)"
+# Ubuntu apt ships nvidia-cuda-toolkit 11.x, which is incompatible with the
+# intel/llvm nightly bundle (requires CUDA 12.x). Install from NVIDIA's official
+# runfile or use the nvidia/cuda Docker base image — do not rely on apt here.
+description   = "NVIDIA CUDA toolkit (SYCL nvptx64 backend; arch via SR_CUDA_ARCH, default 61). Must be installed from NVIDIA's official runfile, not Ubuntu apt (apt ships CUDA 11.x)."
 required      = false
 gpu_only      = true
-linux_apt     = ["nvidia-cuda-toolkit"]
+linux_apt     = []
 windows_vcpkg = []
+check_cmd     = ["nvcc", "--version"]
