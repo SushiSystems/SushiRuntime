@@ -105,6 +105,68 @@ TEST(Integration_FluentLifecycle, RunUntilStopsOnCondition)
     EXPECT_EQ(field[0], 20);
 }
 
+// Coupled fields: u reads v, v evolves on its own. Both rules read the previous
+// step's data (Jacobi), so after K steps v == K and u == sum_{j=0}^{K-1} j. If
+// the swap happened per-rule instead of after the whole step, u would read v's
+// updated value and diverge — so this also pins down the advance-after-step rule.
+TEST(Integration_FluentLifecycle, CoupledFieldsAreJacobi)
+{
+    constexpr std::size_t N     = 128;
+    constexpr std::size_t STEPS = 10;
+
+    auto rt = Runtime::create();
+    auto u  = rt.state<int>(N);
+    auto v  = rt.state<int>(N);
+    for (std::size_t i = 0; i < N; ++i) { u[i] = 0; v[i] = 0; }
+
+    auto sim = rt.graph();
+    sim.add(v, [](std::size_t i, const int* vc, int* vn)
+    {
+        vn[i] = vc[i] + 1;
+    });
+    sim.add(u, v, [](std::size_t i, const int* uc, int* un, const int* vc)
+    {
+        un[i] = uc[i] + vc[i];
+    });
+
+    sim.run(STEPS);
+
+    constexpr int expected_v = static_cast<int>(STEPS);             // 10
+    constexpr int expected_u = static_cast<int>(STEPS * (STEPS - 1) / 2); // 45
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        ASSERT_EQ(v[i], expected_v);
+        ASSERT_EQ(u[i], expected_u);
+    }
+}
+
+// Mutating the graph after a run invalidates the cached plan: the next run
+// recompiles with the added rule, and existing state continues from where it
+// left off.
+TEST(Integration_FluentLifecycle, MutationRecompiles)
+{
+    constexpr std::size_t N = 128;
+
+    auto rt = Runtime::create();
+    auto a  = rt.state<int>(N);
+    for (std::size_t i = 0; i < N; ++i) a[i] = 0;
+
+    auto sim = rt.graph();
+    sim.add(a, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 1; });
+    sim.run(3); // a == 3
+
+    auto b = rt.state<int>(N);
+    for (std::size_t i = 0; i < N; ++i) b[i] = 0;
+    sim.add(b, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 2; });
+    sim.run(2); // recompiles; a += 2 -> 5, b == 4
+
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        ASSERT_EQ(a[i], 5);
+        ASSERT_EQ(b[i], 4);
+    }
+}
+
 // A graph with no tasks is invalid and the non-throwing channel reports it
 // without throwing.
 TEST(Integration_FluentLifecycle, EmptyGraphIsInvalid)
