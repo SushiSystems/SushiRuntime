@@ -68,9 +68,89 @@ If the functional suite passes, you're ready to write code.
 
 ---
 
-## 2. The mental model
+## 2. The quick path — the fluent API
 
-A SushiRuntime program has four moving parts:
+The `api/` layer is the intended entry point. You allocate data as typed
+handles, describe each unit of work as plain C++ over those handles, and run the
+graph. The runtime tracks the reads and writes, places the work on a device, and
+— for stepped workloads — compiles the graph once and replays it. You never
+touch a `sycl::handler` or wire up a dependency by hand.
+
+Here is a complete program: a 1-D heat-diffusion step run for many timesteps.
+
+```cpp
+#include <cstdio>
+#include <SushiRuntime/SushiRuntime.h>
+
+using namespace SushiRuntime;
+
+int main()
+{
+    auto rt = Runtime::create();
+
+    constexpr std::size_t N = 1024;
+
+    // A time-evolving field. The runtime keeps two buffers and swaps them each
+    // step, so a rule reads the current field and writes the next.
+    auto heat = rt.state<float>(N);
+    for (std::size_t i = 0; i < N; ++i) heat[i] = (i == N / 2) ? 1.0f : 0.0f;
+
+    auto sim = rt.graph();
+
+    // One update rule. fn gets the index plus the current and next buffers;
+    // the runtime supplies the pointers and tracks the read/write for you.
+    sim.add(heat, [N](std::size_t i, const float* cur, float* next)
+    {
+        const float left  = (i == 0)     ? cur[i] : cur[i - 1];
+        const float right = (i == N - 1) ? cur[i] : cur[i + 1];
+        next[i] = cur[i] + 0.25f * (left - 2.0f * cur[i] + right);
+    });
+
+    // Compile once, replay 100000 steps. The worker pool, NUMA placement,
+    // device dispatch, and buffer swapping are all handled for you.
+    auto report = sim.run(100000);
+
+    std::printf("ran %zu task-steps in %.1f ms\n",
+                report.total_tasks_executed, report.total_duration_ms);
+    // heat.current() now holds the final field.
+    return 0;
+}
+```
+
+`run()` is a single step; `run(n)` replays `n` steps; `run_for(duration)` and
+`run_until(predicate)` bound a run by wall-clock time or a condition. `try_run()`
+and `try_run(n)` are the non-throwing forms, returning `Result<RunReport, Error>`
+instead of throwing `SushiException`. The graph is compiled the first time it
+runs and after any change to it, then replayed without recompiling.
+
+For data that does not evolve step to step, use `rt.buffer<T>(n)` instead of
+`rt.state<T>(n)`. Both are owning handles to shared USM; both register their
+reads and writes automatically when passed to `add()`.
+
+**Coupled fields** read one another within a step. Every read sees the previous
+step's data (a Jacobi update): each field advances only after the whole step's
+kernels have run, so writing one field never changes what another reads in the
+same step.
+
+```cpp
+auto u = rt.state<float>(N);
+auto v = rt.state<float>(N);
+
+sim.add(v, [](std::size_t i, const float* vc, float* vn) { /* vn[i] = ... */ });
+sim.add(u, v, [](std::size_t i, const float* uc, float* un, const float* vc) {
+    /* un[i] = f(uc, vc) */
+});
+```
+
+The fluent API is enough for most programs. The rest of this guide documents the
+lower-level task-graph API it is built on, for when you need full control over
+task bodies, host/device fallback, or explicit dependency lists.
+
+---
+
+## 3. The lower-level mental model
+
+A program written against the lower-level API has four moving parts:
 
 1. **`RuntimeContext`** — the top-level object. When you create it, it discovers
    your hardware (CPUs, GPUs, NUMA nodes), builds a SYCL queue per device, sets
@@ -95,7 +175,7 @@ finish adding every task before you compile.
 
 ---
 
-## 3. Your first program
+## 4. Your first program
 
 Here is a complete program: it adds two vectors, `C = A + B`. It uses one host
 task to fill the input arrays and one device kernel to do the addition. The
@@ -371,7 +451,7 @@ supplies the state when it does.
 
 ---
 
-## 4. The core API, in detail
+## 5. The core API, in detail
 
 ### `RuntimeContext`
 
@@ -538,7 +618,7 @@ thread-safe relative to each other.
 
 ---
 
-## 5. A second example: a three-stage pipeline
+## 6. A second example: a three-stage pipeline
 
 This shows dependencies doing real work. Three tasks share the same buffer, so
 they're forced into order: initialize → scale (on the device) → reduce on the
@@ -602,7 +682,7 @@ you express an in-place update, and it keeps the task correctly ordered between
 
 ---
 
-## 6. Where to go next
+## 7. Where to go next
 
 - **[CLI_GUIDE.md](CLI_GUIDE.md)** — every `sr` command: build types, test
   suites, running binaries, Docker, and diagnostics.
@@ -610,6 +690,7 @@ you express an in-place update, and it keeps the task correctly ordered between
   pool, work-stealing scheduler, topology mapping), CMake options, and the
   optional distributed master-worker layer.
 - **`tests/functional/integration/`** — runnable, real-world usage of every
-  feature in this guide. `test_sycl_execution.cpp` and `test_graph.cpp` are the
-  best starting points.
+  feature in this guide. `test_fluent_lifecycle.cpp` covers the fluent API
+  (handles, stepping, coupling); `test_sycl_execution.cpp` and `test_graph.cpp`
+  are the best starting points for the lower-level API.
 - **`sr project doxygen`** — generate the full API reference from the headers.
