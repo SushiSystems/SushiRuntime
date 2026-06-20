@@ -148,7 +148,8 @@ v1.0.0 tag — afterwards they can only be fixed if the fix is internal or addit
   `SushiRuntime::span`, `bit.hpp`, `sycl_compat.hpp`.
 
 ### WP-E — Release hygiene (low risk, additive)
-- `sushi.hpp` umbrella header (single include).
+- Single-include entry point: keep `SushiRuntime/SushiRuntime.h` as the one public
+  umbrella. No separate `sushi.hpp` (decided 2026-06-20).
 - Remove the orphaned comment at `graph/task_graph.hpp:161`.
 - Add `@note Reserved: always 0 in v1` to each reserved `RunReport` field.
 - CMake `VERSION 0.1.0` → `1.0.0`; resolve `SR_BUILD_TESTS` default (flip or note).

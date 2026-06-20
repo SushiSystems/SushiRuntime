@@ -132,11 +132,7 @@ namespace SushiRuntime
              * @param graph A compiled graph to run once and discard.
              * @return sycl::event As for the in-place overload.
              */
-            sycl::event execute(CompiledGraph&& graph)
-            {
-                CompiledGraph local = std::move(graph);
-                return execute(local);
-            }
+            sycl::event execute(CompiledGraph&& graph);
 
             /**
              * @brief Signals the engine to stop accepting new work and drain active tasks.

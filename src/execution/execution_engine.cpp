@@ -226,5 +226,14 @@ namespace SushiRuntime
             return completion_event;
         }
 
+        // Defined here, not in the header: constructing the CompiledGraph local
+        // instantiates its destructor (sushi_ptr<Node>::~sushi_ptr), which needs the
+        // complete Node type. The header only forward-declares Node to stay light.
+        sycl::event IExecutionEngine::execute(CompiledGraph&& graph)
+        {
+            CompiledGraph local = std::move(graph);
+            return execute(local);
+        }
+
     } // namespace Execution
 } // namespace SushiRuntime
