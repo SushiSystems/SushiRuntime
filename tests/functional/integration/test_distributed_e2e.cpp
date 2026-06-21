@@ -30,6 +30,8 @@
 #include <SushiRuntime/core/span.hpp>
 #include <atomic>
 #include <chrono>
+#include <cstring>
+#include <future>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -595,6 +597,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     worker_transport->start();
     {
         ByteWriter w;
+        w.put<uint32_t>(PROTOCOL_VERSION);
         w.put<uint32_t>(1);
         w.put<uint32_t>(VEC_ADD.value);
         worker_transport->send(0, MsgType::REGISTER_HELLO, w.view());
@@ -665,6 +668,193 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     if (heartbeat.joinable())
         heartbeat.join();
     worker_transport->stop();
+    sycl::free(a, mq);
+    sycl::free(b, mq);
+    sycl::free(out, mq);
+}
+
+// A superseded (zombie) worker's late writeback must NOT clobber the master's
+// authoritative buffer. We drive the version fence directly: the buffer is
+// advanced to version 3, then a stale BUFFER_PUSH (version 2, poison bytes) is
+// injected over the fabric. The fence must reject it (buffer unchanged), while a
+// fresh push at the current version is accepted. This is the data-corruption
+// race a redispatch-after-false-death would otherwise cause.
+TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
+{
+    std::unique_ptr<RuntimeContext> master_ctx;
+    try
+    {
+        master_ctx = std::make_unique<RuntimeContext>();
+    }
+    catch (const std::exception& e)
+    {
+        GTEST_SKIP() << "No SYCL device available: " << e.what();
+    }
+
+    constexpr size_t N = 16;
+    sycl::queue& mq = master_ctx->get_queue(0);
+    float* out = sycl::malloc_shared<float>(N, mq);
+    ASSERT_NE(out, nullptr);
+    for (size_t i = 0; i < N; ++i) out[i] = 7.0f; // authoritative good value
+
+    InProcessFabric fabric(1);
+    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
+    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+
+    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
+    master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
+    worker_transport->start();
+
+    master_ctx->register_distributed_buffer(out, N * sizeof(float)); // version 1
+    master_ctx->bump_distributed_buffer(out);                        // -> 2
+    master_ctx->bump_distributed_buffer(out);                        // -> 3
+    auto cur = master_ctx->distributed_buffer(out);
+    ASSERT_TRUE(cur.has_value());
+    ASSERT_EQ(cur->version, 3u);
+
+    // Stale writeback: an older version carrying poison. Must be rejected.
+    {
+        BufferPushMsg push;
+        push.handle = *cur;
+        push.handle.version = 2; // < current (3)
+        std::vector<float> poison(N, 999.0f);
+        push.data.resize(N * sizeof(float));
+        std::memcpy(push.data.data(), poison.data(), N * sizeof(float));
+        worker_transport->send(0, MsgType::BUFFER_PUSH, push.serialize());
+    }
+
+    // Wait until the fence has observed and rejected it.
+    bool fenced = false;
+    for (int i = 0; i < 300 && !fenced; ++i)
+    {
+        fenced = master_ctx->distributed_stale_writeback_count() >= 1;
+        if (!fenced) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(fenced) << "Stale writeback should have been rejected by the version fence.";
+    for (size_t i = 0; i < N; ++i)
+        EXPECT_EQ(out[i], 7.0f) << "Stale writeback clobbered the authoritative buffer at " << i;
+
+    // Fresh writeback at the current version: must be accepted.
+    {
+        BufferPushMsg push;
+        push.handle = *cur;
+        push.handle.version = 3; // == current
+        std::vector<float> good(N, 42.0f);
+        push.data.resize(N * sizeof(float));
+        std::memcpy(push.data.data(), good.data(), N * sizeof(float));
+        worker_transport->send(0, MsgType::BUFFER_PUSH, push.serialize());
+    }
+    bool applied = false;
+    for (int i = 0; i < 300 && !applied; ++i)
+    {
+        applied = out[0] == 42.0f;
+        if (!applied) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(applied) << "A current-version writeback should have been accepted.";
+
+    worker_transport->stop();
+    sycl::free(out, mq);
+}
+
+// A worker that never receives the buffer it pulls must not hang the graph. With
+// the fabric dropping the master's BUFFER_PUSH, the worker's input pull times out
+// (set_pull_timeout) and the task fails cleanly, so execute() RETURNS rather than
+// blocking the exec thread (and the whole run) forever.
+TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHanging)
+{
+    std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
+    try
+    {
+        master_ctx = std::make_unique<RuntimeContext>();
+        worker_ctx = std::make_unique<RuntimeContext>();
+    }
+    catch (const std::exception& e)
+    {
+        GTEST_SKIP() << "No SYCL device available: " << e.what();
+    }
+
+    constexpr size_t N = 64;
+    sycl::queue& mq = master_ctx->get_queue(0);
+    float* a   = sycl::malloc_shared<float>(N, mq);
+    float* b   = sycl::malloc_shared<float>(N, mq);
+    float* out = sycl::malloc_shared<float>(N, mq);
+    ASSERT_NE(a, nullptr);
+    ASSERT_NE(b, nullptr);
+    ASSERT_NE(out, nullptr);
+    for (size_t i = 0; i < N; ++i) { a[i] = float(i); b[i] = float(2 * i); out[i] = -1.0f; }
+
+    InProcessFabric fabric(1);
+    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
+    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+
+    // Drop every buffer the master tries to push to the worker, so the worker's
+    // input pull can never complete.
+    fabric.set_fault_policy([](int from, int to, MsgType type)
+    {
+        if (from == -1 && to == 0 && type == MsgType::BUFFER_PUSH)
+            return FaultAction::Drop;
+        return FaultAction::Deliver;
+    });
+
+    auto worker_kernels = make_sushi<KernelRegistry>();
+    register_vec_add(*worker_kernels);
+    WorkerAgent agent(*worker_ctx, worker_transport, worker_kernels);
+    agent.set_pull_timeout(std::chrono::milliseconds(200)); // fail fast for the test
+
+    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
+    master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
+    agent.start();
+
+    bool supported = false;
+    for (int i = 0; i < 300 && !supported; ++i)
+    {
+        supported = master_ctx->distributed_supports(VEC_ADD);
+        if (!supported) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(supported);
+
+    master_ctx->register_distributed_buffer(a,   N * sizeof(float));
+    master_ctx->register_distributed_buffer(b,   N * sizeof(float));
+    master_ctx->register_distributed_buffer(out, N * sizeof(float));
+
+    TaskGraph graph(*master_ctx);
+    TaskMetadata meta{};
+    meta.name  = "vec_add_lost_push";
+    meta.op_id = VEC_ADD;
+    meta.set_param<uint64_t>(0, N);
+    graph.add_task(meta, {a, b}, {out},
+        [a, b, out](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
+        {
+            return q.submit([&](sycl::handler& h)
+            {
+                SushiRuntime::detail::enqueue_host_task(h, [=]
+                {
+                    for (size_t i = 0; i < N; ++i) out[i] = a[i] + b[i];
+                });
+            });
+        });
+
+    // Run on a side thread so a regression (permanent hang) fails the test by
+    // timeout instead of wedging the whole suite.
+    auto compiled = std::make_shared<CompiledGraph>(graph.compile());
+    std::promise<void> done;
+    auto fut = done.get_future();
+    std::thread runner([&]
+    {
+        master_ctx->get_execution_engine().execute(*compiled);
+        done.set_value();
+    });
+
+    const auto status = fut.wait_for(std::chrono::seconds(10));
+    EXPECT_EQ(status, std::future_status::ready)
+        << "execute() hung: a lost buffer push must time out, not block forever.";
+
+    if (status == std::future_status::ready)
+        runner.join();
+    else
+        runner.detach(); // leak rather than join a wedged thread; the test already failed
+
+    agent.stop();
     sycl::free(a, mq);
     sycl::free(b, mq);
     sycl::free(out, mq);

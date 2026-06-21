@@ -50,6 +50,28 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
+         * @brief Wire protocol version, exchanged in the HELLO handshake.
+         *
+         * Both ends are built from the same source in the target lab, but a
+         * mismatched or stray binary connecting to the cluster would otherwise
+         * parse raw structs against an incompatible layout and corrupt silently.
+         * The master rejects a HELLO whose version differs from its own. Bump this
+         * whenever any on-wire struct or message changes shape.
+         */
+        constexpr uint32_t PROTOCOL_VERSION = 1;
+
+        /**
+         * @brief Hard upper bound on a single frame's payload length.
+         *
+         * The frame header carries a 32-bit length the receiver must trust enough
+         * to allocate. A corrupt or hostile length (e.g. 4 GiB) would otherwise
+         * trigger a giant allocation; the transport rejects any frame above this
+         * cap and drops the connection instead. 256 MiB comfortably exceeds the
+         * largest buffer a single BUFFER_PUSH is expected to carry.
+         */
+        constexpr uint32_t MAX_FRAME_BYTES = 256u * 1024u * 1024u;
+
+        /**
          * @brief Network-safe stand-in for a void* USM pointer.
          *
          * The master assigns these; they are globally unique within a run. A
@@ -236,12 +258,21 @@ namespace SushiRuntime
             }
         };
 
-        /** @brief worker -> master: result is ready (lazy: bytes pulled only when needed). */
+        /**
+         * @brief worker -> master: result is ready, WITH the output bytes inline.
+         *
+         * The output data rides in this single message rather than a separate
+         * BUFFER_PUSH, so completion and data are atomic: a dropped result loses
+         * both (the task simply times out and is re-dispatched), and the master can
+         * never mark a task done while its output bytes silently failed to arrive.
+         * On failure, outputs/output_data are empty.
+         */
         struct TaskResultMsg
         {
             uint64_t                  task_id = 0;
             bool                      success = true;
-            std::vector<BufferHandle> outputs; /**< new versions produced on the worker. */
+            std::vector<BufferHandle> outputs;     /**< new versions produced on the worker. */
+            std::vector<std::vector<std::byte>> output_data; /**< bytes for each output, parallel to outputs. */
 
             std::vector<std::byte> serialize() const
             {
@@ -249,7 +280,13 @@ namespace SushiRuntime
                 w.put(task_id);
                 w.put<uint8_t>(success ? 1 : 0);
                 w.put<uint32_t>(static_cast<uint32_t>(outputs.size()));
-                for (const auto& h : outputs) w.put(h);
+                for (size_t i = 0; i < outputs.size(); ++i)
+                {
+                    w.put(outputs[i]);
+                    const auto& blob = i < output_data.size() ? output_data[i]
+                                                              : std::vector<std::byte>{};
+                    w.put_blob(blob.data(), blob.size());
+                }
                 return w.take();
             }
 
@@ -260,7 +297,14 @@ namespace SushiRuntime
                 m.task_id   = r.get<uint64_t>();
                 m.success   = r.get<uint8_t>() != 0;
                 uint32_t n  = r.get<uint32_t>();
-                for (uint32_t i = 0; i < n && r.ok(); ++i) m.outputs.push_back(r.get<BufferHandle>());
+                for (uint32_t i = 0; i < n && r.ok(); ++i)
+                {
+                    BufferHandle h = r.get<BufferHandle>();
+                    auto blob = r.get_blob();
+                    if (!r.ok()) break;
+                    m.outputs.push_back(h);
+                    m.output_data.emplace_back(blob.begin(), blob.end());
+                }
                 return m;
             }
         };

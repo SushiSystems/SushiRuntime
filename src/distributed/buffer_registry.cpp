@@ -57,6 +57,16 @@ namespace SushiRuntime
                 ++it->second.version;
         }
 
+        void BufferRegistry::bump_version_by_id(GlobalBufferID id)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto pit = ptr_by_id_.find(id.value);
+            if (pit == ptr_by_id_.end())
+                return;
+            if (auto it = by_ptr_.find(pit->second); it != by_ptr_.end())
+                ++it->second.version;
+        }
+
         void BufferRegistry::unregister_buffer(void* usm_ptr)
         {
             std::lock_guard<std::mutex> lock(mutex_);

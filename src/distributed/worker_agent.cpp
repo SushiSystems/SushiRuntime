@@ -23,6 +23,7 @@
 
 #include <SushiRuntime/distributed/worker_agent.hpp>
 
+#include <deque>
 #include <queue>
 #include <mutex>
 #include <chrono>
@@ -31,6 +32,7 @@
 #include <vector>
 #include <condition_variable>
 #include <unordered_map>
+#include <unordered_set>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
@@ -59,6 +61,41 @@ namespace SushiRuntime
             std::queue<TaskDispatchMsg>   jobs;
             std::thread                   exec_thread;
             std::atomic<bool>             running{false};
+
+            // Backpressure: cap the pending-job queue so a master that floods this
+            // worker faster than it drains cannot grow memory without bound. When
+            // full, a dispatch is fast-failed (TASK_RESULT{false}) so the master
+            // re-dispatches it elsewhere or runs it locally, rather than silently
+            // queueing unbounded work.
+            std::atomic<size_t>           max_jobs{1024};
+
+            // --- idempotency: a bounded set of recently-seen task ids so a
+            //     duplicated TASK_DISPATCH (transport retransmit) never runs the
+            //     kernel twice. Re-dispatches after failure use a fresh task_id, so
+            //     they are correctly NOT deduplicated. -------------------------
+            static constexpr size_t       MAX_SEEN_IDS = 4096;
+            std::mutex                    seen_mtx;
+            std::unordered_set<uint64_t>  seen_ids;
+            std::deque<uint64_t>          seen_order;
+
+            // Records a task id; returns false if it was already seen (a duplicate).
+            bool mark_seen(uint64_t task_id)
+            {
+                std::lock_guard<std::mutex> lk(seen_mtx);
+                if (!seen_ids.insert(task_id).second)
+                    return false;
+                seen_order.push_back(task_id);
+                if (seen_order.size() > MAX_SEEN_IDS)
+                {
+                    seen_ids.erase(seen_order.front());
+                    seen_order.pop_front();
+                }
+                return true;
+            }
+
+            // Bound on how long resolve_input() waits for a pulled buffer before
+            // giving up, so a lost BUFFER_PUSH fails the task instead of hanging it.
+            std::chrono::milliseconds     pull_timeout{5000};
 
             // --- liveness: a periodic HEARTBEAT so the master can detect a dead
             //     or hung worker and re-dispatch its tasks ----------------------
@@ -110,7 +147,14 @@ namespace SushiRuntime
             transport->send(0, MsgType::BUFFER_REQUEST, req.serialize());
             lk.lock();
 
-            cache_cv.wait(lk, [&] { return fresh() != nullptr || !running.load(); });
+            // Bounded wait: if the push never arrives (lost message, dead master),
+            // return nullptr so execute_dispatch fails the task cleanly instead of
+            // blocking the exec thread forever. A non-positive timeout waits forever.
+            auto ready = [&] { return fresh() != nullptr || !running.load(); };
+            if (pull_timeout.count() > 0)
+                cache_cv.wait_for(lk, pull_timeout, ready);
+            else
+                cache_cv.wait(lk, ready);
             return fresh();
         }
 
@@ -139,11 +183,37 @@ namespace SushiRuntime
                 case MsgType::TASK_DISPATCH:
                 {
                     auto msg = TaskDispatchMsg::deserialize(payload);
+                    // Drop a duplicate dispatch so the kernel runs at most once per
+                    // task id; the original is already queued or done.
+                    if (!mark_seen(msg.task_id))
+                    {
+                        SR_LOG_WARN("Worker ignoring duplicate dispatch of task {}.", msg.task_id);
+                        break;
+                    }
+                    const uint64_t tid = msg.task_id;
+                    bool queued = false;
                     {
                         std::lock_guard<std::mutex> lk(job_mtx);
-                        jobs.push(std::move(msg));
+                        const size_t cap = max_jobs.load(std::memory_order_relaxed);
+                        if (cap == 0 || jobs.size() < cap) // 0 == unbounded
+                        {
+                            jobs.push(std::move(msg));
+                            queued = true;
+                        }
                     }
-                    job_cv.notify_one();
+                    if (queued)
+                    {
+                        job_cv.notify_one();
+                    }
+                    else
+                    {
+                        // Overloaded: fast-fail so the master recovers the task.
+                        SR_LOG_WARN("Worker job queue full; rejecting task {}.", tid);
+                        TaskResultMsg r;
+                        r.task_id = tid;
+                        r.success = false;
+                        transport->send(0, MsgType::TASK_RESULT, r.serialize());
+                    }
                     break;
                 }
                 case MsgType::PING:
@@ -163,6 +233,10 @@ namespace SushiRuntime
                     {
                         std::lock_guard<std::mutex> lk(cache_mtx);
                         auto& e = cache[push.handle.id.value];
+                        // Ignore a stale/duplicate push that would downgrade a cache
+                        // entry we already hold at an equal-or-newer version.
+                        if (e.ptr && push.handle.version < e.version)
+                            break;
                         if (!e.ptr || e.size != push.handle.size_bytes)
                         {
                             if (e.ptr) sycl::free(e.ptr, ctx.get_queue(0));
@@ -199,38 +273,55 @@ namespace SushiRuntime
             in_ptrs.reserve(msg.inputs.size());
             out_ptrs.reserve(msg.outputs.size());
 
-            for (const auto& h : msg.inputs)  in_ptrs.push_back(resolve_input(h));
+            // Resolve inputs first; a pull that timed out yields nullptr. Running the
+            // kernel on a null buffer would crash the worker, so fail the task
+            // instead and let the master re-dispatch it to a healthy peer.
+            bool inputs_ok = true;
+            for (const auto& h : msg.inputs)
+            {
+                void* p = resolve_input(h);
+                if (!p) inputs_ok = false;
+                in_ptrs.push_back(p);
+            }
+            if (!inputs_ok)
+            {
+                SR_LOG_ERROR("Worker could not resolve inputs for task {} "
+                             "(buffer pull timed out); failing it.", msg.task_id);
+                result.success = false;
+                transport->send(0, MsgType::TASK_RESULT, result.serialize());
+                return;
+            }
+
             for (const auto& h : msg.outputs) out_ptrs.push_back(resolve_output(h));
 
             try
             {
                 sycl::event e = (*kernel)(ctx.get_queue(0), in_ptrs, out_ptrs, msg.meta);
                 e.wait();
-                result.outputs = msg.outputs; // new versions now live on this worker
 
-                // Eager result writeback (v1): push each output's bytes back to
-                // the master so leaf results are visible without a later pull.
-                // (A lazy, pull-when-needed path is a future optimization.)
-                for (const auto& h : msg.outputs)
+                // Carry each output's bytes inline in the result, so completion and
+                // data reach the master atomically — a lost result re-dispatches the
+                // whole task rather than leaving the master "done" with no data.
+                result.outputs = msg.outputs; // new versions now live on this worker
+                result.output_data.resize(msg.outputs.size());
                 {
-                    BufferPushMsg push;
-                    push.handle = h;
+                    std::lock_guard<std::mutex> lk(cache_mtx);
+                    for (size_t i = 0; i < msg.outputs.size(); ++i)
                     {
-                        std::lock_guard<std::mutex> lk(cache_mtx);
-                        auto it = cache.find(h.id.value);
+                        auto it = cache.find(msg.outputs[i].id.value);
                         if (it != cache.end() && it->second.ptr)
-                        {
-                            push.data.resize(it->second.size);
-                            std::memcpy(push.data.data(), it->second.ptr, it->second.size);
-                        }
+                            result.output_data[i].assign(
+                                static_cast<std::byte*>(it->second.ptr),
+                                static_cast<std::byte*>(it->second.ptr) + it->second.size);
                     }
-                    transport->send(0, MsgType::BUFFER_PUSH, push.serialize());
                 }
             }
             catch (...)
             {
                 SR_LOG_ERROR("Worker kernel for OpID {} threw.", msg.op_id.value);
                 result.success = false;
+                result.outputs.clear();
+                result.output_data.clear();
             }
 
             transport->send(0, MsgType::TASK_RESULT, result.serialize());
@@ -314,6 +405,16 @@ namespace SushiRuntime
             impl_->heartbeat_interval = interval;
         }
 
+        void WorkerAgent::set_pull_timeout(std::chrono::milliseconds timeout)
+        {
+            impl_->pull_timeout = timeout;
+        }
+
+        void WorkerAgent::set_max_jobs(size_t max_jobs)
+        {
+            impl_->max_jobs.store(max_jobs, std::memory_order_relaxed);
+        }
+
         void WorkerAgent::start()
         {
             bool expected = false;
@@ -328,8 +429,11 @@ namespace SushiRuntime
                 });
             impl_->transport->start();
 
-            // Announce ourselves and the kernels this binary can run.
+            // Announce our protocol version, then the kernels this binary can run.
+            // The version leads so a master on a different protocol can reject us
+            // before trying to parse the rest against an incompatible layout.
             ByteWriter w;
+            w.put<uint32_t>(PROTOCOL_VERSION);
             auto ops = impl_->kernels->known_ops();
             w.put<uint32_t>(static_cast<uint32_t>(ops.size()));
             for (auto op : ops) w.put<uint32_t>(op.value);

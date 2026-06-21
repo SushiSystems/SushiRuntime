@@ -1,0 +1,108 @@
+/**************************************************************************/
+/* run_report_builder.hpp                                                 */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                        https://sushisystems.io                         */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
+/*                                                                        */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/**************************************************************************/
+
+#pragma once
+
+#include <cstddef>
+
+#include <SushiRuntime/core/run_report.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+
+namespace SushiRuntime
+{
+    namespace API
+    {
+        namespace detail
+        {
+            /**
+             * @brief Assembles a RunReport from a finished run's raw measurements.
+             *
+             * Pulled out of Graph so the fluent graph stays a builder/runner and
+             * does not also own the reporting policy: how scheduler counters and
+             * device placement map onto the public RunReport shape lives here, the
+             * one place that changes when the report format or instrumentation does.
+             *
+             * @param ctx         The context that ran the work (queue + distributed telemetry).
+             * @param before      Scheduler counters snapshotted before the run.
+             * @param after       Scheduler counters snapshotted after the run.
+             * @param total_tasks Tasks executed across every step (task_count * steps).
+             * @param compile_ms  Time spent compiling the plan this call (0 if cached).
+             * @param total_ms    Wall-clock time of the whole run.
+             * @return A populated RunReport.
+             */
+            inline Core::RunReport build_run_report(
+                Execution::RuntimeContext&        ctx,
+                const Execution::ExecutionMetrics& before,
+                const Execution::ExecutionMetrics& after,
+                std::size_t                        total_tasks,
+                double                             compile_ms,
+                double                             total_ms)
+            {
+                Core::RunReport report;
+                report.is_successful = true;
+                report.total_tasks_executed = total_tasks;
+                report.graph_analysis_duration_ms = compile_ms;
+                report.total_duration_ms = total_ms;
+
+                // Attribute the tasks to the device class the default queue targets.
+                // Per-task placement and the reserved steal/byte counters are filled
+                // in as the engine exposes them.
+                Core::NumaNodeStatistics node;
+                try
+                {
+                    auto& q = ctx.get_queue(0);
+                    if (q.get_device().is_gpu())
+                        node.gpu_tasks_executed = total_tasks;
+                    else
+                        node.cpu_tasks_executed = total_tasks;
+                }
+                catch (...)
+                {
+                    node.cpu_tasks_executed = total_tasks;
+                    report.warnings.emplace_back("No SYCL queue available; task placement unknown.");
+                }
+
+                // Work-stealing breakdown over the whole run, from the scheduler's
+                // before/after counters.
+                const std::size_t stolen_intra = after.local_steals  - before.local_steals;
+                const std::size_t stolen_inter = after.remote_steals - before.remote_steals;
+                const std::size_t completed    = after.tasks_completed - before.tasks_completed;
+                node.tasks_stolen_intra_numa = stolen_intra;
+                node.tasks_stolen_inter_numa = stolen_inter;
+                const std::size_t stolen_total = stolen_intra + stolen_inter;
+                node.tasks_popped_local = (completed > stolen_total) ? (completed - stolen_total) : 0;
+                report.numa_statistics.push_back(node);
+
+#ifdef SR_DISTRIBUTED
+                auto& d = report.distributed_statistics;
+                d.tasks_offloaded_to_network = ctx.distributed_offloaded_count();
+                d.remote_nodes_involved =
+                    static_cast<std::size_t>(ctx.distributed_alive_workers());
+#endif
+                return report;
+            }
+
+        } // namespace detail
+    } // namespace API
+} // namespace SushiRuntime

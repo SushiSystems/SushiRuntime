@@ -70,6 +70,15 @@ namespace SushiRuntime
                 void bump_version(void* usm_ptr);
 
                 /**
+                 * @brief Bumps a buffer's version by its GlobalBufferID.
+                 *
+                 * The coordinator works in handle ids, not local pointers, when it
+                 * stamps a fresh fencing token onto a task's outputs at dispatch.
+                 * No-op for an unknown id.
+                 */
+                void bump_version_by_id(GlobalBufferID id);
+
+                /**
                  * @brief Unregisters a buffer.
                  *
                  * Called when a USM pointer is freed to prevent a future reallocation
