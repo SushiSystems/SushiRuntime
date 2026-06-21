@@ -80,7 +80,12 @@ namespace SushiRuntime
             std::unordered_set<uint64_t>  seen_ids;
             std::deque<uint64_t>          seen_order;
 
-            // Records a task id; returns false if it was already seen (a duplicate).
+            /**
+             * @brief Records a task ID to detect duplicate dispatches.
+             * Returns false if the task ID was already seen and processed.
+             * @param task_id The uint64_t identifier of the task.
+             * @return A boolean which is true if the task ID is new, false otherwise.
+             */
             bool mark_seen(uint64_t task_id)
             {
                 std::lock_guard<std::mutex> lk(seen_mtx);
@@ -104,6 +109,10 @@ namespace SushiRuntime
             // possibility under packet loss) does not strand the worker forever.
             std::atomic<bool>             registered{false};
 
+            /**
+             * @brief Sends a registration HELLO message to the master.
+             * Announces the worker's protocol version and supported operations.
+             */
             void send_hello()
             {
                 ByteWriter w;
@@ -123,26 +132,66 @@ namespace SushiRuntime
 
             Impl(Execution::RuntimeContext& c) : ctx(c) {}
 
+            /**
+             * @brief Periodically sends heartbeats to the master to prove liveness.
+             */
             void heartbeat_loop();
 
+            /**
+             * @brief Handles incoming messages from the transport.
+             * @param peer The integer ID of the peer.
+             * @param type The MsgType of the message.
+             * @param payload A span of bytes representing the message payload.
+             */
             void on_message(int peer, MsgType type, SushiRuntime::span<const std::byte> payload);
+
+            /**
+             * @brief Continuously dequeues and executes dispatch jobs.
+             */
             void exec_loop();
+
+            /**
+             * @brief Executes a single dispatched task.
+             * Resolves buffers, invokes the kernel, and sends the result.
+             * @param msg The TaskDispatchMsg containing the task parameters.
+             */
             void execute_dispatch(const TaskDispatchMsg& msg);
 
-            // Current device-memory headroom (bytes) reported back to the master on
-            // every PONG. Prefers the Intel free-memory query; falls back to total
-            // global memory where that aspect is unavailable, and 0 on any error.
+            /**
+             * @brief Calculates the current device-memory headroom.
+             * Prefers the Intel free-memory query, falling back to total global memory.
+             * @return An uint64_t representing the available memory in bytes.
+             */
             uint64_t device_free_mem() const;
 
-            // Returns a local USM pointer holding {id} at >= the required version,
-            // pulling it from the master if the cache misses or is stale.
+            /**
+             * @brief Retrieves a local USM pointer for a required input buffer.
+             * Pulls data from the master if the local cache is absent or stale.
+             * @param h The BufferHandle describing the required buffer.
+             * @return A void pointer to the memory, or nullptr on timeout.
+             */
             void* resolve_input(const BufferHandle& h);
-            // Allocates (or reuses) a local USM buffer for an output handle.
+
+            /**
+             * @brief Prepares a local USM buffer for output.
+             * Allocates a new buffer or reuses an appropriately sized existing one.
+             * @param h The BufferHandle describing the output buffer.
+             * @return A void pointer to the allocated memory.
+             */
             void* resolve_output(const BufferHandle& h);
 
+            /**
+             * @brief Frees all cached USM allocations.
+             */
             void free_all();
         };
 
+        /**
+         * @brief Retrieves a local USM pointer for a required input buffer.
+         * Pulls data from the master if the local cache is absent or stale.
+         * @param h The BufferHandle describing the required buffer.
+         * @return A void pointer to the memory, or nullptr on timeout.
+         */
         void* WorkerAgent::Impl::resolve_input(const BufferHandle& h)
         {
             std::unique_lock<std::mutex> lk(cache_mtx);
@@ -175,6 +224,12 @@ namespace SushiRuntime
             return fresh();
         }
 
+        /**
+         * @brief Prepares a local USM buffer for output.
+         * Allocates a new buffer or reuses an appropriately sized existing one.
+         * @param h The BufferHandle describing the output buffer.
+         * @return A void pointer to the allocated memory.
+         */
         void* WorkerAgent::Impl::resolve_output(const BufferHandle& h)
         {
             std::lock_guard<std::mutex> lk(cache_mtx);
@@ -189,6 +244,13 @@ namespace SushiRuntime
             return e.ptr;
         }
 
+        /**
+         * @brief Handles incoming messages from the transport.
+         * Processes registration acks, task dispatches, pings, and buffer pushes.
+         * @param peer The integer ID of the peer.
+         * @param type The MsgType of the message.
+         * @param payload A span of bytes representing the message payload.
+         */
         void WorkerAgent::Impl::on_message(int /*peer*/, MsgType type, SushiRuntime::span<const std::byte> payload)
         {
             switch (type)
@@ -272,6 +334,11 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Executes a single dispatched task.
+         * Resolves buffers, invokes the kernel via TaskGraph, and sends the result.
+         * @param msg The TaskDispatchMsg containing the task parameters.
+         */
         void WorkerAgent::Impl::execute_dispatch(const TaskDispatchMsg& msg)
         {
             TaskResultMsg result;
@@ -360,6 +427,11 @@ namespace SushiRuntime
             transport->send(0, MsgType::TASK_RESULT, result.serialize());
         }
 
+        /**
+         * @brief Calculates the current device-memory headroom.
+         * Prefers the Intel free-memory query, falling back to total global memory.
+         * @return An uint64_t representing the available memory in bytes.
+         */
         uint64_t WorkerAgent::Impl::device_free_mem() const
         {
             try
@@ -382,6 +454,9 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Periodically sends heartbeats to the master to prove liveness.
+         */
         void WorkerAgent::Impl::heartbeat_loop()
         {
             while (running.load())
@@ -397,6 +472,9 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Continuously dequeues and executes dispatch jobs.
+         */
         void WorkerAgent::Impl::exec_loop()
         {
             for (;;)
@@ -413,6 +491,9 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Frees all cached USM allocations.
+         */
         void WorkerAgent::Impl::free_all()
         {
             std::lock_guard<std::mutex> lk(cache_mtx);
@@ -422,6 +503,13 @@ namespace SushiRuntime
         }
 
         // --- public wrapper ---------------------------------------------------
+        /**
+         * @brief Constructs a WorkerAgent instance.
+         * Initializes the worker with a runtime context, transport layer, and kernel registry.
+         * @param ctx A reference to the Execution::RuntimeContext.
+         * @param transport A std::shared_ptr to the ITransport interface.
+         * @param kernels A sushi_ptr to the KernelRegistry.
+         */
         WorkerAgent::WorkerAgent(Execution::RuntimeContext& ctx,
                                  std::shared_ptr<ITransport> transport,
                                  sushi_ptr<KernelRegistry>   kernels)
@@ -431,26 +519,47 @@ namespace SushiRuntime
             impl_->kernels   = std::move(kernels);
         }
 
+        /**
+         * @brief Destructs the WorkerAgent.
+         * Automatically stops threads and releases resources.
+         */
         WorkerAgent::~WorkerAgent()
         {
             stop();
         }
 
+        /**
+         * @brief Configures the frequency of liveness heartbeats sent to the master.
+         * @param interval A std::chrono::milliseconds specifying the duration between heartbeats.
+         */
         void WorkerAgent::set_heartbeat_interval(std::chrono::milliseconds interval)
         {
             impl_->heartbeat_interval = interval;
         }
 
+        /**
+         * @brief Sets the maximum time to wait for buffer pulls from the master.
+         * @param timeout A std::chrono::milliseconds specifying the timeout duration.
+         */
         void WorkerAgent::set_pull_timeout(std::chrono::milliseconds timeout)
         {
             impl_->pull_timeout = timeout;
         }
 
+        /**
+         * @brief Sets the maximum number of pending jobs in the worker queue.
+         * Dispatches exceeding this limit are fast-failed.
+         * @param max_jobs A size_t representing the maximum queue size.
+         */
         void WorkerAgent::set_max_jobs(size_t max_jobs)
         {
             impl_->max_jobs.store(max_jobs, std::memory_order_relaxed);
         }
 
+        /**
+         * @brief Starts the worker agent threads and network handlers.
+         * Begins listening for messages and kicks off the background execution and heartbeat loops.
+         */
         void WorkerAgent::start()
         {
             bool expected = false;
@@ -476,6 +585,9 @@ namespace SushiRuntime
                 impl_->heartbeat_thread = std::thread([raw] { raw->heartbeat_loop(); });
         }
 
+        /**
+         * @brief Blocks the calling thread until the agent stops.
+         */
         void WorkerAgent::run()
         {
             // Park until stop() flips running; exec/pump threads do the work.
@@ -483,6 +595,10 @@ namespace SushiRuntime
             impl_->job_cv.wait(lk, [this] { return !impl_->running.load(); });
         }
 
+        /**
+         * @brief Stops the worker agent and cleans up resources.
+         * Signals background threads to terminate and frees cached USM buffers.
+         */
         void WorkerAgent::stop()
         {
             bool expected = true;

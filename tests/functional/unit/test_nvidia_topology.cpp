@@ -39,8 +39,14 @@ using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Topology;
 using SushiRuntime::Test::UsmShared;
 
-// Find any NVIDIA GPU among discovered nodes (the CUDA backend may report
-// "GeForce"/"GTX"/"RTX" instead of "NVIDIA").
+/**
+ * @brief Finds any NVIDIA GPU among discovered hardware nodes.
+ *
+ * Scans the provided list of nodes for a GPU matching NVIDIA-specific keywords like "GeForce", "GTX", or "RTX".
+ *
+ * @param nodes The vector of discovered hardware nodes.
+ * @return A pointer to the matching hardware node, or nullptr if none is found.
+ */
 static const HardwareNode* find_nvidia_node(const std::vector<HardwareNode>& nodes)
 {
     for (const auto& n : nodes)
@@ -55,7 +61,13 @@ static const HardwareNode* find_nvidia_node(const std::vector<HardwareNode>& nod
     return nullptr;
 }
 
-// True if any GPU device sits on a CUDA platform.
+/**
+ * @brief Checks if any GPU device is available on a CUDA platform.
+ *
+ * Queries the SYCL backend for GPU devices and verifies if their platform name contains "CUDA".
+ *
+ * @return True if a CUDA-backed GPU is available, false otherwise.
+ */
 static bool cuda_device_available()
 {
     for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::gpu))
@@ -68,7 +80,11 @@ static bool cuda_device_available()
     return false;
 }
 
-// Discovery must enumerate the GTX 1060 as a GPU node when CUDA is active.
+/**
+ * @brief Verifies that an NVIDIA GPU is discovered when CUDA is active.
+ *
+ * Probes all devices using HardwareDiscovery and asserts that an NVIDIA GPU is found.
+ */
 TEST(Unit_NvidiaTopologyTest, NvidiaGpuDiscovered)
 {
     if (!cuda_device_available())
@@ -87,7 +103,11 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuDiscovered)
     EXPECT_FALSE(nvidia->name.empty());
 }
 
-// After discovery the GPU must have a valid NUMA id (>= 0), or skip on WSL.
+/**
+ * @brief Verifies that a discovered NVIDIA GPU is assigned a valid NUMA node ID.
+ *
+ * Maps NUMA distances for the discovered nodes and asserts that the NVIDIA GPU has a valid ID, skipping if running in WSL without ACPI passthrough.
+ */
 TEST(Unit_NvidiaTopologyTest, NvidiaGpuHasNUMAMapping)
 {
     if (!cuda_device_available())
@@ -119,7 +139,11 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuHasNUMAMapping)
         << "GTX 1060 must be assigned to a valid NUMA node.";
 }
 
-// RuntimeContext must expose a CUDA-backed queue that runs a trivial host_task.
+/**
+ * @brief Verifies that the RuntimeContext exposes a functional CUDA-backed SYCL queue.
+ *
+ * Identifies a CUDA platform queue and executes a trivial host_task to ensure it does not throw an exception.
+ */
 TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
 {
     if (!cuda_device_available())
@@ -154,7 +178,11 @@ TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
         GTEST_SKIP() << "RuntimeContext found no CUDA-backed queue.";
 }
 
-// End-to-end smoke test: USM shared + a parallel_for on the GTX 1060.
+/**
+ * @brief Performs an end-to-end vector addition smoke test on an NVIDIA GPU.
+ *
+ * Allocates USM shared memory, submits a parallel_for kernel on the CUDA queue, and verifies the addition results.
+ */
 TEST(Unit_NvidiaTopologyTest, NvidiaGpuVectorAdd)
 {
     if (!cuda_device_available())

@@ -79,8 +79,18 @@ namespace SushiRuntime
             /** @brief Reference to the runtime context. */
             RuntimeContext& context;
 
+            /**
+             * @brief Constructs the internal implementation.
+             *
+             * @param ctx The runtime context used for execution.
+             */
             Impl(RuntimeContext& ctx) : context(ctx) {}
 
+            /**
+             * @brief Destroys the internal implementation.
+             *
+             * Safely cleans up remaining lock-free entries if compilation was not completed.
+             */
             ~Impl() 
             {
                 // Safely clean up remaining lock-free entries in case compile() was never called.
@@ -111,7 +121,10 @@ namespace SushiRuntime
 
             /**
              * @brief Pushes a node into the lock-free tracking stacks in O(1) time.
+             *
              * Eliminates the need for any std::mutex during graph construction.
+             *
+             * @param node The node to insert.
              */
             void push_node_lock_free(sushi_ptr<Node> node)
             {
@@ -160,6 +173,9 @@ namespace SushiRuntime
          * run AND every buffer it touches has a serializable handle. Anything
          * else — and every node in Standalone/Worker mode — stays local, so the
          * scheduler's offload branch is a no-op for it.
+         *
+         * @param graph The compiled graph to process.
+         * @param ctx The current runtime context.
          */
         static void stamp_offloadable(SushiRuntime::Execution::CompiledGraph& graph, RuntimeContext& ctx)
         {
@@ -197,15 +213,26 @@ namespace SushiRuntime
         }
 #endif
 
+        /**
+         * @brief Constructs a new TaskGraph.
+         *
+         * @param ctx The runtime context used to execute tasks.
+         */
         TaskGraph::TaskGraph(RuntimeContext& ctx) : impl_(make_sushi<Impl>(ctx))
         {
             SR_LOG_DEBUG("Lock-Free O(1) TaskGraph initialized.");
         }
 
+        /**
+         * @brief Destroys the TaskGraph.
+         */
         TaskGraph::~TaskGraph() = default;
 
         /**
          * @brief Adds a device task (kernel/transfer) with manual event dependencies.
+         *
+         * @param work The task payload to execute.
+         * @param dependencies An optional list of manual SYCL dependencies.
          */
         void TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies) 
         {
@@ -221,6 +248,11 @@ namespace SushiRuntime
 
         /**
          * @brief Adds a device task and resolves USM data dependencies automatically.
+         *
+         * @param work The task payload to execute.
+         * @param read_access A list of USM pointers the task reads from.
+         * @param write_access A list of USM pointers the task writes to.
+         * @param dependencies An optional list of manual SYCL dependencies.
          */
         void TaskGraph::add_node(TaskWork work, 
                                  const std::vector<void*>& read_access, 
@@ -259,6 +291,13 @@ namespace SushiRuntime
 
         /**
          * @brief Adds a semantic task into the graph with explicit device and host fallback work.
+         *
+         * @param meta Metadata describing the task.
+         * @param read_access A list of USM pointers the task reads from.
+         * @param write_access A list of USM pointers the task writes to.
+         * @param device_work The preferred device-side execution workload.
+         * @param fallback_work A host-side alternative or fallback workload.
+         * @param dependencies An optional list of manual SYCL dependencies.
          */
         void TaskGraph::add_task(const TaskMetadata& meta,
                                  const std::vector<void*>& read_access,
@@ -333,6 +372,12 @@ namespace SushiRuntime
 
         /**
          * @brief Adds a semantic task into the graph with host-side fallback only.
+         *
+         * @param meta Metadata describing the task.
+         * @param read_access A list of USM pointers the task reads from.
+         * @param write_access A list of USM pointers the task writes to.
+         * @param fallback_work A host-side workload to execute.
+         * @param dependencies An optional list of manual SYCL dependencies.
          */
         void TaskGraph::add_task(const TaskMetadata& meta,
                                  const std::vector<void*>& read_access,
@@ -350,9 +395,12 @@ namespace SushiRuntime
 
         /**
          * @brief Analyzes dependencies and compiles the graph for execution in O(1) logical time.
-         * * Bypasses the heavy O(N) full graph traversal by exclusively processing 
+         *
+         * Bypasses the heavy O(N) full graph traversal by exclusively processing 
          * nodes that were incrementally tagged as potential roots and leaves during insertion.
-         * * @return CompiledGraph The compiled graph ready to run.
+         *
+         * @return SushiRuntime::Execution::CompiledGraph The compiled graph ready to run.
+         * @throws std::runtime_error If the task graph contains no root nodes.
          */
         SushiRuntime::Execution::CompiledGraph TaskGraph::compile() 
         {

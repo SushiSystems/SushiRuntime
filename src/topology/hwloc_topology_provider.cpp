@@ -35,7 +35,11 @@ namespace SushiRuntime
 {
     namespace Topology
     {
-        /** @brief Default provider: real SYCL discovery + hwloc NUMA mapping. */
+        /** 
+         * @brief Default provider: real SYCL discovery + hwloc NUMA mapping. 
+         * @param config The filter configuration for device enumeration.
+         * @return A vector of enumerated hardware nodes.
+         */
         std::vector<HardwareNode> HwlocTopologyProvider::enumerate(const HardwareFilterConfig& config)
         {
             HardwareDiscovery discovery;
@@ -47,7 +51,10 @@ namespace SushiRuntime
             return nodes;
         }
 
-        /** @brief Maps each logical CPU (PU os_index) to its NUMA node via hwloc. */
+        /** 
+         * @brief Maps each logical CPU (PU os_index) to its NUMA node via hwloc. 
+         * @return A vector mapping CPU core indices to NUMA node IDs.
+         */
         std::vector<int> HwlocTopologyProvider::cpu_core_to_numa() const
         {
             std::vector<int> map;
@@ -87,7 +94,8 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Loads and caches the NUMA distance matrix once, up front.
+         * @brief Constructs the HwlocDistanceModel.
+         * Loads and caches the NUMA distance matrix once, up front.
          *
          * This is the single place that touches the hwloc SLIT table, so the
          * (expensive) topology load happens exactly once per model instance.
@@ -130,6 +138,13 @@ namespace SushiRuntime
             hwloc_topology_destroy(topology);
         }
 
+        /**
+         * @brief Calculates the NUMA distance between two nodes.
+         * Retrieves the distance from the cached SLIT table or falls back to ACPI defaults.
+         * @param numa_a The ID of the first NUMA node.
+         * @param numa_b The ID of the second NUMA node.
+         * @return The distance cost between the two nodes.
+         */
         int HwlocDistanceModel::distance(int numa_a, int numa_b) const
         {
             if (numa_a == numa_b) return 10; // ACPI: local hop is always 10.
@@ -145,6 +160,10 @@ namespace SushiRuntime
             return 21; // ACPI fallback: standard single remote hop.
         }
 
+        /**
+         * @brief Gets the total number of NUMA nodes in the system.
+         * @return The number of NUMA nodes.
+         */
         int HwlocDistanceModel::node_count() const
         {
             return node_count_;

@@ -27,6 +27,13 @@ namespace SushiRuntime
 {
     namespace Distributed
     {
+        /**
+         * @brief Registers a USM memory buffer with the distributed registry to track its state and version.
+         * Assigns a new unique ID or increments the version if the pointer was previously registered.
+         * @param usm_ptr The memory pointer to track.
+         * @param size_bytes The size of the memory buffer in bytes.
+         * @return A BufferHandle containing the registration details.
+         */
         BufferHandle BufferRegistry::register_buffer(void* usm_ptr, uint64_t size_bytes)
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -50,6 +57,11 @@ namespace SushiRuntime
             return h;
         }
 
+        /**
+         * @brief Increments the version of a registered buffer.
+         * Locates the buffer by its pointer and updates the version count to invalidate stale copies.
+         * @param usm_ptr The memory pointer associated with the buffer.
+         */
         void BufferRegistry::bump_version(void* usm_ptr)
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -57,6 +69,11 @@ namespace SushiRuntime
                 ++it->second.version;
         }
 
+        /**
+         * @brief Increments the version of a registered buffer using its global ID.
+         * Locates the buffer by its ID and updates the version count to invalidate stale copies.
+         * @param id The GlobalBufferID identifying the buffer.
+         */
         void BufferRegistry::bump_version_by_id(GlobalBufferID id)
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -67,6 +84,11 @@ namespace SushiRuntime
                 ++it->second.version;
         }
 
+        /**
+         * @brief Removes a buffer from the registry.
+         * Erases the internal tracking data associated with the given pointer.
+         * @param usm_ptr The memory pointer to unregister.
+         */
         void BufferRegistry::unregister_buffer(void* usm_ptr)
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -77,6 +99,12 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Retrieves the buffer handle associated with a specific pointer.
+         * Looks up the pointer in the registry and returns its handle if found.
+         * @param usm_ptr The memory pointer to look up.
+         * @return An std::optional containing the BufferHandle if found, or std::nullopt otherwise.
+         */
         std::optional<BufferHandle> BufferRegistry::lookup(void* usm_ptr) const
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -85,6 +113,12 @@ namespace SushiRuntime
             return std::nullopt;
         }
 
+        /**
+         * @brief Retrieves the buffer entry associated with a specific global ID.
+         * Looks up the ID in the registry and returns its corresponding entry.
+         * @param id The GlobalBufferID to look up.
+         * @return An std::optional containing the BufferRegistry::Entry if found, or std::nullopt otherwise.
+         */
         std::optional<BufferRegistry::Entry> BufferRegistry::lookup_by_id(GlobalBufferID id) const
         {
             std::lock_guard<std::mutex> lock(mutex_);

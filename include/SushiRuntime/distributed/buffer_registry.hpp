@@ -34,63 +34,77 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Master-side bridge between local void* USM and serializable ids.
+         * @brief Master-side bridge between local void* USM pointers and serializable buffer IDs.
          *
-         * The deliberate design choice (offline-first): the allocator does NOT
-         * auto-assign ids. A buffer becomes distributable only when the user
-         * explicitly registers it — an opt-in gesture meaningful only in Master
-         * mode. The 8-of-10 jobs that never touch the cluster pay nothing here.
-         *
-         * The master is authoritative: it owns the current version of every
-         * registered buffer and serves BUFFER_REQUESTs by reading the bytes
-         * straight from the (host-accessible / shared) USM pointer.
-         *
-         * Registered buffers are expected to be shared USM so the host side can
-         * read them when serving a pull. Device-only buffers should be staged to
-         * shared USM before registration.
+         * Allows sharing local memory across the cluster by explicitly registering pointers.
+         * The master owns the authoritative version of every registered buffer and serves remote requests by reading directly from host-accessible memory.
          */
         class SUSHIRUNTIME_API BufferRegistry
         {
             public:
                 /**
                  * @brief Registers a USM pointer as a distributable buffer.
-                 * @return The handle (id, version=1, size) for this buffer.
-                 *
-                 * Re-registering the same pointer returns its existing handle.
+                 * 
+                 * Re-registering an already known pointer returns its existing handle.
+                 * 
+                 * @param usm_ptr The local shared memory pointer to expose to the cluster.
+                 * @param size_bytes The size of the buffer in bytes.
+                 * @return The resulting handle containing the assigned ID, initial version, and size.
                  */
                 BufferHandle register_buffer(void* usm_ptr, uint64_t size_bytes);
 
                 /**
-                 * @brief Bumps the version of a buffer the master just wrote.
+                 * @brief Bumps the version of a buffer after a local master write.
                  *
-                 * Driven by the DependencyTracker's WAW/WAR signal: any local
-                 * write invalidates remote caches, expressed as a version bump.
-                 * No-op for unregistered pointers.
+                 * Invalidates remote worker caches by incrementing the buffer's version. Takes no action for unregistered pointers.
+                 *
+                 * @param usm_ptr The local pointer that was modified.
                  */
                 void bump_version(void* usm_ptr);
 
                 /**
-                 * @brief Bumps a buffer's version by its GlobalBufferID.
+                 * @brief Bumps a buffer's version using its globally unique ID.
                  *
-                 * The coordinator works in handle ids, not local pointers, when it
-                 * stamps a fresh fencing token onto a task's outputs at dispatch.
-                 * No-op for an unknown id.
+                 * Allows the coordinator to invalidate caches during task dispatch without resolving local pointers. Takes no action for unknown IDs.
+                 *
+                 * @param id The global ID of the buffer to bump.
                  */
                 void bump_version_by_id(GlobalBufferID id);
 
                 /**
-                 * @brief Unregisters a buffer.
+                 * @brief Unregisters a distributable buffer.
                  *
-                 * Called when a USM pointer is freed to prevent a future reallocation
-                 * at the same address from aliasing an old buffer ID.
+                 * Removes the mapping to prevent a future reallocation at the same memory address from aliasing an old buffer ID.
+                 *
+                 * @param usm_ptr The local pointer being freed or unshared.
                  */
                 void unregister_buffer(void* usm_ptr);
 
-                /** @brief Current handle for a local pointer (used at compile time). */
+                /**
+                 * @brief Retrieves the current handle for a registered local pointer.
+                 *
+                 * Queries the registry during graph compilation to link local buffers to distributed IDs.
+                 *
+                 * @param usm_ptr The local pointer to query.
+                 * @return The associated buffer handle if registered, or std::nullopt if unknown.
+                 */
                 std::optional<BufferHandle> lookup(void* usm_ptr) const;
 
-                /** @brief Resolves an id back to {ptr, handle} to serve a pull. */
+                /**
+                 * @brief Associates a resolved local pointer with its distributed handle.
+                 * 
+                 * Used internally to package local memory for remote transmission.
+                 */
                 struct Entry { void* ptr; BufferHandle handle; };
+
+                /**
+                 * @brief Resolves a global buffer ID back to its local pointer and handle.
+                 *
+                 * Provides the memory address and size required to serve remote pull requests.
+                 *
+                 * @param id The global ID of the requested buffer.
+                 * @return The local entry if the ID exists, or std::nullopt otherwise.
+                 */
                 std::optional<Entry> lookup_by_id(GlobalBufferID id) const;
 
             private:

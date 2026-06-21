@@ -43,7 +43,13 @@ using SushiRuntime::Test::PriorityTrackingTask;
 
 namespace
 {
-    // Block until value hits target, or fail past the budget.
+    /**
+     * @brief Blocks until value hits target, or fails past the budget.
+     * @param value The atomic value to wait for.
+     * @param target The target value.
+     * @param budget The maximum duration to wait.
+     * @return True if the target was reached, false if it timed out.
+     */
     bool wait_for(const std::atomic<size_t>& value, size_t target,
                   std::chrono::seconds budget)
     {
@@ -58,7 +64,11 @@ namespace
     }
 }
 
-// A modest batch of host tasks must all run exactly once.
+/**
+ * @brief Tests that a modest batch of host tasks runs exactly once.
+ *
+ * Verifies that the scheduler properly executes all submitted tasks.
+ */
 TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
 {
     RuntimeContext ctx;
@@ -80,7 +90,11 @@ TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
     EXPECT_EQ(executed.load(), TOTAL);
 }
 
-// A late high-priority task must run among the first.
+/**
+ * @brief Tests that a late high-priority task bypasses lower priority tasks.
+ *
+ * Verifies that the scheduler honors task priorities and executes the high priority task among the first.
+ */
 TEST(Integration_SchedulerIntegration, PriorityBypass)
 {
     RuntimeContext ctx;
@@ -131,7 +145,11 @@ TEST(Integration_SchedulerIntegration, PriorityBypass)
     EXPECT_TRUE(found_high_early) << "High priority task missed the first batch.";
 }
 
-// A single arm/submit/stop round with no inflight work must shut down cleanly.
+/**
+ * @brief Tests that a single lifecycle round shuts down cleanly.
+ *
+ * Verifies that a clean arm -> submit -> stop round with no inflight work exits without hanging.
+ */
 TEST(Integration_SchedulerIntegration, CleanLifecycleRound)
 {
     RuntimeContext ctx;

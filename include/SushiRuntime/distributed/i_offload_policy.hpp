@@ -35,10 +35,9 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Live, per-worker metrics the policy reasons over.
+         * @brief Live telemetry and health metrics for a single cluster worker.
          *
-         * This is the top tier of the same locality hierarchy the scheduler uses
-         * for NUMA stealing: a worker node is one more (much more distant) tier.
+         * Supplies the state data needed by the offload policy to make task placement decisions.
          */
         struct WorkerStats
         {
@@ -50,17 +49,9 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Decides whether (and where) a ready task should be offloaded. [swappable]
+         * @brief Defines the strategy for selecting an execution node for an offloadable task.
          *
-         * Same plug-in shape as the scheduler's ThermalProxyStrategy, and the same
-         * locality intuition: a worker is the most distant tier of the cost
-         * hierarchy. The default (LeastLoadedOffloadPolicy) ranks live workers by an
-         * estimated completion cost built from telemetry — round-trip latency, data
-         * transfer time, and queue backlog — and keeps tiny payloads local. It can
-         * be replaced at runtime without touching the coordinator.
-         *
-         * Returning std::nullopt means "run it locally" — the safe default that
-         * keeps the 8-of-10 small jobs on the home machine.
+         * Evaluates cluster metrics to choose between remote dispatch and local fallback execution.
          */
         class SUSHIRUNTIME_API IOffloadPolicy
         {
@@ -68,11 +59,12 @@ namespace SushiRuntime
                 virtual ~IOffloadPolicy() = default;
 
                 /**
-                 * @brief Picks a worker for an offloadable, ready node.
-                 * @param node The task under consideration (already offloadable).
-                 * @param workers Current cluster telemetry.
-                 * @param est_bytes Bytes that would have to cross the wire.
-                 * @return Chosen worker id, or nullopt to keep it local.
+                 * @brief Selects the optimal worker for executing a specific task.
+                 *
+                 * @param node The task under consideration for offloading.
+                 * @param workers Current telemetry metrics for all available workers.
+                 * @param est_bytes The estimated amount of data that must cross the network.
+                 * @return The ID of the chosen worker, or std::nullopt to execute locally.
                  */
                 virtual std::optional<int> pick_worker(const Graph::Node& node,
                                                        SushiRuntime::span<const WorkerStats> workers,
@@ -80,18 +72,30 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Default policy: pick the live worker with the lowest estimated
-         * completion cost (rtt + transfer_time + queue backlog) among those with
-         * enough free memory; bail out (local) if none qualifies or the payload is
-         * tiny enough that the network would only add latency.
+         * @brief Strategy that routes tasks to the worker with the lowest estimated completion cost.
+         *
+         * Incorporates network latency, transfer times, and remote queue backlogs to minimize execution span.
+         * Retains tiny payloads locally to avoid network overhead.
          */
         class SUSHIRUNTIME_API LeastLoadedOffloadPolicy final : public IOffloadPolicy
         {
             public:
-                /** @param min_offload_bytes Payloads below this stay local. */
+                /**
+                 * @brief Constructs a policy configured with a minimum payload size.
+                 *
+                 * @param min_offload_bytes The byte threshold below which tasks are forced to run locally.
+                 */
                 explicit LeastLoadedOffloadPolicy(uint64_t min_offload_bytes = 64 * 1024)
                     : min_offload_bytes_(min_offload_bytes) {}
 
+                /**
+                 * @brief Selects the optimal worker based on load and latency.
+                 *
+                 * @param node The task under consideration for offloading.
+                 * @param workers Current telemetry metrics for all available workers.
+                 * @param est_bytes The estimated amount of data that must cross the network.
+                 * @return The ID of the chosen worker, or std::nullopt to execute locally.
+                 */
                 std::optional<int> pick_worker(const Graph::Node& node,
                                                SushiRuntime::span<const WorkerStats> workers,
                                                uint64_t est_bytes) override;

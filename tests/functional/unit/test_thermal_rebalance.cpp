@@ -37,7 +37,11 @@ using namespace SushiRuntime::Scheduler;
 
 namespace
 {
-    // Telemetry stub with per-worker queue depths and cumulative completion totals.
+    /**
+     * @brief A stub telemetry provider for testing thermal rebalancing.
+     *
+     * Supplies preconfigured per-worker queue depths and cumulative completion rates to simulate various system states.
+     */
     class FakeTelemetry : public ITelemetryProvider
     {
     public:
@@ -49,7 +53,11 @@ namespace
         size_t get_completion_rate(int w) const override  { return completed[static_cast<size_t>(w)]; }
     };
 
-    // Migrator stub recording the most recent (and total) migrate calls.
+    /**
+     * @brief A stub task migrator that records migration requests.
+     *
+     * Captures the source, destination, and task count of the most recent migration to verify rebalancer decisions.
+     */
     class RecordingMigrator : public ITaskMigrator
     {
     public:
@@ -68,8 +76,11 @@ namespace
     };
 }
 
-// Worker 0 has a deep queue but a zero completion delta (throttled); worker 1 is
-// idle. The strategy must move half the imbalance from 0 to 1.
+/**
+ * @brief Verifies that the strategy migrates tasks away from a throttled worker.
+ *
+ * Sets up a scenario where one worker is backed up but stalled, while another is idle, expecting half the imbalance to be migrated.
+ */
 TEST(Unit_ThermalRebalanceTest, RescuesThrottledWorker)
 {
     FakeTelemetry telemetry;
@@ -87,7 +98,11 @@ TEST(Unit_ThermalRebalanceTest, RescuesThrottledWorker)
     EXPECT_EQ(migrator.count, 50u) << "Should move half the (max-min) queue imbalance.";
 }
 
-// A long queue that is draining fast is not a bottleneck — leave it alone.
+/**
+ * @brief Verifies that a long but fast-draining queue is not mistaken for a throttled worker.
+ *
+ * Provides a high completion delta for a worker with a deep queue, ensuring the strategy does not trigger migration.
+ */
 TEST(Unit_ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
 {
     FakeTelemetry telemetry;
@@ -103,7 +118,11 @@ TEST(Unit_ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
         << "A fast-draining worker is not throttled; its long queue must not trigger migration.";
 }
 
-// Shallow, comparable queues below the threshold produce no migration.
+/**
+ * @brief Verifies that balanced and shallow queues do not trigger unnecessary migrations.
+ *
+ * Simulates comparable queues well below the imbalance threshold, expecting zero migrations.
+ */
 TEST(Unit_ThermalRebalanceTest, NoMigrationWhenBalanced)
 {
     FakeTelemetry telemetry;
@@ -118,7 +137,11 @@ TEST(Unit_ThermalRebalanceTest, NoMigrationWhenBalanced)
     EXPECT_EQ(migrator.calls.load(), 0) << "Balanced, shallow queues must not migrate.";
 }
 
-// With fewer than two workers there is nowhere to migrate to.
+/**
+ * @brief Verifies that a single-worker topology correctly acts as a no-op during rebalancing.
+ *
+ * Provides only one worker and ensures that no migrations are attempted.
+ */
 TEST(Unit_ThermalRebalanceTest, SingleWorkerIsNoOp)
 {
     FakeTelemetry telemetry;

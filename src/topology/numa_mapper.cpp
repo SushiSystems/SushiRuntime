@@ -38,6 +38,7 @@ namespace SushiRuntime
          * @brief Implementation of the NUMA mapper.
          * 
          * Uses the hwloc library to map PCI devices to their closest NUMA nodes.
+         * @param nodes The vector of hardware nodes to map.
          */
         void NUMAMapper::map_distances(std::vector<HardwareNode>& nodes) 
         {

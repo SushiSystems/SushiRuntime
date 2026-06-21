@@ -37,7 +37,11 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Topology;
 
-// A hand-built 2-node matrix yields exact, deterministic distances.
+/**
+ * @brief Verifies that a hand-built MatrixDistanceModel yields exact, deterministic distances.
+ *
+ * Creates a synthetic 2-node distance matrix and asserts local distances are 10 while remote distances match the provided configuration.
+ */
 TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelObeysAcpiConvention)
 {
     MatrixDistanceModel model{{{10, 21},
@@ -50,7 +54,11 @@ TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelObeysAcpiConvention)
     EXPECT_EQ(model.distance(1, 0), 21); // symmetric remote
 }
 
-// Real interconnects are not uniform; the model returns whatever we program in.
+/**
+ * @brief Verifies that the MatrixDistanceModel correctly supports asymmetric multi-hop fabric distances.
+ *
+ * Constructs a 3-node matrix with non-uniform interconnect costs and verifies correct distance retrievals.
+ */
 TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
 {
     // 3-node layout: 0<->1 cheap, 0<->2 expensive (2 hops).
@@ -63,7 +71,11 @@ TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
     EXPECT_GT(model.distance(0, 2), model.distance(0, 1));
 }
 
-// RuntimeContext reports distances from the injected model, not concrete hwloc.
+/**
+ * @brief Verifies that RuntimeContext correctly utilizes an injected distance model over concrete hwloc.
+ *
+ * Injects a synthetic distance model into the RuntimeContext and ensures its reported NUMA distances match the injected values.
+ */
 TEST(Unit_TopologyAbstractionTest, InjectedDistanceModelDrivesRuntimeContext)
 {
     auto provider = std::make_shared<HwlocTopologyProvider>();
@@ -77,8 +89,11 @@ TEST(Unit_TopologyAbstractionTest, InjectedDistanceModelDrivesRuntimeContext)
     EXPECT_EQ(ctx.numa_distance(0, 1), 21);
 }
 
-// The decorator keeps the real devices but spreads them over a synthetic layout;
-// every device must land in range [0, N).
+/**
+ * @brief Verifies that the RemappingTopologyProvider distributes real devices across a synthetic NUMA layout.
+ *
+ * Wraps a real hwloc provider with a remapper and ensures all discovered devices are assigned to NUMA nodes within the synthetic range.
+ */
 TEST(Unit_TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeNodes)
 {
     constexpr int FAKE_NODES = 4;
@@ -101,7 +116,11 @@ TEST(Unit_TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeN
     }
 }
 
-// End-to-end: synthetic NUMA nodes yield usable, working queues on 1-socket HW.
+/**
+ * @brief Verifies end-to-end functionality of synthetic NUMA nodes providing usable queues.
+ *
+ * Injects a remapping provider and tests that queues obtained for synthetic NUMA IDs can successfully submit host tasks.
+ */
 TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNuma)
 {
     constexpr int FAKE_NODES = 2;

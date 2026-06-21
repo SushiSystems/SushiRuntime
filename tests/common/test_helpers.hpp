@@ -40,8 +40,16 @@ namespace SushiRuntime
 {
     namespace Test
     {
-        // Host task that records its id into a shared list. The optional delay
-        // widens the window for ordering bugs to surface.
+        /**
+         * @brief Creates a host task that records its ID into a shared list.
+         *
+         * The optional delay widens the window for ordering bugs to surface.
+         * @param task_id The ID of the task to record.
+         * @param execution_order Reference to the shared list of executed task IDs.
+         * @param order_mutex Mutex protecting the shared execution order list.
+         * @param delay Optional artificial delay before recording the ID.
+         * @return A callable that matches the SYCL host task signature.
+         */
         inline auto make_order_recorder(int task_id,
                                         std::vector<int>& execution_order,
                                         std::mutex& order_mutex,
@@ -59,10 +67,18 @@ namespace SushiRuntime
             };
         }
 
-        // Canonical scheduler workload: bumps a counter, no GPU involvement.
+        /**
+         * @brief Canonical scheduler workload that bumps an atomic counter.
+         *
+         * Performs a simple increment on the host, requiring no GPU involvement.
+         */
         class AtomicCounterTask : public Scheduler::Task
         {
         public:
+            /**
+             * @brief Constructs an AtomicCounterTask.
+             * @param c Reference to the atomic counter to increment.
+             */
             explicit AtomicCounterTask(std::atomic<size_t>& c)
                 : Task("AtomicCounterTask"), counter_(c) {}
 
@@ -81,10 +97,20 @@ namespace SushiRuntime
             std::atomic<size_t>& counter_;
         };
 
-        // Records its priority, so scheduler tests can assert priority ordering.
+        /**
+         * @brief Task that records its priority into a shared list.
+         *
+         * Used in scheduler tests to assert that priority ordering is respected.
+         */
         class PriorityTrackingTask : public Scheduler::Task
         {
         public:
+            /**
+             * @brief Constructs a PriorityTrackingTask.
+             * @param p The priority level of this task.
+             * @param order Reference to the shared list for recording execution order.
+             * @param mtx Mutex protecting the shared execution order list.
+             */
             PriorityTrackingTask(int p, std::vector<int>& order, std::mutex& mtx)
                 : Task("PriorityTask"), priority_(p), execution_order_(order), order_mutex_(mtx) {}
 
@@ -108,11 +134,20 @@ namespace SushiRuntime
             std::mutex& order_mutex_;
         };
 
-        // Move-only RAII guard for a sycl::malloc_shared<T> buffer; frees on exit.
+        /**
+         * @brief Move-only RAII guard for a sycl::malloc_shared buffer.
+         *
+         * Ensures that the allocated USM memory is automatically freed upon exit.
+         */
         template <typename T>
         class UsmShared
         {
         public:
+            /**
+             * @brief Allocates shared USM memory.
+             * @param q The SYCL queue used for allocation.
+             * @param count Number of elements of type T to allocate.
+             */
             UsmShared(sycl::queue& q, size_t count)
                 : queue_(&q), ptr_(sycl::malloc_shared<T>(count, q)), count_(count) {}
 

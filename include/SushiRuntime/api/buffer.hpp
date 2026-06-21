@@ -165,19 +165,33 @@ namespace SushiRuntime
                  * @brief Registers this buffer as distributable (Master mode).
                  *
                  * Opt-in: only a registered buffer can cross to a worker, and the
-                 * master stays authoritative for it. No-op when empty. Returns *this
-                 * so it chains off the allocation: `auto a = rt.buffer<float>(n).distributed();`
+                 * master stays authoritative for it. No-op when empty.
+                 *
+                 * Two overloads exist to make chaining safe. The lvalue overload
+                 * (on a named buffer) returns *this. The rvalue overload (on a
+                 * temporary returned by Runtime::buffer()) moves the buffer into
+                 * the caller so the allocation survives the chain:
+                 * `auto a = rt.buffer<float>(n).distributed();`
                  *
                  * Note: only a plain Buffer is distributable. A State<T> double-buffers
                  * by swapping pointers each step, which is incompatible with the
                  * version-by-pointer coherence model, so State deliberately has no
                  * distributed() — stage a Buffer instead.
+                 *
+                 * @return *this (lvalue overload) or the buffer by value (rvalue overload).
                  */
-                Buffer& distributed()
+                Buffer& distributed() &
                 {
                     if (ctx_ && ptr_)
                         ctx_->register_distributed_buffer(ptr_, size_ * sizeof(T));
                     return *this;
+                }
+
+                Buffer distributed() &&
+                {
+                    if (ctx_ && ptr_)
+                        ctx_->register_distributed_buffer(ptr_, size_ * sizeof(T));
+                    return std::move(*this);
                 }
 #endif // SR_DISTRIBUTED
 

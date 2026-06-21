@@ -111,11 +111,9 @@ namespace SushiRuntime
         /**
          * @brief Abstract interface for graph execution strategies.
          *
-         * Separates the "how to run a graph" decision from both TaskGraph (which
-         * is only responsible for building the DAG) and RuntimeContext (which is
-         * only responsible for hardware resources). New execution strategies
-         * (e.g., dry-run, profiling, replay) can be plugged in without touching
-         * either of those classes. [OCP compliant]
+         * Separates "how to run a graph" from TaskGraph (which builds the DAG)
+         * and RuntimeContext (which owns hardware). New strategies (dry-run,
+         * profiling, replay) can be plugged in without touching either class.
          */
         class SUSHIRUNTIME_API IExecutionEngine
         {
@@ -172,12 +170,10 @@ namespace SushiRuntime
         /**
          * @brief Default work-stealing execution engine backed by TaskScheduler.
          *
-         * Owns a single persistent TaskScheduler that is started once on construction
-         * and stopped on shutdown(). Each call to execute() rearms the scheduler for
-         * a new graph run without recreating worker threads. [Madde 7 fix]
-         *
-         * Lifecycle is managed by RuntimeContext::Impl so that it is guaranteed to be
-         * shut down before any hardware queues or allocators are destroyed. [Madde 18 fix]
+         * Owns a single persistent TaskScheduler started once on construction.
+         * Each execute() rearms the scheduler for a new graph run without
+         * recreating worker threads. RuntimeContext::Impl shuts this engine down
+         * before any queues or allocators are destroyed.
          */
         class SUSHIRUNTIME_API ExecutionEngine final : public IExecutionEngine
         {

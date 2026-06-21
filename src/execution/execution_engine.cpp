@@ -55,7 +55,13 @@ namespace SushiRuntime
             /** @brief Guards against double-shutdown. */
             std::atomic<bool> is_shutdown{false};
 
-            // DÜZELTME: 'context(ctx),' kısmı silindi, sadece scheduler başlatılıyor.
+            /**
+             * @brief Constructs the internal implementation.
+             *
+             * Starts the task scheduler and workload rebalancer.
+             *
+             * @param ctx The runtime context to attach to.
+             */
             Impl(RuntimeContext& ctx) : scheduler(ctx)
             {
                 scheduler.start();
@@ -76,6 +82,11 @@ namespace SushiRuntime
                 do_shutdown();
             }
 
+            /**
+             * @brief Performs the actual shutdown sequence.
+             *
+             * Stops the rebalancer and worker pool, avoiding multiple shutdown calls.
+             */
             void do_shutdown()
             {
                 if (rebalancer) rebalancer->stop();
@@ -95,20 +106,42 @@ namespace SushiRuntime
         //  ExecutionEngine public interface                                   //
         // ------------------------------------------------------------------ //
 
+        /**
+         * @brief Constructs an ExecutionEngine.
+         *
+         * @param ctx The runtime context the engine is bound to.
+         */
         ExecutionEngine::ExecutionEngine(RuntimeContext& ctx)
             : impl_(make_sushi<Impl>(ctx))
         {}
 
+        /**
+         * @brief Destroys the ExecutionEngine.
+         *
+         * Ensures that the engine is shut down before destruction.
+         */
         ExecutionEngine::~ExecutionEngine()
         {
             // Pimpl destructor will call do_shutdown() if not already done.
         }
 
+        /**
+         * @brief Shuts down the execution engine.
+         *
+         * Stops the task scheduler and the workload rebalancer gracefully.
+         */
         void ExecutionEngine::shutdown()
         {
             impl_->do_shutdown();
         }
 
+        /**
+         * @brief Retrieves the current execution metrics.
+         *
+         * Aggregates completed task and steal counts across all workers.
+         *
+         * @return ExecutionMetrics A structure containing the execution statistics.
+         */
         ExecutionMetrics ExecutionEngine::metrics() const
         {
             ExecutionMetrics m;
@@ -229,6 +262,17 @@ namespace SushiRuntime
         // Defined here, not in the header: constructing the CompiledGraph local
         // instantiates its destructor (sushi_ptr<Node>::~sushi_ptr), which needs the
         // complete Node type. The header only forward-declares Node to stay light.
+
+        /**
+         * @brief Executes a compiled graph, taking ownership of it.
+         *
+         * Defined here rather than the header to keep Node forward-declared.
+         * Constructs a local CompiledGraph, which requires the complete Node type
+         * for its destructor.
+         *
+         * @param graph The compiled graph to execute via move semantics.
+         * @return sycl::event An event that completes when the graph finishes execution.
+         */
         sycl::event IExecutionEngine::execute(CompiledGraph&& graph)
         {
             CompiledGraph local = std::move(graph);
@@ -237,6 +281,14 @@ namespace SushiRuntime
 
         // Defined here for the same reason: touching Node::in_degree needs the
         // complete Node type, which only this translation unit sees.
+
+        /**
+         * @brief Captures the base in-degree state of all nodes in the graph.
+         *
+         * Stores the initial dependencies before any execution begins so that
+         * they can be restored upon re-arming. Defined here since touching
+         * Node::in_degree requires the complete Node type.
+         */
         void CompiledGraph::capture_base_state()
         {
             base_in_degree.clear();
@@ -247,6 +299,12 @@ namespace SushiRuntime
                 ? sentinel->in_degree.load(std::memory_order_relaxed) : 0;
         }
 
+        /**
+         * @brief Restores the captured dependency state to allow re-execution.
+         *
+         * Resets the in-degree of all nodes (including the sentinel) to their
+         * base states and clears any distributed offload attempts.
+         */
         void CompiledGraph::rearm() noexcept
         {
             const std::size_t count = all_nodes.size();

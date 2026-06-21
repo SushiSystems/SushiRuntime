@@ -55,6 +55,10 @@ namespace SushiRuntime
         {
             constexpr int MASTER_PEER = -1;
 
+            /**
+             * @brief Initializes the underlying platform networking system.
+             * On Windows, it calls WSAStartup; on other platforms, it is a no-op.
+             */
             void platform_init()
             {
 #if defined(_WIN32)
@@ -67,6 +71,11 @@ namespace SushiRuntime
 #endif
             }
 
+            /**
+             * @brief Closes a given socket descriptor.
+             * Abstracts platform-specific socket closing functions.
+             * @param s The socket_t descriptor to close.
+             */
             void close_sock(socket_t s)
             {
                 if (s == INVALID_SOCK) return;
@@ -77,8 +86,12 @@ namespace SushiRuntime
 #endif
             }
 
-            // close() alone does NOT wake a recv()/accept() blocked in another
-            // thread on Linux — shutdown() does. Call this before joining readers.
+            /**
+             * @brief Shuts down a given socket descriptor.
+             * close() alone does NOT wake a recv()/accept() blocked in another
+             * thread on Linux — shutdown() does. Call this before joining readers.
+             * @param s The socket_t descriptor to shut down.
+             */
             void shutdown_sock(socket_t s)
             {
                 if (s == INVALID_SOCK) return;
@@ -89,6 +102,11 @@ namespace SushiRuntime
 #endif
             }
 
+            /**
+             * @brief Configures a socket with TCP_NODELAY.
+             * Disables Nagle's algorithm to ensure immediate message transmission.
+             * @param s The socket_t descriptor to configure.
+             */
             void set_nodelay(socket_t s)
             {
                 int one = 1;
@@ -96,7 +114,14 @@ namespace SushiRuntime
                              reinterpret_cast<const char*>(&one), sizeof(one));
             }
 
-            // Blocking read/write of an exact byte count; false on close/error.
+            /**
+             * @brief Performs a blocking read of an exact byte count from a socket.
+             * Continues reading until the requested number of bytes is received or an error occurs.
+             * @param s The socket_t descriptor to read from.
+             * @param buf The buffer to write received data into.
+             * @param n The number of bytes to read.
+             * @return A boolean which is true if the exact byte count was successfully read, false on close/error.
+             */
             bool read_n(socket_t s, void* buf, size_t n)
             {
                 auto* p = static_cast<char*>(buf);
@@ -110,6 +135,14 @@ namespace SushiRuntime
                 return true;
             }
 
+            /**
+             * @brief Performs a blocking write of an exact byte count to a socket.
+             * Continues sending until the requested number of bytes is transmitted or an error occurs.
+             * @param s The socket_t descriptor to write to.
+             * @param buf The buffer containing the data to send.
+             * @param n The number of bytes to write.
+             * @return A boolean which is true if the exact byte count was successfully written, false on close/error.
+             */
             bool write_n(socket_t s, const void* buf, size_t n)
             {
                 const auto* p = static_cast<const char*>(buf);
@@ -140,6 +173,12 @@ namespace SushiRuntime
             std::thread              accept_thread;               // master
             std::vector<std::thread> readers;
 
+            /**
+             * @brief Reads incoming messages from a specific peer socket.
+             * Continuously polls the socket for message frames and dispatches them to the handler.
+             * @param sock The socket_t descriptor for the connection.
+             * @param peer The integer ID of the peer.
+             */
             void reader_loop(socket_t sock, int peer)
             {
                 for (;;)
@@ -169,6 +208,15 @@ namespace SushiRuntime
                 }
             }
 
+            /**
+             * @brief Sends a message to a specific peer socket.
+             * Packages the payload into a frame and transmits it synchronously.
+             * @param sock The socket_t descriptor to send to.
+             * @param m The std::mutex to protect concurrent writes to the socket.
+             * @param peer The integer ID of the peer.
+             * @param type The MsgType of the message to send.
+             * @param payload A span of bytes representing the payload.
+             */
             void send_to(socket_t sock, std::mutex& m, int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
             {
                 if (sock == INVALID_SOCK) return;
@@ -192,6 +240,10 @@ namespace SushiRuntime
                 }
             }
 
+            /**
+             * @brief Accepts incoming worker connections.
+             * Runs on the master transport to accept connections up to the expected worker count.
+             */
             void accept_loop()
             {
                 for (int i = 0; i < worker_count && running.load(); ++i)
@@ -206,10 +258,27 @@ namespace SushiRuntime
             }
         };
 
+        /**
+         * @brief Constructs a TcpTransport with a specific implementation.
+         * Initializes the transport with the given Impl context.
+         * @param impl A std::shared_ptr to the Impl context.
+         */
         TcpTransport::TcpTransport(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
+        /**
+         * @brief Destructs the TcpTransport.
+         * Stops any active connections and threads before destruction.
+         */
         TcpTransport::~TcpTransport() { stop(); }
 
+        /**
+         * @brief Factory method to create a master TCP transport.
+         * Initializes a transport that listens for incoming worker connections.
+         * @param port The port to listen on.
+         * @param worker_count The total number of workers to accept.
+         * @return A std::shared_ptr to the constructed TcpTransport.
+         * @throws std::runtime_error If socket creation, bind, or listen fails.
+         */
         std::shared_ptr<TcpTransport> TcpTransport::make_master(uint16_t port, int worker_count)
         {
             platform_init();
@@ -258,6 +327,13 @@ namespace SushiRuntime
             return std::shared_ptr<TcpTransport>(new TcpTransport(impl));
         }
 
+        /**
+         * @brief Factory method to create a worker TCP transport.
+         * Initializes a transport that connects to the specified master host.
+         * @param host A std::string containing the hostname or IP of the master.
+         * @param port The port to connect to.
+         * @return A std::shared_ptr to the constructed TcpTransport.
+         */
         std::shared_ptr<TcpTransport> TcpTransport::make_worker(const std::string& host, uint16_t port)
         {
             platform_init();
@@ -270,8 +346,18 @@ namespace SushiRuntime
             return std::shared_ptr<TcpTransport>(new TcpTransport(impl));
         }
 
+        /**
+         * @brief Registers a callback to handle incoming messages.
+         * The handler is invoked whenever a complete message is received from a peer.
+         * @param handler The MessageHandler to register.
+         */
         void TcpTransport::on_message(MessageHandler handler) { impl_->handler = std::move(handler); }
 
+        /**
+         * @brief Starts the transport.
+         * Begins listening for connections if master, or connecting if worker, and starts reader threads.
+         * @throws std::runtime_error If socket creation or connection fails.
+         */
         void TcpTransport::start()
         {
             bool expected = false;
@@ -318,6 +404,10 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Stops the transport.
+         * Shuts down all sockets, joins reader threads, and cleans up resources.
+         */
         void TcpTransport::stop()
         {
             bool expected = true;
@@ -347,6 +437,13 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Sends a message to a specific peer.
+         * Broadcasts to all peers if peer_id is negative.
+         * @param peer_id The integer ID of the destination peer, or negative for broadcast.
+         * @param type The MsgType to send.
+         * @param payload A span of bytes containing the message payload.
+         */
         void TcpTransport::send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload)
         {
             if (!impl_->running.load()) return;
@@ -372,11 +469,19 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Retrieves the number of connected peers.
+         * @return An integer representing the number of peers (worker count for master, 1 for worker).
+         */
         int TcpTransport::peer_count() const
         {
             return impl_->is_master ? impl_->worker_count : 1;
         }
 
+        /**
+         * @brief Retrieves the bound port of the transport.
+         * @return An uint16_t representing the port the transport is bound to.
+         */
         uint16_t TcpTransport::bound_port() const { return impl_->port; }
 
     } // namespace Distributed

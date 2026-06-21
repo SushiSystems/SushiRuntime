@@ -44,6 +44,14 @@ using SushiRuntime::Test::AtomicCounterTask;
 
 namespace
 {
+    /**
+     * @brief Wait for an atomic value to reach a target within a budget.
+     * 
+     * @param value The atomic value to watch.
+     * @param target The target value.
+     * @param budget The time budget.
+     * @return True if the target was reached, false on timeout.
+     */
     bool wait_for(const std::atomic<size_t>& value, size_t target,
                   std::chrono::seconds budget)
     {
@@ -57,6 +65,12 @@ namespace
         return true;
     }
 
+    /**
+     * @brief Count the number of distinct NUMA nodes.
+     * 
+     * @param core_to_numa A mapping of CPU cores to NUMA node indices.
+     * @return The number of distinct NUMA nodes.
+     */
     int distinct_numa_nodes(const std::vector<int>& core_to_numa)
     {
         std::set<int> nodes(core_to_numa.begin(), core_to_numa.end());
@@ -64,7 +78,11 @@ namespace
     }
 }
 
-// Under heavy load on real multi-NUMA hardware, most steals must be node-local.
+/**
+ * @brief Tests steal locality on multi-NUMA hardware.
+ * 
+ * Under heavy load on real multi-NUMA hardware, most steals must be node-local.
+ */
 TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
 {
     RuntimeContext ctx;

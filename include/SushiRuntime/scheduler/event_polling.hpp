@@ -175,9 +175,9 @@ namespace SushiRuntime
                             if (active_events.events[i].task)
                                 active_events.events[i].task->release();
 
-                            active_events.remove_at(i); // O(1) Silme
+                            active_events.remove_at(i); // O(1): swaps with the last entry
                             progress = true;
-                            // i'yi artırma, çünkü son eleman bu index'e taşındı
+                            // Do not increment i — the swapped-in last entry now occupies this slot.
                         } 
                         else 
                             ++i;

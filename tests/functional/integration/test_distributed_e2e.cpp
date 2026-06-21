@@ -39,6 +39,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/sycl_compat.hpp>
+#include <SushiRuntime/api/runtime.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
@@ -56,13 +57,21 @@ using namespace SushiRuntime::Distributed;
 
 namespace
 {
-    // Bumped once per kernel run on the worker, so a test can prove the task ran
-    // remotely rather than through the local host fallback.
+    /**
+     * @brief Bumped once per kernel run on the worker.
+     *
+     * Used to prove the task ran remotely rather than through the local host fallback.
+     */
     std::atomic<int> g_worker_runs{0};
 
     constexpr auto VEC_ADD = "vec.add"_op;
 
-    // out[i] = a[i] + b[i] over network-resolved local USM buffers.
+    /**
+     * @brief Registers the vector-add kernel.
+     *
+     * Computes out[i] = a[i] + b[i] over network-resolved local USM buffers.
+     * @param reg The kernel registry to register with.
+     */
     void register_vec_add(KernelRegistry& reg)
     {
         reg.register_kernel(VEC_ADD,
@@ -87,8 +96,11 @@ namespace
     }
 }
 
-// One offloaded vector-add: data goes master->worker, the kernel runs on the
-// worker, results come back, and the graph completes.
+/**
+ * @brief Tests a full offload vector-add round trip.
+ *
+ * Data goes master->worker, the kernel runs on the worker, results come back, and the graph completes.
+ */
 TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
 {
     // The runtime needs at least one SYCL device; skip cleanly if none is present.
@@ -195,8 +207,11 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
     sycl::free(out, mq);
 }
 
-// Two independent offloadable tasks fan out to two distinct workers: the policy
-// spreads the load and each worker runs its share.
+/**
+ * @brief Tests fan-out of offloadable tasks across multiple workers.
+ *
+ * Two independent offloadable tasks fan out to two distinct workers: the policy spreads the load and each worker runs its share.
+ */
 TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
 {
     std::unique_ptr<RuntimeContext> master_ctx, w0_ctx, w1_ctx;
@@ -327,9 +342,11 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     sycl::free(y1, mq);
 }
 
-// A local task writes registered buffer X; a dependent offloaded task reads X
-// (Y = X + X). Proves the local write auto-bumps X's version (so the worker
-// pulls fresh data) and the offloaded result reflects the written values.
+/**
+ * @brief Tests automatic version bumping across a local write followed by an offloaded read.
+ *
+ * Proves the local write auto-bumps X's version (so the worker pulls fresh data) and the offloaded result reflects the locally written values.
+ */
 TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloadedRead)
 {
     std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
@@ -446,8 +463,11 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     sycl::free(y, mq);
 }
 
-// The same vector-add offload, but over the real raw-socket TCP transport on
-// 127.0.0.1 — the wire path a real cluster uses.
+/**
+ * @brief Tests vector-add offload over a real raw-socket TCP transport.
+ *
+ * Exercises the wire path a real cluster uses over 127.0.0.1 loopback.
+ */
 TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
 {
     std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
@@ -545,9 +565,11 @@ TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
     sycl::free(out, mq);
 }
 
-// A worker accepts an offloaded task then dies without replying. The master
-// must not hang: the liveness monitor declares it dead, re-dispatches the task,
-// and runs it locally, so the graph still completes correctly.
+/**
+ * @brief Tests master resilience and local fallback upon worker death.
+ *
+ * A worker accepts an offloaded task then dies without replying. The master must not hang: the liveness monitor declares it dead, re-dispatches the task, and runs it locally.
+ */
 TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
 {
     std::unique_ptr<RuntimeContext> master_ctx;
@@ -673,12 +695,11 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     sycl::free(out, mq);
 }
 
-// A superseded (zombie) worker's late writeback must NOT clobber the master's
-// authoritative buffer. We drive the version fence directly: the buffer is
-// advanced to version 3, then a stale BUFFER_PUSH (version 2, poison bytes) is
-// injected over the fabric. The fence must reject it (buffer unchanged), while a
-// fresh push at the current version is accepted. This is the data-corruption
-// race a redispatch-after-false-death would otherwise cause.
+/**
+ * @brief Tests that stale writebacks from zombie workers are fenced out.
+ *
+ * Proves that a late writeback from a superseded worker does not clobber the master's authoritative buffer, preventing data-corruption races.
+ */
 TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
 {
     std::unique_ptr<RuntimeContext> master_ctx;
@@ -756,10 +777,11 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
     sycl::free(out, mq);
 }
 
-// A worker that never receives the buffer it pulls must not hang the graph. With
-// the fabric dropping the master's BUFFER_PUSH, the worker's input pull times out
-// (set_pull_timeout) and the task fails cleanly, so execute() RETURNS rather than
-// blocking the exec thread (and the whole run) forever.
+/**
+ * @brief Tests that a lost buffer push times out cleanly.
+ *
+ * A worker that never receives the buffer it pulls must time out, failing the task cleanly without hanging the master's execute thread.
+ */
 TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHanging)
 {
     std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
@@ -858,4 +880,65 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
     sycl::free(a, mq);
     sycl::free(b, mq);
     sycl::free(out, mq);
+}
+
+/**
+ * @brief Tests the fluent API for cluster offload.
+ *
+ * Proves the fluent surface can build and run a distributed graph end to end with a local fallback without dropping to the low-level TaskGraph.
+ */
+TEST(Integration_DistributedE2ETest, FluentClusterOffload)
+{
+    g_worker_runs.store(0, std::memory_order_relaxed);
+
+    InProcessFabric fabric(1);
+    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
+    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+
+    std::unique_ptr<RuntimeContext> worker_ctx;
+    std::unique_ptr<Runtime> rt;
+    try
+    {
+        worker_ctx = std::make_unique<RuntimeContext>();
+        rt = std::make_unique<Runtime>(Runtime::create());
+    }
+    catch (const std::exception& e)
+    {
+        GTEST_SKIP() << "No SYCL device available: " << e.what();
+    }
+
+    auto worker_kernels = make_sushi<KernelRegistry>();
+    register_vec_add(*worker_kernels);
+    WorkerAgent agent(*worker_ctx, worker_transport, worker_kernels);
+
+    auto cluster = rt->cluster(master_transport, make_sushi<KernelRegistry>(),
+                               std::make_shared<LeastLoadedOffloadPolicy>(0));
+    agent.start();
+    ASSERT_TRUE(cluster.wait_for_workers(1, std::chrono::seconds(3)))
+        << "Worker never registered with the fluent cluster.";
+
+    constexpr size_t N = 1024;
+    auto a   = rt->buffer<float>(N).distributed();
+    auto b   = rt->buffer<float>(N).distributed();
+    auto out = rt->buffer<float>(N).distributed();
+    for (size_t i = 0; i < N; ++i) { a[i] = float(i); b[i] = float(2 * i); out[i] = -1.0f; }
+
+    float* ap = a.data();
+    float* bp = b.data();
+    float* op = out.data();
+
+    auto g = rt->graph();
+    g.add(VEC_ADD, N,
+          { a.dependency_key(), b.dependency_key() }, { out.dependency_key() },
+          [ap, bp, op](std::size_t i) { op[i] = ap[i] + bp[i]; },
+          { static_cast<std::uint64_t>(N) });
+    g.run();
+
+    EXPECT_GE(cluster.offloaded(), 1u) << "Fluent task should have been offloaded.";
+    bool correct = true;
+    for (size_t i = 0; i < N; ++i)
+        if (out[i] != a[i] + b[i]) { correct = false; break; }
+    EXPECT_TRUE(correct) << "Fluent offloaded result is wrong.";
+
+    agent.stop();
 }

@@ -47,9 +47,15 @@ namespace
 {
     using Clock = std::chrono::steady_clock;
 
-    // True on a WSL2 host. Its CUDA backend adds dispatch latency and exposes no
-    // PCI topology, inflating the overlap wall-clock enough to miss the strict
-    // bar even when the devices demonstrably overlap — used to relax, not delete.
+    /**
+     * @brief Check if running on a WSL2 host.
+     * 
+     * Its CUDA backend adds dispatch latency and exposes no PCI topology, inflating the
+     * overlap wall-clock enough to miss the strict bar even when the devices demonstrably
+     * overlap — used to relax, not delete.
+     * 
+     * @return True if running under WSL, false otherwise.
+     */
     bool running_under_wsl()
     {
 #if defined(__linux__)
@@ -65,12 +71,27 @@ namespace
 #endif
     }
 
+    /**
+     * @brief Calculate milliseconds since a given time point.
+     * 
+     * @param t0 The start time.
+     * @return Milliseconds elapsed.
+     */
     double ms_since(Clock::time_point t0)
     {
         return std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
     }
 
-    // Run `fn` `reps` times and keep the fastest, stripping scheduling/OS noise.
+    /**
+     * @brief Run a function multiple times and keep the fastest time.
+     * 
+     * This strips scheduling/OS noise.
+     * 
+     * @tparam Fn The function type.
+     * @param reps Number of repetitions.
+     * @param fn The function to run.
+     * @return The best execution time in milliseconds.
+     */
     template <typename Fn>
     double best_of(int reps, Fn&& fn)
     {
@@ -84,6 +105,13 @@ namespace
         return best;
     }
 
+    /**
+     * @brief Find the indices for a CPU and GPU device.
+     * 
+     * @param cpu_idx Reference to store the CPU index.
+     * @param gpu_idx Reference to store the GPU index.
+     * @return True if both were found, false otherwise.
+     */
     bool find_cpu_gpu_indices(size_t& cpu_idx, size_t& gpu_idx)
     {
         auto devs = sycl::device::get_devices(sycl::info::device_type::all);
@@ -105,14 +133,19 @@ namespace
         return fc && fg;
     }
 
-    // Heavy, optimizer-resistant element kernel: runtime scales with `iters`.
-    //
-    // The body must be a genuinely non-linear recurrence. A plain
-    // `acc = acc * c + d` is a linear recurrence with a closed form, and some
-    // backends (notably oneAPI's nvptx JIT) collapse the whole loop into it —
-    // GPU time then stays flat regardless of `iters`, so calibration can never
-    // balance the two devices and the overlap measurement becomes meaningless.
-    // A transcendental per iteration has no closed form, forcing the loop to run.
+    /**
+     * @brief Launch a heavy, optimizer-resistant element kernel.
+     * 
+     * Runtime scales with `iters`. The body must be a genuinely non-linear recurrence
+     * to prevent compiler optimizations from collapsing the loop.
+     * 
+     * @param q The SYCL queue.
+     * @param in The input buffer.
+     * @param out The output buffer.
+     * @param n The number of elements.
+     * @param iters Number of iterations per element.
+     * @return The SYCL event for the kernel.
+     */
     sycl::event launch_heavy(sycl::queue& q, float* in, float* out, size_t n, int iters)
     {
         return q.submit([&](sycl::handler& h)
@@ -128,8 +161,12 @@ namespace
     }
 }
 
-// Auto-balance CPU/GPU work, then measure the wall-clock saving of running the
-// two devices concurrently versus serially.
+/**
+ * @brief Tests the CPU/GPU async overlap speedup.
+ * 
+ * Auto-balances CPU/GPU work, then measures the wall-clock saving of running the
+ * two devices concurrently versus serially.
+ */
 TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
 {
     size_t cpu_idx = 0;

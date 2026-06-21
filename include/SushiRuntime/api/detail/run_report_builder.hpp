@@ -37,19 +37,16 @@ namespace SushiRuntime
         {
             /**
              * @brief Assembles a RunReport from a finished run's raw measurements.
+             * 
+             * Maps scheduler counters and device placement onto the public RunReport structure.
              *
-             * Pulled out of Graph so the fluent graph stays a builder/runner and
-             * does not also own the reporting policy: how scheduler counters and
-             * device placement map onto the public RunReport shape lives here, the
-             * one place that changes when the report format or instrumentation does.
-             *
-             * @param ctx         The context that ran the work (queue + distributed telemetry).
-             * @param before      Scheduler counters snapshotted before the run.
-             * @param after       Scheduler counters snapshotted after the run.
-             * @param total_tasks Tasks executed across every step (task_count * steps).
-             * @param compile_ms  Time spent compiling the plan this call (0 if cached).
-             * @param total_ms    Wall-clock time of the whole run.
-             * @return A populated RunReport.
+             * @param ctx         The execution context providing the command queue and distributed telemetry.
+             * @param before      The scheduler execution metrics snapshotted before the run started.
+             * @param after       The scheduler execution metrics snapshotted after the run completed.
+             * @param total_tasks The total number of tasks executed across all steps.
+             * @param compile_ms  The time spent compiling the task graph in milliseconds.
+             * @param total_ms    The total wall-clock execution time in milliseconds.
+             * @return The populated RunReport containing execution statistics.
              */
             inline Core::RunReport build_run_report(
                 Execution::RuntimeContext&        ctx,

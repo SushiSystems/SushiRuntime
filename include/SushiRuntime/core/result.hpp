@@ -34,11 +34,9 @@ namespace SushiRuntime
         /**
          * @brief Wraps a value on its way into a Result's error channel.
          *
-         * Returned by make_error(); a Result constructs from it implicitly so call
-         * sites read `return make_error(Error{...});`. Mirrors std::unexpected from
-         * C++23 without requiring it.
+         * Forces the target Result constructor to treat the payload as an error rather than a success value.
          *
-         * @tparam E The error type carried.
+         * @tparam E The exact type of the error payload carried.
          */
         template <typename E>
         struct ErrorWrapper
@@ -48,8 +46,12 @@ namespace SushiRuntime
 
         /**
          * @brief Builds an ErrorWrapper, deducing the error type.
-         * @param e The error value to wrap.
-         * @return An ErrorWrapper a Result can be constructed from.
+         * 
+         * Constructs the wrapper using perfect forwarding and decay.
+         *
+         * @tparam E The deduced type of the incoming error.
+         * @param e The specific error instance to wrap.
+         * @return An ErrorWrapper carrying the error, suitable for Result construction.
          */
         template <typename E>
         ErrorWrapper<std::decay_t<E>> make_error(E&& e)
@@ -58,16 +60,12 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Holds either a success value of type T or an error of type E.
+         * @brief Holds either a successful result of type T or an error payload of type E.
          *
-         * A small C++17 stand-in for std::expected covering exactly what the v1
-         * API needs: construct from a value or from make_error(), test with
-         * operator bool, and read the value (value()/operator*) or the error
-         * (error()). T and E must be distinct types. Reading the wrong side is
-         * undefined, as with std::expected; callers check first.
+         * Manages a disjoint union of a success value and an error value, requiring explicit state checking before access.
          *
-         * @tparam T The success value type.
-         * @tparam E The error type.
+         * @tparam T The type of the success value.
+         * @tparam E The type of the error value.
          */
         template <typename T, typename E>
         class Result
@@ -75,7 +73,10 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Constructs a success result holding a value.
-                 * @param value The success value.
+                 * 
+                 * Initializes the internal variant with the success state.
+                 *
+                 * @param value The successful result to store.
                  */
                 Result(T value)
                     : data_(std::in_place_index<0>, std::move(value))
@@ -83,38 +84,109 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Constructs an error result from make_error().
-                 * @param wrapper The wrapped error value.
+                 * @brief Constructs an error result from an ErrorWrapper.
+                 * 
+                 * Initializes the internal variant with the error state.
+                 *
+                 * @param wrapper The wrapped error instance to store.
                  */
                 Result(ErrorWrapper<E> wrapper)
                     : data_(std::in_place_index<1>, std::move(wrapper.value))
                 {
                 }
 
-                /** @brief True when this holds a value rather than an error. */
+                /** 
+                 * @brief Checks if this object holds a success value.
+                 * 
+                 * Returns the active state of the underlying variant.
+                 *
+                 * @return True if a success value is present, false if an error is present.
+                 */
                 bool has_value() const noexcept { return data_.index() == 0; }
 
-                /** @brief True when this holds a value rather than an error. */
+                /** 
+                 * @brief Checks if this object holds a success value.
+                 * 
+                 * Provides boolean conversion for if-statement checking.
+                 *
+                 * @return True if a success value is present, false if an error is present.
+                 */
                 explicit operator bool() const noexcept { return has_value(); }
 
-                /** @brief The success value; valid only when has_value() is true. */
+                /** 
+                 * @brief Retrieves the stored success value.
+                 * 
+                 * Extracts the value from the variant without bounds checking.
+                 *
+                 * @return A reference to the underlying success value.
+                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 */
                 T& value() & { return std::get<0>(data_); }
-                /** @brief The success value; valid only when has_value() is true. */
+                /** 
+                 * @brief Retrieves the stored success value.
+                 * 
+                 * Extracts the value from the variant without bounds checking.
+                 *
+                 * @return A constant reference to the underlying success value.
+                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 */
                 const T& value() const & { return std::get<0>(data_); }
 
-                /** @brief The success value; valid only when has_value() is true. */
+                /** 
+                 * @brief Retrieves the stored success value.
+                 * 
+                 * Extracts the value from the variant without bounds checking.
+                 *
+                 * @return A reference to the underlying success value.
+                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 */
                 T& operator*() & { return std::get<0>(data_); }
-                /** @brief The success value; valid only when has_value() is true. */
+                /** 
+                 * @brief Retrieves the stored success value.
+                 * 
+                 * Extracts the value from the variant without bounds checking.
+                 *
+                 * @return A constant reference to the underlying success value.
+                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 */
                 const T& operator*() const & { return std::get<0>(data_); }
 
-                /** @brief Member access on the success value. */
+                /** 
+                 * @brief Accesses a member of the stored success value.
+                 * 
+                 * Evaluates the underlying value pointer.
+                 *
+                 * @return A pointer to the underlying success value.
+                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 */
                 T* operator->() { return &std::get<0>(data_); }
-                /** @brief Member access on the success value. */
+                /** 
+                 * @brief Accesses a member of the stored success value.
+                 * 
+                 * Evaluates the underlying value pointer.
+                 *
+                 * @return A constant pointer to the underlying success value.
+                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 */
                 const T* operator->() const { return &std::get<0>(data_); }
 
-                /** @brief The error; valid only when has_value() is false. */
+                /** 
+                 * @brief Retrieves the stored error payload.
+                 * 
+                 * Extracts the error from the variant without bounds checking.
+                 *
+                 * @return A reference to the underlying error value.
+                 * @warning Accessing the error when a success value is stored yields undefined behavior.
+                 */
                 E& error() & { return std::get<1>(data_); }
-                /** @brief The error; valid only when has_value() is false. */
+                /** 
+                 * @brief Retrieves the stored error payload.
+                 * 
+                 * Extracts the error from the variant without bounds checking.
+                 *
+                 * @return A constant reference to the underlying error value.
+                 * @warning Accessing the error when a success value is stored yields undefined behavior.
+                 */
                 const E& error() const & { return std::get<1>(data_); }
 
             private:

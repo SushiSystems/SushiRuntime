@@ -63,6 +63,13 @@ namespace SushiRuntime
             std::thread                pump;
             std::atomic<bool>          running{false};
 
+            /**
+             * @brief Enqueues a message for processing by this endpoint.
+             * Pushes the message payload into the inbox and notifies the pump thread.
+             * @param from_peer The integer ID of the sending peer.
+             * @param type The MsgType of the message.
+             * @param payload A span of bytes containing the message payload.
+             */
             void enqueue(int from_peer, MsgType type, SushiRuntime::span<const std::byte> payload)
             {
                 {
@@ -73,6 +80,10 @@ namespace SushiRuntime
                 q_cv.notify_one();
             }
 
+            /**
+             * @brief Continuously dequeues and dispatches incoming messages.
+             * Blocks until messages arrive or the transport stops, passing them to the registered handler.
+             */
             void pump_loop()
             {
                 for (;;)
@@ -106,6 +117,12 @@ namespace SushiRuntime
             // Workers currently partitioned off the network (both directions).
             std::vector<bool> partitioned;
 
+            /**
+             * @brief Checks if a specific node is partitioned from the network.
+             * Determines whether the node is cut off based on the fabric's partition configuration.
+             * @param node_id The integer ID of the node to check.
+             * @return A boolean which is true if the node is partitioned, false otherwise.
+             */
             bool is_partitioned(int node_id) const
             {
                 return node_id >= 0 && node_id < static_cast<int>(partitioned.size())
@@ -123,7 +140,12 @@ namespace SushiRuntime
             };
             std::vector<Held> held;
 
-            // Resolves the endpoint for a destination node id (-1 => master).
+            /**
+             * @brief Resolves the endpoint for a destination node ID.
+             * Retrieves a weak pointer to the target's transport implementation.
+             * @param to_peer The integer ID of the destination peer (-1 for master).
+             * @return A std::weak_ptr to the destination's InProcessTransport::Impl.
+             */
             std::weak_ptr<InProcessTransport::Impl> endpoint_for(int to_peer) const
             {
                 if (to_peer == MASTER_ID)
@@ -133,8 +155,14 @@ namespace SushiRuntime
                 return {};
             }
 
-            // Applies the fault policy and routes one message to one destination.
-            // Caller holds mtx. from_peer/to_peer are node ids (-1 = master).
+            /**
+             * @brief Applies the fault policy and routes one message to one destination.
+             * Drops, holds, or delivers the message based on the active policy. Caller must hold the mutex.
+             * @param from_peer The integer ID of the sending peer.
+             * @param to_peer The integer ID of the receiving peer.
+             * @param type The MsgType of the message to route.
+             * @param payload A span of bytes containing the message payload.
+             */
             void route_locked(int from_peer, int to_peer, MsgType type,
                               SushiRuntime::span<const std::byte> payload)
             {
@@ -169,6 +197,11 @@ namespace SushiRuntime
             }
         };
 
+        /**
+         * @brief Constructs an InProcessFabric for simulating distributed communication.
+         * Initializes the central switchboard with the specified number of workers.
+         * @param worker_count The total number of workers in the fabric.
+         */
         InProcessFabric::InProcessFabric(int worker_count)
             : impl_(std::make_shared<Impl>())
         {
@@ -177,16 +210,33 @@ namespace SushiRuntime
             impl_->partitioned.assign(static_cast<size_t>(worker_count), false);
         }
 
+        /**
+         * @brief Destructs the InProcessFabric.
+         */
         InProcessFabric::~InProcessFabric() = default;
 
+        /**
+         * @brief Retrieves the total number of workers configured in the fabric.
+         * @return An integer representing the worker count.
+         */
         int InProcessFabric::worker_count() const { return impl_->worker_count; }
 
+        /**
+         * @brief Installs a fault policy for the fabric.
+         * Enables fault injection by intercepting messages and applying drop, hold, or deliver actions.
+         * @param policy The FaultPolicy to apply.
+         */
         void InProcessFabric::set_fault_policy(FaultPolicy policy)
         {
             std::lock_guard<std::mutex> lk(impl_->mtx);
             impl_->fault = std::move(policy);
         }
 
+        /**
+         * @brief Flushes all held messages, optionally shuffling their order.
+         * Delivers any messages parked by a FaultAction::Hold, enabling out-of-order delivery simulation.
+         * @param shuffle_seed The seed for the random number generator, or 0 to preserve order.
+         */
         void InProcessFabric::flush_held(uint64_t shuffle_seed)
         {
             std::vector<Impl::Held> drained;
@@ -209,12 +259,22 @@ namespace SushiRuntime
                     d->enqueue(m.from_peer, m.type, m.payload);
         }
 
+        /**
+         * @brief Retrieves the count of currently held messages.
+         * @return A std::size_t representing the number of messages held by the fault policy.
+         */
         std::size_t InProcessFabric::held_count() const
         {
             std::lock_guard<std::mutex> lk(impl_->mtx);
             return impl_->held.size();
         }
 
+        /**
+         * @brief Sets or clears a network partition for a specific worker.
+         * Isolates the worker in both directions when partitioned is true.
+         * @param worker The integer ID of the worker to partition.
+         * @param partitioned A boolean indicating whether to partition (true) or heal (false).
+         */
         void InProcessFabric::set_partitioned(int worker, bool partitioned)
         {
             std::lock_guard<std::mutex> lk(impl_->mtx);
@@ -223,6 +283,12 @@ namespace SushiRuntime
         }
 
         // --- transport endpoint ----------------------------------------------
+        /**
+         * @brief Constructs an InProcessTransport and registers it with the fabric.
+         * Attaches this endpoint to the central switchboard for routing.
+         * @param fabric The InProcessFabric to register with.
+         * @param node_id The integer ID of this node (-1 for master).
+         */
         InProcessTransport::InProcessTransport(InProcessFabric& fabric, int node_id)
             : impl_(std::make_shared<Impl>())
         {
@@ -236,16 +302,28 @@ namespace SushiRuntime
                 fabric.impl_->workers[static_cast<size_t>(node_id)] = impl_;
         }
 
+        /**
+         * @brief Destructs the InProcessTransport.
+         * Stops the transport threads before destruction.
+         */
         InProcessTransport::~InProcessTransport()
         {
             stop();
         }
 
+        /**
+         * @brief Registers a callback to handle incoming messages.
+         * @param handler The MessageHandler to invoke when a message arrives.
+         */
         void InProcessTransport::on_message(MessageHandler handler)
         {
             impl_->handler = std::move(handler);
         }
 
+        /**
+         * @brief Starts the transport.
+         * Initiates the pump loop thread to process the inbox.
+         */
         void InProcessTransport::start()
         {
             bool expected = false;
@@ -254,6 +332,10 @@ namespace SushiRuntime
             impl_->pump = std::thread([imp = impl_] { imp->pump_loop(); });
         }
 
+        /**
+         * @brief Stops the transport.
+         * Signals the pump loop to exit and joins its thread.
+         */
         void InProcessTransport::stop()
         {
             bool expected = true;
@@ -264,6 +346,13 @@ namespace SushiRuntime
                 impl_->pump.join();
         }
 
+        /**
+         * @brief Sends a message to a specific peer through the fabric.
+         * Broadcasts to all peers if peer_id is negative.
+         * @param peer_id The integer ID of the destination peer, or negative for broadcast.
+         * @param type The MsgType to send.
+         * @param payload A span of bytes containing the message payload.
+         */
         void InProcessTransport::send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload)
         {
             auto fab = impl_->fabric;
@@ -293,6 +382,10 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Retrieves the number of connected peers.
+         * @return An integer representing the number of peers (worker count for master, 1 for worker).
+         */
         int InProcessTransport::peer_count() const
         {
             auto fab = impl_->fabric;

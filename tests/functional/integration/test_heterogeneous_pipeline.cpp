@@ -45,9 +45,11 @@ using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
 using SushiRuntime::Test::UsmShared;
 
-// 16 independent init -> scale -> bias chains run concurrently, split across
-// devices (GPU chains as kernels, CPU chains as host work). Each result must
-// match ((i + c) * SCALE + BIAS).
+/**
+ * @brief Tests concurrent execution of multiple heterogeneous pipelines.
+ *
+ * Independent init -> scale -> bias chains run concurrently, split across GPU as kernels and CPU as host work.
+ */
 TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 {
     RuntimeContext ctx;

@@ -35,7 +35,11 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Memory;
 
-// Many threads hammering the same bucket exercise the atomic bitmasks.
+/**
+ * @brief Tests concurrent allocation contention.
+ * 
+ * Many threads hammering the same bucket exercise the atomic bitmasks.
+ */
 TEST(Stress_USMAllocatorStress, ConcurrentAllocationContention)
 {
     RuntimeContext ctx;
@@ -77,8 +81,12 @@ TEST(Stress_USMAllocatorStress, ConcurrentAllocationContention)
     SUCCEED();
 }
 
-// Thread A allocates, thread B frees — exercises the global page resolution that
-// routes a remote free back to the owning slot.
+/**
+ * @brief Tests cross-thread deallocation.
+ * 
+ * Thread A allocates, thread B frees — exercises the global page resolution that
+ * routes a remote free back to the owning slot.
+ */
 TEST(Stress_USMAllocatorStress, CrossThreadDeallocation)
 {
     RuntimeContext ctx;

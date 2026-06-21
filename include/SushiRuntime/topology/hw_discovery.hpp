@@ -72,16 +72,21 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Class to find all hardware in the system.
+         * @brief Enumerates available SYCL compute devices and maps each to its NUMA node.
+         *
+         * Used once at RuntimeContext construction to build the device list. Duplicate
+         * SYCL devices (same platform/device reported by multiple backends) are
+         * deduplicated before the list is returned.
          */
-        class SUSHIRUNTIME_API HardwareDiscovery 
+        class SUSHIRUNTIME_API HardwareDiscovery
         {
             public:
                 HardwareDiscovery() = default;
 
                 /**
-                 * @brief Scans for all SYCL devices and returns a list of hardware nodes.
-                 * @return std::vector<HardwareNode> List of found hardware.
+                 * @brief Scans all SYCL platforms and returns matching hardware nodes.
+                 * @param config Device-class filter; defaults to including all classes.
+                 * @return Deduplicated list of found devices with logical IDs and NUMA assignments.
                  */
                 std::vector<HardwareNode> probe_all_devices(const HardwareFilterConfig& config = {});
 

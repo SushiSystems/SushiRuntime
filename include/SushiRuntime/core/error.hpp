@@ -35,12 +35,9 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief Categorises every failure the runtime can report.
+         * @brief Categorizes every failure the runtime can report.
          *
-         * One code per failure class so callers can branch on the cause without
-         * parsing the message. Synchronous failures (graph, compile, allocation)
-         * surface at the call site; device faults arrive through the queue's
-         * async handler and map to kernel_failed.
+         * Provides a distinct code per failure class so callers can handle specific errors programmatically.
          */
         enum class Errc : std::uint8_t
         {
@@ -55,11 +52,10 @@ namespace SushiRuntime
         /**
          * @brief Maps an error code to a short, stable English label.
          *
-         * Used when building messages and when formatting errors for logs. The
-         * returned pointer is a string literal and is always non-null.
+         * Returns a static string literal corresponding to the error code for logging and formatting.
          *
-         * @param code The error code to describe.
-         * @return A short label, e.g. "kernel_failed".
+         * @param code The specific error code to translate.
+         * @return A null-terminated static string literal representing the error name.
          */
         inline const char* to_string(Errc code) noexcept
         {
@@ -76,42 +72,47 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief A single failure: its category and a human-readable message.
+         * @brief Represents a structured runtime failure containing a category and a diagnostic message.
          *
-         * This is the value carried by the non-throwing channel
-         * (Result<RunReport, Error>). Origin tracking via std::source_location was
-         * dropped with the move to C++17; the message carries any needed context.
+         * Carries the error context for non-throwing return channels.
          */
         struct Error
         {
-            Errc code = Errc::ok;   /**< Failure category. */
-            std::string message;    /**< Human-readable detail. */
+            Errc code = Errc::ok;   /**< The failure category. */
+            std::string message;    /**< The human-readable diagnostic detail. */
         };
 
         /**
          * @brief Exception form of Error, thrown by the throwing entry points.
          *
-         * run() throws this; try_run() returns the equivalent Error instead. The
-         * what() text is the Error's message so existing catch(const
-         * std::exception&) sites keep working.
+         * Wraps an Error object and exposes its message through the std::runtime_error interface.
          */
         class SushiException : public std::runtime_error
         {
             public:
                 /**
                  * @brief Wraps an Error as a throwable exception.
-                 * @param err The failure to carry.
+                 * 
+                 * Initializes the standard exception with the error message.
+                 *
+                 * @param err The structured failure detail to carry.
                  */
                 explicit SushiException(Error err)
                     : std::runtime_error(err.message), err_(std::move(err))
                 {
                 }
 
-                /** @brief The structured error behind this exception. */
+                /** 
+                 * @brief Retrieves the structured error behind this exception. 
+                 * 
+                 * Exposes the underlying Error object for programmatic inspection.
+                 *
+                 * @return A constant reference to the underlying structured error.
+                 */
                 const Error& error() const noexcept { return err_; }
 
             private:
-                Error err_; /**< Structured failure detail. */
+                Error err_; /**< The structured failure detail. */
         };
 
         // RunReport lives in core/run_report.hpp (included above); it is the

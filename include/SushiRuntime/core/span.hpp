@@ -23,14 +23,12 @@
 
 #pragma once
 
-// SushiRuntime::span — a non-owning view over a contiguous sequence.
-//
-// On a C++20 (or newer) standard library this is exactly std::span, aliased in.
-// On C++17 it is a minimal hand-rolled equivalent covering the subset the
-// distributed layer uses (dynamic extent only). Spelling every use as
-// SushiRuntime::span means the switch back to std::span is automatic the day the
-// project raises CMAKE_CXX_STANDARD — no call sites change. See
-// docs/slop/cpp_standard_migration.md.
+/**
+ * @file span.hpp
+ * @brief Provides a non-owning view over a contiguous sequence of objects.
+ * 
+ * Implements a C++17 compatible subset of std::span to facilitate memory-safe array operations.
+ */
 
 #include <cstddef>
 
@@ -61,16 +59,11 @@
         inline constexpr std::size_t dynamic_extent = static_cast<std::size_t>(-1);
 
         /**
-         * @brief A non-owning view over a contiguous range (C++17 std::span subset).
+         * @brief A non-owning view over a contiguous sequence of objects.
          *
-         * Dynamic-extent only. Provides the members the codebase relies on:
-         * construction from a pointer+size, from a contiguous container, and from a
-         * C array; data()/size()/empty(); indexing and iteration; and
-         * subspan/first/last. It does not model static extents or the full span
-         * interface — just enough to stand in for std::span until the standard moves
-         * to C++20.
+         * Provides safe access to an underlying array without copying or managing its lifetime.
          *
-         * @tparam T The element type (use `const T` for a read-only view).
+         * @tparam T The underlying element type of the sequence.
          */
         template <typename T>
         class span
@@ -84,25 +77,56 @@
                 using iterator        = T*;
                 using const_iterator  = const T*;
 
+                /**
+                 * @brief Constructs an empty span.
+                 * 
+                 * Initializes the internal pointer to null and the size to zero.
+                 */
                 constexpr span() noexcept = default;
 
+                /**
+                 * @brief Constructs a span from a pointer and a size.
+                 * 
+                 * Maps the specified number of elements starting at the given address.
+                 *
+                 * @param ptr The starting address of the contiguous memory block.
+                 * @param count The number of elements in the memory block.
+                 */
                 constexpr span(pointer ptr, size_type count) noexcept
                     : data_(ptr), size_(count) {}
 
+                /**
+                 * @brief Constructs a span from a pair of pointers.
+                 * 
+                 * Calculates the size based on the distance between the two pointers.
+                 *
+                 * @param first The pointer to the first element.
+                 * @param last The pointer one past the last element.
+                 */
                 constexpr span(pointer first, pointer last) noexcept
                     : data_(first), size_(static_cast<size_type>(last - first)) {}
 
+                /**
+                 * @brief Constructs a span from a native C array.
+                 * 
+                 * Automatically deduces the array's extent at compile time.
+                 *
+                 * @tparam N The automatically deduced size of the array.
+                 * @param arr The native array to wrap.
+                 */
                 template <std::size_t N>
                 constexpr span(element_type (&arr)[N]) noexcept
                     : data_(arr), size_(N) {}
 
-                // From any contiguous container exposing data()/size() whose element
-                // pointer converts to T* (e.g. std::vector<U> -> span<const U>). A
-                // forwarding reference so a temporary container binds too — valid for
-                // the full expression, which is how std::span<const T> behaves and how
-                // the codebase passes msg.serialize() straight into send(). The
-                // enable_if strips cv + ref before comparing to span so this never
-                // hijacks span's own copy/move.
+                /**
+                 * @brief Constructs a span from a contiguous container.
+                 * 
+                 * Resolves the underlying pointer and size via the container's data() and size() methods.
+                 *
+                 * @tparam Container The deduced container type.
+                 * @tparam Decayed The stripped type of the container for SFINAE checks.
+                 * @param c The contiguous container to view.
+                 */
                 template <typename Container,
                           typename Decayed = std::remove_cv_t<std::remove_reference_t<Container>>,
                           typename = std::enable_if_t<
@@ -113,9 +137,37 @@
                 constexpr span(Container&& c) noexcept
                     : data_(c.data()), size_(c.size()) {}
 
+                /**
+                 * @brief Retrieves the pointer to the underlying data.
+                 * 
+                 * Exposes the raw memory address for direct operations.
+                 *
+                 * @return The starting pointer of the viewed sequence.
+                 */
                 constexpr pointer    data()  const noexcept { return data_; }
+                /**
+                 * @brief Retrieves the number of elements in the span.
+                 * 
+                 * Returns the explicit or deduced element count of the view.
+                 *
+                 * @return The number of elements.
+                 */
                 constexpr size_type  size()  const noexcept { return size_; }
+                /**
+                 * @brief Retrieves the size of the span in bytes.
+                 * 
+                 * Calculates the total memory footprint of the viewed sequence.
+                 *
+                 * @return The size in bytes.
+                 */
                 constexpr size_type  size_bytes() const noexcept { return size_ * sizeof(T); }
+                /**
+                 * @brief Checks if the span is empty.
+                 * 
+                 * Returns true if the size is zero.
+                 *
+                 * @return True if the span contains no elements, false otherwise.
+                 */
                 constexpr bool       empty() const noexcept { return size_ == 0; }
 
                 constexpr reference operator[](size_type i) const noexcept { return data_[i]; }

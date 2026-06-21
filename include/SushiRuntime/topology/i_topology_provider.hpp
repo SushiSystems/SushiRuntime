@@ -32,17 +32,14 @@ namespace SushiRuntime
     namespace Topology
     {
         /**
-         * @brief Abstraction over hardware discovery + NUMA mapping. [DIP]
+         * @brief Interface over hardware discovery and NUMA mapping.
          *
-         * The RuntimeContext depends on this interface instead of the concrete
-         * hwloc/SYCL machinery. This is what makes the topology *substitutable*:
+         * RuntimeContext depends on this interface instead of the concrete hwloc/SYCL
+         * machinery, making topology substitutable at construction time:
          *
-         *   - HwlocTopologyProvider      → real bare-metal discovery.
-         *   - RemappingTopologyProvider  → real devices, synthetic NUMA layout,
-         *                                  so multi-node logic can be exercised
-         *                                  on single-node hardware (or under WSL).
-         *
-         * Single responsibility: "produce a fully-populated HardwareNode list".
+         *   - HwlocTopologyProvider      — real bare-metal discovery.
+         *   - RemappingTopologyProvider  — real devices with a synthetic NUMA layout,
+         *                                 so multi-node logic runs on single-node hardware.
          */
         class SUSHIRUNTIME_API ITopologyProvider
         {
@@ -71,10 +68,10 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Abstraction over the NUMA distance (ACPI SLIT) matrix. [ISP]
+         * @brief Interface over the NUMA distance (ACPI SLIT) matrix.
          *
-         * Kept separate from discovery so it can be mocked on its own — the bulk
-         * of topology-aware scheduling logic only needs distances, not devices.
+         * Kept separate from device discovery so it can be independently replaced.
+         * Most topology-aware scheduling logic needs only distances, not device lists.
          */
         class SUSHIRUNTIME_API INumaDistanceModel
         {

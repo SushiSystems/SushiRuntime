@@ -90,7 +90,10 @@ namespace SushiRuntime
             }
 
 
-            /** @brief Pushes a task into the deque. */
+            /** 
+             * @brief Pushes a task into the deque. 
+             * @param task Pointer to the task to push.
+             */
             void push(Task* task) 
             {
                 int64_t b = bottom.load(std::memory_order_relaxed);
@@ -108,7 +111,10 @@ namespace SushiRuntime
                 bottom.store(b + 1, std::memory_order_relaxed);
             }
 
-            /** @brief Removes and returns a task from the bottom (owner thread). */
+            /** 
+             * @brief Removes and returns a task from the bottom (owner thread). 
+             * @return Pointer to the popped task, or nullptr if empty.
+             */
             Task* pop() 
             {
                 int64_t b = bottom.load(std::memory_order_relaxed) - 1;
@@ -139,7 +145,10 @@ namespace SushiRuntime
                 return nullptr;
             }
 
-            /** @brief Steals a task from the top (stealer threads). */
+            /** 
+             * @brief Steals a task from the top (stealer threads). 
+             * @return Pointer to the stolen task, or nullptr if empty.
+             */
             Task* steal() 
             {
                 int64_t t = top.load(std::memory_order_acquire);
@@ -164,6 +173,11 @@ namespace SushiRuntime
             }
         };
 
+        /**
+         * @brief Constructs a new TaskScheduler.
+         * Initializes worker threads and queues based on hardware concurrency.
+         * @param ctx The RuntimeContext to associate with this scheduler.
+         */
         TaskScheduler::TaskScheduler(RuntimeContext& ctx) : context(ctx) 
         {
             size_t threads = std::thread::hardware_concurrency();
@@ -242,6 +256,10 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Starts the task scheduler.
+         * Spawns worker threads that wait for tasks to be submitted.
+         */
         void TaskScheduler::start() 
         {
             // Workers begin in a waiting state. arm_for_execution() must be called
@@ -252,6 +270,10 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Arms the scheduler for a new execution round.
+         * Signals worker threads to wake up and begin processing tasks.
+         */
         void TaskScheduler::arm_for_execution()
         {
             // Signal workers that a new execution round has started.
@@ -261,6 +283,10 @@ namespace SushiRuntime
             pending_cv.notify_all();
         }
 
+        /**
+         * @brief Stops the task scheduler.
+         * Signals workers to drain remaining tasks and exit, then joins threads.
+         */
         void TaskScheduler::stop()
         {
             // Signal workers to drain and exit.
@@ -299,6 +325,10 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Destroys the TaskScheduler.
+         * Ensures that the scheduler is stopped before destruction.
+         */
         TaskScheduler::~TaskScheduler()
         {
             // stop() is idempotent; calling it here ensures cleanup even if
@@ -306,12 +336,21 @@ namespace SushiRuntime
             stop();
         }
 
+        /**
+         * @brief Checks if there are any pending submissions in the global queue.
+         * @return true if there are pending tasks, false otherwise.
+         */
         bool TaskScheduler::has_pending_submissions()
         {
             std::lock_guard<std::mutex> lock(pending_mutex);
             return !pending_submissions.empty() || !priority_submissions.empty();
         }
 
+        /**
+         * @brief Drains a batch of pending submissions into a worker's local queue.
+         * Prevents global queue contention by pulling tasks in batches.
+         * @param thread_id The ID of the worker thread pulling the tasks.
+         */
         void TaskScheduler::drain_pending_submissions(int thread_id)
         {
             if (thread_id < 0 || static_cast<size_t>(thread_id) >= num_workers)
@@ -355,14 +394,15 @@ namespace SushiRuntime
          * @brief Main dispatch loop for worker threads.
          *
          * Lifecycle:
-         * 1. IDLE phase   — running == false, no work. Yield until armed.
-         * 2. ACTIVE phase — running == true. Process tasks and poll events.
-         * 3. DRAIN phase  — running == false again (stop() called).
+         * 1. IDLE phase   - running == false, no work. Yield until armed.
+         * 2. ACTIVE phase - running == true. Process tasks and poll events.
+         * 3. DRAIN phase  - running == false again (stop() called).
          * Continue until inflight events and pending
          * submissions are fully drained, then exit.
          *
          * This design allows the pool to be reused across multiple graph
          * execution rounds without recreating threads. 
+         * @param thread_id The ID of the worker executing this loop.
          */
         void TaskScheduler::dispatch_loop(int thread_id) 
         {
@@ -471,7 +511,11 @@ namespace SushiRuntime
             }
         }
 
-        /** @brief Executes a single task and tracks its events. */
+        /** 
+         * @brief Executes a single task and tracks its events. 
+         * @param task Pointer to the task to execute.
+         * @param events The list of active events to track completion.
+         */
         void TaskScheduler::execute_task(Task* task, EventPolling::ActiveEventList& events) 
         {
             if (!task) return;
@@ -559,6 +603,8 @@ namespace SushiRuntime
          *      once the local tier is exhausted (strict locality policy).
          * This keeps a task on the node where its data lives, avoiding the remote
          * memory hop that NUMA-blind stealing would incur.
+         * @param th_id The ID of the worker attempting to steal.
+         * @return Pointer to a stolen task, or nullptr if none found.
          */
         Task* TaskScheduler::find_task_to_steal(int th_id)
         {
@@ -598,6 +644,11 @@ namespace SushiRuntime
             return nullptr;
         }
 
+        /**
+         * @brief Retrieves the ordered list of victim workers to steal from.
+         * @param worker_id The ID of the worker.
+         * @return A vector of worker IDs ordered by NUMA distance.
+         */
         std::vector<int> TaskScheduler::steal_victim_order(int worker_id) const
         {
             if (worker_id < 0 || static_cast<size_t>(worker_id) >= victim_order_.size())
@@ -605,7 +656,10 @@ namespace SushiRuntime
             return victim_order_[worker_id];
         }
 
-        /** @brief Submits a new task to the main thread's queue. */
+        /** 
+         * @brief Submits a new task to the main thread's queue. 
+         * @param task Pointer to the task to submit.
+         */
         void TaskScheduler::submit(Task* task) 
         {
             if (!task) return;
@@ -626,11 +680,20 @@ namespace SushiRuntime
             pending_cv.notify_one();
         }
 
+        /**
+         * @brief Gets the number of worker threads.
+         * @return The number of workers.
+         */
         size_t TaskScheduler::get_worker_count() const 
         {
             return num_workers;
         }
 
+        /**
+         * @brief Gets the current size of a worker's local queue.
+         * @param worker_id The ID of the worker.
+         * @return The number of tasks in the worker's queue.
+         */
         size_t TaskScheduler::get_queue_size(int worker_id) const 
         {
             if (worker_id < 0 || worker_id >= static_cast<int>(num_workers)) return 0;
@@ -638,12 +701,23 @@ namespace SushiRuntime
             return 0;
         }
 
+        /**
+         * @brief Gets the total number of tasks completed by a worker.
+         * @param worker_id The ID of the worker.
+         * @return The number of completed tasks.
+         */
         size_t TaskScheduler::get_completion_rate(int worker_id) const 
         {
             if (worker_id < 0 || worker_id >= static_cast<int>(num_workers)) return 0;
             return worker_completed_tasks[worker_id].load(std::memory_order_relaxed);
         }
 
+        /**
+         * @brief Migrates tasks from a congested worker to other workers.
+         * @param from_worker_id The ID of the heavily loaded worker.
+         * @param to_worker_id Unused in this implementation (relies on global priority queue).
+         * @param count The number of tasks to migrate.
+         */
         void TaskScheduler::migrate_tasks(int from_worker_id, int /*to_worker_id*/, size_t count) 
         {
             if (from_worker_id < 0 || from_worker_id >= static_cast<int>(num_workers)) return;
@@ -676,6 +750,10 @@ namespace SushiRuntime
         }
 
 #ifdef SR_DISTRIBUTED
+        /**
+         * @brief Sets the distributed coordinator for offloading tasks.
+         * @param c Pointer to the DistributedCoordinator.
+         */
         void TaskScheduler::set_coordinator(Distributed::DistributedCoordinator* c)
         {
             coordinator_ = c;
@@ -712,6 +790,11 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Completes a task that was offloaded to a remote node.
+         * @param node The graph node that was offloaded.
+         * @param success Whether the execution was successful.
+         */
         void TaskScheduler::complete_offloaded_node(Graph::Node* node, bool success)
         {
             if (!node) return;

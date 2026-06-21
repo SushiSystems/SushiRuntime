@@ -38,7 +38,11 @@ using namespace SushiRuntime::Scheduler;
 using SushiRuntime::Test::AtomicCounterTask;
 using SushiRuntime::Test::PriorityTrackingTask;
 
-// One million tasks at once: stability and deque resizing under heavy load.
+/**
+ * @brief Tests scheduler stability and deque resizing under heavy load.
+ * 
+ * Submits one million tasks at once.
+ */
 TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
 {
     RuntimeContext ctx;
@@ -66,7 +70,11 @@ TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
     EXPECT_EQ(executed_count.load(), TOTAL_TASKS);
 }
 
-// Submission under contention: 8 producer threads submitting at once.
+/**
+ * @brief Tests submission under contention.
+ * 
+ * Uses 8 producer threads submitting at once.
+ */
 TEST(Stress_TaskSchedulerStress, MultiProducerContention)
 {
     RuntimeContext ctx;
@@ -106,7 +114,11 @@ TEST(Stress_TaskSchedulerStress, MultiProducerContention)
     EXPECT_EQ(executed_count.load(), NUM_PRODUCERS * TASKS_PER_PRODUCER);
 }
 
-// Repeatedly arm and stop to shake out races, deadlocks, and leaks.
+/**
+ * @brief Tests repeatedly arming and stopping the scheduler.
+ * 
+ * Helps to shake out races, deadlocks, and leaks.
+ */
 TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
 {
     RuntimeContext ctx;
@@ -129,7 +141,11 @@ TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
     SUCCEED();
 }
 
-// A high-priority task must bypass the queue even behind many low-priority ones.
+/**
+ * @brief Tests high-priority task bypassing.
+ * 
+ * A high-priority task must bypass the queue even behind many low-priority ones.
+ */
 TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
 {
     RuntimeContext ctx;

@@ -33,35 +33,63 @@ namespace SushiRuntime
     namespace Topology
     {
         /**
-         * @brief Real hardware topology provider, backed by SYCL + hwloc.
+         * @brief Hardware topology provider backed by SYCL and hwloc.
          *
-         * Delegates to HardwareDiscovery (device enumeration + PCI resolution)
-         * and NUMAMapper (NUMA assignment). This is the default provider used by
-         * RuntimeContext when none is injected.
+         * Delegates to HardwareDiscovery for device enumeration and NUMAMapper for NUMA assignment.
          */
         class SUSHIRUNTIME_API HwlocTopologyProvider : public ITopologyProvider
         {
             public:
+                /** @brief Default constructor. */
                 HwlocTopologyProvider() = default;
+
+                /**
+                 * @brief Discovers and catalogs all available hardware devices.
+                 *
+                 * Scans the system using hwloc and SYCL to build a list of compute nodes.
+                 * @param config The hardware filter configuration defining inclusion or exclusion rules.
+                 * @return The list of discovered hardware nodes ready for scheduling.
+                 */
                 std::vector<HardwareNode> enumerate(const HardwareFilterConfig& config = {}) override;
+
+                /**
+                 * @brief Maps CPU cores to their corresponding NUMA nodes.
+                 *
+                 * Extracts the physical core to NUMA node mapping from the hwloc topology.
+                 * @return An array where the index represents the core ID and the value represents the NUMA node ID.
+                 */
                 std::vector<int> cpu_core_to_numa() const override;
         };
 
         /**
-         * @brief Real NUMA distance model, backed by the hwloc SLIT/SRAT tables.
+         * @brief NUMA distance model backed by hwloc SLIT and SRAT tables.
          *
-         * Unlike the previous NUMAMapper::get_distance(), the topology and its
-         * distance matrix are loaded *once* at construction and cached, so
-         * distance() is a cheap O(1) lookup instead of a full hwloc reload per
-         * call. Falls back to the ACPI convention (10 local / 21 remote) when the
-         * firmware exposes no SLIT table (typical under WSL / single-node desktops).
+         * The topology and its distance matrix are loaded once at construction and cached,
+         * making distance lookups an O(1) operation. Falls back to the ACPI convention
+         * (10 local, 21 remote) when the firmware exposes no SLIT table.
          */
         class SUSHIRUNTIME_API HwlocDistanceModel : public INumaDistanceModel
         {
             public:
+                /** @brief Default constructor. */
                 HwlocDistanceModel();
 
+                /**
+                 * @brief Retrieves the memory access distance between two NUMA nodes.
+                 *
+                 * Looks up the latency cost from the cached SLIT matrix or ACPI fallback.
+                 * @param numa_a The index of the first NUMA node.
+                 * @param numa_b The index of the second NUMA node.
+                 * @return The relative latency cost, where 10 is local and higher values are remote.
+                 */
                 int distance(int numa_a, int numa_b) const override;
+
+                /**
+                 * @brief Retrieves the total number of NUMA nodes in the system.
+                 *
+                 * Returns the node count populated during initialization.
+                 * @return The count of available NUMA nodes.
+                 */
                 int node_count() const override;
 
             private:

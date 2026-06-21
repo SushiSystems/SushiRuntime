@@ -38,7 +38,12 @@ using namespace SushiRuntime::Scheduler;
 
 namespace
 {
-    // Telemetry stub reporting a fixed, single-worker topology.
+    /**
+     * @brief Telemetry stub reporting a fixed, single-worker topology.
+     *
+     * Used by the workload coordinator to mock telemetry data without
+     * needing actual runtime worker threads.
+     */
     class FakeTelemetry : public ITelemetryProvider
     {
     public:
@@ -47,7 +52,12 @@ namespace
         size_t get_completion_rate(int) const override  { return 0; }
     };
 
-    // Migrator stub that records how many migrate calls it received.
+    /**
+     * @brief Migrator stub that records how many migrate calls it received.
+     *
+     * Used to verify that the workload coordinator issues migration commands
+     * exactly as requested by the strategy.
+     */
     class FakeMigrator : public ITaskMigrator
     {
     public:
@@ -55,7 +65,12 @@ namespace
         void migrate_tasks(int, int, size_t) override { calls.fetch_add(1, std::memory_order_relaxed); }
     };
 
-    // Strategy that counts evaluations and optionally requests a migration.
+    /**
+     * @brief Strategy that counts evaluations and optionally requests a migration.
+     *
+     * Tracks how many times the heartbeat loop invokes evaluate_and_rebalance
+     * and forces migration commands for assertions.
+     */
     class CountingStrategy : public IRebalanceStrategy
     {
     public:
@@ -73,7 +88,16 @@ namespace
         }
     };
 
-    // Spin-wait until value reaches target or the budget elapses.
+    /**
+     * @brief Spin-wait until value reaches target or the budget elapses.
+     *
+     * Synchronizes concurrent test assertions against background coordinator threads.
+     *
+     * @param value The atomic integer to read.
+     * @param target The target value to wait for.
+     * @param budget The maximum duration to wait.
+     * @return true if the target was reached, false on timeout.
+     */
     bool wait_until_at_least(const std::atomic<int>& value, int target,
                              std::chrono::milliseconds budget)
     {
@@ -88,8 +112,12 @@ namespace
     }
 }
 
-// Once started, the coordinator repeatedly evaluates the strategy and stop()
-// cleanly joins the loop.
+/**
+ * @brief Tests that the coordinator repeatedly evaluates the strategy and stops cleanly.
+ *
+ * It starts the heartbeat loop, waits for multiple evaluations to happen,
+ * then asserts that stop() successfully joins the background loop.
+ */
 TEST(Integration_WorkloadCoordinatorTest, HeartbeatInvokesStrategy)
 {
     FakeTelemetry telemetry;
@@ -111,7 +139,12 @@ TEST(Integration_WorkloadCoordinatorTest, HeartbeatInvokesStrategy)
         << "Strategy was evaluated after stop() returned (loop not joined).";
 }
 
-// A migration request from the strategy must reach the migrator.
+/**
+ * @brief Tests that a migration request from the strategy reaches the migrator.
+ *
+ * Configures the strategy to request a task migration and asserts that
+ * the migrator receives the exact call.
+ */
 TEST(Integration_WorkloadCoordinatorTest, StrategyDrivesMigration)
 {
     FakeTelemetry telemetry;
@@ -128,7 +161,12 @@ TEST(Integration_WorkloadCoordinatorTest, StrategyDrivesMigration)
     coordinator.stop();
 }
 
-// set_strategy must redirect subsequent evaluations to the new strategy.
+/**
+ * @brief Tests that set_strategy redirects subsequent evaluations to the new strategy.
+ *
+ * Verifies that swapping strategies at runtime causes the coordinator
+ * to stop querying the old one and start driving the new one.
+ */
 TEST(Integration_WorkloadCoordinatorTest, SetStrategySwapsAtRuntime)
 {
     FakeTelemetry telemetry;
@@ -150,7 +188,12 @@ TEST(Integration_WorkloadCoordinatorTest, SetStrategySwapsAtRuntime)
     coordinator.stop();
 }
 
-// A second start() must be a no-op, not a second thread or a stuck coordinator.
+/**
+ * @brief Tests that a second start() is a safe no-op.
+ *
+ * Calling start() while already running must not spawn duplicate threads
+ * or cause deadlocks on shutdown.
+ */
 TEST(Integration_WorkloadCoordinatorTest, DoubleStartIsIdempotent)
 {
     FakeTelemetry telemetry;

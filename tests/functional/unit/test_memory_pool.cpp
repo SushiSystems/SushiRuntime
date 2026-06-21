@@ -38,7 +38,11 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Memory;
 
-// Filling the first page (64 slots) must grow the pool to a new page.
+/**
+ * @brief Tests that filling the first page grows the pool to a new page.
+ *
+ * Allocates beyond the initial page slots to force an expansion.
+ */
 TEST(Unit_USMAllocatorTest, BasicPoolExpansion)
 {
     RuntimeContext ctx;
@@ -66,7 +70,11 @@ TEST(Unit_USMAllocatorTest, BasicPoolExpansion)
         allocator->deallocate(ptr);
 }
 
-// Requests above the largest pool bucket (4096) bypass the pool and go to SYCL.
+/**
+ * @brief Tests that requests above the largest pool bucket bypass the pool.
+ *
+ * Large allocations go directly to SYCL and return non-overlapping pointers.
+ */
 TEST(Unit_USMAllocatorTest, LargeAllocationBypass)
 {
     RuntimeContext ctx;
@@ -86,8 +94,11 @@ TEST(Unit_USMAllocatorTest, LargeAllocationBypass)
     allocator->deallocate(ptr2);
 }
 
-// Every pooled size class (and the first size past the ceiling) returns a
-// usable, writable, distinct allocation.
+/**
+ * @brief Tests that every pooled size class returns a distinct, usable allocation.
+ *
+ * Checks allocations at boundaries including the first size past the ceiling.
+ */
 TEST(Unit_USMAllocatorTest, SizeClassBoundaries)
 {
     RuntimeContext ctx;
@@ -107,7 +118,11 @@ TEST(Unit_USMAllocatorTest, SizeClassBoundaries)
     }
 }
 
-// A zero-byte request must not crash, and freeing the result must be safe.
+/**
+ * @brief Tests that a zero-byte request does not crash and freeing it is safe.
+ *
+ * Verifies edge-case behavior of 0-byte allocations.
+ */
 TEST(Unit_USMAllocatorTest, ZeroByteAllocation)
 {
     RuntimeContext ctx;
@@ -118,7 +133,11 @@ TEST(Unit_USMAllocatorTest, ZeroByteAllocation)
     EXPECT_NO_THROW({ allocator->deallocate(p); });
 }
 
-// Deallocating null is a documented no-op.
+/**
+ * @brief Tests that deallocating a null pointer is a safe no-op.
+ *
+ * Ensures the allocator gracefully ignores nullptr deallocations.
+ */
 TEST(Unit_USMAllocatorTest, NullDeallocation)
 {
     RuntimeContext ctx;
@@ -127,8 +146,11 @@ TEST(Unit_USMAllocatorTest, NullDeallocation)
     EXPECT_NO_THROW({ allocator->deallocate(nullptr); });
 }
 
-// Freeing then re-allocating the same size in a tight loop must keep working
-// (the pool recycles instead of growing unboundedly).
+/**
+ * @brief Tests that freeing then re-allocating the same size recycles memory.
+ *
+ * Ensures the pool reuses slots instead of growing unboundedly.
+ */
 TEST(Unit_USMAllocatorTest, ReusedSlotAfterFree)
 {
     RuntimeContext ctx;
@@ -143,11 +165,12 @@ TEST(Unit_USMAllocatorTest, ReusedSlotAfterFree)
     }
 }
 
-// Deterministic guard for the lock-free remote-free + lazy-drain path. The
-// page-owning producer allocates wave 1; a different thread frees it (remote
-// frees onto the owning slot's stack); the producer's wave 2 must lazily drain
-// that stack and reuse the freed blocks. Re-allocation runs on the owning
-// thread (only it drains its stack), hence the barriers.
+/**
+ * @brief Tests the lock-free remote-free and lazy-drain path.
+ *
+ * Verifies that when a different thread frees memory, the owning thread
+ * lazily drains its stack and reuses the blocks.
+ */
 TEST(Unit_USMAllocatorTest, CrossThreadFreeIsReclaimed)
 {
     RuntimeContext ctx;

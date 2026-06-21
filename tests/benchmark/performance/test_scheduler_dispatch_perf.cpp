@@ -49,6 +49,14 @@ namespace
     constexpr size_t TOTAL  = 500000; // tasks per timed run
     constexpr int    ROUNDS = 3;      // best-of-N to strip jitter
 
+    /**
+     * @brief Wait for an atomic value to reach a target within a budget.
+     * 
+     * @param value The atomic value to watch.
+     * @param target The target value.
+     * @param budget The time budget.
+     * @return True if the target was reached, false on timeout.
+     */
     bool wait_for(const std::atomic<size_t>& value, size_t target,
                   std::chrono::seconds budget)
     {
@@ -62,7 +70,14 @@ namespace
         return true;
     }
 
-    // ns spent on TOTAL inline increments — the cost of the raw work.
+    /**
+     * @brief Measures nanoseconds spent on TOTAL inline increments.
+     * 
+     * This represents the cost of the raw work.
+     * 
+     * @param counter The atomic counter to increment.
+     * @return The time in nanoseconds.
+     */
     double baseline_ns(std::atomic<size_t>& counter)
     {
         counter.store(0, std::memory_order_relaxed);
@@ -74,7 +89,11 @@ namespace
     }
 }
 
-// Report amortized per-task scheduler overhead against the inline floor.
+/**
+ * @brief Tests per-task scheduler dispatch overhead against an inline baseline.
+ * 
+ * Both sides do the identical work, and the delta is the amortized submit+steal+dispatch cost.
+ */
 TEST(Performance_SchedulerDispatchBench, DispatchOverheadVsInlineBaseline)
 {
     RuntimeContext ctx;

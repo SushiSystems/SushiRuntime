@@ -32,12 +32,9 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief Per-NUMA-node execution and work-stealing breakdown.
+         * @brief Describes the per-NUMA-node execution and work-stealing metrics.
          *
-         * One entry per NUMA node that took part in a run. The steal counters are
-         * populated from the scheduler's work-stealing counters; in the current
-         * single-entry form they carry the run's aggregate totals. The byte
-         * field is reserved (reads 0 until allocations are tracked per node).
+         * Tracks tasks executed locally and stolen across nodes for a single NUMA domain.
          */
         struct NumaNodeStatistics
         {
@@ -54,11 +51,9 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Distributed (master-worker) offload and network breakdown.
+         * @brief Describes the distributed master-worker offload and network metrics.
          *
-         * Populated only when the runtime is built and running as a distributed
-         * Master; otherwise every field is 0. The byte counters are reserved
-         * until the transport reports them.
+         * Tracks tasks shipped to remote workers and bytes transferred across the network.
          */
         struct DistributedStatistics
         {
@@ -72,12 +67,9 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Summary of a single graph run.
+         * @brief Summarizes the execution statistics of a single graph run.
          *
-         * Returned by the fluent run()/try_run(). The shape is the stable v1
-         * surface; fields documented as "reserved" exist so the layout never has
-         * to change, and are filled in as the runtime grows the instrumentation
-         * to measure them. They never carry fabricated values.
+         * Aggregates execution times, NUMA topology breakdowns, and distributed network metrics.
          */
         struct RunReport
         {

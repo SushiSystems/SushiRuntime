@@ -51,28 +51,29 @@ namespace SushiRuntime
     namespace Execution
     {
         /**
-         * @brief Main control unit of SushiRuntime.
-         * 
-         * This class manages hardware, USM pools, and SYCL queues.
-         * It uses the Pimpl pattern to keep the ABI stable and hide logic.
+         * @brief Central owner of hardware, SYCL queues, USM allocators, and the execution engine.
+         *
+         * Constructed once per process and shared (via shared_ptr) between the fluent
+         * API layer and all graphs it produces. Uses Pimpl to keep the ABI stable.
+         * In Standalone mode (default) carries zero distributed overhead.
          */
         class SUSHIRUNTIME_API RuntimeContext 
         {
             public:
                 /**
-                 * @brief Creates a new runtime context and scans for hardware matching the config.
+                 * @brief Creates a runtime context and scans for hardware matching @p config.
                  *
-                 * Topology discovery and NUMA distances are injected behind interfaces
-                 * [DIP]. When left null, production defaults are used:
-                 *   - provider       → Topology::HwlocTopologyProvider
-                 *   - distance_model → Topology::HwlocDistanceModel
+                 * Topology discovery and NUMA distances are supplied through injected
+                 * interfaces. When null, production defaults are used:
+                 *   - provider       → HwlocTopologyProvider
+                 *   - distance_model → HwlocDistanceModel
                  *
-                 * Tests inject RemappingTopologyProvider / MatrixDistanceModel to
-                 * exercise multi-node behaviour on single-node hardware.
+                 * Pass RemappingTopologyProvider / MatrixDistanceModel in tests to
+                 * exercise multi-node logic on single-node hardware.
                  *
-                 * @param config         Device-class filter for discovery.
-                 * @param provider       Topology source (null → Hwloc default).
-                 * @param distance_model NUMA distance source (null → Hwloc default).
+                 * @param config         Device-class filter for hardware discovery.
+                 * @param provider       Topology source; null selects the hwloc default.
+                 * @param distance_model NUMA distance model; null selects the hwloc default.
                  */
                 explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {},
                                         std::shared_ptr<Topology::ITopologyProvider> provider = nullptr,
@@ -86,7 +87,12 @@ namespace SushiRuntime
                 RuntimeContext& operator=(const RuntimeContext&) = delete;
 
                 /**
-                 * @brief Finds and lists all available hardware (CPU, GPU, FPGA).
+                 * @brief Re-scans hardware and rebuilds the device queue list.
+                 *
+                 * Normally called automatically by the constructor. Call explicitly
+                 * only when the hardware topology changes at runtime (rare).
+                 *
+                 * @param config Device-class filter; defaults to including all classes.
                  */
                 void probe_hardware(const Topology::HardwareFilterConfig& config = {});
 
@@ -219,8 +225,8 @@ namespace SushiRuntime
                 /**
                  * @brief Returns the execution engine owned by this context.
                  *
-                 * TaskGraph::execute() delegates to this engine so that thread
-                 * orchestration is separated from DAG construction. [Madde 26]
+                 * Separates thread orchestration from DAG construction: TaskGraph
+                 * builds the plan; the engine drives it through the worker pool.
                  *
                  * @return IExecutionEngine& Reference to the active engine.
                  */

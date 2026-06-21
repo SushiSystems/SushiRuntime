@@ -31,13 +31,16 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief Supported hardware backends.
+         * @brief Identifies the hardware backend a device or kernel targets.
+         *
+         * Used as a hint in task metadata and device selection. CUDA is reserved
+         * for future native interop; all current execution paths use SYCL or HOST.
          */
-        enum class Backend 
+        enum class Backend
         {
-            SYCL, /**< SYCL support via Intel DPC++, AdaptiveCPP, or hipSYCL. */
-            CUDA, /**< Native NVIDIA CUDA support for interoperability. */
-            HOST  /**< Standard CPU host backend. */
+            SYCL, /**< SYCL backend (Intel DPC++, AdaptiveCpp, or hipSYCL). */
+            CUDA, /**< Reserved: native CUDA interop (not yet active). */
+            HOST  /**< CPU host backend, no accelerator. */
         };
 
         /** @brief Standard cache line size for modern HPC systems (in bytes). */

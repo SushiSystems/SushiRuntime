@@ -72,6 +72,7 @@ add_executable(sr_functional_tests
     functional/integration/test_workload_coordinator.cpp
     functional/integration/test_device_pipeline.cpp
     functional/integration/test_fluent_lifecycle.cpp
+    functional/integration/test_fluent_api.cpp
 )
 # Distributed layer tests only exist when the layer is built. They are
 # hardware-free (protocol / in-process transport / registries), so they stay in

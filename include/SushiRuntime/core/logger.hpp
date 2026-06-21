@@ -181,12 +181,24 @@ namespace SushiRuntime
                     }
             };
 
-            class SyncLogger 
+            /**
+             * @brief Synchronous logger; writes each message immediately under a mutex.
+             *
+             * Used in test mode (SR_LOGGER_SET_SYNC_MODE(true)) where deterministic,
+             * ordered output matters more than throughput. Errors go to stderr; all
+             * other levels go to stdout.
+             */
+            class SyncLogger
             {
                 private:
                     std::mutex sync_mutex_;
                 public:
-                    void enqueue(LogType level, std::string&& msg) 
+                    /**
+                     * @brief Writes @p msg to the appropriate stream, protected by a mutex.
+                     * @param level Log level; ERR and below go to stderr, others to stdout.
+                     * @param msg   Formatted log line to write.
+                     */
+                    void enqueue(LogType level, std::string&& msg)
                     {
                         std::lock_guard<std::mutex> lock(sync_mutex_);
                         FILE* stream = (level <= LogType::ERR) ? stderr : stdout;
@@ -210,7 +222,17 @@ namespace SushiRuntime
                 return mode;
             }
 
-            inline void dispatch_log(LogType level, std::string&& msg) 
+            /**
+             * @brief Routes a log message to either the sync or async logger.
+             *
+             * The choice is governed by is_sync_logging_enabled(); switching modes
+             * mid-run is safe because the flag is atomic and each logger owns its
+             * own mutex / queue.
+             *
+             * @param level Severity of the message.
+             * @param msg   Fully formatted log line (including timestamp and context).
+             */
+            inline void dispatch_log(LogType level, std::string&& msg)
             {
                 if (is_sync_logging_enabled().load(std::memory_order_relaxed)) 
                 {
