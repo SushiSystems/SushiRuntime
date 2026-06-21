@@ -273,3 +273,96 @@ TEST(Integration_DistributedJepsenTest, DeterminismUnderRandomFaults)
         EXPECT_TRUE(r.empty()) << "seed " << seed << ": " << r;
     }
 }
+
+// Registration itself happens under loss: a fault policy drops a fraction of ALL
+// traffic from before the worker connects, so its HELLO can be lost. The worker
+// must keep re-announcing until acknowledged, the cluster must still assemble,
+// and an offloaded task must still produce the correct result.
+TEST(Integration_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
+{
+    std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
+    try
+    {
+        master_ctx = std::make_unique<RuntimeContext>();
+        worker_ctx = std::make_unique<RuntimeContext>();
+    }
+    catch (const std::exception& e)
+    {
+        GTEST_SKIP() << "No SYCL device available: " << e.what();
+    }
+
+    constexpr size_t N = 128;
+    sycl::queue& mq = master_ctx->get_queue(0);
+    float* in  = sycl::malloc_shared<float>(N, mq);
+    float* out = sycl::malloc_shared<float>(N, mq);
+    ASSERT_NE(in, nullptr);
+    ASSERT_NE(out, nullptr);
+    for (size_t i = 0; i < N; ++i) { in[i] = float(i) + 1.0f; out[i] = -1.0f; }
+
+    InProcessFabric fabric(1);
+    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
+    auto wt = std::make_shared<InProcessTransport>(fabric, 0);
+
+    // Drop ~20% of everything, from the very start — registration included.
+    auto rng = std::make_shared<std::mt19937_64>(12345);
+    fabric.set_fault_policy([rng](int, int, MsgType) -> FaultAction
+    {
+        std::uniform_int_distribution<int> d(0, 99);
+        return d(*rng) < 20 ? FaultAction::Drop : FaultAction::Deliver;
+    });
+
+    auto kernels = make_sushi<KernelRegistry>();
+    register_vec_double(*kernels);
+    WorkerAgent agent(*worker_ctx, wt, kernels);
+    agent.set_heartbeat_interval(std::chrono::milliseconds(30)); // fast HELLO retry
+    agent.set_pull_timeout(std::chrono::milliseconds(150));
+
+    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
+    master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
+    master_ctx->distributed_set_task_deadline(std::chrono::milliseconds(300));
+    agent.start();
+
+    // The HELLO retry must punch through the loss within a generous window.
+    bool up = false;
+    for (int i = 0; i < 500 && !up; ++i)
+    {
+        up = master_ctx->distributed_alive_workers() == 1;
+        if (!up) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(up) << "Cluster never assembled under registration loss.";
+
+    master_ctx->register_distributed_buffer(in,  N * sizeof(float));
+    master_ctx->register_distributed_buffer(out, N * sizeof(float));
+
+    TaskGraph graph(*master_ctx);
+    TaskMetadata m{};
+    m.name  = "double";
+    m.op_id = VEC_DOUBLE;
+    m.set_param<uint64_t>(0, N);
+    graph.add_task(m, {in}, {out},
+        [in, out](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
+        {
+            return q.submit([&](sycl::handler& h)
+            {
+                SushiRuntime::detail::enqueue_host_task(h, [=]
+                { for (size_t i = 0; i < N; ++i) out[i] = in[i] * 2.0f; });
+            });
+        });
+
+    auto compiled = std::make_shared<CompiledGraph>(graph.compile());
+    std::promise<void> done;
+    auto fut = done.get_future();
+    std::thread runner([&] { master_ctx->get_execution_engine().execute(*compiled); done.set_value(); });
+    const bool returned = fut.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    EXPECT_TRUE(returned) << "execute() hung under registration loss.";
+    if (returned) runner.join(); else runner.detach();
+
+    fabric.set_fault_policy(nullptr);
+    agent.stop();
+    if (returned)
+        for (size_t i = 0; i < N; ++i)
+            ASSERT_EQ(out[i], (float(i) + 1.0f) * 2.0f) << "wrong result at " << i;
+
+    sycl::free(in, mq);
+    sycl::free(out, mq);
+}

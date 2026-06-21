@@ -36,6 +36,8 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
+#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime
@@ -96,6 +98,21 @@ namespace SushiRuntime
             // Bound on how long resolve_input() waits for a pulled buffer before
             // giving up, so a lost BUFFER_PUSH fails the task instead of hanging it.
             std::chrono::milliseconds     pull_timeout{5000};
+
+            // Set once the master acknowledges our HELLO. Until then the heartbeat
+            // loop keeps re-sending HELLO, so a lost registration message (a real
+            // possibility under packet loss) does not strand the worker forever.
+            std::atomic<bool>             registered{false};
+
+            void send_hello()
+            {
+                ByteWriter w;
+                w.put<uint32_t>(PROTOCOL_VERSION);
+                auto ops = kernels->known_ops();
+                w.put<uint32_t>(static_cast<uint32_t>(ops.size()));
+                for (auto op : ops) w.put<uint32_t>(op.value);
+                transport->send(0, MsgType::REGISTER_HELLO, w.view());
+            }
 
             // --- liveness: a periodic HEARTBEAT so the master can detect a dead
             //     or hung worker and re-dispatch its tasks ----------------------
@@ -177,7 +194,8 @@ namespace SushiRuntime
             switch (type)
             {
                 case MsgType::REGISTER_ACK:
-                    SR_LOG_INFO("Worker agent registered with master.");
+                    if (!registered.exchange(true))
+                        SR_LOG_INFO("Worker agent registered with master.");
                     break;
 
                 case MsgType::TASK_DISPATCH:
@@ -296,8 +314,23 @@ namespace SushiRuntime
 
             try
             {
-                sycl::event e = (*kernel)(ctx.get_queue(0), in_ptrs, out_ptrs, msg.meta);
-                e.wait();
+                // Run the kernel through the worker's OWN TaskGraph + scheduler
+                // rather than inline on queue(0): the node carries its input/output
+                // pointers, so the scheduler routes it to the queue that owns the USM
+                // (correct on a multi-device worker) and the work participates in the
+                // worker's normal NUMA-aware execution. The remote kernel is a host-
+                // work shape (queue + deps -> event), so it drops straight into a
+                // host-fallback task node.
+                Graph::TaskGraph g(ctx);
+                const auto* k = kernel;
+                const auto  meta = msg.meta;
+                g.add_task(msg.meta, in_ptrs, out_ptrs,
+                    [k, in_ptrs, out_ptrs, meta](sycl::queue& q,
+                        const std::vector<sycl::event>&) -> sycl::event
+                    {
+                        return (*k)(q, in_ptrs, out_ptrs, meta);
+                    });
+                ctx.get_execution_engine().execute(g.compile());
 
                 // Carry each output's bytes inline in the result, so completion and
                 // data reach the master atomically — a lost result re-dispatches the
@@ -357,6 +390,9 @@ namespace SushiRuntime
                 heartbeat_cv.wait_for(lk, heartbeat_interval, [&] { return !running.load(); });
                 if (!running.load()) return;
                 lk.unlock();
+                // Keep retrying registration until the master acknowledges it.
+                if (!registered.load(std::memory_order_relaxed))
+                    send_hello();
                 transport->send(0, MsgType::HEARTBEAT, {});
             }
         }
@@ -429,15 +465,9 @@ namespace SushiRuntime
                 });
             impl_->transport->start();
 
-            // Announce our protocol version, then the kernels this binary can run.
-            // The version leads so a master on a different protocol can reject us
-            // before trying to parse the rest against an incompatible layout.
-            ByteWriter w;
-            w.put<uint32_t>(PROTOCOL_VERSION);
-            auto ops = impl_->kernels->known_ops();
-            w.put<uint32_t>(static_cast<uint32_t>(ops.size()));
-            for (auto op : ops) w.put<uint32_t>(op.value);
-            impl_->transport->send(0, MsgType::REGISTER_HELLO, w.view());
+            // Announce our protocol version + kernels. The heartbeat loop re-sends
+            // this until REGISTER_ACK, so a lost HELLO does not strand the worker.
+            impl_->send_hello();
 
             impl_->exec_thread = std::thread([raw] { raw->exec_loop(); });
 
