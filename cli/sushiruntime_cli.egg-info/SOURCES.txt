@@ -11,6 +11,7 @@ sushiruntime/services/diag.py
 sushiruntime/services/discovery.py
 sushiruntime/services/docker.py
 sushiruntime/services/project.py
+sushiruntime/services/select.py
 sushiruntime/services/setup.py
 sushiruntime/setup/__init__.py
 sushiruntime/setup/dependency_source.py

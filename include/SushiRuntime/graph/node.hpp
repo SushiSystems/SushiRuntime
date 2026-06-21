@@ -184,6 +184,21 @@ namespace SushiRuntime
             /** @brief Raw read/write USM pointers retained so compile() can resolve handles. */
             std::vector<void*> dist_reads_;
             std::vector<void*> dist_writes_;
+
+            /**
+             * @brief Live read/write pointers for a double-buffered offload node.
+             *
+             * Ordinary offload nodes touch fixed allocations, so compile() bakes
+             * their handles once into in_handles_/out_handles_. A double-buffered
+             * (State) node instead rotates which allocation it reads and writes every
+             * step, so baking would address the wrong buffer on alternating steps.
+             * When these are set, the fluent layer re-points them at the step's
+             * current/next allocations before each step and the coordinator resolves
+             * handles from them at dispatch — keeping the compiled plan replayable
+             * while following the swap. Null for every ordinary node.
+             */
+            std::shared_ptr<std::vector<void*>> live_reads_;
+            std::shared_ptr<std::vector<void*>> live_writes_;
             /**
              * @brief How many times this node has been (re)dispatched to a worker.
              *

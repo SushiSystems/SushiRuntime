@@ -188,6 +188,26 @@ namespace SushiRuntime
                 if (!n || n->metadata.op_id.value == 0) continue;
                 if (!ctx.distributed_supports(n->metadata.op_id)) continue;
 
+                // A double-buffered node resolves its handles from live pointers at
+                // dispatch, so do not bake them here. Mark it offloadable only when
+                // every buffer it currently touches is registered; otherwise leave it
+                // local (the host fallback still runs).
+                if (n->live_reads_ || n->live_writes_)
+                {
+                    bool live_ok = true;
+                    if (n->live_reads_)
+                        for (void* p : *n->live_reads_)
+                            if (!ctx.distributed_buffer(p)) { live_ok = false; break; }
+                    if (live_ok && n->live_writes_)
+                        for (void* p : *n->live_writes_)
+                            if (!ctx.distributed_buffer(p)) { live_ok = false; break; }
+                    if (!live_ok) continue;
+
+                    n->offloadable_ = true;
+                    n->remote_op_   = n->metadata.op_id;
+                    continue;
+                }
+
                 std::vector<SushiRuntime::Distributed::BufferHandle> ins, outs;
                 bool ok = true;
 
@@ -391,6 +411,52 @@ namespace SushiRuntime
                      TaskWork{},
                      std::move(fallback_work),
                      dependencies);
+        }
+
+        /**
+         * @brief Adds an offloadable task whose touched buffers rotate every step.
+         *
+         * @param meta Metadata carrying the offloadable op_id.
+         * @param live_reads Shared list of the buffers read this step.
+         * @param live_writes Shared list of the buffers written this step.
+         * @param fallback_work Host fallback run when the task is not offloaded.
+         * @param dependencies An optional list of manual SYCL dependencies.
+         */
+        void TaskGraph::add_offload_dynamic(const TaskMetadata& meta,
+                                            std::shared_ptr<std::vector<void*>> live_reads,
+                                            std::shared_ptr<std::vector<void*>> live_writes,
+                                            HostWork fallback_work,
+                                            const std::vector<sycl::event>& dependencies)
+        {
+            auto node = make_sushi<Node>();
+            node->metadata  = meta;
+            node->host_work = std::move(fallback_work);
+            node->sycl_deps = dependencies;
+            node->mode      = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+
+            // Snapshot the current pointers for dependency ordering and queue routing
+            // (both reason about a single compiled graph, where the snapshot holds).
+            const std::vector<void*> reads  = live_reads  ? *live_reads  : std::vector<void*>{};
+            const std::vector<void*> writes = live_writes ? *live_writes : std::vector<void*>{};
+
+            for (void* ptr : reads)
+                if (ptr) impl_->tracker.resolve(node.get(), ptr, false);
+            for (void* ptr : writes)
+                if (ptr) impl_->tracker.resolve(node.get(), ptr, true);
+
+            node->io_reads_  = reads;
+            node->io_writes_ = writes;
+
+#ifdef SR_DISTRIBUTED
+            node->dist_reads_   = reads;
+            node->dist_writes_  = writes;
+            // The live lists drive dispatch-time handle resolution so the node
+            // follows the double-buffer swap without recompiling.
+            node->live_reads_   = std::move(live_reads);
+            node->live_writes_  = std::move(live_writes);
+#endif
+
+            impl_->push_node_lock_free(std::move(node));
         }
 
         /**

@@ -74,6 +74,9 @@ namespace SushiRuntime
         class Buffer
         {
             public:
+                /** @brief Element type, exposed so generic code can recover it. */
+                using value_type = T;
+
                 /** @brief Constructs an empty handle that owns no memory. */
                 Buffer() = default;
 
@@ -173,10 +176,10 @@ namespace SushiRuntime
                  * the caller so the allocation survives the chain:
                  * `auto a = rt.buffer<float>(n).distributed();`
                  *
-                 * Note: only a plain Buffer is distributable. A State<T> double-buffers
-                 * by swapping pointers each step, which is incompatible with the
-                 * version-by-pointer coherence model, so State deliberately has no
-                 * distributed() — stage a Buffer instead.
+                 * A State<T> is also distributable (State::distributed()); it
+                 * registers both of its allocations and the offload path resolves the
+                 * step's read/write handles from the live pointers, so the swap is
+                 * followed without breaking the version-by-pointer coherence model.
                  *
                  * @return *this (lvalue overload) or the buffer by value (rvalue overload).
                  */
@@ -227,6 +230,9 @@ namespace SushiRuntime
         class State
         {
             public:
+                /** @brief Element type, exposed so generic code can recover it. */
+                using value_type = T;
+
                 /** @brief Constructs an empty state that owns no memory. */
                 State() = default;
 
@@ -277,6 +283,35 @@ namespace SushiRuntime
                     using std::swap;
                     swap(cur_, next_);
                 }
+
+#ifdef SR_DISTRIBUTED
+                /**
+                 * @brief Registers both fields as distributable buffers (Master mode).
+                 *
+                 * Opt-in, mirroring Buffer::distributed(): exposes each of the State's
+                 * two allocations to the cluster so a stepped graph can offload its
+                 * update rule. The two allocations keep stable handles for the State's
+                 * lifetime; only which one is read versus written rotates each step,
+                 * and the offload path follows that from the live pointers. No-op when
+                 * empty.
+                 *
+                 * @return *this, for chaining.
+                 */
+                State& distributed() &
+                {
+                    cur_.distributed();
+                    next_.distributed();
+                    return *this;
+                }
+
+                /** @brief Rvalue overload; moves the state into the caller. */
+                State distributed() &&
+                {
+                    cur_.distributed();
+                    next_.distributed();
+                    return std::move(*this);
+                }
+#endif // SR_DISTRIBUTED
 
             private:
                 Buffer<T> cur_;

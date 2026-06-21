@@ -155,6 +155,35 @@ As-built divergences from the original sketch, found during implementation:
 - `OpID` auto-generation for fluent tasks (for JIT/offload reach) is **not yet
   wired**; it remains an additive follow-up behind the existing `OpID` seam.
 
+### WP-C2 — Fluent hardening (multidimensional, variadic, distributed State) — **implemented**
+
+Additive extensions so the fluent API reaches the runtime's full power without
+dropping to raw `sycl::handler`. All overloads live in `api/launch.hpp` and
+`api/runtime.hpp`; the backing graph is already dimension- and dependency-agnostic,
+so nothing below the fluent layer changed except the distributed offload path.
+
+- **Multidimensional launches.** `Extent<N>` (global box + origin offset) and
+  `NdRange<N>` (global + local for the work-group model). `add(Extent, fn)` hands
+  the kernel a `sycl::id<N>`; `add(NdRange, fn)` hands it a `sycl::nd_item<N>`
+  (barriers, local memory, sub-groups). `State` gets `add(State, Extent, fn)`.
+  Plain 1-D `size_t` calls are unchanged (an exact `size_t` match always beats the
+  `size_t → Extent<1>` conversion, so there is no ambiguity).
+- **Sub-range / halo updates.** An `Extent` with a non-zero origin iterates only a
+  sub-box, so interior-only stencils and ghost-layer updates need no raw handler.
+- **Variadic coupled State.** The fixed 1-/2-input coupled overloads are replaced by
+  one `add(out, in0, …, fn)` reading any number of fields (Jacobi semantics kept).
+- **Dependency ergonomics.** `Reads(…)` / `Writes(…)` accept `Buffer`/`State`
+  handles directly; `In(buf)` / `Out(buf)` / `InOut(buf)` additionally hand the
+  kernel raw pointers and register the access in one call. The raw `vector<void*>`
+  overloads remain the low-level escape hatch.
+- **Distributed State** (`State::distributed()` + `add(op, State, fn)`). A `State`
+  rotates its allocations each step, so its offload node carries live read/write
+  pointer lists that the fluent layer re-points before each step; `compile()` marks
+  it offloadable without baking handles and the coordinator resolves them at
+  dispatch (`Node::live_reads_/live_writes_`, `TaskGraph::add_offload_dynamic`,
+  `stamp_offloadable`, `try_offload`). The version-fence coherence model is
+  unchanged. Design and validation-owed notes: `docs/slop/distributed_state_design.md`.
+
 ### WP-D — Forever-type decisions
 - **`Core::Result<T,E>`:** declare it the *official forever type* (not a temporary
   `std::expected` shim). Even when the C++ baseline rises, `Result` stays our type

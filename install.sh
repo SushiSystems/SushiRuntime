@@ -63,13 +63,17 @@ fi
 cd "$REPO_DIR"
 log "Repo: $REPO_DIR"
 
-# 4. Install the `sr` CLI into the current interpreter.
+# 4. Install the `sr` CLI.
 log "Installing the sr CLI..."
-python3 -m pip install --upgrade pip >/dev/null
-python3 -m pip install ./cli
+python3 cli/install.py
 
 # 5. Run the installer pipeline.
 log "Running: sr setup all $GPU_FLAG $DRY_FLAG"
-python3 -m sushiruntime setup all $GPU_FLAG $DRY_FLAG
+PIPX_BIN_DIR=$(python3 -m pipx environment --value PIPX_BIN_DIR)
+SR_CMD="$PIPX_BIN_DIR/sr"
+if [ ! -x "$SR_CMD" ]; then
+  SR_CMD="sr"
+fi
+$SR_CMD setup all $GPU_FLAG $DRY_FLAG
 
 log "Done. Try: sr project test --suite functional"

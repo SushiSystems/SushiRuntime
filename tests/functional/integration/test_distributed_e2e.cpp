@@ -94,6 +94,104 @@ namespace
                 });
             });
     }
+
+    /**
+     * @brief Bumped once per State-step kernel run on the worker.
+     *
+     * Proves the distributed State step ran remotely, not via the local fallback.
+     */
+    std::atomic<int> g_state_worker_runs{0};
+
+    constexpr auto STATE_STEP = "state.step"_op;
+
+    /**
+     * @brief Registers the State-step kernel: next[i] = cur[i] + (i % 7).
+     *
+     * The same rule is given as the fluent local fallback, so an offloaded run must
+     * match the closed form seed[i] + steps*(i % 7) regardless of which physical
+     * buffer the double-buffer swap leaves the result in. ins[0] is the step's
+     * current field, outs[0] its next field — the runtime re-points these per step.
+     * @param reg The kernel registry to register with.
+     */
+    void register_state_step(KernelRegistry& reg)
+    {
+        reg.register_kernel(STATE_STEP,
+            [](sycl::queue& q, SushiRuntime::span<void* const> ins, SushiRuntime::span<void* const> outs,
+               const TaskMetadata& meta) -> sycl::event
+            {
+                auto* cur  = static_cast<const int*>(ins[0]);
+                auto* next = static_cast<int*>(outs[0]);
+                const size_t n = meta.get_param<uint64_t>(0);
+
+                return q.submit([&](sycl::handler& h)
+                {
+                    SushiRuntime::detail::enqueue_host_task(h, [=]
+                    {
+                        for (size_t i = 0; i < n; ++i)
+                            next[i] = cur[i] + static_cast<int>(i % 7);
+                        g_state_worker_runs.fetch_add(1, std::memory_order_relaxed);
+                    });
+                });
+            });
+    }
+
+    /**
+     * @brief Evolves a distributed State<int> for @p steps on a 1-worker in-process
+     *        cluster and returns its final field.
+     *
+     * Builds the cluster through the fluent surface (Runtime::cluster, State::distributed,
+     * Graph::add(op, State, ...)). The per-step rule next[i] = cur[i] + (i % 7) is
+     * registered identically on the worker, so the offloaded result is checkable
+     * against a closed form by the caller. Throws if no SYCL device is present or the
+     * worker fails to register, so the caller can translate that into a clean skip.
+     *
+     * @param n        Element count of the State.
+     * @param steps    Number of steps to run.
+     * @param offloaded Out: tasks the cluster shipped to the worker.
+     * @return The final field values, length @p n.
+     */
+    std::vector<int> evolve_distributed_state(std::size_t n, std::size_t steps,
+                                              std::uint64_t& offloaded)
+    {
+        InProcessFabric fabric(1);
+        auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
+        auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+
+        RuntimeContext worker_ctx;            // throws if no device
+        Runtime rt = Runtime::create();       // throws if no device
+
+        auto worker_kernels = make_sushi<KernelRegistry>();
+        register_state_step(*worker_kernels);
+        WorkerAgent agent(worker_ctx, worker_transport, worker_kernels);
+
+        auto cluster = rt.cluster(master_transport, make_sushi<KernelRegistry>(),
+                                  std::make_shared<LeastLoadedOffloadPolicy>(0));
+        agent.start();
+        if (!cluster.wait_for_workers(1, std::chrono::seconds(3)))
+            throw std::runtime_error("worker never registered with the cluster");
+
+        auto field = rt.state<int>(n).distributed();
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            field.current()[i] = static_cast<int>(i);
+            field.next()[i]    = static_cast<int>(i);
+        }
+
+        auto g = rt.graph();
+        g.add(STATE_STEP, field,
+              [](std::size_t i, const int* cur, int* next)
+              { next[i] = cur[i] + static_cast<int>(i % 7); },
+              { static_cast<std::uint64_t>(n) });
+        g.run(steps);
+
+        std::vector<int> result(n);
+        for (std::size_t i = 0; i < n; ++i)
+            result[i] = field[i];
+
+        offloaded = cluster.offloaded();
+        agent.stop();
+        return result;
+    }
 }
 
 /**
@@ -941,4 +1039,47 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
     EXPECT_TRUE(correct) << "Fluent offloaded result is wrong.";
 
     agent.stop();
+}
+
+/**
+ * @brief Tests transparent offload of a double-buffered State across even and odd
+ *        step counts.
+ *
+ * A State rotates its two allocations every step, so the compiled plan cannot bake
+ * its offload handles — the runtime re-points live pointer lists per step and the
+ * coordinator resolves handles at dispatch. This is the one place where an even vs
+ * odd number of steps lands the logical result in a different physical buffer, so it
+ * is the sharpest check that the live-IO indirection follows the swap. Both runs must
+ * match the closed form seed[i] + steps*(i % 7) and must actually have offloaded.
+ */
+TEST(Integration_DistributedE2ETest, FluentDistributedStateParity)
+{
+    constexpr std::size_t N = 1024;
+
+    std::vector<int> even_result, odd_result;
+    std::uint64_t off_even = 0, off_odd = 0;
+    try
+    {
+        g_state_worker_runs.store(0, std::memory_order_relaxed);
+        even_result = evolve_distributed_state(N, 4, off_even);   // even step count
+        g_state_worker_runs.store(0, std::memory_order_relaxed);
+        odd_result  = evolve_distributed_state(N, 5, off_odd);    // odd step count
+    }
+    catch (const std::exception& e)
+    {
+        GTEST_SKIP() << "No SYCL device / cluster unavailable: " << e.what();
+    }
+
+    EXPECT_GE(off_even, 1u) << "Even-step State should have offloaded at least once.";
+    EXPECT_GE(off_odd, 1u)  << "Odd-step State should have offloaded at least once.";
+
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        const int base = static_cast<int>(i);
+        const int step = static_cast<int>(i % 7);
+        EXPECT_EQ(even_result[i], base + 4 * step)
+            << "Even-step distributed State result wrong at " << i;
+        EXPECT_EQ(odd_result[i], base + 5 * step)
+            << "Odd-step distributed State result wrong at " << i;
+    }
 }

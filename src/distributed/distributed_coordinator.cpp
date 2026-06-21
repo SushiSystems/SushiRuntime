@@ -669,8 +669,38 @@ namespace SushiRuntime
             msg.op_id = node->remote_op_;
             msg.meta  = node->metadata;
 
+            // A double-buffered node carries no baked handles; resolve them from its
+            // live pointer lists for this step. Any pointer that is not (still)
+            // registered makes the task fall back to local execution.
+            std::vector<BufferHandle> in_handles;
+            std::vector<BufferHandle> out_handles;
+            const bool dynamic_io = static_cast<bool>(node->live_reads_) ||
+                                    static_cast<bool>(node->live_writes_);
+            if (dynamic_io)
+            {
+                if (node->live_reads_)
+                    for (void* p : *node->live_reads_)
+                    {
+                        auto h = impl_->buffers->lookup(p);
+                        if (!h) { impl_->declined_count.fetch_add(1, std::memory_order_relaxed); return false; }
+                        in_handles.push_back(*h);
+                    }
+                if (node->live_writes_)
+                    for (void* p : *node->live_writes_)
+                    {
+                        auto h = impl_->buffers->lookup(p);
+                        if (!h) { impl_->declined_count.fetch_add(1, std::memory_order_relaxed); return false; }
+                        out_handles.push_back(*h);
+                    }
+            }
+            else
+            {
+                in_handles  = node->in_handles_;
+                out_handles = node->out_handles_;
+            }
+
             uint64_t est_bytes = 0;
-            for (const auto& h : node->in_handles_)
+            for (const auto& h : in_handles)
             {
                 BufferHandle cur = h;
                 if (auto e = impl_->buffers->lookup_by_id(h.id)) cur = e->handle;
@@ -701,7 +731,7 @@ namespace SushiRuntime
             // (re)dispatch bumps again, so the master's BUFFER_PUSH handler rejects
             // any writeback carrying an older version — the result of a superseded
             // (slow/zombie) run that would otherwise clobber fresh data.
-            for (const auto& h : node->out_handles_)
+            for (const auto& h : out_handles)
             {
                 impl_->buffers->bump_version_by_id(h.id);
                 BufferHandle cur = h;

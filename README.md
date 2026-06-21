@@ -294,6 +294,39 @@ sim.add(u, v, [](std::size_t i, const float* uc, float* un, const float* vc) {
 });
 ```
 
+#### Multidimensional, tiled, and bordered work
+
+The same `add()` describes 2-D/3-D grids, tiled work-group kernels, and
+interior-only updates without dropping to a raw `sycl::handler`. `Extent<N>`
+names a global iteration box (optionally with an origin offset, which becomes
+the halo it skips); `NdRange<N>` names a global range plus a local work-group
+size for tiling and local memory.
+
+```cpp
+// 2-D per-element map: the kernel sees a sycl::id<2> over the whole box.
+g.add(Extent{W, H}, [p](sycl::id<2> idx) { p[idx[1] * W + idx[0]] = /* ... */; });
+
+// Tiled work-group kernel: global WxH, local 4x4, kernel sees sycl::nd_item<2>.
+g.add(NdRange{ sycl::range<2>(W, H), sycl::range<2>(4, 4) },
+      [p](sycl::nd_item<2> it) { /* it.get_global_id(0), it.get_local_id(1), ... */ });
+
+// Interior-only (halo) stencil over a State: iterate the (W-2)x(H-2) box at (1,1);
+// the one-cell border stays fixed. See examples/fluent_stencil_2d.cpp.
+Extent<2> interior{ sycl::range<2>(W - 2, H - 2), sycl::id<2>(1, 1) };
+g.add(field, interior, [](sycl::id<2> idx, const float* cur, float* next) { /* ... */ });
+```
+
+Dependencies can also be declared explicitly when the kernel touches buffers the
+argument list does not name. `Reads{...}`/`Writes{...}` register the hazards by
+handle; `In(buf)`/`Out(buf)`/`InOut(buf)` both register the access and hand the
+kernel the raw pointer as an argument.
+
+```cpp
+g.add(Reads{ src }, Writes{ dst }, N, [p](std::size_t i) { /* ... */ });
+g.add(Extent{N}, In(src), Out(dst),
+      [](sycl::id<1> i, const int* s, int* d) { d[i[0]] = s[i[0]] * 2; });
+```
+
 ### Low-level API
 
 The lower layers are available directly when you need full control:
@@ -341,9 +374,11 @@ The fluent entry point that most users should start from:
   double-buffered field for stepped workloads. Passing a handle to `add()`
   registers the task's reads and writes automatically.
 - `API::Graph` — chainable builder. `add()` overloads take per-element, range,
-  or raw kernels, or `State` / `Buffer` handles (including coupled multi-field
-  rules). `run()` / `run(n)` / `run_for()` / `run_until()` compile once and
-  replay; `try_run()` / `try_run(n)` are the non-throwing forms.
+  or raw kernels, `State` / `Buffer` handles (including coupled multi-field
+  rules), multidimensional `Extent<N>` boxes (with halo offsets) and tiled
+  `NdRange<N>` work-groups, and explicit `Reads`/`Writes`/`In`/`Out`/`InOut`
+  dependency wrappers. `run()` / `run(n)` / `run_for()` / `run_until()` compile
+  once and replay; `try_run()` / `try_run(n)` are the non-throwing forms.
 - `RunReport` — timing and steal statistics returned after each run.
 - `Errc` / `Error` / `SushiException` — the error type hierarchy. `run()`
   throws; `try_run()` returns `Result<RunReport, Error>` without throwing.
@@ -422,7 +457,8 @@ include/SushiRuntime/   Public headers (this is the API surface)
                         transports, KernelRegistry, BufferRegistry, coordinator, worker agent,
                         IOffloadPolicy, WorkerStats)
 src/                    Implementations of the above
-examples/               Sample apps (distributed master/worker demo; distributed builds only)
+examples/               Sample apps: fluent quick-start and 2-D stencil (always
+                        built); distributed master/worker demo (distributed builds only)
 tests/
   common/               Shared GoogleTest entry point and helpers
   functional/           unit / regression / integration (fast, CI)
@@ -449,6 +485,17 @@ sr project run sr_distributed_demo --distributed=master --port=5555 --workers=1
 # Across machines: run the master on one box and point each worker's
 # --master at the master's IP.
 ```
+
+The fluent API can drive the same offload without touching the protocol. A
+`State` marked `distributed()` registers both of its double-buffered allocations
+with the cluster, and `rt.cluster(transport, kernels, policy)` returns a handle
+that hands tasks to workers under the chosen `IOffloadPolicy`. Because a `State`
+swaps buffers every step, the offload handles are resolved at dispatch time
+rather than baked at compile time, so the same `add(op, state, fallback)` step
+runs remotely when a worker is available and falls back to local execution when
+none is. `cluster.offloaded()` / `declined()` report what actually happened; see
+`tests/functional/integration/test_distributed_e2e.cpp`
+(`FluentDistributedStateParity`) for a worked end-to-end example.
 
 The distributed tests (protocol, transports, buffer coherence, and SYCL end-to-end offload including multi-worker fan-out and TCP loopback) are part of the functional suite when the layer is enabled:
 
