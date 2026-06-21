@@ -41,6 +41,11 @@ class InstallContext:
     cfg: Config
     gpu: bool = False
     dry_run: bool = False
+    everything: bool = False
+    # Opt-in: also install the heavy Intel oneAPI DPC++ compiler (icx/icpx).
+    # Off by default — the lean intel-llvm + adaptivecpp toolchains are installed
+    # unconditionally, mirroring the Dockerfile's WITH_ONEAPI=0 default.
+    oneapi: bool = False
 
     # Populated by DetectStep: tool/dependency name -> present?
     detected: dict[str, bool] = field(default_factory=dict)

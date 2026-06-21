@@ -31,10 +31,38 @@ def _cache_key(cfg: Config) -> str:
             # The toolchain gates whether oneAPI setvars is sourced, so it must
             # key the cache: switching intel-llvm<->oneapi has to rebuild the snapshot.
             "toolchain": cfg.toolchain,
+            # The intel-llvm/adaptivecpp toolchains inject their own bin dirs into
+            # the snapshot PATH, so a change to either invalidates the cache.
+            "llvm_root": cfg.llvm_root,
+            "acpp_exe": cfg.acpp_exe,
         },
         sort_keys=True,
     )
     return hashlib.sha256(material.encode()).hexdigest()
+
+
+def _merge_env(base: dict[str, str], overlay: dict[str, str]) -> dict[str, str]:
+    """Merge overlay into base. PATH is prepended rather than replaced so that
+    toolchain directories (VS, oneAPI) take priority while scoop/user tools added
+    by the shell profile remain reachable.
+
+    PATH is collapsed into the *single* case variant the base already uses (e.g.
+    Windows' "Path"). Writing the overlay's "PATH" as a new key while base keeps
+    "Path" leaves two conflicting entries; Windows then honours only one for child
+    processes, so toolchain dirs added to the other silently vanish from DLL/exe
+    resolution.
+    """
+    merged = dict(base)
+    path_key = next((k for k in merged if k.upper() == "PATH"), None)
+    for k, v in overlay.items():
+        if k.upper() == "PATH":
+            target = path_key or k
+            existing = merged.get(target, "")
+            merged[target] = v + os.pathsep + existing if existing else v
+            path_key = target
+        else:
+            merged[k] = v
+    return merged
 
 
 def _parse_windows_set(output: str) -> dict[str, str]:
@@ -66,13 +94,58 @@ def _snapshot_windows(cfg: Config) -> dict[str, str] | None:
         return None
     parts.append("set")
     script = " && ".join(parts)
+    # Pass the whole command as a single string, NOT as ["cmd", "/c", script].
+    # With a list, subprocess re-quotes each element and mangles the inner
+    # double-quotes around the (space-containing) vcvars path, so cmd.exe sees
+    # the quoted path as one unknown token ("...vcvars64.bat" is not recognized)
+    # and returns non-zero — silently dropping the entire VS environment.
     result = subprocess.run(
-        ["cmd", "/c", script], capture_output=True, text=True
+        "cmd /c " + script, capture_output=True, text=True
     )
     if result.returncode != 0:
         console.warn("Environment script returned non-zero; using current env.")
         return None
     return _parse_windows_set(result.stdout)
+
+
+def _prepend_path(env: dict[str, str], var: str, dirs: list[str]) -> None:
+    """Prepend *dirs* to the (case-insensitive) *var* path entry of *env*."""
+    if not dirs:
+        return
+    key = next((k for k in env if k.upper() == var.upper()), var)
+    existing = env.get(key, "")
+    env[key] = os.pathsep.join(dirs + ([existing] if existing else []))
+
+
+def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
+    """Add the non-oneAPI toolchain bin/lib dirs to a build/run environment.
+
+    Neither platform ships a system SYCL compiler for the intel-llvm bundle
+    (clang++) or AdaptiveCpp (acpp): they live in their own install trees, so
+    their bin must be on PATH (and, on Linux, their lib on LD_LIBRARY_PATH) for
+    the compiler and its SYCL runtime libraries to resolve at build and run time.
+    oneAPI needs no help here — its setvars wires this up already.
+    """
+    if cfg.toolchain == "oneapi":
+        return
+    bins: list[str] = []
+    libs: list[str] = []
+    if cfg.toolchain == "intel-llvm":
+        root = cfg.expand(cfg.llvm_root)
+        if root and Path(root).is_dir():
+            bins.append(str(Path(root) / "bin"))
+            libs.append(str(Path(root) / "lib"))
+    elif cfg.toolchain == "adaptivecpp":
+        acpp = cfg.expand(cfg.acpp_exe)
+        if acpp and Path(acpp).is_file():
+            acpp_root = Path(acpp).parent.parent
+            bins.append(str(Path(acpp).parent))
+            libs.append(str(acpp_root / "lib"))
+    bins = [d for d in bins if Path(d).is_dir()]
+    _prepend_path(env, "PATH", bins)
+    if not cfg.is_windows:
+        libs = [d for d in libs if Path(d).is_dir()]
+        _prepend_path(env, "LD_LIBRARY_PATH", libs)
 
 
 def _snapshot_linux(cfg: Config) -> dict[str, str] | None:
@@ -121,9 +194,9 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
         try:
             cached = json.loads(cache_file.read_text())
             if cached.get("key") == key:
-                merged = dict(os.environ)
-                merged.update(cached["env"])
-                return merged
+                env = _merge_env(dict(os.environ), cached["env"])
+                _inject_toolchain_paths(cfg, env)
+                return env
         except (json.JSONDecodeError, OSError, KeyError):
             pass  # fall through and rebuild
 
@@ -131,13 +204,15 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
         _snapshot_windows(cfg) if cfg.is_windows else _snapshot_linux(cfg)
     )
     if not snapshot:
-        return dict(os.environ)
+        env = dict(os.environ)
+        _inject_toolchain_paths(cfg, env)
+        return env
 
     try:
         cache_file.write_text(json.dumps({"key": key, "env": snapshot}))
     except OSError:
         pass
 
-    merged = dict(os.environ)
-    merged.update(snapshot)
-    return merged
+    env = _merge_env(dict(os.environ), snapshot)
+    _inject_toolchain_paths(cfg, env)
+    return env

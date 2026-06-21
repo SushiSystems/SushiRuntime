@@ -3,8 +3,9 @@
 Each step has a single responsibility and depends only on abstractions:
 ``DetectStep`` inventories the machine, ``InstallDepsStep`` installs missing
 manifest packages through injected package managers, ``ConfigureStep`` writes
-``config.local.toml`` from probed tool paths, and ``VerifyStep`` builds and
-smoke-tests through the existing project service.
+``config.local.toml`` from probed tool paths, ``VerifyStep`` builds and
+smoke-tests through the project service, and ``UninstallStep`` tears down
+everything the installer placed on the system.
 """
 
 from __future__ import annotations
@@ -18,31 +19,42 @@ from rich.table import Table
 from .. import console
 from ..config import config_dir
 from . import probe
+from .probe import binary_works
 from .dependency_source import Dependency, IDependencySource
-from .package_managers import IPackageManager
+from .package_managers import (
+    IPackageManager,
+    WINGET_ID_TO_CMD,
+    _tools_dir,
+)
 from .pipeline import InstallContext, Step, StepResult
+from . import toolchains
 
-# System toolchain that is not a C++ library dependency (so it lives here, not in
-# the manifest): the build tools every platform needs on PATH.
+# System toolchain installed through the toolchain manager (not via the manifest
+# since these tools must exist before vcpkg/pip can run).
 _LINUX_TOOLCHAIN_APT = ["build-essential", "cmake", "ninja-build", "git"]
-_WINDOWS_TOOLCHAIN_WINGET = [
+_WINDOWS_TOOLCHAIN_PKGS = [
     "Kitware.CMake", "Ninja-build.Ninja", "Git.Git",
 ]
 
 
 def _dep_installed(dep: Dependency, mgr: IPackageManager, platform: str) -> bool:
-    """True if a dependency is already satisfied (falls back to package manager if check_cmd fails)."""
     if dep.check_cmd:
         try:
             if subprocess.run(dep.check_cmd, capture_output=True).returncode == 0:
                 return True
         except (OSError, FileNotFoundError):
             pass
-            
     pkgs = dep.packages_for(platform)
     if not pkgs:
         return False
     return all(mgr.is_installed(p) for p in pkgs)
+
+
+def _first_available(managers: list[IPackageManager]) -> IPackageManager | None:
+    for mgr in managers:
+        if mgr.available():
+            return mgr
+    return None
 
 
 class DetectStep(Step):
@@ -61,23 +73,18 @@ class DetectStep(Step):
         table.add_column("Status")
         table.add_column("Detail", style="dim")
 
-        # Generic tools (presence on PATH).
         for tool in ("python3" if plat != "windows" else "python",
                      "git", "cmake", "ninja", "pkg-config"):
             found = shutil.which(tool) is not None
             ctx.detected[tool] = found
             table.add_row(tool, _mark(found), shutil.which(tool) or "")
 
-        # Toolchain compiler.
         compiler, where = probe.find_sycl_compiler(ctx.cfg)
         ctx.detected["sycl_compiler"] = compiler is not None
         table.add_row("SYCL compiler", _mark(compiler is not None),
                       f"{compiler or '-'} {where or ''}".strip())
 
-        # Manifest dependencies.
         for dep in self._source.selected(plat, ctx.gpu):
-            # Detection here is informational; can't always check without the
-            # package manager, so just record declared presence via check_cmd.
             present = False
             if dep.check_cmd:
                 try:
@@ -90,7 +97,6 @@ class DetectStep(Step):
             table.add_row(dep.name, _mark(present) if dep.check_cmd else "[dim]?[/dim]",
                           f"{dep.description} ({pkgs})")
 
-        # GPU.
         gpu_present = shutil.which("nvidia-smi") is not None
         ctx.detected["nvidia_gpu"] = gpu_present
         table.add_row("NVIDIA GPU", _mark(gpu_present),
@@ -101,7 +107,7 @@ class DetectStep(Step):
 
 
 class InstallDepsStep(Step):
-    """Install missing manifest dependencies + system toolchain."""
+    """Install missing manifest dependencies and system toolchain."""
 
     name = "install-deps"
 
@@ -117,61 +123,109 @@ class InstallDepsStep(Step):
         return None
 
     def run(self, ctx: InstallContext) -> StepResult:
-        plat = ctx.cfg.platform
-        if plat == "windows":
+        if ctx.cfg.platform == "windows":
             return self._run_windows(ctx)
         return self._run_linux(ctx)
 
-    # -- Linux: everything through apt -------------------------------------- #
+    # -- SYCL toolchains (shared) --------------------------------------------- #
+
+    def _install_toolchains(self, ctx: InstallContext,
+                            mgr: IPackageManager | None,
+                            vcpkg: IPackageManager | None) -> None:
+        """Install the default SYCL toolchains (intel-llvm + AdaptiveCpp).
+
+        Both are recorded on ``ctx.resolved_paths`` so ConfigureStep can write
+        their paths. Failures are non-fatal: the intel-llvm bundle alone is enough
+        to build, and AdaptiveCpp's from-source build is best-effort.
+        """
+        llvm = toolchains.install_intel_llvm(ctx.cfg, ctx.dry_run)
+        if llvm:
+            ctx.resolved_paths["llvm_root"] = llvm
+        else:
+            console.warn("intel/llvm bundle not installed; the default "
+                         "intel-llvm toolchain will be unavailable.")
+        acpp = toolchains.install_adaptivecpp(ctx.cfg, mgr, vcpkg, ctx.dry_run)
+        if acpp:
+            ctx.resolved_paths["acpp_exe"] = acpp
+
+    # -- Linux ---------------------------------------------------------------- #
+
     def _run_linux(self, ctx: InstallContext) -> StepResult:
-        apt = self._manager("apt")
-        if apt is None or not apt.available():
-            msg = "apt-get not available. Only Debian/Ubuntu is supported."
+        linux_managers = ["apt", "dnf", "yum", "pacman", "zypper"]
+        mgr = next(
+            (self._manager(n) for n in linux_managers
+             if self._manager(n) and self._manager(n).available()),  # type: ignore[union-attr]
+            None,
+        )
+        if mgr is None:
+            msg = ("No supported package manager found (apt, dnf, yum, pacman, zypper). "
+                   "Install python3, pip, git, cmake, and ninja manually, then re-run.")
             if ctx.dry_run:
-                console.warn(f"(dry-run) {msg} Would stop here on a real run.")
+                console.warn(f"(dry-run) {msg}")
                 return StepResult.SKIPPED
             console.error(msg)
             return StepResult.FAILED
 
-        pkgs: list[str] = list(_LINUX_TOOLCHAIN_APT)
+        console.info(f"Using package manager: {mgr.name}")
+
+        # Translate the generic apt toolchain list to native package names.
+        pkgs: list[str] = list(mgr.translate_apt(_LINUX_TOOLCHAIN_APT))
         for dep in self._source.selected("linux", ctx.gpu):
-            if _dep_installed(dep, apt, "linux"):
+            if _dep_installed(dep, mgr, "linux"):
                 console.info(f"{dep.name}: already installed, skipping.")
                 continue
-            pkgs.extend(dep.linux_apt)
+            pkgs.extend(mgr.translate_apt(dep.linux_apt))
 
         pkgs = _dedup(pkgs)
         if not pkgs:
+            console.info("All packages already present.")
             return StepResult.SKIPPED
-        console.info(f"Installing via apt: {', '.join(pkgs)}")
-        ok = apt.install(pkgs, ctx.dry_run)
+
+        console.info(f"Installing via {mgr.name}: {', '.join(pkgs)}")
+        ok = mgr.install(pkgs, ctx.dry_run)
         ctx.installed.extend(pkgs)
-        # The SYCL compiler (intel/llvm or oneAPI) is a toolchain bootstrap, not
-        # an apt library; surface guidance rather than failing the pipeline.
-        if not ctx.detected.get("sycl_compiler", False):
-            console.warn(
-                "No SYCL compiler detected. Install the intel/llvm nightly "
-                "toolchain or Intel oneAPI DPC++ (see README / Dockerfile)."
-            )
+
+        self._install_toolchains(ctx, mgr=mgr, vcpkg=None)
+
+        # Intel oneAPI DPC++ — opt-in (--oneapi). Mirrors the Dockerfile's
+        # WITH_ONEAPI apt route; needs the Intel oneAPI apt repo configured.
+        if ctx.oneapi and mgr.name == "apt":
+            console.info("oneAPI: installing intel-oneapi-compiler-dpcpp-cpp "
+                         "(requires the Intel oneAPI apt repository).")
+            mgr.install(["intel-oneapi-compiler-dpcpp-cpp"], ctx.dry_run)
+        elif ctx.oneapi:
+            console.warn(f"--oneapi on {mgr.name} is not automated; install the "
+                         "Intel oneAPI DPC++ compiler manually.")
         return StepResult.OK if ok else StepResult.FAILED
 
-    # -- Windows: toolchain via winget, libs via vcpkg ---------------------- #
+    # -- Windows -------------------------------------------------------------- #
+
     def _run_windows(self, ctx: InstallContext) -> StepResult:
         winget = self._manager("winget")
-        vcpkg = self._manager("vcpkg")
-        if winget is None or not winget.available():
-            msg = ("winget not available. Install 'App Installer' from the "
-                   "Microsoft Store, then re-run.")
-            if ctx.dry_run:
-                console.warn(f"(dry-run) {msg} Would stop here on a real run.")
-                return StepResult.SKIPPED
-            console.error(msg)
-            return StepResult.FAILED
+        direct = self._manager("direct-download")
+        vcpkg  = self._manager("vcpkg")
 
-        console.info("Installing system toolchain via winget...")
-        tool_ok = winget.install(_WINDOWS_TOOLCHAIN_WINGET, ctx.dry_run)
+        # Only install toolchain items that are not already on PATH.
+        missing = [
+            pkg for pkg in _WINDOWS_TOOLCHAIN_PKGS
+            if not shutil.which(WINGET_ID_TO_CMD.get(pkg, ""))
+        ]
 
-        # C++ library ports through vcpkg.
+        tool_ok = True
+        if missing:
+            if winget and winget.available():
+                console.info("Installing missing toolchain via winget ...")
+                tool_ok = winget.install(missing, ctx.dry_run)
+            elif direct:
+                console.info("winget unavailable; installing toolchain via direct download ...")
+                tool_ok = direct.install(missing, ctx.dry_run)
+            else:
+                console.error("No install method available for toolchain packages.")
+                return StepResult.FAILED
+        else:
+            console.info("System toolchain already present, skipping.")
+
+        # C++ library ports via vcpkg.
         ports: list[str] = []
         for dep in self._source.selected("windows", ctx.gpu):
             if vcpkg and _dep_installed(dep, vcpkg, "windows"):
@@ -189,47 +243,97 @@ class InstallDepsStep(Step):
             lib_ok = vcpkg.install(ports, ctx.dry_run)
             ctx.installed.extend(ports)
 
-        if winget and winget.available() and not winget.is_installed("Microsoft.VisualStudio.2022.BuildTools"):
-            if ctx.dry_run:
-                console.info("(dry-run) skipping VS Build Tools install.")
-            else:
-                vs_cmd = [
-                    "winget", "install", "--id", "Microsoft.VisualStudio.2022.BuildTools", "-e",
-                    "--accept-package-agreements", "--accept-source-agreements",
-                    "--override", '--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --quiet --wait --norestart'
-                ]
-                import subprocess
-                with console.console.status("[bold cyan]Installing Visual Studio Build Tools (C++ workloads) in the background... This may take 10-20 minutes.", spinner="bouncingBar"):
-                    rc = subprocess.run(vs_cmd).returncode
-                if rc != 0:
-                    console.warn("Visual Studio Build Tools installation failed or was cancelled.")
-                    tool_ok = False
+        # VS Build Tools — only attempt if winget is present.
+        if winget and winget.available():
+            if not winget.is_installed("Microsoft.VisualStudio.2022.BuildTools"):
+                if ctx.dry_run:
+                    console.info("(dry-run) skipping VS Build Tools install.")
                 else:
-                    console.success("Visual Studio Build Tools installed successfully.")
+                    vs_cmd = [
+                        "winget", "install",
+                        "--id", "Microsoft.VisualStudio.2022.BuildTools", "-e",
+                        "--accept-package-agreements", "--accept-source-agreements",
+                        "--override",
+                        "--add Microsoft.VisualStudio.Workload.VCTools "
+                        "--includeRecommended --quiet --wait --norestart",
+                    ]
+                    with console.console.status(
+                        "[bold cyan]Installing Visual Studio Build Tools "
+                        "(C++ workloads) — this may take 10–20 minutes.",
+                        spinner="bouncingBar",
+                    ):
+                        rc = subprocess.run(vs_cmd).returncode
+                    if rc != 0:
+                        console.warn("Visual Studio Build Tools install failed or was cancelled.")
+                        tool_ok = False
+                    else:
+                        console.success("Visual Studio Build Tools installed.")
 
-        if not ctx.detected.get("sycl_compiler", False):
+        # Lean SYCL toolchains (intel-llvm bundle + AdaptiveCpp), like the
+        # Dockerfile's default. oneAPI is installed below only with --oneapi.
+        self._install_toolchains(ctx, mgr=None, vcpkg=vcpkg)
+
+        # Intel oneAPI — opt-in (--oneapi), and only when icx-cl is not present.
+        if ctx.oneapi and not ctx.detected.get("sycl_compiler", False):
             if ctx.dry_run:
                 console.info("(dry-run) skipping Intel oneAPI install.")
             else:
-                oneapi_url = "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/bae85ab1-cfcd-4251-8d42-a0c27949ea33/intel-oneapi-toolkit-2026.0.0.193_offline.exe"
+                oneapi_url = (
+                    "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/"
+                    "bae85ab1-cfcd-4251-8d42-a0c27949ea33/"
+                    "intel-oneapi-toolkit-2026.0.0.193_offline.exe"
+                )
                 installer = Path.home() / "intel-oneapi-toolkit-offline.exe"
-                
                 if not installer.is_file():
-                    console.info(f"Downloading Intel oneAPI Installer (~4GB) from Intel servers...")
-                    dl_rc = subprocess.run(["curl", "-L", "-o", str(installer), oneapi_url]).returncode
+                    console.info("Downloading Intel oneAPI Installer (~4 GB) from Intel servers ...")
+                    dl_rc = subprocess.run(
+                        ["curl", "-L", "-o", str(installer), oneapi_url]
+                    ).returncode
                     if dl_rc != 0:
                         console.error("Failed to download Intel oneAPI installer.")
                         tool_ok = False
-                
                 if installer.is_file() and tool_ok:
-                    oneapi_cmd = [str(installer), "-s", "-a", "--silent", "--eula", "accept", "-p=NEED_VS2022_INTEGRATION=1"]
-                    with console.console.status("[bold cyan]Executing oneAPI installer silently... This may take 10-20 minutes.", spinner="bouncingBar"):
-                        rc = subprocess.run(oneapi_cmd).returncode
-                    if rc != 0:
+                    oneapi_cmd = [
+                        str(installer), "-s", "-a", "--silent", "--eula", "accept",
+                        "-p=NEED_VS2022_INTEGRATION=1",
+                    ]
+                    with console.console.status(
+                        "[bold cyan]Installing Intel oneAPI Toolkit silently "
+                        "— this may take 10–20 minutes.",
+                        spinner="bouncingBar",
+                    ):
+                        try:
+                            rc = subprocess.run(oneapi_cmd).returncode
+                        except OSError as exc:
+                            if getattr(exc, "winerror", None) == 740:
+                                console.info(
+                                    "Intel oneAPI requires administrator privileges. "
+                                    "A UAC prompt will appear — approve it to continue."
+                                )
+                                try:
+                                    ps_cmd = (
+                                        f"$p = Start-Process -FilePath '{str(installer)}'"
+                                        f" -ArgumentList '-s','-a','--silent','--eula','accept'"
+                                        f",'-p=NEED_VS2022_INTEGRATION=1'"
+                                        f" -Verb RunAs -Wait -PassThru; exit $p.ExitCode"
+                                    )
+                                    rc = subprocess.run(
+                                        ["powershell", "-Command", ps_cmd],
+                                        timeout=1200,
+                                    ).returncode
+                                except Exception as exc2:
+                                    console.error(f"Elevated oneAPI launch failed: {exc2}")
+                                    tool_ok = False
+                                    rc = 1
+                            else:
+                                console.warn(f"Intel oneAPI installer failed to launch: {exc}")
+                                tool_ok = False
+                                rc = 1
+                    if rc != 0 and tool_ok:
                         console.warn("Intel oneAPI Toolkit installation failed.")
                         tool_ok = False
-                    else:
-                        console.success("Intel oneAPI Toolkit installed successfully.")
+                    elif rc == 0:
+                        console.success("Intel oneAPI Toolkit installed.")
 
         return StepResult.OK if (tool_ok and lib_ok) else StepResult.FAILED
 
@@ -251,8 +355,6 @@ class ConfigureStep(Step):
 
         if ctx.dry_run:
             console.info(f"(dry-run) would write {target}:")
-            # markup=False: the [tool.<platform>] header must not be parsed as
-            # rich markup (it would silently vanish from the preview).
             console.console.print(content, markup=False)
             return StepResult.OK
 
@@ -276,7 +378,6 @@ class VerifyStep(Step):
             console.info("(dry-run) skipping build/verify.")
             return StepResult.SKIPPED
 
-        # Imported lazily to avoid a heavy import at module load.
         from ..services import project as project_svc
         from ..services.project import BuildType, Suite
 
@@ -292,9 +393,141 @@ class VerifyStep(Step):
         if rc != 0:
             console.warn("Functional smoke test reported failures.")
             return StepResult.FAILED
+
         console.success("Build + smoke test passed. Project is ready.")
         return StepResult.OK
 
+
+class UninstallStep(Step):
+    """Remove packages and files that the installer placed on this system.
+
+    With ``ctx.everything`` set, also removes toolchain binaries (cmake, git,
+    ninja) that were downloaded by the direct-download manager. This is a
+    destructive operation and cannot be undone automatically.
+    """
+
+    name = "uninstall"
+
+    def __init__(self, source: IDependencySource,
+                 managers: list[IPackageManager]) -> None:
+        self._source = source
+        self._managers = managers
+
+    def _manager(self, name: str) -> IPackageManager | None:
+        for m in self._managers:
+            if m.name == name:
+                return m
+        return None
+
+    def run(self, ctx: InstallContext) -> StepResult:
+        if ctx.cfg.platform == "windows":
+            return self._run_windows(ctx)
+        return self._run_linux(ctx)
+
+    def _run_linux(self, ctx: InstallContext) -> StepResult:
+        linux_names = ["apt", "dnf", "yum", "pacman", "zypper"]
+        mgr = next(
+            (self._manager(n) for n in linux_names
+             if self._manager(n) and self._manager(n).available()),  # type: ignore[union-attr]
+            None,
+        )
+        pkgs: list[str] = []
+        for dep in self._source.selected("linux", ctx.gpu):
+            pkgs.extend(mgr.translate_apt(dep.linux_apt) if mgr else dep.linux_apt)
+        pkgs = _dedup(pkgs)
+
+        if mgr and pkgs:
+            console.info(f"Removing via {mgr.name}: {', '.join(pkgs)}")
+            mgr.remove(pkgs, ctx.dry_run)
+
+        self._remove_config(ctx)
+        return StepResult.OK
+
+    def _run_windows(self, ctx: InstallContext) -> StepResult:
+        vcpkg = self._manager("vcpkg")
+
+        ports: list[str] = []
+        for dep in self._source.selected("windows", ctx.gpu):
+            ports.extend(dep.windows_vcpkg)
+        ports = _dedup(ports)
+
+        if vcpkg and ports:
+            console.info(f"Removing vcpkg ports: {', '.join(ports)}")
+            vcpkg.remove(ports, ctx.dry_run)
+
+        # Remove the ninja extracted to the tools dir.
+        tools = _tools_dir()
+        ninja_exe = tools / "ninja.exe"
+        if ninja_exe.is_file():
+            if ctx.dry_run:
+                console.info(f"(dry-run) would remove {ninja_exe}")
+            else:
+                ninja_exe.unlink()
+                console.info(f"Removed {ninja_exe}")
+            if tools.is_dir() and not any(tools.iterdir()):
+                if not ctx.dry_run:
+                    tools.rmdir()
+
+        if ctx.everything:
+            self._remove_toolchain_windows(ctx)
+
+        self._remove_config(ctx)
+        return StepResult.OK
+
+    def _remove_toolchain_windows(self, ctx: InstallContext) -> None:
+        """Remove cmake and git installed by the direct-download manager.
+
+        This uses msiexec /x for CMake and the Git uninstaller found in the
+        Program Files tree. Winget uninstall is tried first when available.
+        """
+        winget = self._manager("winget")
+        if winget and winget.available():
+            console.info("Removing toolchain via winget ...")
+            winget.remove(["Kitware.CMake", "Git.Git"], ctx.dry_run)
+            return
+
+        # CMake MSI uninstall via product code discovery.
+        if not ctx.dry_run:
+            import subprocess as sp
+            try:
+                result = sp.run(
+                    ["wmic", "product", "where", "name like 'CMake%'",
+                     "get", "IdentifyingNumber", "/value"],
+                    capture_output=True, text=True,
+                )
+                for line in result.stdout.splitlines():
+                    if line.startswith("IdentifyingNumber="):
+                        guid = line.split("=", 1)[1].strip()
+                        sp.run(["msiexec", "/x", guid, "/quiet", "/norestart"],
+                               timeout=120)
+                        console.info("CMake uninstalled.")
+            except Exception as exc:
+                console.warn(f"CMake uninstall skipped: {exc}")
+
+            # Git uninstaller lives alongside the binary.
+            git_path = shutil.which("git")
+            if git_path:
+                uninstaller = Path(git_path).parent.parent / "unins000.exe"
+                if uninstaller.is_file():
+                    sp.run([str(uninstaller), "/VERYSILENT", "/NORESTART"],
+                           timeout=120)
+                    console.info("Git uninstalled.")
+        else:
+            console.info("(dry-run) would remove CMake and Git.")
+
+    def _remove_config(self, ctx: InstallContext) -> None:
+        target = config_dir() / "config.local.toml"
+        if target.is_file():
+            if ctx.dry_run:
+                console.info(f"(dry-run) would remove {target}")
+            else:
+                target.unlink()
+                console.success(f"Removed {target}")
+
+
+# --------------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------------- #
 
 def _mark(ok: bool) -> str:
     return "[green]OK[/green]" if ok else "[red]MISSING[/red]"

@@ -193,45 +193,77 @@ def docker_run(
 # --------------------------------------------------------------------------- #
 @setup_app.command("all")
 def setup_all(
-    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+    gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
 ):
     """Detect, install dependencies, write config, then build and smoke-test."""
-    raise typer.Exit(setup_svc.run("all", gpu=gpu, dry_run=dry_run))
+    raise typer.Exit(setup_svc.run("all", gpu=gpu, dry_run=dry_run, oneapi=oneapi))
 
 
 @setup_app.command("detect")
 def setup_detect(
-    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+    gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
 ):
     """Inventory the machine: tools, compiler, dependencies, GPU."""
-    raise typer.Exit(setup_svc.run("detect", gpu=gpu, dry_run=False))
+    raise typer.Exit(setup_svc.run("detect", gpu=gpu, dry_run=False, oneapi=oneapi))
 
 
 @setup_app.command("install")
 def setup_install(
-    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+    gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
 ):
     """Install missing dependencies (apt on Linux, winget+vcpkg on Windows)."""
-    raise typer.Exit(setup_svc.run("install", gpu=gpu, dry_run=dry_run))
+    raise typer.Exit(setup_svc.run("install", gpu=gpu, dry_run=dry_run, oneapi=oneapi))
 
 
 @setup_app.command("configure")
 def setup_configure(
-    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+    gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
 ):
     """Generate config.local.toml from probed tool paths."""
-    raise typer.Exit(setup_svc.run("configure", gpu=gpu, dry_run=dry_run))
+    raise typer.Exit(setup_svc.run("configure", gpu=gpu, dry_run=dry_run, oneapi=oneapi))
 
 
 @setup_app.command("verify")
 def setup_verify(
-    gpu: bool = typer.Option(False, "--gpu", help="Include GPU/CUDA deps."),
+    gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
 ):
     """Build the project and run the functional smoke test."""
-    raise typer.Exit(setup_svc.run("verify", gpu=gpu, dry_run=False))
+    raise typer.Exit(setup_svc.run("verify", gpu=gpu, dry_run=False, oneapi=oneapi))
+
+
+@setup_app.command("uninstall")
+def setup_uninstall(
+    gpu: bool = typer.Option(False, "--gpu", help="Include GPU-only deps in removal."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be removed without changing anything."),
+    everything: bool = typer.Option(
+        False, "--everything",
+        help=(
+            "[bold red]WARNING:[/bold red] Also removes cmake, git, and ninja "
+            "that were installed by the direct-download fallback. "
+            "Do not use this flag if those tools were already present before "
+            "running the installer — it will remove your existing installation."
+        ),
+    ),
+):
+    """Remove packages, vcpkg ports, and config files placed by `sr setup`.
+
+    By default only vcpkg C++ library ports and [cyan]config.local.toml[/cyan]
+    are removed. Pass [bold]--everything[/bold] to also uninstall the toolchain
+    binaries (cmake, git, ninja) that the installer may have downloaded.
+
+    [bold yellow]Warning:[/bold yellow] [bold]--everything[/bold] is irreversible
+    and will remove cmake and git system-wide on Windows. Only use it on machines
+    where SushiRuntime was the sole reason those tools were installed.
+    """
+    raise typer.Exit(setup_svc.uninstall(gpu=gpu, dry_run=dry_run, everything=everything))
 
 
 # --------------------------------------------------------------------------- #

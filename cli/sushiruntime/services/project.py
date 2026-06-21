@@ -57,9 +57,44 @@ def _build_dir(root: Path, asan: bool) -> Path:
     return root / ("build-asan" if asan else "build")
 
 
+def _cmake(cfg: Config) -> str:
+    """The cmake executable: the configured path if set, else bare 'cmake'."""
+    return cfg.expand(cfg.cmake_exe) if cfg.cmake_exe else "cmake"
+
+
+def _ctest(cfg: Config) -> str:
+    """The ctest executable: the configured path if set, else bare 'ctest'."""
+    return cfg.expand(cfg.ctest_exe) if cfg.ctest_exe else "ctest"
+
+
+def _resolve_exe(name: str, env: dict[str, str]) -> str:
+    """Return the full path to *name* from env PATH, or *name* itself as fallback.
+
+    Using the full path sidesteps Windows PATH case-sensitivity bugs when a
+    plain-dict env is passed to subprocess (os.environ uses 'Path', overlays
+    may use 'PATH' — subprocess sees both and picks unpredictably).
+    """
+    env_path = next((v for k, v in env.items() if k.upper() == "PATH"), None)
+    found = shutil.which(name, path=env_path) or shutil.which(name)
+    return found or name
+
+
 def _run(cmd: list[str], env: dict[str, str], cwd: Path) -> int:
-    console.command(subprocess.list2cmdline(cmd))
-    return subprocess.run(cmd, cwd=str(cwd), env=env).returncode
+    # Resolve the executable to a full path so subprocess.CreateProcess never
+    # relies on PATH lookup from the env dict (which may have case-mismatched keys
+    # on Windows when cmake/ninja live in scoop shims).
+    resolved = list(cmd)
+    resolved[0] = _resolve_exe(cmd[0], env)
+    console.command(subprocess.list2cmdline(resolved))
+    try:
+        return subprocess.run(resolved, cwd=str(cwd), env=env).returncode
+    except FileNotFoundError:
+        console.error(
+            f"Executable not found: '{cmd[0]}'.\n"
+            f"  - it is not on PATH and no explicit path is configured.\n"
+            f"  - set its path in config.local.toml (e.g. cmake_exe / ctest_exe / ninja_exe), or\n"
+            f"  - re-run `sr setup configure` to auto-detect it.")
+        return 1
 
 
 def _neutralize_runtime_ld(cfg: Config, env: dict[str, str]) -> None:
@@ -157,7 +192,7 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
                           cuda: str, dist: str, asan: bool, tests: bool,
                           cc: str, cxx: str) -> list[str]:
     args = [
-        "cmake", "-B", str(build_dir), "-G", cfg.generator,
+        _cmake(cfg), "-B", str(build_dir), "-G", cfg.generator,
         f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_C_COMPILER={cc}",
@@ -182,22 +217,51 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
     return args
 
 
+def _check_windows_compiler(cfg: Config, env: dict[str, str]) -> int:
+    """Fail early (with guidance) if the toolchain's compiler is not installed.
+
+    Without this, an unresolved compiler (e.g. selecting the adaptivecpp toolchain
+    before acpp is built) surfaces only as a cryptic 'is not a full path' CMake
+    error several lines into configure.
+    """
+    cxx = cfg.resolved_windows_compiler()
+    found = Path(cxx).is_file() or _resolve_exe(cxx, env) != cxx
+    if found:
+        return 0
+    hint = {
+        "adaptivecpp": "AdaptiveCpp (acpp) is not installed. Build it with "
+                       "`sr setup install`, or switch back with `sr toolchain intel-llvm`.",
+        "intel-llvm": "The intel/llvm bundle (clang++) is not installed. Install it "
+                      "with `sr setup install`.",
+        "oneapi": "Intel oneAPI (icx-cl) is not installed. Install it with "
+                  "`sr setup install --oneapi`, or set icx_compiler in config.local.toml.",
+    }.get(cfg.toolchain, "")
+    console.error(
+        f"Toolchain '{cfg.toolchain}' compiler '{cxx}' was not found.\n  - {hint}")
+    return 1
+
+
 def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
                             dist: str, asan: bool, tests: bool) -> list[str]:
     vcpkg = cfg.expand(cfg.vcpkg_root)
     triplet = cfg.vcpkg_triplet
     asan_flags = f" {ASAN_FLAGS}" if asan else ""
+
+    # The compiler is toolchain-specific: intel-llvm -> clang++, oneapi -> icx-cl,
+    # adaptivecpp -> acpp. Pass -DSR_SYCL_TOOLCHAIN explicitly so CMakeLists does
+    # not auto-force it from the compiler name (e.g. icx-cl => oneapi), which would
+    # diverge from the environment the CLI actually snapshots.
+    cxx = cfg.resolved_windows_compiler()
     args = [
-        "cmake", "-B", str(build_dir), "-G", "Ninja",
+        _cmake(cfg), "-B", str(build_dir), "-G", "Ninja",
         f"-DCMAKE_BUILD_TYPE={build_type}",
+        f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_TOOLCHAIN_FILE={vcpkg}/scripts/buildsystems/vcpkg.cmake",
         f"-DVCPKG_ROOT={vcpkg}",
         f"-DVCPKG_TARGET_TRIPLET={triplet}",
         f"-DCMAKE_MAKE_PROGRAM={cfg.expand(cfg.ninja_exe)}",
-        f"-DCMAKE_CXX_COMPILER={cfg.expand(cfg.icx_compiler)}",
-        f"-DCMAKE_C_COMPILER={cfg.expand(cfg.icx_compiler)}",
-        f"-DCMAKE_CXX_FLAGS=-fsycl{asan_flags}",
-        f"-DCMAKE_C_FLAGS={asan_flags.strip()}",
+        f"-DCMAKE_CXX_COMPILER={cxx}",
+        f"-DCMAKE_C_COMPILER={cxx}",
         f"-DPKG_CONFIG_EXECUTABLE={cfg.expand(cfg.pkgconf_exe)}",
         f"-DCMAKE_PREFIX_PATH={vcpkg}/installed/{triplet}",
         "-DSR_ENABLE_CUDA=OFF",  # no nvptx toolchain on the Windows host
@@ -205,6 +269,17 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
         "-DSYCL_LIB_SUFFIX=9",
     ]
+    # AdaptiveCpp (acpp) injects its own SYCL flags via add_sycl_to_target; the
+    # -fsycl flag is only meaningful to the clang-based intel-llvm/oneapi drivers.
+    if cfg.toolchain == "adaptivecpp":
+        if asan:
+            args += [f"-DCMAKE_CXX_FLAGS={ASAN_FLAGS}",
+                     f"-DCMAKE_C_FLAGS={ASAN_FLAGS}"]
+    else:
+        args += [
+            f"-DCMAKE_CXX_FLAGS=-fsycl{asan_flags}",
+            f"-DCMAKE_C_FLAGS={asan_flags.strip()}",
+        ]
     return args
 
 
@@ -248,6 +323,8 @@ def build(build_type: BuildType, distributed: bool = False,
         if build_dir.is_dir():
             shutil.rmtree(build_dir, ignore_errors=True)
         if cfg.is_windows:
+            if (rc := _check_windows_compiler(cfg, env)) != 0:
+                return rc
             args = _configure_args_windows(cfg, build_dir, cmake_build_type, dist, asan, tests)
         else:
             resolved = _resolve_compiler(cfg, force, env, asan=asan)
@@ -264,7 +341,7 @@ def build(build_type: BuildType, distributed: bool = False,
         (build_dir / STAMP_NAME).write_text(dist)
 
     console.info("Building...")
-    rc = _run(["cmake", "--build", str(build_dir), "--config", cmake_build_type],
+    rc = _run([_cmake(cfg), "--build", str(build_dir), "--config", cmake_build_type],
               env, cwd=root)
     if rc == 0:
         console.success("Build completed successfully!")
@@ -289,7 +366,7 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
     # ctest spawns the test binaries, so it hits the same run-time UR mismatch as
     # `run`; neutralize setvars' LD_LIBRARY_PATH for the oneAPI build.
     _neutralize_runtime_ld(cfg, env)
-    cmd = ["ctest", "--test-dir", str(build_dir), "--output-on-failure"]
+    cmd = [_ctest(cfg), "--test-dir", str(build_dir), "--output-on-failure"]
     if suite != Suite.all:
         cmd += ["-L", suite.value]
     if filter:
