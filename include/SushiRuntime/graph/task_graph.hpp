@@ -140,6 +140,31 @@ namespace SushiRuntime
                               const std::vector<sycl::event>& dependencies = {});
 
                 /**
+                 * @brief Adds an offloadable task whose buffers rotate every step.
+                 *
+                 * The double-buffered counterpart to the offload add_task overloads:
+                 * for a task that reads one allocation and writes another and swaps
+                 * the two each step (a distributed State), the touched buffers cannot
+                 * be frozen at compile time. The node carries the shared @p live_reads
+                 * / @p live_writes pointer lists, which the caller re-points before
+                 * each step; compile() marks the node offloadable without baking
+                 * handles, and the coordinator resolves them from the live lists at
+                 * dispatch. Dependency ordering and queue routing use the lists'
+                 * current contents at insertion.
+                 *
+                 * @param meta        Metadata carrying the offloadable op_id.
+                 * @param live_reads  Shared list of the buffers read this step.
+                 * @param live_writes Shared list of the buffers written this step.
+                 * @param fallback_work Host fallback run when the task is not offloaded.
+                 * @param dependencies Additional explicit user dependencies.
+                 */
+                void add_offload_dynamic(const TaskMetadata& meta,
+                                         std::shared_ptr<std::vector<void*>> live_reads,
+                                         std::shared_ptr<std::vector<void*>> live_writes,
+                                         HostWork fallback_work,
+                                         const std::vector<sycl::event>& dependencies = {});
+
+                /**
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.
                  *
                  * Links leaf nodes to a sentinel completion node, identifies root nodes

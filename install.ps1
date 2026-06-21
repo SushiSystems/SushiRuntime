@@ -67,14 +67,18 @@ Info "Repo: $RepoDir"
 
 # 4. Install the `sr` CLI.
 Info "Installing the sr CLI..."
-python -m pip install --upgrade pip | Out-Null
-python -m pip install ./cli
+python cli/install.py
 
 # 5. Run the installer pipeline.
 $flags = @("setup", "all")
 if ($Gpu)    { $flags += "--gpu" }
 if ($DryRun) { $flags += "--dry-run" }
 Info "Running: sr $($flags -join ' ')"
-python -m sushiruntime @flags
+$PipxBinDir = python -m pipx environment --value PIPX_BIN_DIR
+$SrCmd = Join-Path $PipxBinDir "sr.exe"
+if (-not (Test-Path $SrCmd)) {
+    $SrCmd = "sr"
+}
+& $SrCmd @flags
 
 Info "Done. Try: sr project test --suite functional"

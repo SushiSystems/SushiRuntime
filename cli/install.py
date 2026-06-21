@@ -47,7 +47,14 @@ def ensure_pipx() -> str:
 	                   capture_output=True).returncode == 0:
 		return f"{sys.executable} -m pipx"
 	print("[INFO] pipx not found; installing it with pip...")
-	if run([sys.executable, "-m", "pip", "install", "--user", "pipx"]) != 0:
+	
+	cmd = [sys.executable, "-m", "pip", "install", "--user", "pipx"]
+	pip_help = subprocess.run([sys.executable, "-m", "pip", "install", "--help"], 
+	                          capture_output=True, text=True).stdout
+	if "--break-system-packages" in pip_help:
+		cmd.append("--break-system-packages")
+		
+	if run(cmd) != 0:
 		sys.exit("[ERROR] Failed to install pipx.")
 	run([sys.executable, "-m", "pipx", "ensurepath"])
 	return f"{sys.executable} -m pipx"

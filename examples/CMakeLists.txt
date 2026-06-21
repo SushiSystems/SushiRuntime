@@ -1,10 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
-# ============================================================================
-# Examples. The fluent quick-start always builds; the distributed demo only
-# when the distributed layer is enabled (it links the master/worker entry
-# points).
-# ============================================================================
+# The fluent quick-start and 2-D stencil always build; the distributed demo only
+# when the distributed layer is enabled (it links the master/worker entry points).
 
 add_executable(sr_fluent_quickstart fluent_quickstart.cpp)
 target_link_libraries(sr_fluent_quickstart PRIVATE sushiruntime)
@@ -17,6 +14,19 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:sushiruntime>
             $<TARGET_FILE_DIR:sr_fluent_quickstart>)
+endif()
+
+add_executable(sr_fluent_stencil_2d fluent_stencil_2d.cpp)
+target_link_libraries(sr_fluent_stencil_2d PRIVATE sushiruntime)
+set_target_properties(sr_fluent_stencil_2d PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON)
+add_sycl_to_target(TARGET sr_fluent_stencil_2d SOURCES fluent_stencil_2d.cpp)
+if(WIN32)
+    add_custom_command(TARGET sr_fluent_stencil_2d POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:sushiruntime>
+            $<TARGET_FILE_DIR:sr_fluent_stencil_2d>)
 endif()
 
 if(SR_ENABLE_DISTRIBUTED)

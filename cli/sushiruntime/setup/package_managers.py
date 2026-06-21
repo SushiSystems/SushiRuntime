@@ -25,10 +25,19 @@ def _run(cmd: list[str], dry_run: bool, *, check: bool = False) -> int:
     if dry_run:
         console.info("(dry-run) not executed")
         return 0
-    result = subprocess.run(cmd)
-    if check and result.returncode != 0:
-        console.error(f"Command failed ({result.returncode}).")
-    return result.returncode
+    process = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace"
+    )
+    if process.stdout:
+        for line in iter(process.stdout.readline, ""):
+            # We must use print(line, end="") but rich.console.print doesn't support end="" perfectly
+            # if we want to avoid extra newlines. We can just strip the newline and let rich add it.
+            console.console.print(line.rstrip("\n"), markup=False, highlight=False)
+    process.wait()
+    if check and process.returncode != 0:
+        console.error(f"Command failed ({process.returncode}).")
+    return process.returncode
 
 
 class IPackageManager(ABC):

@@ -39,6 +39,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/buffer.hpp>
+#include <SushiRuntime/api/launch.hpp>
 #include <SushiRuntime/api/detail/run_report_builder.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -97,6 +98,165 @@ namespace SushiRuntime
         template <class F>
         inline constexpr bool is_range_kernel_v =
             std::is_invocable_v<F, std::size_t, std::size_t, sycl::handler&>;
+
+        namespace detail
+        {
+            // Pulls the read/write dependency key out of either data handle. A
+            // Buffer has one base address; a State exposes its current buffer as the
+            // read key and its next buffer as the write key. These free functions let
+            // the Reads/Writes/In/Out wrappers accept both handle types uniformly.
+            template <typename T>
+            inline void* read_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
+            template <typename T>
+            inline void* read_key_of(const State<T>& s) noexcept { return s.read_key(); }
+            template <typename T>
+            inline void* write_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
+            template <typename T>
+            inline void* write_key_of(const State<T>& s) noexcept { return s.write_key(); }
+        } // namespace detail
+
+        /**
+         * @brief Names the data a task reads, as a list of dependency keys.
+         *
+         * The ergonomic counterpart to a hand-built std::vector<void*>: pass the
+         * Buffers and States a task reads and this collects their read keys, so the
+         * caller never spells dependency_key()/read_key() by hand. Used by the
+         * explicit-tracking and offload add() overloads to order tasks by data.
+         */
+        struct Reads
+        {
+            std::vector<void*> keys;  /**< Read dependency keys, in argument order. */
+
+            /** @brief Collects the read key of each handle passed. */
+            template <class... Handles>
+            explicit Reads(const Handles&... hs) : keys{ detail::read_key_of(hs)... } {}
+        };
+
+        /**
+         * @brief Names the data a task writes, as a list of dependency keys.
+         *
+         * As Reads, but gathers write keys (a State contributes its next buffer).
+         */
+        struct Writes
+        {
+            std::vector<void*> keys;  /**< Write dependency keys, in argument order. */
+
+            /** @brief Collects the write key of each handle passed. */
+            template <class... Handles>
+            explicit Writes(const Handles&... hs) : keys{ detail::write_key_of(hs)... } {}
+        };
+
+        /**
+         * @brief A kernel argument captured for read, with auto dependency tracking.
+         *
+         * Wraps a Buffer so add() can both register the read and hand the kernel the
+         * raw element pointer — the caller writes the data flow once and gets pointer
+         * capture and dependency ordering together. @ref ACCESS marks the intent.
+         *
+         * @tparam T Element type of the wrapped buffer.
+         */
+        template <typename T>
+        struct In
+        {
+            const T* ptr;  /**< Element pointer handed to the kernel. */
+            void* key;     /**< Read dependency key for this argument. */
+            static constexpr bool reads = true;   /**< Contributes a read key. */
+            static constexpr bool writes = false; /**< Contributes no write key. */
+
+            /** @brief Captures @p b as a read-only kernel argument. */
+            In(const Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()) {}
+        };
+
+        /**
+         * @brief A kernel argument captured for write, with auto dependency tracking.
+         * @tparam T Element type of the wrapped buffer.
+         */
+        template <typename T>
+        struct Out
+        {
+            T* ptr;        /**< Element pointer handed to the kernel. */
+            void* key;     /**< Write dependency key for this argument. */
+            static constexpr bool reads = false;  /**< Contributes no read key. */
+            static constexpr bool writes = true;  /**< Contributes a write key. */
+
+            /** @brief Captures @p b as a write-only kernel argument. */
+            Out(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()) {}
+        };
+
+        /**
+         * @brief A kernel argument captured for read-modify-write tracking.
+         * @tparam T Element type of the wrapped buffer.
+         */
+        template <typename T>
+        struct InOut
+        {
+            T* ptr;        /**< Element pointer handed to the kernel. */
+            void* key;     /**< Dependency key counted as both read and write. */
+            static constexpr bool reads = true;   /**< Contributes a read key. */
+            static constexpr bool writes = true;  /**< Contributes a write key. */
+
+            /** @brief Captures @p b as a read-and-write kernel argument. */
+            InOut(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()) {}
+        };
+
+        // Class-template argument deduction so the wrapper element type follows the
+        // buffer: In(buf), Out(buf), InOut(buf) need no <T>.
+        template <typename T> In(const Buffer<T>&) -> In<T>;
+        template <typename T> Out(Buffer<T>&) -> Out<T>;
+        template <typename T> InOut(Buffer<T>&) -> InOut<T>;
+
+        namespace detail
+        {
+            // True for the In/Out/InOut kernel-argument wrappers. Lets the
+            // auto-capture add() overload tell its capture arguments from the
+            // trailing callable.
+            template <class T> struct is_capture : std::false_type {};
+            template <class T> struct is_capture<In<T>>    : std::true_type {};
+            template <class T> struct is_capture<Out<T>>   : std::true_type {};
+            template <class T> struct is_capture<InOut<T>> : std::true_type {};
+            template <class T>
+            inline constexpr bool is_capture_v = is_capture<std::decay_t<T>>::value;
+
+            // Calls fn(idx, ptr0, ptr1, ...) by unpacking the captured pointer
+            // tuple. Kept free so it is usable from inside a device lambda; all
+            // operations (std::get over a tuple of pointers) are device-safe.
+            template <class Fn, int N, class Tuple, std::size_t... Is>
+            inline void invoke_with_pointers(const Fn& fn, sycl::id<N> idx,
+                                             const Tuple& ptrs, std::index_sequence<Is...>)
+            {
+                fn(idx, std::get<Is>(ptrs)...);
+            }
+
+            // Reads each coupled-input view's current pointer into a plain tuple,
+            // host-side at submit time. A StateView holds the live current/next
+            // pointers for the step, so dereferencing here (not in the kernel) lets
+            // the device lambda capture raw pointers and still follow the swap.
+            template <class Views, std::size_t... Is>
+            inline auto views_current(const Views& views, std::index_sequence<Is...>)
+            {
+                return std::make_tuple(std::get<Is>(views)->cur...);
+            }
+
+            // Calls fn(i, cur, next, in0, in1, ...) by unpacking the read-input
+            // pointer tuple. Device-safe: every tuple element is a raw pointer.
+            template <class Fn, class T, class Tuple, std::size_t... Is>
+            inline void invoke_state(const Fn& fn, std::size_t i,
+                                     const T* cur, T* next,
+                                     const Tuple& ins, std::index_sequence<Is...>)
+            {
+                fn(i, cur, next, std::get<Is>(ins)...);
+            }
+
+            // Gathers the read keys of a tuple of State pointers, in order. Called
+            // at compile time so the dependency tracker labels every coupled input
+            // consistently with the canonical single-State overload.
+            template <class StatesTuple, std::size_t... Is>
+            inline std::vector<void*> read_keys_of(const StatesTuple& states,
+                                                   std::index_sequence<Is...>)
+            {
+                return std::vector<void*>{ std::get<Is>(states)->read_key()... };
+            }
+        } // namespace detail
 
         /**
          * @brief A chainable graph of tasks built fluently, then run.
@@ -175,6 +335,158 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Adds a multidimensional per-element task over an Extent.
+                 *
+                 * The 2-D/3-D counterpart of add(std::size_t, fn): the runtime
+                 * submits a parallel_for over the Extent's box and invokes @p fn with
+                 * the global sycl::id of each work-item. When the Extent carries an
+                 * origin offset the iteration covers only that sub-box, so a kernel
+                 * can skip a halo or touch just a ghost layer. Plain 1-D counts keep
+                 * using the std::size_t overloads; pass a 1-D Extent only when you
+                 * want an origin offset.
+                 *
+                 * @tparam N  Iteration rank (1, 2, or 3).
+                 * @param e   The iteration box (extent and origin offset).
+                 * @param fn  Callable invoked as fn(sycl::id<N>) per work-item.
+                 * @return *this, for chaining.
+                 */
+                template <int N, class F,
+                          std::enable_if_t<std::is_invocable_v<F, sycl::id<N>>, int> = 0>
+                Graph& add(Extent<N> e, F&& fn)
+                {
+                    specs_.push_back([fn = std::forward<F>(fn), e](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, e](sycl::handler& h)
+                        {
+                            const sycl::id<N> off = e.offset;
+                            h.parallel_for(e.extent,
+                                           [fn, off](sycl::id<N> idx) { fn(idx + off); });
+                        });
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a tiled task over an NdRange (work-group execution).
+                 *
+                 * Submits a parallel_for over the NdRange and hands @p fn a
+                 * sycl::nd_item<N>, exposing the work-group model — barriers, local
+                 * (shared) memory, sub-groups — that a flat parallel_for cannot. Use
+                 * it for blocked algorithms (tiled GEMM, shared-memory stencils)
+                 * where neighbouring work-items must cooperate.
+                 *
+                 * @tparam N  Iteration rank (1, 2, or 3).
+                 * @param r   Global and local ranges; global must tile by local.
+                 * @param fn  Callable invoked as fn(sycl::nd_item<N>) per work-item.
+                 * @return *this, for chaining.
+                 */
+                template <int N, class F,
+                          std::enable_if_t<std::is_invocable_v<F, sycl::nd_item<N>>, int> = 0>
+                Graph& add(NdRange<N> r, F&& fn)
+                {
+                    specs_.push_back([fn = std::forward<F>(fn), r](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, r](sycl::handler& h)
+                        {
+                            h.parallel_for(r.to_nd_range(),
+                                           [fn](sycl::nd_item<N> it) { fn(it); });
+                        });
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a 1-D per-element task with handle-based read/write
+                 *        tracking.
+                 *
+                 * The ergonomic form of the explicit-tracking overload: pass the
+                 * Buffers/States the task reads and writes as Reads(...)/Writes(...)
+                 * instead of building a std::vector<void*> by hand. The dependency
+                 * tracker still orders the task by the keys those wrappers gathered.
+                 *
+                 * @param reads  Handles this task reads (their read keys).
+                 * @param writes Handles this task writes (their write keys).
+                 * @param n      Iteration range; fn is called for each i in [0, n).
+                 * @param fn     Callable invoked as fn(i) for each index i.
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
+                Graph& add(const Reads& reads, const Writes& writes,
+                           std::size_t n, F&& fn)
+                {
+                    return add(reads.keys, writes.keys, n, std::forward<F>(fn));
+                }
+
+                /**
+                 * @brief Adds an N-D per-element task with handle-based tracking.
+                 *
+                 * As the 1-D Reads/Writes overload, over an Extent box so the same
+                 * ergonomic dependency wrappers serve multidimensional kernels.
+                 *
+                 * @tparam N  Iteration rank (1, 2, or 3).
+                 * @param reads  Handles this task reads.
+                 * @param writes Handles this task writes.
+                 * @param e   The iteration box (extent and origin offset).
+                 * @param fn  Callable invoked as fn(sycl::id<N>) per work-item.
+                 * @return *this, for chaining.
+                 */
+                template <int N, class F,
+                          std::enable_if_t<std::is_invocable_v<F, sycl::id<N>>, int> = 0>
+                Graph& add(const Reads& reads, const Writes& writes,
+                           Extent<N> e, F&& fn)
+                {
+                    const std::vector<void*> r = reads.keys;
+                    const std::vector<void*> w = writes.keys;
+                    specs_.push_back([fn = std::forward<F>(fn), e, r, w](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, e](sycl::handler& h)
+                        {
+                            const sycl::id<N> off = e.offset;
+                            h.parallel_for(e.extent,
+                                           [fn, off](sycl::id<N> idx) { fn(idx + off); });
+                        }, r, w);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds an N-D per-element task capturing its buffer arguments.
+                 *
+                 * The most direct form: pass the buffers a kernel touches as
+                 * In(buf)/Out(buf)/InOut(buf) and the runtime both registers the
+                 * reads/writes and hands @p fn the raw element pointers, in argument
+                 * order, after the index. The caller writes the data flow once and
+                 * gets pointer capture and dependency ordering together.
+                 *
+                 * @tparam N    Iteration rank (1, 2, or 3).
+                 * @tparam Cap0 First capture wrapper (guarantees at least one).
+                 * @tparam Args Remaining capture wrappers, then the trailing callable.
+                 * @param e     The iteration box (extent and origin offset).
+                 * @param c0    First captured argument.
+                 * @param args  Remaining captured arguments and the callable last.
+                 * @return *this, for chaining.
+                 */
+                template <int N, class Cap0, class... Args,
+                          std::enable_if_t<detail::is_capture_v<Cap0> &&
+                                           (sizeof...(Args) >= 1), int> = 0>
+                Graph& add(Extent<N> e, Cap0 c0, Args&&... args)
+                {
+                    // Args is one trailing pack so it deduces; the last element is the
+                    // callable and the rest are further captures. Splitting here keeps
+                    // the call site reading In(a), Out(c), fn with fn last.
+                    auto tup = std::forward_as_tuple(std::forward<Args>(args)...);
+                    constexpr std::size_t M = sizeof...(Args);
+                    return emit_captured(e, c0, tup, std::make_index_sequence<M - 1>{},
+                                         std::get<M - 1>(tup));
+                }
+
+                /**
                  * @brief Adds the per-step update rule for a time-evolving State.
                  *
                  * This is the canonical stepped task: it reads the state's current
@@ -219,98 +531,81 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a coupled update rule reading one other field.
+                 * @brief Adds a multidimensional per-step update rule for a State.
                  *
-                 * Writes @p out's next field from @p out's current field and the
-                 * current field of @p in0 — the building block for coupled systems
-                 * (e.g. reaction-diffusion). All reads see the previous step's data
-                 * (a Jacobi update): every State advances only after all of a step's
-                 * kernels have run, so writing one field never changes what another
-                 * reads in the same step. Each field must have exactly one update
-                 * rule per step.
+                 * The 2-D/3-D form of add(State, fn): the runtime iterates the Extent
+                 * box (whole field, or a sub-box for boundary/halo handling) and
+                 * hands @p fn the global index alongside the current/next pointers.
+                 * The double-buffer swap is followed exactly as in the 1-D form.
                  *
-                 * @tparam T   Element type of the written field.
-                 * @tparam A   Element type of the read field.
-                 * @param out  The field this rule writes; must outlive the graph.
-                 * @param in0  A field this rule reads; must outlive the graph.
-                 * @param fn   Invoked as fn(i, const T* cur, T* next, const A* a).
+                 * @tparam T  Element type of the State.
+                 * @tparam N  Iteration rank (1, 2, or 3).
+                 * @param s   The state this rule evolves; must outlive the graph.
+                 * @param e   The iteration box (extent and origin offset).
+                 * @param fn  Callable invoked as fn(sycl::id<N>, const T* cur, T* next).
                  * @return *this, for chaining.
                  */
-                template <typename T, typename A, class F,
-                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
-                              const T*, T*, const A*>, int> = 0>
-                Graph& add(State<T>& out, State<A>& in0, F&& fn)
+                template <typename T, int N, class F,
+                          std::enable_if_t<std::is_invocable_v<F,
+                              sycl::id<N>, const T*, T*>, int> = 0>
+                Graph& add(State<T>& s, Extent<N> e, F&& fn)
                 {
-                    auto ov = view_for(out);
-                    auto av = view_for(in0);
-                    State<T>* op = &out;
-                    State<A>* a0 = &in0;
+                    auto view = view_for(s);
+                    State<T>* sp = &s;
 
-                    specs_.push_back([fn = std::forward<F>(fn), ov, av, op, a0](BackingGraph& bg)
+                    specs_.push_back([fn = std::forward<F>(fn), view, sp, e](BackingGraph& bg)
                     {
-                        const std::size_t n = op->size();
-                        bg.add_node([fn, ov, av, n](sycl::handler& h)
+                        bg.add_node([fn, view, e](sycl::handler& h)
                         {
-                            const T* cur = ov->cur;
-                            T* next = ov->next;
-                            const A* a = av->cur;
-                            h.parallel_for(sycl::range<1>(n),
-                                           [=](sycl::id<1> i) { fn(i[0], cur, next, a); });
-                        }, { op->read_key(), a0->read_key() }, { op->write_key() });
+                            const T* cur = view->cur;
+                            T* next = view->next;
+                            const sycl::id<N> off = e.offset;
+                            h.parallel_for(e.extent, [=](sycl::id<N> idx)
+                            {
+                                fn(idx + off, cur, next);
+                            });
+                        }, { sp->read_key() }, { sp->write_key() });
                     });
 
-                    register_advance(out, ov);
+                    register_advance(s, view);
                     ++task_count_;
                     dirty_ = true;
                     return *this;
                 }
 
                 /**
-                 * @brief Adds a coupled update rule reading two other fields.
+                 * @brief Adds a coupled update rule reading any number of fields.
                  *
-                 * As the single-input coupling overload, with two read fields.
+                 * Writes @p out's next field from @p out's current field and the
+                 * current field of one or more other States — the building block for
+                 * coupled systems (e.g. reaction-diffusion with several species). All
+                 * reads see the previous step's data (a Jacobi update): every State
+                 * advances only after all of a step's kernels have run, so writing one
+                 * field never changes what another reads in the same step. Each field
+                 * must have exactly one update rule per step.
                  *
-                 * @tparam T   Element type of the written field.
-                 * @tparam A   Element type of the first read field.
-                 * @tparam B   Element type of the second read field.
+                 * @tparam T    Element type of the written field.
+                 * @tparam A    Element type of the first read field.
+                 * @tparam Rest Further read States, then the update callable last.
                  * @param out  The field this rule writes; must outlive the graph.
                  * @param in0  First read field; must outlive the graph.
-                 * @param in1  Second read field; must outlive the graph.
-                 * @param fn   Invoked as fn(i, const T* cur, T* next, const A* a,
-                 *             const B* b).
+                 * @param rest Further read fields and the callable last. The callable
+                 *             is invoked as fn(i, const T* cur, T* next, const A* a,
+                 *             ...); one read pointer per input, in order.
                  * @return *this, for chaining.
                  */
-                template <typename T, typename A, typename B, class F,
-                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
-                              const T*, T*, const A*, const B*>, int> = 0>
-                Graph& add(State<T>& out, State<A>& in0, State<B>& in1, F&& fn)
+                template <typename T, typename A, class... Rest,
+                          std::enable_if_t<(sizeof...(Rest) >= 1), int> = 0>
+                Graph& add(State<T>& out, State<A>& in0, Rest&&... rest)
                 {
-                    auto ov = view_for(out);
-                    auto av = view_for(in0);
-                    auto bv = view_for(in1);
-                    State<T>* op = &out;
-                    State<A>* a0 = &in0;
-                    State<B>* b1 = &in1;
-
-                    specs_.push_back([fn = std::forward<F>(fn), ov, av, bv, op, a0, b1](BackingGraph& bg)
-                    {
-                        const std::size_t n = op->size();
-                        bg.add_node([fn, ov, av, bv, n](sycl::handler& h)
-                        {
-                            const T* cur = ov->cur;
-                            T* next = ov->next;
-                            const A* a = av->cur;
-                            const B* b = bv->cur;
-                            h.parallel_for(sycl::range<1>(n),
-                                           [=](sycl::id<1> i) { fn(i[0], cur, next, a, b); });
-                        }, { op->read_key(), a0->read_key(), b1->read_key() },
-                           { op->write_key() });
-                    });
-
-                    register_advance(out, ov);
-                    ++task_count_;
-                    dirty_ = true;
-                    return *this;
+                    // Rest is one trailing pack (so it deduces); its last element is
+                    // the callable and the rest are further read States. Splitting
+                    // here keeps the call site reading add(out, a, b, c, fn).
+                    auto tup = std::forward_as_tuple(std::forward<Rest>(rest)...);
+                    constexpr std::size_t M = sizeof...(Rest);
+                    return emit_coupled(out, in0, tup,
+                                        std::make_index_sequence<M - 1>{},
+                                        std::get<M - 1>(tup));
                 }
 
                 /**
@@ -402,6 +697,111 @@ namespace SushiRuntime
                                 });
                             });
                     });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds an offloadable task naming its data with Reads/Writes.
+                 *
+                 * The ergonomic form of the offload overload: pass the touched
+                 * Buffers/States as Reads(...)/Writes(...) instead of building the
+                 * dependency-key vectors by hand. Behaviour is otherwise identical —
+                 * remote when a willing worker exists, the local fallback otherwise.
+                 *
+                 * @param op     OpID of the kernel, e.g. "vec.add"_op.
+                 * @param n      Iteration range for the local fallback parallel_for.
+                 * @param reads  Handles this task reads.
+                 * @param writes Handles this task writes.
+                 * @param local  Local fallback invoked as local(i) for i in [0, n).
+                 * @param params Scalar params copied into TaskMetadata (index order).
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
+                Graph& add(::SushiRuntime::Graph::OpID op, std::size_t n,
+                           const Reads& reads, const Writes& writes,
+                           F&& local,
+                           std::initializer_list<std::uint64_t> params = {})
+                {
+                    return add(op, n, reads.keys, writes.keys,
+                               std::forward<F>(local), params);
+                }
+
+                /**
+                 * @brief Adds an offloadable per-step update rule for a State.
+                 *
+                 * The distributed counterpart of add(State, fn): the State's step may
+                 * ship to a worker (when @p op is registered cluster-wide and a worker
+                 * is willing) or run its local fallback, with the same graph correct
+                 * either way. Because a State rotates its allocations each step, the
+                 * node tracks the step's read/write buffers through live pointer lists
+                 * the runtime re-points before every step, so the compiled plan stays
+                 * replayable while the offload follows the double-buffer swap. Register
+                 * the State with State::distributed() first so both allocations can
+                 * cross to a worker.
+                 *
+                 * @tparam T  Element type of the State.
+                 * @param op  OpID of the kernel, e.g. "heat.step"_op.
+                 * @param s   The state this rule evolves; must outlive the graph.
+                 * @param local Local fallback invoked as local(i, const T* cur, T* next).
+                 * @param params Scalar params copied into TaskMetadata (index order).
+                 * @return *this, for chaining.
+                 */
+                template <typename T, class F,
+                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
+                                                               const T*, T*>, int> = 0>
+                Graph& add(::SushiRuntime::Graph::OpID op, State<T>& s, F&& local,
+                           std::initializer_list<std::uint64_t> params = {})
+                {
+                    auto view = view_for(s);
+                    State<T>* sp = &s;
+                    auto live_reads  = std::make_shared<std::vector<void*>>(
+                        std::vector<void*>{ s.read_key() });
+                    auto live_writes = std::make_shared<std::vector<void*>>(
+                        std::vector<void*>{ s.write_key() });
+                    std::vector<std::uint64_t> pv(params);
+
+                    specs_.push_back([fn = std::forward<F>(local), view, sp, op, pv,
+                                      live_reads, live_writes](BackingGraph& bg)
+                    {
+                        ::SushiRuntime::Graph::TaskMetadata meta{};
+                        meta.name  = "fluent_offload_state";
+                        meta.op_id = op;
+                        for (std::size_t i = 0; i < pv.size() &&
+                             i < ::SushiRuntime::Graph::TaskMetadata::K_MAX_PARAMS; ++i)
+                            meta.set_param<std::uint64_t>(static_cast<int>(i), pv[i]);
+
+                        const std::size_t n = sp->size();
+                        bg.add_offload_dynamic(meta, live_reads, live_writes,
+                            [fn, view, n](sycl::queue& q,
+                                          const std::vector<sycl::event>&) -> sycl::event
+                            {
+                                // Read the live pointers each submit so the local
+                                // fallback follows the swap exactly as the offload does.
+                                const T* cur = view->cur;
+                                T* next = view->next;
+                                return q.submit([&](sycl::handler& h)
+                                {
+                                    h.parallel_for(sycl::range<1>(n),
+                                        [fn, cur, next](sycl::id<1> i)
+                                        {
+                                            fn(i[0], cur, next);
+                                        });
+                                });
+                            });
+                    });
+
+                    register_advance(s, view);
+
+                    // Re-point the live IO at the step's current/next allocations
+                    // before each step so the coordinator resolves the right handles.
+                    dist_io_updaters_.push_back([view, live_reads, live_writes]()
+                    {
+                        (*live_reads)[0]  = view->cur;
+                        (*live_writes)[0] = view->next;
+                    });
+
                     ++task_count_;
                     dirty_ = true;
                     return *this;
@@ -565,6 +965,11 @@ namespace SushiRuntime
                     std::size_t executed = 0;
                     while (keep_going(executed))
                     {
+                        // Re-point any double-buffered offload node's live IO at this
+                        // step's allocations before the plan runs (no-op otherwise).
+                        for (auto& update_io : dist_io_updaters_)
+                            update_io();
+
                         reset_plan_state();
                         engine.execute(plan_); // lvalue -> non-consuming replay
 
@@ -624,6 +1029,93 @@ namespace SushiRuntime
                     });
                 }
 
+                // Appends a capture wrapper's dependency key to the read and/or
+                // write list according to the access it declares. An InOut counts
+                // toward both, so a read-modify-write task orders correctly.
+                template <class Cap>
+                static void collect_keys(std::vector<void*>& reads,
+                                         std::vector<void*>& writes, const Cap& c)
+                {
+                    if (Cap::reads)
+                        reads.push_back(c.key);
+                    if (Cap::writes)
+                        writes.push_back(c.key);
+                }
+
+                // Emits the node for the variadic coupled-State overload once the
+                // trailing callable has been split from the read States. @p ins
+                // selects the further read States out of @p tup; @p in0 is the first.
+                template <typename T, typename A, class Tuple, std::size_t... Is, class F>
+                Graph& emit_coupled(State<T>& out, State<A>& in0, Tuple& tup,
+                                    std::index_sequence<Is...>, F&& fn)
+                {
+                    constexpr std::size_t K = 1 + sizeof...(Is);  // number of read inputs
+                    using Seq = std::make_index_sequence<K>;
+
+                    auto ov = view_for(out);
+                    auto views = std::make_tuple(view_for(in0), view_for(std::get<Is>(tup))...);
+                    auto states = std::make_tuple(&out, &in0, &std::get<Is>(tup)...);
+                    State<T>* op = &out;
+
+                    specs_.push_back([fn = std::forward<F>(fn), ov, views, states, op]
+                                     (BackingGraph& bg)
+                    {
+                        const std::size_t n = op->size();
+                        auto reads = detail::read_keys_of(states,
+                            std::make_index_sequence<K + 1>{});
+                        bg.add_node([fn, ov, views, n](sycl::handler& h)
+                        {
+                            const T* cur = ov->cur;
+                            T* next = ov->next;
+                            // Resolve the input current pointers host-side at submit
+                            // so the device lambda captures raw pointers, not views.
+                            auto ins_ptrs = detail::views_current(views, Seq{});
+                            h.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i)
+                            {
+                                detail::invoke_state(fn, i[0], cur, next, ins_ptrs, Seq{});
+                            });
+                        }, reads, { op->write_key() });
+                    });
+
+                    register_advance(out, ov);
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                // Emits the node for the In/Out/InOut capture overload once the
+                // trailing callable has been split from the capture wrappers. @p caps
+                // selects the further captures out of @p tup; @p c0 is the first.
+                template <int N, class Cap0, class Tuple, std::size_t... Is, class F>
+                Graph& emit_captured(Extent<N> e, Cap0 c0, Tuple& tup,
+                                     std::index_sequence<Is...>, F&& fn)
+                {
+                    std::vector<void*> reads;
+                    std::vector<void*> writes;
+                    collect_keys(reads, writes, c0);
+                    (collect_keys(reads, writes, std::get<Is>(tup)), ...);
+
+                    auto ptrs = std::make_tuple(c0.ptr, std::get<Is>(tup).ptr...);
+                    constexpr std::size_t K = 1 + sizeof...(Is);
+
+                    specs_.push_back([fn = std::forward<F>(fn), e, reads, writes, ptrs]
+                                     (BackingGraph& bg)
+                    {
+                        bg.add_node([fn, e, ptrs](sycl::handler& h)
+                        {
+                            const sycl::id<N> off = e.offset;
+                            h.parallel_for(e.extent, [fn, off, ptrs](sycl::id<N> idx)
+                            {
+                                detail::invoke_with_pointers(
+                                    fn, idx + off, ptrs, std::make_index_sequence<K>{});
+                            });
+                        }, reads, writes);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
                 // Builds a fresh backing graph from the recorded specs, compiles it,
                 // and caches the plan. The compiled plan snapshots its own replay
                 // baseline (in-degrees) so the fluent layer never touches Node's
@@ -657,6 +1149,11 @@ namespace SushiRuntime
                 // One per State update rule: advances the state and re-points its
                 // view at the swapped buffers, run once per step boundary by run(n).
                 std::vector<std::function<void()>> step_advancers_;
+
+                // One per double-buffered offload rule: re-points the node's live IO
+                // pointer lists at the step's current/next allocations before each
+                // step. Empty unless a distributed State step was added.
+                std::vector<std::function<void()>> dist_io_updaters_;
 
                 // One shared StateView per State, captured by every kernel that
                 // touches it. Type-erased; view_for() casts back to the typed view.
@@ -841,6 +1338,11 @@ namespace SushiRuntime
     // stays API::Graph (reached through auto) because the name Graph already
     // denotes a namespace at this scope.
     using API::Runtime;
+    using API::Reads;
+    using API::Writes;
+    using API::In;
+    using API::Out;
+    using API::InOut;
     using Core::Error;
     using Core::Errc;
     using Core::RunReport;
