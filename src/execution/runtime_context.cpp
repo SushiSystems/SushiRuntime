@@ -593,10 +593,21 @@ namespace SushiRuntime
             return impl_->coordinator ? impl_->coordinator->redispatched_count() : 0;
         }
 
+        uint64_t RuntimeContext::distributed_stale_writeback_count() const
+        {
+            return impl_->coordinator ? impl_->coordinator->stale_writeback_count() : 0;
+        }
+
         void RuntimeContext::distributed_set_liveness_timeout(std::chrono::milliseconds timeout)
         {
             if (impl_->coordinator)
                 impl_->coordinator->set_liveness_timeout(timeout);
+        }
+
+        void RuntimeContext::distributed_set_task_deadline(std::chrono::milliseconds deadline)
+        {
+            if (impl_->coordinator)
+                impl_->coordinator->set_task_deadline(deadline);
         }
 
         int RuntimeContext::distributed_alive_workers() const

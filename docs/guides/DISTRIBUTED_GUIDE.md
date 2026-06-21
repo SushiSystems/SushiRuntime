@@ -303,6 +303,54 @@ fabric and a real TCP loopback path, byte-for-byte identical above the transport
 
 ---
 
+## 11a. Reliability & failure model
+
+The distributed layer is an **offload accelerator**, not a highly-available
+database. Its safety contract is deliberately narrow and worth stating exactly,
+because what it does *not* promise is as important as what it does.
+
+**The safety property.** The master is the single authoritative writer of every
+registered buffer. The contract is **determinism under faults**: whatever the
+network does — drop, duplicate, reorder, delay, or partition messages, or kill a
+worker — a run that completes ends with the **same bytes** in the master's
+buffers as a fault-free run. The `Integration_DistributedJepsenTest` soak asserts
+exactly this under a seeded random nemesis.
+
+**What protects that property.** Five mechanisms compose:
+
+1. **Worker heartbeats** (`set_liveness_timeout`, default 5 s). A silent worker is
+   declared dead and its in-flight tasks re-dispatched.
+2. **Per-task deadline** (`distributed_set_task_deadline`, default 30 s). A second,
+   independent axis: a task with no result within the bound is re-dispatched even
+   if its worker is *still heartbeating*. This closes the gap where a single lost
+   `TASK_DISPATCH`/`TASK_RESULT` would otherwise hang a task forever.
+3. **Version-fenced writeback.** Each (re)dispatch stamps a fresh version onto the
+   task's outputs; the master rejects any writeback carrying an older version, so a
+   slow/zombie worker's late result can never clobber a newer one (a Kleppmann
+   fencing token).
+4. **Worker idempotency.** A duplicated dispatch (transport retransmit) is
+   deduplicated by `task_id`, so the kernel runs at most once per id.
+5. **Transparent local fallback.** After `MAX_OFFLOAD_ATTEMPTS` failed remote
+   tries, the node is pinned local and runs on the master — so a permanently
+   unreachable worker degrades to a slower local run, never a stall.
+
+Workers also bound their input-pull wait (`set_pull_timeout`) and their job queue
+(`set_max_jobs`, fast-failing when full), so a lost buffer push or a flood cannot
+hang or balloon a worker.
+
+**What is explicitly NOT provided (by design).**
+
+- **No master failover.** The master is a **single point of failure**: if it dies,
+  the run dies. This is intentional for an offload accelerator; if you need an HA
+  control plane, that belongs above this layer, not inside it.
+- **No cross-run durability.** Buffer versions and the cluster are in-memory and
+  per-run; there is no persistence or recovery log.
+- **No Byzantine tolerance.** Workers are trusted to run the registered kernel
+  faithfully; the layer defends against *crashes and lost messages*, not malice.
+  (See [`SECURITY.md`](../../SECURITY.md) for the trust boundary.)
+
+---
+
 ## 12. v1 limitations (know these before you scale out)
 
 - **Homogeneous cluster only.** Raw trivially-copyable serialization assumes the

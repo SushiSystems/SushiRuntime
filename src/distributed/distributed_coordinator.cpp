@@ -69,14 +69,28 @@ namespace SushiRuntime
             // every live worker can run it (the negotiated common kernel set).
             std::unordered_map<uint32_t, int> op_support;
 
-            struct PendingTask { Graph::Node* node = nullptr; int worker = -1; };
+            struct PendingTask
+            {
+                Graph::Node*      node = nullptr;
+                int               worker = -1;
+                Clock::time_point dispatched_at; // for the per-task deadline
+            };
             std::unordered_map<uint64_t, PendingTask> pending; // task_id -> {node, worker}
             std::atomic<uint64_t>            next_task_id{1};
+
+            // Per-task deadline: a dispatched task must produce a result within this
+            // bound or it is treated as failed and re-dispatched. This is a SECOND
+            // liveness axis, independent of heartbeats: a worker can keep
+            // heartbeating yet a single lost TASK_DISPATCH or TASK_RESULT would
+            // otherwise leave the task pending forever. 0 disables it.
+            std::atomic<int64_t>             task_deadline_ms{30000};
 
             // "ran where" telemetry, so silent local fallback is observable.
             std::atomic<uint64_t>            offloaded_count{0};
             std::atomic<uint64_t>            declined_count{0};
             std::atomic<uint64_t>            redispatched_count{0};
+            // Writebacks rejected by the version fence (stale/superseded results).
+            std::atomic<uint64_t>            stale_writebacks{0};
 
             // --- liveness monitor: declares a silent worker dead and re-injects
             //     its in-flight tasks so the master never stalls on a lost peer --
@@ -95,6 +109,10 @@ namespace SushiRuntime
             // Collects tasks orphaned by a now-dead worker (under mtx); the caller
             // re-injects them via on_resubmit outside the lock.
             std::vector<Graph::Node*> reap_dead_workers();
+            // Collects tasks whose per-task deadline elapsed while their worker is
+            // still alive (a lost dispatch/result); re-injected like dead-worker
+            // orphans. Returns the orphan nodes; caller resubmits outside the lock.
+            std::vector<Graph::Node*> reap_timed_out_tasks();
         };
 
         void DistributedCoordinator::Impl::handle_message(int peer, MsgType type,
@@ -114,6 +132,15 @@ namespace SushiRuntime
                 case MsgType::REGISTER_HELLO:
                 {
                     ByteReader r(payload);
+                    uint32_t ver = r.get<uint32_t>();
+                    if (!r.ok() || ver != PROTOCOL_VERSION)
+                    {
+                        // A peer speaking a different protocol must not join: its
+                        // raw structs would be parsed against an incompatible layout.
+                        SR_LOG_ERROR("Worker {} HELLO rejected: protocol v{} != v{}.",
+                                     peer, ver, PROTOCOL_VERSION);
+                        break;
+                    }
                     uint32_t n = r.get<uint32_t>();
                     std::vector<uint32_t> ops;
                     for (uint32_t i = 0; i < n && r.ok(); ++i) ops.push_back(r.get<uint32_t>());
@@ -156,6 +183,19 @@ namespace SushiRuntime
                     auto push = BufferPushMsg::deserialize(payload);
                     if (auto e = buffers->lookup_by_id(push.handle.id))
                     {
+                        // Version fence (Kleppmann fencing token): each (re)dispatch
+                        // bumps the output version, so a writeback carrying a version
+                        // older than the buffer's current one belongs to a superseded
+                        // dispatch — e.g. a worker we declared dead that was only slow.
+                        // Accepting it would clobber a newer result, so we drop it.
+                        if (push.handle.version < e->handle.version)
+                        {
+                            stale_writebacks.fetch_add(1, std::memory_order_relaxed);
+                            SR_LOG_WARN("Dropping stale writeback for buffer {} "
+                                        "(v{} < current v{}).", push.handle.id.value,
+                                        push.handle.version, e->handle.version);
+                            break;
+                        }
                         uint64_t n = push.data.size();
                         if (n > e->handle.size_bytes) n = e->handle.size_bytes;
                         std::memcpy(e->ptr, push.data.data(), n);
@@ -178,8 +218,34 @@ namespace SushiRuntime
                             workers[peer].inflight--;
                     }
                     // A stale result for a task we already re-dispatched (the worker
-                    // was slow, not dead) finds nothing in `pending` and is dropped.
-                    if (node && on_complete)
+                    // was slow, not dead) finds nothing in `pending` and is dropped —
+                    // both its completion AND its now-superseded output bytes.
+                    if (!node)
+                        break;
+
+                    // Apply the inline output bytes to the master's authoritative
+                    // buffers BEFORE releasing successors, so a dependent reader sees
+                    // the produced data. Version-fenced: a result stamped older than
+                    // the buffer's current version is a superseded run and ignored.
+                    if (res.success)
+                    {
+                        for (size_t i = 0; i < res.outputs.size(); ++i)
+                        {
+                            const auto& h = res.outputs[i];
+                            auto e = buffers->lookup_by_id(h.id);
+                            if (!e) continue;
+                            if (h.version < e->handle.version)
+                            {
+                                stale_writebacks.fetch_add(1, std::memory_order_relaxed);
+                                continue;
+                            }
+                            uint64_t n = res.output_data[i].size();
+                            if (n > e->handle.size_bytes) n = e->handle.size_bytes;
+                            std::memcpy(e->ptr, res.output_data[i].data(), n);
+                        }
+                    }
+
+                    if (on_complete)
                         on_complete(node, res.success);
                     break;
                 }
@@ -252,6 +318,14 @@ namespace SushiRuntime
             impl_->monitor_cv.notify_all();
         }
 
+        void DistributedCoordinator::set_task_deadline(std::chrono::milliseconds deadline)
+        {
+            impl_->task_deadline_ms.store(deadline.count(), std::memory_order_relaxed);
+            // Wake the monitor so it recomputes its poll period against the new
+            // deadline rather than sleeping out a stale, longer interval.
+            impl_->monitor_cv.notify_all();
+        }
+
         uint64_t DistributedCoordinator::offloaded_count() const
         {
             return impl_->offloaded_count.load(std::memory_order_relaxed);
@@ -265,6 +339,11 @@ namespace SushiRuntime
         uint64_t DistributedCoordinator::redispatched_count() const
         {
             return impl_->redispatched_count.load(std::memory_order_relaxed);
+        }
+
+        uint64_t DistributedCoordinator::stale_writeback_count() const
+        {
+            return impl_->stale_writebacks.load(std::memory_order_relaxed);
         }
 
         int DistributedCoordinator::alive_worker_count() const
@@ -358,6 +437,39 @@ namespace SushiRuntime
             return orphans;
         }
 
+        std::vector<Graph::Node*> DistributedCoordinator::Impl::reap_timed_out_tasks()
+        {
+            std::vector<Graph::Node*> orphans;
+            const int64_t deadline_ms = task_deadline_ms.load(std::memory_order_relaxed);
+            if (deadline_ms <= 0)
+                return orphans; // per-task deadline disabled
+
+            const auto now = Clock::now();
+            const auto deadline = std::chrono::milliseconds(deadline_ms);
+
+            std::lock_guard<std::mutex> lk(mtx);
+            for (auto it = pending.begin(); it != pending.end(); )
+            {
+                if (now - it->second.dispatched_at < deadline)
+                {
+                    ++it;
+                    continue;
+                }
+
+                // The task has been in flight too long even though its worker may
+                // still be heartbeating — a lost dispatch or lost result. Treat it
+                // as failed: drop the worker's inflight count and re-inject the node.
+                const int w = it->second.worker;
+                if (w >= 0 && w < static_cast<int>(workers.size()) && workers[w].inflight > 0)
+                    workers[w].inflight--;
+                SR_LOG_WARN("Task {} exceeded its {}ms deadline on worker {}; "
+                            "re-dispatching.", it->first, deadline_ms, w);
+                orphans.push_back(it->second.node);
+                it = pending.erase(it);
+            }
+            return orphans;
+        }
+
         void DistributedCoordinator::Impl::send_rtt_pings()
         {
             std::vector<int> alive_peers;
@@ -382,10 +494,13 @@ namespace SushiRuntime
             {
                 {
                     std::unique_lock<std::mutex> lk(monitor_mtx);
-                    // Poll at a fraction of the timeout so detection latency is
-                    // bounded without busy-spinning.
-                    auto period = std::chrono::milliseconds(
-                        liveness_timeout_ms.load(std::memory_order_relaxed) / 2);
+                    // Poll at a fraction of the tightest deadline (worker liveness or
+                    // per-task) so detection latency is bounded without busy-spinning.
+                    int64_t live_ms = liveness_timeout_ms.load(std::memory_order_relaxed);
+                    int64_t task_ms = task_deadline_ms.load(std::memory_order_relaxed);
+                    int64_t tightest = live_ms;
+                    if (task_ms > 0 && task_ms < tightest) tightest = task_ms;
+                    auto period = std::chrono::milliseconds(tightest / 2);
                     if (period.count() < 50) period = std::chrono::milliseconds(50);
                     // Plain wait (no predicate) so set_liveness_timeout()'s notify
                     // wakes us to recompute `period` against the new timeout rather
@@ -399,7 +514,12 @@ namespace SushiRuntime
                 // reasons over, then reap anyone who has gone silent.
                 send_rtt_pings();
 
+                // Two recovery axes: workers gone silent (heartbeat), and individual
+                // tasks stuck past their deadline on a still-live worker (lost
+                // dispatch/result). Both re-inject the orphaned node the same way.
                 auto orphans = reap_dead_workers();
+                auto stuck   = reap_timed_out_tasks();
+                orphans.insert(orphans.end(), stuck.begin(), stuck.end());
                 for (Graph::Node* node : orphans)
                 {
                     redispatched_count.fetch_add(1, std::memory_order_relaxed);
@@ -440,13 +560,6 @@ namespace SushiRuntime
                 msg.inputs.push_back(cur);
                 est_bytes += cur.size_bytes;
             }
-            for (const auto& h : node->out_handles_)
-            {
-                BufferHandle cur = h;
-                if (auto e = impl_->buffers->lookup_by_id(h.id)) cur = e->handle;
-                msg.outputs.push_back(cur);
-            }
-
             int chosen = -1;
             {
                 std::lock_guard<std::mutex> lk(impl_->mtx);
@@ -459,9 +572,24 @@ namespace SushiRuntime
                 chosen = *pick;
 
                 msg.task_id = impl_->next_task_id.fetch_add(1, std::memory_order_relaxed);
-                impl_->pending[msg.task_id] = Impl::PendingTask{ node, chosen }; // takes over the scheduling ref
+                impl_->pending[msg.task_id] =
+                    Impl::PendingTask{ node, chosen, Clock::now() }; // takes over the scheduling ref
                 if (chosen >= 0 && chosen < static_cast<int>(impl_->workers.size()))
                     impl_->workers[chosen].inflight++;
+            }
+
+            // Only now that the task is committed to a worker, stamp its outputs
+            // with a fresh fencing token. Done after the policy decision so a
+            // declined (locally-run) task never bumps a version spuriously. Each
+            // (re)dispatch bumps again, so the master's BUFFER_PUSH handler rejects
+            // any writeback carrying an older version — the result of a superseded
+            // (slow/zombie) run that would otherwise clobber fresh data.
+            for (const auto& h : node->out_handles_)
+            {
+                impl_->buffers->bump_version_by_id(h.id);
+                BufferHandle cur = h;
+                if (auto e = impl_->buffers->lookup_by_id(h.id)) cur = e->handle;
+                msg.outputs.push_back(cur);
             }
 
             node->offload_attempts_.fetch_add(1, std::memory_order_relaxed);

@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <cstddef>
+#include <functional>
 #include <memory>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
@@ -32,6 +34,32 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
+         * @brief What a fault policy decides should happen to one in-flight message.
+         *
+         * Lets a test reproduce the partial-failure scenarios a real network
+         * imposes — lost packets, retransmits, and a slow peer whose late reply
+         * races a redispatch — all deterministically, on one machine.
+         */
+        enum class FaultAction
+        {
+            Deliver,    /**< Normal: route the message to its destination. */
+            Drop,       /**< Silently discard it (a lost packet). */
+            Duplicate,  /**< Deliver it twice (a spurious retransmit). */
+            Hold        /**< Park it until flush_held(); models an arbitrarily slow peer. */
+        };
+
+        /**
+         * @brief Decides the fate of each message; installed via set_fault_policy().
+         *
+         * @param from_peer Sender node id (-1 = master, 0..N-1 = worker).
+         * @param to_peer   Destination node id (-1 = master, 0..N-1 = worker).
+         * @param type      The message kind.
+         * @return The action to take; default (no policy) is Deliver.
+         */
+        using FaultPolicy =
+            std::function<FaultAction(int from_peer, int to_peer, MsgType type)>;
+
+        /**
          * @brief Shared in-process switchboard connecting a master to N workers.
          *
          * Created once, then handed to each endpoint. Delivery happens on a
@@ -40,6 +68,11 @@ namespace SushiRuntime
          * shape a real socket transport would impose, minus the network. This is
          * the "RemappingTopologyProvider of the network layer": full multi-node
          * logic, single machine.
+         *
+         * For reliability testing it doubles as a fault injector: a FaultPolicy can
+         * drop, duplicate, or hold messages so the master/worker recovery paths can
+         * be driven through lost packets, retransmits, and slow-peer races without a
+         * real network. Production code installs no policy and pays nothing.
          */
         class SUSHIRUNTIME_API InProcessFabric
         {
@@ -52,6 +85,41 @@ namespace SushiRuntime
 
                 /** @brief Number of workers this fabric wires up. */
                 int worker_count() const;
+
+                /**
+                 * @brief Installs (or clears, with nullptr) the fault policy.
+                 *
+                 * Consulted for every message at send time. Thread-safe; may be
+                 * swapped mid-run to change the failure scenario between phases.
+                 */
+                void set_fault_policy(FaultPolicy policy);
+
+                /**
+                 * @brief Delivers every message currently parked by FaultAction::Hold,
+                 *        then clears the hold buffer.
+                 *
+                 * Models a slow peer's backlog finally draining — the moment a stale
+                 * reply can race work that has already moved on. With a non-zero
+                 * @p shuffle_seed the held messages are delivered in a seeded random
+                 * order, injecting message reordering on top of the delay.
+                 *
+                 * @param shuffle_seed 0 = deliver in held (FIFO) order; else reorder.
+                 */
+                void flush_held(uint64_t shuffle_seed = 0);
+
+                /** @brief Number of messages currently parked by Hold. */
+                std::size_t held_count() const;
+
+                /**
+                 * @brief Partitions a worker off the network (or heals it).
+                 *
+                 * While partitioned, every message to or from @p worker is dropped in
+                 * both directions — the classic split-brain nemesis. Healing it
+                 * (partitioned=false) restores delivery for subsequent messages;
+                 * anything sent during the partition is already lost (as on a real
+                 * link). Out-of-range ids are ignored.
+                 */
+                void set_partitioned(int worker, bool partitioned);
 
                 struct Impl;
                 /** @brief Internal shared routing state (public for endpoint access). */

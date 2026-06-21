@@ -24,6 +24,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
@@ -52,7 +53,7 @@ namespace SushiRuntime
          * resolved root nodes and the sentinel node that signals graph completion.
          * The ExecutionEngine consumes it; TaskGraph only produces it.
          */
-        struct CompiledGraph
+        struct SUSHIRUNTIME_API CompiledGraph
         {
             /** @brief Nodes with no pending incoming dependencies (DAG entry points). */
             std::vector<SushiRuntime::Graph::Node*> roots;
@@ -60,10 +61,36 @@ namespace SushiRuntime
             /** @brief Sentinel node injected at the end of the graph. */
             sushi_ptr<SushiRuntime::Graph::Node> sentinel;
 
-            /** * @brief Owns all nodes to keep them alive during execution. 
+            /** * @brief Owns all nodes to keep them alive during execution.
              * This prevents Use-After-Free bugs since internal dependencies rely on raw pointers.
              */
             std::vector<sushi_ptr<SushiRuntime::Graph::Node>> all_nodes;
+
+            /**
+             * @brief Snapshots each node's compiled in-degree so the plan can replay.
+             *
+             * execute() consumes a node's in_degree as it releases successors, so a
+             * second run needs the original counts restored first. Call this once
+             * after compile(); rearm() then restores from the snapshot before every
+             * subsequent run. Keeping this here (next to Node) instead of in the
+             * fluent API is what lets the public API stop reaching into Node's
+             * scheduler-internal fields.
+             */
+            void capture_base_state();
+
+            /**
+             * @brief Restores every node's per-run state to its compiled baseline.
+             *
+             * Resets in_degree (nodes + sentinel) from the snapshot capture_base_state()
+             * took, and clears any distributed offload bookkeeping, so the cached plan
+             * is ready to run again. Safe to call only after capture_base_state().
+             */
+            void rearm() noexcept;
+
+            /** @brief Per-node compiled in-degree baseline, filled by capture_base_state(). */
+            std::vector<std::int32_t> base_in_degree;
+            /** @brief Sentinel's compiled in-degree baseline. */
+            std::int32_t sentinel_in_degree = 0;
         };
 
         /**

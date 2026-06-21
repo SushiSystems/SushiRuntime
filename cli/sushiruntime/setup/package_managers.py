@@ -124,7 +124,7 @@ class VcpkgManager(IPackageManager):
 
     def _root(self) -> Path:
         root = self._cfg.expand(self._cfg.vcpkg_root) if self._cfg.vcpkg_root else ""
-        return Path(root) if root else Path("C:/vcpkg")
+        return Path(root) if root else Path.home() / "vcpkg"
 
     def _exe(self) -> Path:
         return self._root() / "vcpkg.exe"

@@ -31,13 +31,18 @@ _WINDOWS_TOOLCHAIN_WINGET = [
 
 
 def _dep_installed(dep: Dependency, mgr: IPackageManager, platform: str) -> bool:
-    """True if a dependency is already satisfied (check_cmd wins if present)."""
+    """True if a dependency is already satisfied (falls back to package manager if check_cmd fails)."""
     if dep.check_cmd:
         try:
-            return subprocess.run(dep.check_cmd, capture_output=True).returncode == 0
+            if subprocess.run(dep.check_cmd, capture_output=True).returncode == 0:
+                return True
         except (OSError, FileNotFoundError):
-            return False
-    return all(mgr.is_installed(p) for p in dep.packages_for(platform))
+            pass
+            
+    pkgs = dep.packages_for(platform)
+    if not pkgs:
+        return False
+    return all(mgr.is_installed(p) for p in pkgs)
 
 
 class DetectStep(Step):
@@ -184,12 +189,48 @@ class InstallDepsStep(Step):
             lib_ok = vcpkg.install(ports, ctx.dry_run)
             ctx.installed.extend(ports)
 
-        console.warn(
-            "Visual Studio Build Tools and Intel oneAPI DPC++ (icx-cl) cannot be "
-            "installed silently here. If missing, install:\n"
-            "  winget install Microsoft.VisualStudio.2022.BuildTools\n"
-            "  Intel oneAPI Base Toolkit: https://www.intel.com/oneapi"
-        )
+        if winget and winget.available() and not winget.is_installed("Microsoft.VisualStudio.2022.BuildTools"):
+            if ctx.dry_run:
+                console.info("(dry-run) skipping VS Build Tools install.")
+            else:
+                vs_cmd = [
+                    "winget", "install", "--id", "Microsoft.VisualStudio.2022.BuildTools", "-e",
+                    "--accept-package-agreements", "--accept-source-agreements",
+                    "--override", '--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --quiet --wait --norestart'
+                ]
+                import subprocess
+                with console.console.status("[bold cyan]Installing Visual Studio Build Tools (C++ workloads) in the background... This may take 10-20 minutes.", spinner="bouncingBar"):
+                    rc = subprocess.run(vs_cmd).returncode
+                if rc != 0:
+                    console.warn("Visual Studio Build Tools installation failed or was cancelled.")
+                    tool_ok = False
+                else:
+                    console.success("Visual Studio Build Tools installed successfully.")
+
+        if not ctx.detected.get("sycl_compiler", False):
+            if ctx.dry_run:
+                console.info("(dry-run) skipping Intel oneAPI install.")
+            else:
+                oneapi_url = "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/bae85ab1-cfcd-4251-8d42-a0c27949ea33/intel-oneapi-toolkit-2026.0.0.193_offline.exe"
+                installer = Path.home() / "intel-oneapi-toolkit-offline.exe"
+                
+                if not installer.is_file():
+                    console.info(f"Downloading Intel oneAPI Installer (~4GB) from Intel servers...")
+                    dl_rc = subprocess.run(["curl", "-L", "-o", str(installer), oneapi_url]).returncode
+                    if dl_rc != 0:
+                        console.error("Failed to download Intel oneAPI installer.")
+                        tool_ok = False
+                
+                if installer.is_file() and tool_ok:
+                    oneapi_cmd = [str(installer), "-s", "-a", "--silent", "--eula", "accept", "-p=NEED_VS2022_INTEGRATION=1"]
+                    with console.console.status("[bold cyan]Executing oneAPI installer silently... This may take 10-20 minutes.", spinner="bouncingBar"):
+                        rc = subprocess.run(oneapi_cmd).returncode
+                    if rc != 0:
+                        console.warn("Intel oneAPI Toolkit installation failed.")
+                        tool_ok = False
+                    else:
+                        console.success("Intel oneAPI Toolkit installed successfully.")
+
         return StepResult.OK if (tool_ok and lib_ok) else StepResult.FAILED
 
 

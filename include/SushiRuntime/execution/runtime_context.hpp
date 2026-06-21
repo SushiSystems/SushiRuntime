@@ -290,6 +290,9 @@ namespace SushiRuntime
                 /** @brief Tasks re-injected after a worker death / remote failure (Master mode telemetry). */
                 uint64_t distributed_redispatched_count() const;
 
+                /** @brief Writebacks rejected by the version fence — stale/superseded results (Master mode telemetry). */
+                uint64_t distributed_stale_writeback_count() const;
+
                 /**
                  * @brief Sets the worker liveness timeout (Master mode).
                  *
@@ -297,6 +300,14 @@ namespace SushiRuntime
                  * in-flight tasks are re-dispatched to a survivor or run locally.
                  */
                 void distributed_set_liveness_timeout(std::chrono::milliseconds timeout);
+
+                /**
+                 * @brief Sets the per-task offload deadline (Master mode; default 30s).
+                 *
+                 * A task with no result within this bound is re-dispatched, covering
+                 * a lost dispatch/result to a still-heartbeating worker. 0 disables.
+                 */
+                void distributed_set_task_deadline(std::chrono::milliseconds deadline);
 
                 /** @brief Number of live (registered) workers in the cluster. */
                 int distributed_alive_workers() const;

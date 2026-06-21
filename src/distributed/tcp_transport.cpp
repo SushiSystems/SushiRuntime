@@ -151,6 +151,16 @@ namespace SushiRuntime
                     std::memcpy(&len, hdr, 4);
                     MsgType type = static_cast<MsgType>(hdr[4]);
 
+                    // Trust the length only up to a sane cap: a corrupt or
+                    // mismatched-protocol peer can send an arbitrary 32-bit length,
+                    // and allocating it blindly is a trivial OOM. Drop the peer.
+                    if (len > MAX_FRAME_BYTES)
+                    {
+                        SR_LOG_ERROR("Peer {} sent oversized frame ({} bytes > {} cap); "
+                                     "dropping connection.", peer, len, MAX_FRAME_BYTES);
+                        break;
+                    }
+
                     std::vector<std::byte> payload(len);
                     if (len && !read_n(sock, payload.data(), len)) break;
 
@@ -159,7 +169,7 @@ namespace SushiRuntime
                 }
             }
 
-            void send_to(socket_t sock, std::mutex& m, MsgType type, SushiRuntime::span<const std::byte> payload)
+            void send_to(socket_t sock, std::mutex& m, int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
             {
                 if (sock == INVALID_SOCK) return;
                 unsigned char hdr[5];
@@ -168,8 +178,18 @@ namespace SushiRuntime
                 hdr[4] = static_cast<unsigned char>(type);
 
                 std::lock_guard<std::mutex> lk(m);
-                if (!write_n(sock, hdr, sizeof(hdr))) return;
-                if (len) write_n(sock, payload.data(), len);
+                // A failed write means the peer's connection is gone (reset or
+                // half-open). Don't swallow it: shut the socket down so the peer's
+                // reader thread unblocks and exits, turning a wedged link into a
+                // clean teardown — the master's liveness monitor then reaps the
+                // worker (or the worker notices the master is gone). Idempotent:
+                // a subsequent send on the same dead socket just shuts it again.
+                if (!write_n(sock, hdr, sizeof(hdr)) ||
+                    (len && !write_n(sock, payload.data(), len)))
+                {
+                    SR_LOG_WARN("TCP send to peer {} failed; tearing down the connection.", peer);
+                    shutdown_sock(sock);
+                }
             }
 
             void accept_loop()
@@ -336,17 +356,19 @@ namespace SushiRuntime
                 if (peer_id < 0) // broadcast
                 {
                     for (size_t i = 0; i < impl_->peers.size(); ++i)
-                        impl_->send_to(impl_->peers[i], *impl_->send_mtx[i], type, payload);
+                        impl_->send_to(impl_->peers[i], *impl_->send_mtx[i],
+                                       static_cast<int>(i), type, payload);
                 }
                 else if (peer_id < static_cast<int>(impl_->peers.size()))
                 {
                     impl_->send_to(impl_->peers[static_cast<size_t>(peer_id)],
-                                   *impl_->send_mtx[static_cast<size_t>(peer_id)], type, payload);
+                                   *impl_->send_mtx[static_cast<size_t>(peer_id)],
+                                   peer_id, type, payload);
                 }
             }
             else
             {
-                impl_->send_to(impl_->peers[0], *impl_->send_mtx[0], type, payload);
+                impl_->send_to(impl_->peers[0], *impl_->send_mtx[0], MASTER_PEER, type, payload);
             }
         }
 

@@ -37,6 +37,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/buffer.hpp>
+#include <SushiRuntime/api/detail/run_report_builder.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -515,49 +516,8 @@ namespace SushiRuntime
                     const auto after = engine.metrics();
 
                     const std::size_t total_tasks = task_count_ * executed;
-
-                    Core::RunReport report;
-                    report.is_successful = true;
-                    report.total_tasks_executed = total_tasks;
-                    report.graph_analysis_duration_ms = compile_ms;
-                    report.total_duration_ms = ms(t0, t1);
-
-                    // Attribute the tasks to the device class the default queue
-                    // targets. Per-task placement and the reserved steal/byte
-                    // counters are filled in as the engine exposes them.
-                    Core::NumaNodeStatistics node;
-                    try
-                    {
-                        auto& q = ctx_->get_queue(0);
-                        if (q.get_device().is_gpu())
-                            node.gpu_tasks_executed = total_tasks;
-                        else
-                            node.cpu_tasks_executed = total_tasks;
-                    }
-                    catch (...)
-                    {
-                        node.cpu_tasks_executed = total_tasks;
-                        report.warnings.emplace_back("No SYCL queue available; task placement unknown.");
-                    }
-
-                    // Work-stealing breakdown over the whole run, from the
-                    // scheduler's before/after counters.
-                    const std::size_t stolen_intra = after.local_steals  - before.local_steals;
-                    const std::size_t stolen_inter = after.remote_steals - before.remote_steals;
-                    const std::size_t completed    = after.tasks_completed - before.tasks_completed;
-                    node.tasks_stolen_intra_numa = stolen_intra;
-                    node.tasks_stolen_inter_numa = stolen_inter;
-                    const std::size_t stolen_total = stolen_intra + stolen_inter;
-                    node.tasks_popped_local = (completed > stolen_total) ? (completed - stolen_total) : 0;
-                    report.numa_statistics.push_back(node);
-
-#ifdef SR_DISTRIBUTED
-                    auto& d = report.distributed_statistics;
-                    d.tasks_offloaded_to_network = ctx_->distributed_offloaded_count();
-                    d.remote_nodes_involved =
-                        static_cast<std::size_t>(ctx_->distributed_alive_workers());
-#endif
-                    return report;
+                    return detail::build_run_report(*ctx_, before, after, total_tasks,
+                                                    compile_ms, ms(t0, t1));
                 }
 
                 // Returns the shared view for a State, creating it (and registering
@@ -601,8 +561,9 @@ namespace SushiRuntime
                 }
 
                 // Builds a fresh backing graph from the recorded specs, compiles it,
-                // caches the plan, and snapshots each node's compiled in-degree so a
-                // replay can restore it. compile() drains its builder, so a fresh
+                // and caches the plan. The compiled plan snapshots its own replay
+                // baseline (in-degrees) so the fluent layer never touches Node's
+                // scheduler-internal state. compile() drains its builder, so a fresh
                 // BackingGraph is built whenever the topology changes.
                 void build_plan()
                 {
@@ -610,32 +571,16 @@ namespace SushiRuntime
                     for (auto& spec : specs_)
                         spec(bg);
                     plan_ = bg.compile();
-
-                    base_in_degree_.clear();
-                    base_in_degree_.reserve(plan_.all_nodes.size());
-                    for (auto& n : plan_.all_nodes)
-                        base_in_degree_.push_back(n->in_degree.load(std::memory_order_relaxed));
-                    sentinel_in_degree_ = plan_.sentinel
-                        ? plan_.sentinel->in_degree.load(std::memory_order_relaxed) : 0;
+                    plan_.capture_base_state();
                     dirty_ = false;
                 }
 
-                // Restores every node's dependency counter to its compiled value so
-                // the cached plan can run again. The scheduler re-arms itself; this
-                // resets the DAG-side state a previous run consumed.
+                // Restores the cached plan's per-run state so it can run again. The
+                // scheduler re-arms itself; this resets the DAG-side state a previous
+                // run consumed, owned by CompiledGraph next to the Node definition.
                 void reset_plan_state() noexcept
                 {
-                    const std::size_t count = plan_.all_nodes.size();
-                    for (std::size_t i = 0; i < count && i < base_in_degree_.size(); ++i)
-                        plan_.all_nodes[i]->in_degree.store(base_in_degree_[i],
-                                                            std::memory_order_relaxed);
-                    if (plan_.sentinel)
-                        plan_.sentinel->in_degree.store(sentinel_in_degree_,
-                                                        std::memory_order_relaxed);
-#ifdef SR_DISTRIBUTED
-                    for (auto& n : plan_.all_nodes)
-                        n->offload_attempts_.store(0, std::memory_order_relaxed);
-#endif
+                    plan_.rearm();
                 }
 
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
@@ -660,9 +605,8 @@ namespace SushiRuntime
                 std::size_t task_count_ = 0;
 
                 // Cached compiled plan, valid while !dirty_; replayed across steps.
+                // It owns its own replay baseline (see capture_base_state/rearm).
                 Execution::CompiledGraph plan_;
-                std::vector<std::int32_t> base_in_degree_;
-                std::int32_t sentinel_in_degree_ = 0;
                 bool dirty_ = true;
         };
 

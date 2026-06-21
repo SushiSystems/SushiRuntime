@@ -77,6 +77,29 @@ namespace SushiRuntime
                  */
                 void set_heartbeat_interval(std::chrono::milliseconds interval);
 
+                /**
+                 * @brief Sets how long an input buffer pull may wait (default 5s).
+                 *
+                 * resolve_input() blocks until the master pushes the requested
+                 * {id, version}. Without a bound, a lost BUFFER_PUSH would hang the
+                 * task forever — and because heartbeats run on a separate thread, the
+                 * master would still see the worker as alive and never re-dispatch,
+                 * stalling the whole graph. On timeout the task fails cleanly
+                 * (TASK_RESULT success=false) so the master can recover. A zero or
+                 * negative duration means wait forever (legacy behaviour).
+                 * Must be called before start().
+                 */
+                void set_pull_timeout(std::chrono::milliseconds timeout);
+
+                /**
+                 * @brief Caps the pending-job queue (default 1024); 0 means unbounded.
+                 *
+                 * A dispatch arriving when the queue is full is fast-failed so the
+                 * master re-dispatches it, bounding this worker's memory under a
+                 * flood. May be called at any time.
+                 */
+                void set_max_jobs(size_t max_jobs);
+
                 /** @brief Starts the transport and the message-processing loop. */
                 void start();
 

@@ -61,7 +61,7 @@ windows_vcpkg = ["gtest"]
 description   = "OpenCL ICD loader + dev headers (exposes CPU as a SYCL device)"
 required      = true
 linux_apt     = ["ocl-icd-opencl-dev", "ocl-icd-libopencl1"]
-windows_vcpkg = []
+windows_vcpkg = ["opencl"]
 check_cmd     = ["pkg-config", "--exists", "OpenCL"]
 
 [pkgconf]

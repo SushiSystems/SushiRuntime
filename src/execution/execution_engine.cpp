@@ -235,5 +235,32 @@ namespace SushiRuntime
             return execute(local);
         }
 
+        // Defined here for the same reason: touching Node::in_degree needs the
+        // complete Node type, which only this translation unit sees.
+        void CompiledGraph::capture_base_state()
+        {
+            base_in_degree.clear();
+            base_in_degree.reserve(all_nodes.size());
+            for (auto& n : all_nodes)
+                base_in_degree.push_back(n->in_degree.load(std::memory_order_relaxed));
+            sentinel_in_degree = sentinel
+                ? sentinel->in_degree.load(std::memory_order_relaxed) : 0;
+        }
+
+        void CompiledGraph::rearm() noexcept
+        {
+            const std::size_t count = all_nodes.size();
+            for (std::size_t i = 0; i < count && i < base_in_degree.size(); ++i)
+                all_nodes[i]->in_degree.store(base_in_degree[i],
+                                              std::memory_order_relaxed);
+            if (sentinel)
+                sentinel->in_degree.store(sentinel_in_degree,
+                                          std::memory_order_relaxed);
+#ifdef SR_DISTRIBUTED
+            for (auto& n : all_nodes)
+                n->offload_attempts_.store(0, std::memory_order_relaxed);
+#endif
+        }
+
     } // namespace Execution
 } // namespace SushiRuntime
