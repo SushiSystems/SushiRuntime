@@ -30,13 +30,16 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+// CompiledGraph holds sushi_ptr<Graph::Node> members and is dllexport'd
+// (SUSHIRUNTIME_API). On Windows, exporting a class forces its implicit special
+// members to be instantiated at the class definition, which requires Node to be
+// complete here — a forward declaration triggers "member access into incomplete
+// type" under clang. Including the definition keeps the build valid on Windows
+// and is a no-op on platforms where the class is not exported (e.g. Linux).
+#include <SushiRuntime/graph/node.hpp>
 
 namespace SushiRuntime
 {
-    namespace Graph
-    {
-        struct Node;
-    }
 
 #ifdef SR_DISTRIBUTED
     namespace Scheduler { class TaskScheduler; }

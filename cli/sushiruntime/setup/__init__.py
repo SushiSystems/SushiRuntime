@@ -13,11 +13,12 @@ implementation detail behind small interfaces (:class:`pipeline.Step`,
 
 from __future__ import annotations
 
-from .factory import build_pipeline
+from .factory import build_pipeline, build_uninstall_pipeline
 from .pipeline import InstallContext, InstallPipeline, Step, StepResult
 
 __all__ = [
     "build_pipeline",
+    "build_uninstall_pipeline",
     "InstallContext",
     "InstallPipeline",
     "Step",

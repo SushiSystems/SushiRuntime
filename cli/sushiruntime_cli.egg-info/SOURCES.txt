@@ -20,6 +20,7 @@ sushiruntime/setup/package_managers.py
 sushiruntime/setup/pipeline.py
 sushiruntime/setup/probe.py
 sushiruntime/setup/steps.py
+sushiruntime/setup/toolchains.py
 sushiruntime_cli.egg-info/PKG-INFO
 sushiruntime_cli.egg-info/SOURCES.txt
 sushiruntime_cli.egg-info/dependency_links.txt

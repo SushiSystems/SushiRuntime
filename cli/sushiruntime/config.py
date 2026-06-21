@@ -68,7 +68,11 @@ _ENV_OVERRIDES = {
     "oneapi_root": "SR_ONEAPI_ROOT",
     "vs_vcvars": "SR_VCVARS",
     "ninja_exe": "SR_NINJA",
+    "cmake_exe": "SR_CMAKE",
+    "ctest_exe": "SR_CTEST",
     "icx_compiler": "SR_ICX",
+    "llvm_root": "SR_LLVM_ROOT",
+    "acpp_exe": "SR_ACPP",
     "pkgconf_exe": "SR_PKGCONF",
     "vcpkg_triplet": "SR_VCPKG_TRIPLET",
     "target_bin": "SR_TARGET_BIN",
@@ -94,7 +98,18 @@ class Config:
     oneapi_root: str = ""
     vs_vcvars: str = ""
     ninja_exe: str = ""
+    # cmake/ctest are resolved from PATH when empty. They are configurable
+    # because VS BuildTools does not ship the CMake component, so on Windows
+    # cmake commonly lives in a scoop/standalone install that is not on PATH.
+    cmake_exe: str = ""
+    ctest_exe: str = ""
     icx_compiler: str = ""
+    # intel/llvm nightly bundle root (holds bin/clang++) for the intel-llvm
+    # toolchain, and the AdaptiveCpp compiler for the adaptivecpp toolchain.
+    # On Windows these are how the non-oneAPI toolchains provide a SYCL compiler;
+    # they are discovered by `sr setup` and written to config.local.toml.
+    llvm_root: str = ""
+    acpp_exe: str = ""
     pkgconf_exe: str = ""
     vcpkg_triplet: str = "x64-windows"
 
@@ -121,6 +136,27 @@ class Config:
         default_cc, default_cxx = TOOLCHAIN_COMPILERS.get(
             self.toolchain, TOOLCHAIN_COMPILERS["intel-llvm"])
         return (self.cc or default_cc, self.cxx or default_cxx)
+
+    def llvm_bin(self) -> str:
+        """The intel/llvm bundle's bin directory, or '' when not configured."""
+        root = self.expand(self.llvm_root)
+        return str(Path(root) / "bin") if root else ""
+
+    def resolved_windows_compiler(self) -> str:
+        """Return the C++ compiler to drive the Windows build for the toolchain.
+
+        Windows has no system SYCL compiler, so each toolchain points at its own:
+        intel-llvm -> clang++ from the intel/llvm bundle, oneapi -> icx-cl,
+        adaptivecpp -> acpp. Falls back to a bare command name when the path is
+        not configured so PATH resolution still has a chance.
+        """
+        if self.toolchain == "oneapi":
+            return self.expand(self.icx_compiler) or "icx-cl"
+        if self.toolchain == "adaptivecpp":
+            return self.expand(self.acpp_exe) or "acpp"
+        # intel-llvm (default)
+        bin_dir = self.llvm_bin()
+        return str(Path(bin_dir) / "clang++.exe") if bin_dir else "clang++"
 
 
 def _read_toml(path: Path) -> dict:

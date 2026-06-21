@@ -57,10 +57,14 @@ namespace SushiRuntime
                 HANDLE thread = GetCurrentThread();
                 DWORD_PTR mask = (1ULL << core_id); 
                 
-                if (SetThreadAffinityMask(thread, mask) == 0) 
+                if (SetThreadAffinityMask(thread, mask) == 0)
+                {
                     SR_LOG_WARN("Failed to set thread affinity for core {} on Windows. Error: {}", core_id, GetLastError());
+                }
                 else
+                {
                     SR_LOG_DEBUG("Thread successfully pinned to core {}", core_id);
+                }
             #else
                 cpu_set_t cpuset;
                 CPU_ZERO(&cpuset);

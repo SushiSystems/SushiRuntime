@@ -30,7 +30,14 @@ target_bin = "sr_functional_tests.exe"
 # The following are machine-specific; override in config.local.toml.
 # vs_vcvars    = "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat"
 # oneapi_root  = "C:/Program Files (x86)/Intel/oneAPI"
-# ninja_exe    = "C:/Users/<you>/.conda/envs/sushiruntime/Library/bin/ninja.exe"
-# vcpkg_root   = "C:/Users/<you>/.conda/envs/sushiruntime/Library/share/vcpkg"
-# icx_compiler = "C:/Users/<you>/.conda/envs/sushiruntime/Library/bin/icx-cl.exe"
-# pkgconf_exe  = "C:/Users/<you>/.conda/envs/sushiruntime/Library/bin/pkg-config.exe"
+# ninja_exe    = "ninja"
+# vcpkg_root   = "C:/vcpkg"
+# icx_compiler = "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/bin/icx-cl.exe"
+# pkgconf_exe  = "C:/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe"
+# cmake_exe    = "C:/Users/<you>/scoop/shims/cmake.exe"
+# ctest_exe    = "C:/Users/<you>/scoop/shims/ctest.exe"
+# SYCL toolchains installed by `sr setup` (intel-llvm is the default):
+#   llvm_root  = intel/llvm bundle root holding bin/clang++.exe (intel-llvm)
+#   acpp_exe   = AdaptiveCpp's acpp launcher (adaptivecpp)
+# llvm_root    = "C:/Users/<you>/AppData/Local/SushiRuntime/toolchains/llvm-sycl"
+# acpp_exe     = "C:/Users/<you>/AppData/Local/SushiRuntime/toolchains/adaptivecpp/bin/acpp.bat"

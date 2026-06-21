@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+import sys
+
+# Force UTF-8 on stdout/stderr before any Rich output. A legacy Windows console
+# defaults to cp1252, which cannot encode Rich's spinner glyphs (e.g. the braille
+# '⠼'); the first such character would raise UnicodeEncodeError and turn any
+# progress display — including the failure path — into a secondary traceback.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        try:
+            _reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.theme import Theme

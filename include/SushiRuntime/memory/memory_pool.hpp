@@ -35,7 +35,10 @@ namespace SushiRuntime
     namespace Memory
     {
         using FlushCallback = void(*)(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count);
-        extern std::atomic<FlushCallback> g_flush_callback;
+        // Exported: referenced by inline code (e.g. the magazine flush path) that
+        // is compiled into consumer TUs, so the symbol must cross the DLL boundary
+        // on Windows. SUSHIRUNTIME_API is a no-op where the lib is not a DLL.
+        SUSHIRUNTIME_API extern std::atomic<FlushCallback> g_flush_callback;
         
         /**
          * @brief A page of fixed-size slots managed by the bitmask pool.
