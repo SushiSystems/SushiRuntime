@@ -160,6 +160,27 @@ namespace SushiRuntime
                  */
                 void* dependency_key() const noexcept { return static_cast<void*>(ptr_); }
 
+#ifdef SR_DISTRIBUTED
+                /**
+                 * @brief Registers this buffer as distributable (Master mode).
+                 *
+                 * Opt-in: only a registered buffer can cross to a worker, and the
+                 * master stays authoritative for it. No-op when empty. Returns *this
+                 * so it chains off the allocation: `auto a = rt.buffer<float>(n).distributed();`
+                 *
+                 * Note: only a plain Buffer is distributable. A State<T> double-buffers
+                 * by swapping pointers each step, which is incompatible with the
+                 * version-by-pointer coherence model, so State deliberately has no
+                 * distributed() — stage a Buffer instead.
+                 */
+                Buffer& distributed()
+                {
+                    if (ctx_ && ptr_)
+                        ctx_->register_distributed_buffer(ptr_, size_ * sizeof(T));
+                    return *this;
+                }
+#endif // SR_DISTRIBUTED
+
             private:
                 /** @brief Frees the owned allocation and clears the handle. */
                 void reset() noexcept

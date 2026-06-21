@@ -123,6 +123,14 @@ ctx.register_distributed_buffer(b,   n * sizeof(float));
 ctx.register_distributed_buffer(out, n * sizeof(float));
 ```
 
+> **Fluent shortcut.** With the fluent API, `Runtime::cluster(transport, kernels,
+> policy)` promotes the runtime to Master and returns an `API::Cluster` handle that
+> bundles the tuning knobs and telemetry (`wait_for_workers`, `task_deadline`,
+> `liveness_timeout`, `offloaded()`/`stale_writebacks()`/…), and
+> `Buffer<T>::distributed()` registers a buffer inline. `State<T>` has no
+> `distributed()` — its per-step pointer swap is incompatible with the
+> version-by-pointer coherence model, so stage a `Buffer` instead.
+
 Until `enable_distributed_master` is called, the context behaves exactly as
 Standalone (zero overhead). A task becomes offloadable only if its
 `TaskMetadata::op_id` is set to an `OpID` that some live worker supports — you set
@@ -333,10 +341,19 @@ exactly this under a seeded random nemesis.
 5. **Transparent local fallback.** After `MAX_OFFLOAD_ATTEMPTS` failed remote
    tries, the node is pinned local and runs on the master — so a permanently
    unreachable worker degrades to a slower local run, never a stall.
+6. **Result atomicity.** A task's output bytes ride *inline* in its `TASK_RESULT`,
+   so completion and data arrive together — the master can never mark a task done
+   while its output silently failed to arrive.
+7. **Registration retry.** A worker re-sends its `HELLO` every heartbeat until the
+   master acknowledges it, so a lost registration message cannot strand a worker
+   outside the cluster.
 
 Workers also bound their input-pull wait (`set_pull_timeout`) and their job queue
 (`set_max_jobs`, fast-failing when full), so a lost buffer push or a flood cannot
-hang or balloon a worker.
+hang or balloon a worker. The whole set is exercised by the seeded
+fault-injection soak (`Integration_DistributedJepsenTest`), which drops,
+duplicates, reorders, holds, and partitions messages — registration included —
+and asserts byte-identical results every run.
 
 **What is explicitly NOT provided (by design).**
 
