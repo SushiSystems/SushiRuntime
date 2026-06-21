@@ -32,11 +32,10 @@ namespace SushiRuntime
     namespace Topology
     {
         /**
-         * @brief In-memory, hardware-free NUMA distance model for testing. [LSP]
+         * @brief In-memory, hardware-free NUMA distance model for testing.
          *
-         * Holds an explicit N x N SLIT-style matrix so multi-node distance and
-         * placement logic can be validated deterministically on any machine —
-         * including single-node desktops and WSL where no real SLIT exists.
+         * Holds an explicit N x N SLIT-style matrix to validate multi-node distance
+         * and placement logic deterministically on any machine.
          *
          * Example (2 sockets, 21-cost remote hop):
          * @code
@@ -47,6 +46,13 @@ namespace SushiRuntime
         class MatrixDistanceModel : public INumaDistanceModel
         {
             public:
+                /**
+                 * @brief Constructs the model with a predefined distance matrix.
+                 *
+                 * Initializes the internal distance matrix and validates its dimensions.
+                 * @param matrix The square distance matrix representing NUMA node latencies (takes ownership).
+                 * @throws std::invalid_argument If the provided matrix is not square.
+                 */
                 explicit MatrixDistanceModel(std::vector<std::vector<int>> matrix)
                     : matrix_(std::move(matrix))
                 {
@@ -55,17 +61,31 @@ namespace SushiRuntime
                             throw std::invalid_argument("MatrixDistanceModel: matrix must be square.");
                 }
 
+                /**
+                 * @brief Retrieves the memory access distance between two NUMA nodes.
+                 *
+                 * Looks up the latency cost from the internal matrix, falling back to ACPI convention if either index is out of bounds.
+                 * @param numa_a The index of the source NUMA node.
+                 * @param numa_b The index of the destination NUMA node.
+                 * @return The latency cost from the matrix, or 10/21 if out of range.
+                 */
                 int distance(int numa_a, int numa_b) const override
                 {
                     if (numa_a < 0 || numa_b < 0 ||
                         static_cast<size_t>(numa_a) >= matrix_.size() ||
                         static_cast<size_t>(numa_b) >= matrix_.size())
                     {
-                        return (numa_a == numa_b) ? 10 : 21; // out-of-range → ACPI convention
+                        return (numa_a == numa_b) ? 10 : 21; // out-of-range -> ACPI convention
                     }
                     return matrix_[static_cast<size_t>(numa_a)][static_cast<size_t>(numa_b)];
                 }
 
+                /**
+                 * @brief Retrieves the total number of simulated NUMA nodes.
+                 *
+                 * Returns the dimension of the internal distance matrix.
+                 * @return The number of NUMA nodes represented by the matrix.
+                 */
                 int node_count() const override
                 {
                     return static_cast<int>(matrix_.size());

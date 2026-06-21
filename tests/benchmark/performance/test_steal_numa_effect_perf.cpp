@@ -55,6 +55,14 @@ namespace
     constexpr size_t TOTAL  = 300000;
     constexpr int    ROUNDS = 3;
 
+    /**
+     * @brief Wait for an atomic value to reach a target within a budget.
+     * 
+     * @param value The atomic value to watch.
+     * @param target The target value.
+     * @param budget The time budget.
+     * @return True if the target was reached, false on timeout.
+     */
     bool wait_for(const std::atomic<size_t>& value, size_t target,
                   std::chrono::seconds budget)
     {
@@ -68,6 +76,12 @@ namespace
         return true;
     }
 
+    /**
+     * @brief Creates a synthetic runtime context with a specified number of NUMA nodes.
+     * 
+     * @param nodes The number of synthetic NUMA nodes.
+     * @return A shared pointer to the synthetic runtime context.
+     */
     std::shared_ptr<RuntimeContext> make_synthetic_ctx(int nodes)
     {
         auto provider = std::make_shared<RemappingTopologyProvider>(
@@ -80,6 +94,9 @@ namespace
             Topology::HardwareFilterConfig{}, provider, distance);
     }
 
+    /**
+     * @brief Benchmark results containing execution time and steal counts.
+     */
     struct Result
     {
         double ms = 1e300;
@@ -87,8 +104,15 @@ namespace
         size_t remote = 0;
     };
 
-    // Drain TOTAL counter tasks through ctx's scheduler, best-of-N for the time,
-    // keeping the steal split from the fastest round.
+    /**
+     * @brief Runs the workload through the scheduler.
+     * 
+     * Drains TOTAL counter tasks through ctx's scheduler, best-of-N for the time,
+     * keeping the steal split from the fastest round.
+     * 
+     * @param ctx The runtime context.
+     * @return The best result.
+     */
     Result run_workload(RuntimeContext& ctx)
     {
         Result best;
@@ -118,8 +142,12 @@ namespace
     }
 }
 
-// Same workload, same cores: report the throughput delta between the flat and
-// the synthetic-NUMA-aware scheduler, plus the aware steal locality.
+/**
+ * @brief Tests NUMA-aware vs NUMA-blind stealing throughput.
+ * 
+ * Same workload, same cores: report the throughput delta between the flat and
+ * the synthetic-NUMA-aware scheduler, plus the aware steal locality.
+ */
 TEST(Performance_StealNumaEffectBench, NumaAwareVsBlindThroughput)
 {
     RuntimeContext blind_ctx; // real (flat on single-socket) topology

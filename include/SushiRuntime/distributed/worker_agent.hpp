@@ -37,76 +37,84 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Stateless executor daemon running on each worker machine.
+         * @brief Serves as a daemon that executes distributed tasks on a worker machine.
          *
-         * The agent is a thin network shell around a normal, local RuntimeContext.
-         * Inside the worker, the existing NUMA-aware hierarchical stealing and the
-         * intra-NUMA manager run unchanged — the agent merely feeds them work that
-         * arrived over the wire.
-         *
-         * Cycle:
-         *   1. HELLO the master with this binary's registered OpID set.
-         *   2. On TASK_DISPATCH: resolve each input BufferHandle against the local
-         *      cache (pull-on-miss via BUFFER_REQUEST), run the OpID's kernel on
-         *      the local context, cache outputs under their new versions.
-         *   3. Reply TASK_RESULT (lazy — output bytes travel only when the master
-         *      later requests them as another task's input).
-         *
-         * The buffer cache is keyed by {id, version}: a dispatch referencing a
-         * version the worker lacks triggers a pull, which is exactly how a
-         * master-side write (version bump) invalidates a stale cache entry.
+         * Bridges the network transport and the local runtime context, fetching required remote data and executing incoming dispatches.
          */
         class SUSHIRUNTIME_API WorkerAgent
         {
             public:
+                /**
+                 * @brief Constructs a worker agent bounded to a local runtime context.
+                 *
+                 * Initializes the background state and attaches the transport to receive network messages.
+                 *
+                 * @param ctx The local runtime context that executes the computational tasks.
+                 * @param transport The underlying network transport for master-worker communication.
+                 * @param kernels The registry mapping operation IDs to executable local kernels.
+                 */
                 WorkerAgent(Execution::RuntimeContext& ctx,
                             std::shared_ptr<ITransport> transport,
                             sushi_ptr<KernelRegistry>   kernels);
+
+                /**
+                 * @brief Cleans up the worker agent resources.
+                 *
+                 * Automatically stops the internal event loops and releases memory before destruction.
+                 */
                 ~WorkerAgent();
 
                 WorkerAgent(const WorkerAgent&) = delete;
                 WorkerAgent& operator=(const WorkerAgent&) = delete;
 
                 /**
-                 * @brief Sets the liveness heartbeat period (default 1s).
+                 * @brief Configures the time interval between network liveness pings.
                  *
-                 * The agent sends a HEARTBEAT to the master every interval so a
-                 * crash or hang is detectable as missed beats. A zero duration
-                 * disables heartbeats (used by tests to simulate a dead worker).
-                 * Must be called before start().
+                 * Schedules periodic heartbeat messages to notify the master that the worker is still active.
+                 *
+                 * @param interval The duration between consecutive heartbeat transmissions.
+                 * @warning Must be called prior to invoking start().
                  */
                 void set_heartbeat_interval(std::chrono::milliseconds interval);
 
                 /**
-                 * @brief Sets how long an input buffer pull may wait (default 5s).
+                 * @brief Defines the maximum duration to wait for a requested buffer transfer.
                  *
-                 * resolve_input() blocks until the master pushes the requested
-                 * {id, version}. Without a bound, a lost BUFFER_PUSH would hang the
-                 * task forever — and because heartbeats run on a separate thread, the
-                 * master would still see the worker as alive and never re-dispatch,
-                 * stalling the whole graph. On timeout the task fails cleanly
-                 * (TASK_RESULT success=false) so the master can recover. A zero or
-                 * negative duration means wait forever (legacy behaviour).
-                 * Must be called before start().
+                 * Forces tasks to fail gracefully instead of hanging indefinitely if a remote data fetch times out.
+                 *
+                 * @param timeout The maximum allowed wait time for a buffer transfer, or zero/negative to wait indefinitely.
+                 * @warning Must be called prior to invoking start().
                  */
                 void set_pull_timeout(std::chrono::milliseconds timeout);
 
                 /**
-                 * @brief Caps the pending-job queue (default 1024); 0 means unbounded.
+                 * @brief Limits the maximum number of queued pending jobs to prevent memory exhaustion.
                  *
-                 * A dispatch arriving when the queue is full is fast-failed so the
-                 * master re-dispatches it, bounding this worker's memory under a
-                 * flood. May be called at any time.
+                 * Rejects incoming dispatches immediately if the internal queue exceeds this limit.
+                 *
+                 * @param max_jobs The strict upper bound on the number of pending tasks, or 0 for an unbounded queue.
                  */
                 void set_max_jobs(size_t max_jobs);
 
-                /** @brief Starts the transport and the message-processing loop. */
+                /**
+                 * @brief Activates network communication and starts the background message processing loop.
+                 *
+                 * Transitions the agent into a running state where it can accept and process network payloads.
+                 */
                 void start();
 
-                /** @brief Blocks until stop() is called from another thread. */
+                /**
+                 * @brief Suspends the calling thread until the agent is explicitly stopped.
+                 *
+                 * Blocks execution synchronously by waiting on an internal synchronization primitive.
+                 */
                 void run();
 
-                /** @brief Signals the agent to drain and stop. Safe from any thread. */
+                /**
+                 * @brief Triggers a graceful shutdown of the agent's background loops.
+                 *
+                 * Signals internal threads to exit and cleanly interrupts the blocking run method.
+                 */
                 void stop();
 
             private:

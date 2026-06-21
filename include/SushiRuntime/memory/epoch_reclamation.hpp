@@ -134,16 +134,27 @@ namespace SushiRuntime
             }
         }
 
-        class EpochManager 
+        /**
+         * @brief Epoch-based memory reclamation (EBR) manager.
+         *
+         * Maintains a global epoch counter and per-thread epoch slots. Threads
+         * enter/exit critical sections with enter()/exit(); objects retired via
+         * retire<T>() are deleted only after every active thread has advanced
+         * past the epoch in which they were retired. Thread slots are cache-line
+         * padded to eliminate false sharing. Thread-safe; lock-free on the fast path.
+         *
+         * This is a singleton accessed via instance().
+         */
+        class EpochManager
         {
         private:
             static constexpr size_t MAX_EPOCH_THREADS = Core::MAX_WORKER_THREADS + 32;
-            
+
             std::atomic<uint64_t> global_epoch_{1};
-            
-            // MULTI-THREAD DARBOĞAZ ÇÖZÜMÜ: False Sharing (Sahte Paylaşım) Engellendi.
-            // Her thread'in verisi 64-byte aralıklarla RAM'e diziliyor. L1/L2 Cache Miss tarihe karıştı!
-            struct alignas(Core::CACHE_LINE_SIZE) ThreadEpochSlot 
+
+            // Each slot is cache-line padded so concurrent epoch stores by different
+            // threads land on separate cache lines and do not false-share.
+            struct alignas(Core::CACHE_LINE_SIZE) ThreadEpochSlot
             {
                 std::atomic<uint64_t> epoch{0};
                 std::atomic<bool> active{false};
@@ -154,7 +165,12 @@ namespace SushiRuntime
             std::atomic<int> thread_id_high_water_{0};
             std::atomic<Detail::RetiredNode*> global_orphan_list_{nullptr};
 
-            int register_thread() 
+            /**
+             * @brief Registers the calling thread and returns its slot id.
+             * @return Slot index in [0, MAX_EPOCH_THREADS).
+             * @throws std::runtime_error if all slots are occupied.
+             */
+            int register_thread()
             {
                 for (int i = 0; i < static_cast<int>(MAX_EPOCH_THREADS); ++i) 
                 {
@@ -174,7 +190,11 @@ namespace SushiRuntime
                 throw std::runtime_error("EBR: Maximum thread limit reached.");
             }
 
-            void check_and_reclaim() 
+            /**
+             * @brief Attempts to advance the global epoch and frees any safely
+             *        retired objects whose epoch is no longer reachable.
+             */
+            void check_and_reclaim()
             {
                 auto& tls_state = Detail::get_tls_state();
                 
@@ -250,7 +270,14 @@ namespace SushiRuntime
                 return inst;
             }
 
-            inline void enter() 
+            /**
+             * @brief Enters a read-side critical section.
+             *
+             * Stamps the calling thread's slot with the current global epoch so
+             * concurrent retire() calls know the thread is active and cannot
+             * reclaim objects from this epoch yet.
+             */
+            inline void enter()
             {
                 auto& tls_state = Detail::get_tls_state();
                 if (tls_state.id == -1) tls_state.id = register_thread();
@@ -258,7 +285,13 @@ namespace SushiRuntime
                 thread_slots_[tls_state.id].epoch.store(current, std::memory_order_release);
             }
 
-            inline void exit() 
+            /**
+             * @brief Exits the read-side critical section.
+             *
+             * Clears the calling thread's epoch slot (stores 0), signalling that
+             * it holds no live references and reclamation of older epochs may proceed.
+             */
+            inline void exit()
             {
                 auto& tls_state = Detail::get_tls_state();
                 if (tls_state.id != -1) 
@@ -289,7 +322,16 @@ namespace SushiRuntime
                     check_and_reclaim();
             }
 
-            void unregister_thread(int id, Detail::RetiredNode* remaining_nodes) 
+            /**
+             * @brief Deregisters a thread slot and hands its retire list to the global orphan list.
+             *
+             * Called from EpochThreadLocalState's destructor when a thread exits.
+             * Nodes in @p remaining_nodes are picked up by the next check_and_reclaim().
+             *
+             * @param id              Slot id returned by register_thread().
+             * @param remaining_nodes Head of the thread's unreclaimed retire list, or null.
+             */
+            void unregister_thread(int id, Detail::RetiredNode* remaining_nodes)
             {
                 if (id < 0 || id >= static_cast<int>(MAX_EPOCH_THREADS)) return;
 
@@ -312,8 +354,10 @@ namespace SushiRuntime
             }
         };
 
-        // DERLEME HATASINA NEDEN OLAN EKSİK KISIM EKLENDİ
-        struct EpochGuard 
+        /**
+         * @brief RAII guard that enters the EBR critical section on construction and exits on destruction.
+         */
+        struct EpochGuard
         {
             EpochGuard() { EpochManager::instance().enter(); }
             ~EpochGuard() { EpochManager::instance().exit(); }
@@ -321,8 +365,7 @@ namespace SushiRuntime
             EpochGuard& operator=(const EpochGuard&) = delete;
         };
 
-        // YENİ: Thread Local State yok edilirken devir teslim
-        inline Detail::EpochThreadLocalState::~EpochThreadLocalState() 
+        inline Detail::EpochThreadLocalState::~EpochThreadLocalState()
         {
             if (id != -1) 
             {

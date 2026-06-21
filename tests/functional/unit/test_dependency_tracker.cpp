@@ -35,13 +35,24 @@ using namespace SushiRuntime::Graph;
 
 namespace
 {
+    /**
+     * @brief Helper to retrieve the in_degree of a node.
+     *
+     * @param n The node to inspect.
+     * @return The current in_degree count.
+     */
     int in_degree_of(const sushi_ptr<Node>& n)
     {
         return n->in_degree.load(std::memory_order_relaxed);
     }
 }
 
-// writer then reader on one buffer: the reader gains one incoming edge (RAW).
+/**
+ * @brief Tests that a read after a write creates a single RAW edge.
+ *
+ * Simulates a writer followed by a reader accessing the same buffer, ensuring
+ * the reader's incoming edge count increments.
+ */
 TEST(Unit_DependencyTrackerTest, RawCreatesEdge)
 {
     DependencyTracker tracker;
@@ -60,7 +71,12 @@ TEST(Unit_DependencyTrackerTest, RawCreatesEdge)
     tracker.reset();
 }
 
-// W1 -> R -> W2: R depends on W1 (RAW); W2 depends on both R (WAR) and W1 (WAW).
+/**
+ * @brief Tests WAR and WAW edge tracking in a chain of dependencies.
+ *
+ * Creates a sequence of Write -> Read -> Write and verifies the correct
+ * dependency counts for all operations.
+ */
 TEST(Unit_DependencyTrackerTest, WarAndWawChain)
 {
     DependencyTracker tracker;
@@ -82,7 +98,12 @@ TEST(Unit_DependencyTrackerTest, WarAndWawChain)
     tracker.reset();
 }
 
-// One writer, two readers: both depend on the writer but not on each other.
+/**
+ * @brief Tests that multiple readers of the same writer don't depend on each other.
+ *
+ * Ensures that Read-After-Read (RAR) operations remain parallel and only
+ * depend on the preceding write.
+ */
 TEST(Unit_DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
 {
     DependencyTracker tracker;
@@ -103,7 +124,12 @@ TEST(Unit_DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
     tracker.reset();
 }
 
-// A writer and reader sharing two buffers must be linked by only one edge.
+/**
+ * @brief Tests that multiple shared buffers between the same nodes create only one edge.
+ *
+ * When a writer and a reader access two distinct buffers, the dependency tracker
+ * should deduplicate this into a single logical dependency edge.
+ */
 TEST(Unit_DependencyTrackerTest, SharedBuffersCreateSingleEdge)
 {
     DependencyTracker tracker;
@@ -124,7 +150,12 @@ TEST(Unit_DependencyTrackerTest, SharedBuffersCreateSingleEdge)
     tracker.reset();
 }
 
-// A node writing the same buffer twice must never create an edge to itself.
+/**
+ * @brief Tests that writing the same buffer twice by the same node does not create a self-dependency.
+ *
+ * Resolving a write operation multiple times on the same node should never increment
+ * its own dependency degree.
+ */
 TEST(Unit_DependencyTrackerTest, NoSelfDependency)
 {
     DependencyTracker tracker;

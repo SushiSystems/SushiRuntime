@@ -21,6 +21,15 @@
 /* permissions and limitations under the License.                         */
 /**************************************************************************/
 
+#pragma once
+
+/**
+ * @file export.hpp
+ * @brief Defines macro utilities for library symbol export and import.
+ * 
+ * Configures platform-specific attributes to control the visibility of public API symbols.
+ */
+
 #if defined(_WIN32) || defined(__CYGWIN__)
   #ifdef SUSHIRUNTIME_EXPORTS
     #define SUSHIRUNTIME_API __declspec(dllexport)

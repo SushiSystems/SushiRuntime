@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <thread>
 #include <type_traits>
@@ -338,6 +339,68 @@ namespace SushiRuntime
                             h.parallel_for(sycl::range<1>(n),
                                            [fn](sycl::id<1> i) { fn(i[0]); });
                         }, reads, writes);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds an offloadable task: a named remote kernel with a
+                 *        local fallback.
+                 *
+                 * This is the fluent counterpart to a distributed dispatch. @p op
+                 * names a kernel registered (by the same OpID) in this binary's
+                 * KernelRegistry on every node; when the runtime is a Master with a
+                 * live worker that supports @p op, the scheduler may ship this task
+                 * over the wire. Otherwise — standalone build, no worker, or the
+                 * policy declining — @p local runs it here, so the same graph is
+                 * correct with or without a cluster (transparent fallback).
+                 *
+                 * @p reads / @p writes are the buffers the task touches, given as
+                 * dependency keys (Buffer/State::dependency_key() or read_/write_key()).
+                 * The dependency tracker orders the task by them, and the distributed
+                 * layer resolves them to network buffer handles. @p params are scalar
+                 * arguments carried in TaskMetadata (e.g. element counts).
+                 *
+                 * @param op     OpID of the kernel, e.g. "vec.add"_op.
+                 * @param n      Iteration range for the local fallback parallel_for.
+                 * @param reads  Dependency keys this task reads.
+                 * @param writes Dependency keys this task writes.
+                 * @param local  Local fallback invoked as local(i) for i in [0, n).
+                 * @param params Scalar params copied into TaskMetadata (index order).
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
+                Graph& add(::SushiRuntime::Graph::OpID op, std::size_t n,
+                           const std::vector<void*>& reads,
+                           const std::vector<void*>& writes,
+                           F&& local,
+                           std::initializer_list<std::uint64_t> params = {})
+                {
+                    std::vector<std::uint64_t> pv(params);
+                    specs_.push_back([fn = std::forward<F>(local), n, reads, writes, op, pv]
+                                     (BackingGraph& bg)
+                    {
+                        ::SushiRuntime::Graph::TaskMetadata meta{};
+                        meta.name   = "fluent_offload";
+                        meta.op_id  = op;
+                        for (std::size_t i = 0; i < pv.size() &&
+                             i < ::SushiRuntime::Graph::TaskMetadata::K_MAX_PARAMS; ++i)
+                            meta.set_param<std::uint64_t>(static_cast<int>(i), pv[i]);
+
+                        // Host-fallback shape (queue + deps -> event): run locally as
+                        // a parallel_for when this task is not offloaded. Setting
+                        // op_id is what makes compile() consider it offloadable.
+                        bg.add_task(meta, reads, writes,
+                            [fn, n](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
+                            {
+                                return q.submit([&](sycl::handler& h)
+                                {
+                                    h.parallel_for(sycl::range<1>(n),
+                                                   [fn](sycl::id<1> i) { fn(i[0]); });
+                                });
+                            });
                     });
                     ++task_count_;
                     dirty_ = true;

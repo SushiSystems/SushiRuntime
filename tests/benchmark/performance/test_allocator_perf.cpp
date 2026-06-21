@@ -75,11 +75,14 @@ namespace
 #endif
     }
 
-    // Per-op timer backed by the CPU timestamp counter. steady_clock can have a
-    // ~100ns tick on virtualized hosts — coarser than a single pool op — which
-    // floors the per-op tail. rdtsc gives sub-ns resolution; only same-thread
-    // deltas are taken, so cross-core TSC sync is irrelevant. Falls back to
-    // steady_clock off x86.
+    /**
+     * @brief Per-op timer backed by the CPU timestamp counter.
+     * 
+     * steady_clock can have a ~100ns tick on virtualized hosts — coarser than a single pool op — which
+     * floors the per-op tail. rdtsc gives sub-ns resolution; only same-thread
+     * deltas are taken, so cross-core TSC sync is irrelevant. Falls back to
+     * steady_clock off x86.
+     */
     struct HiResTimer
     {
         static inline double ns_per_tick = 1.0;
@@ -101,7 +104,9 @@ namespace
 #endif
         }
 
-        // Pin the tick rate against steady_clock over a busy interval.
+        /**
+         * @brief Pin the tick rate against steady_clock over a busy interval.
+         */
         static void calibrate()
         {
 #if defined(SR_HAS_RDTSC)
@@ -132,7 +137,13 @@ namespace
         }
     };
 
-    // Per-op latency in ns from a tick bracket, instrument overhead removed.
+    /**
+     * @brief Per-op latency in ns from a tick bracket, instrument overhead removed.
+     * 
+     * @param start The start tick.
+     * @param end The end tick.
+     * @return The latency in nanoseconds.
+     */
     inline double op_ns(uint64_t start, uint64_t end)
     {
         double v = static_cast<double>(end - start) * HiResTimer::ns_per_tick
@@ -140,7 +151,12 @@ namespace
         return v < 0.0 ? 0.0 : v;
     }
 
-    // Touch every cache line so the real first-touch (page commit) cost is paid.
+    /**
+     * @brief Touch every cache line so the real first-touch (page commit) cost is paid.
+     * 
+     * @param p Pointer to the memory.
+     * @param size Size of the memory in bytes.
+     */
     inline void touch_pages(void* p, size_t size)
     {
         if (!p || size == 0)
@@ -151,15 +167,27 @@ namespace
         c[size - 1] = 0;
     }
 
-    // Per-round latency statistics from a sorted sample vector.
+    /**
+     * @brief Per-round latency statistics from a sorted sample vector.
+     */
     struct LatencyDist
     {
         double p50 = 0, p99 = 0, p999 = 0, p9999 = 0, mean = 0;
         double ops_per_sec = 0;
     };
 
-    // Build a distribution from two sources: block_means (batched) feeds mean,
-    // p50, throughput; per_op (single-op) feeds the tail. Sorts both in place.
+    /**
+     * @brief Build a distribution from two sources.
+     * 
+     * block_means (batched) feeds mean, p50, throughput; per_op (single-op) feeds the tail.
+     * Sorts both in place.
+     * 
+     * @param block_means Batched means.
+     * @param per_op Single-op times.
+     * @param total_ops Total operations.
+     * @param total_ns Total nanoseconds.
+     * @return Computed latency distribution.
+     */
     LatencyDist compute_latency2(std::vector<double>& block_means,
                                  std::vector<double>& per_op,
                                  double total_ops, double total_ns)
@@ -189,14 +217,21 @@ namespace
         return d;
     }
 
-    // Per-round results for a producer/consumer contestant, kept split.
+    /**
+     * @brief Per-round results for a producer/consumer contestant, kept split.
+     */
     struct PCResult
     {
         LatencyDist alloc;   // producer side: alloc + first-touch + handoff
         LatencyDist free_;   // consumer side: free() only
     };
 
-    // Median across rounds, field by field — robust against a single outlier.
+    /**
+     * @brief Median across rounds, field by field — robust against a single outlier.
+     * 
+     * @param rs The latency distributions.
+     * @return Aggregated latency distribution.
+     */
     LatencyDist aggregate_rounds(std::vector<LatencyDist>& rs)
     {
         auto med = [&](double LatencyDist::*field)
@@ -218,8 +253,15 @@ namespace
         return a;
     }
 
-    // Timing-agnostic sanity gate: this is a benchmark, not a perf regression
-    // test, so it only asserts forward progress (no deadlock / no absurd stall).
+    /**
+     * @brief Timing-agnostic sanity gate.
+     * 
+     * This is a benchmark, not a perf regression test, so it only asserts forward
+     * progress (no deadlock / no absurd stall).
+     * 
+     * @param name Name of the test.
+     * @param d The latency distribution.
+     */
     void sanity_gate(const std::string& name, const LatencyDist& d)
     {
         EXPECT_GT(d.ops_per_sec, 0.0) << name << ": no forward progress (possible deadlock)";
@@ -237,7 +279,9 @@ namespace
                   << " | "      << std::setw(11) << std::setprecision(0) << d.ops_per_sec << " ops/s\n";
     }
 
-    // Pluggable allocator interface so we can swap the contestant (pool, malloc).
+    /**
+     * @brief Pluggable allocator interface so we can swap the contestant (pool, malloc).
+     */
     struct AllocatorVTable
     {
         std::string name;
@@ -245,8 +289,15 @@ namespace
         std::function<void(void*)>    free_;
     };
 
-    // Warm the upcoming scenario's size-class bucket before timing begins, so the
-    // first measured iterations don't pay a cold-bucket refill spike.
+    /**
+     * @brief Warm the upcoming scenario's size-class bucket before timing begins.
+     * 
+     * This prevents the first measured iterations from paying a cold-bucket refill spike.
+     * 
+     * @param av The allocator vtable.
+     * @param alloc_size The allocation size.
+     * @param iters Number of iterations.
+     */
     void warmup_scenario(const AllocatorVTable& av, size_t alloc_size, size_t iters = 4096)
     {
         for (size_t i = 0; i < iters; ++i)
@@ -258,9 +309,19 @@ namespace
         }
     }
 
-    // Same-thread alloc/free (magazine best case). Phase 1 times batches
-    // (mean/p50/throughput, tick amortized); phase 2 times each op via rdtsc
-    // (p99/p999/p9999). Only phase 1 counts toward ops/s.
+    /**
+     * @brief Benchmark same-thread alloc/free (magazine best case).
+     * 
+     * Phase 1 times batches (mean/p50/throughput, tick amortized); phase 2 times each op
+     * via rdtsc (p99/p999/p9999). Only phase 1 counts toward ops/s.
+     * 
+     * @param av The allocator vtable.
+     * @param thread_count The number of threads.
+     * @param iters_per_thread Iterations per thread.
+     * @param alloc_size The allocation size.
+     * @param batch The batch size.
+     * @return Measured latency distribution.
+     */
     LatencyDist bench_same_thread(const AllocatorVTable& av,
                                   size_t thread_count,
                                   size_t iters_per_thread,
@@ -344,10 +405,20 @@ namespace
         return compute_latency2(bm_all, po_all, total_ops, total_ns);
     }
 
-    // Producer/consumer alloc/free (cross-thread free). Half the threads alloc +
-    // push into a bounded SPSC ring, the other half pop + free. The two sides are
-    // timed and reported SEPARATELY so the remote-free cost is a first-class
-    // number. Same two-phase (batched + rdtsc per-op) timing as above.
+    /**
+     * @brief Benchmark producer/consumer alloc/free (cross-thread free).
+     * 
+     * Half the threads alloc + push into a bounded SPSC ring, the other half pop + free.
+     * The two sides are timed and reported SEPARATELY so the remote-free cost is a first-class
+     * number. Same two-phase (batched + rdtsc per-op) timing as above.
+     * 
+     * @param av The allocator vtable.
+     * @param pair_count Number of producer/consumer pairs.
+     * @param iters_per_pair Iterations per pair.
+     * @param alloc_size The allocation size.
+     * @param batch The batch size.
+     * @return Producer/consumer results.
+     */
     PCResult bench_producer_consumer(const AllocatorVTable& av,
                                      size_t pair_count,
                                      size_t iters_per_pair,
@@ -530,6 +601,9 @@ namespace
     }
 }
 
+/**
+ * @brief Test fixture for allocator performance benchmarks.
+ */
 class Performance_AllocatorBench : public ::testing::Test
 {
 protected:
@@ -557,7 +631,13 @@ protected:
         }
     }
 
-    // Contestant table for a given strategy.
+    /**
+     * @brief Contestant table for a given strategy.
+     * 
+     * @param strat The allocator strategy.
+     * @param strat_name The name of the strategy.
+     * @return List of contestant vtables.
+     */
     std::vector<AllocatorVTable> contestants_for(
         const IAllocatorStrategy& strat, const char* strat_name)
     {
@@ -572,7 +652,11 @@ protected:
         return v;
     }
 
-    // The std::malloc reference floor (non-USM).
+    /**
+     * @brief The std::malloc reference floor (non-USM).
+     * 
+     * @return Allocator vtable for malloc.
+     */
     AllocatorVTable malloc_floor()
     {
         return {
@@ -582,8 +666,18 @@ protected:
         };
     }
 
-    // Run a benchmark across N rounds in randomized order (first round discarded
-    // as cold-start), reporting the median across the rest.
+    /**
+     * @brief Run a benchmark across N rounds in randomized order.
+     * 
+     * First round is discarded as cold-start, reporting the median across the rest.
+     * 
+     * @tparam BenchFn Benchmark function type.
+     * @param title Title of the benchmark.
+     * @param contestants List of contestants.
+     * @param bench_fn Benchmark function to run.
+     * @param warmup_size Warmup allocation size.
+     * @param rounds Number of rounds.
+     */
     template <typename BenchFn>
     void run_matrix(const std::string& title,
                     std::vector<AllocatorVTable> contestants,
@@ -622,8 +716,19 @@ protected:
         }
     }
 
-    // Producer/consumer variant: same scheduling, but each contestant prints two
-    // lines ("alloc" and "free") so the handoff sides stay transparent.
+    /**
+     * @brief Producer/consumer variant of benchmark matrix execution.
+     * 
+     * Same scheduling, but each contestant prints two lines ("alloc" and "free")
+     * so the handoff sides stay transparent.
+     * 
+     * @tparam BenchFn Benchmark function type.
+     * @param title Title of the benchmark.
+     * @param contestants List of contestants.
+     * @param bench_fn Benchmark function to run.
+     * @param warmup_size Warmup allocation size.
+     * @param rounds Number of rounds.
+     */
     template <typename BenchFn>
     void run_matrix_pc(const std::string& title,
                        std::vector<AllocatorVTable> contestants,
@@ -670,7 +775,11 @@ protected:
     }
 };
 
-// Same-thread workload: magazine best case.
+/**
+ * @brief Tests same-thread alloc/free workload over various sizes.
+ * 
+ * Represents the magazine best case.
+ */
 TEST_F(Performance_AllocatorBench, SameThread_Shared_AllSizes)
 {
     auto cs = contestants_for(Strategies::Shared::instance(), "Shared");
@@ -689,6 +798,11 @@ TEST_F(Performance_AllocatorBench, SameThread_Shared_AllSizes)
     }
 }
 
+/**
+ * @brief Tests same-thread alloc/free workload with maximum hardware threads.
+ * 
+ * Evaluates performance when all cores are concurrently allocating/freeing.
+ */
 TEST_F(Performance_AllocatorBench, SameThread_Shared_MaxThreads)
 {
     auto cs = contestants_for(Strategies::Shared::instance(), "Shared");
@@ -709,7 +823,11 @@ TEST_F(Performance_AllocatorBench, SameThread_Shared_MaxThreads)
     }
 }
 
-// Producer/consumer: realistic task-graph pattern, magazine worst case.
+/**
+ * @brief Tests producer/consumer alloc/free workload.
+ * 
+ * Represents realistic task-graph pattern, which is the magazine worst case.
+ */
 TEST_F(Performance_AllocatorBench, ProducerConsumer_Shared)
 {
     auto cs = contestants_for(Strategies::Shared::instance(), "Shared");

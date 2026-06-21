@@ -41,8 +41,14 @@ using namespace SushiRuntime::Topology;
 
 namespace
 {
-    // RuntimeContext split into `nodes` synthetic NUMA nodes (core i -> i % nodes)
-    // with a symmetric distance matrix (10 local, 21 remote).
+    /**
+     * @brief Creates a synthetic RuntimeContext split into `nodes` NUMA nodes.
+     *
+     * Generates a context with a symmetric distance matrix mapping core i -> i % nodes.
+     *
+     * @param nodes The number of synthetic NUMA nodes.
+     * @return A shared pointer to the created RuntimeContext.
+     */
     std::shared_ptr<RuntimeContext> make_synthetic_ctx(int nodes)
     {
         auto provider = std::make_shared<RemappingTopologyProvider>(
@@ -57,8 +63,12 @@ namespace
     }
 }
 
-// With cores split across 2 nodes, every worker's steal order must list all
-// same-node victims before any cross-node victim.
+/**
+ * @brief Tests that node-local victims precede remote ones in the steal order.
+ *
+ * With cores split across nodes, every worker's steal order must list all
+ * same-node victims before any cross-node victim.
+ */
 TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
 {
     constexpr int NODES = 2;
@@ -94,8 +104,12 @@ TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
     }
 }
 
-// Default (real) topology collapses to one node here; the steal order must still
-// contain every other worker (single-tier == original behaviour).
+/**
+ * @brief Tests that a flat topology keeps all victims in the steal order.
+ *
+ * The default (real) topology collapses to one node here; the steal order
+ * must still contain every other worker.
+ */
 TEST(Unit_NumaStealTest, FlatTopologyKeepsAllVictims)
 {
     RuntimeContext ctx; // default Hwloc provider/model.

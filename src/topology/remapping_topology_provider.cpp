@@ -29,6 +29,13 @@ namespace SushiRuntime
 {
     namespace Topology
     {
+        /**
+         * @brief Constructs a new RemappingTopologyProvider.
+         * Wraps an existing provider to map devices into synthetic NUMA nodes.
+         * @param inner The underlying topology provider to wrap.
+         * @param fake_node_count The number of synthetic NUMA nodes to simulate.
+         * @throws std::invalid_argument if the inner provider is null.
+         */
         RemappingTopologyProvider::RemappingTopologyProvider(std::shared_ptr<ITopologyProvider> inner,
                                                              int fake_node_count)
             : inner_(std::move(inner)), fake_node_count_(fake_node_count)
@@ -39,6 +46,12 @@ namespace SushiRuntime
                 fake_node_count_ = 1;
         }
 
+        /**
+         * @brief Enumerates hardware nodes and remaps their NUMA IDs.
+         * Distributes discovered devices across the synthetic NUMA nodes in a round-robin fashion.
+         * @param config The hardware filter configuration.
+         * @return A vector of hardware nodes with synthetic NUMA node IDs.
+         */
         std::vector<HardwareNode> RemappingTopologyProvider::enumerate(const HardwareFilterConfig& config)
         {
             std::vector<HardwareNode> nodes = inner_->enumerate(config);
@@ -58,6 +71,11 @@ namespace SushiRuntime
             return nodes;
         }
 
+        /**
+         * @brief Maps CPU cores to synthetic NUMA nodes.
+         * Overlays a synthetic round-robin layout on the real cores.
+         * @return A vector mapping CPU core indices to synthetic NUMA node IDs.
+         */
         std::vector<int> RemappingTopologyProvider::cpu_core_to_numa() const
         {
             // Overlay the same synthetic round-robin layout on the real cores, so

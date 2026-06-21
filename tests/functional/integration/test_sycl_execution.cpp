@@ -36,8 +36,11 @@ using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
 using SushiRuntime::Test::UsmShared;
 
-// Full end-to-end run: a host task initializes the inputs, a device kernel
-// adds them, and the host verifies the result.
+/**
+ * @brief Tests an end-to-end vector addition.
+ *
+ * A host task initializes the inputs, a device kernel adds them, and the host verifies the result.
+ */
 TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
 {
     RuntimeContext ctx;
@@ -103,8 +106,11 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
     EXPECT_TRUE(passed) << "Vector addition kernel produced incorrect results!";
 }
 
-// Three dependent stages that share USM: init (host) -> scale (device kernel)
-// -> reduce (host sum). The tracker must serialize them and the sum must match.
+/**
+ * @brief Tests a multi-stage execution chain sharing USM.
+ *
+ * Three dependent stages: init (host) -> scale (device kernel) -> reduce (host sum). The tracker must serialize them and the final sum must match the expected value.
+ */
 TEST(Integration_SyclExecutionTest, MultiStageChain)
 {
     RuntimeContext ctx;

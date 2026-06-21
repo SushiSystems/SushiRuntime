@@ -34,26 +34,37 @@ namespace SushiRuntime
         /**
          * @brief Decorator that overlays a synthetic NUMA layout on real devices.
          *
-         * Wraps any inner ITopologyProvider (normally HwlocTopologyProvider),
-         * keeps the *real* SYCL devices it discovers — so queues and kernels run
-         * for real — but reassigns each node's numa_node_id across a configurable
-         * number of fake NUMA nodes (round-robin).
-         *
-         * This is how multi-node routing/placement is exercised on single-node
-         * hardware (Ryzen 7600X + GTX 1060) or under WSL where the real topology
-         * collapses to node 0. Pair it with a MatrixDistanceModel sized to
-         * @ref fake_node_count.
+         * Wraps an underlying ITopologyProvider, preserving real SYCL devices while reassigning
+         * NUMA node IDs across a configurable number of synthetic nodes in a round-robin fashion.
          */
         class SUSHIRUNTIME_API RemappingTopologyProvider : public ITopologyProvider
         {
             public:
                 /**
-                 * @param inner            Underlying real provider (must be non-null).
-                 * @param fake_node_count  Number of synthetic NUMA nodes to spread across.
+                 * @brief Constructs a provider that overrides NUMA node assignments.
+                 *
+                 * Wraps the real provider to distribute devices across synthetic nodes.
+                 * @param inner The underlying real topology provider. Takes shared ownership.
+                 * @param fake_node_count The target number of synthetic NUMA nodes to distribute across.
+                 * @warning The inner provider must not be null.
                  */
                 RemappingTopologyProvider(std::shared_ptr<ITopologyProvider> inner, int fake_node_count);
 
+                /**
+                 * @brief Discovers hardware devices and assigns them to synthetic NUMA nodes.
+                 *
+                 * Calls the underlying provider and modifies the resulting NUMA assignments using round-robin distribution.
+                 * @param config The hardware filter configuration defining inclusion or exclusion rules.
+                 * @return The list of hardware nodes with overridden NUMA assignments.
+                 */
                 std::vector<HardwareNode> enumerate(const HardwareFilterConfig& config = {}) override;
+
+                /**
+                 * @brief Maps CPU cores to synthetic NUMA nodes.
+                 *
+                 * Queries the underlying core mapping and re-assigns them across the synthetic nodes.
+                 * @return An array mapping core ID to the assigned synthetic NUMA node ID.
+                 */
                 std::vector<int> cpu_core_to_numa() const override;
 
             private:

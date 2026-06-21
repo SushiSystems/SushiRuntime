@@ -36,7 +36,11 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Topology;
 
-// Discovery must find at least one compute device, with sequential logical ids.
+/**
+ * @brief Verifies that hardware discovery finds at least one compute device with sequential logical IDs.
+ *
+ * Probes all devices and ensures the returned list is not empty, possesses sequential IDs, and has valid names.
+ */
 TEST(Unit_TopologyTest, HardwareDiscoveryProbe)
 {
     HardwareDiscovery discovery;
@@ -56,7 +60,11 @@ TEST(Unit_TopologyTest, HardwareDiscoveryProbe)
     }
 }
 
-// ACPI SLIT distances: local node is exactly 10, a remote node is greater.
+/**
+ * @brief Verifies basic NUMA distance matrix properties as per ACPI SLIT standards.
+ *
+ * Asserts that the local node distance is exactly 10, and a remote node distance is strictly greater than 10.
+ */
 TEST(Unit_TopologyTest, NUMAMatrixDistances)
 {
     NUMAMapper mapper;
@@ -68,7 +76,11 @@ TEST(Unit_TopologyTest, NUMAMatrixDistances)
     EXPECT_GT(remote_distance, 10) << "Remote NUMA distance must be greater than 10.";
 }
 
-// Requesting a queue for a non-existent NUMA node must fall back, not crash.
+/**
+ * @brief Verifies that requesting a queue for an invalid NUMA ID falls back safely instead of crashing.
+ *
+ * Requests a queue with a non-existent NUMA ID and validates that the returned fallback queue functions normally.
+ */
 TEST(Unit_TopologyTest, InvalidNUMAFallbackQueue)
 {
     RuntimeContext ctx;
@@ -87,7 +99,11 @@ TEST(Unit_TopologyTest, InvalidNUMAFallbackQueue)
     }) << "Context crashed when an invalid NUMA ID was requested.";
 }
 
-// Requesting an allocator for an invalid NUMA node must fall back to node 0.
+/**
+ * @brief Verifies that requesting an allocator for an invalid NUMA ID safely falls back to node 0.
+ *
+ * Passes a negative NUMA ID to the context and ensures memory can still be allocated and deallocated correctly.
+ */
 TEST(Unit_TopologyTest, InvalidNUMAFallbackAllocator)
 {
     RuntimeContext ctx;

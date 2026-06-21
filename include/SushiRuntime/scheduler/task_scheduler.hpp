@@ -57,10 +57,16 @@ namespace SushiRuntime
         class Deque;
         class Task;
 
-        /** @brief Comparator for global priority queue. */
-        struct TaskPriorityCompare 
+        /**
+         * @brief Min-heap comparator for the global priority queue.
+         *
+         * Returns true when @p a should yield to @p b, i.e. when a's priority is
+         * lower. Null pointers sort to the bottom (lowest priority) to handle any
+         * sentinel entries without a null-check in the dispatch loop.
+         */
+        struct TaskPriorityCompare
         {
-            bool operator()(const Task* a, const Task* b) const 
+            bool operator()(const Task* a, const Task* b) const
             {
                 if (!a) return true;
                 if (!b) return false;
@@ -69,7 +75,13 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Work-stealing scheduler loop.
+         * @brief NUMA-aware work-stealing scheduler.
+         *
+         * Owns a fixed-size pool of worker threads started once (start()) and kept
+         * alive across graph runs. Each run is gated by arm_for_execution() +
+         * submit(root) pairs; the sentinel node's completion promise unblocks the
+         * caller. Workers steal from node-local victims first; cross-node steals are
+         * tracked separately so the RunReport can report intra/inter-NUMA balance.
          */
         class SUSHIRUNTIME_API TaskScheduler : public ITelemetryProvider, public ITaskMigrator
         {
@@ -155,11 +167,10 @@ namespace SushiRuntime
                 /**
                  * @brief Arms the scheduler for a new execution round.
                  *
-                 * Resets the running flag to true so that workers continue their
-                 * dispatch loops for the upcoming graph. Must be called before
-                 * submitting the first root node of each execution round.
-                 *
-                 * This is the Madde 7 fix: no thread creation/destruction between runs.
+                 * Resets the running flag so workers continue their dispatch loops
+                 * for the upcoming graph. Must be called before submitting the first
+                 * root node of each round. Avoids thread creation/destruction between
+                 * successive graph runs by reusing the persistent worker pool.
                  */
                 void arm_for_execution();
 
@@ -167,8 +178,8 @@ namespace SushiRuntime
                  * @brief Signals workers to stop and waits for all threads to join.
                  *
                  * Called once when the RuntimeContext (and thus the ExecutionEngine)
-                 * is being destroyed. Ensures no dangling context references exist
-                 * after this call returns. [Madde 18 fix]
+                 * is being destroyed. After this returns, no worker thread holds a
+                 * reference to the context, so queues and allocators can be freed safely.
                  */
                 void stop();
 

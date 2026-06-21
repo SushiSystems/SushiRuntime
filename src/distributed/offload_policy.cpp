@@ -50,6 +50,14 @@ namespace SushiRuntime
             constexpr double QUEUE_PENALTY_US_PER_TASK = 1000.0;
         }
 
+        /**
+         * @brief Selects the optimal worker for offloading a task based on least-loaded heuristics.
+         * Evaluates workers considering round-trip time, data transfer cost, and queue backlog to pick the best candidate.
+         * @param node The Graph::Node to be offloaded.
+         * @param workers A span containing statistics for all available workers.
+         * @param est_bytes The estimated bytes of data to transfer for the task.
+         * @return An std::optional containing the selected worker ID, or std::nullopt if no worker is suitable.
+         */
         std::optional<int> LeastLoadedOffloadPolicy::pick_worker(const Graph::Node& /*node*/,
                                                                  SushiRuntime::span<const WorkerStats> workers,
                                                                  uint64_t est_bytes)

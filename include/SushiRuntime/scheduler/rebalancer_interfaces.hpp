@@ -25,35 +25,86 @@
 #include <vector>
 #include <cstdint>
 
-namespace SushiRuntime 
+namespace SushiRuntime
 {
-    namespace Scheduler 
+    namespace Scheduler
     {
-        // 1. İşçilerin anlık durumunu okuyan arayüz (Interface Segregation)
-        class ITelemetryProvider 
+        /**
+         * @brief Read-only view of live scheduler state for rebalance decisions.
+         *
+         * Implemented by TaskScheduler; injected into IRebalanceStrategy so the
+         * strategy can inspect queue depths and completion rates without coupling
+         * to the scheduler's internals.
+         */
+        class ITelemetryProvider
         {
             public:
                 virtual ~ITelemetryProvider() = default;
+
+                /** @return Total number of active worker threads. */
                 virtual size_t get_worker_count() const = 0;
+
+                /**
+                 * @brief Pending task count for one worker.
+                 * @param worker_id Worker index in [0, get_worker_count()).
+                 * @return Number of tasks currently queued for that worker.
+                 */
                 virtual size_t get_queue_size(int worker_id) const = 0;
-                // İşçinin son 1 milisaniyede bitirdiği iş sayısı (Hız/Throttling göstergesi)
-                virtual size_t get_completion_rate(int worker_id) const = 0; 
+
+                /**
+                 * @brief Cumulative completed-task count for one worker.
+                 *
+                 * This is a running total, not a per-interval rate; callers
+                 * diff two snapshots to compute a rate over an interval.
+                 *
+                 * @param worker_id Worker index in [0, get_worker_count()).
+                 * @return Total tasks completed by that worker since scheduler start.
+                 */
+                virtual size_t get_completion_rate(int worker_id) const = 0;
         };
 
-        // 2. İşçiler arasında zorla görev taşıyan arayüz
-        class ITaskMigrator 
+        /**
+         * @brief Forcibly moves tasks between workers to balance load.
+         *
+         * Implemented by TaskScheduler; injected into IRebalanceStrategy so the
+         * strategy can trigger migration without touching scheduler internals.
+         */
+        class ITaskMigrator
         {
             public:
                 virtual ~ITaskMigrator() = default;
-                // Slow_worker'dan fast_worker'a 'count' kadar görevi kilitlenmeden (lock-free) taşır
+
+                /**
+                 * @brief Moves up to @p count tasks from one worker to another.
+                 * @param from_worker_id Source worker index.
+                 * @param to_worker_id   Destination worker index.
+                 * @param count          Maximum number of tasks to move.
+                 */
                 virtual void migrate_tasks(int from_worker_id, int to_worker_id, size_t count) = 0;
         };
 
-        // 3. Strateji Arayüzü (Open/Closed Principle)
-        class IRebalanceStrategy 
+        /**
+         * @brief Policy interface for deciding when and how to rebalance workers.
+         *
+         * Injected into WorkloadCoordinator. Each strategy sees the same
+         * telemetry/migrator pair and implements its own load-detection logic.
+         * Swap strategies at runtime via WorkloadCoordinator::set_strategy().
+         */
+        class IRebalanceStrategy
         {
             public:
                 virtual ~IRebalanceStrategy() = default;
+
+                /**
+                 * @brief Inspects scheduler state and issues migration commands.
+                 *
+                 * Called on a fixed interval by WorkloadCoordinator. Implementations
+                 * read @p telemetry to detect imbalance and call
+                 * @p migrator to move tasks between workers.
+                 *
+                 * @param telemetry Live scheduler counters (read-only).
+                 * @param migrator  Migration actuator to move tasks.
+                 */
                 virtual void evaluate_and_rebalance(const ITelemetryProvider& telemetry, ITaskMigrator& migrator) = 0;
         };
     }

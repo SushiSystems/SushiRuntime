@@ -34,47 +34,94 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Real TCP transport over raw sockets (POSIX + Winsock).
+         * @brief Provides a TCP-based implementation for network communication using raw sockets.
          *
-         * Dependency-free — no Boost, no Asio, no ZeroMQ — which keeps the
-         * "lightweight, no external DLL" goal intact and lets the lab's 5
-         * machines talk directly. Wire framing matches the in-process fabric
-         * (`[4B length][1B type][payload]`), so the coordinator and worker agent
-         * are unchanged when swapping `InProcessTransport` for this.
-         *
-         * Asymmetric, mirroring the master-worker model:
-         *   - Master binds a port and accepts `worker_count` connections; peer
-         *     ids are assigned 0..N-1 in accept order. send(peer) targets that
-         *     worker; peer < 0 broadcasts.
-         *   - Worker connects to the master; send() always targets the master,
-         *     and inbound messages are reported with peer == -1.
-         *
-         * One reader thread per connection; writes to a socket are serialized.
-         * Homogeneous-architecture lab assumed (native-endian length prefix).
+         * Establishes asymmetric master-worker connections to exchange framed messages across network boundaries.
          */
         class SUSHIRUNTIME_API TcpTransport final : public ITransport
         {
             public:
                 /**
-                 * @brief Creates a master endpoint bound to @p port (0 = OS-assigned).
+                 * @brief Instantiates a master network endpoint that listens for incoming worker connections.
                  *
-                 * Binds immediately so bound_port() is valid before start(); the
-                 * actual accept loop runs once start() is called.
+                 * Pre-binds the socket to the specified port immediately, while connection acceptance is deferred until start() is invoked.
+                 *
+                 * @param port The port number to bind to, or 0 to let the operating system assign an available port.
+                 * @param worker_count The exact number of worker connections to wait for.
+                 * @return A shared pointer to the newly created transport instance.
+                 * @throws std::runtime_error If socket creation or binding fails.
                  */
                 static std::shared_ptr<TcpTransport> make_master(uint16_t port, int worker_count);
 
-                /** @brief Creates a worker endpoint that will connect to @p host:@p port on start(). */
+                /**
+                 * @brief Instantiates a worker network endpoint configured to connect to a specific master.
+                 *
+                 * Stores the connection details for later use; the actual network connection is established when start() is invoked.
+                 *
+                 * @param host The hostname or IP address of the master node to connect to.
+                 * @param port The destination port number on the master node.
+                 * @return A shared pointer to the newly created transport instance.
+                 */
                 static std::shared_ptr<TcpTransport> make_worker(const std::string& host, uint16_t port);
 
+                /**
+                 * @brief Cleans up network resources and shuts down active connections.
+                 *
+                 * Ensures all underlying socket handles are properly closed and worker threads are joined.
+                 */
                 ~TcpTransport() override;
 
+                /**
+                 * @brief Transmits a binary payload to a specified peer.
+                 *
+                 * Frames the data with a header and writes it synchronously to the target socket.
+                 *
+                 * @param peer_id The numeric ID of the target peer, or < 0 to broadcast to all peers (master only).
+                 * @param type The type of message being transmitted.
+                 * @param payload A non-owning view of the raw bytes to send.
+                 */
                 void send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload) override;
+
+                /**
+                 * @brief Registers a callback function to handle incoming network messages.
+                 *
+                 * Stores the provided handler to be invoked whenever a complete frame is received.
+                 *
+                 * @param handler The callback function to execute on message arrival.
+                 */
                 void on_message(MessageHandler handler) override;
+
+                /**
+                 * @brief Activates the transport layer to begin network operations.
+                 *
+                 * Starts background threads for accepting connections (master) or connecting and reading data (worker).
+                 */
                 void start() override;
+
+                /**
+                 * @brief Terminates all active network operations and gracefully stops background threads.
+                 *
+                 * Signals the internal loops to exit and closes open sockets to force unblocking.
+                 */
                 void stop() override;
+
+                /**
+                 * @brief Retrieves the total number of connected peers.
+                 *
+                 * Returns the count of established connections managed by this transport instance.
+                 *
+                 * @return The integer count of active peer connections.
+                 */
                 int  peer_count() const override;
 
-                /** @brief Actual bound port (master only); useful when port 0 was requested. */
+                /**
+                 * @brief Retrieves the actual local port number bound by a master endpoint.
+                 *
+                 * Queries the underlying socket address to determine the OS-assigned port if 0 was originally requested.
+                 *
+                 * @return The local port number in use.
+                 * @warning This function is only valid for master endpoints; calling it on a worker yields undefined results.
+                 */
                 uint16_t bound_port() const;
 
                 struct Impl;

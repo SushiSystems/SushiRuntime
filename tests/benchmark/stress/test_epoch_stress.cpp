@@ -37,10 +37,14 @@ using namespace SushiRuntime::Memory;
 
 namespace
 {
-    // Counters are heap-owned by shared_ptr: EBR reclamation is deferred, so a
-    // tail of retired objects outlives the test and is freed later. Raw pointers
-    // to stack atomics would then be written after the frame is gone — a
-    // stack-use-after-return. shared_ptr keeps them alive while any Tracked refers.
+    /**
+     * @brief Counters for tracking object lifecycles.
+     * 
+     * Counters are heap-owned by shared_ptr: EBR reclamation is deferred, so a
+     * tail of retired objects outlives the test and is freed later. Raw pointers
+     * to stack atomics would then be written after the frame is gone — a
+     * stack-use-after-return. shared_ptr keeps them alive while any Tracked refers.
+     */
     struct Counters
     {
         std::atomic<long> live{0};       // net live (constructed - destroyed)
@@ -48,8 +52,16 @@ namespace
     };
     using CountersPtr = std::shared_ptr<Counters>;
 
+    /**
+     * @brief Creates a shared pointer to a new Counters object.
+     * 
+     * @return A shared pointer to the created counters.
+     */
     inline CountersPtr make_counters() { return std::make_shared<Counters>(); }
 
+    /**
+     * @brief An object tracked by the epoch manager.
+     */
     struct Tracked
     {
         CountersPtr c;
@@ -65,8 +77,12 @@ namespace
     };
 }
 
-// Sustained multi-thread churn: after all threads join and the main thread
-// drains, the destroyed count must dominate and live must stay bounded.
+/**
+ * @brief Tests high-churn epoch stress without leaking.
+ * 
+ * Sustained multi-thread churn: after all threads join and the main thread
+ * drains, the destroyed count must dominate and live must stay bounded.
+ */
 TEST(Stress_EpochStress, HighChurnNoLeak)
 {
     CountersPtr c = make_counters();
@@ -102,8 +118,12 @@ TEST(Stress_EpochStress, HighChurnNoLeak)
     EXPECT_GE(c->live.load(), 0) << "Negative live count indicates a double-free.";
 }
 
-// Repeatedly spawn short-lived threads that retire then exit, forcing the orphan
-// handoff on every join while a drainer keeps advancing epochs.
+/**
+ * @brief Tests orphan handoff by repeatedly spawning short-lived threads.
+ * 
+ * Repeatedly spawn short-lived threads that retire then exit, forcing the orphan
+ * handoff on every join while a drainer keeps advancing epochs.
+ */
 TEST(Stress_EpochStress, ThreadSpawnExitHandoff)
 {
     CountersPtr c = make_counters();

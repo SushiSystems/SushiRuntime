@@ -199,7 +199,15 @@ namespace SushiRuntime
 
         inline thread_local ThreadLocalMagazine t_mag{};
 
-        class BitmaskMemoryPool 
+        /**
+         * @brief Lock-free slab allocator that tracks free slots with 64-bit bitmasks.
+         *
+         * Each MemoryPage holds 64 equally-sized slots; the bitmask marks allocated
+         * bits. Allocation is a CAS on the bitmask — no mutex, no lock. The magazine
+         * layer (ThreadLocalMagazine) amortizes CAS cost by batching claims in groups
+         * of up to BATCH_SIZE.
+         */
+        class BitmaskMemoryPool
         {
             public:
                 /**
@@ -252,7 +260,12 @@ namespace SushiRuntime
                     return bulk_claim_impl(root_page, out_array, max_claim, /*claim_all=*/false);
                 }
 
-                void deallocate_to_page(MemoryPage& page, void* ptr) 
+                /**
+                 * @brief Returns one slot to its page by clearing the corresponding bitmask bit.
+                 * @param page Page that owns @p ptr (determined by the calling allocator).
+                 * @param ptr  Slot pointer to free; must lie within @p page's slab.
+                 */
+                void deallocate_to_page(MemoryPage& page, void* ptr)
                 {
                     size_t offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(page.start_ptr);
                     int slot_idx = static_cast<int>(offset / page.slot_size);

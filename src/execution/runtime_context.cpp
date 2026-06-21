@@ -160,6 +160,15 @@ namespace SushiRuntime
             }
         };
 
+        /**
+         * @brief Constructs a RuntimeContext with optional hardware configuration and topology providers.
+         *
+         * Initializes the compute stack, probes available hardware, and prepares the execution engine.
+         *
+         * @param config The hardware filtering configuration.
+         * @param provider Optional custom topology provider.
+         * @param distance_model Optional custom NUMA distance model.
+         */
         RuntimeContext::RuntimeContext(const Topology::HardwareFilterConfig& config,
                                        std::shared_ptr<Topology::ITopologyProvider> provider,
                                        std::shared_ptr<Topology::INumaDistanceModel> distance_model)
@@ -186,10 +195,20 @@ namespace SushiRuntime
             impl_->engine = std::make_unique<ExecutionEngine>(*this);
         }
 
+        /**
+         * @brief Destroys the RuntimeContext.
+         *
+         * Cleans up all managed hardware, allocators, and execution resources.
+         */
         RuntimeContext::~RuntimeContext() = default;
 
         /**
-         * @brief Hardware discovery and topology mapping process.
+         * @brief Executes the hardware discovery and topology mapping process.
+         *
+         * Initializes the device inventory and configures SYCL queues based on NUMA nodes.
+         *
+         * @param config The configuration containing hardware filtering preferences.
+         * @throws std::exception If a critical initialization failure occurs.
          */
         void RuntimeContext::probe_hardware(const Topology::HardwareFilterConfig& config) 
         {
@@ -249,17 +268,34 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Retrieves a SYCL queue by its global index.
+         *
+         * @param index The global index of the queue.
+         * @return sycl::queue& Reference to the requested queue.
+         * @throws std::runtime_error If the queue index is out of bounds.
+         */
         sycl::queue& RuntimeContext::get_queue(size_t index) 
         {
             SR_THROW_IF(index >= impl_->all_queues.size(), "Queue index out of bounds.");
             return impl_->all_queues[index];
         }
 
+        /**
+         * @brief Gets the total number of available devices (queues).
+         *
+         * @return size_t The count of devices.
+         */
         size_t RuntimeContext::device_count() const
         {
             return impl_->all_queues.size();
         }
 
+        /**
+         * @brief Retrieves the default USM allocator for NUMA node 0.
+         *
+         * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> A pointer to the USM allocator.
+         */
         sushi_ptr<SushiRuntime::Memory::USMAllocator> RuntimeContext::get_allocator() 
         {
             return get_allocator(0);
@@ -267,10 +303,13 @@ namespace SushiRuntime
 
         /**
          * @brief Returns the closest SYCL queue for a specific NUMA node.
-         * * Falls back to default queue if none found. Uses thread_local cursors
-         * to achieve perfect round-robin load balancing with ZERO atomic contention.
-         * * @param numa_id Target NUMA node ID.
+         *
+         * Falls back to a default queue if none is found. Uses thread_local cursors
+         * to achieve perfect round-robin load balancing with zero atomic contention.
+         *
+         * @param numa_id Target NUMA node ID.
          * @return sycl::queue& Reference to the queue.
+         * @throws std::runtime_error If no SYCL queues are available.
          */
         sycl::queue& RuntimeContext::get_numa_local_queue(int numa_id)
         {
@@ -296,6 +335,14 @@ namespace SushiRuntime
             return impl_->all_queues[0]; // Fallback dummy return
         }
 
+        /**
+         * @brief Allocates shared USM memory on a specific device.
+         *
+         * @param bytes The size in bytes to allocate.
+         * @param device_index The index of the device to allocate on.
+         * @return void* Pointer to the allocated memory.
+         * @throws std::runtime_error If the device index is out of bounds.
+         */
         void* RuntimeContext::malloc_shared_on(size_t bytes, size_t device_index)
         {
             sycl::queue& q = get_queue(device_index); // throws if out of bounds
@@ -308,6 +355,13 @@ namespace SushiRuntime
             return p;
         }
 
+        /**
+         * @brief Allocates shared USM memory on a specific NUMA node.
+         *
+         * @param bytes The size in bytes to allocate.
+         * @param numa_id The NUMA node ID specifying the locality.
+         * @return void* Pointer to the allocated memory.
+         */
         void* RuntimeContext::malloc_shared(size_t bytes, int numa_id)
         {
             sycl::queue& q = get_numa_local_queue(numa_id);
@@ -325,6 +379,13 @@ namespace SushiRuntime
             return p;
         }
 
+        /**
+         * @brief Allocates device-only USM memory on a specific NUMA node.
+         *
+         * @param bytes The size in bytes to allocate.
+         * @param numa_id The NUMA node ID specifying the locality.
+         * @return void* Pointer to the allocated memory.
+         */
         void* RuntimeContext::malloc_device(size_t bytes, int numa_id)
         {
             sycl::queue& q = get_numa_local_queue(numa_id);
@@ -340,6 +401,13 @@ namespace SushiRuntime
             return p;
         }
 
+        /**
+         * @brief Frees memory that was allocated via USM.
+         *
+         * Releases the memory using the appropriate context queue that owns it.
+         *
+         * @param ptr Pointer to the allocated memory.
+         */
         void RuntimeContext::free_usm(void* ptr)
         {
             if (!ptr) return;
@@ -365,6 +433,16 @@ namespace SushiRuntime
                 sycl::free(ptr, impl_->all_queues[0]); // best effort
         }
 
+        /**
+         * @brief Retrieves the queue associated with the context that allocated the given USM pointer.
+         *
+         * First relies on an authoritative internal tracking map. As a fallback, uses SYCL
+         * pointer introspection.
+         *
+         * @param ptr The USM pointer to inspect.
+         * @param fallback_numa The NUMA node ID to fallback to if the owner cannot be determined.
+         * @return sycl::queue& Reference to the associated queue.
+         */
         sycl::queue& RuntimeContext::get_queue_for_ptr(void* ptr, int fallback_numa)
         {
             if (ptr)
@@ -476,16 +554,37 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Computes the distance between two NUMA nodes.
+         *
+         * Uses the internal distance model to determine proximity.
+         *
+         * @param numa_a The first NUMA node ID.
+         * @param numa_b The second NUMA node ID.
+         * @return int The distance metric between the two nodes.
+         */
         int RuntimeContext::numa_distance(int numa_a, int numa_b) const
         {
             return impl_->distance_model->distance(numa_a, numa_b);
         }
 
+        /**
+         * @brief Retrieves the mapping from logical CPU cores to NUMA nodes.
+         *
+         * @return const std::vector<int>& A vector mapping core index to NUMA node ID.
+         */
         const std::vector<int>& RuntimeContext::cpu_core_to_numa() const
         {
             return impl_->core_to_numa;
         }
 
+        /**
+         * @brief Waits for all queues in the runtime context to finish execution.
+         *
+         * This function acts as a global synchronization point.
+         *
+         * @throws sycl::exception If an error occurs during queue execution.
+         */
         void RuntimeContext::wait_all()
         {
             for (auto& q : impl_->all_queues) 
@@ -494,12 +593,23 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Gets a reference to the active execution engine.
+         *
+         * @return IExecutionEngine& A reference to the execution engine instance.
+         * @throws std::runtime_error If the execution engine is not initialized.
+         */
         IExecutionEngine& RuntimeContext::get_execution_engine()
         {
             SR_THROW_IF(!impl_->engine, "ExecutionEngine is not initialized. Was probe_hardware() called?");
             return *impl_->engine;
         }
 
+        /**
+         * @brief Shuts down the runtime context and its execution engine.
+         *
+         * Safely stops internal components before full destruction.
+         */
         void RuntimeContext::shutdown()
         {
             if (impl_->engine)
@@ -509,6 +619,16 @@ namespace SushiRuntime
         }
 
 #ifdef SR_DISTRIBUTED
+        /**
+         * @brief Enables distributed Master mode on the runtime context.
+         *
+         * Initializes network communication and coordinator for remote task offloading.
+         *
+         * @param transport The transport layer for communication.
+         * @param kernels The kernel registry to be used across nodes.
+         * @param policy The strategy used to offload tasks to workers.
+         * @throws std::runtime_error If the transport is null or execution engine is unavailable.
+         */
         void RuntimeContext::enable_distributed_master(
             std::shared_ptr<Distributed::ITransport> transport,
             sushi_ptr<Distributed::KernelRegistry>   kernels,
@@ -543,24 +663,48 @@ namespace SushiRuntime
             SR_LOG_INFO("RuntimeContext promoted to distributed Master mode.");
         }
 
+        /**
+         * @brief Registers a USM buffer for distributed tracking.
+         *
+         * @param usm_ptr The raw pointer to the buffer.
+         * @param size_bytes The size of the buffer in bytes.
+         * @return Distributed::BufferHandle A handle representing the registered buffer.
+         * @throws std::runtime_error If the context is not in Master mode.
+         */
         Distributed::BufferHandle RuntimeContext::register_distributed_buffer(void* usm_ptr, uint64_t size_bytes)
         {
             SR_THROW_IF(!impl_->buffers, "register_distributed_buffer requires Master mode.");
             return impl_->buffers->register_buffer(usm_ptr, size_bytes);
         }
 
+        /**
+         * @brief Bumps the version of a registered distributed buffer.
+         *
+         * @param usm_ptr The raw pointer to the buffer.
+         */
         void RuntimeContext::bump_distributed_buffer(void* usm_ptr)
         {
             if (impl_->buffers)
                 impl_->buffers->bump_version(usm_ptr);
         }
 
+        /**
+         * @brief Unregisters a distributed buffer from tracking.
+         *
+         * @param usm_ptr The raw pointer to the buffer.
+         */
         void RuntimeContext::unregister_distributed_buffer(void* usm_ptr)
         {
             if (impl_->buffers)
                 impl_->buffers->unregister_buffer(usm_ptr);
         }
 
+        /**
+         * @brief Looks up the distributed buffer handle for a given pointer.
+         *
+         * @param usm_ptr The raw pointer to query.
+         * @return std::optional<Distributed::BufferHandle> The buffer handle if found, otherwise std::nullopt.
+         */
         std::optional<Distributed::BufferHandle> RuntimeContext::distributed_buffer(void* usm_ptr) const
         {
             if (!impl_->buffers)
@@ -568,48 +712,95 @@ namespace SushiRuntime
             return impl_->buffers->lookup(usm_ptr);
         }
 
+        /**
+         * @brief Checks if a specific distributed operation is supported.
+         *
+         * @param op The operation identifier.
+         * @return true If the operation is supported.
+         * @return false Otherwise.
+         */
         bool RuntimeContext::distributed_supports(Graph::OpID op) const
         {
             return impl_->coordinator && impl_->coordinator->supports(op);
         }
 
+        /**
+         * @brief Gets the current distributed role of the context.
+         *
+         * @return RuntimeContext::RuntimeRole The role (e.g., Standalone, Master).
+         */
         RuntimeContext::RuntimeRole RuntimeContext::distributed_role() const
         {
             return impl_->role;
         }
 
+        /**
+         * @brief Gets the total count of distributed tasks offloaded.
+         *
+         * @return uint64_t The number of offloaded tasks.
+         */
         uint64_t RuntimeContext::distributed_offloaded_count() const
         {
             return impl_->coordinator ? impl_->coordinator->offloaded_count() : 0;
         }
 
+        /**
+         * @brief Gets the total count of distributed tasks declined by workers.
+         *
+         * @return uint64_t The number of declined tasks.
+         */
         uint64_t RuntimeContext::distributed_declined_count() const
         {
             return impl_->coordinator ? impl_->coordinator->declined_count() : 0;
         }
 
+        /**
+         * @brief Gets the total count of distributed tasks that were redispatched.
+         *
+         * @return uint64_t The number of redispatched tasks.
+         */
         uint64_t RuntimeContext::distributed_redispatched_count() const
         {
             return impl_->coordinator ? impl_->coordinator->redispatched_count() : 0;
         }
 
+        /**
+         * @brief Gets the total count of stale writebacks in distributed executions.
+         *
+         * @return uint64_t The number of stale writeback operations.
+         */
         uint64_t RuntimeContext::distributed_stale_writeback_count() const
         {
             return impl_->coordinator ? impl_->coordinator->stale_writeback_count() : 0;
         }
 
+        /**
+         * @brief Sets the liveness timeout for distributed worker nodes.
+         *
+         * @param timeout The duration before a worker is considered unresponsive.
+         */
         void RuntimeContext::distributed_set_liveness_timeout(std::chrono::milliseconds timeout)
         {
             if (impl_->coordinator)
                 impl_->coordinator->set_liveness_timeout(timeout);
         }
 
+        /**
+         * @brief Sets the deadline for a distributed task to complete.
+         *
+         * @param deadline The maximum duration allowed for a task.
+         */
         void RuntimeContext::distributed_set_task_deadline(std::chrono::milliseconds deadline)
         {
             if (impl_->coordinator)
                 impl_->coordinator->set_task_deadline(deadline);
         }
 
+        /**
+         * @brief Gets the current count of alive workers in the cluster.
+         *
+         * @return int The number of active remote workers.
+         */
         int RuntimeContext::distributed_alive_workers() const
         {
             return impl_->coordinator ? impl_->coordinator->alive_worker_count() : 0;

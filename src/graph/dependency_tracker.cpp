@@ -31,6 +31,12 @@ namespace SushiRuntime
 {
     namespace Graph
     {
+        /**
+         * @brief Resets the dependency tracker state.
+         *
+         * Cleans up the lock-free access history across all shards. It is safe
+         * to run after graph compilation completes.
+         */
         void DependencyTracker::reset()
         {
             // Clean up the lock-free access history for all shards
@@ -49,8 +55,13 @@ namespace SushiRuntime
 
         /**
          * @brief Resolves memory dependencies for a task node.
-         * * Inserts the access into the lock-free history and traverses backwards
+         *
+         * Inserts the access into the lock-free history and traverses backwards
          * to automatically resolve RAW, WAR, and WAW hazards.
+         *
+         * @param node The graph node introducing the access.
+         * @param ptr The memory pointer being accessed.
+         * @param is_write True if the access is a write, false if it is a read.
          */
         void DependencyTracker::resolve(Node* node, void* ptr, bool is_write) 
         {
@@ -109,6 +120,15 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Explicitly adds a dependency between two nodes.
+         *
+         * Registers a successor relationship and updates the target node's
+         * in-degree using atomic operations.
+         *
+         * @param from The source node.
+         * @param to The target node that depends on the source node.
+         */
         void DependencyTracker::add_dependency(Node* from, Node* to)
         {
             if (from && to && from != to)

@@ -52,9 +52,13 @@ using SushiRuntime::Test::UsmShared;
 
 namespace
 {
-    // True when NUMA node 0 maps to a single device queue. The engine round-robins
-    // KERNEL nodes across a node's queues, so with more than one queue the nodes
-    // scatter across contexts and shared USM is no longer universally valid.
+    /**
+     * @brief Checks if NUMA node 0 maps to a single device queue.
+     *
+     * The engine round-robins KERNEL nodes across a node's queues, so with more than one queue the nodes scatter across contexts and shared USM is no longer universally valid.
+     * @param ctx The runtime context to query for NUMA queues.
+     * @return True if NUMA node 0 has exactly one device queue, false otherwise.
+     */
     bool numa0_has_single_queue(RuntimeContext& ctx)
     {
         sycl::queue& first = ctx.get_numa_local_queue(0);
@@ -65,9 +69,11 @@ namespace
     }
 }
 
-// Every node is a device kernel submitted by the engine. Verifies the engine
-// resolves the RAW fan-out, keeps the readers parallel, joins the fan-in, and
-// produces correct results across every buffer.
+/**
+ * @brief Tests an engine-driven device kernel diamond pipeline.
+ *
+ * Verifies the engine resolves the RAW fan-out, keeps the readers parallel, joins the fan-in, and produces correct results across every buffer.
+ */
 TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
 {
     RuntimeContext ctx;

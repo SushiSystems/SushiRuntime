@@ -40,14 +40,24 @@ using SushiRuntime::Scheduler::RangeTask;
 
 namespace
 {
-    // No-op body: the test is about partitioning bookkeeping, not compute.
+    /**
+     * @brief Creates a no-operation kernel for range task testing.
+     *
+     * Used for tests focusing on partitioning bookkeeping where compute logic is unnecessary.
+     *
+     * @return A callable lambda that performs no operation.
+     */
     auto noop_kernel()
     {
         return [](size_t, size_t, sycl::handler&) {};
     }
 }
 
-// A range is splittable only when strictly larger than the grain (1024).
+/**
+ * @brief Verifies that a range task is splittable only when strictly larger than its grain size.
+ *
+ * Asserts that sizes above the grain (1024) are splittable, while exact grain or smaller sizes are not, and return nullopt when split.
+ */
 TEST(Unit_RangeTaskTest, SplittableOnlyAboveGrain)
 {
     RangeTask big(size_t{0}, size_t{4096}, noop_kernel());
@@ -64,8 +74,11 @@ TEST(Unit_RangeTaskTest, SplittableOnlyAboveGrain)
         << "split() on a below-grain range must return nullopt (nothing to steal).";
 }
 
-// Repeated splitting yields distinct sub-tasks, shrinks the owner each time, and
-// converges to a non-splittable state — the loop a worker drives to rebalance.
+/**
+ * @brief Verifies that repeated splitting yields distinct sub-tasks and eventually converges.
+ *
+ * Repeatedly splits a large range task, tracking each yielded chunk to ensure they are distinct, and asserts the owner becomes non-splittable once exhausted.
+ */
 TEST(Unit_RangeTaskTest, SplitHandsOffDistinctChunksUntilExhausted)
 {
     sushi_ptr<Task> owner = make_sushi<RangeTask>(size_t{0}, size_t{1u << 16}, noop_kernel());

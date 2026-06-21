@@ -35,7 +35,11 @@ namespace SushiRuntime
 {
     namespace Topology
     {
-        /** @brief Triggers an expanded hardware probe to find all compute units. */
+        /** 
+         * @brief Triggers an expanded hardware probe to find all compute units. 
+         * @param config The filter configuration to use during the probe.
+         * @return A vector of discovered hardware nodes.
+         */
         std::vector<HardwareNode> HardwareDiscovery::probe_all_devices(const HardwareFilterConfig& config) 
         {
             SR_LOG_DEBUG("Starting expanded hardware probe...");
@@ -47,7 +51,11 @@ namespace SushiRuntime
             return discovered_nodes;
         }
 
-        /** @brief Scans all SYCL devices and extracts their physical and capability details. */
+        /** 
+         * @brief Scans all SYCL devices and extracts their physical and capability details. 
+         * @param nodes The vector to populate with discovered devices.
+         * @param config The filter configuration specifying which device types to include.
+         */
         void HardwareDiscovery::discover_sycl_devices(std::vector<HardwareNode>& nodes, const HardwareFilterConfig& config) 
         {
             hwloc_topology_t topology;

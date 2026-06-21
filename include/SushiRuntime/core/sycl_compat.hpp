@@ -32,12 +32,13 @@ namespace SushiRuntime
     namespace detail
     {
         /**
-         * @brief Detects whether a handler exposes host_task(Fn).
+         * @brief Detects whether a SYCL command group handler exposes host_task.
          *
-         * The C++17 void_t detection idiom replacing a C++20 requires-expression:
-         * the partial specialisation matches only when h.host_task(fn) is a valid
-         * expression, leaving has_host_task_v true for the Intel toolchains and
-         * false for AdaptiveCpp (which lacks the member).
+         * Uses SFINAE to verify if the handler supports the standard host_task method at compile time.
+         * 
+         * @tparam Handler The type of the SYCL command group handler.
+         * @tparam Fn The type of the callable task.
+         * @tparam Unnamed SFINAE helper parameter.
          */
         template <class Handler, class Fn, class = void>
         struct has_host_task : std::false_type {};
@@ -51,20 +52,14 @@ namespace SushiRuntime
         inline constexpr bool has_host_task_v = has_host_task<Handler, Fn>::value;
 
         /**
-         * @brief Enqueues a host-side callable into a SYCL command group, portably.
+         * @brief Enqueues a host-side callable into a SYCL command group.
          *
-         * The standard way is handler::host_task (SYCL 2020), which the Intel
-         * toolchains provide. AdaptiveCpp does not expose host_task on its handler
-         * and instead offers AdaptiveCpp_enqueue_custom_operation. This helper
-         * picks the available one at compile time via capability detection, so no
-         * toolchain macro is needed.
+         * Selects the appropriate host execution mechanism dynamically based on the toolchain capabilities.
          *
-         * The handler is a template parameter so the unused branch is never
-         * instantiated — the missing member is only ever named in a dependent
-         * context, which the discarded if-constexpr branch skips.
-         *
-         * @param h  The command-group handler.
-         * @param fn The host callable, invoked with no arguments.
+         * @tparam Handler The type of the SYCL command group handler.
+         * @tparam Fn The type of the callable host task.
+         * @param h The active command-group handler managing the execution queue.
+         * @param fn The host callable to execute asynchronously, expecting no arguments.
          */
         template <class Handler, class Fn>
         inline void enqueue_host_task(Handler& h, Fn&& fn)

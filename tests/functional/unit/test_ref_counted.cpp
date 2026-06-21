@@ -37,7 +37,11 @@ using namespace SushiRuntime;
 
 namespace
 {
-    // RefCounted payload that bumps an external counter on destruction.
+    /**
+     * @brief A test payload for RefCounted that tracks its own destruction.
+     *
+     * Increments an external atomic counter when its destructor is invoked to verify lifecycle management.
+     */
     struct Tracked : public Core::RefCounted
     {
         std::atomic<int>& destroyed;
@@ -45,7 +49,11 @@ namespace
         ~Tracked() override { destroyed.fetch_add(1, std::memory_order_relaxed); }
     };
 
-    // Base/Derived pair to verify polymorphic, single deletion.
+    /**
+     * @brief A base class to verify polymorphic destruction in RefCounted objects.
+     *
+     * Used in conjunction with Derived to ensure that destruction through a base pointer deletes the object correctly exactly once.
+     */
     struct Base : public Core::RefCounted
     {
         std::atomic<int>& destroyed;
@@ -54,6 +62,11 @@ namespace
         ~Base() override = default;
     };
 
+    /**
+     * @brief A derived class to verify polymorphic destruction in RefCounted objects.
+     *
+     * Overrides the base class to increment a destruction counter upon being deleted.
+     */
     struct Derived : public Base
     {
         explicit Derived(std::atomic<int>& d) : Base(d) {}
@@ -62,7 +75,11 @@ namespace
     };
 }
 
-// make_sushi() yields a single owner; dropping it destroys the object once.
+/**
+ * @brief Verifies that make_sushi yields a single owner that destroys the object exactly once.
+ *
+ * Creates a smart pointer and ensures that the tracked object is destroyed upon the pointer going out of scope.
+ */
 TEST(Unit_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
 {
     std::atomic<int> destroyed{0};
@@ -75,7 +92,11 @@ TEST(Unit_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
     EXPECT_EQ(destroyed.load(), 1) << "Object must be destroyed exactly once when its sole owner drops.";
 }
 
-// Copy increments the shared count; move transfers ownership without changing it.
+/**
+ * @brief Verifies that copying increments the refcount while moving transfers ownership without altering it.
+ *
+ * Tracks the reference count through move and copy operations and ensures proper decrementing upon scope exit.
+ */
 TEST(Unit_RefCountedTest, CopyBumpsMoveTransfers)
 {
     std::atomic<int> destroyed{0};
@@ -96,8 +117,11 @@ TEST(Unit_RefCountedTest, CopyBumpsMoveTransfers)
     EXPECT_EQ(destroyed.load(), 0);
 }
 
-// leak() returns the raw pointer and empties the smart pointer without touching
-// the count, so the caller owns the outstanding reference.
+/**
+ * @brief Verifies that leak() detaches the raw pointer without modifying the reference count.
+ *
+ * Asserts that the smart pointer is emptied while the object's reference count remains unchanged, leaving ownership to the caller.
+ */
 TEST(Unit_RefCountedTest, LeakDetachesWithoutChangingCount)
 {
     std::atomic<int> destroyed{0};
@@ -113,8 +137,11 @@ TEST(Unit_RefCountedTest, LeakDetachesWithoutChangingCount)
     EXPECT_EQ(destroyed.load(), 1);
 }
 
-// sushi_ptr<Derived> converts to sushi_ptr<Base>, dispatches virtually, and
-// deletes once through the base.
+/**
+ * @brief Verifies polymorphic conversion and single deletion through a base pointer.
+ *
+ * Converts a derived smart pointer to a base smart pointer, asserts virtual dispatch works, and ensures exactly one destruction occurs.
+ */
 TEST(Unit_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
 {
     std::atomic<int> destroyed{0};
@@ -127,8 +154,11 @@ TEST(Unit_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
     EXPECT_EQ(destroyed.load(), 1) << "Deleting via base must run the derived destructor exactly once.";
 }
 
-// Many threads copying and dropping the same pointer must leave the count
-// consistent with no premature destruction — the hot-path guarantee.
+/**
+ * @brief Verifies that concurrent reference counting operations are thread-safe and atomic.
+ *
+ * Spawns multiple threads to aggressively copy and drop a shared pointer, asserting that the object survives and count remains consistent.
+ */
 TEST(Unit_RefCountedTest, ConcurrentRefCountingIsAtomic)
 {
     std::atomic<int> destroyed{0};

@@ -36,7 +36,9 @@ namespace SushiRuntime
         struct Node; 
 
         /**
-         * @brief Represents a single memory access event in the lock-free history.
+         * @brief Records a specific memory access event within the lock-free history linked list.
+         *
+         * Forms the basis for chronological dependency tracking by chaining read and write events together.
          */
         struct AccessNode 
         {
@@ -47,33 +49,49 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief State tracking for USM resources using Lock-Free Access History.
-         * * Uses cache line alignment to prevent false sharing.
+         * @brief Manages the access history state for a single tracked resource using lock-free semantics.
+         *
+         * Maintains an atomic pointer to the most recent access event, aligned to hardware cache lines to prevent false sharing.
          */
         struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) ResourceState 
         {
-            /** @brief Lock-free atomic pointer to the most recent access. */
+            /**
+             * @brief Points atomically to the most recent access event in the history.
+             *
+             * Provides the necessary lock-free synchronization point for appending new accesses to the chain.
+             */
             std::atomic<AccessNode*> tail{nullptr};
         };
 
         /**
-         * @brief Tracks dependencies between tasks completely without using locks.
-         * * Eliminates spinlocks by utilizing a chronological lock-free linked list
-         * (Access History) for each resource shard.
+         * @brief Resolves and manages task execution dependencies entirely without locks.
+         *
+         * Relies on a lock-free chronological access history distributed across independent resource shards to mitigate contention.
          */
         class SUSHIRUNTIME_API DependencyTracker 
         {
             private:
-                /** @brief Number of shards used to reduce contention. */
+                /**
+                 * @brief Defines the fixed number of concurrent resource tracking shards.
+                 *
+                 * Spreads memory addresses over multiple independent atomic roots to minimize cross-thread interference.
+                 */
                 static constexpr size_t SHARD_COUNT = 1024;
                 
-                /** @brief Registry of resource states. */
+                /**
+                 * @brief Stores the array of independent resource access states.
+                 *
+                 * Provides fixed-size contiguous memory containing all individual lock-free shard tails.
+                 */
                 std::array<ResourceState, SHARD_COUNT> registry;
 
                 /**
-                 * @brief Generates a slot index from a pointer address using SplitMix64 hash.
-                 * @param ptr The pointer to map.
-                 * @return size_t The index in the shard registry.
+                 * @brief Maps a raw memory address to a specific internal shard index.
+                 *
+                 * Applies a fast SplitMix64 bitwise hashing algorithm on the address bits to distribute pointers uniformly.
+                 *
+                 * @param ptr The memory address to hash.
+                 * @return The computed array index corresponding to a specific shard.
                  */
                 inline size_t get_shard_idx(void* ptr) const 
                 {
@@ -85,24 +103,38 @@ namespace SushiRuntime
                 }
 
             public:
-                /** @brief Initializes the dependency tracker. */
+                /**
+                 * @brief Constructs an empty dependency tracker instance.
+                 *
+                 * Initializes the internal registry of shards to a clean state.
+                 */
                 DependencyTracker() = default;
 
-                /** @brief Cleans up the access history objects safely. */
+                /**
+                 * @brief Resets the dependency tracking states and reclaims memory.
+                 *
+                 * Safely traverses and deallocates all lock-free access history chains.
+                 */
                 void reset();
 
                 /**
-                 * @brief Resolves implicit dependencies for a task node utilizing Lock-Free traversal.
-                 * @param node The task node to check.
-                 * @param ptr The memory resource being accessed.
-                 * @param is_write True if the access is a write operation.
+                 * @brief Links a task into the implicit access dependency graph for a specific resource.
+                 *
+                 * Appends a new access node to the resource shard and wires appropriate predecessor constraints based on data flow rules.
+                 *
+                 * @param node The current task node that requires execution ordering.
+                 * @param ptr The base pointer of the memory resource being accessed.
+                 * @param is_write Indicates whether the operation intends to modify the resource.
                  */
                 void resolve(Node* node, void* ptr, bool is_write);
 
                 /**
-                 * @brief Creates a direct dependency between two nodes.
-                 * @param from The source node.
-                 * @param to The target node.
+                 * @brief Enforces an explicit execution ordering constraint between two tasks.
+                 *
+                 * Directly registers the source node as a required predecessor of the target node.
+                 *
+                 * @param from The predecessor task node that must complete first.
+                 * @param to The successor task node whose execution is blocked.
                  */
                 void add_dependency(Node* from, Node* to);
         };

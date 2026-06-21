@@ -101,20 +101,49 @@ namespace SushiRuntime
             std::condition_variable          monitor_cv;
             std::atomic<bool>                monitor_running{false};
 
+            /**
+             * @brief Handles an incoming message from a worker.
+             * Processes different message types such as registration, buffer pushes, and task results.
+             * @param peer The integer ID of the worker.
+             * @param type The MsgType of the message.
+             * @param payload A span of bytes representing the message payload.
+             */
             void handle_message(int peer, MsgType type, SushiRuntime::span<const std::byte> payload);
+
+            /**
+             * @brief Periodically checks worker liveness and re-dispatches tasks.
+             * Runs in a background thread to reap dead workers and timed-out tasks.
+             */
             void monitor_loop();
-            // Sends a fresh RTT probe to every live worker. Snapshots peer ids
-            // under mtx, then sends outside the lock (the reply arrives as PONG).
+
+            /**
+             * @brief Sends round-trip time ping messages to all alive workers.
+             * Sends a fresh RTT probe to every live worker, snapshotting peers under the mutex.
+             */
             void send_rtt_pings();
-            // Collects tasks orphaned by a now-dead worker (under mtx); the caller
-            // re-injects them via on_resubmit outside the lock.
+
+            /**
+             * @brief Reaps workers that missed heartbeats.
+             * Collects tasks orphaned by a now-dead worker and returns them for re-dispatch.
+             * @return A vector of Graph::Node pointers for orphaned tasks.
+             */
             std::vector<Graph::Node*> reap_dead_workers();
-            // Collects tasks whose per-task deadline elapsed while their worker is
-            // still alive (a lost dispatch/result); re-injected like dead-worker
-            // orphans. Returns the orphan nodes; caller resubmits outside the lock.
+
+            /**
+             * @brief Reaps tasks that have timed out on alive workers.
+             * Collects tasks whose per-task deadline elapsed and returns them for re-dispatch.
+             * @return A vector of Graph::Node pointers for timed-out tasks.
+             */
             std::vector<Graph::Node*> reap_timed_out_tasks();
         };
 
+        /**
+         * @brief Handles an incoming message from a worker.
+         * Updates liveness statistics and processes registration, buffers, and results based on the message type.
+         * @param peer The integer ID of the worker.
+         * @param type The MsgType of the message.
+         * @param payload A span of bytes representing the message payload.
+         */
         void DistributedCoordinator::Impl::handle_message(int peer, MsgType type,
                                                           SushiRuntime::span<const std::byte> payload)
         {
@@ -276,6 +305,14 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Constructs a DistributedCoordinator.
+         * Initializes internal data structures to manage task offloading and tracking across workers.
+         * @param kernels A sushi_ptr to the KernelRegistry.
+         * @param buffers A reference to the BufferRegistry.
+         * @param transport A std::shared_ptr to the ITransport interface.
+         * @param policy A std::shared_ptr to the IOffloadPolicy.
+         */
         DistributedCoordinator::DistributedCoordinator(sushi_ptr<KernelRegistry> kernels,
                                                        BufferRegistry&           buffers,
                                                        std::shared_ptr<ITransport>     transport,
@@ -295,21 +332,38 @@ namespace SushiRuntime
                 impl_->workers[i].worker_id = i;
         }
 
+        /**
+         * @brief Destructs the DistributedCoordinator.
+         * Stops operations and background threads before destruction.
+         */
         DistributedCoordinator::~DistributedCoordinator()
         {
             stop();
         }
 
+        /**
+         * @brief Sets the callback invoked upon task completion.
+         * @param hook The CompletionHook to run when a task finishes successfully or fails.
+         */
         void DistributedCoordinator::set_completion_hook(CompletionHook hook)
         {
             impl_->on_complete = std::move(hook);
         }
 
+        /**
+         * @brief Sets the callback invoked to resubmit a failed or orphaned task.
+         * @param hook The ResubmitHook to run when a task needs to be re-dispatched.
+         */
         void DistributedCoordinator::set_resubmit_hook(ResubmitHook hook)
         {
             impl_->on_resubmit = std::move(hook);
         }
 
+        /**
+         * @brief Updates the maximum time without heartbeats before declaring a worker dead.
+         * Wakes the monitor thread to apply the new timeout immediately.
+         * @param timeout A std::chrono::milliseconds specifying the new timeout.
+         */
         void DistributedCoordinator::set_liveness_timeout(std::chrono::milliseconds timeout)
         {
             impl_->liveness_timeout_ms.store(timeout.count(), std::memory_order_relaxed);
@@ -318,6 +372,11 @@ namespace SushiRuntime
             impl_->monitor_cv.notify_all();
         }
 
+        /**
+         * @brief Updates the maximum time a task can remain pending on a worker.
+         * Wakes the monitor thread to apply the new deadline immediately.
+         * @param deadline A std::chrono::milliseconds specifying the new per-task deadline.
+         */
         void DistributedCoordinator::set_task_deadline(std::chrono::milliseconds deadline)
         {
             impl_->task_deadline_ms.store(deadline.count(), std::memory_order_relaxed);
@@ -326,26 +385,47 @@ namespace SushiRuntime
             impl_->monitor_cv.notify_all();
         }
 
+        /**
+         * @brief Retrieves the total number of offloaded tasks.
+         * @return An uint64_t representing the offloaded task count.
+         */
         uint64_t DistributedCoordinator::offloaded_count() const
         {
             return impl_->offloaded_count.load(std::memory_order_relaxed);
         }
 
+        /**
+         * @brief Retrieves the total number of declined tasks.
+         * @return An uint64_t representing the declined task count.
+         */
         uint64_t DistributedCoordinator::declined_count() const
         {
             return impl_->declined_count.load(std::memory_order_relaxed);
         }
 
+        /**
+         * @brief Retrieves the total number of re-dispatched tasks.
+         * @return An uint64_t representing the re-dispatched task count.
+         */
         uint64_t DistributedCoordinator::redispatched_count() const
         {
             return impl_->redispatched_count.load(std::memory_order_relaxed);
         }
 
+        /**
+         * @brief Retrieves the total number of stale writebacks dropped.
+         * @return An uint64_t representing the stale writeback count.
+         */
         uint64_t DistributedCoordinator::stale_writeback_count() const
         {
             return impl_->stale_writebacks.load(std::memory_order_relaxed);
         }
 
+        /**
+         * @brief Counts the currently alive workers in the network.
+         * Iterates over all known workers and sums those marked as alive.
+         * @return An integer count of alive workers.
+         */
         int DistributedCoordinator::alive_worker_count() const
         {
             std::lock_guard<std::mutex> lk(impl_->mtx);
@@ -354,6 +434,11 @@ namespace SushiRuntime
             return n;
         }
 
+        /**
+         * @brief Checks if a specific operation is supported by the alive workers.
+         * @param op The Graph::OpID representing the operation.
+         * @return A boolean which is true if at least one worker supports it, false otherwise.
+         */
         bool DistributedCoordinator::supports(Graph::OpID op) const
         {
             std::lock_guard<std::mutex> lk(impl_->mtx);
@@ -361,6 +446,10 @@ namespace SushiRuntime
             return it != impl_->op_support.end() && it->second > 0;
         }
 
+        /**
+         * @brief Starts the coordinator and its monitor thread.
+         * Begins listening for transport messages and sets up liveness monitoring.
+         */
         void DistributedCoordinator::start()
         {
             Impl* raw = impl_.get();
@@ -376,6 +465,10 @@ namespace SushiRuntime
                 impl_->monitor_thread = std::thread([raw] { raw->monitor_loop(); });
         }
 
+        /**
+         * @brief Stops the coordinator and waits for threads to exit.
+         * Signals the monitor to shutdown and stops the transport interface.
+         */
         void DistributedCoordinator::stop()
         {
             if (!impl_)
@@ -393,6 +486,11 @@ namespace SushiRuntime
                 impl_->transport->stop();
         }
 
+        /**
+         * @brief Reaps workers that missed heartbeats.
+         * Collects tasks orphaned by dead workers and drops them from the common kernel set.
+         * @return A vector of Graph::Node pointers for orphaned tasks.
+         */
         std::vector<Graph::Node*> DistributedCoordinator::Impl::reap_dead_workers()
         {
             std::vector<Graph::Node*> orphans;
@@ -437,6 +535,11 @@ namespace SushiRuntime
             return orphans;
         }
 
+        /**
+         * @brief Reaps tasks that have timed out on alive workers.
+         * Collects tasks whose per-task deadline elapsed indicating a lost dispatch/result.
+         * @return A vector of Graph::Node pointers for timed-out tasks.
+         */
         std::vector<Graph::Node*> DistributedCoordinator::Impl::reap_timed_out_tasks()
         {
             std::vector<Graph::Node*> orphans;
@@ -470,6 +573,10 @@ namespace SushiRuntime
             return orphans;
         }
 
+        /**
+         * @brief Sends round-trip time ping messages to all alive workers.
+         * Broadcasts a steady-clock token to measure latency across the network.
+         */
         void DistributedCoordinator::Impl::send_rtt_pings()
         {
             std::vector<int> alive_peers;
@@ -488,6 +595,10 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Periodically checks worker liveness and re-dispatches tasks.
+         * Wakes at fractions of the tightest deadline to reap timed out operations efficiently.
+         */
         void DistributedCoordinator::Impl::monitor_loop()
         {
             while (monitor_running.load())
@@ -531,6 +642,12 @@ namespace SushiRuntime
             }
         }
 
+        /**
+         * @brief Attempts to offload a graph node to a suitable worker.
+         * Delegates selection to the policy and performs buffer tracking for the offload.
+         * @param node A pointer to the Graph::Node to offload.
+         * @return A boolean which is true if the node was successfully dispatched, false otherwise.
+         */
         bool DistributedCoordinator::try_offload(Graph::Node* node)
         {
             if (!node) return false;

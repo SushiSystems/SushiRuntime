@@ -33,12 +33,15 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief Base class for reference counting.
-         * 
-         * This class implements an intrusive reference counting mechanism.
-         * It manages the lifetime of objects using atomic operations.
+         * @brief Intrusive reference-counted base for objects managed by sushi_ptr.
+         *
+         * The counter starts at 0; each sushi_ptr copy increments it with relaxed
+         * ordering (no synchronisation needed — ownership cannot change without an
+         * existing reference). The last release() issues a release fence before
+         * calling delete, ensuring all prior writes are visible to any thread that
+         * had access through an earlier reference.
          */
-        class SUSHIRUNTIME_API RefCounted 
+        class SUSHIRUNTIME_API RefCounted
         {
             protected:
                 /** @brief Atomic reference counter. */
@@ -54,17 +57,26 @@ namespace SushiRuntime
                 RefCounted& operator=(const RefCounted&) = delete;  
 
                 /**
-                 * @brief Increases the reference count by 1.
+                 * @brief Acquires a reference. Called by sushi_ptr on copy construction/assignment.
+                 *
+                 * Relaxed ordering is intentional: add_ref() is only called by a
+                 * thread that already holds a reference, so no additional synchronisation
+                 * is needed to observe the object's state.
                  */
-                void add_ref() const noexcept 
+                void add_ref() const noexcept
                 {
                     ref_count.fetch_add(1, std::memory_order_relaxed);
                 }
 
                 /**
-                 * @brief Decreases the reference count by 1. Deletes the object if count reaches zero.
+                 * @brief Releases a reference, deleting the object when the count reaches zero.
+                 *
+                 * The fetch_sub uses release ordering so all prior writes are visible to
+                 * the thread that observes the count drop to zero; the acquire fence before
+                 * delete pairs with that release to prevent the deletion from being reordered
+                 * before the final reference drop.
                  */
-                void release() const noexcept 
+                void release() const noexcept
                 {
                     int32_t old = ref_count.fetch_sub(1, std::memory_order_release);
 

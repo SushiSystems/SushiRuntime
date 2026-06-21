@@ -49,6 +49,13 @@ namespace
 {
     constexpr int ROUNDS = 3;
 
+    /**
+     * @brief Measures the minimum compilation time for a task graph.
+     * 
+     * @param ctx The runtime context.
+     * @param nodes The number of nodes in the graph.
+     * @return The minimum compilation time in microseconds.
+     */
     double min_compile_us(RuntimeContext& ctx, size_t nodes)
     {
         // A small rolling buffer set so consecutive tasks form real dependencies
@@ -80,7 +87,11 @@ namespace
     }
 }
 
-// compile() latency and us/node across increasing graph sizes.
+/**
+ * @brief Tests TaskGraph::compile() latency scaling.
+ * 
+ * Measures compile() latency and us/node across increasing graph sizes.
+ */
 TEST(Performance_GraphCompileBench, CompileScaling)
 {
     RuntimeContext ctx;
@@ -103,7 +114,12 @@ namespace
     constexpr int    INNER  = 64;       // per-element compute weight
     constexpr int    CHUNKS = 8;
 
-    // Reference compute per element, matching the device kernel below.
+    /**
+     * @brief Reference compute per element, matching the device kernel.
+     * 
+     * @param x The input value.
+     * @return The computed result.
+     */
     float expected(float x)
     {
         for (int k = 0; k < INNER; ++k)
@@ -111,6 +127,12 @@ namespace
         return x;
     }
 
+    /**
+     * @brief Run a function multiple times and return the best execution time.
+     * 
+     * @param fn The function to run.
+     * @return The best time in milliseconds.
+     */
     double best_of(const std::function<double()>& fn)
     {
         double best = 1e300;
@@ -120,7 +142,11 @@ namespace
     }
 }
 
-// Sequential (copy -> compute -> copy) vs a chunked pipeline across two queues.
+/**
+ * @brief Tests H2D/D2H transfer-compute overlap.
+ * 
+ * Compares sequential (copy -> compute -> copy) vs a chunked pipeline across two queues.
+ */
 TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
 {
     std::unique_ptr<RuntimeContext> ctx;

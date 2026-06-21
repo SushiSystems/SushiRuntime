@@ -44,15 +44,24 @@ using namespace SushiRuntime::Graph::Literals;
 
 namespace
 {
+    /**
+     * @brief Converts a byte vector to a read-only span.
+     *
+     * @param v The byte vector.
+     * @return A span covering the vector's data.
+     */
     SushiRuntime::span<const std::byte> as_bytes(const std::vector<std::byte>& v)
     {
         return { v.data(), v.size() };
     }
 }
 
-// A TaskDispatchMsg (metadata + handle lists) survives serialize/deserialize
-// byte-for-byte — the contract that lets OpID + handles cross the wire while the
-// code and pointers never do.
+/**
+ * @brief Tests that a TaskDispatchMsg survives serialization/deserialization byte-for-byte.
+ *
+ * Verifies the contract that lets OpID and handles cross the wire while the
+ * code and pointers never do.
+ */
 TEST(Unit_DistributedTest, ProtocolRoundTrip)
 {
     TaskDispatchMsg msg;
@@ -80,7 +89,11 @@ TEST(Unit_DistributedTest, ProtocolRoundTrip)
     EXPECT_EQ(back.outputs[0].id.value, 3u);
 }
 
-// The raw-bytes payload (the actual data pull) preserves its blob.
+/**
+ * @brief Tests that the raw-bytes payload of a buffer push preserves its blob.
+ *
+ * Checks that BufferPushMsg serialization maintains the byte data and handle.
+ */
 TEST(Unit_DistributedTest, BufferPushRoundTrip)
 {
     BufferPushMsg push;
@@ -96,8 +109,12 @@ TEST(Unit_DistributedTest, BufferPushRoundTrip)
     EXPECT_EQ(back.data[3], std::byte{0xEF});
 }
 
-// master->worker and worker->master messages arrive on the peer's handler with
-// the correct peer id — the switchboard routing a real protocol on one machine.
+/**
+ * @brief Tests that in-process transport routes messages correctly in both directions.
+ *
+ * master->worker and worker->master messages arrive on the peer's handler with
+ * the correct peer id, simulating a real protocol on one machine.
+ */
 TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
 {
     InProcessFabric fabric(1);
@@ -140,9 +157,13 @@ TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
     master.stop();
 }
 
-// Registration is stable per pointer; re-registration bumps the version (USM
-// address reuse detection); a write bump increments further; lookup_by_id
-// round-trips id -> pointer.
+/**
+ * @brief Tests buffer registration stability and version bumping.
+ *
+ * Registration is stable per pointer; re-registration bumps the version
+ * (USM address reuse detection); a write bump increments further; lookup_by_id
+ * round-trips id -> pointer.
+ */
 TEST(Unit_DistributedTest, BufferRegistryVersioning)
 {
     BufferRegistry reg;
@@ -177,6 +198,15 @@ TEST(Unit_DistributedTest, BufferRegistryVersioning)
 // are validated without a live cluster.
 namespace
 {
+    /**
+     * @brief Helper to create synthetic WorkerStats for testing.
+     *
+     * @param id The worker ID.
+     * @param inflight Number of in-flight tasks.
+     * @param free_mem Available free memory in bytes.
+     * @param rtt_us Round-trip time in microseconds.
+     * @return A WorkerStats object.
+     */
     WorkerStats live_worker(int id, uint32_t inflight, uint64_t free_mem, uint32_t rtt_us)
     {
         WorkerStats w;
@@ -192,7 +222,11 @@ namespace
     constexpr uint64_t AMPLE_MEM   = 1ull << 30; // 1 GiB headroom
 }
 
-// A payload below min_offload_bytes never offloads, even with an idle worker.
+/**
+ * @brief Tests that a payload below min_offload_bytes never offloads.
+ *
+ * Even with an idle worker, the payload is kept local if it is too small.
+ */
 TEST(Unit_DistributedTest, PolicyKeepsTinyPayloadLocal)
 {
     LeastLoadedOffloadPolicy policy; // default 64 KiB gate
@@ -203,7 +237,11 @@ TEST(Unit_DistributedTest, PolicyKeepsTinyPayloadLocal)
     EXPECT_FALSE(pick.has_value());
 }
 
-// With equal load and headroom, the nearer (lower-RTT) worker wins.
+/**
+ * @brief Tests that the nearer worker is picked when load and headroom are equal.
+ *
+ * The policy prefers the worker with the lower round-trip time (RTT).
+ */
 TEST(Unit_DistributedTest, PolicyPicksLowerRttWorker)
 {
     LeastLoadedOffloadPolicy policy;
@@ -218,7 +256,11 @@ TEST(Unit_DistributedTest, PolicyPicksLowerRttWorker)
     EXPECT_EQ(*pick, 1);
 }
 
-// Equal RTT and headroom: the emptier queue wins.
+/**
+ * @brief Tests that the emptier queue wins when RTT and headroom are equal.
+ *
+ * Prefers the worker with fewer in-flight tasks.
+ */
 TEST(Unit_DistributedTest, PolicyPrefersLessLoadedWhenEquallyNear)
 {
     LeastLoadedOffloadPolicy policy;
@@ -233,7 +275,11 @@ TEST(Unit_DistributedTest, PolicyPrefersLessLoadedWhenEquallyNear)
     EXPECT_EQ(*pick, 1);
 }
 
-// A worker with less free_mem than the payload is excluded; no candidate -> local.
+/**
+ * @brief Tests that a worker with less free memory than the payload is excluded.
+ *
+ * If no candidate has sufficient headroom, the task falls back to local execution.
+ */
 TEST(Unit_DistributedTest, PolicyRejectsInsufficientHeadroom)
 {
     LeastLoadedOffloadPolicy policy;
@@ -246,7 +292,11 @@ TEST(Unit_DistributedTest, PolicyRejectsInsufficientHeadroom)
     EXPECT_FALSE(pick.has_value());
 }
 
-// No live worker -> transparent local fallback.
+/**
+ * @brief Tests that execution falls back to local when there are no live workers.
+ *
+ * Ensures transparent local fallback.
+ */
 TEST(Unit_DistributedTest, PolicyFallsBackLocalWhenNoLiveWorker)
 {
     LeastLoadedOffloadPolicy policy;
@@ -259,7 +309,11 @@ TEST(Unit_DistributedTest, PolicyFallsBackLocalWhenNoLiveWorker)
     EXPECT_FALSE(pick.has_value());
 }
 
-// free_mem == 0 means "no headroom info", so the worker stays eligible.
+/**
+ * @brief Tests that zero free memory means "no headroom info", keeping the worker eligible.
+ *
+ * The policy treats free_mem == 0 as unknown rather than out of memory.
+ */
 TEST(Unit_DistributedTest, PolicyTreatsZeroFreeMemAsUnknown)
 {
     LeastLoadedOffloadPolicy policy;

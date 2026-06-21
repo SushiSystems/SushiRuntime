@@ -36,13 +36,34 @@ namespace SushiRuntime
     {
         using namespace SushiRuntime::Core;
 
+        /**
+         * @brief Global allocator ID counter.
+         * Used to assign a unique ID to each allocator instance.
+         */
         static std::atomic<uint64_t> g_allocator_id_counter{1};
 
+        /**
+         * @brief Global flush callback pointer.
+         * Used to notify the system when a magazine is flushed.
+         */
         std::atomic<FlushCallback> g_flush_callback{nullptr};
 
         class USMManagerImpl;
+
+        /**
+         * @brief Registry of all active USM managers.
+         * Indexed by allocator ID modulo 256.
+         */
         static std::atomic<USMManagerImpl*> g_allocator_registry[256];
 
+        /**
+         * @brief Global callback function to flush a magazine batch.
+         * Routes the flush request to the appropriate allocator instance.
+         * @param alloc_id The ID of the allocator.
+         * @param bucket_idx The index of the size bucket.
+         * @param ptrs Array of pointers to flush.
+         * @param count Number of pointers in the array.
+         */
         void global_flush_magazine(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count);
 
         /**
@@ -112,6 +133,9 @@ namespace SushiRuntime
             /**
              * @brief Registers a memory span into the Radix Tree.
              * Allocates trie nodes dynamically and lock-free via CAS.
+             * @param ptr Pointer to the start of the memory span.
+             * @param size Size of the memory span in bytes.
+             * @param page Pointer to the MemoryPage to associate with the span.
              */
             void set(void* ptr, size_t size, MemoryPage* page) 
             {
@@ -166,6 +190,9 @@ namespace SushiRuntime
 
             /**
              * @brief Ultra-fast, wait-free, lock-free pointer resolution. O(1).
+             * Resolves a given pointer to its associated MemoryPage.
+             * @param ptr Pointer to resolve.
+             * @return Pointer to the associated MemoryPage, or nullptr if not found.
              */
             MemoryPage* get(void* ptr) const 
             {
@@ -187,6 +214,12 @@ namespace SushiRuntime
         class USMManagerImpl : public USMAllocator 
         {
             public:
+                /**
+                 * @brief Constructs a new USMManagerImpl.
+                 * Initializes the manager with the given SYCL queue and NUMA ID.
+                 * @param q The SYCL queue to associate with the allocator.
+                 * @param numa_id The NUMA node ID to bind allocations to.
+                 */
                 explicit USMManagerImpl(sycl::queue& q, int numa_id) 
                     : queue_(q), numa_id_(numa_id), allocator_id_(g_allocator_id_counter.fetch_add(1, std::memory_order_relaxed)) 
                 {
@@ -200,6 +233,10 @@ namespace SushiRuntime
                     // her thread ilk allocate() çağrısında kendi slotunu expand eder.
                 }
 
+                /**
+                 * @brief Destroys the USMManagerImpl.
+                 * Cleans up all resources, drains remote-free queues, and releases SYCL allocations.
+                 */
                 ~USMManagerImpl() override
                 {
                     g_allocator_registry[allocator_id_ % 256].store(nullptr, std::memory_order_release);
@@ -242,6 +279,13 @@ namespace SushiRuntime
                     }
                 }
 
+                /**
+                 * @brief Flushes a batch of pointers back to their owner pages.
+                 * Resolves the owner page for each pointer and deallocates it.
+                 * @param bucket_idx The index of the size bucket (unused in this implementation).
+                 * @param ptrs Array of pointers to flush.
+                 * @param count Number of pointers in the array.
+                 */
                 void flush_batch(int /*bucket_idx*/, void** ptrs, size_t count)
                 {
                     for (size_t i = 0; i < count; ++i)
@@ -268,6 +312,10 @@ namespace SushiRuntime
                  *      requesting more memory from SYCL.
                  *   5. Fallback: route directly to the strategy's raw allocator
                  *      for non-poolable strategies or oversized requests.
+                 * @param bytes Number of bytes to allocate.
+                 * @param strategy The allocation strategy to use.
+                 * @param alignment Alignment of the allocation.
+                 * @return Pointer to the allocated memory, or nullptr on failure.
                  */
                 void* allocate(size_t bytes, 
                             const IAllocatorStrategy& strategy = Strategies::Shared::instance(),
@@ -383,6 +431,7 @@ namespace SushiRuntime
                  *  - Out-of-pool (page_map miss): straight to sycl::free.
                  *    These are oversized allocations or non-poolable strategy
                  *    allocations that bypassed the pool entirely.
+                 * @param ptr Pointer to the memory to deallocate.
                  */
                 void deallocate(void* ptr) override 
                 {
@@ -430,6 +479,12 @@ namespace SushiRuntime
                     sycl::free(ptr, queue_.get_context());
                 }
 
+                /**
+                 * @brief Retrieves the SYCL device associated with a given pointer.
+                 * Queries the SYCL runtime for the device owning the allocation.
+                 * @param ptr Pointer to query.
+                 * @return The SYCL device that owns the pointer.
+                 */
                 sycl::device get_device_of(void* ptr) override 
                 {
                     return sycl::get_pointer_device(ptr, queue_.get_context());
@@ -513,6 +568,12 @@ namespace SushiRuntime
                 std::atomic<MemoryPage*> global_pages_[MAX_PAGES] = {nullptr};
                 std::atomic<int>         global_page_count_{0};
 
+                /**
+                 * @brief Gets the bucket index for a given allocation size.
+                 * Uses hardware-accelerated 'Count Leading Zeros' to find the bucket index in O(1).
+                 * @param size The allocation size in bytes.
+                 * @return The index of the corresponding size bucket.
+                 */
                 inline int get_bucket_index(size_t size)
                 {
                     // Use hardware-accelerated 'Count Leading Zeros' to find the bucket index in O(1).
@@ -549,6 +610,9 @@ namespace SushiRuntime
                  * The release ordering on the CAS ensures that any writes to
                  * the freed memory by the user before deallocate() are visible
                  * to the slot owner before it observes the new head.
+                 * @param slot The ID of the owning slot.
+                 * @param bucket_idx The index of the size bucket.
+                 * @param ptr Pointer to the memory being freed.
                  */
                 inline void push_remote_free(int slot, int bucket_idx, void* ptr) noexcept
                 {
@@ -574,6 +638,8 @@ namespace SushiRuntime
                  * Capped at REMOTE_DRAIN_CAP to bound the worst case: a slot
                  * that has accumulated thousands of remote frees should not
                  * pay all of them on a single allocate.
+                 * @param slot The ID of the slot being drained.
+                 * @param bucket_idx The index of the size bucket.
                  */
                 inline void drain_remote_free_into_magazine(int slot, int bucket_idx) noexcept
                 {
@@ -614,6 +680,9 @@ namespace SushiRuntime
                  *
                  * O(N) in chain length; only called on overflow paths. The
                  * common case (drain succeeds entirely) does not invoke this.
+                 * @param slot The ID of the owning slot.
+                 * @param bucket_idx The index of the size bucket.
+                 * @param chain_head Pointer to the head of the chain to requeue.
                  */
                 inline void requeue_remote_chain(int slot, int bucket_idx, void* chain_head) noexcept
                 {
@@ -634,6 +703,13 @@ namespace SushiRuntime
                         std::memory_order_relaxed));
                 }
 
+                /**
+                 * @brief Allocates new pages from SYCL and assigns them to the given slot and bucket.
+                 * Expands the capacity of the memory pool for the given thread slot.
+                 * @param slot The ID of the slot to expand.
+                 * @param bucket_idx The index of the size bucket.
+                 * @return true if expansion was successful, false otherwise.
+                 */
                 bool allocate_new_page(int slot, int bucket_idx)
                 {
                     size_t slot_size = BUCKET_SIZES[bucket_idx];
@@ -701,6 +777,13 @@ namespace SushiRuntime
             if (mgr) mgr->flush_batch(bucket_idx, ptrs, count);
         }
 
+        /**
+         * @brief Creates a new USM allocator instance.
+         * Instantiates a USMManagerImpl with the provided queue and NUMA node.
+         * @param q The SYCL queue to associate with the allocator.
+         * @param numa_id The NUMA node ID to bind allocations to.
+         * @return A smart pointer to the created USM allocator.
+         */
         sushi_ptr<USMAllocator> create_allocator(sycl::queue& q, int numa_id) 
         {
             return make_sushi<USMManagerImpl>(q, numa_id);

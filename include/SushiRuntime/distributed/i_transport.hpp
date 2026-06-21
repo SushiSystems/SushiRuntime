@@ -34,51 +34,60 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Abstraction over the message-passing substrate. [DIP]
+         * @brief Hardware-agnostic interface for message passing across the cluster.
          *
-         * Mirrors the topology layer's substitution pattern (Hwloc vs Remapping):
-         *
-         *   - AsioTcpTransport    -> real TCP between lab machines.
-         *   - InProcessTransport  -> several "nodes" in one process over loopback
-         *                            queues, so the whole master/worker protocol
-         *                            can be developed and tested on a single
-         *                            machine (and under WSL) with no network.
-         *
-         * The coordinator and worker agent depend only on this interface, so the
-         * jump from single-machine simulation to a real cluster changes only the
-         * endpoint list, never the upper layers.
-         *
-         * peer_id semantics: from the master, peer_id selects a worker
-         * (0..N-1); from a worker, peer_id is ignored (it has one peer, the
-         * master). Implementations may treat peer_id < 0 as "broadcast".
+         * Decouples the coordination logic from the underlying network topology or local simulation queues.
          */
         class SUSHIRUNTIME_API ITransport
         {
             public:
-                /** @brief Callback signature for an inbound, fully-framed message. */
+                /**
+                 * @brief Callback invoked when a fully framed message arrives.
+                 *
+                 * @param peer The ID of the sending node.
+                 * @param type The enumerated kind of the received message.
+                 * @param payload The raw serialized bytes of the message body.
+                 */
                 using MessageHandler =
                     std::function<void(int peer, MsgType type, SushiRuntime::span<const std::byte> payload)>;
 
                 virtual ~ITransport() = default;
 
                 /**
-                 * @brief Sends one framed message to a peer.
-                 * @param peer_id Destination peer (worker index for master; ignored for worker).
-                 * @param type Message kind.
-                 * @param payload Already-serialized body bytes.
+                 * @brief Transmits a framed message to a target peer.
+                 *
+                 * @param peer_id The destination node ID. Use a negative value for broadcast from the master.
+                 * @param type The semantic kind of the message.
+                 * @param payload The serialized data to transmit.
                  */
                 virtual void send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload) = 0;
 
-                /** @brief Registers the handler invoked for every inbound message. */
+                /**
+                 * @brief Registers the callback responsible for handling all inbound messages.
+                 *
+                 * @param handler The function to invoke upon message receipt.
+                 */
                 virtual void on_message(MessageHandler handler) = 0;
 
-                /** @brief Begins serving (connect/accept, spin I/O threads). */
+                /**
+                 * @brief Activates the transport layer to begin network operations.
+                 *
+                 * Opens sockets, accepts connections, and starts I/O worker threads.
+                 */
                 virtual void start() = 0;
 
-                /** @brief Stops serving and releases I/O resources. Idempotent. */
+                /**
+                 * @brief Halts the transport layer and releases network resources.
+                 *
+                 * Safely shuts down I/O threads and closes connections. Safe to call multiple times.
+                 */
                 virtual void stop() = 0;
 
-                /** @brief Number of reachable peers (master: worker count; worker: 1). */
+                /**
+                 * @brief Retrieves the number of reachable endpoints.
+                 *
+                 * @return The worker count for the master, or 1 for a worker node.
+                 */
                 virtual int peer_count() const = 0;
         };
 

@@ -46,15 +46,27 @@ namespace SushiRuntime
         /** @brief Work definition for a host-side library call node. */
         using HostWork = std::function<sycl::event(sycl::queue&, const std::vector<sycl::event>&)>;
 
-        struct SmallEventVector 
+        /**
+         * @brief Inline-optimised storage for a node's SYCL event dependencies.
+         *
+         * Holds up to STATIC_CAP events without a heap allocation; additional
+         * events spill into a dynamic_data vector. Avoids per-node vector
+         * allocation in the common case (≤ 8 deps).
+         */
+        struct SmallEventVector
         {
             static constexpr size_t STATIC_CAP = 8;
 
-            size_t static_count = 0;
-            sycl::event static_data[STATIC_CAP];
-            std::vector<sycl::event> dynamic_data;
-            
-            inline SmallEventVector& operator=(const std::vector<sycl::event>& vec) 
+            size_t static_count = 0;                /**< Number of events in the inline buffer. */
+            sycl::event static_data[STATIC_CAP];   /**< Inline event storage. */
+            std::vector<sycl::event> dynamic_data; /**< Overflow storage when count > STATIC_CAP. */
+
+            /**
+             * @brief Replaces the stored events with those from @p vec.
+             * @param vec Source event list.
+             * @return *this.
+             */
+            inline SmallEventVector& operator=(const std::vector<sycl::event>& vec)
             {
                 static_count = 0;
                 dynamic_data.clear();
@@ -69,6 +81,10 @@ namespace SushiRuntime
                 return *this;
             }
 
+            /**
+             * @brief Returns all stored events as a single vector.
+             * @return Vector containing inline events followed by any overflow events.
+             */
             inline std::vector<sycl::event> to_vector() const
             {
                 std::vector<sycl::event> res;
@@ -87,18 +103,25 @@ namespace SushiRuntime
         struct Node;
 
         /**
-         * @brief Element for a lock-free linked list of successor nodes.
+         * @brief Node in the lock-free spillover successor list.
+         *
+         * Used when a node's successor count exceeds MAX_INLINE_SUCCESSORS; additional
+         * successors are chained via a compare-exchange push-front into Node::successor_list.
          */
-        struct SuccessorNode 
+        struct SuccessorNode
         {
-            Node* target;
-            SuccessorNode* next;
+            Node* target;           /**< Successor graph node to release when this node completes. */
+            SuccessorNode* next;    /**< Next element in the linked list; null for the list tail. */
         };
 
         /**
-         * @brief Representing a node in the runtime graph. 
-         * 
-         * It uses lock-free dependency management and inherits from Task.
+         * @brief One node in the compiled task DAG.
+         *
+         * Inherits from Task so the scheduler can dispatch it without knowing the DAG
+         * layer. Dependency management is lock-free: in_degree is decremented with
+         * acq_rel by EventPolling as predecessors complete; when it reaches zero the
+         * node is pushed to the ready queue. Successors are stored inline (up to
+         * MAX_INLINE_SUCCESSORS) and overflow into a lock-free linked list.
          */
         struct Node : public SushiRuntime::Scheduler::Task
         {
@@ -173,10 +196,16 @@ namespace SushiRuntime
 #endif
 
             /**
-             * @brief Adds a successor node in a lock-free way.
-             * @param target The node that depends on this node.
+             * @brief Registers @p target as a successor of this node.
+             *
+             * Fills the inline buffer first; once it is full, pushes @p target onto
+             * the lock-free successor_list via compare_exchange_weak with
+             * release/relaxed ordering — release so the stored pointer is visible to
+             * any thread that reads successor_list with acquire ordering.
+             *
+             * @param target Node to enqueue when this node completes.
              */
-            void add_successor(Node* target) noexcept 
+            void add_successor(Node* target) noexcept
             {
                 int32_t idx = inline_successor_count.fetch_add(1, std::memory_order_relaxed);
                 if (idx < MAX_INLINE_SUCCESSORS)

@@ -28,14 +28,23 @@
 
 using namespace SushiRuntime;
 
-// We can't easily capture the log stream here, but we can verify formatting runs.
+/**
+ * @brief Tests basic info logging formatting.
+ *
+ * We cannot easily capture the log stream here, but we can verify formatting runs
+ * without throwing exceptions.
+ */
 TEST(Unit_LoggerTest, BasicInfoLog)
 {
     SR_LOGGER_SET_SYNC_MODE(true);
     EXPECT_NO_THROW({ SR_LOG_INFO("Testing logger: {}", "Success"); });
 }
 
-// SR_THROW_IF throws on a true condition and stays silent on a false one.
+/**
+ * @brief Tests that SR_THROW_IF throws on a true condition and stays silent on false.
+ *
+ * Validates the behavior of the throw-if macro.
+ */
 TEST(Unit_LoggerTest, ThrowIfMacro)
 {
     EXPECT_THROW({ SR_THROW_IF(true, "Expected failure {}", 404); }, std::runtime_error);

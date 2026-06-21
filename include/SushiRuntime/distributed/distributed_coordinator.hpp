@@ -40,42 +40,43 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Master-side brain: the only distributed object the scheduler touches.
+         * @brief Orchestrates distributed task offloading and remote execution on the master node.
          *
-         * The scheduler's dispatch loop calls try_offload() for the handful of
-         * tasks that compile() flagged offloadable. Everything else — node
-         * registry, buffer directory, the pull-based coherence protocol — lives
-         * behind the Pimpl and never appears on the local hot path.
-         *
-         * Coherence model (kept deliberately simple for v1):
-         *   - master is authoritative for every registered buffer;
-         *   - workers cache by {id, version} and pull on miss;
-         *   - a local write bumps the version (BufferRegistry::bump_version),
-         *     which transparently invalidates stale worker caches.
-         *
-         * Result handling: when a worker reports TASK_RESULT, the coordinator
-         * resolves the task_id back to its Node and invokes the completion hook
-         * the scheduler installed — the network equivalent of EventPolling
-         * firing a SYCL event and releasing successors.
+         * Hides the complexity of network transport, worker heartbeats, and cluster state from the local task scheduler.
+         * Remote buffer coherence is managed transparently via version bumping on local writes.
          */
         class SUSHIRUNTIME_API DistributedCoordinator
         {
             public:
-                /** @brief Invoked (off the hot path) when an offloaded node finishes. */
+                /**
+                 * @brief Callback invoked when a remotely executed task completes.
+                 *
+                 * Integrates remote completion with the local task graph's dependency resolution.
+                 *
+                 * @param node The task graph node that finished execution.
+                 * @param success True if execution completed without error, false otherwise.
+                 */
                 using CompletionHook = std::function<void(Graph::Node* node, bool success)>;
 
                 /**
-                 * @brief Re-injects a node into the scheduler's ready queue.
+                 * @brief Callback invoked to re-inject an orphaned node into the ready queue.
                  *
-                 * Installed by the scheduler. The coordinator calls it when a
-                 * worker dies (or returns failure) with the orphaned node: the
-                 * dispatch loop then re-offloads it to a surviving worker, or —
-                 * if none remain or the retry cap is hit — runs it locally. This
-                 * is what turns a lost worker into a transparent fallback rather
-                 * than a permanent stall.
+                 * Called when a worker dies or fails, allowing the scheduler to retry offloading or execute locally.
+                 *
+                 * @param node The task graph node to be rescheduled.
                  */
                 using ResubmitHook = std::function<void(Graph::Node* node)>;
 
+                /**
+                 * @brief Constructs a new distributed coordinator.
+                 *
+                 * Wires up the coordinator with the necessary subsystems for distributed execution.
+                 *
+                 * @param kernels Registry containing the offloadable kernel implementations.
+                 * @param buffers Directory of globally addressable memory buffers.
+                 * @param transport Network layer for cluster communication.
+                 * @param policy Decision engine for worker selection and task placement.
+                 */
                 DistributedCoordinator(sushi_ptr<KernelRegistry> kernels,
                                        BufferRegistry&           buffers,
                                        std::shared_ptr<ITransport>     transport,
@@ -85,77 +86,119 @@ namespace SushiRuntime
                 DistributedCoordinator(const DistributedCoordinator&) = delete;
                 DistributedCoordinator& operator=(const DistributedCoordinator&) = delete;
 
-                /** @brief Starts transport, waits for workers to register (HELLO). */
+                /**
+                 * @brief Starts the network transport and begins accepting worker connections.
+                 *
+                 * Blocks until initial worker node discovery is complete.
+                 */
                 void start();
 
-                /** @brief Drains inflight remote work and stops the transport. */
+                /**
+                 * @brief Drains inflight remote work and stops the network transport.
+                 *
+                 * Safely tears down cluster connections.
+                 */
                 void stop();
 
                 /**
-                 * @brief True if at least one live worker can run this OpID.
+                 * @brief Checks if at least one active worker can execute a specific operation.
                  *
-                 * Queried by TaskGraph::compile() to decide offloadability. An op
-                 * absent from every worker's registry keeps its tasks local.
+                 * Queried during graph compilation to determine if a node is offloadable.
+                 *
+                 * @param op The operation ID to query.
+                 * @return True if supported by a live worker, false otherwise.
                  */
                 bool supports(Graph::OpID op) const;
 
                 /**
-                 * @brief Installs the hook used to release a node's successors.
+                 * @brief Installs the hook used to release a node's successors upon completion.
                  *
-                 * The scheduler passes a closure that performs the same
-                 * successor-decrement / ready-enqueue logic EventPolling uses.
+                 * The scheduler provides this closure to mirror local event polling behavior.
+                 *
+                 * @param hook The completion callback to register.
                  */
                 void set_completion_hook(CompletionHook hook);
 
-                /** @brief Installs the hook used to re-inject an orphaned node (see ResubmitHook). */
+                /**
+                 * @brief Installs the hook used to re-inject an orphaned node.
+                 *
+                 * The scheduler provides this closure to handle worker failures gracefully.
+                 *
+                 * @param hook The resubmission callback to register.
+                 */
                 void set_resubmit_hook(ResubmitHook hook);
 
                 /**
-                 * @brief Sets how long a worker may go silent before it is
-                 * declared dead and its in-flight tasks re-dispatched (default 5s).
+                 * @brief Sets the maximum silence duration before declaring a worker dead.
                  *
-                 * Any inbound message (heartbeat, result, buffer request) refreshes
-                 * liveness, so this only fires on a genuinely crashed or hung peer.
+                 * Dead workers trigger task redispatch. Any inbound message refreshes the timer.
+                 *
+                 * @param timeout The duration to wait before timing out a worker.
                  */
                 void set_liveness_timeout(std::chrono::milliseconds timeout);
 
                 /**
-                 * @brief Sets the per-task deadline (default 30s; 0 disables it).
+                 * @brief Sets the per-task execution deadline to prevent permanent stalls.
                  *
-                 * A second recovery axis, independent of worker heartbeats: a task
-                 * dispatched to a worker must yield a result within this bound or it
-                 * is re-dispatched. Closes the gap where a single lost TASK_DISPATCH
-                 * or TASK_RESULT to an otherwise-healthy (still heartbeating) worker
-                 * would leave the task pending forever. Set well above the slowest
-                 * expected kernel + buffer-transfer time to avoid false re-dispatch.
+                 * A task failing to complete within this bound is redispatched. A value of zero disables the deadline.
+                 *
+                 * @param deadline The maximum allowed duration for task completion.
                  */
                 void set_task_deadline(std::chrono::milliseconds deadline);
 
                 /**
-                 * @brief Attempts to offload one ready, offloadable node.
+                 * @brief Attempts to offload a ready task to a remote worker.
                  *
-                 * @return true  -> the node was shipped to a worker; the caller
-                 *                  must NOT run it locally.
-                 *         false -> no worker chosen (policy declined / none ready);
-                 *                  the caller runs it locally (transparent fallback).
+                 * Delegates to the configured offload policy to select a suitable destination.
                  *
-                 * Called from the scheduler's dispatch loop behind a single
-                 * [[unlikely]] offloadable check, so non-offloaded tasks never
-                 * reach here.
+                 * @param node The ready, offloadable node to dispatch.
+                 * @return True if dispatched to a worker, false if the local fallback should be used.
                  */
                 bool try_offload(Graph::Node* node);
 
-                /** @brief Tasks actually shipped to a worker (telemetry). */
+                /**
+                 * @brief Retrieves the total number of tasks successfully offloaded.
+                 *
+                 * Used for cluster telemetry and performance monitoring.
+                 *
+                 * @return The cumulative offloaded task count.
+                 */
                 uint64_t offloaded_count() const;
-                /** @brief Offloadable tasks the policy kept local (telemetry). */
+
+                /**
+                 * @brief Retrieves the number of offloadable tasks that ran locally due to policy decisions.
+                 *
+                 * Used for cluster telemetry and load balancing analysis.
+                 *
+                 * @return The cumulative declined task count.
+                 */
                 uint64_t declined_count() const;
-                /** @brief Tasks re-injected after a worker death or remote failure (telemetry). */
+
+                /**
+                 * @brief Retrieves the number of tasks re-injected due to remote failures.
+                 *
+                 * Tracks fault tolerance events like worker death or network timeouts.
+                 *
+                 * @return The cumulative redispatched task count.
+                 */
                 uint64_t redispatched_count() const;
 
-                /** @brief Writebacks rejected by the version fence — stale/superseded results (telemetry). */
+                /**
+                 * @brief Retrieves the number of writebacks rejected by version fencing.
+                 *
+                 * Indicates how many stale or superseded results were discarded.
+                 *
+                 * @return The cumulative stale writeback count.
+                 */
                 uint64_t stale_writeback_count() const;
 
-                /** @brief Number of workers that have registered (HELLO) and are live. */
+                /**
+                 * @brief Retrieves the number of active, fully registered cluster workers.
+                 *
+                 * Represents the currently available distributed execution capacity.
+                 *
+                 * @return The active worker count.
+                 */
                 int alive_worker_count() const;
 
             private:

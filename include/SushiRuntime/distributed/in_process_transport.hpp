@@ -34,11 +34,9 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief What a fault policy decides should happen to one in-flight message.
+         * @brief Dictates how the transport simulation handles an in-flight message.
          *
-         * Lets a test reproduce the partial-failure scenarios a real network
-         * imposes — lost packets, retransmits, and a slow peer whose late reply
-         * races a redispatch — all deterministically, on one machine.
+         * Permits deterministic injection of network failures like packet loss or reordering.
          */
         enum class FaultAction
         {
@@ -49,75 +47,80 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Decides the fate of each message; installed via set_fault_policy().
+         * @brief Callback determining the fault action for each transmitted message.
          *
-         * @param from_peer Sender node id (-1 = master, 0..N-1 = worker).
-         * @param to_peer   Destination node id (-1 = master, 0..N-1 = worker).
-         * @param type      The message kind.
-         * @return The action to take; default (no policy) is Deliver.
+         * @param from_peer The ID of the sending node.
+         * @param to_peer The ID of the destination node.
+         * @param type The kind of message being transmitted.
+         * @return The action to apply to the message, defaulting to delivery.
          */
         using FaultPolicy =
             std::function<FaultAction(int from_peer, int to_peer, MsgType type)>;
 
         /**
-         * @brief Shared in-process switchboard connecting a master to N workers.
+         * @brief Simulates a complete cluster network within a single process.
          *
-         * Created once, then handed to each endpoint. Delivery happens on a
-         * per-endpoint queue drained by its own thread, so message handling is
-         * asynchronous and never reentrant — the same ordering and concurrency
-         * shape a real socket transport would impose, minus the network. This is
-         * the "RemappingTopologyProvider of the network layer": full multi-node
-         * logic, single machine.
-         *
-         * For reliability testing it doubles as a fault injector: a FaultPolicy can
-         * drop, duplicate, or hold messages so the master/worker recovery paths can
-         * be driven through lost packets, retransmits, and slow-peer races without a
-         * real network. Production code installs no policy and pays nothing.
+         * Connects local endpoints via asynchronous queues, providing a testbed for distributed logic without real networking.
          */
         class SUSHIRUNTIME_API InProcessFabric
         {
             public:
+                /**
+                 * @brief Constructs a new simulated network fabric.
+                 *
+                 * @param worker_count The number of simulated worker nodes to provision.
+                 */
                 explicit InProcessFabric(int worker_count);
+
+                /**
+                 * @brief Destroys the simulated network fabric.
+                 *
+                 * Cleans up shared routing state.
+                 */
                 ~InProcessFabric();
 
                 InProcessFabric(const InProcessFabric&) = delete;
                 InProcessFabric& operator=(const InProcessFabric&) = delete;
 
-                /** @brief Number of workers this fabric wires up. */
+                /**
+                 * @brief Retrieves the number of worker nodes managed by this fabric.
+                 *
+                 * @return The simulated worker count.
+                 */
                 int worker_count() const;
 
                 /**
-                 * @brief Installs (or clears, with nullptr) the fault policy.
+                 * @brief Configures the active failure injection strategy.
                  *
-                 * Consulted for every message at send time. Thread-safe; may be
-                 * swapped mid-run to change the failure scenario between phases.
+                 * Applied thread-safely to all subsequent messages. Passing nullptr disables fault injection.
+                 *
+                 * @param policy The fault decision callback to enforce.
                  */
                 void set_fault_policy(FaultPolicy policy);
 
                 /**
-                 * @brief Delivers every message currently parked by FaultAction::Hold,
-                 *        then clears the hold buffer.
+                 * @brief Delivers all messages currently detained by a hold policy.
                  *
-                 * Models a slow peer's backlog finally draining — the moment a stale
-                 * reply can race work that has already moved on. With a non-zero
-                 * @p shuffle_seed the held messages are delivered in a seeded random
-                 * order, injecting message reordering on top of the delay.
+                 * Emulates the sudden arrival of delayed packets, potentially scrambling ordering.
                  *
-                 * @param shuffle_seed 0 = deliver in held (FIFO) order; else reorder.
+                 * @param shuffle_seed Seed for randomized delivery order; 0 preserves FIFO.
                  */
                 void flush_held(uint64_t shuffle_seed = 0);
 
-                /** @brief Number of messages currently parked by Hold. */
+                /**
+                 * @brief Counts the messages currently parked by the fault policy.
+                 *
+                 * @return The number of detained messages.
+                 */
                 std::size_t held_count() const;
 
                 /**
-                 * @brief Partitions a worker off the network (or heals it).
+                 * @brief Isolates or reconnects a worker to simulate network partitions.
                  *
-                 * While partitioned, every message to or from @p worker is dropped in
-                 * both directions — the classic split-brain nemesis. Healing it
-                 * (partitioned=false) restores delivery for subsequent messages;
-                 * anything sent during the partition is already lost (as on a real
-                 * link). Out-of-range ids are ignored.
+                 * All traffic to and from the isolated worker is silently dropped.
+                 *
+                 * @param worker The target worker ID.
+                 * @param partitioned True to sever connectivity, false to restore it.
                  */
                 void set_partitioned(int worker, bool partitioned);
 
@@ -127,23 +130,64 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief One ITransport endpoint on an InProcessFabric.
+         * @brief A single communication endpoint attached to an in-process fabric.
          *
-         * node_id == -1 designates the master; 0..N-1 designate workers. From the
-         * master, send(peer_id, ...) routes to worker peer_id (or broadcasts when
-         * peer_id < 0); from a worker, the destination is always the master.
+         * Provides the standard transport interface over simulated local queues.
          */
         class SUSHIRUNTIME_API InProcessTransport final : public ITransport
         {
             public:
+                /**
+                 * @brief Constructs a simulated transport endpoint.
+                 *
+                 * @param fabric The shared routing switchboard to attach to.
+                 * @param node_id The identity of this endpoint (-1 for master, 0..N-1 for workers).
+                 */
                 InProcessTransport(InProcessFabric& fabric, int node_id);
+
+                /**
+                 * @brief Destroys the simulated transport endpoint.
+                 *
+                 * Detaches from the shared fabric.
+                 */
                 ~InProcessTransport() override;
 
+                /**
+                 * @brief Transmits a framed message to a target peer via the simulated fabric.
+                 *
+                 * @param peer_id The destination node ID.
+                 * @param type The semantic kind of the message.
+                 * @param payload The serialized data to transmit.
+                 */
                 void send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload) override;
+
+                /**
+                 * @brief Registers the callback responsible for handling all inbound messages.
+                 *
+                 * @param handler The function to invoke upon message receipt.
+                 */
                 void on_message(MessageHandler handler) override;
+
+                /**
+                 * @brief Activates the simulated transport endpoint.
+                 *
+                 * Spawns the local delivery thread to process the asynchronous incoming queue.
+                 */
                 void start() override;
+
+                /**
+                 * @brief Halts the simulated transport endpoint.
+                 *
+                 * Safely drains the local queue and terminates the delivery thread.
+                 */
                 void stop() override;
-                int  peer_count() const override;
+
+                /**
+                 * @brief Retrieves the number of reachable endpoints on the fabric.
+                 *
+                 * @return The worker count for the master, or 1 for a worker node.
+                 */
+                int peer_count() const override;
 
                 /** @brief Per-endpoint state; public so the fabric can hold weak refs to endpoints. */
                 struct Impl;

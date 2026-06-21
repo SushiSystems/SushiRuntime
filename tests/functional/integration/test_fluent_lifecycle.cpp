@@ -27,12 +27,11 @@
 
 using namespace SushiRuntime;
 
-// Replay + double-buffer: one update rule increments every element by 1 each
-// step. After K steps every element must equal K. That only holds if the
-// compiled plan is replayed with the per-node in_degree reset between steps,
-// and the State is double-buffered so each step reads the previous field and
-// writes the next one. A broken reset would deadlock or skip steps; a broken
-// swap would read stale data and diverge from K.
+/**
+ * @brief Tests state replay and double-buffering during fluent execution.
+ *
+ * One update rule increments every element by 1 each step. Verifies that the compiled plan is properly replayed and State is double-buffered so each step reads the previous field and writes the next one.
+ */
 TEST(Integration_FluentLifecycle, StateReplayIncrement)
 {
     constexpr std::size_t N     = 1024;
@@ -58,9 +57,11 @@ TEST(Integration_FluentLifecycle, StateReplayIncrement)
     EXPECT_TRUE(ok) << "State replay/double-buffer produced wrong values.";
 }
 
-// Replay must also work across separate run() calls: the second run resets the
-// node state the first run consumed. 10 then 5 steps must leave every element
-// at 15.
+/**
+ * @brief Tests replay across multiple run() calls.
+ *
+ * Verifies that the second run resets the node state the first run consumed, ensuring continuous execution.
+ */
 TEST(Integration_FluentLifecycle, ReplayAcrossCalls)
 {
     constexpr std::size_t N = 256;
@@ -83,8 +84,11 @@ TEST(Integration_FluentLifecycle, ReplayAcrossCalls)
         ASSERT_EQ(field[i], 15);
 }
 
-// run_until checks its stop condition before each step and sees the State the
-// previous step produced, so it must stop exactly when field[0] reaches 20.
+/**
+ * @brief Tests that run_until stops exactly when the condition is met.
+ *
+ * Checks its stop condition before each step using the State the previous step produced.
+ */
 TEST(Integration_FluentLifecycle, RunUntilStopsOnCondition)
 {
     constexpr std::size_t N = 64;
@@ -105,10 +109,11 @@ TEST(Integration_FluentLifecycle, RunUntilStopsOnCondition)
     EXPECT_EQ(field[0], 20);
 }
 
-// Coupled fields: u reads v, v evolves on its own. Both rules read the previous
-// step's data (Jacobi), so after K steps v == K and u == sum_{j=0}^{K-1} j. If
-// the swap happened per-rule instead of after the whole step, u would read v's
-// updated value and diverge — so this also pins down the advance-after-step rule.
+/**
+ * @brief Tests that coupled fields evolve using Jacobi-style updates.
+ *
+ * Both rules read the previous step's data, verifying the advance-after-step rule rather than per-rule swapping.
+ */
 TEST(Integration_FluentLifecycle, CoupledFieldsAreJacobi)
 {
     constexpr std::size_t N     = 128;
@@ -140,9 +145,11 @@ TEST(Integration_FluentLifecycle, CoupledFieldsAreJacobi)
     }
 }
 
-// Mutating the graph after a run invalidates the cached plan: the next run
-// recompiles with the added rule, and existing state continues from where it
-// left off.
+/**
+ * @brief Tests that mutating the graph recompiles the plan.
+ *
+ * The next run recompiles with the added rule, and existing state continues from where it left off.
+ */
 TEST(Integration_FluentLifecycle, MutationRecompiles)
 {
     constexpr std::size_t N = 128;
@@ -167,8 +174,11 @@ TEST(Integration_FluentLifecycle, MutationRecompiles)
     }
 }
 
-// A graph with no tasks is invalid and the non-throwing channel reports it
-// without throwing.
+/**
+ * @brief Tests that an empty graph is reported as invalid.
+ *
+ * The non-throwing try_run() channel reports an invalid_graph error without throwing an exception.
+ */
 TEST(Integration_FluentLifecycle, EmptyGraphIsInvalid)
 {
     auto rt  = Runtime::create();

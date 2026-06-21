@@ -24,6 +24,14 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/logger.hpp>
 
+/**
+ * @brief Entry point for the test suite.
+ *
+ * Initializes the logger and GoogleTest, then runs all test cases.
+ * @param argc Number of command-line arguments.
+ * @param argv Array of command-line argument strings.
+ * @return 0 on success, non-zero if any tests fail.
+ */
 int main(int argc, char** argv)
 {
     // Stream logs synchronously so they don't interleave with GTest output.

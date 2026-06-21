@@ -32,24 +32,31 @@ namespace SushiRuntime
     namespace Topology
     {
         /**
-         * @brief Maps memory access distances (NUMA distance) between hardware units.
+         * @brief Maps memory access distances between hardware units.
+         *
+         * Analyzes hardware topology to associate devices with their closest NUMA nodes.
          */
         class SUSHIRUNTIME_API NUMAMapper 
         {
             public:
+                /** @brief Default constructor. */
                 NUMAMapper() = default;
 
                 /**
-                 * @brief Identifies the closest NUMA node for each device in the list.
-                 * @param nodes The list of hardware nodes to map.
+                 * @brief Identifies the closest NUMA node for each device.
+                 *
+                 * Updates each node's NUMA assignment based on physical hwloc proximity data.
+                 * @param nodes The list of hardware nodes to update in place.
                  */
                 void map_distances(std::vector<HardwareNode>& nodes);
 
                 /**
-                 * @brief Returns the latency cost between two NUMA nodes.
-                 * @param numa_node_a First NUMA node ID.
-                 * @param numa_node_b Second NUMA node ID.
-                 * @return int The distance or latency value.
+                 * @brief Retrieves the latency cost between two NUMA nodes.
+                 *
+                 * Queries the underlying hwloc system for the distance between the nodes.
+                 * @param numa_node_a The first NUMA node index.
+                 * @param numa_node_b The second NUMA node index.
+                 * @return The distance value, typically 10 for local and >10 for remote access.
                  */
                 int get_distance(int numa_node_a, int numa_node_b) const;
 

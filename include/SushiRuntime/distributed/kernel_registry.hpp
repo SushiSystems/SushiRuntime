@@ -37,25 +37,24 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Maps an OpID to a kernel already compiled into this binary.
+         * @brief Resolves an OpID to a pre-compiled kernel for distributed execution.
          *
-         * This is the answer to "how do you distribute a compiled project": you
-         * do not ship code, you ship an OpID, and every node looks that id up in
-         * its own identical registry. The master uses it (via the common set
-         * negotiated at HELLO) to decide which tasks are even offloadable; each
-         * worker uses it to actually run the work.
-         *
-         * Both ends register the SAME kernels at startup — they are part of the
-         * same binary. A task whose op_id is absent here simply stays local.
+         * Each node maintains an identical local registry of kernels, so the network
+         * only transmits IDs instead of compiled code.
          */
         class SUSHIRUNTIME_API KernelRegistry : public Core::RefCounted
         {
             public:
                 /**
-                 * @brief A kernel callable in terms of network-resolved local buffers.
+                 * @brief Defines a kernel signature that executes using network-resolved local buffers.
                  *
-                 * inputs/outputs are local USM pointers the worker resolved from
-                 * BufferHandles; meta carries the serialized scalar params.
+                 * Executes the underlying operation by consuming resolved Unified Shared Memory (USM) pointers and serialized metadata.
+                 *
+                 * @param queue The SYCL queue on which the kernel executes.
+                 * @param inputs Array of local USM pointers providing read-only input data.
+                 * @param outputs Array of local USM pointers providing writeable output data.
+                 * @param meta Serialized metadata containing scalar parameters for the task.
+                 * @return A SYCL event representing the asynchronous execution of the kernel.
                  */
                 using RemoteKernel = std::function<sycl::event(
                     sycl::queue&            queue,
@@ -63,16 +62,43 @@ namespace SushiRuntime
                     SushiRuntime::span<void* const>  outputs,
                     const Graph::TaskMetadata& meta)>;
 
-                /** @brief Registers (or replaces) the kernel for an OpID. */
+                /**
+                 * @brief Registers or replaces a kernel implementation for a specific operation ID.
+                 *
+                 * Stores the callable inside the internal map using the operation ID as the key for later retrieval.
+                 *
+                 * @param id The unique identifier for the operation.
+                 * @param fn The callable kernel implementation to register.
+                 */
                 void register_kernel(Graph::OpID id, RemoteKernel fn);
 
-                /** @brief True if a kernel is registered for this OpID. */
+                /**
+                 * @brief Checks whether a kernel implementation exists for the specified operation ID.
+                 *
+                 * Queries the internal registry map to confirm the presence of the operation.
+                 *
+                 * @param id The unique identifier for the operation to check.
+                 * @return True if a kernel is registered, false otherwise.
+                 */
                 bool has(Graph::OpID id) const;
 
-                /** @brief Returns the kernel for an OpID, or nullptr. */
+                /**
+                 * @brief Retrieves the registered kernel implementation for a given operation ID.
+                 *
+                 * Looks up the ID in the internal registry and returns a pointer to the callable if found.
+                 *
+                 * @param id The unique identifier for the operation to find.
+                 * @return A pointer to the kernel if found, or nullptr if the operation is unregistered.
+                 */
                 const RemoteKernel* find(Graph::OpID id) const;
 
-                /** @brief All registered OpIDs, sent in the HELLO handshake. */
+                /**
+                 * @brief Extracts a list of all currently registered operation IDs.
+                 *
+                 * Iterates through the internal registry and collects the keys into a flat list.
+                 *
+                 * @return A vector containing all registered operation IDs.
+                 */
                 std::vector<Graph::OpID> known_ops() const;
 
             private:

@@ -50,33 +50,23 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Wire protocol version, exchanged in the HELLO handshake.
+         * @brief Defines the wire protocol version to prevent incompatible nodes from communicating.
          *
-         * Both ends are built from the same source in the target lab, but a
-         * mismatched or stray binary connecting to the cluster would otherwise
-         * parse raw structs against an incompatible layout and corrupt silently.
-         * The master rejects a HELLO whose version differs from its own. Bump this
-         * whenever any on-wire struct or message changes shape.
+         * This value is exchanged during the initial handshake and validated by the master to ensure struct layout matches.
          */
         constexpr uint32_t PROTOCOL_VERSION = 1;
 
         /**
-         * @brief Hard upper bound on a single frame's payload length.
+         * @brief Establishes a maximum size for incoming network frames to prevent memory exhaustion.
          *
-         * The frame header carries a 32-bit length the receiver must trust enough
-         * to allocate. A corrupt or hostile length (e.g. 4 GiB) would otherwise
-         * trigger a giant allocation; the transport rejects any frame above this
-         * cap and drops the connection instead. 256 MiB comfortably exceeds the
-         * largest buffer a single BUFFER_PUSH is expected to carry.
+         * The transport layer validates the incoming frame length against this constant before allocating a reception buffer.
          */
         constexpr uint32_t MAX_FRAME_BYTES = 256u * 1024u * 1024u;
 
         /**
-         * @brief Network-safe stand-in for a void* USM pointer.
+         * @brief Provides a network-safe identifier representing a distributed memory allocation.
          *
-         * The master assigns these; they are globally unique within a run. A
-         * worker never sees a master pointer, only this id, which it resolves
-         * against its own BufferCache to a local USM allocation.
+         * Workers use this globally unique ID to resolve local Unified Shared Memory (USM) pointers via their buffer cache.
          */
         struct GlobalBufferID
         {
@@ -88,12 +78,9 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Coherence token: identity + version + size.
+         * @brief Tracks the identity, size, and coherence state of a distributed buffer.
          *
-         * Version is the heart of the stateful buffer cache. The master bumps it
-         * whenever a task writes the buffer (WAW/WAR in the DependencyTracker).
-         * A worker holding an older version treats its cache entry as stale and
-         * pulls fresh bytes (pull-on-miss, master-authoritative).
+         * The master increments the version on write operations, forcing workers to fetch fresh data when their cached version becomes stale.
          */
         struct BufferHandle
         {
@@ -103,7 +90,9 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Message kinds on the wire. One byte in the frame header.
+         * @brief Defines the available message types for the distributed wire protocol.
+         *
+         * Embedded as a single byte within the frame header to route payloads to appropriate handlers.
          */
         enum class MsgType : uint8_t
         {
@@ -119,10 +108,9 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief On-wire frame: [4B length][1B type][payload...].
+         * @brief Defines the standard header structure for all network frames.
          *
-         * length counts the payload bytes only (not the header). Kept tiny so
-         * any ITransport (TCP, in-process) can frame messages identically.
+         * Precedes the variable-length payload to provide the message type and exact byte count for allocation.
          */
         struct FrameHeader
         {
@@ -130,13 +118,15 @@ namespace SushiRuntime
             MsgType  type;
         };
 
-        // ---------------------------------------------------------------------
         // Tiny length-prefixed serializer. Both ends share the same binary and,
         // in the target lab, the same architecture/endianness, so we keep it raw
         // and trivially-copyable rather than pulling in a schema library.
-        // ---------------------------------------------------------------------
 
-        /** @brief Appends trivially-copyable values and sized blobs to a byte buffer. */
+        /**
+         * @brief Serializes trivially-copyable values and binary blobs into a contiguous byte buffer.
+         *
+         * Appends raw memory representations sequentially to an internal vector for network transmission.
+         */
         class ByteWriter
         {
             public:
@@ -148,7 +138,14 @@ namespace SushiRuntime
                     buf_.insert(buf_.end(), p, p + sizeof(T));
                 }
 
-                /** @brief Writes a length-prefixed (uint64) raw blob. */
+                /**
+                 * @brief Appends a length-prefixed raw byte array to the buffer.
+                 *
+                 * Writes the size first as a 64-bit integer, followed by the actual payload bytes.
+                 *
+                 * @param data Pointer to the start of the binary data.
+                 * @param bytes The number of bytes to read from the data pointer.
+                 */
                 void put_blob(const void* data, uint64_t bytes)
                 {
                     put(bytes);
@@ -163,7 +160,11 @@ namespace SushiRuntime
                 std::vector<std::byte> buf_;
         };
 
-        /** @brief Reads back what ByteWriter produced. Bounds-checked via ok(). */
+        /**
+         * @brief Deserializes trivially-copyable values and binary blobs from a byte span.
+         *
+         * Tracks a read cursor and bounds-checks all extractions to safely decode network payloads.
+         */
         class ByteReader
         {
             public:
@@ -186,7 +187,13 @@ namespace SushiRuntime
                     return v;
                 }
 
-                /** @brief Reads a length-prefixed blob; returned span aliases the input buffer. */
+                /**
+                 * @brief Extracts a length-prefixed raw byte array from the current position.
+                 *
+                 * Reads the 64-bit length prefix, then returns a subspan of the payload while advancing the cursor.
+                 *
+                 * @return A span viewing the extracted data block, or an empty span if a bounds check fails.
+                 */
                 SushiRuntime::span<const std::byte> get_blob()
                 {
                     uint64_t bytes = get<uint64_t>();
@@ -209,18 +216,14 @@ namespace SushiRuntime
                 bool   ok_  = true;
         };
 
-        // ---------------------------------------------------------------------
         // Message bodies. These are *logical* shapes; (de)serialization is done
         // explicitly with ByteWriter/ByteReader because they carry variable
         // length handle lists and blobs.
-        // ---------------------------------------------------------------------
 
         /**
-         * @brief master -> worker: execute one offloaded task.
+         * @brief Encodes a master-to-worker command to execute an offloaded task.
          *
-         * Carries no code and no pointers — only the OpID of a kernel already
-         * compiled into the worker, the serializable TaskMetadata (params[8]),
-         * and the input/output buffer handles to resolve against the cache.
+         * Serializes the operation ID, metadata, and buffer dependencies into a network message.
          */
         struct TaskDispatchMsg
         {
@@ -259,13 +262,9 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief worker -> master: result is ready, WITH the output bytes inline.
+         * @brief Encodes a worker-to-master notification containing task completion status and output data.
          *
-         * The output data rides in this single message rather than a separate
-         * BUFFER_PUSH, so completion and data are atomic: a dropped result loses
-         * both (the task simply times out and is re-dispatched), and the master can
-         * never mark a task done while its output bytes silently failed to arrive.
-         * On failure, outputs/output_data are empty.
+         * Serializes the execution outcome alongside the mutated buffer versions and their raw byte payloads inline.
          */
         struct TaskResultMsg
         {
@@ -309,7 +308,11 @@ namespace SushiRuntime
             }
         };
 
-        /** @brief either direction: ship the raw bytes for one buffer version. */
+        /**
+         * @brief Encodes a unidirectional transfer of raw buffer bytes.
+         *
+         * Serializes a buffer handle alongside its raw byte contents to satisfy remote data requests or cache pushes.
+         */
         struct BufferPushMsg
         {
             BufferHandle           handle;
@@ -334,7 +337,11 @@ namespace SushiRuntime
             }
         };
 
-        /** @brief worker -> master: I need this {id,version}; please push it. */
+        /**
+         * @brief Encodes a worker-to-master request for a specific buffer version.
+         *
+         * Serializes the desired global identifier and version number to trigger a master push.
+         */
         struct BufferRequestMsg
         {
             GlobalBufferID id;
@@ -359,12 +366,9 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief master -> worker RTT probe.
+         * @brief Encodes a master-to-worker timing probe for measuring network latency.
          *
-         * The token is the master's own steady-clock value at send time. The
-         * worker echoes it verbatim in a PongMsg; the master computes the round
-         * trip purely from its own clock, so worker/master clock skew never enters
-         * the measurement.
+         * Carries a master-generated clock token which the worker must echo back verbatim.
          */
         struct PingMsg
         {
@@ -387,11 +391,9 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief worker -> master RTT reply + live device-memory headroom.
+         * @brief Encodes a worker-to-master reply to a timing probe, including current resource state.
          *
-         * Carries the PingMsg token unchanged (so the master can derive RTT) plus
-         * the worker's current free device memory, which the offload policy uses as
-         * a headroom gate before dispatching a payload to that worker.
+         * Echoes the master's clock token and provides the worker's available device memory headroom.
          */
         struct PongMsg
         {

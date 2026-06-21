@@ -31,9 +31,12 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief Counts the set bits in a 64-bit value (std::popcount stand-in).
-         * @param x The value to inspect.
-         * @return The number of 1 bits, 0..64.
+         * @brief Counts the set bits in a 64-bit unsigned integer.
+         * 
+         * Uses compiler intrinsics to efficiently calculate the population count.
+         *
+         * @param x The 64-bit unsigned integer to inspect.
+         * @return The total number of bits set to 1, ranging from 0 to 64.
          */
         inline int popcount_u64(std::uint64_t x) noexcept
         {
@@ -45,9 +48,12 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Counts trailing zero bits in a 64-bit value (std::countr_zero stand-in).
-         * @param x The value to inspect.
-         * @return The number of trailing 0 bits; 64 when x is 0.
+         * @brief Counts the trailing zero bits in a 64-bit unsigned integer.
+         * 
+         * Uses compiler intrinsics to efficiently locate the least significant set bit.
+         *
+         * @param x The 64-bit unsigned integer to inspect.
+         * @return The number of trailing 0 bits, or 64 if the value is zero.
          */
         inline int countr_zero_u64(std::uint64_t x) noexcept
         {

@@ -39,8 +39,12 @@ using namespace SushiRuntime::Scheduler;
 using namespace SushiRuntime::Memory;
 using SushiRuntime::Test::AtomicCounterTask;
 
-// stop() right after submit, without waiting, must drain cleanly instead of
-// deadlocking or leaking threads.
+/**
+ * @brief Tests that stop() right after submit drains cleanly.
+ *
+ * Prevents deadlocks or leaked threads when stopping the scheduler immediately
+ * after queuing tasks.
+ */
 TEST(Regression_Sentinel, Scheduler_AbruptStopDrains)
 {
     RuntimeContext ctx;
@@ -57,8 +61,13 @@ TEST(Regression_Sentinel, Scheduler_AbruptStopDrains)
         << "Abrupt stop() must drain without deadlock or throw.";
 }
 
-// When a thread exits, its retire_list is donated to the global orphan list and
-// reclaimed by survivors. A prior bug returned orphans to the wrong free pool.
+/**
+ * @brief Tests that orphaned nodes from an exited thread are correctly reclaimed.
+ *
+ * Simulates a thread exiting with a retire list, which is then donated to the
+ * global orphan list and must be freed by survivors. A prior bug returned
+ * orphans to the wrong free pool.
+ */
 TEST(Regression_Sentinel, Epoch_OrphanedNodesReclaimed)
 {
     // The counter is a shared_ptr, not a raw pointer to a stack atomic: EBR

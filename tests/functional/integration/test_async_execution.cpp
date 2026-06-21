@@ -38,8 +38,14 @@ using SushiRuntime::Test::UsmShared;
 
 namespace
 {
-    // Find the discovery index of the first CPU and first GPU. get_queue(i)
-    // follows the same device order as sycl::device::get_devices(all).
+    /**
+     * @brief Finds the discovery index of the first CPU and first GPU.
+     *
+     * Iterates through all available SYCL devices to locate indices for CPU and GPU queues.
+     * @param cpu_idx Reference to store the found CPU index.
+     * @param gpu_idx Reference to store the found GPU index.
+     * @return True if both a CPU and a GPU were found, false otherwise.
+     */
     bool find_cpu_gpu_indices(size_t& cpu_idx, size_t& gpu_idx)
     {
         auto devs = sycl::device::get_devices(sycl::info::device_type::all);
@@ -62,8 +68,11 @@ namespace
     }
 }
 
-// An independent vector-add on each queue, submitted back-to-back without
-// waiting in between. Both results must be correct.
+/**
+ * @brief Tests concurrent execution of vector-add on CPU and GPU.
+ *
+ * Submits independent workloads to CPU and GPU queues back-to-back without waiting in between, and verifies both produce correct results.
+ */
 TEST(Integration_AsyncExecutionTest, CpuGpuConcurrentVectorAdd)
 {
     size_t cpu_idx = 0;
@@ -144,9 +153,11 @@ TEST(Integration_AsyncExecutionTest, CpuGpuConcurrentVectorAdd)
     EXPECT_TRUE(cpu_ok) << "CPU half of concurrent execution produced wrong results.";
 }
 
-// A submit() to a busy GPU queue must hand control back to the host before the
-// kernel finishes. Launch a heavy kernel and assert it is still in-flight right
-// after submit returns, at least once across a few attempts.
+/**
+ * @brief Verifies that asynchronous GPU dispatch does not block the host.
+ *
+ * Submits a heavy kernel to the GPU queue and asserts that it remains in-flight immediately after the submit call returns.
+ */
 TEST(Integration_AsyncExecutionTest, AsyncDispatchDoesNotBlock)
 {
     size_t cpu_idx = 0;

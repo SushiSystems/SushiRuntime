@@ -41,10 +41,17 @@ namespace SushiRuntime
     namespace Topology 
     {
         /**
-         * @brief İşletim sistemini atlayarak mevcut thread'i spesifik bir CPU çekirdeğine donanımsal olarak kilitler.
-         * @param core_id Kilitlenecek mantıksal çekirdek ID'si (0, 1, 2...)
+         * @brief Pins the calling thread to a specific logical CPU core.
+         *
+         * Uses the OS affinity API (SetThreadAffinityMask on Windows,
+         * pthread_setaffinity_np on POSIX) to bind the thread so the
+         * scheduler never migrates it to a different core.
+         *
+         * @param core_id Logical core index (0-based). Must be a valid index
+         *                for the running system; out-of-range values are logged
+         *                as warnings and silently ignored by the OS.
          */
-        inline void pin_current_thread_to_core(int core_id) 
+        inline void pin_current_thread_to_core(int core_id)
         {
             #ifdef _WIN32
                 HANDLE thread = GetCurrentThread();

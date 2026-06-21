@@ -61,6 +61,12 @@ namespace
 
     std::atomic<int> g_worker_runs[2];
 
+    /**
+     * @brief Register the vector add kernel.
+     * 
+     * @param reg The kernel registry.
+     * @param worker_idx The worker index to record execution.
+     */
     void register_vec_add(KernelRegistry& reg, int worker_idx)
     {
         reg.register_kernel(VEC_ADD,
@@ -83,11 +89,18 @@ namespace
             });
     }
 
-    // One graph of TASKS independent vector-adds over distinct buffers.
+    /**
+     * @brief One graph of TASKS independent vector-adds over distinct buffers.
+     */
     struct Workload
     {
         std::vector<float*> a, b, out;
 
+        /**
+         * @brief Allocate buffers for the workload.
+         * 
+         * @param q The SYCL queue to allocate on.
+         */
         void alloc(sycl::queue& q)
         {
             a.resize(TASKS);
@@ -107,6 +120,11 @@ namespace
             }
         }
 
+        /**
+         * @brief Free the allocated buffers.
+         * 
+         * @param ctx The runtime context used for allocation.
+         */
         void free(RuntimeContext& ctx)
         {
             for (size_t t = 0; t < TASKS; ++t)
@@ -118,6 +136,13 @@ namespace
         }
     };
 
+    /**
+     * @brief Build a compiled graph for the given workload.
+     * 
+     * @param ctx The runtime context.
+     * @param w The workload to build the graph for.
+     * @return The compiled graph.
+     */
     CompiledGraph build_graph(RuntimeContext& ctx, Workload& w)
     {
         TaskGraph graph(ctx);
@@ -151,8 +176,12 @@ namespace
     }
 }
 
-// Drive TASKS offloadable tasks across two in-process workers; report throughput,
-// per-task round-trip latency, and the worker load split.
+/**
+ * @brief Tests the throughput and latency of the master->worker offload path.
+ * 
+ * Drives TASKS offloadable tasks across two in-process workers, reporting throughput,
+ * per-task round-trip latency, and the worker load split.
+ */
 TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
 {
     std::unique_ptr<RuntimeContext> master_ctx, w0_ctx, w1_ctx;

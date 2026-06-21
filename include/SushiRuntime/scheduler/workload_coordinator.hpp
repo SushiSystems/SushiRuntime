@@ -28,54 +28,79 @@
 #include <atomic>
 #include <chrono>
 
-namespace SushiRuntime 
+namespace SushiRuntime
 {
-    namespace Scheduler 
+    namespace Scheduler
     {
-        class WorkloadCoordinator 
+        /**
+         * @brief Background monitor that drives an IRebalanceStrategy on a fixed heartbeat.
+         *
+         * Runs a dedicated low-overhead coordinator thread that calls
+         * IRebalanceStrategy::evaluate_and_rebalance every 5 ms. The strategy
+         * inspects live telemetry via ITelemetryProvider and issues task migrations
+         * via ITaskMigrator. The strategy can be swapped at runtime while the
+         * coordinator is running.
+         */
+        class WorkloadCoordinator
         {
             private:
                 const ITelemetryProvider& telemetry_;
                 ITaskMigrator& migrator_;
                 std::unique_ptr<IRebalanceStrategy> strategy_;
-                
+
                 std::atomic<bool> running_{false};
                 std::thread coordinator_thread_;
 
-                void monitor_loop() 
+                void monitor_loop()
                 {
-                    // Koordinatör OS Jitter yaratmasın diye düşük öncelikli çalışabilir veya izole edilebilir.
-                    while (running_.load(std::memory_order_relaxed)) 
+                    while (running_.load(std::memory_order_relaxed))
                     {
-                        // Stratejiyi çalıştır ve gerekirse müdahale et
                         strategy_->evaluate_and_rebalance(telemetry_, migrator_);
-                        
-                        // İşlemciyi boğmamak için bekle (Her 5 milisaniyede bir kalp atışı)
                         std::this_thread::sleep_for(std::chrono::milliseconds(5));
                     }
                 }
 
             public:
+                /**
+                 * @brief Constructs a coordinator but does not start the thread.
+                 * @param t        Telemetry source (must outlive this object).
+                 * @param m        Migration actuator (must outlive this object).
+                 * @param s        Initial rebalance strategy.
+                 */
                 WorkloadCoordinator(const ITelemetryProvider& t, ITaskMigrator& m, std::unique_ptr<IRebalanceStrategy> s)
                     : telemetry_(t), migrator_(m), strategy_(std::move(s)) {}
 
+                /** @brief Calls stop() if the coordinator thread is still running. */
                 ~WorkloadCoordinator() { stop(); }
 
-                void start() 
+                /**
+                 * @brief Starts the coordinator thread. No-op if already running.
+                 */
+                void start()
                 {
-                    if (!running_.exchange(true)) 
+                    if (!running_.exchange(true))
                         coordinator_thread_ = std::thread(&WorkloadCoordinator::monitor_loop, this);
                 }
 
-                void stop() 
+                /**
+                 * @brief Signals the coordinator to stop and joins its thread. No-op if not running.
+                 */
+                void stop()
                 {
-                    if (running_.exchange(false)) 
-                        if (coordinator_thread_.joinable()) 
+                    if (running_.exchange(false))
+                        if (coordinator_thread_.joinable())
                             coordinator_thread_.join();
                 }
 
-                // OCP: Çalışma zamanında strateji değiştirilebilir!
-                void set_strategy(std::unique_ptr<IRebalanceStrategy> new_strategy) 
+                /**
+                 * @brief Replaces the active rebalance strategy.
+                 *
+                 * Safe to call while the coordinator is running; the next heartbeat
+                 * fires the new strategy.
+                 *
+                 * @param new_strategy Replacement strategy (takes ownership).
+                 */
+                void set_strategy(std::unique_ptr<IRebalanceStrategy> new_strategy)
                 {
                     strategy_ = std::move(new_strategy);
                 }

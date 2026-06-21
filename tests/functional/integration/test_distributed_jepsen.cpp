@@ -62,8 +62,12 @@ namespace
 {
     constexpr auto VEC_DOUBLE = "vec.double"_op;
 
-    // o[i] = a[i] * 2 over network-resolved local USM buffers. Deterministic, so a
-    // remote run and the local fallback produce identical bytes.
+    /**
+     * @brief Registers the vec.double kernel.
+     *
+     * Computes o[i] = a[i] * 2 over network-resolved local USM buffers.
+     * @param reg The registry to register the kernel with.
+     */
     void register_vec_double(KernelRegistry& reg)
     {
         reg.register_kernel(VEC_DOUBLE,
@@ -83,7 +87,11 @@ namespace
             });
     }
 
-    // Runs one randomized scenario; returns "" on success or a failure reason.
+    /**
+     * @brief Runs one randomized Jepsen scenario.
+     * @param seed The random seed for the nemesis fault injector.
+     * @return Empty string on success, or a failure reason description.
+     */
     std::string run_one_scenario(uint64_t seed)
     {
         constexpr int    W = 2;     // workers
@@ -253,8 +261,11 @@ namespace
     }
 }
 
-// Soak across several seeds: every randomized fault schedule must end with the
-// correct (fault-free) result and a run that actually returned.
+/**
+ * @brief Soaks across several random seeds to assert determinism.
+ *
+ * Every randomized fault schedule must end with the correct (fault-free) result and a run that actually returned.
+ */
 TEST(Integration_DistributedJepsenTest, DeterminismUnderRandomFaults)
 {
     // Skip cleanly if there is no SYCL device (first scenario reports it).
@@ -274,10 +285,11 @@ TEST(Integration_DistributedJepsenTest, DeterminismUnderRandomFaults)
     }
 }
 
-// Registration itself happens under loss: a fault policy drops a fraction of ALL
-// traffic from before the worker connects, so its HELLO can be lost. The worker
-// must keep re-announcing until acknowledged, the cluster must still assemble,
-// and an offloaded task must still produce the correct result.
+/**
+ * @brief Tests that registration survives severe message loss.
+ *
+ * A fault policy drops traffic before the worker connects. The worker must keep re-announcing until acknowledged, and the offloaded task must still produce the correct result.
+ */
 TEST(Integration_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
 {
     std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;

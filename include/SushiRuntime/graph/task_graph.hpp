@@ -139,26 +139,23 @@ namespace SushiRuntime
                               HostWork fallback_work,
                               const std::vector<sycl::event>& dependencies = {});
 
-/**
-                 * @brief Analyzes dependencies and compiles the graph for execution.
-                 * * @warning PHASE 1 & PHASE 2 CONCURRENCY DISCLAIMER:
-                 * Graph construction methods like add_node() and add_task() (Phase 1) 
-                 * and the compile() method (Phase 2) are NOT thread-safe when executed 
-                 * concurrently. You MUST ensure that all nodes are fully inserted 
-                 * into the graph (Phase 1 completion) before invoking compile().
-                 * * This process links leaves to a sentinel completion node, finds roots,
-                 * and transfers ownership to a CompiledGraph. It does NOT submit tasks
-                 * to the hardware or block execution.
-                 * * @return CompiledGraph The compiled graph ready to run.
+                /**
+                 * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.
+                 *
+                 * Links leaf nodes to a sentinel completion node, identifies root nodes
+                 * (zero in-degree), and transfers node ownership to the returned
+                 * CompiledGraph. Does not submit any work to hardware.
+                 *
+                 * @warning Not thread-safe with respect to add_node() / add_task().
+                 *          All nodes must be inserted before compile() is called.
+                 *
+                 * @return CompiledGraph Compiled plan; call execute() on it to run.
                  */
                 SushiRuntime::Execution::CompiledGraph compile();
 
             private:
                 struct Impl;
-                /** @brief Pimpl handle for internal implementation details. */
                 sushi_ptr<Impl> impl_;
-                /** @brief Reference to the runtime context. */
-                // SushiRuntime::Execution::RuntimeContext& ctx_; // Not used in implementation
         };
     
     } // namespace Graph

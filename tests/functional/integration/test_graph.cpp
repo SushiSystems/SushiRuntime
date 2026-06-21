@@ -39,7 +39,11 @@ using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
 using SushiRuntime::Test::make_order_recorder;
 
-// Three tasks sharing one pointer must run strictly in order (RAW, then WAR/WAW).
+/**
+ * @brief Tests sequential execution due to USM dependencies.
+ *
+ * Three tasks sharing one pointer must run strictly in order (RAW, then WAR/WAW).
+ */
 TEST(Integration_TaskGraphTest, SequentialUSMDependency)
 {
     RuntimeContext ctx;
@@ -74,7 +78,11 @@ TEST(Integration_TaskGraphTest, SequentialUSMDependency)
     EXPECT_EQ(execution_order[2], 3);
 }
 
-// Tasks with no shared memory are independent roots and run concurrently.
+/**
+ * @brief Tests concurrent execution of independent tasks.
+ *
+ * Tasks with no shared memory are independent roots and execute concurrently.
+ */
 TEST(Integration_TaskGraphTest, IndependentRootsExecution)
 {
     RuntimeContext ctx;
@@ -104,8 +112,11 @@ TEST(Integration_TaskGraphTest, IndependentRootsExecution)
     EXPECT_EQ(completed_tasks.load(), NUM_TASKS);
 }
 
-// Diamond DAG: A(write X) -> B,C(read X) -> D(write X). B and C run in parallel
-// after A; D waits for both (WAR hazard).
+/**
+ * @brief Tests execution of a diamond DAG.
+ *
+ * A(write X) -> B,C(read X) -> D(write X). B and C run in parallel after A; D waits for both resolving the WAR hazard.
+ */
 TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
 {
     RuntimeContext ctx;

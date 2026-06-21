@@ -39,16 +39,23 @@ namespace
 {
     using Counter = std::shared_ptr<std::atomic<int>>;
 
+    /**
+     * @brief Helper to create a shared atomic counter.
+     *
+     * @return A shared_ptr to a new atomic counter initialized to 0.
+     */
     inline Counter make_counter() { return std::make_shared<std::atomic<int>>(0); }
 
-    // Heap payload that bumps a shared counter on destruction, so a test can
-    // observe reclamation without reaching into EpochManager internals.
-    //
-    // The counter is a shared_ptr, NOT a raw pointer to a stack atomic: EBR
-    // reclamation is deferred, so a tail of retired objects can be freed during a
-    // later test. A raw stack pointer would then be written after this frame is
-    // gone — a stack-use-after-return. shared_ptr keeps the counter alive as long
-    // as any Tracked references it.
+    /**
+     * @brief Heap payload that bumps a shared counter on destruction.
+     *
+     * Used so a test can observe reclamation without reaching into EpochManager internals.
+     * The counter is a shared_ptr, NOT a raw pointer to a stack atomic: EBR
+     * reclamation is deferred, so a tail of retired objects can be freed during a
+     * later test. A raw stack pointer would then be written after this frame is
+     * gone — a stack-use-after-return. shared_ptr keeps the counter alive as long
+     * as any Tracked references it.
+     */
     struct Tracked
     {
         Counter destroyed;
@@ -56,8 +63,15 @@ namespace
         ~Tracked() { destroyed->fetch_add(1, std::memory_order_relaxed); }
     };
 
-    // Retire `count` objects, then run extra guarded passes to advance the epoch
-    // and drain pending nodes. Returns how many were reclaimed.
+    /**
+     * @brief Retires a count of objects, then runs extra guarded passes to advance the epoch.
+     *
+     * Used to drain pending nodes and test reclamation.
+     *
+     * @param destroyed The shared counter to observe.
+     * @param count The number of objects to retire.
+     * @return The number of reclaimed objects.
+     */
     int retire_and_drain(const Counter& destroyed, int count)
     {
         for (int i = 0; i < count; ++i)
@@ -74,7 +88,11 @@ namespace
     }
 }
 
-// Constructing/destroying an EpochGuard must be safe and balanced, even nested.
+/**
+ * @brief Tests that constructing and destroying an EpochGuard is safe and balanced.
+ *
+ * Checks that nested guards do not throw exceptions or leave unbalanced state.
+ */
 TEST(Unit_EpochReclamationTest, GuardEnterExitBalanced)
 {
     EXPECT_NO_THROW({
@@ -85,7 +103,11 @@ TEST(Unit_EpochReclamationTest, GuardEnterExitBalanced)
     });
 }
 
-// After enough guarded retire calls, the bulk of retired objects are deleted.
+/**
+ * @brief Tests that the bulk of retired objects are deleted after enough guarded retire calls.
+ *
+ * Verifies that the reclamation process eventually frees objects from past epochs.
+ */
 TEST(Unit_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
 {
     Counter destroyed = make_counter();
@@ -98,8 +120,11 @@ TEST(Unit_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
     EXPECT_GT(reclaimed, RETIRED) << "Epoch reclamation did not collect retired objects.";
 }
 
-// A thread that retires then exits must not leak: its nodes go to the global
-// orphan list and are reclaimed by another thread's draining work.
+/**
+ * @brief Tests that a thread that retires then exits hands off its orphaned nodes.
+ *
+ * Its nodes go to the global orphan list and are reclaimed by another thread's draining work.
+ */
 TEST(Unit_EpochReclamationTest, ThreadExitHandsOffOrphans)
 {
     Counter destroyed = make_counter();
@@ -130,7 +155,11 @@ TEST(Unit_EpochReclamationTest, ThreadExitHandsOffOrphans)
         << "Orphaned nodes from an exited thread were never reclaimed (leak).";
 }
 
-// Many threads retiring at once must not corrupt the manager.
+/**
+ * @brief Tests that many threads retiring at once do not corrupt the manager.
+ *
+ * Ensures concurrent retirements are thread-safe and objects are eventually reclaimed.
+ */
 TEST(Unit_EpochReclamationTest, ConcurrentRetireNoCrash)
 {
     Counter destroyed = make_counter();

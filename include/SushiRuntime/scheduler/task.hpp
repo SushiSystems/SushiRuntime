@@ -115,9 +115,15 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Example of a range-based task that can be split.
+         * @brief A splittable work-stealing task over a contiguous index range.
+         *
+         * Represents work for [start, end) and can donate the lower half to a
+         * thief via split(). The start index is atomic so a split and an execute
+         * racing on the same task are both safe: each sees a consistent range.
+         * Used by the graph layer to expose large parallel_for ranges as
+         * steal-friendly units.
          */
-        class SUSHIRUNTIME_API RangeTask : public Task 
+        class SUSHIRUNTIME_API RangeTask : public Task
         {
             private:
                 /** @brief Atomic start index of the current range. */
