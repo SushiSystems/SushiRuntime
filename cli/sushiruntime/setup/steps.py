@@ -35,13 +35,17 @@ from . import toolchains
 _LINUX_TOOLCHAIN_APT = ["build-essential", "cmake", "ninja-build", "git"]
 
 
+def _check_cmd_ok(cmd: list[str]) -> bool:
+    """True if *cmd* runs and exits 0 (its tool is present and the check passes)."""
+    try:
+        return subprocess.run(cmd, capture_output=True).returncode == 0
+    except (OSError, FileNotFoundError):
+        return False
+
+
 def _dep_installed(dep: Dependency, mgr: IPackageManager, platform: str) -> bool:
-    if dep.check_cmd:
-        try:
-            if subprocess.run(dep.check_cmd, capture_output=True).returncode == 0:
-                return True
-        except (OSError, FileNotFoundError):
-            pass
+    if dep.check_cmd and _check_cmd_ok(dep.check_cmd):
+        return True
     pkgs = dep.packages_for(platform)
     if not pkgs:
         return False
@@ -60,8 +64,18 @@ class DetectStep(Step):
 
     name = "detect"
 
-    def __init__(self, source: IDependencySource) -> None:
+    def __init__(self, source: IDependencySource,
+                 managers: list[IPackageManager] | None = None) -> None:
         self._source = source
+        self._managers = managers or []
+
+    def _dep_manager(self, plat: str) -> IPackageManager | None:
+        """The manager that knows whether a manifest dep is installed."""
+        if plat == "windows":
+            return next((m for m in self._managers if m.name == "vcpkg"), None)
+        linux = ("apt", "dnf", "yum", "pacman", "zypper")
+        return next((m for m in self._managers
+                     if m.name in linux and m.available()), None)
 
     def run(self, ctx: InstallContext) -> StepResult:
         plat = ctx.cfg.platform
@@ -72,11 +86,22 @@ class DetectStep(Step):
         table.add_column("Status")
         table.add_column("Detail", style="dim")
 
+        # Some tools the build uses live off PATH (the deps folder, or a vcpkg
+        # port like pkgconf). Fall back to the configured path so the row shows
+        # what the build actually uses instead of a misleading MISSING.
+        cfg = ctx.cfg
+        configured = {
+            "cmake": cfg.expand(cfg.cmake_exe) if cfg.cmake_exe else "",
+            "ninja": cfg.expand(cfg.ninja_exe) if cfg.ninja_exe else "",
+            "pkg-config": cfg.expand(cfg.pkgconf_exe) if cfg.pkgconf_exe else "",
+        }
         for tool in ("python3" if plat != "windows" else "python",
                      "git", "cmake", "ninja", "pkg-config"):
-            found = shutil.which(tool) is not None
-            ctx.detected[tool] = found
-            table.add_row(tool, _mark(found), shutil.which(tool) or "")
+            path = shutil.which(tool) or ""
+            if not path and configured.get(tool) and Path(configured[tool]).is_file():
+                path = configured[tool]
+            ctx.detected[tool] = bool(path)
+            table.add_row(tool, _mark(bool(path)), path)
 
         compiler, where = probe.find_sycl_compiler(ctx.cfg)
         if compiler is None:
@@ -87,17 +112,19 @@ class DetectStep(Step):
         table.add_row("SYCL compiler", _mark(compiler is not None),
                       f"{compiler or '-'} {where or ''}".strip())
 
+        # Use the same check `install-deps` uses (check_cmd, then the package
+        # manager) so detect and install agree — a lib installed via vcpkg/apt
+        # is reported present even when its check_cmd tool (e.g. pkg-config) is
+        # not on PATH.
+        dep_mgr = self._dep_manager(plat)
         for dep in self._source.selected(plat, ctx.gpu):
-            present = False
-            if dep.check_cmd:
-                try:
-                    present = subprocess.run(
-                        dep.check_cmd, capture_output=True).returncode == 0
-                except (OSError, FileNotFoundError):
-                    present = False
+            if dep_mgr is not None:
+                present = _dep_installed(dep, dep_mgr, plat)
+            else:
+                present = bool(dep.check_cmd) and _check_cmd_ok(dep.check_cmd)
             ctx.detected[dep.name] = present
             pkgs = ", ".join(dep.packages_for(plat))
-            table.add_row(dep.name, _mark(present) if dep.check_cmd else "[dim]?[/dim]",
+            table.add_row(dep.name, _mark(present),
                           f"{dep.description} ({pkgs})")
 
         gpu_present = shutil.which("nvidia-smi") is not None

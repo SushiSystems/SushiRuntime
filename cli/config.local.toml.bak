@@ -2,7 +2,7 @@
 # `sr setup configure` writes the [tool.<platform>] tool paths.
 
 [tool]
-toolchain = "oneapi"
+toolchain = "intel-llvm"
 
 [tool.windows]
 cmake_exe = "D:/Projects/sushiruntime/dependencies/tools/cmake/bin/cmake.EXE"
