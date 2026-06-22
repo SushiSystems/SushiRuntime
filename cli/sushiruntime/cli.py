@@ -266,6 +266,19 @@ def setup_verify(
     raise typer.Exit(setup_svc.run("verify", gpu=gpu, dry_run=False, oneapi=oneapi, profile=profile.value))
 
 
+@setup_app.command("acpp")
+def setup_acpp(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
+):
+    """Install AdaptiveCpp on demand.
+
+    Builds acpp from source. On Windows this downloads LLVM (~2-3 GB) into the
+    deps folder without prompting, since you asked for acpp explicitly. Does not
+    change the active toolchain — run `sr toolchain adaptivecpp` afterwards.
+    """
+    raise typer.Exit(setup_svc.install_acpp(dry_run=dry_run))
+
+
 @setup_app.command("uninstall")
 def setup_uninstall(
     gpu: bool = typer.Option(False, "--gpu", help="Include GPU-only deps in removal."),

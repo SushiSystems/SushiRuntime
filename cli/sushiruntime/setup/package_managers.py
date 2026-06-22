@@ -75,6 +75,18 @@ def _gh_latest_asset(repo: str, asset_glob: str) -> str:
     raise RuntimeError(f"No asset matching '{asset_glob}' in {repo} latest release.")
 
 
+def _gh_tagged_asset(repo: str, tag: str, asset_glob: str) -> str:
+    """Return the download URL for an asset of a specific release *tag*."""
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+    req = urllib.request.Request(url, headers={"User-Agent": "sushiruntime-installer"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    for asset in data.get("assets", []):
+        if fnmatch.fnmatch(asset["name"], asset_glob):
+            return asset["browser_download_url"]
+    raise RuntimeError(f"No asset matching '{asset_glob}' in {repo} {tag}.")
+
+
 def _download(url: str, dest: Path) -> None:
     console.info(f"Downloading {dest.name} ...")
     req = urllib.request.Request(url, headers={"User-Agent": "sushiruntime-installer"})
