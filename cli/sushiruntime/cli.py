@@ -51,6 +51,17 @@ class DockerAction(str, enum.Enum):
     run = "run"
 
 
+class Profile(str, enum.Enum):
+    """Install profile: which SYCL toolchains `sr setup` provisions.
+
+    lightweight = AdaptiveCpp only (smallest), normal = intel-llvm + AdaptiveCpp
+    (default), full = the above plus the heavy Intel oneAPI DPC++ compiler.
+    """
+    lightweight = "lightweight"
+    normal = "normal"
+    full = "full"
+
+
 # --------------------------------------------------------------------------- #
 # toolchain (SYCL toolchain)
 # --------------------------------------------------------------------------- #
@@ -193,50 +204,66 @@ def docker_run(
 # --------------------------------------------------------------------------- #
 @setup_app.command("all")
 def setup_all(
+    profile: Profile = typer.Option(
+        Profile.normal, "--profile", "-p", case_sensitive=False,
+        help="SYCL toolchain profile: lightweight (acpp only) | normal "
+             "(intel-llvm + acpp) | full (+ oneAPI)."),
     gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
-    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Alias for --profile full (back-compat)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
 ):
     """Detect, install dependencies, write config, then build and smoke-test."""
-    raise typer.Exit(setup_svc.run("all", gpu=gpu, dry_run=dry_run, oneapi=oneapi))
+    raise typer.Exit(setup_svc.run("all", gpu=gpu, dry_run=dry_run, oneapi=oneapi, profile=profile.value))
 
 
 @setup_app.command("detect")
 def setup_detect(
+    profile: Profile = typer.Option(
+        Profile.normal, "--profile", "-p", case_sensitive=False,
+        help="SYCL toolchain profile: lightweight | normal | full."),
     gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
-    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Alias for --profile full (back-compat)."),
 ):
     """Inventory the machine: tools, compiler, dependencies, GPU."""
-    raise typer.Exit(setup_svc.run("detect", gpu=gpu, dry_run=False, oneapi=oneapi))
+    raise typer.Exit(setup_svc.run("detect", gpu=gpu, dry_run=False, oneapi=oneapi, profile=profile.value))
 
 
 @setup_app.command("install")
 def setup_install(
+    profile: Profile = typer.Option(
+        Profile.normal, "--profile", "-p", case_sensitive=False,
+        help="SYCL toolchain profile: lightweight | normal | full."),
     gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
-    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Alias for --profile full (back-compat)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
 ):
     """Install missing dependencies (apt on Linux, winget+vcpkg on Windows)."""
-    raise typer.Exit(setup_svc.run("install", gpu=gpu, dry_run=dry_run, oneapi=oneapi))
+    raise typer.Exit(setup_svc.run("install", gpu=gpu, dry_run=dry_run, oneapi=oneapi, profile=profile.value))
 
 
 @setup_app.command("configure")
 def setup_configure(
+    profile: Profile = typer.Option(
+        Profile.normal, "--profile", "-p", case_sensitive=False,
+        help="SYCL toolchain profile: lightweight | normal | full."),
     gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
-    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Alias for --profile full (back-compat)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show, don't change."),
 ):
     """Generate config.local.toml from probed tool paths."""
-    raise typer.Exit(setup_svc.run("configure", gpu=gpu, dry_run=dry_run, oneapi=oneapi))
+    raise typer.Exit(setup_svc.run("configure", gpu=gpu, dry_run=dry_run, oneapi=oneapi, profile=profile.value))
 
 
 @setup_app.command("verify")
 def setup_verify(
+    profile: Profile = typer.Option(
+        Profile.normal, "--profile", "-p", case_sensitive=False,
+        help="SYCL toolchain profile: lightweight | normal | full."),
     gpu: bool = typer.Option(True, "--gpu/--no-gpu", help="Include GPU/CUDA deps (on by default; use --no-gpu to skip)."),
-    oneapi: bool = typer.Option(False, "--oneapi", help="Also install the heavy Intel oneAPI DPC++ compiler."),
+    oneapi: bool = typer.Option(False, "--oneapi", help="Alias for --profile full (back-compat)."),
 ):
     """Build the project and run the functional smoke test."""
-    raise typer.Exit(setup_svc.run("verify", gpu=gpu, dry_run=False, oneapi=oneapi))
+    raise typer.Exit(setup_svc.run("verify", gpu=gpu, dry_run=False, oneapi=oneapi, profile=profile.value))
 
 
 @setup_app.command("uninstall")

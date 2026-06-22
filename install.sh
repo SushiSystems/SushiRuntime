@@ -9,8 +9,14 @@
 # the Dockerfile. GPU/CUDA deps are included by default; Intel oneAPI (heavy) is
 # opt-in.
 #
+# SYCL toolchain profiles (footprint vs breadth):
+#   --lightweight  AdaptiveCpp only (smallest)
+#   --normal       intel-llvm + AdaptiveCpp (default)
+#   --full         the above plus the heavy Intel oneAPI DPC++ compiler
+# --oneapi remains a back-compat alias for --full.
+#
 # Usage (inside a checkout):
-#   bash install.sh [--no-gpu] [--oneapi] [--dry-run]
+#   bash install.sh [--lightweight|--normal|--full] [--no-gpu] [--dry-run]
 #
 # Usage (bare machine, no checkout yet):
 #   curl -fsSL https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.sh | bash -s -- --no-gpu
@@ -19,14 +25,22 @@ set -euo pipefail
 REPO_URL="${SR_REPO_URL:-https://github.com/sushisystems/sushiruntime.git}"
 # GPU is on by default ("stock"); pass --no-gpu to skip CUDA deps.
 GPU_FLAG="--gpu"
+PROFILE="normal"
 ONEAPI_FLAG=""
 DRY_FLAG=""
+expect_profile=0
 for arg in "$@"; do
+  if [ "$expect_profile" -eq 1 ]; then PROFILE="$arg"; expect_profile=0; continue; fi
   case "$arg" in
-    --gpu)     GPU_FLAG="--gpu" ;;
-    --no-gpu)  GPU_FLAG="--no-gpu" ;;
-    --oneapi)  ONEAPI_FLAG="--oneapi" ;;
-    --dry-run) DRY_FLAG="--dry-run" ;;
+    --gpu)         GPU_FLAG="--gpu" ;;
+    --no-gpu)      GPU_FLAG="--no-gpu" ;;
+    --lightweight) PROFILE="lightweight" ;;
+    --normal)      PROFILE="normal" ;;
+    --full)        PROFILE="full" ;;
+    --profile)     expect_profile=1 ;;
+    --profile=*)   PROFILE="${arg#*=}" ;;
+    --oneapi)      ONEAPI_FLAG="--oneapi" ;;
+    --dry-run)     DRY_FLAG="--dry-run" ;;
     *) printf '[WARN] unknown argument: %s\n' "$arg" ;;
   esac
 done
@@ -99,11 +113,11 @@ log "Installing the sr CLI..."
 python3 cli/install.py
 
 # Run the installer pipeline.
-log "Running: sr setup all $GPU_FLAG $ONEAPI_FLAG $DRY_FLAG"
+log "Running: sr setup all --profile $PROFILE $GPU_FLAG $ONEAPI_FLAG $DRY_FLAG"
 PIPX_BIN_DIR=$(python3 -m pipx environment --value PIPX_BIN_DIR)
 SR_CMD="$PIPX_BIN_DIR/sr"
 if [ ! -x "$SR_CMD" ]; then SR_CMD="sr"; fi
-$SR_CMD setup all $GPU_FLAG $ONEAPI_FLAG $DRY_FLAG
+$SR_CMD setup all --profile "$PROFILE" $GPU_FLAG $ONEAPI_FLAG $DRY_FLAG
 SR_EXIT=$?
 if [ "$SR_EXIT" -eq 0 ]; then
   log "Done. Try: sr project test --suite functional"

@@ -47,6 +47,14 @@ class InstallContext:
     # unconditionally, mirroring the Dockerfile's WITH_ONEAPI=0 default.
     oneapi: bool = False
 
+    # Which SYCL toolchains the active profile provisions. Defaults reproduce the
+    # historical "normal" profile (intel-llvm + AdaptiveCpp); ``factory`` overrides
+    # them from PROFILE_SPECS. ``active_toolchain`` is the one ConfigureStep pins as
+    # the default for subsequent builds (None => leave the existing choice alone).
+    install_intel_llvm: bool = True
+    install_acpp: bool = True
+    active_toolchain: str | None = None
+
     # Populated by DetectStep: tool/dependency name -> present?
     detected: dict[str, bool] = field(default_factory=dict)
     # Populated by InstallDepsStep: package names actually installed this run.
