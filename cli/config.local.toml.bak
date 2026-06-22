@@ -2,14 +2,14 @@
 # `sr setup configure` writes the [tool.<platform>] tool paths.
 
 [tool]
-toolchain = "intel-llvm"
+toolchain = "oneapi"
 
 [tool.windows]
-cmake_exe = "C:/Users/sushi/scoop/shims/cmake.exe"
-ctest_exe = "C:/Users/sushi/scoop/shims/ctest.exe"
+cmake_exe = "D:/Projects/sushiruntime/dependencies/tools/cmake/bin/cmake.EXE"
+ctest_exe = "D:/Projects/sushiruntime/dependencies/tools/cmake/bin/ctest.EXE"
 icx_compiler = "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/bin/icx-cl.exe"
-llvm_root = "C:/Users/sushi/AppData/Local/SushiRuntime/toolchains/llvm-sycl"
-ninja_exe = "C:/Users/sushi/scoop/shims/ninja.exe"
+llvm_root = "D:/Projects/sushiruntime/dependencies/toolchains/llvm-sycl"
+ninja_exe = "C:/Users/sushi/AppData/Local/SushiRuntime/tools/ninja.EXE"
 oneapi_root = "C:/Program Files (x86)/Intel/oneAPI"
 pkgconf_exe = "C:/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe"
 vcpkg_root = "C:/vcpkg"

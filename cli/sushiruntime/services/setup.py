@@ -34,6 +34,24 @@ def run(step: str = "all", gpu: bool = False, dry_run: bool = False,
         console.error(str(exc))
         return 1
 
+    # Gather consent for the heavy Windows LLVM download up front — before the
+    # progress spinner starts — so the prompt is actually answerable.
+    if (not dry_run and step in ("all", "install") and ctx.install_acpp
+            and ctx.cfg.is_windows):
+        from ..setup.toolchains import (
+            LLVM_WINDOWS_VERSION, _confirm_timeout, _find_windows_llvm,
+        )
+        if _find_windows_llvm() is None:
+            ctx.assume_acpp_llvm = _confirm_timeout(
+                f"[bold yellow]AdaptiveCpp needs LLVM {LLVM_WINDOWS_VERSION} "
+                "(a ~2-3 GB download) to build on Windows.[/bold yellow]\n"
+                "Install it now into the deps folder?",
+                default=False,
+            )
+            if not ctx.assume_acpp_llvm:
+                console.info("Skipping the LLVM download. Install acpp later with "
+                             "[cyan]sr setup acpp[/cyan].")
+
     ok = pipeline.run(ctx)
     if ok:
         console.success("Setup completed.")

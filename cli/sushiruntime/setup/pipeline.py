@@ -54,6 +54,10 @@ class InstallContext:
     install_intel_llvm: bool = True
     install_acpp: bool = True
     active_toolchain: str | None = None
+    # Consent for the heavy Windows LLVM download acpp needs. Gathered up front
+    # (before the progress spinner) so the prompt is actually answerable; the
+    # toolchain installer never prompts mid-pipeline.
+    assume_acpp_llvm: bool = False
 
     # Populated by DetectStep: tool/dependency name -> present?
     detected: dict[str, bool] = field(default_factory=dict)
