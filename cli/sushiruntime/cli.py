@@ -274,7 +274,8 @@ def setup_uninstall(
         False, "--everything",
         help=(
             "[bold red]WARNING:[/bold red] Also removes cmake, git, and ninja "
-            "that were installed by the direct-download fallback. "
+            "that were installed by the direct-download fallback, plus the "
+            "downloaded SYCL toolchains (intel/llvm bundle + AdaptiveCpp, several GB). "
             "Do not use this flag if those tools were already present before "
             "running the installer — it will remove your existing installation."
         ),
