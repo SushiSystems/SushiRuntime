@@ -125,6 +125,43 @@ def find_sycl_compiler(cfg: Config) -> tuple[str | None, str]:
     return (None, "")
 
 
+def find_configured_toolchain(cfg: Config) -> tuple[str | None, str]:
+    """Return (label, path) for a SYCL compiler installed by `sr setup`, or (None, '').
+
+    Unlike :func:`find_sycl_compiler`, this consults the off-PATH binaries the
+    installer drops in (the intel/llvm bundle's clang++ and AdaptiveCpp's acpp),
+    via the configured paths first and the toolchains dir as a fallback. Used by
+    ``DetectStep`` so a re-run reports those toolchains accurately instead of
+    falsely showing the compiler as missing.
+    """
+    win = cfg.platform == "windows"
+    base = _toolchains_dir()
+
+    bundle = ""
+    if cfg.llvm_root:
+        cand = Path(cfg.expand(cfg.llvm_root)) / "bin" / ("clang++.exe" if win else "clang++")
+        if cand.is_file():
+            bundle = str(cand)
+    if not bundle:
+        cand = base / "llvm-sycl" / "bin" / ("clang++.exe" if win else "clang++")
+        if cand.is_file():
+            bundle = str(cand)
+    if bundle and binary_works(bundle):
+        return ("intel-llvm clang++", bundle)
+
+    acpp = cfg.expand(cfg.acpp_exe) if cfg.acpp_exe else ""
+    if not (acpp and Path(acpp).is_file()):
+        for name in ("acpp.bat", "acpp"):
+            cand = base / "adaptivecpp" / "bin" / name
+            if cand.is_file():
+                acpp = str(cand)
+                break
+    if acpp and Path(acpp).is_file() and binary_works(acpp):
+        return ("acpp", acpp)
+
+    return (None, "")
+
+
 def resolve_local_config(cfg: Config, gpu: bool = False) -> dict[str, str]:
     """Probe machine-specific tool paths to write into config.local.toml.
 

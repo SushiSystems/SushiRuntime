@@ -80,6 +80,10 @@ class DetectStep(Step):
             table.add_row(tool, _mark(found), shutil.which(tool) or "")
 
         compiler, where = probe.find_sycl_compiler(ctx.cfg)
+        if compiler is None:
+            # The intel/llvm bundle and acpp live off PATH; consult the paths
+            # `sr setup` records so a post-install re-run reports them correctly.
+            compiler, where = probe.find_configured_toolchain(ctx.cfg)
         ctx.detected["sycl_compiler"] = compiler is not None
         table.add_row("SYCL compiler", _mark(compiler is not None),
                       f"{compiler or '-'} {where or ''}".strip())
@@ -464,6 +468,8 @@ class UninstallStep(Step):
             console.info(f"Removing via {mgr.name}: {', '.join(pkgs)}")
             mgr.remove(pkgs, ctx.dry_run)
 
+        if ctx.everything:
+            self._remove_installed_toolchains(ctx)
         self._remove_config(ctx)
         return StepResult.OK
 
@@ -494,9 +500,27 @@ class UninstallStep(Step):
 
         if ctx.everything:
             self._remove_toolchain_windows(ctx)
+            self._remove_installed_toolchains(ctx)
 
         self._remove_config(ctx)
         return StepResult.OK
+
+    def _remove_installed_toolchains(self, ctx: InstallContext) -> None:
+        """Delete the SYCL toolchains `sr setup` downloaded (multi-GB).
+
+        The intel/llvm bundle (~2 GB) and AdaptiveCpp build live under the
+        toolchains dir, outside any package manager, so nothing else reclaims
+        that space. Only removed with ``--everything`` since it is the heaviest,
+        least-reversible part of an uninstall.
+        """
+        tc_dir = toolchains.toolchains_dir()
+        if not tc_dir.is_dir():
+            return
+        if ctx.dry_run:
+            console.info(f"(dry-run) would remove SYCL toolchains at {tc_dir}")
+            return
+        shutil.rmtree(tc_dir, ignore_errors=True)
+        console.success(f"Removed SYCL toolchains at {tc_dir}")
 
     def _remove_toolchain_windows(self, ctx: InstallContext) -> None:
         """Remove cmake and git installed by the direct-download manager.
