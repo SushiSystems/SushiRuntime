@@ -12,19 +12,24 @@ from ..setup import build_pipeline, build_uninstall_pipeline
 
 
 def run(step: str = "all", gpu: bool = False, dry_run: bool = False,
-        oneapi: bool = False) -> int:
+        oneapi: bool = False, profile: str = "normal") -> int:
     """Run one step (or the whole pipeline) and return a process exit code."""
     console.header("SushiRuntime Setup")
     if dry_run:
         console.info("Dry-run: showing actions without changing the system.")
     if gpu:
         console.info("GPU mode: CUDA-capable dependencies included.")
-    if oneapi:
-        console.info("oneAPI mode: the Intel DPC++ compiler will also be installed.")
+    effective = "full" if oneapi else profile
+    _PROFILE_BLURB = {
+        "lightweight": "Lightweight profile: AdaptiveCpp only (smallest footprint).",
+        "normal": "Normal profile: intel/llvm bundle + AdaptiveCpp.",
+        "full": "Full profile: intel/llvm + AdaptiveCpp + the heavy Intel oneAPI DPC++ compiler.",
+    }
+    console.info(_PROFILE_BLURB.get(effective, f"Profile: {effective}."))
 
     try:
         pipeline, ctx = build_pipeline(only=step, gpu=gpu, dry_run=dry_run,
-                                       oneapi=oneapi)
+                                       oneapi=oneapi, profile=profile)
     except (ValueError, FileNotFoundError) as exc:
         console.error(str(exc))
         return 1

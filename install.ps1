@@ -13,30 +13,39 @@
     powershell -ExecutionPolicy Bypass -File install.ps1
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File install.ps1 -NoGpu -OneApi
+    powershell -ExecutionPolicy Bypass -File install.ps1 -Profile lightweight -NoGpu
 
 .EXAMPLE
     irm https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.ps1 | iex
 #>
 [CmdletBinding()]
 param(
+    # SYCL toolchain profile (footprint vs breadth):
+    #   lightweight = AdaptiveCpp only (smallest)
+    #   normal      = intel-llvm + AdaptiveCpp (default)
+    #   full        = the above plus the heavy Intel oneAPI DPC++ compiler
+    [ValidateSet("lightweight", "normal", "full")]
+    [string]$Profile = "normal",
     [switch]$NoGpu,
-    [switch]$OneApi,
+    [switch]$OneApi,  # Back-compat alias for -Profile full.
     [switch]$Gpu,     # Back-compat no-op: GPU is on by default now.
     [switch]$DryRun
 )
 
+# -OneApi is the historical "also install oneAPI" switch; map it to the full profile.
+if ($OneApi) { $Profile = "full" }
+
 $ErrorActionPreference = "Stop"
 
-# Only Intel oneAPI needs administrator rights, and it is opt-in. Self-elevate
-# (once, at a single UAC prompt) only when -OneApi is requested; the default
-# intel-llvm/AdaptiveCpp install runs fine as a normal user.
-if ($OneApi) {
+# Only Intel oneAPI needs administrator rights, and it is opt-in (the full
+# profile). Self-elevate (once, at a single UAC prompt) only then; the
+# lightweight/normal intel-llvm/AdaptiveCpp install runs fine as a normal user.
+if ($Profile -eq "full") {
     $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Host "[INFO] Requesting administrator privileges (required for Intel oneAPI)..." -ForegroundColor Cyan
         $psArgs = [System.Collections.Generic.List[string]]@(
-            "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "-OneApi"
+            "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "-Profile", "full"
         )
         if ($NoGpu)  { $psArgs.Add("-NoGpu") }
         if ($DryRun) { $psArgs.Add("-DryRun") }
@@ -183,9 +192,8 @@ Info "Installing the sr CLI..."
 python cli/install.py
 
 # Run the installer pipeline. GPU is on by default ("stock"); --no-gpu skips it.
-$flags = @("setup", "all")
+$flags = @("setup", "all", "--profile", $Profile)
 if ($NoGpu)  { $flags += "--no-gpu" } else { $flags += "--gpu" }
-if ($OneApi) { $flags += "--oneapi" }
 if ($DryRun) { $flags += "--dry-run" }
 Info "Running: sr $($flags -join ' ')"
 $PipxBinDir = python -m pipx environment --value PIPX_BIN_DIR

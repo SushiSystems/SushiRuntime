@@ -58,6 +58,24 @@ TOOLCHAIN_COMPILERS = {
     "oneapi": ("icx", "icpx"),
 }
 
+# Install profiles for `sr setup --profile`. Each picks which SYCL toolchains
+# the installer provisions and which one ends up active, trading footprint for
+# breadth:
+#   lightweight - AdaptiveCpp only (smallest; acpp's single-pass SSCP path is the
+#                 only realistic route to a sub-GB toolchain), active = adaptivecpp.
+#   normal      - intel/llvm bundle + AdaptiveCpp, active = intel-llvm (default).
+#   full        - the above plus the heavy Intel oneAPI DPC++ compiler.
+PROFILES = ("lightweight", "normal", "full")
+
+# profile -> which toolchains to install and which to activate. ``intel_llvm`` /
+# ``acpp`` / ``oneapi`` gate each installer; ``active`` is written as the default
+# SR_SYCL_TOOLCHAIN so the very next build uses a compiler the profile installed.
+PROFILE_SPECS = {
+    "lightweight": {"intel_llvm": False, "acpp": True, "oneapi": False, "active": "adaptivecpp"},
+    "normal":      {"intel_llvm": True,  "acpp": True, "oneapi": False, "active": "intel-llvm"},
+    "full":        {"intel_llvm": True,  "acpp": True, "oneapi": True,  "active": "intel-llvm"},
+}
+
 # Maps a Config field to the SR_* env var that overrides it.
 _ENV_OVERRIDES = {
     "toolchain": "SR_SYCL_TOOLCHAIN",

@@ -132,21 +132,31 @@ class InstallDepsStep(Step):
     def _install_toolchains(self, ctx: InstallContext,
                             mgr: IPackageManager | None,
                             vcpkg: IPackageManager | None) -> None:
-        """Install the default SYCL toolchains (intel-llvm + AdaptiveCpp).
+        """Install the SYCL toolchains the active profile selected.
 
-        Both are recorded on ``ctx.resolved_paths`` so ConfigureStep can write
-        their paths. Failures are non-fatal: the intel-llvm bundle alone is enough
-        to build, and AdaptiveCpp's from-source build is best-effort.
+        Which toolchains run is gated by ``ctx.install_intel_llvm`` /
+        ``ctx.install_acpp`` (set from PROFILE_SPECS). Installed paths are recorded
+        on ``ctx.resolved_paths`` so ConfigureStep can write them. Failures are
+        non-fatal when another toolchain remains, but the sole toolchain of a
+        profile failing leaves nothing to build with, so that case warns loudly.
         """
-        llvm = toolchains.install_intel_llvm(ctx.cfg, ctx.dry_run)
-        if llvm:
-            ctx.resolved_paths["llvm_root"] = llvm
-        else:
-            console.warn("intel/llvm bundle not installed; the default "
-                         "intel-llvm toolchain will be unavailable.")
-        acpp = toolchains.install_adaptivecpp(ctx.cfg, mgr, vcpkg, ctx.dry_run)
-        if acpp:
-            ctx.resolved_paths["acpp_exe"] = acpp
+        if ctx.install_intel_llvm:
+            llvm = toolchains.install_intel_llvm(ctx.cfg, ctx.dry_run)
+            if llvm:
+                ctx.resolved_paths["llvm_root"] = llvm
+            else:
+                console.warn("intel/llvm bundle not installed; the intel-llvm "
+                             "toolchain will be unavailable.")
+
+        if ctx.install_acpp:
+            acpp = toolchains.install_adaptivecpp(ctx.cfg, mgr, vcpkg, ctx.dry_run)
+            if acpp:
+                ctx.resolved_paths["acpp_exe"] = acpp
+            elif not ctx.install_intel_llvm:
+                console.warn("AdaptiveCpp is the only toolchain in this profile but "
+                             "it did not install; the project will not build. "
+                             "Re-run with `--profile normal` for the intel-llvm "
+                             "fallback.")
 
     # -- Linux ---------------------------------------------------------------- #
 
@@ -344,27 +354,41 @@ class ConfigureStep(Step):
     name = "configure"
 
     def run(self, ctx: InstallContext) -> StepResult:
+        from ..config import set_toolchain
+
         values = probe.resolve_local_config(ctx.cfg, gpu=ctx.gpu)
         ctx.resolved_paths = values
-        if not values:
+
+        target = config_dir() / "config.local.toml"
+
+        if ctx.dry_run:
+            if ctx.active_toolchain:
+                console.info(f"(dry-run) would set active toolchain to "
+                             f"'{ctx.active_toolchain}'.")
+            if values:
+                console.info(f"(dry-run) would write {target}:")
+                console.console.print(
+                    probe.render_local_config(ctx.cfg.platform, values), markup=False)
+            return StepResult.OK
+
+        if not values and not ctx.active_toolchain:
             console.info("No machine-specific paths to write; defaults suffice.")
             return StepResult.SKIPPED
 
-        target = config_dir() / "config.local.toml"
-        content = probe.render_local_config(ctx.cfg.platform, values)
+        if values:
+            content = probe.render_local_config(ctx.cfg.platform, values)
+            if target.is_file():
+                backup = target.with_suffix(".toml.bak")
+                shutil.copyfile(target, backup)
+                console.info(f"Backed up existing config to {backup.name}")
+            target.write_text(content, encoding="utf-8")
+            console.success(f"Wrote {target}")
 
-        if ctx.dry_run:
-            console.info(f"(dry-run) would write {target}:")
-            console.console.print(content, markup=False)
-            return StepResult.OK
-
-        if target.is_file():
-            backup = target.with_suffix(".toml.bak")
-            shutil.copyfile(target, backup)
-            console.info(f"Backed up existing config to {backup.name}")
-
-        target.write_text(content, encoding="utf-8")
-        console.success(f"Wrote {target}")
+        # Pin the profile's toolchain last: set_toolchain rewrites the file while
+        # preserving the [tool.<platform>] table just written above.
+        if ctx.active_toolchain:
+            set_toolchain(ctx.active_toolchain)
+            console.success(f"Active SYCL toolchain set to '{ctx.active_toolchain}'.")
         return StepResult.OK
 
 
