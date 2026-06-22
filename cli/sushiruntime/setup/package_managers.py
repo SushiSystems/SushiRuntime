@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import console
-from ..config import Config
+from ..config import Config, deps_dir
 from .probe import binary_works as _binary_works
 
 
@@ -59,10 +59,8 @@ def _is_root() -> bool:
 
 
 def _tools_dir() -> Path:
-    """Portable directory for tools extracted by the direct-download manager."""
-    local = os.environ.get("LOCALAPPDATA", "")
-    base = Path(local) if local else Path.home() / ".local"
-    return base / "SushiRuntime" / "tools"
+    """Directory for portable tools (cmake, ninja) under the deps folder."""
+    return deps_dir() / "tools"
 
 
 def _gh_latest_asset(repo: str, asset_glob: str) -> str:
@@ -106,22 +104,102 @@ def _add_to_user_path_windows(directory: str) -> None:
         pass  # Non-fatal; session PATH is updated by the PowerShell wrapper.
 
 
+def refresh_windows_path() -> None:
+    """Reload PATH from the registry into this process (Windows only, else no-op).
+
+    Installers (winget, MSI, our direct downloads) update the Machine/User PATH
+    in the registry, but an already-running process keeps the PATH it inherited.
+    Without this refresh a tool installed moments earlier in the same `sr setup`
+    run (e.g. CMake under Program Files) stays invisible to ``shutil.which``,
+    which causes needless reinstalls and false 'missing' reports — and a failed
+    reinstall then aborts the whole pipeline.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import winreg
+        parts: list[str] = []
+        for root, sub in (
+            (winreg.HKEY_LOCAL_MACHINE,
+             r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+            (winreg.HKEY_CURRENT_USER, r"Environment"),
+        ):
+            try:
+                key = winreg.OpenKey(root, sub)
+                try:
+                    val, _ = winreg.QueryValueEx(key, "Path")
+                    parts.append(os.path.expandvars(str(val)))
+                finally:
+                    winreg.CloseKey(key)
+            except FileNotFoundError:
+                pass
+        parts.append(os.environ.get("PATH", ""))  # keep this process's own additions
+        seen: set[str] = set()
+        out: list[str] = []
+        for entry in os.pathsep.join(parts).split(os.pathsep):
+            key_l = entry.lower()
+            if entry and key_l not in seen:
+                seen.add(key_l)
+                out.append(entry)
+        os.environ["PATH"] = os.pathsep.join(out)
+    except Exception:
+        pass
+
+
+def _cmake_portable_bin() -> Path:
+    """bin/ of the portable CMake the direct-download manager extracts."""
+    return _tools_dir() / "cmake" / "bin"
+
+
+def _cmake_on_system() -> str:
+    """Resolve a usable cmake after a refresh: PATH, Program Files, portable dir."""
+    refresh_windows_path()
+    found = shutil.which("cmake")
+    if found:
+        return found
+    candidates = [
+        r"C:\Program Files\CMake\bin\cmake.exe",
+        r"C:\Program Files (x86)\CMake\bin\cmake.exe",
+        str(_cmake_portable_bin() / "cmake.exe"),
+    ]
+    for base in candidates:
+        if Path(base).is_file():
+            return base
+    return ""
+
+
 # Direct-download install functions (Windows only) --------------------------- #
 
 def _install_cmake_direct() -> bool:
+    # Use the portable .zip, not the .msi: the CMake MSI requires administrator
+    # rights (it writes to Program Files and the system PATH), but the default
+    # non-oneAPI install runs as a normal user. Extracting the zip into the tools
+    # dir and adding it to the user PATH needs no elevation — mirroring ninja.
+    if _cmake_on_system():
+        console.info("cmake: already present, skipping.")
+        return True
     try:
-        url = _gh_latest_asset("Kitware/CMake", "*windows-x86_64.msi")
-        with tempfile.NamedTemporaryFile(suffix=".msi", delete=False) as f:
-            dest = Path(f.name)
-        _download(url, dest)
-        console.info("Installing CMake silently ...")
-        rc = subprocess.run(
-            ["msiexec", "/i", str(dest), "/quiet", "/norestart",
-             "ADD_CMAKE_TO_PATH=System"],
-            timeout=300,
-        ).returncode
-        dest.unlink(missing_ok=True)
-        return rc == 0
+        url = _gh_latest_asset("Kitware/CMake", "*windows-x86_64.zip")
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
+            zip_dest = Path(f.name)
+        _download(url, zip_dest)
+        target = _tools_dir() / "cmake"
+        console.info(f"Extracting CMake to {target} ...")
+        with tempfile.TemporaryDirectory() as staging:
+            stage = Path(staging)
+            with zipfile.ZipFile(zip_dest) as zf:
+                zf.extractall(stage)
+            entries = list(stage.iterdir())
+            srcroot = entries[0] if len(entries) == 1 and entries[0].is_dir() else stage
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+            shutil.move(str(srcroot), str(target))
+        zip_dest.unlink(missing_ok=True)
+        _add_to_user_path_windows(str(_cmake_portable_bin()))
+        if (_cmake_portable_bin() / "cmake.exe").is_file():
+            return True
+        console.error("CMake not found after extracting the portable archive.")
+        return False
     except Exception as exc:
         console.error(f"CMake direct install failed: {exc}")
         return False
@@ -499,6 +577,7 @@ class DirectDownloadWindowsManager(IPackageManager):
         return _binary_works(path) if path else False
 
     def install(self, pkgs: list[str], dry_run: bool) -> bool:
+        refresh_windows_path()  # see a tool installed earlier this run
         ok = True
         for pkg in pkgs:
             cmd = WINGET_ID_TO_CMD.get(pkg)
@@ -529,9 +608,9 @@ class VcpkgManager(IPackageManager):
         root = self._cfg.expand(self._cfg.vcpkg_root) if self._cfg.vcpkg_root else ""
         if root:
             return Path(root)
-        # Prefer the conventional system-wide location; fall back to user home.
-        system_default = Path("C:/vcpkg")
-        return system_default if system_default.exists() else Path.home() / "vcpkg"
+        # Self-contained default: vcpkg lives under the deps folder so the whole
+        # install is one deletable directory.
+        return deps_dir() / "vcpkg"
 
     def _exe(self) -> Path:
         return self._root() / "vcpkg.exe"

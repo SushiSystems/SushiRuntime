@@ -27,13 +27,12 @@ import tempfile
 from pathlib import Path
 
 from .. import console
-from ..config import Config
+from ..config import Config, deps_dir
 from .package_managers import (
     IPackageManager,
     _download,
     _gh_latest_asset,
     _run,
-    _tools_dir,
 )
 
 # AdaptiveCpp release pinned to match the Dockerfile (ADAPTIVECPP_VERSION).
@@ -44,7 +43,7 @@ ACPP_LLVM = "17"
 
 def toolchains_dir() -> Path:
     """Base directory for SYCL toolchains installed by ``sr setup``."""
-    return _tools_dir().parent / "toolchains"
+    return deps_dir() / "toolchains"
 
 
 # --------------------------------------------------------------------------- #

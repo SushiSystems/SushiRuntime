@@ -25,6 +25,7 @@ from .package_managers import (
     IPackageManager,
     WINGET_ID_TO_CMD,
     _tools_dir,
+    refresh_windows_path,
 )
 from .pipeline import InstallContext, Step, StepResult
 from . import toolchains
@@ -32,9 +33,6 @@ from . import toolchains
 # System toolchain installed through the toolchain manager (not via the manifest
 # since these tools must exist before vcpkg/pip can run).
 _LINUX_TOOLCHAIN_APT = ["build-essential", "cmake", "ninja-build", "git"]
-_WINDOWS_TOOLCHAIN_PKGS = [
-    "Kitware.CMake", "Ninja-build.Ninja", "Git.Git",
-]
 
 
 def _dep_installed(dep: Dependency, mgr: IPackageManager, platform: str) -> bool:
@@ -67,6 +65,7 @@ class DetectStep(Step):
 
     def run(self, ctx: InstallContext) -> StepResult:
         plat = ctx.cfg.platform
+        refresh_windows_path()  # reflect tools the bootstrap installer just added
         table = Table(show_header=True, header_style="bold magenta",
                       title="Environment inventory")
         table.add_column("Component")
@@ -107,6 +106,19 @@ class DetectStep(Step):
                       "use --gpu to install CUDA" if gpu_present else "")
 
         console.console.print(table)
+
+        from ..config import deps_dir
+        console.info(f"Vendored dependencies go in one folder: {deps_dir()}")
+        console.info("Remove the whole install by deleting that folder "
+                     "(`sr setup uninstall --everything` does it for you).")
+        if plat == "windows":
+            console.info("System prerequisites kept outside that folder: the C++ "
+                         "host compiler (Visual Studio Build Tools + Windows SDK), "
+                         "git, and — with --gpu — the CUDA toolkit.")
+        else:
+            console.info("System prerequisites kept outside that folder: the host "
+                         "compiler (gcc) plus the -dev packages (hwloc, gtest, "
+                         "opencl), git, and — with --gpu — the CUDA toolkit.")
         return StepResult.OK
 
 
@@ -215,29 +227,37 @@ class InstallDepsStep(Step):
     # -- Windows -------------------------------------------------------------- #
 
     def _run_windows(self, ctx: InstallContext) -> StepResult:
+        refresh_windows_path()  # see cmake/git the bootstrap script just installed
         winget = self._manager("winget")
         direct = self._manager("direct-download")
         vcpkg  = self._manager("vcpkg")
 
-        # Only install toolchain items that are not already on PATH.
-        missing = [
-            pkg for pkg in _WINDOWS_TOOLCHAIN_PKGS
-            if not shutil.which(WINGET_ID_TO_CMD.get(pkg, ""))
-        ]
-
         tool_ok = True
-        if missing:
+
+        # cmake + ninja: always install portably into the deps folder (never
+        # system-wide via winget), so the whole install stays one deletable
+        # directory. The direct-download manager extracts them under deps/tools
+        # and skips anything already on PATH.
+        portable = ["Kitware.CMake", "Ninja-build.Ninja"]
+        missing_portable = [
+            pkg for pkg in portable if not shutil.which(WINGET_ID_TO_CMD.get(pkg, ""))
+        ]
+        if missing_portable and direct:
+            console.info("Installing CMake + Ninja portably into the deps folder ...")
+            tool_ok = direct.install(missing_portable, ctx.dry_run)
+        elif not missing_portable:
+            console.info("cmake + ninja already present, skipping.")
+
+        # git is a bootstrap prerequisite (needed to clone the repo and acpp), so
+        # it stays a system tool: reuse an existing one, else install via winget.
+        if not shutil.which("git"):
             if winget and winget.available():
-                console.info("Installing missing toolchain via winget ...")
-                tool_ok = winget.install(missing, ctx.dry_run)
+                console.info("Installing git via winget ...")
+                tool_ok = winget.install(["Git.Git"], ctx.dry_run) and tool_ok
             elif direct:
-                console.info("winget unavailable; installing toolchain via direct download ...")
-                tool_ok = direct.install(missing, ctx.dry_run)
+                tool_ok = direct.install(["Git.Git"], ctx.dry_run) and tool_ok
             else:
-                console.error("No install method available for toolchain packages.")
-                return StepResult.FAILED
-        else:
-            console.info("System toolchain already present, skipping.")
+                console.warn("git not found and no installer available; install it manually.")
 
         # C++ library ports via vcpkg.
         ports: list[str] = []
@@ -360,6 +380,7 @@ class ConfigureStep(Step):
     def run(self, ctx: InstallContext) -> StepResult:
         from ..config import set_toolchain
 
+        refresh_windows_path()  # probe needs to see freshly-installed tools
         values = probe.resolve_local_config(ctx.cfg, gpu=ctx.gpu)
         ctx.resolved_paths = values
 
@@ -485,7 +506,7 @@ class UninstallStep(Step):
             console.info(f"Removing vcpkg ports: {', '.join(ports)}")
             vcpkg.remove(ports, ctx.dry_run)
 
-        # Remove the ninja extracted to the tools dir.
+        # Remove the ninja binary and portable cmake we extracted to the tools dir.
         tools = _tools_dir()
         ninja_exe = tools / "ninja.exe"
         if ninja_exe.is_file():
@@ -494,9 +515,15 @@ class UninstallStep(Step):
             else:
                 ninja_exe.unlink()
                 console.info(f"Removed {ninja_exe}")
-            if tools.is_dir() and not any(tools.iterdir()):
-                if not ctx.dry_run:
-                    tools.rmdir()
+        cmake_dir = tools / "cmake"
+        if cmake_dir.is_dir():
+            if ctx.dry_run:
+                console.info(f"(dry-run) would remove {cmake_dir}")
+            else:
+                shutil.rmtree(cmake_dir, ignore_errors=True)
+                console.info(f"Removed {cmake_dir}")
+        if tools.is_dir() and not any(tools.iterdir()) and not ctx.dry_run:
+            tools.rmdir()
 
         if ctx.everything:
             self._remove_toolchain_windows(ctx)
@@ -506,21 +533,22 @@ class UninstallStep(Step):
         return StepResult.OK
 
     def _remove_installed_toolchains(self, ctx: InstallContext) -> None:
-        """Delete the SYCL toolchains `sr setup` downloaded (multi-GB).
+        """Delete the entire vendored deps folder (the one-folder install).
 
-        The intel/llvm bundle (~2 GB) and AdaptiveCpp build live under the
-        toolchains dir, outside any package manager, so nothing else reclaims
-        that space. Only removed with ``--everything`` since it is the heaviest,
-        least-reversible part of an uninstall.
+        Everything `sr setup` downloads — the intel/llvm bundle (~1 GB),
+        AdaptiveCpp, portable cmake/ninja, and the vcpkg tree — lives under one
+        directory, so ``--everything`` reclaims it all in a single rmtree. Only
+        done with ``--everything`` since it is the heaviest, least-reversible part.
         """
-        tc_dir = toolchains.toolchains_dir()
-        if not tc_dir.is_dir():
+        from ..config import deps_dir
+        dep_dir = deps_dir()
+        if not dep_dir.is_dir():
             return
         if ctx.dry_run:
-            console.info(f"(dry-run) would remove SYCL toolchains at {tc_dir}")
+            console.info(f"(dry-run) would remove the whole deps folder at {dep_dir}")
             return
-        shutil.rmtree(tc_dir, ignore_errors=True)
-        console.success(f"Removed SYCL toolchains at {tc_dir}")
+        shutil.rmtree(dep_dir, ignore_errors=True)
+        console.success(f"Removed the vendored deps folder at {dep_dir}")
 
     def _remove_toolchain_windows(self, ctx: InstallContext) -> None:
         """Remove cmake and git installed by the direct-download manager.
