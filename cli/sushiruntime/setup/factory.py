@@ -71,7 +71,7 @@ def build_pipeline(
     managers = managers if managers is not None else _managers_for(cfg)
 
     all_steps = {
-        "detect":    DetectStep(source),
+        "detect":    DetectStep(source, managers),
         "install":   InstallDepsStep(source, managers),
         "configure": ConfigureStep(),
         "verify":    VerifyStep(),
