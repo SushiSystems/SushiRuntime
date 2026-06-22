@@ -165,7 +165,9 @@ class InstallDepsStep(Step):
                              "toolchain will be unavailable.")
 
         if ctx.install_acpp:
-            acpp = toolchains.install_adaptivecpp(ctx.cfg, mgr, vcpkg, ctx.dry_run)
+            acpp = toolchains.install_adaptivecpp(
+                ctx.cfg, mgr, vcpkg, ctx.dry_run,
+                assume_yes=ctx.assume_acpp_llvm)
             if acpp:
                 ctx.resolved_paths["acpp_exe"] = acpp
             elif not ctx.install_intel_llvm:

@@ -47,17 +47,25 @@ LLVM_WINDOWS_VERSION = "17.0.6"
 _LLVM_CONSENT_TIMEOUT = 30
 
 
-def _confirm_timeout(prompt: str, timeout: int = _LLVM_CONSENT_TIMEOUT,
+def _confirm_timeout(message: str, timeout: int = _LLVM_CONSENT_TIMEOUT,
                      default: bool = False) -> bool:
     """Ask a yes/no question, returning *default* if unanswered within *timeout*.
 
-    Used to gate the heavy (~2-3 GB) LLVM download behind explicit consent. A
-    non-interactive stdin (piped install, CI) yields *default* immediately, so an
-    unattended run never blocks and never downloads LLVM unless asked.
+    Prints *message* then a standardized ``[y/n]`` hint (the brackets are escaped
+    so Rich does not eat them as markup). Used to gate the heavy (~2-3 GB) LLVM
+    download behind explicit consent. A non-interactive stdin (piped install, CI)
+    yields *default* immediately, so an unattended run never blocks.
+
+    Must be called *outside* any Rich progress/live context — a prompt rendered
+    under a spinner is not answerable.
     """
     import threading
 
-    console.console.print(prompt)
+    console.console.print(message)
+    hint = r"\[y/n]" if default is False else r"\[Y/n]"
+    console.console.print(
+        f"[bold]Your choice {hint}[/bold] (auto-"
+        f"{'yes' if default else 'no'} in {timeout}s): ", end="")
     result = [default]
 
     def _read() -> None:
@@ -71,6 +79,7 @@ def _confirm_timeout(prompt: str, timeout: int = _LLVM_CONSENT_TIMEOUT,
     thread.start()
     thread.join(timeout)
     if thread.is_alive():
+        console.console.print()  # finish the prompt line
         console.info(f"No answer in {timeout}s — defaulting to "
                      f"{'yes' if default else 'no'}.")
     return result[0]
@@ -373,16 +382,10 @@ def _acpp_deps_windows(vcpkg: IPackageManager | None,
     if existing:
         return existing
 
+    # Consent is gathered up front by the caller (before the progress spinner),
+    # never here — prompting mid-pipeline is unanswerable. Without consent, skip.
     if not assume_yes:
-        consent = _confirm_timeout(
-            "[bold yellow]AdaptiveCpp needs LLVM " + LLVM_WINDOWS_VERSION +
-            " (a ~2-3 GB download) to build on Windows.[/bold yellow]\n"
-            "Install it now into the deps folder? [y/N] "
-            f"(auto-no in {_LLVM_CONSENT_TIMEOUT}s) ",
-            default=False,
-        )
-        if not consent:
-            return (None, None)
+        return (None, None)
 
     # Consent given. Prefer winget if available (installs to Program Files),
     # else vendor the official tarball into the deps folder.
