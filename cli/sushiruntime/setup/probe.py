@@ -15,7 +15,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..config import Config
+from ..config import Config, deps_dir
 
 # Common Windows install roots probed when a tool is not already on PATH.
 _VS_VCVARS_GLOBS = [
@@ -47,21 +47,9 @@ def _first_existing(paths: list[str]) -> str:
     return ""
 
 
-def _scoop_shim(name: str) -> str:
-    """Return the scoop shim path for *name* if it exists, else ''.
-
-    Scoop installs to ~/scoop/shims (or $SCOOP/shims), which a non-interactive
-    shell often lacks on PATH even when the tool is installed.
-    """
-    import os
-    roots = [os.environ.get("SCOOP", ""), str(Path.home() / "scoop")]
-    for root in roots:
-        if not root:
-            continue
-        shim = Path(root) / "shims" / f"{name}.exe"
-        if shim.is_file():
-            return str(shim)
-    return ""
+def _tools_dir() -> Path:
+    """Where `sr setup` extracts portable tools (cmake, ninja): deps/tools."""
+    return deps_dir() / "tools"
 
 
 def _toolchains_dir() -> Path:
@@ -70,10 +58,7 @@ def _toolchains_dir() -> Path:
     Mirrors ``toolchains.toolchains_dir`` without importing it (that module pulls
     in package_managers, which imports this one — an import cycle).
     """
-    import os
-    local = os.environ.get("LOCALAPPDATA", "")
-    base = Path(local) if local else Path.home() / ".local"
-    return base / "SushiRuntime" / "toolchains"
+    return deps_dir() / "toolchains"
 
 
 def _discover_installed_toolchains(cfg: Config, values: dict[str, str]) -> None:
@@ -192,18 +177,25 @@ def _resolve_windows(cfg: Config) -> dict[str, str]:
     if icx:
         values["icx_compiler"] = icx
 
-    ninja = shutil.which("ninja") or _scoop_shim("ninja")
+    portable_bin = _tools_dir() / "cmake" / "bin"
+    ninja = shutil.which("ninja") or _first_existing([str(_tools_dir() / "ninja.exe")])
     if ninja:
         values["ninja_exe"] = ninja
 
     # VS BuildTools omits the CMake component, so pin the discovered cmake/ctest
-    # (commonly a scoop/standalone install) rather than relying on PATH at build
-    # time, where the snapshotted env may not expose them. Fall back to the scoop
-    # shims dir, which is often absent from a non-interactive shell's PATH.
-    cmake = shutil.which("cmake") or _scoop_shim("cmake")
+    # rather than relying on PATH at build time, where the snapshotted env may not
+    # expose it. cmake may live outside PATH for a non-interactive shell: a system
+    # MSI in Program Files, or the portable zip we extract under deps/tools/cmake.
+    _cmake_pf = [str(portable_bin / "cmake.exe"),
+                 r"C:/Program Files/CMake/bin/cmake.exe",
+                 r"C:/Program Files (x86)/CMake/bin/cmake.exe"]
+    _ctest_pf = [str(portable_bin / "ctest.exe"),
+                 r"C:/Program Files/CMake/bin/ctest.exe",
+                 r"C:/Program Files (x86)/CMake/bin/ctest.exe"]
+    cmake = shutil.which("cmake") or _first_existing(_cmake_pf)
     if cmake:
         values["cmake_exe"] = cmake
-    ctest = shutil.which("ctest") or _scoop_shim("ctest")
+    ctest = shutil.which("ctest") or _first_existing(_ctest_pf)
     if ctest:
         values["ctest_exe"] = ctest
 
@@ -213,15 +205,9 @@ def _resolve_windows(cfg: Config) -> dict[str, str]:
     if vcpkg_root and (".conda" in vcpkg_root or "envs" in vcpkg_root):
         vcpkg_root = ""
     if not (vcpkg_root and Path(vcpkg_root).is_dir()):
-        # Prefer the conventional system-wide location, then user home.
-        for candidate in ("C:/vcpkg", str(Path.home() / "vcpkg")):
-            if Path(candidate).is_dir():
-                vcpkg_root = candidate
-                break
-        else:
-            # Not found anywhere — write the desired bootstrap target so
-            # VcpkgManager clones there instead of defaulting to home.
-            vcpkg_root = "C:/vcpkg"
+        # Self-contained default: the deps vcpkg tree. Written even when absent so
+        # VcpkgManager bootstraps there instead of a system-wide location.
+        vcpkg_root = str(deps_dir() / "vcpkg")
     if vcpkg_root:
         values["vcpkg_root"] = vcpkg_root
         # pkgconf shipped by vcpkg is the one CMakeLists expects.
