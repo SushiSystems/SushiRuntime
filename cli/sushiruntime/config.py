@@ -44,6 +44,30 @@ def config_dir(root: Path | None = None) -> Path:
             return root / name
     return root / "cli"
 
+def deps_dir() -> Path:
+    """The single self-contained directory for everything ``sr setup`` downloads.
+
+    Everything vendorable — the intel/llvm bundle, AdaptiveCpp, a portable CMake
+    and Ninja, and the vcpkg tree with its C++ library ports — lands under here,
+    so a user can see exactly what was fetched and reclaim it all by deleting one
+    folder. Defaults to ``<repo>/dependencies`` (git-ignored); override with
+    ``SR_DEPS_DIR``. Falls back to a user-local path when not inside a checkout.
+
+    System-level prerequisites that cannot live in one folder (the host C++
+    compiler — MSVC+SDK on Windows, gcc and a few -dev packages on Linux — and
+    CUDA) are intentionally *not* placed here; the installer reports them instead.
+    """
+    override = os.environ.get("SR_DEPS_DIR")
+    if override:
+        return Path(override)
+    try:
+        return find_project_root() / "dependencies"
+    except SystemExit:
+        local = os.environ.get("LOCALAPPDATA", "")
+        base = Path(local) if local else Path.home() / ".local"
+        return base / "SushiRuntime" / "dependencies"
+
+
 # The SYCL toolchains a user can select. Must match SR_SYCL_TOOLCHAIN in
 # CMakeLists.txt: intel-llvm (primary), adaptivecpp (secondary), oneapi (supported).
 TOOLCHAINS = ("intel-llvm", "adaptivecpp", "oneapi")
@@ -56,6 +80,24 @@ TOOLCHAIN_COMPILERS = {
     "adaptivecpp": ("gcc", "acpp"),
     "intel-llvm": ("clang", "clang++"),
     "oneapi": ("icx", "icpx"),
+}
+
+# Install profiles for `sr setup --profile`. Each picks which SYCL toolchains
+# the installer provisions and which one ends up active, trading footprint for
+# breadth:
+#   lightweight - AdaptiveCpp only (smallest; acpp's single-pass SSCP path is the
+#                 only realistic route to a sub-GB toolchain), active = adaptivecpp.
+#   normal      - intel/llvm bundle + AdaptiveCpp, active = intel-llvm (default).
+#   full        - the above plus the heavy Intel oneAPI DPC++ compiler.
+PROFILES = ("lightweight", "normal", "full")
+
+# profile -> which toolchains to install and which to activate. ``intel_llvm`` /
+# ``acpp`` / ``oneapi`` gate each installer; ``active`` is written as the default
+# SR_SYCL_TOOLCHAIN so the very next build uses a compiler the profile installed.
+PROFILE_SPECS = {
+    "lightweight": {"intel_llvm": False, "acpp": True, "oneapi": False, "active": "adaptivecpp"},
+    "normal":      {"intel_llvm": True,  "acpp": True, "oneapi": False, "active": "intel-llvm"},
+    "full":        {"intel_llvm": True,  "acpp": True, "oneapi": True,  "active": "intel-llvm"},
 }
 
 # Maps a Config field to the SR_* env var that overrides it.

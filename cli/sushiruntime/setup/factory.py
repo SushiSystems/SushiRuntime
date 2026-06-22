@@ -8,7 +8,7 @@ happens here, not in the steps.
 
 from __future__ import annotations
 
-from ..config import Config, load_config
+from ..config import Config, PROFILE_SPECS, PROFILES, load_config
 from .dependency_source import IDependencySource, TomlDependencySource
 from .package_managers import (
     AptManager,
@@ -45,6 +45,7 @@ def build_pipeline(
     gpu: bool = False,
     dry_run: bool = False,
     oneapi: bool = False,
+    profile: str = "normal",
     cfg: Config | None = None,
     source: IDependencySource | None = None,
     managers: list[IPackageManager] | None = None,
@@ -52,14 +53,25 @@ def build_pipeline(
     """Build the installer pipeline and its execution context.
 
     ``only`` selects a single step ('detect'|'install'|'configure'|'verify') or
-    the whole sequence ('all'). ``source``/``managers`` can be injected for tests.
+    the whole sequence ('all'). ``profile`` selects which SYCL toolchains to
+    provision (lightweight|normal|full); ``oneapi=True`` is a back-compat alias
+    that forces the 'full' profile. ``source``/``managers`` can be injected for
+    tests.
     """
+    if profile not in PROFILE_SPECS:
+        raise ValueError(f"Unknown profile '{profile}'. Choose from {PROFILES}.")
+    # --oneapi is the historical switch for "also install oneAPI" — honour it by
+    # upgrading to the full profile so old invocations keep working.
+    if oneapi:
+        profile = "full"
+    spec = PROFILE_SPECS[profile]
+
     cfg = cfg or load_config()
     source = source or TomlDependencySource()
     managers = managers if managers is not None else _managers_for(cfg)
 
     all_steps = {
-        "detect":    DetectStep(source),
+        "detect":    DetectStep(source, managers),
         "install":   InstallDepsStep(source, managers),
         "configure": ConfigureStep(),
         "verify":    VerifyStep(),
@@ -77,7 +89,11 @@ def build_pipeline(
     else:
         raise ValueError(f"Unknown step '{only}'. Choose from {STEP_NAMES}.")
 
-    ctx = InstallContext(cfg=cfg, gpu=gpu, dry_run=dry_run, oneapi=oneapi)
+    ctx = InstallContext(
+        cfg=cfg, gpu=gpu, dry_run=dry_run, oneapi=spec["oneapi"],
+        install_intel_llvm=spec["intel_llvm"], install_acpp=spec["acpp"],
+        active_toolchain=spec["active"],
+    )
     return InstallPipeline(ordered), ctx
 
 

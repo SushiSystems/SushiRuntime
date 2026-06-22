@@ -13,30 +13,39 @@
     powershell -ExecutionPolicy Bypass -File install.ps1
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File install.ps1 -NoGpu -OneApi
+    powershell -ExecutionPolicy Bypass -File install.ps1 -Profile lightweight -NoGpu
 
 .EXAMPLE
     irm https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.ps1 | iex
 #>
 [CmdletBinding()]
 param(
+    # SYCL toolchain profile (footprint vs breadth):
+    #   lightweight = AdaptiveCpp only (smallest)
+    #   normal      = intel-llvm + AdaptiveCpp (default)
+    #   full        = the above plus the heavy Intel oneAPI DPC++ compiler
+    [ValidateSet("lightweight", "normal", "full")]
+    [string]$Profile = "normal",
     [switch]$NoGpu,
-    [switch]$OneApi,
+    [switch]$OneApi,  # Back-compat alias for -Profile full.
     [switch]$Gpu,     # Back-compat no-op: GPU is on by default now.
     [switch]$DryRun
 )
 
+# -OneApi is the historical "also install oneAPI" switch; map it to the full profile.
+if ($OneApi) { $Profile = "full" }
+
 $ErrorActionPreference = "Stop"
 
-# Only Intel oneAPI needs administrator rights, and it is opt-in. Self-elevate
-# (once, at a single UAC prompt) only when -OneApi is requested; the default
-# intel-llvm/AdaptiveCpp install runs fine as a normal user.
-if ($OneApi) {
+# Only Intel oneAPI needs administrator rights, and it is opt-in (the full
+# profile). Self-elevate (once, at a single UAC prompt) only then; the
+# lightweight/normal intel-llvm/AdaptiveCpp install runs fine as a normal user.
+if ($Profile -eq "full") {
     $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Host "[INFO] Requesting administrator privileges (required for Intel oneAPI)..." -ForegroundColor Cyan
         $psArgs = [System.Collections.Generic.List[string]]@(
-            "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "-OneApi"
+            "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "-Profile", "full"
         )
         if ($NoGpu)  { $psArgs.Add("-NoGpu") }
         if ($DryRun) { $psArgs.Add("-DryRun") }
@@ -50,13 +59,10 @@ function Warn($m) { Write-Host "[WARN] $m"  -ForegroundColor Yellow }
 function Fail($m) { Write-Host "[ERROR] $m" -ForegroundColor Red; exit 1 }
 
 $RepoUrl  = if ($env:SR_REPO_URL) { $env:SR_REPO_URL } else { "https://github.com/sushisystems/sushiruntime.git" }
-$ToolsDir = Join-Path $env:LOCALAPPDATA "SushiRuntime\tools"
-if (-not (Test-Path $ToolsDir)) { New-Item -ItemType Directory -Force $ToolsDir | Out-Null }
 
 function Refresh-Path {
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("Path","User")   + ";" +
-                $ToolsDir
+                [System.Environment]::GetEnvironmentVariable("Path","User")
 }
 
 function GitHub-LatestUrl($repo, $assetGlob) {
@@ -113,53 +119,12 @@ function Ensure-Git {
     Refresh-Path
 }
 
-function Ensure-CMake {
-    Refresh-Path
-    if (Get-Command cmake -ErrorAction SilentlyContinue) { return }
-
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Info "Installing CMake via winget..."
-        winget install --id Kitware.CMake -e --accept-package-agreements --accept-source-agreements --silent
-        Refresh-Path
-        if (Get-Command cmake -ErrorAction SilentlyContinue) { return }
-    }
-
-    $url  = GitHub-LatestUrl "Kitware/CMake" "*windows-x86_64.msi"
-    $dest = Join-Path $env:TEMP "cmake-setup.msi"
-    Download $url $dest
-    Info "Installing CMake..."
-    Start-Process -Wait msiexec -ArgumentList "/i","$dest","/quiet","/norestart","ADD_CMAKE_TO_PATH=System"
-    Refresh-Path
-}
-
-function Ensure-Ninja {
-    Refresh-Path
-    if (Get-Command ninja -ErrorAction SilentlyContinue) { return }
-
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Info "Installing Ninja via winget..."
-        winget install --id Ninja-build.Ninja -e --accept-package-agreements --accept-source-agreements --silent
-        Refresh-Path
-        if (Get-Command ninja -ErrorAction SilentlyContinue) { return }
-    }
-
-    $url  = GitHub-LatestUrl "ninja-build/ninja" "ninja-win.zip"
-    $zip  = Join-Path $env:TEMP "ninja-win.zip"
-    Download $url $zip
-    Info "Extracting Ninja to $ToolsDir..."
-    Expand-Archive -Path $zip -DestinationPath $ToolsDir -Force
-    Refresh-Path
-
-    if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
-        $env:Path += ";$ToolsDir"
-    }
-}
-
-# Bootstrap tools.
+# Bootstrap only what `sr` itself needs to run and clone: Python and Git.
+# CMake and Ninja are installed portably into <repo>/dependencies by `sr setup`
+# so the whole toolchain lives in one deletable folder — we no longer scatter
+# them into LOCALAPPDATA here.
 Ensure-Python
 Ensure-Git
-Ensure-CMake
-Ensure-Ninja
 
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) { Fail "python not on PATH after install. Open a new terminal and re-run." }
@@ -183,9 +148,8 @@ Info "Installing the sr CLI..."
 python cli/install.py
 
 # Run the installer pipeline. GPU is on by default ("stock"); --no-gpu skips it.
-$flags = @("setup", "all")
+$flags = @("setup", "all", "--profile", $Profile)
 if ($NoGpu)  { $flags += "--no-gpu" } else { $flags += "--gpu" }
-if ($OneApi) { $flags += "--oneapi" }
 if ($DryRun) { $flags += "--dry-run" }
 Info "Running: sr $($flags -join ' ')"
 $PipxBinDir = python -m pipx environment --value PIPX_BIN_DIR

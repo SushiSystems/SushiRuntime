@@ -5,6 +5,10 @@ build-tsan/
 bin/
 lib/
 out/
+
+# Vendored dependencies fetched by `sr setup` (intel/llvm bundle, AdaptiveCpp,
+# portable cmake/ninja, vcpkg). One self-contained, deletable folder.
+dependencies/
 docs/html
 venv/
 

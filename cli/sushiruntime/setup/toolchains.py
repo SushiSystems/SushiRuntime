@@ -27,24 +27,81 @@ import tempfile
 from pathlib import Path
 
 from .. import console
-from ..config import Config
+from ..config import Config, deps_dir
 from .package_managers import (
     IPackageManager,
     _download,
     _gh_latest_asset,
+    _gh_tagged_asset,
     _run,
-    _tools_dir,
 )
 
 # AdaptiveCpp release pinned to match the Dockerfile (ADAPTIVECPP_VERSION).
 ACPP_VERSION = "v24.10.0"
 # clang/llvm major version used to build acpp (Dockerfile ACPP_LLVM).
 ACPP_LLVM = "17"
+# Full LLVM release vendored on Windows when no LLVM dev install exists. Matches
+# ACPP_LLVM. The official clang+llvm Windows tarball ships lib/cmake/llvm.
+LLVM_WINDOWS_VERSION = "17.0.6"
+# Seconds to wait for consent before downloading the heavy LLVM (default: no).
+_LLVM_CONSENT_TIMEOUT = 30
+
+
+def _confirm_timeout(message: str, timeout: int = _LLVM_CONSENT_TIMEOUT,
+                     default: bool = False) -> bool:
+    """Ask a yes/no question, returning *default* if unanswered within *timeout*.
+
+    Prints *message* then a standardized ``[y/n]`` hint (the brackets are escaped
+    so Rich does not eat them as markup). Used to gate the heavy (~2-3 GB) LLVM
+    download behind explicit consent. A non-interactive stdin (piped install, CI)
+    yields *default* immediately, so an unattended run never blocks.
+
+    Must be called *outside* any Rich progress/live context — a prompt rendered
+    under a spinner is not answerable.
+    """
+    import threading
+
+    console.console.print(message)
+    hint = r"\[y/n]" if default is False else r"\[Y/n]"
+    console.console.print(
+        f"[bold]Your choice {hint}[/bold] (auto-"
+        f"{'yes' if default else 'no'} in {timeout}s): ", end="")
+    result = [default]
+
+    def _read() -> None:
+        try:
+            answer = input().strip().lower()
+            result[0] = answer in ("y", "yes", "e", "evet")
+        except (EOFError, OSError):
+            pass  # non-interactive: keep the default
+
+    thread = threading.Thread(target=_read, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        console.console.print()  # finish the prompt line
+        console.info(f"No answer in {timeout}s — defaulting to "
+                     f"{'yes' if default else 'no'}.")
+    return result[0]
+
+
+def _find_windows_llvm() -> tuple[str, str] | None:
+    """Return (LLVM_DIR, clang_prefix) for an existing Windows LLVM, else None."""
+    bases = [
+        deps_dir() / "tools" / "llvm",
+        Path(r"C:/Program Files/LLVM"),
+        Path(r"C:/Program Files (x86)/LLVM"),
+    ]
+    for base in bases:
+        cm = base / "lib" / "cmake" / "llvm"
+        if cm.is_dir():
+            return (str(cm), str(base))
+    return None
 
 
 def toolchains_dir() -> Path:
     """Base directory for SYCL toolchains installed by ``sr setup``."""
-    return _tools_dir().parent / "toolchains"
+    return deps_dir() / "toolchains"
 
 
 # --------------------------------------------------------------------------- #
@@ -117,16 +174,77 @@ def _extract_tar_gz(archive: Path, dest: Path) -> None:
             shutil.move(str(item), str(target))
 
 
+def _extract_tarball(archive: Path, dest: Path) -> None:
+    """Extract any tar archive (gz/xz/...) into *dest*, collapsing a top wrapper.
+
+    Like ``_extract_tar_gz`` but autodetects the compression (``r:*``), so it
+    handles the LLVM ``clang+llvm-*.tar.xz`` releases as well.
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as staging:
+        stage = Path(staging)
+        with tarfile.open(archive, "r:*") as tf:
+            try:
+                tf.extractall(stage, filter="data")
+            except TypeError:
+                tf.extractall(stage)
+        entries = list(stage.iterdir())
+        srcroot = entries[0] if len(entries) == 1 and entries[0].is_dir() else stage
+        for item in srcroot.iterdir():
+            target = dest / item.name
+            if target.exists():
+                shutil.rmtree(target) if target.is_dir() else target.unlink()
+            shutil.move(str(item), str(target))
+
+
+def _vendor_llvm_windows() -> tuple[str, str] | None:
+    """Download the official clang+llvm Windows tarball into deps/tools/llvm.
+
+    Returns (LLVM_DIR, clang_prefix) for the vendored install, or None on
+    failure. Keeps acpp's heavy LLVM dependency inside the one deps folder
+    instead of relying on winget/Program Files.
+    """
+    dest = deps_dir() / "tools" / "llvm"
+    tag = f"llvmorg-{LLVM_WINDOWS_VERSION}"
+    asset = f"clang+llvm-{LLVM_WINDOWS_VERSION}-x86_64-pc-windows-msvc.tar.xz"
+    try:
+        url = _gh_tagged_asset("llvm/llvm-project", tag, asset)
+    except Exception as exc:
+        console.error(f"Could not resolve LLVM {LLVM_WINDOWS_VERSION} asset: {exc}")
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / asset
+        try:
+            console.info(f"Downloading LLVM {LLVM_WINDOWS_VERSION} (~1 GB) into {dest} ...")
+            _download(url, archive)
+            console.info("Extracting LLVM (this takes a minute) ...")
+            _extract_tarball(archive, dest)
+        except Exception as exc:
+            console.error(f"LLVM vendor failed: {exc}")
+            shutil.rmtree(dest, ignore_errors=True)
+            return None
+    found = _find_windows_llvm()
+    if found:
+        console.success(f"LLVM {LLVM_WINDOWS_VERSION} vendored into {dest}")
+    else:
+        console.error("LLVM extracted but lib/cmake/llvm is missing.")
+    return found
+
+
 # --------------------------------------------------------------------------- #
 # AdaptiveCpp (acpp) from source
 # --------------------------------------------------------------------------- #
 
 def install_adaptivecpp(cfg: Config, mgr: IPackageManager | None,
-                        vcpkg: IPackageManager | None, dry_run: bool) -> str | None:
+                        vcpkg: IPackageManager | None, dry_run: bool,
+                        assume_yes: bool = False) -> str | None:
     """Build AdaptiveCpp from source. Return the ``acpp`` executable path.
 
     Best-effort: a failure is reported but left non-fatal by the caller, since
-    the intel-llvm toolchain already provides a working SYCL compiler.
+    the intel-llvm toolchain already provides a working SYCL compiler. On Windows
+    a missing LLVM dev install triggers a timed consent prompt before the heavy
+    (~2-3 GB) LLVM download; ``assume_yes`` skips that prompt (used by the
+    explicit ``sr setup acpp`` command).
     """
     prefix = toolchains_dir() / "adaptivecpp"
     acpp = prefix / "bin" / ("acpp.bat" if cfg.is_windows else "acpp")
@@ -148,10 +266,11 @@ def install_adaptivecpp(cfg: Config, mgr: IPackageManager | None,
         return str(acpp_exe)
 
     llvm_dir, clang_prefix = (
-        _acpp_deps_windows(vcpkg) if cfg.is_windows else _acpp_deps_linux(mgr)
+        _acpp_deps_windows(vcpkg, assume_yes=assume_yes)
+        if cfg.is_windows else _acpp_deps_linux(mgr)
     )
     if llvm_dir is None:
-        console.warn("AdaptiveCpp LLVM dependency unavailable; skipping acpp build.")
+        _explain_acpp_skip(cfg)
         return None
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -194,6 +313,31 @@ def install_adaptivecpp(cfg: Config, mgr: IPackageManager | None,
     return None
 
 
+def _explain_acpp_skip(cfg: Config) -> None:
+    """Explain clearly why the acpp build was skipped and how to enable it.
+
+    AdaptiveCpp has no official Windows binary, so `sr setup` builds it from
+    source — which needs an LLVM development install (with lib/cmake/llvm). When
+    that is unavailable the build is skipped (non-fatal: intel-llvm still works).
+    The user asked for an actionable message instead of a bare warning.
+    """
+    console.warn("AdaptiveCpp (acpp) was skipped — it builds from source and its "
+                 "LLVM development dependency is not available.")
+    if cfg.is_windows:
+        console.info("Install it anytime with [bold cyan]sr setup acpp[/bold cyan] — "
+                     f"that downloads LLVM {LLVM_WINDOWS_VERSION} (~2-3 GB) into the "
+                     "deps folder and builds acpp, no prompt.")
+        console.info("Note: the intel/llvm bundle cannot supply this LLVM — it ships "
+                     "a compiler, not the LLVM cmake/dev files acpp needs.")
+    else:
+        console.info("To enable acpp on Linux, install the LLVM dev packages, e.g. "
+                     "(Debian/Ubuntu): clang-17 llvm-17-dev libclang-17-dev "
+                     "libboost-context-dev libboost-fiber-dev, then re-run "
+                     "`sr setup --profile normal`.")
+    console.info("This is non-fatal: intel-llvm is installed and selected, so you "
+                 "can build and run now. acpp is the secondary toolchain.")
+
+
 def _acpp_deps_linux(mgr: IPackageManager | None) -> tuple[str | None, str | None]:
     """Install acpp build deps via the distro manager. Return (LLVM_DIR, clang_prefix).
 
@@ -220,25 +364,42 @@ def _acpp_deps_linux(mgr: IPackageManager | None) -> tuple[str | None, str | Non
     return ("", None)  # empty LLVM_DIR => cmake searches default locations
 
 
-def _acpp_deps_windows(vcpkg: IPackageManager | None) -> tuple[str | None, str | None]:
+def _acpp_deps_windows(vcpkg: IPackageManager | None,
+                       assume_yes: bool = False) -> tuple[str | None, str | None]:
     """Install acpp build deps on Windows. Return (LLVM_DIR, clang_prefix).
 
-    LLVM comes from winget (LLVM.LLVM); boost-context/fiber from vcpkg. This is
-    the least-tested path — acpp's Windows support is young — so it is wrapped in
-    best-effort error handling by the caller.
+    boost-context/fiber come from vcpkg. acpp also needs an LLVM dev install
+    (lib/cmake/llvm); if one is already present it is reused. Otherwise acquiring
+    it means a ~2-3 GB download, so the user is asked first (30 s, default no).
+    On consent LLVM is vendored into the deps folder (winget is used when present
+    but is not required). Without consent we return (None, None) and the caller
+    explains how to enable acpp later.
     """
     if vcpkg is not None:
         vcpkg.install(["boost-context", "boost-fiber"], dry_run=False)
-    if not shutil.which("clang"):
-        if shutil.which("winget"):
-            subprocess.run(
-                ["winget", "install", "--id", "LLVM.LLVM", "-e",
-                 "--accept-package-agreements", "--accept-source-agreements",
-                 "--silent"],
-                check=False,
-            )
-    for base in (r"C:/Program Files/LLVM", r"C:/Program Files (x86)/LLVM"):
-        cm = Path(base) / "lib" / "cmake" / "llvm"
-        if cm.is_dir():
-            return (str(cm), base)
-    return (None, None)
+
+    existing = _find_windows_llvm()
+    if existing:
+        return existing
+
+    # Consent is gathered up front by the caller (before the progress spinner),
+    # never here — prompting mid-pipeline is unanswerable. Without consent, skip.
+    if not assume_yes:
+        return (None, None)
+
+    # Consent given. Prefer winget if available (installs to Program Files),
+    # else vendor the official tarball into the deps folder.
+    if shutil.which("winget"):
+        console.info("Installing LLVM via winget ...")
+        subprocess.run(
+            ["winget", "install", "--id", "LLVM.LLVM", "-e",
+             "--accept-package-agreements", "--accept-source-agreements",
+             "--silent"],
+            check=False,
+        )
+        existing = _find_windows_llvm()
+        if existing:
+            return existing
+
+    vendored = _vendor_llvm_windows()
+    return vendored if vendored else (None, None)
