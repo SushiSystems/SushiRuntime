@@ -150,7 +150,7 @@ def install_adaptivecpp(cfg: Config, mgr: IPackageManager | None,
         _acpp_deps_windows(vcpkg) if cfg.is_windows else _acpp_deps_linux(mgr)
     )
     if llvm_dir is None:
-        console.warn("AdaptiveCpp LLVM dependency unavailable; skipping acpp build.")
+        _explain_acpp_skip(cfg)
         return None
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -191,6 +191,33 @@ def install_adaptivecpp(cfg: Config, mgr: IPackageManager | None,
         return str(result)
     console.warn("AdaptiveCpp build completed but acpp binary not found.")
     return None
+
+
+def _explain_acpp_skip(cfg: Config) -> None:
+    """Explain clearly why the acpp build was skipped and how to enable it.
+
+    AdaptiveCpp has no official Windows binary, so `sr setup` builds it from
+    source — which needs an LLVM development install (with lib/cmake/llvm). When
+    that is unavailable the build is skipped (non-fatal: intel-llvm still works).
+    The user asked for an actionable message instead of a bare warning.
+    """
+    console.warn("AdaptiveCpp (acpp) was skipped — it builds from source and its "
+                 "LLVM development dependency is not available.")
+    if cfg.is_windows:
+        console.info("To enable acpp on Windows, provide an LLVM dev install "
+                     "(with lib/cmake/llvm), then re-run `sr setup --profile normal`:")
+        console.info("  - winget:  winget install LLVM.LLVM   (if winget is present)")
+        console.info("  - manual:  install LLVM-<ver>-win64.exe from "
+                     "https://github.com/llvm/llvm-project/releases")
+        console.info("Note: the intel/llvm bundle cannot supply this — it ships a "
+                     "compiler, not the LLVM cmake/dev files acpp needs.")
+    else:
+        console.info("To enable acpp on Linux, install the LLVM dev packages, e.g. "
+                     "(Debian/Ubuntu): clang-17 llvm-17-dev libclang-17-dev "
+                     "libboost-context-dev libboost-fiber-dev, then re-run "
+                     "`sr setup --profile normal`.")
+    console.info("This is non-fatal: intel-llvm is installed and selected, so you "
+                 "can build and run now. acpp is the secondary toolchain.")
 
 
 def _acpp_deps_linux(mgr: IPackageManager | None) -> tuple[str | None, str | None]:
