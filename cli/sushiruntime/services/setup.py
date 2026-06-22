@@ -45,6 +45,40 @@ def run(step: str = "all", gpu: bool = False, dry_run: bool = False,
     return 1
 
 
+def install_acpp(dry_run: bool = False) -> int:
+    """Install AdaptiveCpp on demand and record its path. Return an exit code.
+
+    Unlike `setup all`, this assumes consent for the heavy LLVM download on
+    Windows (the user asked for acpp explicitly) and does not change the active
+    toolchain — only records acpp's path so `sr toolchain adaptivecpp` works.
+    """
+    from ..config import load_config
+    from ..setup import toolchains
+    from ..setup.factory import _managers_for, build_pipeline
+
+    console.header("Install AdaptiveCpp")
+    cfg = load_config()
+    managers = _managers_for(cfg)
+    vcpkg = next((m for m in managers if m.name == "vcpkg"), None)
+    linux_names = ("apt", "dnf", "yum", "pacman", "zypper")
+    mgr = next((m for m in managers
+                if m.name in linux_names and m.available()), None)
+
+    acpp = toolchains.install_adaptivecpp(cfg, mgr, vcpkg, dry_run=dry_run,
+                                          assume_yes=True)
+    if not acpp:
+        console.error("AdaptiveCpp install did not complete. See messages above.")
+        return 1
+    console.success(f"AdaptiveCpp installed: {acpp}")
+
+    # Record acpp's path in config.local.toml without changing the active toolchain.
+    pipeline, ctx = build_pipeline(only="configure", dry_run=dry_run)
+    ctx.active_toolchain = None
+    pipeline.run(ctx)
+    console.info("Select it with `sr toolchain adaptivecpp`.")
+    return 0
+
+
 def uninstall(
     gpu: bool = False,
     dry_run: bool = False,
