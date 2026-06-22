@@ -25,6 +25,7 @@ from .package_managers import (
     IPackageManager,
     WINGET_ID_TO_CMD,
     _tools_dir,
+    refresh_windows_path,
 )
 from .pipeline import InstallContext, Step, StepResult
 from . import toolchains
@@ -32,18 +33,19 @@ from . import toolchains
 # System toolchain installed through the toolchain manager (not via the manifest
 # since these tools must exist before vcpkg/pip can run).
 _LINUX_TOOLCHAIN_APT = ["build-essential", "cmake", "ninja-build", "git"]
-_WINDOWS_TOOLCHAIN_PKGS = [
-    "Kitware.CMake", "Ninja-build.Ninja", "Git.Git",
-]
+
+
+def _check_cmd_ok(cmd: list[str]) -> bool:
+    """True if *cmd* runs and exits 0 (its tool is present and the check passes)."""
+    try:
+        return subprocess.run(cmd, capture_output=True).returncode == 0
+    except (OSError, FileNotFoundError):
+        return False
 
 
 def _dep_installed(dep: Dependency, mgr: IPackageManager, platform: str) -> bool:
-    if dep.check_cmd:
-        try:
-            if subprocess.run(dep.check_cmd, capture_output=True).returncode == 0:
-                return True
-        except (OSError, FileNotFoundError):
-            pass
+    if dep.check_cmd and _check_cmd_ok(dep.check_cmd):
+        return True
     pkgs = dep.packages_for(platform)
     if not pkgs:
         return False
@@ -62,39 +64,67 @@ class DetectStep(Step):
 
     name = "detect"
 
-    def __init__(self, source: IDependencySource) -> None:
+    def __init__(self, source: IDependencySource,
+                 managers: list[IPackageManager] | None = None) -> None:
         self._source = source
+        self._managers = managers or []
+
+    def _dep_manager(self, plat: str) -> IPackageManager | None:
+        """The manager that knows whether a manifest dep is installed."""
+        if plat == "windows":
+            return next((m for m in self._managers if m.name == "vcpkg"), None)
+        linux = ("apt", "dnf", "yum", "pacman", "zypper")
+        return next((m for m in self._managers
+                     if m.name in linux and m.available()), None)
 
     def run(self, ctx: InstallContext) -> StepResult:
         plat = ctx.cfg.platform
+        refresh_windows_path()  # reflect tools the bootstrap installer just added
         table = Table(show_header=True, header_style="bold magenta",
                       title="Environment inventory")
         table.add_column("Component")
         table.add_column("Status")
         table.add_column("Detail", style="dim")
 
+        # Some tools the build uses live off PATH (the deps folder, or a vcpkg
+        # port like pkgconf). Fall back to the configured path so the row shows
+        # what the build actually uses instead of a misleading MISSING.
+        cfg = ctx.cfg
+        configured = {
+            "cmake": cfg.expand(cfg.cmake_exe) if cfg.cmake_exe else "",
+            "ninja": cfg.expand(cfg.ninja_exe) if cfg.ninja_exe else "",
+            "pkg-config": cfg.expand(cfg.pkgconf_exe) if cfg.pkgconf_exe else "",
+        }
         for tool in ("python3" if plat != "windows" else "python",
                      "git", "cmake", "ninja", "pkg-config"):
-            found = shutil.which(tool) is not None
-            ctx.detected[tool] = found
-            table.add_row(tool, _mark(found), shutil.which(tool) or "")
+            path = shutil.which(tool) or ""
+            if not path and configured.get(tool) and Path(configured[tool]).is_file():
+                path = configured[tool]
+            ctx.detected[tool] = bool(path)
+            table.add_row(tool, _mark(bool(path)), path)
 
         compiler, where = probe.find_sycl_compiler(ctx.cfg)
+        if compiler is None:
+            # The intel/llvm bundle and acpp live off PATH; consult the paths
+            # `sr setup` records so a post-install re-run reports them correctly.
+            compiler, where = probe.find_configured_toolchain(ctx.cfg)
         ctx.detected["sycl_compiler"] = compiler is not None
         table.add_row("SYCL compiler", _mark(compiler is not None),
                       f"{compiler or '-'} {where or ''}".strip())
 
+        # Use the same check `install-deps` uses (check_cmd, then the package
+        # manager) so detect and install agree — a lib installed via vcpkg/apt
+        # is reported present even when its check_cmd tool (e.g. pkg-config) is
+        # not on PATH.
+        dep_mgr = self._dep_manager(plat)
         for dep in self._source.selected(plat, ctx.gpu):
-            present = False
-            if dep.check_cmd:
-                try:
-                    present = subprocess.run(
-                        dep.check_cmd, capture_output=True).returncode == 0
-                except (OSError, FileNotFoundError):
-                    present = False
+            if dep_mgr is not None:
+                present = _dep_installed(dep, dep_mgr, plat)
+            else:
+                present = bool(dep.check_cmd) and _check_cmd_ok(dep.check_cmd)
             ctx.detected[dep.name] = present
             pkgs = ", ".join(dep.packages_for(plat))
-            table.add_row(dep.name, _mark(present) if dep.check_cmd else "[dim]?[/dim]",
+            table.add_row(dep.name, _mark(present),
                           f"{dep.description} ({pkgs})")
 
         gpu_present = shutil.which("nvidia-smi") is not None
@@ -103,6 +133,19 @@ class DetectStep(Step):
                       "use --gpu to install CUDA" if gpu_present else "")
 
         console.console.print(table)
+
+        from ..config import deps_dir
+        console.info(f"Vendored dependencies go in one folder: {deps_dir()}")
+        console.info("Remove the whole install by deleting that folder "
+                     "(`sr setup uninstall --everything` does it for you).")
+        if plat == "windows":
+            console.info("System prerequisites kept outside that folder: the C++ "
+                         "host compiler (Visual Studio Build Tools + Windows SDK), "
+                         "git, and — with --gpu — the CUDA toolkit.")
+        else:
+            console.info("System prerequisites kept outside that folder: the host "
+                         "compiler (gcc) plus the -dev packages (hwloc, gtest, "
+                         "opencl), git, and — with --gpu — the CUDA toolkit.")
         return StepResult.OK
 
 
@@ -132,21 +175,33 @@ class InstallDepsStep(Step):
     def _install_toolchains(self, ctx: InstallContext,
                             mgr: IPackageManager | None,
                             vcpkg: IPackageManager | None) -> None:
-        """Install the default SYCL toolchains (intel-llvm + AdaptiveCpp).
+        """Install the SYCL toolchains the active profile selected.
 
-        Both are recorded on ``ctx.resolved_paths`` so ConfigureStep can write
-        their paths. Failures are non-fatal: the intel-llvm bundle alone is enough
-        to build, and AdaptiveCpp's from-source build is best-effort.
+        Which toolchains run is gated by ``ctx.install_intel_llvm`` /
+        ``ctx.install_acpp`` (set from PROFILE_SPECS). Installed paths are recorded
+        on ``ctx.resolved_paths`` so ConfigureStep can write them. Failures are
+        non-fatal when another toolchain remains, but the sole toolchain of a
+        profile failing leaves nothing to build with, so that case warns loudly.
         """
-        llvm = toolchains.install_intel_llvm(ctx.cfg, ctx.dry_run)
-        if llvm:
-            ctx.resolved_paths["llvm_root"] = llvm
-        else:
-            console.warn("intel/llvm bundle not installed; the default "
-                         "intel-llvm toolchain will be unavailable.")
-        acpp = toolchains.install_adaptivecpp(ctx.cfg, mgr, vcpkg, ctx.dry_run)
-        if acpp:
-            ctx.resolved_paths["acpp_exe"] = acpp
+        if ctx.install_intel_llvm:
+            llvm = toolchains.install_intel_llvm(ctx.cfg, ctx.dry_run)
+            if llvm:
+                ctx.resolved_paths["llvm_root"] = llvm
+            else:
+                console.warn("intel/llvm bundle not installed; the intel-llvm "
+                             "toolchain will be unavailable.")
+
+        if ctx.install_acpp:
+            acpp = toolchains.install_adaptivecpp(
+                ctx.cfg, mgr, vcpkg, ctx.dry_run,
+                assume_yes=ctx.assume_acpp_llvm)
+            if acpp:
+                ctx.resolved_paths["acpp_exe"] = acpp
+            elif not ctx.install_intel_llvm:
+                console.warn("AdaptiveCpp is the only toolchain in this profile but "
+                             "it did not install; the project will not build. "
+                             "Re-run with `--profile normal` for the intel-llvm "
+                             "fallback.")
 
     # -- Linux ---------------------------------------------------------------- #
 
@@ -201,29 +256,37 @@ class InstallDepsStep(Step):
     # -- Windows -------------------------------------------------------------- #
 
     def _run_windows(self, ctx: InstallContext) -> StepResult:
+        refresh_windows_path()  # see cmake/git the bootstrap script just installed
         winget = self._manager("winget")
         direct = self._manager("direct-download")
         vcpkg  = self._manager("vcpkg")
 
-        # Only install toolchain items that are not already on PATH.
-        missing = [
-            pkg for pkg in _WINDOWS_TOOLCHAIN_PKGS
-            if not shutil.which(WINGET_ID_TO_CMD.get(pkg, ""))
-        ]
-
         tool_ok = True
-        if missing:
+
+        # cmake + ninja: always install portably into the deps folder (never
+        # system-wide via winget), so the whole install stays one deletable
+        # directory. The direct-download manager extracts them under deps/tools
+        # and skips anything already on PATH.
+        portable = ["Kitware.CMake", "Ninja-build.Ninja"]
+        missing_portable = [
+            pkg for pkg in portable if not shutil.which(WINGET_ID_TO_CMD.get(pkg, ""))
+        ]
+        if missing_portable and direct:
+            console.info("Installing CMake + Ninja portably into the deps folder ...")
+            tool_ok = direct.install(missing_portable, ctx.dry_run)
+        elif not missing_portable:
+            console.info("cmake + ninja already present, skipping.")
+
+        # git is a bootstrap prerequisite (needed to clone the repo and acpp), so
+        # it stays a system tool: reuse an existing one, else install via winget.
+        if not shutil.which("git"):
             if winget and winget.available():
-                console.info("Installing missing toolchain via winget ...")
-                tool_ok = winget.install(missing, ctx.dry_run)
+                console.info("Installing git via winget ...")
+                tool_ok = winget.install(["Git.Git"], ctx.dry_run) and tool_ok
             elif direct:
-                console.info("winget unavailable; installing toolchain via direct download ...")
-                tool_ok = direct.install(missing, ctx.dry_run)
+                tool_ok = direct.install(["Git.Git"], ctx.dry_run) and tool_ok
             else:
-                console.error("No install method available for toolchain packages.")
-                return StepResult.FAILED
-        else:
-            console.info("System toolchain already present, skipping.")
+                console.warn("git not found and no installer available; install it manually.")
 
         # C++ library ports via vcpkg.
         ports: list[str] = []
@@ -344,27 +407,42 @@ class ConfigureStep(Step):
     name = "configure"
 
     def run(self, ctx: InstallContext) -> StepResult:
+        from ..config import set_toolchain
+
+        refresh_windows_path()  # probe needs to see freshly-installed tools
         values = probe.resolve_local_config(ctx.cfg, gpu=ctx.gpu)
         ctx.resolved_paths = values
-        if not values:
+
+        target = config_dir() / "config.local.toml"
+
+        if ctx.dry_run:
+            if ctx.active_toolchain:
+                console.info(f"(dry-run) would set active toolchain to "
+                             f"'{ctx.active_toolchain}'.")
+            if values:
+                console.info(f"(dry-run) would write {target}:")
+                console.console.print(
+                    probe.render_local_config(ctx.cfg.platform, values), markup=False)
+            return StepResult.OK
+
+        if not values and not ctx.active_toolchain:
             console.info("No machine-specific paths to write; defaults suffice.")
             return StepResult.SKIPPED
 
-        target = config_dir() / "config.local.toml"
-        content = probe.render_local_config(ctx.cfg.platform, values)
+        if values:
+            content = probe.render_local_config(ctx.cfg.platform, values)
+            if target.is_file():
+                backup = target.with_suffix(".toml.bak")
+                shutil.copyfile(target, backup)
+                console.info(f"Backed up existing config to {backup.name}")
+            target.write_text(content, encoding="utf-8")
+            console.success(f"Wrote {target}")
 
-        if ctx.dry_run:
-            console.info(f"(dry-run) would write {target}:")
-            console.console.print(content, markup=False)
-            return StepResult.OK
-
-        if target.is_file():
-            backup = target.with_suffix(".toml.bak")
-            shutil.copyfile(target, backup)
-            console.info(f"Backed up existing config to {backup.name}")
-
-        target.write_text(content, encoding="utf-8")
-        console.success(f"Wrote {target}")
+        # Pin the profile's toolchain last: set_toolchain rewrites the file while
+        # preserving the [tool.<platform>] table just written above.
+        if ctx.active_toolchain:
+            set_toolchain(ctx.active_toolchain)
+            console.success(f"Active SYCL toolchain set to '{ctx.active_toolchain}'.")
         return StepResult.OK
 
 
@@ -440,6 +518,8 @@ class UninstallStep(Step):
             console.info(f"Removing via {mgr.name}: {', '.join(pkgs)}")
             mgr.remove(pkgs, ctx.dry_run)
 
+        if ctx.everything:
+            self._remove_installed_toolchains(ctx)
         self._remove_config(ctx)
         return StepResult.OK
 
@@ -455,7 +535,7 @@ class UninstallStep(Step):
             console.info(f"Removing vcpkg ports: {', '.join(ports)}")
             vcpkg.remove(ports, ctx.dry_run)
 
-        # Remove the ninja extracted to the tools dir.
+        # Remove the ninja binary and portable cmake we extracted to the tools dir.
         tools = _tools_dir()
         ninja_exe = tools / "ninja.exe"
         if ninja_exe.is_file():
@@ -464,15 +544,40 @@ class UninstallStep(Step):
             else:
                 ninja_exe.unlink()
                 console.info(f"Removed {ninja_exe}")
-            if tools.is_dir() and not any(tools.iterdir()):
-                if not ctx.dry_run:
-                    tools.rmdir()
+        cmake_dir = tools / "cmake"
+        if cmake_dir.is_dir():
+            if ctx.dry_run:
+                console.info(f"(dry-run) would remove {cmake_dir}")
+            else:
+                shutil.rmtree(cmake_dir, ignore_errors=True)
+                console.info(f"Removed {cmake_dir}")
+        if tools.is_dir() and not any(tools.iterdir()) and not ctx.dry_run:
+            tools.rmdir()
 
         if ctx.everything:
             self._remove_toolchain_windows(ctx)
+            self._remove_installed_toolchains(ctx)
 
         self._remove_config(ctx)
         return StepResult.OK
+
+    def _remove_installed_toolchains(self, ctx: InstallContext) -> None:
+        """Delete the entire vendored deps folder (the one-folder install).
+
+        Everything `sr setup` downloads — the intel/llvm bundle (~1 GB),
+        AdaptiveCpp, portable cmake/ninja, and the vcpkg tree — lives under one
+        directory, so ``--everything`` reclaims it all in a single rmtree. Only
+        done with ``--everything`` since it is the heaviest, least-reversible part.
+        """
+        from ..config import deps_dir
+        dep_dir = deps_dir()
+        if not dep_dir.is_dir():
+            return
+        if ctx.dry_run:
+            console.info(f"(dry-run) would remove the whole deps folder at {dep_dir}")
+            return
+        shutil.rmtree(dep_dir, ignore_errors=True)
+        console.success(f"Removed the vendored deps folder at {dep_dir}")
 
     def _remove_toolchain_windows(self, ctx: InstallContext) -> None:
         """Remove cmake and git installed by the direct-download manager.

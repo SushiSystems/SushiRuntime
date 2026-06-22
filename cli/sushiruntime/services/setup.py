@@ -12,22 +12,45 @@ from ..setup import build_pipeline, build_uninstall_pipeline
 
 
 def run(step: str = "all", gpu: bool = False, dry_run: bool = False,
-        oneapi: bool = False) -> int:
+        oneapi: bool = False, profile: str = "normal") -> int:
     """Run one step (or the whole pipeline) and return a process exit code."""
     console.header("SushiRuntime Setup")
     if dry_run:
         console.info("Dry-run: showing actions without changing the system.")
     if gpu:
         console.info("GPU mode: CUDA-capable dependencies included.")
-    if oneapi:
-        console.info("oneAPI mode: the Intel DPC++ compiler will also be installed.")
+    effective = "full" if oneapi else profile
+    _PROFILE_BLURB = {
+        "lightweight": "Lightweight profile: AdaptiveCpp only (smallest footprint).",
+        "normal": "Normal profile: intel/llvm bundle + AdaptiveCpp.",
+        "full": "Full profile: intel/llvm + AdaptiveCpp + the heavy Intel oneAPI DPC++ compiler.",
+    }
+    console.info(_PROFILE_BLURB.get(effective, f"Profile: {effective}."))
 
     try:
         pipeline, ctx = build_pipeline(only=step, gpu=gpu, dry_run=dry_run,
-                                       oneapi=oneapi)
+                                       oneapi=oneapi, profile=profile)
     except (ValueError, FileNotFoundError) as exc:
         console.error(str(exc))
         return 1
+
+    # Gather consent for the heavy Windows LLVM download up front — before the
+    # progress spinner starts — so the prompt is actually answerable.
+    if (not dry_run and step in ("all", "install") and ctx.install_acpp
+            and ctx.cfg.is_windows):
+        from ..setup.toolchains import (
+            LLVM_WINDOWS_VERSION, _confirm_timeout, _find_windows_llvm,
+        )
+        if _find_windows_llvm() is None:
+            ctx.assume_acpp_llvm = _confirm_timeout(
+                f"[bold yellow]AdaptiveCpp needs LLVM {LLVM_WINDOWS_VERSION} "
+                "(a ~2-3 GB download) to build on Windows.[/bold yellow]\n"
+                "Install it now into the deps folder?",
+                default=False,
+            )
+            if not ctx.assume_acpp_llvm:
+                console.info("Skipping the LLVM download. Install acpp later with "
+                             "[cyan]sr setup acpp[/cyan].")
 
     ok = pipeline.run(ctx)
     if ok:
@@ -38,6 +61,40 @@ def run(step: str = "all", gpu: bool = False, dry_run: bool = False,
         return 0
     console.error("Setup did not complete. See messages above.")
     return 1
+
+
+def install_acpp(dry_run: bool = False) -> int:
+    """Install AdaptiveCpp on demand and record its path. Return an exit code.
+
+    Unlike `setup all`, this assumes consent for the heavy LLVM download on
+    Windows (the user asked for acpp explicitly) and does not change the active
+    toolchain — only records acpp's path so `sr toolchain adaptivecpp` works.
+    """
+    from ..config import load_config
+    from ..setup import toolchains
+    from ..setup.factory import _managers_for, build_pipeline
+
+    console.header("Install AdaptiveCpp")
+    cfg = load_config()
+    managers = _managers_for(cfg)
+    vcpkg = next((m for m in managers if m.name == "vcpkg"), None)
+    linux_names = ("apt", "dnf", "yum", "pacman", "zypper")
+    mgr = next((m for m in managers
+                if m.name in linux_names and m.available()), None)
+
+    acpp = toolchains.install_adaptivecpp(cfg, mgr, vcpkg, dry_run=dry_run,
+                                          assume_yes=True)
+    if not acpp:
+        console.error("AdaptiveCpp install did not complete. See messages above.")
+        return 1
+    console.success(f"AdaptiveCpp installed: {acpp}")
+
+    # Record acpp's path in config.local.toml without changing the active toolchain.
+    pipeline, ctx = build_pipeline(only="configure", dry_run=dry_run)
+    ctx.active_toolchain = None
+    pipeline.run(ctx)
+    console.info("Select it with `sr toolchain adaptivecpp`.")
+    return 0
 
 
 def uninstall(
