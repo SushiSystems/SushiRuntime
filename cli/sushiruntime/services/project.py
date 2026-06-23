@@ -34,7 +34,7 @@ class BuildType(str, enum.Enum):
 
 class Suite(str, enum.Enum):
     # Fine-grained CTest labels (assigned in tests/CMakeLists.txt from the GTest
-    # suite-name prefix convention). Each value is passed verbatim to `ctest -L`.
+    # suite-name prefix convention).
     unit = "unit"
     regression = "regression"
     integration = "integration"
@@ -43,6 +43,22 @@ class Suite(str, enum.Enum):
     performance = "performance"
     benchmark = "benchmark"     # umbrella: stress + performance
     all = "all"
+
+
+# Each suite maps to a CTest label-selection regex (`ctest -L`). The single
+# categories anchor an exact match; the two umbrellas (functional / benchmark)
+# are an alternation over their sub-labels rather than a label of their own,
+# because a baked-in umbrella label does not survive gtest_discover_tests on
+# current CMake (see tests/CMakeLists.txt). `all` selects everything (no -L).
+_SUITE_LABEL_REGEX = {
+    Suite.unit: "^unit$",
+    Suite.regression: "^regression$",
+    Suite.integration: "^integration$",
+    Suite.functional: "^(unit|integration|regression)$",
+    Suite.stress: "^stress$",
+    Suite.performance: "^performance$",
+    Suite.benchmark: "^(stress|performance)$",
+}
 
 
 _CMAKE_BUILD_TYPE = {
@@ -97,6 +113,39 @@ def _run(cmd: list[str], env: dict[str, str], cwd: Path) -> int:
         return 1
 
 
+def _run_drained(cmd: list[str], env: dict[str, str], cwd: Path) -> int:
+    """Run *cmd* while actively draining its output, echoing it line by line.
+
+    Unlike :func:`_run` (which lets the child inherit our stdout), this pipes the
+    child's stdout/stderr and reads them in this process. That matters for
+    ``ctest`` on Windows: its ``gtest_discover_tests`` step spawns the test binary
+    to enumerate cases, and when ctest's stdout is an inherited, slowly-drained
+    pipe (our own stdout, itself piped by the caller's shell) the discovery child
+    intermittently stalls and registers nothing — surfacing as "No tests were
+    found". Draining the pipe ourselves keeps that enumeration reliable, while we
+    re-emit every line so the live test output is unchanged for the user.
+    """
+    resolved = list(cmd)
+    resolved[0] = _resolve_exe(cmd[0], env)
+    console.command(subprocess.list2cmdline(resolved))
+    try:
+        proc = subprocess.Popen(
+            resolved, cwd=str(cwd), env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1)
+    except FileNotFoundError:
+        console.error(
+            f"Executable not found: '{cmd[0]}'.\n"
+            f"  - it is not on PATH and no explicit path is configured.\n"
+            f"  - set its path in config.local.toml (e.g. cmake_exe / ctest_exe / ninja_exe), or\n"
+            f"  - re-run `sr setup configure` to auto-detect it.")
+        return 1
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        console.console.print(line.rstrip("\n"), highlight=False, soft_wrap=True)
+    return proc.wait()
+
+
 def _neutralize_runtime_ld(cfg: Config, env: dict[str, str]) -> None:
     """Strip setvars' LD_LIBRARY_PATH from a *run-time* env for the oneAPI build.
 
@@ -117,11 +166,50 @@ def _neutralize_runtime_ld(cfg: Config, env: dict[str, str]) -> None:
         env.pop("LD_LIBRARY_PATH", None)
 
 
-def _needs_configure(build_dir: Path, generator: str, dist: str) -> bool:
+def _cache_home_dir(build_dir: Path) -> str | None:
+    """Return the source dir a build tree was configured against, or None.
+
+    Read from CMakeCache.txt's CMAKE_HOME_DIRECTORY. Used to detect a build tree
+    carried over from another machine/path (e.g. a Docker volume build mounted at
+    /workspace, reused on the Windows host): those absolute paths no longer exist,
+    so CTest's `if(EXISTS ...)` guards fail and ctest reports "No tests were
+    found" even though the sources are fine. Reconfiguring from scratch fixes it.
+    """
+    cache = build_dir / "CMakeCache.txt"
+    if not cache.is_file():
+        return None
+    try:
+        for line in cache.read_text(errors="ignore").splitlines():
+            if line.startswith("CMAKE_HOME_DIRECTORY:"):
+                return line.partition("=")[2].strip()
+    except OSError:
+        return None
+    return None
+
+
+def _stale_build_tree(build_dir: Path, root: Path) -> bool:
+    """True if the build tree was configured for a different source directory.
+
+    A path mismatch (case- and separator-insensitive) means the cache's baked-in
+    absolute paths are wrong for this checkout, so a clean reconfigure is required.
+    """
+    home = _cache_home_dir(build_dir)
+    if not home:
+        return False
+    return os.path.normcase(os.path.normpath(home)) != \
+        os.path.normcase(os.path.normpath(str(root)))
+
+
+def _needs_configure(build_dir: Path, generator: str, dist: str,
+                     root: Path) -> bool:
     if not build_dir.is_dir():
         return True
     sentinel = "build.ninja" if generator == "Ninja" else "Makefile"
     if not (build_dir / sentinel).is_file():
+        return True
+    if _stale_build_tree(build_dir, root):
+        console.warn("Build tree was configured for a different source path "
+                     "(e.g. a Docker volume build); reconfiguring from scratch.")
         return True
     stamp = build_dir / STAMP_NAME
     if stamp.is_file():
@@ -317,7 +405,7 @@ def build(build_type: BuildType, distributed: bool = False,
 
     env = load_build_env(cfg, build_dir)
 
-    if _needs_configure(build_dir, cfg.generator, dist):
+    if _needs_configure(build_dir, cfg.generator, dist, root):
         console.info(f"Configuring CMake... (type={build_type.value}, "
                      f"distributed={dist}, cuda={cuda})")
         if build_dir.is_dir():
@@ -359,6 +447,12 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
     if not build_dir.is_dir():
         console.error(f"{build_dir.name}/ not found. Run `sr project build` first.")
         return 1
+    if _stale_build_tree(build_dir, root):
+        console.error(
+            f"{build_dir.name}/ was configured for a different source path "
+            "(e.g. a Docker volume build reused on this host).\n"
+            "  - run `sr project build` to reconfigure it cleanly first.")
+        return 1
     if distributed:
         console.info("Note: distributed tests only exist if built with --distributed.")
 
@@ -368,7 +462,7 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
     _neutralize_runtime_ld(cfg, env)
     cmd = [_ctest(cfg), "--test-dir", str(build_dir), "--output-on-failure"]
     if suite != Suite.all:
-        cmd += ["-L", suite.value]
+        cmd += ["-L", _SUITE_LABEL_REGEX[suite]]
     if filter:
         # gtest_discover_tests registers tests as "Suite.Case"; ctest -R filters
         # those names directly (a richer alternative to --gtest_filter).
@@ -378,7 +472,7 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
         # ctest way to flush out flakiness.
         cmd += ["--repeat", f"until-fail:{repeat}"]
         console.info(f"Repeating each test up to {repeat}x (stop on first failure).")
-    return _run(cmd, env, cwd=build_dir)
+    return _run_drained(cmd, env, cwd=build_dir)
 
 
 def run(target: str | None = None, sort: bool = False,

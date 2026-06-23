@@ -6,14 +6,14 @@ cmake_minimum_required(VERSION 3.22) # gtest_discover_tests(TEST_FILTER ...)
 # Two suites, two binaries:
 #   * sr_functional_tests  -> functional/{unit,regression,integration}
 #                             Fast, deterministic, host-friendly. Runs on every
-#                             commit in CI (ctest -L functional).
+#                             commit in CI (ctest -L 'unit|integration|regression').
 #   * sr_benchmark_tests   -> benchmark/{stress,performance}
 #                             Heavy/slow (1M-task bomb, latency probes). Gated by
 #                             SR_BUILD_BENCHMARKS, which defaults ON so local
 #                             dev gets the binary out of the box. The CI fast lane
-#                             passes -DSR_BUILD_BENCHMARKS=OFF to skip building
-#                             it and runs only `ctest -L functional`; the nightly
-#                             lane leaves it ON and runs `ctest -L benchmark`.
+#                             passes -DSR_BUILD_BENCHMARKS=OFF to skip building it
+#                             and runs only the functional label regex; the nightly
+#                             lane leaves it ON and runs `ctest -L 'stress|performance'`.
 #
 # Shared GTest entry point and helpers live in common/.
 # ============================================================================
@@ -91,22 +91,29 @@ sushi_configure_test_target(sr_functional_tests)
 # Sub-suite labels come from the GTest suite-name prefix convention
 # (Unit_* / Integration_* / Regression_*), so a category filter is robust and
 # new tests are picked up automatically as long as they follow the convention.
-# Every group also carries the umbrella "functional" label, so `ctest -L
-# functional` still runs the whole suite.
+#
+# Each group carries a SINGLE label. The "functional" umbrella is expressed by
+# the consumer as a label regex (`ctest -L 'unit|integration|regression'`, which
+# is what `sr project test --suite functional` runs) rather than a second label
+# baked in here: a two-element LABELS list (e.g. "unit;functional") is silently
+# flattened to two separate one-element labels by this CMake version's
+# GoogleTestAddTests.cmake (it loses the list escaping when re-expanding the
+# property), so the umbrella label never actually registers. Keeping one label
+# per group sidesteps that entirely and is robust across CMake versions.
 gtest_discover_tests(sr_functional_tests
     DISCOVERY_MODE PRE_TEST
     TEST_FILTER "Unit_*"
-    PROPERTIES LABELS "unit;functional"
+    PROPERTIES LABELS "unit"
 )
 gtest_discover_tests(sr_functional_tests
     DISCOVERY_MODE PRE_TEST
     TEST_FILTER "Integration_*"
-    PROPERTIES LABELS "integration;functional"
+    PROPERTIES LABELS "integration"
 )
 gtest_discover_tests(sr_functional_tests
     DISCOVERY_MODE PRE_TEST
     TEST_FILTER "Regression_*"
-    PROPERTIES LABELS "regression;functional"
+    PROPERTIES LABELS "regression"
 )
 
 # ----------------------------------------------------------------------------
@@ -135,15 +142,16 @@ if(SR_BUILD_BENCHMARKS)
     endif()
     sushi_configure_test_target(sr_benchmark_tests)
 
-    # Same prefix convention: Stress_* / Performance_*, both under "benchmark".
+    # Same prefix convention: Stress_* / Performance_*. As above, single labels;
+    # the "benchmark" umbrella is the regex `ctest -L 'stress|performance'`.
     gtest_discover_tests(sr_benchmark_tests
         DISCOVERY_MODE PRE_TEST
         TEST_FILTER "Stress_*"
-        PROPERTIES LABELS "stress;benchmark"
+        PROPERTIES LABELS "stress"
     )
     gtest_discover_tests(sr_benchmark_tests
         DISCOVERY_MODE PRE_TEST
         TEST_FILTER "Performance_*"
-        PROPERTIES LABELS "performance;benchmark"
+        PROPERTIES LABELS "performance"
     )
 endif()
