@@ -235,6 +235,38 @@ def _install_ninja_direct() -> bool:
         return False
 
 
+def _install_doxygen_direct() -> bool:
+    target = _tools_dir() / "doxygen"
+    exe = target / "doxygen.exe"
+    if exe.is_file():
+        console.info("doxygen: already present in deps/tools, skipping.")
+        return True
+    try:
+        url = _gh_latest_asset("doxygen/doxygen", "doxygen-*.windows.x64.bin.zip")
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
+            zip_dest = Path(f.name)
+        _download(url, zip_dest)
+        console.info(f"Extracting Doxygen to {target} ...")
+        with tempfile.TemporaryDirectory() as staging:
+            stage = Path(staging)
+            with zipfile.ZipFile(zip_dest) as zf:
+                zf.extractall(stage)
+            entries = list(stage.iterdir())
+            srcroot = entries[0] if len(entries) == 1 and entries[0].is_dir() else stage
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+            shutil.move(str(srcroot), str(target))
+        zip_dest.unlink(missing_ok=True)
+        _add_to_user_path_windows(str(target))
+        if exe.is_file():
+            return True
+        console.error("doxygen.exe not found after extracting the portable archive.")
+        return False
+    except Exception as exc:
+        console.error(f"Doxygen direct install failed: {exc}")
+        return False
+
+
 def _install_git_direct() -> bool:
     try:
         url = _gh_latest_asset("git-for-windows/git", "*64-bit.exe")
@@ -558,16 +590,18 @@ class WingetManager(IPackageManager):
 
 # Maps winget package IDs to the command-line tool they provide.
 WINGET_ID_TO_CMD: dict[str, str] = {
-    "Kitware.CMake":     "cmake",
-    "Ninja-build.Ninja": "ninja",
-    "Git.Git":           "git",
+    "Kitware.CMake":              "cmake",
+    "Ninja-build.Ninja":          "ninja",
+    "Git.Git":                    "git",
+    "DimitriVanHeesch.Doxygen":   "doxygen",
 }
 
 # Maps winget IDs to direct-download installer functions.
 _DIRECT_RECIPES: dict[str, Callable[[], bool]] = {
-    "Kitware.CMake":     _install_cmake_direct,
-    "Ninja-build.Ninja": _install_ninja_direct,
-    "Git.Git":           _install_git_direct,
+    "Kitware.CMake":             _install_cmake_direct,
+    "Ninja-build.Ninja":         _install_ninja_direct,
+    "Git.Git":                   _install_git_direct,
+    "DimitriVanHeesch.Doxygen":  _install_doxygen_direct,
 }
 
 

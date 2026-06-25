@@ -116,6 +116,7 @@ _ENV_OVERRIDES = {
     "llvm_root": "SR_LLVM_ROOT",
     "acpp_exe": "SR_ACPP",
     "pkgconf_exe": "SR_PKGCONF",
+    "doxygen_exe": "SR_DOXYGEN",
     "vcpkg_triplet": "SR_VCPKG_TRIPLET",
     "target_bin": "SR_TARGET_BIN",
 }
@@ -153,6 +154,9 @@ class Config:
     llvm_root: str = ""
     acpp_exe: str = ""
     pkgconf_exe: str = ""
+    # doxygen is resolved from PATH when empty; configurable because on Windows it
+    # commonly installs outside PATH (winget/choco shims or Program Files).
+    doxygen_exe: str = ""
     vcpkg_triplet: str = "x64-windows"
 
     # Run defaults
