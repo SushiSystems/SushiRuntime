@@ -21,8 +21,10 @@
 /* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-#include <future>
 #include <memory>
+#include <mutex>
+#include <condition_variable>
+#include <exception>
 #include <cstddef>
 #include <cstdint>
 #include <SushiRuntime/core/logger.hpp>
@@ -39,6 +41,63 @@ namespace SushiRuntime
     namespace Execution
     {
         /**
+         * @brief A reusable completion gate that replaces the per-step promise.
+         *
+         * execute() used to allocate a fresh std::promise/std::future pair (and a
+         * capturing sentinel closure) on every step of a replayed run — millions of
+         * heap allocations and a thread hand-off per million-step run, pure jitter on
+         * a real-time frame. This latch lives once on the engine and is reset, armed,
+         * and waited on each step with no allocation: the sentinel publishes the
+         * outcome under the mutex and notifies; the caller waits on the predicate.
+         *
+         * A condition_variable (not C++20 atomic::wait/a binary_semaphore, which the
+         * C++17 baseline lacks) is the portable allocation-free primitive here; the
+         * mutex is uncontended in steady state, so the cost is a futex wait, not a
+         * malloc. The failure carried alongside is published before done under the
+         * same lock, so a waiter that observes done sees a fully-written outcome.
+         */
+        struct CompletionLatch
+        {
+            std::mutex              mutex;          /**< Guards the fields below. */
+            std::condition_variable cv;            /**< Signalled when the run quiesces. */
+            bool                    done = false;   /**< True once the sentinel reported in. */
+            bool                    failed = false; /**< Whether the finished run failed. */
+            std::exception_ptr      error;          /**< First task exception, when failed. */
+
+            /** @brief Clears the gate for the next step before roots are submitted. */
+            void reset()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                done = false;
+                failed = false;
+                error = nullptr;
+            }
+
+            /**
+             * @brief Publishes a finished run's outcome and wakes the waiter.
+             * @param run_failed Whether a task threw during the run.
+             * @param err        The first exception when @p run_failed, else null.
+             */
+            void signal(bool run_failed, std::exception_ptr err)
+            {
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    failed = run_failed;
+                    error = std::move(err);
+                    done = true;
+                }
+                cv.notify_one();
+            }
+
+            /** @brief Blocks the caller until signal() reports the run done. */
+            void wait()
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                cv.wait(lock, [this] { return done; });
+            }
+        };
+
+        /**
          * @brief Private implementation of ExecutionEngine (Pimpl).
          *
          * Owns a single persistent TaskScheduler. The scheduler is started
@@ -52,6 +111,9 @@ namespace SushiRuntime
         {
             /** @brief Persistent scheduler that survives multiple graph executions. */
             SushiRuntime::Scheduler::TaskScheduler scheduler;
+
+            /** @brief Reusable per-step completion gate (replaces promise/future). */
+            CompletionLatch completion;
             std::unique_ptr<SushiRuntime::Scheduler::WorkloadCoordinator> rebalancer;
 
             /** @brief Whether the background rebalancer should be running. */
@@ -278,10 +340,12 @@ namespace SushiRuntime
          * Responsibility split (Madde 26 / SRP fix):
          *  - TaskGraph::compile() builds the DAG and the root list.
          *  - ExecutionEngine::execute() handles thread orchestration, the
-         *    sentinel node setup, promise/future signalling, and graph cleanup.
+         *    sentinel node setup, completion signalling, and graph cleanup.
          *
          * The persistent scheduler is "re-armed" for this execution round via
-         * arm_for_execution() instead of being destroyed and recreated (Madde 7).
+         * arm_for_execution() instead of being destroyed and recreated (Madde 7),
+         * and completion flows through one reusable CompletionLatch on the engine
+         * rather than a promise/future allocated per step.
          */
         sycl::event ExecutionEngine::execute(CompiledGraph& graph)
         {
@@ -291,88 +355,79 @@ namespace SushiRuntime
             SR_LOG_INFO("Executing graph ({} root nodes).", graph.roots.size());
 
             // -----------------------------------------------------------------
-            // Step 1: Wire the sentinel node's host_work before submitting roots.
-            //         The sentinel captures the promises and the scheduler pointer
-            //         so it can signal completion from inside the worker thread.
+            // Step 1: Wire the sentinel's host_work once. It captures only stable
+            //         pointers — the engine's latch and scheduler — so the closure
+            //         is built the first time this plan runs and reused for every
+            //         later step, instead of being reassigned each call. A recompile
+            //         produces a fresh sentinel (empty host_work), which re-wires.
             // -----------------------------------------------------------------
-            auto completion_signal        = std::make_shared<std::promise<void>>();
-            auto completion_signal_future = completion_signal->get_future();
-            auto completion_event_promise = std::make_shared<std::promise<sycl::event>>();
-            auto completion_event_future  = completion_event_promise->get_future();
+            if (!graph.sentinel->host_work)
+            {
+                graph.sentinel->metadata.name = "graph_completion_sentinel";
+                graph.sentinel->is_sentinel   = true;
+                graph.sentinel->mode          = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
 
-            auto* sched_ptr = &impl_->scheduler;
+                auto* latch     = &impl_->completion;
+                auto* sched_ptr = &impl_->scheduler;
+                graph.sentinel->host_work =
+                    [latch, sched_ptr]
+                    (sycl::queue&, const std::vector<sycl::event>& deps) -> sycl::event
+                    {
+                        // The sentinel is the final node: the DAG only dispatches it
+                        // once every predecessor's event has completed. Signal
+                        // completion directly in C++ rather than through a SYCL host
+                        // operation — AdaptiveCpp does not run a custom-operation
+                        // callback until its event is waited on, so a host-task-based
+                        // sentinel would never fire and execute() would block forever.
+                        // Wait on the predecessor events first so any device work is
+                        // genuinely flushed (this also drives AdaptiveCpp's queue to
+                        // completion) before we report done. Copy each event:
+                        // AdaptiveCpp's event::wait() is non-const and deps is const.
+                        for (auto e : deps)
+                            if (e != sycl::event{})
+                                e.wait();
 
-            graph.sentinel->metadata.name = "graph_completion_sentinel";
-            graph.sentinel->is_sentinel   = true;
-            graph.sentinel->mode          = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
-            graph.sentinel->host_work     =
-                [sched_ptr, completion_signal, completion_event_promise]
-                (sycl::queue&, const std::vector<sycl::event>& deps) -> sycl::event
-                {
-                    // The sentinel is the final node: the DAG only dispatches it
-                    // once every predecessor's event has completed. Signal completion
-                    // directly in C++ rather than through a SYCL host operation —
-                    // AdaptiveCpp does not run a custom-operation callback until its
-                    // event is waited on, so a host-task-based sentinel would never
-                    // fire and execute() would block forever. Wait on the predecessor
-                    // events first so any device work is genuinely flushed (this also
-                    // drives AdaptiveCpp's queue to completion) before we report done.
-                    // Copy each event: AdaptiveCpp's event::wait() is non-const,
-                    // and deps is a const vector. sycl::event is a cheap handle.
-                    for (auto e : deps)
-                        if (e != sycl::event{})
-                            e.wait();
+                        // Read the run outcome before re-arming: arm_for_execution()
+                        // clears run_failed_ for the next round, so capture it first.
+                        // A failed run still drains every node to this sentinel, so
+                        // reaching here means the run has quiesced either way.
+                        const bool failed = sched_ptr->run_failed();
+                        std::exception_ptr err = failed ? sched_ptr->run_error() : nullptr;
 
-                    // Read the run outcome before re-arming: arm_for_execution()
-                    // clears run_failed_ for the next round, so capture it first.
-                    // A failed run still drains every node to this sentinel (the
-                    // failed task and all later ones are routed through completion),
-                    // so reaching here means the run has quiesced either way.
-                    const bool failed = sched_ptr->run_failed();
-                    std::exception_ptr err = failed ? sched_ptr->run_error() : nullptr;
+                        sched_ptr->arm_for_execution(); // re-arm for the NEXT round
 
-                    sched_ptr->arm_for_execution(); // re-arm for the NEXT round
-
-                    completion_event_promise->set_value(sycl::event{});
-                    if (failed)
-                        completion_signal->set_exception(err);
-                    else
-                        completion_signal->set_value();
-                    return {};
-                };
+                        latch->signal(failed, std::move(err));
+                        return {};
+                    };
+            }
 
             // -----------------------------------------------------------------
-            // Step 2: Arm the scheduler for this execution round, then submit roots.
-            //         arm_for_execution() resets the internal "done" state without
-            //         touching the live worker threads.
+            // Step 2: Reset the latch, arm the scheduler, then submit roots.
+            //         The reset must precede submission so a waiter cannot observe
+            //         the previous step's completion. The caller's wait() returned
+            //         only after the previous sentinel signalled, i.e. after that
+            //         step fully drained, so resetting here races nothing.
             // -----------------------------------------------------------------
+            impl_->completion.reset();
             impl_->scheduler.arm_for_execution();
 
             for (auto* root : graph.roots)
                 impl_->scheduler.submit(root);
 
             // -----------------------------------------------------------------
-            // Step 3: Block the calling thread until the sentinel fires.
+            // Step 3: Block until the sentinel signals the latch, then surface a
+            //         failure exactly as before (rethrow; the pool stays re-armable).
             // -----------------------------------------------------------------
+            impl_->completion.wait();
 
-            try
+            if (impl_->completion.failed)
             {
-                // The sentinel always fires — a failed run still drains every node
-                // to it — and delivers either set_value (success) or set_exception
-                // (the first task error), so get() returns or rethrows here.
-                completion_signal_future.wait();
-                completion_signal_future.get();
+                SR_LOG_ERROR("Graph execution aborted due to a task error.");
+                std::rethrow_exception(impl_->completion.error);
             }
-            catch (const std::exception& e)
-            {
-                SR_LOG_ERROR("Graph execution aborted due to an internal error: {}", e.what());
-                throw; // Surface the error to user code; the pool stays re-armable.
-            }
-
-            sycl::event completion_event = completion_event_future.get();
 
             SR_LOG_INFO("Graph execution completed.");
-            return completion_event;
+            return sycl::event{};
         }
 
         // Defined here, not in the header: constructing the CompiledGraph local
