@@ -22,6 +22,7 @@ venv/
 
 # Machine-specific CLI config (committed config.toml holds shared defaults)
 cli/config.local.toml
+cli/config.local.toml.bak
 
 # Python build / editable-install artifacts
 cli/build/
