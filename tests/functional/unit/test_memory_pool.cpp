@@ -26,6 +26,7 @@
 // in benchmark/stress, but the lock-free remote-free + lazy-drain path gets one
 // deterministic guard here too.
 
+#include <atomic>
 #include <vector>
 #include <thread>
 #include <unordered_set>
@@ -230,4 +231,94 @@ TEST(Unit_USMAllocatorTest, CrossThreadFreeIsReclaimed)
 
     for (void* p : wave2)
         allocator->deallocate(p);
+}
+
+/**
+ * @brief A thread that outlives its RuntimeContext exits cleanly.
+ *
+ * The worker fills its thread-local magazine, then the context (and its
+ * allocator) is destroyed while the thread is still alive. When the thread
+ * finally exits, its magazine destructor flushes into an allocator that no
+ * longer exists; the flush must safely no-op rather than touch freed pages.
+ * Run under ASan, this catches the teardown use-after-free.
+ */
+TEST(Unit_USMAllocatorTest, ThreadOutlivingContextExitsCleanly)
+{
+    std::atomic<bool> populated{false};
+    std::atomic<bool> context_gone{false};
+
+    std::thread app;
+    {
+        RuntimeContext ctx;
+        // Raw pointer only: the temporary sushi_ptr is dropped here, so the
+        // thread does not keep the allocator alive past the context.
+        Memory::USMAllocator* alloc = ctx.get_allocator().get();
+
+        app = std::thread([&, alloc]
+        {
+            std::vector<void*> ptrs;
+            ptrs.reserve(200);
+            for (int i = 0; i < 200; ++i)
+                ptrs.push_back(alloc->allocate(128));
+            for (void* p : ptrs)
+                alloc->deallocate(p);   // populate this thread's magazine
+
+            populated.store(true, std::memory_order_release);
+            while (!context_gone.load(std::memory_order_acquire))
+                std::this_thread::yield();
+            // Returning here runs the thread-local magazine destructor after the
+            // allocator is gone — the path under test.
+        });
+
+        while (!populated.load(std::memory_order_acquire))
+            std::this_thread::yield();
+    } // RuntimeContext destroyed: allocator and its pages are freed.
+
+    context_gone.store(true, std::memory_order_release);
+    app.join();
+    SUCCEED();
+}
+
+/**
+ * @brief Interleaving allocations across allocators stays correct.
+ *
+ * With per-allocator magazine banks, a thread can hold several allocators' caches
+ * at once. Interleaving more allocators than MAX_ALLOCATORS also exercises the
+ * LRU eviction path. Every allocator must return valid, non-overlapping, usable
+ * memory regardless of interleaving.
+ */
+TEST(Unit_USMAllocatorTest, InterleavedMultiAllocatorIsCorrect)
+{
+    RuntimeContext ctx;
+    sycl::queue& q = ctx.get_queue(0);
+
+    // More than ThreadLocalMagazine::MAX_ALLOCATORS (4) to force bank eviction.
+    constexpr int NUM_ALLOC = 6;
+    constexpr int PER_ALLOC = 100;
+
+    std::vector<sushi_ptr<Memory::USMAllocator>> allocs;
+    for (int i = 0; i < NUM_ALLOC; ++i)
+        allocs.push_back(Memory::create_allocator(q));
+
+    std::vector<std::vector<void*>> ptrs(NUM_ALLOC);
+    std::unordered_set<void*> all;
+
+    // Round-robin across allocators so a single thread cycles their banks.
+    for (int round = 0; round < PER_ALLOC; ++round)
+    {
+        for (int a = 0; a < NUM_ALLOC; ++a)
+        {
+            void* p = allocs[a]->allocate(128);
+            ASSERT_NE(p, nullptr) << "alloc " << a << " round " << round;
+            auto* bytes = static_cast<volatile char*>(p);
+            bytes[0]   = static_cast<char>(a);
+            bytes[127] = static_cast<char>(a);   // usable across its whole extent
+            ptrs[a].push_back(p);
+            ASSERT_TRUE(all.insert(p).second) << "live pointer aliased across allocators";
+        }
+    }
+
+    for (int a = 0; a < NUM_ALLOC; ++a)
+        for (void* p : ptrs[a])
+            allocs[a]->deallocate(p);   // each pointer goes back to its own allocator
 }

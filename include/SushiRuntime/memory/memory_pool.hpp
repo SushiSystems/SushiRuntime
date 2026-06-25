@@ -26,6 +26,7 @@
 #include <SushiRuntime/core/bit.hpp>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -74,127 +75,162 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Zero-Atomic Thread Local Magazine.
+         * @brief Zero-atomic thread-local magazine with per-allocator banks.
          *
-         * Operates completely wait-free and atomic-free in the hot path.
-         * Replaces single-fetch caching with a magazine model.
-         *
-         * @note Multi-allocator flush cliff: the magazine tracks the most
-         *       recently used USMAllocator instance via current_alloc_id.
-         *       When a thread allocates from a different allocator than the
-         *       one cached in the magazine, the entire magazine is flushed
-         *       through g_flush_callback before the new allocation proceeds.
-         *       This is acceptable for single-allocator workloads (the typical
-         *       case) but represents a hidden cost for workloads that
-         *       interleave allocations across multiple USMAllocator instances
-         *       (e.g., multi-GPU systems, multi-context workloads). Such
-         *       workloads should batch their allocations per-allocator to
-         *       avoid repeated flushes, or use distinct worker threads per
-         *       allocator instance.
+         * Operates wait-free and atomic-free in the hot path. Each USMAllocator
+         * gets its own bank of cached slots, so interleaving allocations across
+         * allocators (multi-GPU / multi-context) no longer flushes the whole
+         * magazine on every switch — the old "flush cliff". A thread keeps up to
+         * MAX_ALLOCATORS banks; touching one more evicts the least-recently-used
+         * bank (flushing it back to its allocator). The common single-allocator
+         * case stays on the fast path via the cur_bank_ cache: one comparison,
+         * no scan.
          */
-        struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) ThreadLocalMagazine 
+        struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) ThreadLocalMagazine
         {
-            static constexpr size_t BATCH_SIZE = 256; 
+            static constexpr size_t BATCH_SIZE = 256;
             static constexpr size_t NUM_BUCKETS = 4;
+
+            /**
+             * @brief Per-thread cap on simultaneously cached allocator banks.
+             *
+             * Covers typical heterogeneous nodes (a worker touches its NUMA-local
+             * device, occasionally a sibling). A thread that interleaves more than
+             * this many allocators evicts the LRU bank on each new one — correct,
+             * just back to paying a flush. Sized to balance that against the
+             * per-thread memory cost (each bank is NUM_BUCKETS * BATCH_SIZE ptrs).
+             */
+            static constexpr size_t MAX_ALLOCATORS = 4;
 
             /**
              * @brief Low-watermark threshold for proactive refill.
              *
              * When a bucket's count drops below this value, is_low() returns
-             * true. Callers (typically the USMAllocator) may use this signal
-             * to trigger an early refill from BitmaskMemoryPool, smoothing
-             * out the worst-case latency spike that occurs when a bucket
-             * empties completely and must refill on the critical path.
-             *
-             * Set to 25% of BATCH_SIZE. Lower values delay refill (more
-             * spikes); higher values refill too eagerly (wasted work).
+             * true. Set to 25% of BATCH_SIZE: lower delays refill (more spikes),
+             * higher refills too eagerly (wasted work).
              */
             static constexpr size_t LOW_WATERMARK = BATCH_SIZE / 4;
 
-            void* ptrs[NUM_BUCKETS][BATCH_SIZE];
-            size_t count[NUM_BUCKETS] = {0};
-            uint64_t current_alloc_id = 0;
+            /** @brief One allocator's cached slots; alloc_id 0 means the bank is unused. */
+            struct Bank
+            {
+                uint64_t alloc_id = 0;
+                uint64_t lru = 0;                       /**< Last-use tick, for eviction. */
+                size_t count[NUM_BUCKETS] = {0};
+                void* ptrs[NUM_BUCKETS][BATCH_SIZE];
+            };
 
-            inline void flush_all() 
+            Bank banks[MAX_ALLOCATORS];
+            uint64_t tick_ = 0;          /**< Monotonic clock for LRU ordering. */
+            Bank* cur_bank_ = nullptr;   /**< Last bank used; the single-allocator fast path. */
+
+            /** @brief Flushes one bank's slots back to its allocator and empties it. */
+            inline void flush_bank(Bank& b)
             {
                 FlushCallback cb = g_flush_callback.load(std::memory_order_acquire);
-                if (cb) 
+                for (size_t i = 0; i < NUM_BUCKETS; ++i)
                 {
-                    for (size_t i = 0; i < NUM_BUCKETS; ++i) 
+                    if (b.count[i] > 0)
                     {
-                        if (count[i] > 0) 
-                        {
-                            cb(current_alloc_id, i, ptrs[i], count[i]);
-                            count[i] = 0;
-                        }
+                        if (cb) cb(b.alloc_id, static_cast<int>(i), b.ptrs[i], b.count[i]);
+                        b.count[i] = 0;
                     }
                 }
             }
 
-            inline void check_alloc_id(uint64_t alloc_id) 
+            /** @brief Flushes every bank; called on thread exit. */
+            inline void flush_all()
             {
-                if (current_alloc_id != alloc_id) 
-                {
-                    flush_all();
-                    current_alloc_id = alloc_id;
-                }
+                for (auto& b : banks)
+                    if (b.alloc_id != 0)
+                        flush_bank(b);
             }
 
-            // HOT PATH: 2 CPU instructions. No atomics, no locks.
-            inline void* pop(int bucket_idx, uint64_t alloc_id) 
+            /**
+             * @brief Resolves the bank for @p alloc_id, allocating or evicting as needed.
+             *
+             * Fast path: the cached cur_bank_ when the id is unchanged. Otherwise
+             * scans for a matching or empty bank; if all banks are in use, evicts
+             * (flushes) the least-recently-used one. Owner-thread only — no locks.
+             * @param alloc_id The allocator whose bank is requested.
+             * @return Reference to the resolved bank.
+             */
+            inline Bank& bank_for(uint64_t alloc_id)
             {
-                check_alloc_id(alloc_id);
+                if (cur_bank_ && cur_bank_->alloc_id == alloc_id)
+                    return *cur_bank_;
 
-                if (count[bucket_idx] == 0) 
+                Bank* victim = &banks[0];
+                for (auto& b : banks)
+                {
+                    if (b.alloc_id == alloc_id)
+                    {
+                        b.lru = ++tick_;
+                        cur_bank_ = &b;
+                        return b;
+                    }
+                    if (b.alloc_id == 0)
+                    {
+                        b.alloc_id = alloc_id;
+                        b.lru = ++tick_;
+                        cur_bank_ = &b;
+                        return b;
+                    }
+                    if (b.lru < victim->lru) victim = &b;
+                }
+
+                // All banks in use: evict the LRU back to its allocator, then reuse it.
+                flush_bank(*victim);
+                victim->alloc_id = alloc_id;
+                victim->lru = ++tick_;
+                cur_bank_ = victim;
+                return *victim;
+            }
+
+            // HOT PATH: bank lookup (cached) + one decrement. No atomics, no locks.
+            inline void* pop(int bucket_idx, uint64_t alloc_id)
+            {
+                Bank& b = bank_for(alloc_id);
+                if (b.count[bucket_idx] == 0)
                     return nullptr;
 
-                return ptrs[bucket_idx][--count[bucket_idx]];
+                return b.ptrs[bucket_idx][--b.count[bucket_idx]];
             }
 
-            // HOT PATH: 3 CPU instructions. No atomics, no locks.
-            inline bool push(int bucket_idx, void* ptr, uint64_t alloc_id) 
+            // HOT PATH: bank lookup (cached) + one store. No atomics, no locks.
+            inline bool push(int bucket_idx, void* ptr, uint64_t alloc_id)
             {
-                check_alloc_id(alloc_id);
-                if (count[bucket_idx] >= BATCH_SIZE) 
+                Bank& b = bank_for(alloc_id);
+                if (b.count[bucket_idx] >= BATCH_SIZE)
                     return false; // Magazine Full
 
-                ptrs[bucket_idx][count[bucket_idx]++] = ptr;
-
+                b.ptrs[bucket_idx][b.count[bucket_idx]++] = ptr;
                 return true;
             }
 
             /**
              * @brief Returns true if a bucket is below the low-watermark.
-             *
-             * Used by callers to decide whether to trigger a proactive
-             * refill from BitmaskMemoryPool. A "low" bucket is not yet
-             * empty (pop will still succeed) but is approaching exhaustion.
-             *
-             * Refilling while pop is still serviceable hides the refill
-             * cost from the critical path of subsequent allocations.
-             *
              * @param bucket_idx The bucket to query.
-             * @return true if count[bucket_idx] < LOW_WATERMARK.
+             * @param alloc_id The allocator whose bank to query.
+             * @return true if the bank's count for the bucket is below LOW_WATERMARK.
              */
-            inline bool is_low(int bucket_idx) const 
+            inline bool is_low(int bucket_idx, uint64_t alloc_id)
             {
-                return count[bucket_idx] < LOW_WATERMARK;
+                return bank_for(alloc_id).count[bucket_idx] < LOW_WATERMARK;
             }
 
             /**
-             * @brief Returns the number of free slots in a bucket.
+             * @brief Returns the number of free slots in a bucket of an allocator's bank.
              *
-             * Used by BitmaskMemoryPool::bulk_claim_capped to size a partial
-             * page claim, so that a thread does not greedily claim all 64
-             * slots of a page when its magazine can only absorb a few.
-             *
+             * Used by the allocator to size a bulk_claim_capped so it does not
+             * grab more page slots than the magazine can hold.
              * @param bucket_idx The bucket to query.
-             * @return Number of slots that can still be pushed before the
-             *         magazine bucket is full.
+             * @param alloc_id The allocator whose bank to query.
+             * @return Slots that can still be pushed before the bank bucket is full.
              */
-            inline size_t free_capacity(int bucket_idx) const 
+            inline size_t free_capacity(int bucket_idx, uint64_t alloc_id)
             {
-                return BATCH_SIZE - count[bucket_idx];
+                return BATCH_SIZE - bank_for(alloc_id).count[bucket_idx];
             }
 
             ~ThreadLocalMagazine() { flush_all(); }
