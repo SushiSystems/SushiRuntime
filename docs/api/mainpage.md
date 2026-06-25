@@ -52,6 +52,7 @@ auto report = sim.run(10'000);                   // compile once, replay 10k ste
 | Run plain CPU work in the graph | `SushiRuntime::API::Graph::add_host()` |
 | Keep a field on the device | `SushiRuntime::API::Residency`, `Buffer::read_range` / `write_range` |
 | Tune for real-time / determinism | `SushiRuntime::API::Runtime::rebalancer()` |
+| Profile per-node / per-worker timing | `SushiRuntime::API::RuntimeConfig`, `SushiRuntime::Core::NodeTiming`, `WorkerTiming` |
 | Read run results | `SushiRuntime::Core::RunReport` |
 
 Browse the full list under **Classes** and **Namespaces** in the sidebar; every

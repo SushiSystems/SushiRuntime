@@ -67,6 +67,40 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Per-node (per-system) timing accumulated over a run.
+         *
+         * The breakdown a frame budget is tuned against: how long each node spent on
+         * the device versus on a worker thread, summed across every step the run
+         * replayed. Populated only when the runtime was created with profiling on;
+         * otherwise the report carries no node rows.
+         */
+        struct NodeTiming
+        {
+            std::size_t plan_index = 0;     /**< Stable index of the node in the compiled plan; the identity. */
+            std::string name;               /**< Node label, or the default task id when none was set. */
+            std::size_t invocations = 0;    /**< Times the node was dispatched across the run. */
+            double device_ms = 0.0;         /**< Summed kernel device time (from SYCL event profiling). */
+            double host_ms = 0.0;           /**< Summed wall-clock for native/host work run on a worker. */
+        };
+
+        /**
+         * @brief Per-worker time breakdown that attributes where a run's time went.
+         *
+         * Separates real work from starvation and scheduling overhead so a stall can
+         * be attributed: a worker mostly idle or stealing means the graph is too
+         * narrow, while high polling time points at completion/sync overhead.
+         * Populated only when profiling is on.
+         */
+        struct WorkerTiming
+        {
+            int worker_id = -1;      /**< Worker thread this row describes. */
+            double busy_ms = 0.0;    /**< Time spent inside task execution. */
+            double stealing_ms = 0.0;/**< Time spent searching victims for work to steal. */
+            double polling_ms = 0.0; /**< Time spent polling in-flight events for completion. */
+            double idle_ms = 0.0;    /**< Time spent backing off or waiting to be armed. */
+        };
+
+        /**
          * @brief Summarizes the execution statistics of a single graph run.
          *
          * Aggregates execution times, NUMA topology breakdowns, and distributed network metrics.
@@ -96,6 +130,10 @@ namespace SushiRuntime
 
             // F. Diagnostics
             std::vector<std::string> warnings;          /**< Non-fatal notes raised during the run. */
+
+            // G. Profiling breakdown (populated only when the runtime has profiling on)
+            std::vector<NodeTiming>   node_timings;     /**< Per-node device/host timing; empty when profiling is off. */
+            std::vector<WorkerTiming> worker_timings;   /**< Per-worker busy/steal/poll/idle split; empty when profiling is off. */
         };
 
     } // namespace Core
