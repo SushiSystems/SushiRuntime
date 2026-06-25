@@ -74,10 +74,14 @@ namespace SushiRuntime
                  * @param config         Device-class filter for hardware discovery.
                  * @param provider       Topology source; null selects the hwloc default.
                  * @param distance_model NUMA distance model; null selects the hwloc default.
+                 * @param profiling      Build queues with SYCL profiling enabled so
+                 *                        RunReport can report per-kernel device timing;
+                 *                        false (default) builds them as before.
                  */
                 explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {},
                                         std::shared_ptr<Topology::ITopologyProvider> provider = nullptr,
-                                        std::shared_ptr<Topology::INumaDistanceModel> distance_model = nullptr);
+                                        std::shared_ptr<Topology::INumaDistanceModel> distance_model = nullptr,
+                                        bool profiling = false);
                 
                 /** @brief Destroys the context and frees all resources. */
                 ~RuntimeContext();
@@ -95,6 +99,40 @@ namespace SushiRuntime
                  * @param config Device-class filter; defaults to including all classes.
                  */
                 void probe_hardware(const Topology::HardwareFilterConfig& config = {});
+
+                /**
+                 * @brief Whether this context's queues were built with profiling on.
+                 *
+                 * Lets the run driver skip all profiling collection when the context
+                 * was created without it, keeping the no-profiling path free of timing
+                 * reads. Fixed at construction.
+                 *
+                 * @return True if device kernel timing is available, false otherwise.
+                 */
+                bool profiling_enabled() const noexcept;
+
+                /**
+                 * @brief Records bytes copied device->host by an explicit transfer.
+                 *
+                 * Called by the selective-readback path (Buffer::read_range) so a run
+                 * report can attribute host-pull traffic. Counts only runtime-issued
+                 * copies, never the driver's implicit USM migration.
+                 *
+                 * @param bytes Number of bytes copied out to the host.
+                 */
+                void add_device_to_host_bytes(std::size_t bytes) noexcept;
+
+                /**
+                 * @brief Records bytes copied host->device by an explicit transfer.
+                 * @param bytes Number of bytes copied to the device (Buffer::write_range).
+                 */
+                void add_host_to_device_bytes(std::size_t bytes) noexcept;
+
+                /** @brief Cumulative device->host bytes from explicit transfers. */
+                std::size_t device_to_host_bytes() const noexcept;
+
+                /** @brief Cumulative host->device bytes from explicit transfers. */
+                std::size_t host_to_device_bytes() const noexcept;
 
                 /**
                  * @brief Gets a SYCL queue for a specific device.

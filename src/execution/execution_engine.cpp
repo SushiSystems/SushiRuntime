@@ -23,6 +23,8 @@
 
 #include <future>
 #include <memory>
+#include <cstddef>
+#include <cstdint>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/graph/node.hpp>
@@ -191,6 +193,61 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Zeroes node and per-worker profiling accumulators before a run.
+         */
+        void ExecutionEngine::reset_profiling(CompiledGraph& graph)
+        {
+            for (auto& n : graph.all_nodes)
+            {
+                n->prof_invocations.store(0, std::memory_order_relaxed);
+                n->prof_device_ns.store(0, std::memory_order_relaxed);
+                n->prof_host_ns.store(0, std::memory_order_relaxed);
+            }
+            impl_->scheduler.reset_worker_times();
+        }
+
+        /**
+         * @brief Reads the accumulators into a report's profiling breakdown.
+         */
+        void ExecutionEngine::collect_profiling(CompiledGraph& graph,
+                                                Core::RunReport& report) const
+        {
+            for (auto& n : graph.all_nodes)
+            {
+                if (n->is_sentinel) continue;
+                const std::uint64_t inv = n->prof_invocations.load(std::memory_order_relaxed);
+                if (inv == 0) continue;
+
+                Core::NodeTiming t;
+                t.plan_index  = n->plan_index;
+                t.name        = n->metadata.name;
+                t.invocations = static_cast<std::size_t>(inv);
+                t.device_ms   = n->prof_device_ns.load(std::memory_order_relaxed) / 1.0e6;
+                t.host_ms     = n->prof_host_ns.load(std::memory_order_relaxed) / 1.0e6;
+                report.node_timings.push_back(std::move(t));
+            }
+
+            double polling_ms_total = 0.0;
+            const std::size_t workers = impl_->scheduler.get_worker_count();
+            for (std::size_t i = 0; i < workers; ++i)
+            {
+                const auto s = impl_->scheduler.get_worker_times(static_cast<int>(i));
+                Core::WorkerTiming w;
+                w.worker_id   = static_cast<int>(i);
+                w.busy_ms     = s.busy_ns / 1.0e6;
+                w.stealing_ms = s.stealing_ns / 1.0e6;
+                w.polling_ms  = s.polling_ns / 1.0e6;
+                w.idle_ms     = s.idle_ns / 1.0e6;
+                polling_ms_total += w.polling_ms;
+                report.worker_timings.push_back(w);
+            }
+
+            // Completion polling is the scheduler's own overhead between kernels;
+            // surface it in the long-reserved field so a frame can be tuned against it.
+            report.scheduling_overhead_ms = polling_ms_total;
+        }
+
+        /**
          * @brief Retrieves the current execution metrics.
          *
          * Aggregates completed task and steal counts across all workers.
@@ -352,8 +409,14 @@ namespace SushiRuntime
         {
             base_in_degree.clear();
             base_in_degree.reserve(all_nodes.size());
-            for (auto& n : all_nodes)
+            for (std::size_t i = 0; i < all_nodes.size(); ++i)
+            {
+                auto& n = all_nodes[i];
+                // Stamp the node's stable plan identity here, the one pass that
+                // already walks every node once after compile.
+                n->plan_index = i;
                 base_in_degree.push_back(n->in_degree.load(std::memory_order_relaxed));
+            }
             sentinel_in_degree = sentinel
                 ? sentinel->in_degree.load(std::memory_order_relaxed) : 0;
         }

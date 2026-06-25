@@ -9,6 +9,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- RunReport observability (§5.5): opt-in profiling, chosen once at
+  `Runtime::create({}, cfg)` with `RuntimeConfig::profiling = true`. When on, a run
+  report carries a per-node breakdown (`node_timings`: device vs host time and
+  invocation count per system, keyed by a stable plan index) and a per-worker stall
+  split (`worker_timings`: busy / stealing / polling / idle), and fills the
+  previously-reserved `scheduling_overhead_ms` from completion-polling time. Device
+  timing comes from SYCL event profiling (queues are built with profiling enabled
+  only in this mode); a backend without profiling support keeps the counts and skips
+  device time. Off by default: queues and the dispatch hot path are as before,
+  reading no timestamps, and the report's profiling vectors stay empty. Explicit
+  host<->device transfers issued by `Buffer::read_range`/`write_range` are always
+  accounted (`host_to_device_bytes` / `device_to_host_bytes`, attributed to the run
+  window); implicit shared-USM driver migration is not observable through SYCL and is
+  deliberately not reported.
 - Fluent API reference site: a repo-root `Doxyfile` scoped to the public
   `include/SushiRuntime/api` surface, a hand-written manual landing
   (`docs/api/mainpage.md`), and the getting-started guide build together into a
