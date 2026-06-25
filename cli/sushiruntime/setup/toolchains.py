@@ -19,6 +19,7 @@ the intel-llvm path is enough to build, so an acpp build failure is non-fatal.
 
 from __future__ import annotations
 
+import glob as _glob
 import os
 import shutil
 import subprocess
@@ -35,6 +36,23 @@ from .package_managers import (
     _gh_tagged_asset,
     _run,
 )
+
+
+def _run_quiet(cmd: list[str], dry_run: bool) -> bool:
+    """Run *cmd* silently; on failure print the last 20 lines of output."""
+    console.command(subprocess.list2cmdline(cmd))
+    if dry_run:
+        console.info("(dry-run) not executed")
+        return True
+    result = subprocess.run(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    if result.returncode != 0:
+        lines = (result.stdout or "").splitlines()
+        for line in lines[-20:]:
+            console.console.print(line, markup=False, highlight=False)
+    return result.returncode == 0
 
 # AdaptiveCpp release pinned to match the Dockerfile (ADAPTIVECPP_VERSION).
 ACPP_VERSION = "v24.10.0"
@@ -83,6 +101,18 @@ def _confirm_timeout(message: str, timeout: int = _LLVM_CONSENT_TIMEOUT,
         console.info(f"No answer in {timeout}s — defaulting to "
                      f"{'yes' if default else 'no'}.")
     return result[0]
+
+
+def _find_windows_sdk_rc_dir() -> str:
+    """Return the directory containing rc.exe from the Windows 10/11 SDK, or ''."""
+    for pat in [
+        r"C:/Program Files (x86)/Windows Kits/10/bin/*/x64/rc.exe",
+        r"C:/Program Files/Windows Kits/10/bin/*/x64/rc.exe",
+    ]:
+        hits = sorted(_glob.glob(pat))
+        if hits:
+            return str(Path(hits[-1]).parent)
+    return ""
 
 
 def _find_windows_llvm() -> tuple[str, str] | None:
@@ -308,12 +338,23 @@ def install_adaptivecpp(cfg: Config, mgr: IPackageManager | None,
         if cfg.ninja_exe:
             cfg_cmd.append(f"-DCMAKE_MAKE_PROGRAM={cfg.expand(cfg.ninja_exe)}")
 
-        if _run(cfg_cmd, dry_run, check=True) != 0:
-            console.warn("AdaptiveCpp configure failed; skipping.")
+        # On Windows, clang-cl needs rc.exe (Windows SDK Resource Compiler) on
+        # PATH for the manifest-embed step. vcvars is not sourced here, so we
+        # locate the SDK bin dir and inject it into the subprocess environment.
+        if cfg.is_windows:
+            rc_dir = _find_windows_sdk_rc_dir()
+            if rc_dir and rc_dir.lower() not in os.environ.get("PATH", "").lower():
+                os.environ["PATH"] = rc_dir + os.pathsep + os.environ.get("PATH", "")
+
+        configure_ok = _run_quiet(cfg_cmd, dry_run)
+        if not configure_ok:
+            console.warn("AdaptiveCpp configure failed; skipping. "
+                         "intel-llvm is installed and selected.")
             return None
         if _run([cmake, "--build", str(build), "--target", "install"],
                 dry_run, check=True) != 0:
-            console.warn("AdaptiveCpp build failed; skipping.")
+            console.warn("AdaptiveCpp build failed; skipping. "
+                         "intel-llvm is installed and selected.")
             return None
 
     result = next((c for c in (acpp, acpp_exe) if c.is_file()), None)
