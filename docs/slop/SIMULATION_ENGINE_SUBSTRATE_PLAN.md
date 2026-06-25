@@ -67,7 +67,7 @@ project owner. They are not assumptions; they reshape the priorities in §7–§
 | L12 | **Claude builds the domain layers** (ECS + physics) as **separate, zero-coupling libraries** (no runtime header in them); the fluent API **may be freely extended**. | The plan must reach implementation-level API contracts; new fluent overloads (late binding, regions, device state) are permitted. |
 | L13 | **Native CPU execution path is wanted, but fully abstracted** behind the existing SYCL + scheduler model — invisible to the user side, single completion contract, low maintenance. | Add a native-thread path for pure-CPU HOST tasks behind `Task::ExecutionMode`, reusing the existing "empty-event = ready inline" seam (`event_polling.hpp:63`). One branch in `execute_task`, **not** a second scheduler. |
 | L14 | **The engine is a separate repository, `SushiEngine` (not yet created).** Strict role split: **SushiEngine = the engine** (entities, physics, scenes — the *what*); **SushiRuntime = computes and schedules** (the *when / where / how*). | The ECS and physics libraries live in the **SushiEngine** repo and depend only on SushiRuntime's **public API** (the fluent layer + any new public seams). SushiRuntime gains **no** engine concept. This document plans the SushiRuntime-side seams (WP-0…WP-2, WP-4…WP-7) and the contracts SushiEngine builds against (WP-3 is the SushiEngine side). Keep the two repos' roles distinct at all times. |
-| L15 | **Pure C++ for v1** — no scripting/authoring frontend. | No Python/binding work in scope; worlds and systems are defined in C++. The architecture should not preclude a later scripting layer, but none is built now. |
+| L15 | **Pure C++ for v1** — no scripting/authoring frontend. **Python frontend is explicitly ABANDONED** (decided 2026-06-25): the audience is **industry, not researchers**, so a binding layer would only cost time. The C++ **Fluent API is the one and only frontend**, and it gets first-class developer experience: proper docs + a **Unity3D-scripting-API-style documentation website** (a browsable API-reference site, not just README prose). | No Python/binding work in scope; worlds and systems are defined in C++. The fluent API surface is the product's public face, so it ships with a real docs site (see **WP-DOCS**, §7). The architecture should not preclude a later scripting layer, but none is built now. |
 | L16 | **First end-to-end milestone = a tiny ECS vertical slice.** | A few components + 2–3 systems proving parallel system scheduling and deferred spawn/destroy — the "graph behaves like a game engine" thesis. It may use dense arrays at tiny scale (region identity not yet required), then graduate to chunks. See §10. |
 | L17 | **WP-0 order: the two deadlock BLOCKERs first** (§3.1 event-cap, §3.4 deque), then error isolation, cancellation, magazine. | Sequences the first weeks; deadlocks are the items that make any larger graph unsafe, so they lead. |
 
@@ -744,6 +744,42 @@ the fallback.
 
 ---
 
+### WP-DOCS — Fluent API documentation site (per L15, Unity-style)
+
+**Problem:** the C++ Fluent API is now the *only* frontend (Python abandoned, L15) and
+the product's public face for an **industry** audience. A README is not enough; the
+owner wants a Unity3D-scripting-API-style experience: a browsable, searchable
+**API-reference website** with per-type / per-method pages, signatures, parameters,
+return values, and runnable usage snippets.
+
+**Design:**
+- **Source of truth = the Doxygen comments already mandated** by `CONTRIBUTING.md`
+  (every public function documents *why* + *how* + every `@param`/`@return`). The site
+  is generated from those, so docs cannot drift from the headers.
+- **Pipeline:** Doxygen (XML) → a static-site generator (e.g. Doxygen+doxysphinx,
+  or Doxygen XML → mkdocs-material / Sphinx-breathe) producing a Unity-manual-style
+  layout: a hand-written **manual / guides** section (getting started, the
+  build→compile→execute model, State/Buffer, run/run_for/run_until, regions once WP-2
+  lands) alongside the **auto-generated scripting reference**.
+- **Surface scoped to the public fluent layer** (`api/`): `Runtime`, `API::Graph`,
+  `Buffer`/`State`, `RunReport`, `Error`/`Errc`. Lower layers stay in `ARCHITECTURE.md`.
+- **Kept honest by CI:** the docs build runs in CI; a missing/!-documented public
+  symbol fails the build, so the site stays complete as the API grows (WP-1 late-binding
+  overloads, WP-6 residency tags, etc. each add their pages when they land).
+
+**Files:** a `docs/` site config (generator of choice), a Doxyfile scoped to
+`include/SushiRuntime/api/`, CI job to build+publish (e.g. GitHub Pages).
+
+**Risks:** low. Main cost is choosing the generator and writing the hand-authored
+manual pages. It must track the API, so it is *not* a one-shot: every public-seam WP
+(WP-1, WP-2, WP-6, WP-7) adds its doc pages as part of that WP's "done".
+
+**Acceptance:** a published site where a user can browse from `Runtime::create()` to
+each `add()` overload with signatures and a working snippet, plus a getting-started
+manual; CI fails if a public fluent symbol is undocumented.
+
+---
+
 ## 8. Why the current distributed layer is the wrong axis for a large world
 
 The existing layer is a **task-offload / work-pull** system, and a good one for its
@@ -836,7 +872,8 @@ Full work-package set after folding in the owner's decisions (§0.1):
 WP-0 core hardening · WP-1 persistent graph / late bindings · WP-2 region identity ·
 WP-3 ECS + physics layer (archetype chunks, PGS colouring) · WP-4 determinism via
 fixed reduction order · WP-5 peer-to-peer domain decomposition (+ streaming/migration
-primitive) · WP-6 device-resident state · WP-7 native CPU path.
+primitive) · WP-6 device-resident state · WP-7 native CPU path · WP-DOCS Unity-style
+fluent-API docs site (ongoing — each public-seam WP adds its pages as part of "done").
 
 ```
 WP-0 (core hardening: event cap, error isolation, cancellation, deque, magazine)

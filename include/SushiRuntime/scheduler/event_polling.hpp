@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <atomic>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <functional>
 #include <sycl/sycl.hpp>
@@ -63,32 +64,81 @@ namespace SushiRuntime
                     bool ready = false;
                 };
 
-                struct ActiveEventList 
+                /**
+                 * @brief In-flight events for one worker; never drops an event.
+                 *
+                 * The common case (≤ INLINE_CAP outstanding events) stays in an
+                 * inline buffer with no allocation. Beyond that the list spills to a
+                 * heap vector — the same inline-then-spill shape as SmallEventVector.
+                 * Dropping an event would orphan its successors (their in_degree
+                 * never reaches zero) and deadlock the run, so push() must always
+                 * store, even if that means growing.
+                 */
+                struct ActiveEventList
                 {
-                    static constexpr size_t MAX_EVENTS = 256;
-                    PolledEvent events[MAX_EVENTS];
-                    size_t count = 0;
+                    /** @brief Inline capacity before any heap allocation is needed. */
+                    static constexpr size_t INLINE_CAP = 256;
 
-                    bool is_empty() const { return count == 0; }
-                    
-                    bool push(const PolledEvent& pe) 
+                    PolledEvent inline_events[INLINE_CAP];   /**< Inline fast-path storage. */
+                    size_t inline_count = 0;                 /**< Entries held inline (≤ INLINE_CAP). */
+                    std::vector<PolledEvent> spill;          /**< Overflow storage, used only past INLINE_CAP. */
+
+                    /** @brief Total number of tracked events, inline plus spilled. */
+                    size_t size() const { return inline_count + spill.size(); }
+
+                    bool is_empty() const { return inline_count == 0 && spill.empty(); }
+
+                    /**
+                     * @brief Indexes the list as one contiguous sequence.
+                     *
+                     * Indices [0, inline_count) address the inline buffer; the rest
+                     * address the spill vector in order.
+                     * @param i Logical index in [0, size()).
+                     * @return Reference to the addressed entry.
+                     */
+                    PolledEvent& operator[](size_t i)
                     {
-                        if (count < MAX_EVENTS) 
-                        {
-                            events[count++] = pe;
-                            return true;
-                        }
-                        
-                        return false;
+                        return i < inline_count ? inline_events[i]
+                                                : spill[i - inline_count];
                     }
 
-                    void remove_at(size_t index) 
+                    /**
+                     * @brief Records an in-flight event. Never fails.
+                     *
+                     * Fills the inline buffer first, then spills to the heap. There
+                     * is deliberately no full/overflow path: a dropped event deadlocks
+                     * the run (see the struct note).
+                     * @param pe The event/task pair to track.
+                     */
+                    void push(const PolledEvent& pe)
                     {
-                        if (index < count) 
-                        {
-                            events[index] = events[count - 1];
-                            count--;
-                        }
+                        if (inline_count < INLINE_CAP)
+                            inline_events[inline_count++] = pe;
+                        else
+                            spill.push_back(pe);
+                    }
+
+                    /**
+                     * @brief Removes entry @p index in O(1) by moving the tail into it.
+                     *
+                     * Mirrors the original swap-with-last, but the "last" entry may
+                     * live in either the inline buffer or the spill vector, so the
+                     * tail is dropped from whichever currently holds it.
+                     * @param index Logical index to remove; out-of-range is a no-op.
+                     */
+                    void remove_at(size_t index)
+                    {
+                        const size_t n = size();
+                        if (index >= n) return;
+
+                        const size_t last = n - 1;
+                        if (index != last)
+                            (*this)[index] = std::move((*this)[last]);
+
+                        if (!spill.empty())
+                            spill.pop_back();
+                        else
+                            --inline_count;
                     }
                 };
 
@@ -144,23 +194,23 @@ namespace SushiRuntime
                     }
 
                     bool progress = false;
-                    for (size_t i = 0; i < active_events.count; )
+                    for (size_t i = 0; i < active_events.size(); )
                     {
-                        bool done = active_events.events[i].ready;
+                        bool done = active_events[i].ready;
                         if (!done)
                         {
-                            auto status = active_events.events[i].event.get_info<sycl::info::event::command_execution_status>();
+                            auto status = active_events[i].event.get_info<sycl::info::event::command_execution_status>();
                             done = (status == sycl::info::event_command_status::complete);
                         }
                         if (done)
                         {
-                            // In AdaptiveCpp (and some other SYCL implementations), get_info<complete> 
+                            // In AdaptiveCpp (and some other SYCL implementations), get_info<complete>
                             // might return true before implicit USM data migrations are fully visible.
-                            // Since we already know it's complete, calling wait() is instantaneous 
+                            // Since we already know it's complete, calling wait() is instantaneous
                             // but guarantees the SYCL runtime flushes memory visibility.
-                            if (active_events.events[i].event != sycl::event{})
+                            if (active_events[i].event != sycl::event{})
                             {
-                                active_events.events[i].event.wait();
+                                active_events[i].event.wait();
                             }
 
 #ifdef SR_DISTRIBUTED
@@ -168,12 +218,12 @@ namespace SushiRuntime
                             // write's version bump is visible to any dependent task
                             // (e.g. an offloaded reader) by the time it is dispatched.
                             if (on_node_complete_)
-                                on_node_complete_(active_events.events[i].task);
+                                on_node_complete_(active_events[i].task);
 #endif
-                            trigger_successors(active_events.events[i].task, local_queue);
+                            trigger_successors(active_events[i].task, local_queue);
 
-                            if (active_events.events[i].task)
-                                active_events.events[i].task->release();
+                            if (active_events[i].task)
+                                active_events[i].task->release();
 
                             active_events.remove_at(i); // O(1): swaps with the last entry
                             progress = true;
@@ -204,7 +254,7 @@ namespace SushiRuntime
                         // rarely fires and the hot path is unchanged.
                         if (++stall_polls_ >= STALL_DRIVE_THRESHOLD && !active_events.is_empty())
                         {
-                            auto& oldest = active_events.events[0];
+                            auto& oldest = active_events[0];
                             if (oldest.event != sycl::event{})
                             {
                                 try { oldest.event.wait(); }
