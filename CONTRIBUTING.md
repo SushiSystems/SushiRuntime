@@ -126,11 +126,39 @@ Keep it tight. The rule is completeness, not length: technical, objective, plain
 English, no filler and no restating the obvious. If a `@param` only repeats the
 parameter name, the line is noise — say what the value *means* or constrains.
 
+This is the shape to follow — one `@brief` line, a single short line of context,
+then every parameter and the return:
+
+```cpp
+/**
+ * @brief Creates a host task that records its ID into a shared list.
+ *
+ * The optional delay widens the window for ordering bugs to surface.
+ * @param task_id The ID of the task to record.
+ * @param execution_order Reference to the shared list of executed task IDs.
+ * @param order_mutex Mutex protecting the shared execution order list.
+ * @param delay Optional artificial delay before recording the ID.
+ * @return A callable that matches the SYCL host task signature.
+ */
+inline auto make_order_recorder(int task_id,
+                                std::vector<int>& execution_order,
+                                std::mutex& order_mutex,
+                                std::chrono::milliseconds delay = std::chrono::milliseconds(0));
+```
+
+The tags, in order:
+
 - `@brief` — one sentence on *why* the function exists.
-- A following line (or two) on *how* it works, when the mechanism is not obvious.
+- One short line on *how* it works or what to watch for — only when the mechanism
+  is not obvious from the brief. Often a single line is enough; omit it when the
+  brief already says everything.
 - `@param` for each parameter — its meaning, units, ownership, or valid range.
 - `@return` for the result — what it is and what each outcome signals.
-- `@throws` / `@warning` when a caller must know about failure or a precondition.
+- `@throws` / `@warning` only when a caller must know about failure or a
+  precondition. Do not add them by reflex.
+
+When the mechanism genuinely needs more than a line, expand the body — but stop as
+soon as the caller knows enough:
 
 ```cpp
 /**
@@ -150,20 +178,112 @@ sycl::queue& queue_for(void* ptr);
 
 ---
 
-## 5. Commits and pull requests
+## 5. Documentation is part of the change
 
-- Write imperative, scoped commit messages: `fix(scheduler): …`,
-  `feat(distributed): …`, `docs: …`, `test(memory): …`.
+Documentation is not a follow-up task — it ships in the same pull request as the
+code it describes. A reviewer should never have to discover that a guide, the
+README, or the changelog now contradicts the tree. If your change makes any
+existing sentence false, fixing that sentence is part of the change.
+
+Treat the following as hard requirements, not suggestions:
+
+- **Every change updates [`docs/CHANGELOG.md`](docs/CHANGELOG.md).** Add an entry
+  under `## [Unreleased]` in the right group (`Added` / `Changed` / `Fixed` /
+  `Removed` / `Deprecated`). This is the one file *no* user-visible change may
+  skip.
+- **A new or changed feature updates the user-facing guides.** When you add,
+  rename, or change the behavior of public API, you must update
+  [`docs/guides/INTRODUCTION.md`](docs/guides/INTRODUCTION.md) (the getting-started
+  tour and its code samples must compile against the current API) and
+  [`docs/guides/ARCHITECTURE.md`](docs/guides/ARCHITECTURE.md) (every class,
+  constant, and algorithm it names must still exist). Update the top-level
+  [`README.md`](README.md) when the change touches what the project *is* or how a
+  first-time reader gets started.
+- **Any CLI change updates the CLI docs.** If you add, rename, or change a
+  `sr` / `sushiruntime` command, flag, or its output, update
+  [`docs/guides/CLI_GUIDE.md`](docs/guides/CLI_GUIDE.md) — the full command
+  reference — *and* the build/test/setup snippets in this file and the README that
+  invoke it. Command help text (Typer `--help`) and the guide must agree.
+- **Distributed changes update the distributed guide.** A change to the
+  master-worker layer, its protocol, or its environment flags
+  (`SUSHI_ENABLE_DISTRIBUTED`, deadlines, version fencing) updates
+  [`docs/guides/DISTRIBUTED_GUIDE.md`](docs/guides/DISTRIBUTED_GUIDE.md).
+- **A new dependency updates the dependency surface.** See §7 — the entry in
+  `cli/dependencies.toml`, the `CMakeLists.txt` find call, and the `Dockerfile`
+  apt line must move together.
+- **Public API carries Doxygen.** New or changed public functions follow the
+  Doxygen rules in §4. The header *is* documentation.
+
+Code samples in the guides are checked against the real API, mirroring what the
+integration tests do — a sample that no longer compiles is a broken doc. Before
+opening the PR, grep the docs for any symbol, command, or flag you renamed and fix
+every hit.
+
+The PR description (§6) must say which docs you touched, or state explicitly that
+the change is doc-invisible (an internal refactor with no API, CLI, or behavior
+change). "Docs later" is not accepted.
+
+---
+
+## 6. Commits and pull requests
+
+### Branch names
+
+Branch off the current `main` with a type prefix and a short, lowercase,
+hyphenated description of the work:
+
+```
+feature/handle-based-graph-add
+fix/steal-race-on-empty-deque
+chore/bump-googletest
+docs/cli-guide-setup-section
+```
+
+Use `feature/` for new functionality, `fix/` for bug fixes, `chore/` for
+build/tooling/dependency upkeep, `docs/` for documentation-only work. Keep it to
+a few words — the branch names what it does, it is not the commit message.
+
+### Commit headers
+
+Every commit header is `type: short summary`:
+
+- **Prefix** with the type: `feat:`, `fix:`, `chore:`, `docs:`, `test:`,
+  `refactor:`. Add a scope when it sharpens the line: `fix(scheduler):`,
+  `feat(distributed):`.
+- **Lowercase** the summary, imperative mood, no trailing period. Short and
+  precise — say what the commit does, not how it feels.
+
+```
+feat(distributed): add version fencing to the pull deadline
+fix(memory): release the EBR epoch on the early-return path
+chore: bump hwloc to 2.11
+```
+
+### Commit body and PR description
+
+When a commit or PR needs explaining, write the body as bullet points. Each bullet
+starts with a past-tense verb describing what the change did, then the object:
+
+```
+- Added handle-based Graph::add() with automatic dependency tracking.
+- Changed IExecutionEngine::execute to be non-consuming so graphs replay.
+- Removed the hand-wired dependency edges from the integration tests.
+```
+
+Plain English, technical, and objective. State the mechanism and the effect — no
+marketing, no adjectives selling the change, no "this finally makes X great".
+
+- The PR description states **what** changed, **why**, and **how you tested it**
+  (which suites, sanitizers, hardware), names the docs you touched (see §5), and
+  links the issue.
 - Rebase onto the current `main` before opening the PR; keep history clean.
-- In the PR description, state **what** changed, **why**, and **how you tested it**
-  (which suites, sanitizers, hardware). Link the issue.
 - CI must be green. Reviewers look for correctness (especially memory ordering and
   the cross-context USM invariant), test coverage, and that the change respects
   the layer boundaries.
 
 ---
 
-## 6. Adding a C++ dependency
+## 7. Adding a C++ dependency
 
 All C++ library dependencies live in a single manifest, `cli/dependencies.toml`
 (the installer's source of truth). Add a table:
@@ -183,7 +303,7 @@ needs it, add it to the `Dockerfile` apt line.
 
 ---
 
-## 7. Reporting bugs and requesting features
+## 8. Reporting bugs and requesting features
 
 Use the GitHub issue templates. A good bug report includes the platform and
 toolchain, the build type, the exact command, and the smallest reproducer you can
@@ -192,7 +312,7 @@ issue — follow [`SECURITY.md`](SECURITY.md).
 
 ---
 
-## 8. Questions
+## 9. Questions
 
 Open a GitHub Discussion, join the community Discord (see [`SECURITY.md`](SECURITY.md)
 for the current invite), or email **mustafagarip@sushisystems.io**.

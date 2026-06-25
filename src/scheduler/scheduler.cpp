@@ -36,6 +36,7 @@
 #include <SushiRuntime/topology/affinity.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include <SushiRuntime/scheduler/work_stealing_deque.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #ifdef SR_DISTRIBUTED
 #include <SushiRuntime/graph/node.hpp>
@@ -48,130 +49,6 @@ namespace SushiRuntime
     {
         using namespace SushiRuntime::Execution;
         using namespace SushiRuntime::Core;
-
-        /**
-         * @brief Highly optimized lock-free Chase-Lev deque for task scheduling.
-         * * Utilizes a fixed-capacity power-of-2 ring buffer to eliminate dynamic 
-         * resizing overhead and memory reclamation (garbage collection) issues. 
-         * Each slot is a std::atomic<Task*> so the array is accessed atomically.
-         * * The owner thread pushes and pops from the bottom (LIFO).
-         * Stealer threads steal from the top (FIFO).
-         */
-        class alignas(SushiRuntime::Core::CACHE_LINE_SIZE) Deque : public Core::RefCounted 
-        {
-        public:
-            /** @brief Fixed capacity to avoid runtime resizing. 256K is huge for DAG workloads. */
-            static constexpr int64_t CAPACITY = 262144;
-            static constexpr int64_t MASK = CAPACITY - 1;
-
-            /** @brief Ring buffer of atomic slots (C++17 replacement for atomic_ref). */
-            std::atomic<Task*>* items;
-
-            alignas(SushiRuntime::Core::CACHE_LINE_SIZE) std::atomic<int64_t> top;
-            alignas(SushiRuntime::Core::CACHE_LINE_SIZE) std::atomic<int64_t> bottom;
-            
-        public:
-            Deque() : top(0), bottom(0) 
-            {
-                items = new std::atomic<Task*>[CAPACITY]();
-            }
-
-            ~Deque() override
-            {
-                delete[] items;
-            }
-
-            inline size_t size() const 
-            {
-                int64_t b = bottom.load(std::memory_order_relaxed);
-                int64_t t = top.load(std::memory_order_relaxed);
-                
-                return (b >= t) ? static_cast<size_t>(b - t) : 0;
-            }
-
-
-            /** 
-             * @brief Pushes a task into the deque. 
-             * @param task Pointer to the task to push.
-             */
-            void push(Task* task) 
-            {
-                int64_t b = bottom.load(std::memory_order_relaxed);
-                int64_t t = top.load(std::memory_order_acquire);
-                
-                if (b - t >= CAPACITY) 
-                {
-                    SR_LOG_ERROR("Chase-Lev Deque overflow! Capacity {} exceeded.", CAPACITY);
-                    return; 
-                }
-
-                items[b & MASK].store(task, std::memory_order_relaxed);
-                
-                std::atomic_thread_fence(std::memory_order_release);
-                bottom.store(b + 1, std::memory_order_relaxed);
-            }
-
-            /** 
-             * @brief Removes and returns a task from the bottom (owner thread). 
-             * @return Pointer to the popped task, or nullptr if empty.
-             */
-            Task* pop() 
-            {
-                int64_t b = bottom.load(std::memory_order_relaxed) - 1;
-                bottom.store(b, std::memory_order_relaxed);
-
-                std::atomic_thread_fence(std::memory_order_seq_cst);
-                int64_t t = top.load(std::memory_order_relaxed);
-
-                if (t <= b) 
-                {
-                    Task* task = items[b & MASK].load(std::memory_order_relaxed);
-
-                    if (t == b) 
-                    {
-                        if (!top.compare_exchange_strong(t, 
-                                                         t + 1, 
-                                                         std::memory_order_seq_cst, 
-                                                         std::memory_order_relaxed))
-                        {
-                            task = nullptr;
-                        }
-                        bottom.store(b + 1, std::memory_order_relaxed);
-                    }
-                    return task;
-                }
-                
-                bottom.store(b + 1, std::memory_order_relaxed);
-                return nullptr;
-            }
-
-            /** 
-             * @brief Steals a task from the top (stealer threads). 
-             * @return Pointer to the stolen task, or nullptr if empty.
-             */
-            Task* steal() 
-            {
-                int64_t t = top.load(std::memory_order_acquire);
-                std::atomic_thread_fence(std::memory_order_seq_cst);
-                int64_t b = bottom.load(std::memory_order_acquire);
-
-                if (t < b) 
-                {
-                    Task* task = items[t & MASK].load(std::memory_order_relaxed);
-
-                    if (!top.compare_exchange_strong(t, 
-                                                     t + 1, 
-                                                     std::memory_order_seq_cst, 
-                                                     std::memory_order_relaxed))
-                    {
-                        return nullptr;
-                    }
-
-                    return task;
-                }
-                return nullptr;
-            }
-        };
 
         /**
          * @brief Constructs a new TaskScheduler.
@@ -576,9 +453,12 @@ namespace SushiRuntime
                 // poller flagged ready, so successors fire and the task is released
                 // uniformly, without fabricating a barrier event. The old barrier
                 // relied on host-op status polling, which AdaptiveCpp does not report.
+                //
+                // push() never drops: the list spills to the heap past its inline
+                // capacity. Dropping an event here would leave the task's successors
+                // permanently un-triggered and deadlock the run.
                 const bool ready = (e == sycl::event{});
-                if (!events.push({e, task, ready}))
-                    SR_LOG_WARN("ActiveEventList capacity is full, events cannot be polled!");
+                events.push({e, task, ready});
             } 
             catch (...) 
             {

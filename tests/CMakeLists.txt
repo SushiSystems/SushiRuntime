@@ -61,6 +61,8 @@ add_executable(sr_functional_tests
     functional/unit/test_range_task.cpp
     functional/unit/test_dependency_tracker.cpp
     functional/unit/test_thermal_rebalance.cpp
+    functional/unit/test_event_polling.cpp
+    functional/unit/test_work_stealing_deque.cpp
 
     functional/regression/test_regression.cpp
 
