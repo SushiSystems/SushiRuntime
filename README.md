@@ -174,7 +174,7 @@ The `oneapi` toolchain is opt-in because `icpx` is large: build with `--oneapi`,
 sr config show         # print resolved config with per-field source annotation
 sr env dump            # print the environment cmake/ctest/run subprocesses see
 sr env dump --asan     # same for the build-asan/ tree
-sr project doxygen     # generate Doxygen HTML docs (requires Doxyfile at repo root)
+sr project doxygen     # build the fluent API reference site into docs/api-site/html
 ```
 
 ## Running the tests
@@ -465,7 +465,7 @@ tests/
   benchmark/            stress / performance (heavy, nightly)
 cli/                    Python `sr` / `sushiruntime` CLI package (Typer + rich)
 .github/workflows/      CI: functional tests per push, benchmarks nightly
-docs/                   Changelog, TODO, and guides
+docs/                   Changelog, guides, and the fluent API reference (api/, Doxyfile)
 Dockerfile              CUDA + Clang/LLVM SYCL build environment
 ```
 

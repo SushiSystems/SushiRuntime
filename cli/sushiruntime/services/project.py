@@ -550,5 +550,20 @@ def doxygen() -> int:
     if not doxyfile.is_file():
         console.error("Doxyfile not found at repo root.")
         return 1
+
+    # Resolve doxygen from config first, then PATH. Doxygen is an external tool we
+    # do not vendor, so when it is genuinely missing give the install command for
+    # the platform rather than the generic "set cmake_exe" resolver message.
+    doxy = cfg.expand(cfg.doxygen_exe) if cfg.doxygen_exe else "doxygen"
+    if _resolve_exe(doxy, env) == doxy and not Path(doxy).is_file():
+        console.error(
+            "Doxygen is not installed or not on PATH.\n"
+            "  - Windows: winget install DimitriVanHeesch.Doxygen"
+            "  (or: choco install doxygen.install)\n"
+            "  - Linux:   apt-get install -y doxygen graphviz\n"
+            "  - macOS:   brew install doxygen graphviz\n"
+            "  - or set doxygen_exe in config.local.toml to an existing doxygen binary.")
+        return 1
+
     (root / "docs").mkdir(exist_ok=True)
-    return _run(["doxygen", "Doxyfile"], env, cwd=root)
+    return _run([doxy, "Doxyfile"], env, cwd=root)

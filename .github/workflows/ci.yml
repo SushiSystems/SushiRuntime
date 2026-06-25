@@ -40,6 +40,37 @@ jobs:
           cmake --build build
           ctest --test-dir build -L "unit|integration|regression" --output-on-failure
 
+  docs:
+    name: API docs site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Doxygen
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends doxygen graphviz
+
+      - name: Build the fluent API reference
+        shell: bash
+        run: |
+          set -e
+          doxygen Doxyfile
+          # Surface any undocumented public symbol or missing @param. Reported,
+          # not yet fatal: once the log is clean across the public api/ surface,
+          # flip this to `exit 1` so the reference can never regress.
+          log=docs/api-site/doxygen-warnings.log
+          if [ -s "$log" ]; then
+            echo "::warning::Doxygen reported documentation gaps in the public API:"
+            cat "$log"
+          fi
+
+      - name: Upload the generated site
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-site
+          path: docs/api-site/html
+
   benchmark:
     name: Benchmark suite (nightly)
     if: github.event_name == 'schedule'
