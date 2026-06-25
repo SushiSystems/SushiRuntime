@@ -464,6 +464,22 @@ namespace SushiRuntime
                     deps = node->sycl_deps.to_vector();
                 }
 
+                // A pure-CPU host task submits no device work, so it needs no
+                // queue: run it directly on this worker thread and report an empty
+                // event, which the poller treats as ready-inline. Completion flows
+                // through the same trigger_successors + release path as any other
+                // task — one completion contract, not a second scheduler. The node
+                // is only dispatched once its predecessor events have completed, so
+                // the shared USM it reads is already visible host-side and the SYCL
+                // deps are moot. Acquiring a queue is skipped entirely.
+                if (node && node->get_execution_mode() == Task::ExecutionMode::HOST &&
+                    !node->submits_device_work())
+                {
+                    node->execute_native();
+                    events.push({sycl::event{}, task, true});
+                    return;
+                }
+
                 // Both paths must run on the queue whose context owns the node's
                 // USM. A HOST task is just as dangerous as a KERNEL one here: its
                 // host_work lambda commonly does its own queue.submit() of a device

@@ -158,6 +158,19 @@ sim.add(API::when([&] { return enabled; }).and_sized([&] { return active; }),
         [p = out.data()](std::size_t i) { /* runs only while enabled, over active */ });
 ```
 
+**Native CPU tasks** run plain host C++ — gameplay logic, AI, navigation — with
+no SYCL submission, ordered into the graph by the data they touch. Use
+`add_host()` and name the data with `Reads(...)`/`Writes(...)`:
+
+```cpp
+sim.add_host(API::Reads(world), API::Writes(decisions),
+             [&] { /* arbitrary C++; runs on a worker thread, no kernel launch */ });
+```
+
+The task is dispatched only after its predecessors complete, so the shared USM it
+reads is already up to date; its successors then run once it returns. Do not
+submit SYCL work from an `add_host` body — use a normal `add()` for that.
+
 The fluent API is enough for most programs. The rest of this guide documents the
 lower-level task-graph API it is built on, for when you need full control over
 task bodies, host/device fallback, or explicit dependency lists.

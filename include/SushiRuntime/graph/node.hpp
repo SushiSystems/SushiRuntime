@@ -135,9 +135,21 @@ namespace SushiRuntime
             
             /** @brief The host work to be executed in this node if it's a HOST task. */
             HostWork host_work;
-            
+
+            /** @brief Pure-CPU work run natively on the worker thread (no SYCL queue). */
+            std::function<void()> native_work;
+
             /** @brief The execution mode of this node. */
             ExecutionMode mode = ExecutionMode::KERNEL;
+
+            /**
+             * @brief Whether this node submits SYCL device work (the safe default).
+             *
+             * Cleared by the native host path so the scheduler runs native_work
+             * directly instead of routing through a queue. A node that submits a
+             * kernel from its host_work must keep this true.
+             */
+            bool submits_device_work_ = true;
 
             /** @brief Number of incoming dependencies. */
             std::atomic<int32_t> in_degree{0};
@@ -276,6 +288,12 @@ namespace SushiRuntime
 
             /** @brief Returns prioritized value from metadata. */
             int get_priority() const noexcept override          { return metadata.priority; }
+
+            /** @brief Reports whether this node submits SYCL device work. */
+            bool submits_device_work() const noexcept override  { return submits_device_work_; }
+
+            /** @brief Runs the node's pure-CPU work directly on the worker thread. */
+            void execute_native() override                      { if(native_work) native_work(); }
 
             /** @brief Executes the task work within a SYCL handler. */
             void execute(sycl::handler& h) override             { if(work) work(h); }
