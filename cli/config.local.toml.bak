@@ -1,5 +1,0 @@
-# Managed by the SushiRuntime CLI. `sr toolchain` writes the toolchain key;
-# `sr setup configure` writes the [tool.<platform>] tool paths.
-
-[tool]
-toolchain = "intel-llvm"
