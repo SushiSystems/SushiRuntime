@@ -31,6 +31,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
+#include <SushiRuntime/core/resource_region.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
 #ifdef SR_DISTRIBUTED
 #include <SushiRuntime/distributed/protocol.hpp>
@@ -166,17 +167,17 @@ namespace SushiRuntime
             bool is_sentinel = false;
 
             /**
-             * @brief Raw USM read/write pointers this node touches.
+             * @brief USM read/write regions this node touches.
              *
-             * Retained on every build (not just distributed) so the scheduler
-             * can route a KERNEL submit to the queue whose context actually owns
-             * the data. USM is pinned to the device/context it was allocated on;
-             * running the kernel on a sibling device's queue (e.g. CPU USM on a
-             * CUDA queue) is an illegal cross-context access. See
-             * TaskScheduler::execute_task.
+             * Retained on every build (not just distributed) so the scheduler can
+             * route a KERNEL submit to the queue whose context actually owns the
+             * data — it anchors on a region's base. USM is pinned to the
+             * device/context it was allocated on; running the kernel on a sibling
+             * device's queue (e.g. CPU USM on a CUDA queue) is an illegal
+             * cross-context access. See TaskScheduler::execute_task.
              */
-            std::vector<void*> io_reads_;
-            std::vector<void*> io_writes_;
+            std::vector<SushiRuntime::Core::ResourceRegion> io_reads_;
+            std::vector<SushiRuntime::Core::ResourceRegion> io_writes_;
 
 #ifdef SR_DISTRIBUTED
             /**

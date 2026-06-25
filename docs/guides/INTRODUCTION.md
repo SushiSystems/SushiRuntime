@@ -602,6 +602,13 @@ tasks touching ten different buffers all run at once. You can also pass explicit
 `sycl::event` dependencies as the last argument if you need ordering the pointer
 analysis can't see.
 
+The analysis works on **regions**, not whole buffers: two tasks are serialized
+only when their byte ranges actually overlap. Name a sub-range with
+`buffer.region(offset, count)` and pass it to `Reads(...)`/`Writes(...)`, and the
+runtime will run tasks on disjoint slices of one buffer in parallel — an array's
+two halves, or a grid's interior and its halo. A whole buffer (the default when
+you pass a handle) overlaps every slice of itself, so it stays conservative.
+
 ### Compile and execute
 
 ```cpp

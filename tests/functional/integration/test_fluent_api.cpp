@@ -27,6 +27,7 @@
 //   - add(fn) raw sycl::handler overload
 //   - add(n, fn) range kernel overload
 //   - add(reads, writes, n, fn) pointer-tracked overload
+//   - Reads/Writes over Buffer::region() sub-region tracking
 //   - Buffer<T> standalone allocation and graph use
 //   - Graph::size()
 //   - Runtime::context() accessor
@@ -223,6 +224,48 @@ TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
+}
+
+// Region-tracked add: two writers touch disjoint halves of one buffer, so the
+// tracker leaves them unordered, then a whole-buffer reader overlaps both and
+// must run after each. Proves sub-region identity end-to-end through the fluent
+// layer: disjoint slices are independent while an overlapping access still
+// orders. A broken (base-pointer) identity would either serialize the halves or
+// let the reader observe an unwritten half.
+TEST(Integration_FluentAPI, SubRegionDisjointWritesThenWholeRead)
+{
+    constexpr std::size_t N = 64;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    auto out = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        buf[i] = 0;
+        out[i] = -1;
+    }
+
+    int* p = buf.data();
+    int* o = out.data();
+
+    auto g = rt.graph();
+
+    // Lower half := 1, upper half := 2. Disjoint regions of buf -> unordered.
+    g.add(Reads(), Writes(buf.region(0, N / 2)), N / 2,
+          [p](std::size_t i) { p[i] = 1; });
+    g.add(Reads(), Writes(buf.region(N / 2, N / 2)), N / 2,
+          [p](std::size_t i) { p[N / 2 + i] = 2; });
+
+    // Whole-buffer read overlaps both halves -> ordered after both writers.
+    g.add(Reads(buf), Writes(out), N,
+          [p, o](std::size_t i) { o[i] = p[i]; });
+
+    g.run();
+
+    for (std::size_t i = 0; i < N / 2; ++i)
+        ASSERT_EQ(out[i], 1) << "lower half at i=" << i;
+    for (std::size_t i = N / 2; i < N; ++i)
+        ASSERT_EQ(out[i], 2) << "upper half at i=" << i;
 }
 
 // Buffer<T> standalone: allocate, seed host-side, use in a graph task via

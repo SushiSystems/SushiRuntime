@@ -385,22 +385,35 @@ only on overflow allocates a `SuccessorNode` and CAS-pushes it onto the list.
 
 ### 8.2 `DependencyTracker` — lock-free hazard resolution
 
-This is the heart of "implicit dependencies." It keeps a **per-pointer access
-history** with no locks:
+This is the heart of "implicit dependencies." It keeps a **per-allocation access
+history** with no locks and orders accesses by **region overlap**, not bare
+pointer equality:
 
-- The pointer space is **sharded** into `SHARD_COUNT = 1024` `ResourceState`s,
-  each cache-line aligned (no false sharing). A pointer maps to a shard via a
-  **SplitMix64** hash of its address.
+- Accesses are tracked as `ResourceRegion { base, offset, length }` — a byte
+  interval within one allocation (`core/resource_region.hpp`). A bare base
+  pointer is the whole-buffer region, so pointer-keyed callers behave exactly as
+  before; `Buffer::region(offset, count)` names a sub-range.
+- The allocation space is **sharded** into `SHARD_COUNT = 1024` `ResourceState`s,
+  each cache-line aligned (no false sharing). A region maps to a shard via a
+  **SplitMix64** hash of its `base`, so every access to one allocation lands in
+  the same chain and is comparable by overlap.
 - Each shard's `ResourceState` holds an atomic `tail` pointing at the most recent
-  `AccessNode` (`{ task, is_write, prev }`), forming an immutable backward-linked
-  history.
-- `resolve(node, ptr, is_write)` walks the history to add exactly the edges
+  `AccessNode` (`{ task, is_write, region, prev }`), forming an immutable
+  backward-linked history.
+- `resolve(node, region, is_write)` walks the history and orders the node after
+  every earlier access whose region **overlaps**, adding exactly the edges
   required:
-  - **RAW**: a read after a write depends on that write.
-  - **WAR / WAW**: a write depends on the preceding reads *and* the preceding
-    write.
-  - **RAR stays parallel**: two reads of the same buffer do **not** depend on each
-    other.
+  - **RAW**: a read depends on every prior write that overlaps it.
+  - **WAR / WAW**: a write depends on the overlapping preceding reads *and*
+    writes.
+  - **RAR stays parallel**: two reads do **not** depend on each other.
+  - **Disjoint sub-regions stay parallel**: two accesses to non-overlapping
+    ranges of the same allocation are not ordered (interior vs halo, an array's
+    two halves). Distinct allocations never serialize.
+  - The walk stops early only at a prior writer that **fully covers** the region
+    (earlier accesses to that range are then ordered behind it transitively); a
+    partially-overlapping writer does not end the walk, so no sub-region edge is
+    dropped.
   - Edges are **deduplicated** (sharing several buffers between the same pair adds
     one edge) and a node never depends on itself.
 
@@ -689,10 +702,12 @@ To make the layering concrete, here is one device task —
    `add_task` call and records pre/post `ExecutionMetrics` timestamps for the
    `RunReport`.
 2. **graph/** — `add_task` creates a `Node`, stores the kernel and
-   `io_reads_={A,B}`, `io_writes_={C}`. `DependencyTracker::resolve` is called for
-   A, B (reads) and C (write): each pointer hashes (SplitMix64) to one of 1024
-   shards; the history there yields the prior writers/readers; edges are added by
-   incrementing this node's `in_degree` and registering it as their successor.
+   `io_reads_={A,B}`, `io_writes_={C}` as `ResourceRegion`s (bare pointers become
+   whole-buffer regions). `DependencyTracker::resolve` is called for A, B (reads)
+   and C (write): each region's `base` hashes (SplitMix64) to one of 1024 shards;
+   the history there yields the prior writers/readers whose regions overlap; edges
+   are added by incrementing this node's `in_degree` and registering it as their
+   successor.
 3. **graph/** — `compile()` finds this node is a root only if nothing wrote A/B/C
    before it; links it toward the sentinel; moves it into `CompiledGraph`.
 4. **execution/** — `execute()` injects roots; the `ExecutionEngine` arms the
