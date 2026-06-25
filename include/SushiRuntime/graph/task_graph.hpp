@@ -29,6 +29,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/core/resource_region.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 
@@ -87,18 +88,20 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a device task with automatic dependency tracking.
-                 * 
-                 * The runtime checks the memory addresses (USM) to automatically 
-                 * find when this task can safely run.
-                 * 
+                 *
+                 * The runtime orders this task by the USM regions it touches: two
+                 * tasks are serialized only when their regions overlap, so disjoint
+                 * sub-ranges of one allocation run in parallel. A bare base pointer
+                 * converts to the whole-buffer region, the conservative default.
+                 *
                  * @param work Function that uses a sycl::handler to run work.
-                 * @param read_access List of memory addresses this task reads from.
-                 * @param write_access List of memory addresses this task writes to.
+                 * @param read_access Regions this task reads from.
+                 * @param write_access Regions this task writes to.
                  * @param dependencies Additional manual events to wait for.
                  */
-                void add_node(TaskWork work, 
-                             const std::vector<void*>& read_access, 
-                             const std::vector<void*>& write_access,
+                void add_node(TaskWork work,
+                             const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                             const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                              const std::vector<sycl::event>& dependencies = {});
 
                 /**
@@ -115,8 +118,8 @@ namespace SushiRuntime
                  * @param dependencies Additional explicit user dependencies.
                  */
                 void add_task(const TaskMetadata& meta,
-                              const std::vector<void*>& read_access,
-                              const std::vector<void*>& write_access,
+                              const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                              const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                               TaskWork device_work,
                               HostWork fallback_work,
                               const std::vector<sycl::event>& dependencies = {});
@@ -134,8 +137,8 @@ namespace SushiRuntime
                  * @param dependencies Additional explicit user dependencies.
                  */
                 void add_task(const TaskMetadata& meta,
-                              const std::vector<void*>& read_access,
-                              const std::vector<void*>& write_access,
+                              const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                              const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                               HostWork fallback_work,
                               const std::vector<sycl::event>& dependencies = {});
 

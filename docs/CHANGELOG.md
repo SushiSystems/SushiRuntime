@@ -9,6 +9,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- Region-based dependency identity: the `DependencyTracker` now orders accesses
+  by **byte-interval overlap** (`Core::ResourceRegion { base, offset, length }`),
+  not bare base-pointer equality. Disjoint sub-ranges of one allocation (an
+  array's halves, a grid's interior versus its halo) run in parallel, while
+  overlapping ranges are still ordered. `Buffer<T>::region(offset, count)` names
+  a sub-range; pass it to `Reads(...)`/`Writes(...)`. A bare pointer remains the
+  whole-buffer region, so existing graphs are unchanged.
 - Fluent stepped API for the v1 surface: `Runtime::buffer<T>()` / `state<T>()`
   typed shared-USM handles; handle-based `Graph::add()` with automatic
   dependency tracking, including `add(state, fn)` stepped update rules and
@@ -27,6 +34,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 - `TaskGraph::add_node(work, reads, writes)` now retains the access lists on the
   node, matching `add_task`, so the scheduler routes the kernel to the queue that
   owns its USM.
+- `TaskGraph::add_node` / `add_task` read/write parameters and `Node::io_reads_` /
+  `io_writes_` are now `std::vector<Core::ResourceRegion>` rather than
+  `std::vector<void*>`. Base pointers convert implicitly to whole-buffer regions,
+  so bare-pointer call sites (`{a, b}`, `{C}`) compile unchanged.
 - README, INTRODUCTION, and ARCHITECTURE lead with the fluent API; the
   task-graph API is documented as the lower-level foundation.
 
