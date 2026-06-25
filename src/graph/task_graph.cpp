@@ -279,9 +279,28 @@ namespace SushiRuntime
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                  const std::vector<sycl::event>& dependencies)
         {
+            add_node(std::move(work), read_access, write_access, nullptr, dependencies);
+        }
+
+        /**
+         * @brief Adds a device task with automatic tracking and a late-binding block.
+         *
+         * @param work The task payload to execute.
+         * @param read_access A list of USM regions the task reads from.
+         * @param write_access A list of USM regions the task writes to.
+         * @param bindings Shared per-step controls; null behaves like the plain overload.
+         * @param dependencies An optional list of manual SYCL dependencies.
+         */
+        void TaskGraph::add_node(TaskWork work,
+                                 const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                                 std::shared_ptr<LateBindings> bindings,
+                                 const std::vector<sycl::event>& dependencies)
+        {
             auto node = make_sushi<Node>();
             node->work = std::move(work);
             node->sycl_deps = dependencies;
+            node->bindings_ = std::move(bindings);
 
             // Resolve USM dependencies for reads and writes
             for (const auto& r : read_access)

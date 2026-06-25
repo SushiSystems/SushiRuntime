@@ -32,6 +32,7 @@
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
 #include <SushiRuntime/core/resource_region.hpp>
+#include <SushiRuntime/graph/late_bindings.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
 #ifdef SR_DISTRIBUTED
 #include <SushiRuntime/distributed/protocol.hpp>
@@ -178,6 +179,20 @@ namespace SushiRuntime
              */
             std::vector<SushiRuntime::Core::ResourceRegion> io_reads_;
             std::vector<SushiRuntime::Core::ResourceRegion> io_writes_;
+
+            /**
+             * @brief Late-bound per-step controls (enabled flag and live size).
+             *
+             * Null for an ordinary node, so the scheduler's hot path pays one
+             * null-pointer load before falling through to normal execution. When
+             * set by a dynamic add() overload, the fluent layer re-points its
+             * fields each step: the scheduler reads enabled to decide whether to
+             * run the node, and the kernel reads count for its iteration range.
+             * Bindings may change size/enable freely but never which resources the
+             * node touches — that would invalidate the compiled dependency edges
+             * and requires a recompile.
+             */
+            std::shared_ptr<LateBindings> bindings_;
 
 #ifdef SR_DISTRIBUTED
             /**

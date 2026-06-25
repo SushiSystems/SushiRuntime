@@ -9,6 +9,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- Late-bound graph tasks (persistent graph, no per-step recompile): a `Dynamic`
+  tag — built with `API::when(predicate)` and/or `API::sized(count)` and passed
+  as the leading argument to `Graph::add()` — lets a task's per-step **enablement**
+  and **iteration size** change every step while the graph is compiled exactly
+  once and replayed. A disabled node runs no kernel and instantly releases its
+  successors (a sleeping island / LOD-off system); `sized()` iterates a live
+  prefix within the buffers' baked capacity. Available on the per-element
+  (`Reads`/`Writes` and raw-pointer) and 1-D `State` add overloads. The controls
+  live in a shared `Graph::LateBindings { enabled, count }` block the scheduler
+  and kernel read at dispatch. `Graph::compile_count()` exposes the replay
+  guarantee (stays 1 across such a run). Bindings may vary size/enable but not
+  which resources a node touches — that still requires a recompile.
 - Region-based dependency identity: the `DependencyTracker` now orders accesses
   by **byte-interval overlap** (`Core::ResourceRegion { base, offset, length }`),
   not bare base-pointer equality. Disjoint sub-ranges of one allocation (an

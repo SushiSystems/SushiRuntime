@@ -142,6 +142,22 @@ sim.add(u, v, [](std::size_t i, const float* uc, float* un, const float* vc) {
 });
 ```
 
+**Late-bound tasks** vary their size or whether they run each step, without
+recompiling the graph. Pass `API::when(predicate)` and/or `API::sized(count)` as
+the leading argument to `add()`: `when()` skips the task on steps its predicate
+is false (a sleeping subsystem), and `sized()` iterates only a live prefix of the
+buffers' capacity (a changing number of active elements). The graph still
+compiles once — `g.compile_count()` stays 1 across the whole run.
+
+```cpp
+std::size_t active = 0;     // updated by your code between steps
+bool        enabled = true;
+
+sim.add(API::when([&] { return enabled; }).and_sized([&] { return active; }),
+        API::Reads(in), API::Writes(out), CAPACITY,
+        [p = out.data()](std::size_t i) { /* runs only while enabled, over active */ });
+```
+
 The fluent API is enough for most programs. The rest of this guide documents the
 lower-level task-graph API it is built on, for when you need full control over
 task bodies, host/device fallback, or explicit dependency lists.

@@ -172,6 +172,20 @@ A program's lifecycle is always the same three phases, and they must not overlap
 > are **not** thread-safe relative to each other. Build the entire graph, then
 > compile, then execute.
 
+**Late-bound replay.** The compiled plan is static in topology, but two per-node
+properties may change between steps without recompiling: the **iteration size**
+and whether the node **runs at all**. A node may carry a `Graph::LateBindings
+{ enabled, count }` block (a `std::shared_ptr` the fluent layer re-points each
+step); the scheduler skips a disabled node by routing it through the poller as
+instantly complete (its successors still fire, so the DAG drains), and the kernel
+reads `count` for its range. The fluent surface exposes this through `API::when()`
+/ `API::sized()` (see the `Dynamic` tag). This generalises the distributed layer's
+`live_reads_`/`live_writes_` late-pointer mechanism to size and enablement, so an
+ECS-style graph that spawns/destroys entities or sleeps subsystems per frame
+compiles once — `Graph::compile_count()` stays 1. Bindings may change size/enable
+but **not** which resources a node touches, since that would invalidate the
+dependency edges fixed at compile.
+
 ---
 
 ## 5. Core (`core/`)
