@@ -25,6 +25,7 @@
 
 
 #include <array>
+#include <cstdint>
 #include <deque>
 #include <mutex>
 #include <atomic>
@@ -146,6 +147,26 @@ namespace SushiRuntime
                 /** @brief Cache-line aligned atomic counters for tracking completed tasks per worker. */
                 alignas(Core::CACHE_LINE_SIZE) std::atomic<size_t> worker_completed_tasks[Core::MAX_WORKER_THREADS];
 
+                /**
+                 * @brief Per-worker accumulated time buckets (nanoseconds).
+                 *
+                 * Each element is its own cache line, so the worker that owns an index
+                 * is the only writer and there is no false sharing. Relaxed atomics:
+                 * a worker accumulates only its own bucket and the engine reads them at
+                 * a run boundary, with no cross-worker ordering requirement.
+                 */
+                struct alignas(Core::CACHE_LINE_SIZE) WorkerTimeBuckets
+                {
+                    std::atomic<std::uint64_t> busy_ns{0};
+                    std::atomic<std::uint64_t> stealing_ns{0};
+                    std::atomic<std::uint64_t> polling_ns{0};
+                    std::atomic<std::uint64_t> idle_ns{0};
+                };
+                WorkerTimeBuckets worker_time_[Core::MAX_WORKER_THREADS];
+
+                /** @brief Whether the active run accumulates per-worker time buckets. */
+                bool profiling_active_ = false;
+
                 // --- NUMA-aware hierarchical stealing (built once at construction) ---
                 /** @brief NUMA node of each worker (= node of the core it is pinned to). */
                 std::vector<int> worker_numa_;
@@ -264,6 +285,36 @@ namespace SushiRuntime
                 size_t get_local_steal_count() const  { return local_steals_.load(std::memory_order_relaxed); }
                 /** @brief Count of successful steals that had to cross to a remote node. */
                 size_t get_remote_steal_count() const { return remote_steals_.load(std::memory_order_relaxed); }
+
+                /**
+                 * @brief One worker's accumulated time split, in nanoseconds.
+                 *
+                 * The stall-attribution signal: how a worker spent a run across real
+                 * work, stealing, completion polling, and idle backoff. Only populated
+                 * when the run was armed for profiling.
+                 */
+                struct WorkerTimeSplit
+                {
+                    std::uint64_t busy_ns = 0;     /**< Inside task execution. */
+                    std::uint64_t stealing_ns = 0; /**< Searching victims for work. */
+                    std::uint64_t polling_ns = 0;  /**< Polling in-flight events. */
+                    std::uint64_t idle_ns = 0;     /**< Backing off or waiting to be armed. */
+                };
+
+                /**
+                 * @brief Returns the accumulated time split for worker @p worker_id.
+                 * @param worker_id Worker index in [0, get_worker_count()).
+                 * @return The worker's time split; zeroed when out of range.
+                 */
+                WorkerTimeSplit get_worker_times(int worker_id) const noexcept;
+
+                /**
+                 * @brief Zeroes every worker's time split.
+                 *
+                 * Called by the engine before a profiled run so the report covers only
+                 * that run, mirroring the before/after handling of the steal counters.
+                 */
+                void reset_worker_times() noexcept;
 
 #ifdef SR_DISTRIBUTED
                 /**

@@ -24,6 +24,8 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 #include <optional>
@@ -205,6 +207,29 @@ namespace SushiRuntime
              * and requires a recompile.
              */
             std::shared_ptr<LateBindings> bindings_;
+
+            /**
+             * @brief Stable identity of this node in the compiled plan.
+             *
+             * Assigned once by CompiledGraph::capture_base_state() as the node's
+             * position in all_nodes, so a RunReport row can name a node that has no
+             * label and two same-named nodes stay distinct. Zero until compiled.
+             */
+            std::size_t plan_index = 0;
+
+            /**
+             * @brief Profiling accumulators, summed across a run's steps.
+             *
+             * Written only when the runtime was built with profiling on; otherwise
+             * the dispatch and completion paths never touch them. Relaxed atomics:
+             * each is a monotonic counter accumulated as steps replay and read once
+             * at the run boundary, with no ordering dependency on other state. A
+             * given step's completion is reaped by exactly one worker, but different
+             * steps may be reaped by different workers, so the adds are atomic.
+             */
+            std::atomic<std::uint64_t> prof_invocations{0};  /**< Dispatch count over the run. */
+            std::atomic<std::uint64_t> prof_device_ns{0};    /**< Summed kernel device time (ns). */
+            std::atomic<std::uint64_t> prof_host_ns{0};      /**< Summed native/host wall time (ns). */
 
 #ifdef SR_DISTRIBUTED
             /**

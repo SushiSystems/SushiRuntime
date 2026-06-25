@@ -219,6 +219,7 @@ namespace SushiRuntime
                     {
                         auto& q = ctx_->get_queue_for_ptr(static_cast<void*>(ptr_));
                         q.memcpy(out.data(), ptr_ + offset, count * sizeof(T)).wait();
+                        ctx_->add_device_to_host_bytes(count * sizeof(T));
                     }
                     return out;
                 }
@@ -242,6 +243,7 @@ namespace SushiRuntime
                     {
                         auto& q = ctx_->get_queue_for_ptr(static_cast<void*>(ptr_));
                         q.memcpy(ptr_ + offset, src, count * sizeof(T)).wait();
+                        ctx_->add_host_to_device_bytes(count * sizeof(T));
                     }
                 }
 

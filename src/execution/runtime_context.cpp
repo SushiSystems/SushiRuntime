@@ -71,6 +71,30 @@ namespace SushiRuntime
             std::vector<sycl::queue> all_queues;
 
             /**
+             * @brief Whether device queues were built with profiling enabled.
+             *
+             * Set once at construction. Queues carry the SYCL profiling property
+             * only when this is true, so the per-node kernel timing in RunReport is
+             * available; left false (the default) the queues are built exactly as
+             * before and the hot path reads no timestamps.
+             */
+            bool profiling = false;
+
+            /**
+             * @brief Cumulative bytes the runtime itself copied across the PCIe link.
+             *
+             * Counts only the explicit, runtime-initiated transfers — the selective
+             * readback in Buffer::read_range / write_range (and the distributed path)
+             * — so RunReport can report how much the host pulled from and pushed to
+             * the device during a run. Implicit shared-USM page migration by the
+             * driver is invisible to SYCL and deliberately not counted here. Relaxed
+             * atomics: the values are monotonic counters read at a run boundary, with
+             * no ordering dependency on other state.
+             */
+            std::atomic<std::size_t> device_to_host_bytes{0};
+            std::atomic<std::size_t> host_to_device_bytes{0};
+
+            /**
              * @brief USM pointer -> owning queue index (into all_queues).
              *
              * Populated by RuntimeContext::malloc_* so the scheduler can run a
@@ -171,10 +195,16 @@ namespace SushiRuntime
          */
         RuntimeContext::RuntimeContext(const Topology::HardwareFilterConfig& config,
                                        std::shared_ptr<Topology::ITopologyProvider> provider,
-                                       std::shared_ptr<Topology::INumaDistanceModel> distance_model)
+                                       std::shared_ptr<Topology::INumaDistanceModel> distance_model,
+                                       bool profiling)
             : impl_(make_sushi<Impl>())
         {
             SR_LOG_INFO("Initializing compute stack...");
+
+            // Record the profiling choice before probe_hardware() builds the queues,
+            // so the property is applied while they are created (queues are built
+            // once and not rebuilt to toggle profiling).
+            impl_->profiling = profiling;
 
             // Fall back to the real hwloc-backed defaults when nothing is injected.
             impl_->provider = provider ? std::move(provider)
@@ -203,6 +233,46 @@ namespace SushiRuntime
         RuntimeContext::~RuntimeContext() = default;
 
         /**
+         * @brief Reports whether the queues were built with profiling enabled.
+         */
+        bool RuntimeContext::profiling_enabled() const noexcept
+        {
+            return impl_->profiling;
+        }
+
+        /**
+         * @brief Adds to the device->host explicit-transfer byte counter.
+         */
+        void RuntimeContext::add_device_to_host_bytes(std::size_t bytes) noexcept
+        {
+            impl_->device_to_host_bytes.fetch_add(bytes, std::memory_order_relaxed);
+        }
+
+        /**
+         * @brief Adds to the host->device explicit-transfer byte counter.
+         */
+        void RuntimeContext::add_host_to_device_bytes(std::size_t bytes) noexcept
+        {
+            impl_->host_to_device_bytes.fetch_add(bytes, std::memory_order_relaxed);
+        }
+
+        /**
+         * @brief Returns cumulative device->host explicit-transfer bytes.
+         */
+        std::size_t RuntimeContext::device_to_host_bytes() const noexcept
+        {
+            return impl_->device_to_host_bytes.load(std::memory_order_relaxed);
+        }
+
+        /**
+         * @brief Returns cumulative host->device explicit-transfer bytes.
+         */
+        std::size_t RuntimeContext::host_to_device_bytes() const noexcept
+        {
+            return impl_->host_to_device_bytes.load(std::memory_order_relaxed);
+        }
+
+        /**
          * @brief Executes the hardware discovery and topology mapping process.
          *
          * Initializes the device inventory and configures SYCL queues based on NUMA nodes.
@@ -223,12 +293,21 @@ namespace SushiRuntime
 
                 for (const auto& node : impl_->nodes) 
                 {
+                    // FPGAs or custom accelerators often execute better in-order or
+                    // don't support full OOO queues natively. Profiling is added on
+                    // top when the context was built for it, so RunReport can read
+                    // each kernel's device start/end timestamps; the two properties
+                    // compose, so the FPGA case keeps its in-order guarantee.
+                    const bool needs_in_order =
+                        !node.sycl_dev.is_cpu() && !node.sycl_dev.is_gpu();
                     sycl::property_list props;
-                    if (!node.sycl_dev.is_cpu() && !node.sycl_dev.is_gpu()) 
-                    {
-                        // FPGAs or custom accelerators often execute better in-order or don't support full OOO queues natively.
+                    if (needs_in_order && impl_->profiling)
+                        props = { sycl::property::queue::in_order(),
+                                  sycl::property::queue::enable_profiling() };
+                    else if (needs_in_order)
                         props = { sycl::property::queue::in_order() };
-                    }
+                    else if (impl_->profiling)
+                        props = { sycl::property::queue::enable_profiling() };
                     
                     sycl::queue q(node.sycl_dev, [](sycl::exception_list elist) 
                     {
