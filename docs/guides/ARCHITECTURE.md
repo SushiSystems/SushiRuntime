@@ -186,6 +186,16 @@ compiles once — `Graph::compile_count()` stays 1. Bindings may change size/ena
 but **not** which resources a node touches, since that would invalidate the
 dependency edges fixed at compile.
 
+**Native CPU tasks.** A host task that submits no device work need not go through
+a SYCL queue. When a `Node` reports `submits_device_work() == false` (set by the
+fluent `Graph::add_host()`), the scheduler runs its `execute_native()` callable
+directly on the worker thread and reports an empty event — the same "ready inline"
+seam host tasks already use — so its successors release through the normal path
+with no queue acquired. A node is only dispatched after its predecessor events
+complete, so the shared USM it reads is visible host-side. The default is the safe
+SYCL route (`submits_device_work() == true`); only `add_host()` opts in, so a host
+task that does submit a kernel is never misrouted.
+
 ---
 
 ## 5. Core (`core/`)

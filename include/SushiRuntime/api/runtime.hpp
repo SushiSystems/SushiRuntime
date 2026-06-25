@@ -775,6 +775,60 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Adds a pure-CPU task ordered by the data it touches.
+                 *
+                 * For arbitrary host C++ that submits no device work — gameplay
+                 * logic, AI, navigation, the CPU half of a broadphase. Name the data
+                 * it touches with Reads(...)/Writes(...) so the tracker orders it
+                 * against the rest of the graph; the runtime then runs @p fn natively
+                 * on a worker thread, with no SYCL queue submission, and releases its
+                 * successors through the same path as any kernel task. The shared USM
+                 * it reads is visible because the task runs only after its
+                 * predecessors complete.
+                 *
+                 * @param reads  Handles this task reads (their read keys).
+                 * @param writes Handles this task writes (their write keys).
+                 * @param fn     Nullary callable run once; must not submit SYCL work.
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<std::is_invocable_v<F>, int> = 0>
+                Graph& add_host(const Reads& reads, const Writes& writes, F&& fn)
+                {
+                    std::vector<Core::ResourceRegion> r = reads.keys;
+                    std::vector<Core::ResourceRegion> w = writes.keys;
+                    specs_.push_back([fn = std::forward<F>(fn), r, w](BackingGraph& bg)
+                    {
+                        bg.add_native(r, w, fn);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds an untracked pure-CPU task that runs every step.
+                 *
+                 * The dependency-free form of add_host: with no Reads/Writes the task
+                 * is both a root and a leaf, so use it for self-contained host work
+                 * (telemetry, a per-step callback) that needs no ordering against
+                 * other tasks. Runs natively, with no SYCL submission.
+                 *
+                 * @param fn Nullary callable run once per step; must not submit SYCL work.
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<std::is_invocable_v<F>, int> = 0>
+                Graph& add_host(F&& fn)
+                {
+                    specs_.push_back([fn = std::forward<F>(fn)](BackingGraph& bg)
+                    {
+                        bg.add_native({}, {}, fn);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
                  * @brief Adds an offloadable task: a named remote kernel with a
                  *        local fallback.
                  *
