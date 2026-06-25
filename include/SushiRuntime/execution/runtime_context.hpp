@@ -176,6 +176,23 @@ namespace SushiRuntime
                 void* malloc_shared_on(size_t bytes, size_t device_index);
 
                 /**
+                 * @brief Allocates device-only USM pinned to one specific device queue.
+                 *
+                 * The device-resident counterpart of malloc_shared_on: the allocation
+                 * stays on @p device_index and is never host-addressable, so a field
+                 * kept resident across frames does not migrate to the host on access.
+                 * The owner is recorded exactly as for shared USM, so the scheduler
+                 * routes kernels to the owning queue and selective host readback copies
+                 * through it. Use it when several device-resident buffers must share one
+                 * context (a State's two fields).
+                 *
+                 * @param bytes        Allocation size in bytes.
+                 * @param device_index Target device queue index ([0, device_count())).
+                 * @return Device USM pointer, or nullptr on failure.
+                 */
+                void* malloc_device_on(size_t bytes, size_t device_index);
+
+                /**
                  * @brief Frees USM obtained from malloc_shared/malloc_device and
                  *        drops its owner record. Safe to call with nullptr.
                  */

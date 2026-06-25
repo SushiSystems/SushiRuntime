@@ -9,6 +9,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- Device-resident state: `Buffer<T>`/`State<T>` (and the `rt.buffer<T>()` /
+  `rt.state<T>()` factories) take an optional `Residency` — `Shared` (the default,
+  host-addressable) or `Device` (stays resident on its device, no host migration).
+  Device-resident handles are not host-indexable (`operator[]` asserts in debug);
+  the host seeds and reads them through `write_range(offset, src, count)` and
+  `read_range(offset, count)`, the selective-readback seam that copies just a
+  window through the owning queue. Backed by `RuntimeContext::malloc_device_on`.
+  Shared residency and existing code are unchanged.
 - Native CPU execution path: `Graph::add_host(...)` runs arbitrary host C++ that
   submits no SYCL work (gameplay logic, AI, navigation, CPU-side broadphase)
   directly on a worker thread, with no queue submission. The task is ordered into
