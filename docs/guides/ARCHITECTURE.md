@@ -288,22 +288,28 @@ Allocation tuned for parallel, heterogeneous workloads. Three cooperating pieces
 **record the owning queue** for each allocation (see §10), which is what lets the
 scheduler dispatch a kernel to the exact device/context that owns its data.
 
-A global `FlushCallback` (`g_flush_callback` atomic) can be installed by the
-runtime to flush thread magazines when a second `USMAllocator` instance is
-detected on the same thread — this prevents the "multi-allocator flush cliff"
-pathology without requiring per-call checks in the hot path.
+A global `FlushCallback` (`g_flush_callback` atomic) routes a thread magazine's
+cached slots back to the owning `USMAllocator` (e.g. on thread exit or bank
+eviction). The callback runs under a shared lock (`g_flush_mutex`); an allocator's
+destructor takes that lock exclusively while it nulls its registry slot and frees
+its pages, so a flush can never touch a freed page and a flush that starts after
+teardown safely no-ops (`owns_id` also rejects a registry-index collision). This
+is what lets a thread that outlives its `RuntimeContext` still exit cleanly.
 
 ### 7.2 `BitmaskMemoryPool` + `ThreadLocalMagazine` — the fast path
 
 For poolable (Shared) allocations there is a two-tier, mostly lock-free pool:
 
 - **`ThreadLocalMagazine`** (`thread_local`) is the hot path. `NUM_BUCKETS = 4`
-  size classes (**64, 256, 1024, 4096** bytes), each a stack of up to
-  `BATCH_SIZE = 256` pointers. `pop` and `push` are 2–3 instructions with **no
-  atomics and no locks**. A `LOW_WATERMARK` (BATCH_SIZE/4 = 64) lets the caller
-  refill proactively before a bucket empties on the critical path.
-  `free_capacity(bucket_idx)` returns how many slots the magazine can still
-  absorb, used by `bulk_claim_capped` to size the refill batch exactly.
+  size classes, each a stack of up to `BATCH_SIZE = 256` pointers. `pop` and
+  `push` are a few instructions with **no atomics and no locks**. It holds a small
+  set of **per-allocator banks** (`MAX_ALLOCATORS`) so interleaving allocations
+  across allocators (multi-GPU / multi-context) no longer flushes the whole
+  magazine on every switch — the former "flush cliff". A `cur_bank_` cache keeps
+  the single-allocator case to one comparison; touching more allocators than the
+  bank count evicts (flushes) the least-recently-used bank.
+  `free_capacity(bucket_idx, alloc_id)` returns how many slots that allocator's
+  bank can still absorb, used by `bulk_claim_capped` to size the refill exactly.
 - **`BitmaskMemoryPool`** is the backing store. Memory is carved into
   `MemoryPage`s of 64 fixed-size slots tracked by a single `uint64_t` atomic
   `bitmask`. Refilling a magazine uses **bulk claim**: `bulk_claim` takes the

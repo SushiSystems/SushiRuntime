@@ -24,6 +24,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdint>
+#include <shared_mutex>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -55,6 +56,19 @@ namespace SushiRuntime
          * Indexed by allocator ID modulo 256.
          */
         static std::atomic<USMManagerImpl*> g_allocator_registry[256];
+
+        /**
+         * @brief Serializes magazine flushes against allocator teardown.
+         *
+         * Flushes (global_flush_magazine, from any thread including a dying
+         * thread's magazine) take it shared; an allocator's destructor takes it
+         * exclusive while it nulls its registry slot and frees its pages. This
+         * guarantees no flush touches an allocator's pages while they are being
+         * freed, and any flush that starts after teardown sees a null registry
+         * slot and becomes a no-op — so a thread that outlives its RuntimeContext
+         * can still exit cleanly.
+         */
+        static std::shared_timed_mutex g_flush_mutex;
 
         /**
          * @brief Global callback function to flush a magazine batch.
@@ -239,6 +253,13 @@ namespace SushiRuntime
                  */
                 ~USMManagerImpl() override
                 {
+                    // Hold the flush lock exclusively for the whole teardown: it
+                    // blocks until any in-flight magazine flush targeting this
+                    // allocator completes, and makes the registry-null below
+                    // visible before pages are freed, so no flush can touch a
+                    // freed page. A flush that starts after this sees the null slot.
+                    std::unique_lock<std::shared_timed_mutex> teardown_lock(g_flush_mutex);
+
                     g_allocator_registry[allocator_id_ % 256].store(nullptr, std::memory_order_release);
 
                     // Drain any remote-free queues into the page bitmasks before
@@ -367,13 +388,13 @@ namespace SushiRuntime
                         // available pointers.
                         void* batch[BATCH_SIZE];
                         MemoryPage* root = thread_slots_[slot].root_pages[bucket_idx].load(std::memory_order_acquire);
-                        size_t cap = t_mag.free_capacity(bucket_idx);
+                        size_t cap = t_mag.free_capacity(bucket_idx, allocator_id_);
                         if (cap > BATCH_SIZE) cap = BATCH_SIZE;
                         int claimed = pool_.bulk_claim_capped(root, batch, static_cast<int>(cap));
 
                         if (claimed > 0)
                         {
-                            for (int i = 1; i < claimed; ++i) 
+                            for (int i = 1; i < claimed; ++i)
                                 t_mag.push(bucket_idx, batch[i], allocator_id_);
                             return batch[0];
                         }
@@ -385,7 +406,7 @@ namespace SushiRuntime
                             // After expansion, the magazine is still empty so we can
                             // safely take the full page worth via bulk_claim. Use the
                             // capped variant anyway for consistency; cap is unchanged.
-                            cap = t_mag.free_capacity(bucket_idx);
+                            cap = t_mag.free_capacity(bucket_idx, allocator_id_);
                             if (cap > BATCH_SIZE) cap = BATCH_SIZE;
                             claimed = pool_.bulk_claim_capped(root, batch, static_cast<int>(cap));
 
@@ -485,10 +506,21 @@ namespace SushiRuntime
                  * @param ptr Pointer to query.
                  * @return The SYCL device that owns the pointer.
                  */
-                sycl::device get_device_of(void* ptr) override 
+                sycl::device get_device_of(void* ptr) override
                 {
                     return sycl::get_pointer_device(ptr, queue_.get_context());
                 }
+
+                /**
+                 * @brief Confirms this allocator owns a given id.
+                 *
+                 * Guards against an id%256 registry collision: a stale flush whose
+                 * id maps to this slot but belongs to a since-destroyed allocator
+                 * must not be applied to this allocator's pages.
+                 * @param id The allocator id carried by a flush request.
+                 * @return True if @p id is this allocator's id.
+                 */
+                bool owns_id(uint64_t id) const { return allocator_id_ == id; }
 
             private:
                 sycl::queue& queue_;
@@ -771,10 +803,17 @@ namespace SushiRuntime
                 }
         };
 
-        void global_flush_magazine(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count) 
+        void global_flush_magazine(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count)
         {
+            // Shared lock: many threads may flush concurrently, but all are
+            // excluded while an allocator tears down (see g_flush_mutex). Once the
+            // lock is held, a destroyed allocator's slot reads null and a collided
+            // slot fails owns_id, so the flush safely no-ops in both cases.
+            std::shared_lock<std::shared_timed_mutex> flush_lock(g_flush_mutex);
+
             USMManagerImpl* mgr = g_allocator_registry[alloc_id % 256].load(std::memory_order_acquire);
-            if (mgr) mgr->flush_batch(bucket_idx, ptrs, count);
+            if (mgr && mgr->owns_id(alloc_id))
+                mgr->flush_batch(bucket_idx, ptrs, count);
         }
 
         /**
