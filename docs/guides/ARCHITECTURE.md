@@ -124,9 +124,19 @@ do not need to reach into the lower layers.
     `tasks_stolen_intra_numa`, `tasks_stolen_inter_numa`.
   - `distributed_statistics` — `DistributedStatistics`: offloaded task count,
     `remote_nodes_involved`.
-  - Fields marked `[reserved]` (`scheduling_overhead_ms`,
-    `network_latency_wait_ms`, byte counters) are present in the struct but
-    always zero in v1.
+  - `host_to_device_bytes` / `device_to_host_bytes` — bytes the runtime itself
+    copied across the link during the run window, via `Buffer::read_range` /
+    `write_range`. Implicit shared-USM page migration by the driver is invisible to
+    SYCL and is deliberately **not** counted; only explicit, runtime-issued
+    transfers are.
+  - `node_timings` / `worker_timings` — present only when the runtime was created
+    with profiling on (`Runtime::create({}, cfg)`, `RuntimeConfig::profiling`).
+    `NodeTiming` gives per-node device vs host time and an invocation count keyed by
+    a stable plan index; `WorkerTiming` splits each worker's run into
+    busy/stealing/polling/idle for stall attribution. Off (the default), the queues
+    and the dispatch hot path read no timestamps and these stay empty.
+  - `scheduling_overhead_ms` is filled from the workers' completion-polling time
+    when profiling is on, else zero. `network_latency_wait_ms` stays reserved.
 
 - **`Errc`** — error codes: `ok`, `invalid_graph`, `compile_failed`,
   `allocation_failed`, `kernel_failed`, `device_lost`.
@@ -252,8 +262,8 @@ Three headers form the error layer:
 - **`result.hpp`**: `Result<T, E>` — a C++17 value-based error carrier modelled
   on `std::expected`; `ErrorWrapper<E>`; `make_error()` factory. Used throughout
   the stack so callers can choose between throwing and non-throwing call sites.
-- **`run_report.hpp`**: `RunReport` struct (see §3) plus `NumaNodeStatistics`
-  and `DistributedStatistics`.
+- **`run_report.hpp`**: `RunReport` struct (see §3) plus `NumaNodeStatistics`,
+  `DistributedStatistics`, and the profiling rows `NodeTiming` / `WorkerTiming`.
 
 ### Compatibility shims
 

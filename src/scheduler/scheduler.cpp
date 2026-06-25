@@ -29,6 +29,8 @@
 #include <atomic>
 #include <random>
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/sycl_compat.hpp>
@@ -166,6 +168,13 @@ namespace SushiRuntime
                 run_error_ = nullptr;
             }
             run_failed_.store(false, std::memory_order_release);
+
+            // Publish the context's (fixed) profiling choice to the poller before
+            // workers run, so completion accumulates per-node timing under profiling
+            // and stays free of timestamp reads otherwise.
+            const bool prof = context.profiling_enabled();
+            event_poller.set_profiling(prof);
+            profiling_active_ = prof;
 
             running.store(true, std::memory_order_release);
             pending_cv.notify_all();
@@ -307,23 +316,42 @@ namespace SushiRuntime
 
             int spin_count = 0;
 
+            // Stall-attribution timing. All reads are gated on profiling_active_, so
+            // a non-profiled run takes no clock samples in this hot loop.
+            using sclock = std::chrono::steady_clock;
+            auto& wt = worker_time_[thread_id];
+            auto add_ns = [](std::atomic<std::uint64_t>& bucket,
+                             sclock::time_point a, sclock::time_point b) noexcept
+            {
+                bucket.fetch_add(static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(b - a).count()),
+                    std::memory_order_relaxed);
+            };
+
             while (true)
             {
                 const bool is_running = running.load(std::memory_order_acquire);
                 const bool is_shutdown = shutdown_requested.load(std::memory_order_acquire);
+                // Read after the acquire above: arm_for_execution() writes
+                // profiling_active_ then publishes it with the release store to
+                // running, so observing running here makes that write visible without
+                // a separate atomic.
+                const bool prof = profiling_active_;
 
                 // IDLE / waiting-for-arm phase: no work, not yet signalled.
                 if (!is_running && !is_shutdown && active_events.is_empty() && !has_pending_submissions())
                 {
                     // Full idle, sleep until armed or stopped
+                    const auto idle0 = prof ? sclock::now() : sclock::time_point{};
                     std::unique_lock<std::mutex> lock(pending_mutex);
-                    pending_cv.wait_for(lock, std::chrono::milliseconds(10), [this]() 
+                    pending_cv.wait_for(lock, std::chrono::milliseconds(10), [this]()
                     {
-                        return running.load(std::memory_order_acquire) || 
-                               shutdown_requested.load(std::memory_order_acquire) || 
-                               !pending_submissions.empty() || 
+                        return running.load(std::memory_order_acquire) ||
+                               shutdown_requested.load(std::memory_order_acquire) ||
+                               !pending_submissions.empty() ||
                                !priority_submissions.empty();
                     });
+                    if (prof) add_ns(wt.idle_ns, idle0, sclock::now());
                     continue;
                 }
 
@@ -334,8 +362,15 @@ namespace SushiRuntime
                 {
                     SushiRuntime::Memory::EpochGuard epoch_guard;
 
-                    event_poller.poll_events(active_events, *my_queue);
-                    
+                    if (prof)
+                    {
+                        const auto p0 = sclock::now();
+                        event_poller.poll_events(active_events, *my_queue);
+                        add_ns(wt.polling_ns, p0, sclock::now());
+                    }
+                    else
+                        event_poller.poll_events(active_events, *my_queue);
+
                     {
                         std::lock_guard<std::mutex> lock(pending_mutex);
                         if (!priority_submissions.empty())
@@ -348,8 +383,17 @@ namespace SushiRuntime
                     if (!task)
                         task = my_queue->pop();
 
-                    if (!task) 
-                        task = find_task_to_steal(thread_id);
+                    if (!task)
+                    {
+                        if (prof)
+                        {
+                            const auto s0 = sclock::now();
+                            task = find_task_to_steal(thread_id);
+                            add_ns(wt.stealing_ns, s0, sclock::now());
+                        }
+                        else
+                            task = find_task_to_steal(thread_id);
+                    }
 
                     if (task)
                     {
@@ -376,9 +420,15 @@ namespace SushiRuntime
                                 offloaded = coordinator_->try_offload(gnode);
                         }
                         if (!offloaded)
+                        {
+                            const auto b0 = prof ? sclock::now() : sclock::time_point{};
                             execute_task(task, active_events);
+                            if (prof) add_ns(wt.busy_ns, b0, sclock::now());
+                        }
 #else
+                        const auto b0 = prof ? sclock::now() : sclock::time_point{};
                         execute_task(task, active_events);
+                        if (prof) add_ns(wt.busy_ns, b0, sclock::now());
 #endif
                     }
                 }
@@ -391,10 +441,12 @@ namespace SushiRuntime
                     // It is extremely important for the thread to be outside the Epoch while in the Backoff (Yield/Sleep) phase,
                     // so that a sleeping thread does not stall the global memory reclamation process.
                     spin_count++;
-                    if (spin_count < 100) 
+                    const auto bk0 = prof ? sclock::now() : sclock::time_point{};
+                    if (spin_count < 100)
                         std::this_thread::yield();
-                    else 
+                    else
                         std::this_thread::sleep_for(std::chrono::microseconds(100));
+                    if (prof) add_ns(wt.idle_ns, bk0, sclock::now());
                 }
             }
         }
@@ -481,7 +533,26 @@ namespace SushiRuntime
                 if (node && node->get_execution_mode() == Task::ExecutionMode::HOST &&
                     !node->submits_device_work())
                 {
-                    node->execute_native();
+                    // Native work runs synchronously here, so wall-clock around it is
+                    // its true duration. Only host_ns is taken here; the invocation
+                    // count is bumped once at completion (poll_events), the single
+                    // chokepoint every node passes through, so nothing double-counts.
+                    // The timing read happens only under profiling, leaving the
+                    // default path untouched.
+                    if (context.profiling_enabled())
+                    {
+                        const auto h0 = std::chrono::steady_clock::now();
+                        node->execute_native();
+                        const auto h1 = std::chrono::steady_clock::now();
+                        node->prof_host_ns.fetch_add(
+                            static_cast<std::uint64_t>(
+                                std::chrono::duration_cast<std::chrono::nanoseconds>(h1 - h0).count()),
+                            std::memory_order_relaxed);
+                    }
+                    else
+                    {
+                        node->execute_native();
+                    }
                     events.push({sycl::event{}, task, true});
                     return;
                 }
@@ -572,6 +643,37 @@ namespace SushiRuntime
         {
             std::lock_guard<std::mutex> lock(run_error_mutex_);
             return run_error_;
+        }
+
+        /**
+         * @brief Returns the accumulated time split for a worker.
+         */
+        TaskScheduler::WorkerTimeSplit
+        TaskScheduler::get_worker_times(int worker_id) const noexcept
+        {
+            WorkerTimeSplit s;
+            if (worker_id < 0 || static_cast<size_t>(worker_id) >= num_workers)
+                return s;
+            const auto& b = worker_time_[worker_id];
+            s.busy_ns     = b.busy_ns.load(std::memory_order_relaxed);
+            s.stealing_ns = b.stealing_ns.load(std::memory_order_relaxed);
+            s.polling_ns  = b.polling_ns.load(std::memory_order_relaxed);
+            s.idle_ns     = b.idle_ns.load(std::memory_order_relaxed);
+            return s;
+        }
+
+        /**
+         * @brief Zeroes every worker's accumulated time split.
+         */
+        void TaskScheduler::reset_worker_times() noexcept
+        {
+            for (size_t i = 0; i < Core::MAX_WORKER_THREADS; ++i)
+            {
+                worker_time_[i].busy_ns.store(0, std::memory_order_relaxed);
+                worker_time_[i].stealing_ns.store(0, std::memory_order_relaxed);
+                worker_time_[i].polling_ns.store(0, std::memory_order_relaxed);
+                worker_time_[i].idle_ns.store(0, std::memory_order_relaxed);
+            }
         }
 
         /**

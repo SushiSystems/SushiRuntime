@@ -1152,7 +1152,15 @@ namespace SushiRuntime
                     // ended a previous run does not abort this one.
                     engine.reset_cancellation();
 
+                    // Clear the profiling accumulators so the report covers only this
+                    // run; only when the context was built for profiling.
+                    const bool profiling = ctx_->profiling_enabled();
+                    if (profiling)
+                        engine.reset_profiling(plan_);
+
                     const auto before = engine.metrics();
+                    const std::size_t d2h_before = ctx_->device_to_host_bytes();
+                    const std::size_t h2d_before = ctx_->host_to_device_bytes();
                     const auto t0 = clock::now();
 
                     std::size_t executed = 0;
@@ -1187,6 +1195,15 @@ namespace SushiRuntime
                     auto report = detail::build_run_report(*ctx_, before, after, total_tasks,
                                                            compile_ms, ms(t0, t1));
                     report.cancelled = engine.is_cancelled();
+
+                    // Explicit host<->device transfers issued during this run window
+                    // (selective readback). Implicit USM migration is not counted.
+                    report.device_to_host_bytes = ctx_->device_to_host_bytes() - d2h_before;
+                    report.host_to_device_bytes = ctx_->host_to_device_bytes() - h2d_before;
+
+                    // Per-node and per-worker timing, only when profiling is on.
+                    if (profiling)
+                        engine.collect_profiling(plan_, report);
                     return report;
                 }
 
@@ -1596,6 +1613,26 @@ namespace SushiRuntime
 #endif // SR_DISTRIBUTED
 
         /**
+         * @brief Optional runtime-wide settings chosen once at Runtime::create().
+         *
+         * Separate from the hardware filter so settings that shape the whole runtime
+         * (rather than which devices are selected) have a home that can grow without
+         * touching create()'s signature again. Every field defaults to the
+         * zero-overhead behaviour, so passing nothing keeps the previous semantics.
+         */
+        struct RuntimeConfig
+        {
+            /**
+             * @brief Build queues with profiling so RunReport carries device timing.
+             *
+             * Construction-time because SYCL queues are created once and not rebuilt
+             * to toggle profiling. Off by default: the queues and the dispatch hot
+             * path are then exactly as without this struct, reading no timestamps.
+             */
+            bool profiling = false;
+        };
+
+        /**
          * @brief Entry point of the fluent API: owns hardware and hands out graphs.
          *
          * Create one with Runtime::create(), then call graph() to build work.
@@ -1607,12 +1644,16 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Creates a runtime with default device selection.
-                 * @param config Device-class filter passed to hardware discovery.
+                 * @param config         Device-class filter passed to hardware discovery.
+                 * @param runtime_config Runtime-wide settings (e.g. profiling); defaults
+                 *                        to the zero-overhead behaviour.
                  * @return A ready Runtime.
                  */
-                static Runtime create(const Topology::HardwareFilterConfig& config = {})
+                static Runtime create(const Topology::HardwareFilterConfig& config = {},
+                                      const RuntimeConfig& runtime_config = {})
                 {
-                    return Runtime(std::make_shared<Execution::RuntimeContext>(config));
+                    return Runtime(std::make_shared<Execution::RuntimeContext>(
+                        config, nullptr, nullptr, runtime_config.profiling));
                 }
 
                 /**
@@ -1719,6 +1760,7 @@ namespace SushiRuntime
     // stays API::Graph (reached through auto) because the name Graph already
     // denotes a namespace at this scope.
     using API::Runtime;
+    using API::RuntimeConfig;
     using API::Reads;
     using API::Writes;
     using API::In;

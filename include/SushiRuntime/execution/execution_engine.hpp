@@ -37,6 +37,7 @@
 // type" under clang. Including the definition keeps the build valid on Windows
 // and is a no-op on platforms where the class is not exported (e.g. Linux).
 #include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/core/run_report.hpp>
 
 namespace SushiRuntime
 {
@@ -202,6 +203,23 @@ namespace SushiRuntime
 
             /** @brief Whether a background rebalancer is running. Default false. */
             virtual bool rebalancer_enabled() const { return false; }
+
+            /**
+             * @brief Clears profiling accumulators before a profiled run.
+             *
+             * Default no-op so engines that gather no timing (and test doubles) need
+             * not implement it. @param graph The compiled plan whose counters reset.
+             */
+            virtual void reset_profiling(CompiledGraph& /*graph*/) {}
+
+            /**
+             * @brief Fills a report's profiling breakdown after a profiled run.
+             *
+             * Default no-op. @param graph The compiled plan read for timing.
+             * @param report The report whose profiling rows are populated.
+             */
+            virtual void collect_profiling(CompiledGraph& /*graph*/,
+                                           Core::RunReport& /*report*/) const {}
         };
 
         /**
@@ -283,6 +301,31 @@ namespace SushiRuntime
 
             /** @brief Whether the background rebalancer is currently running. */
             bool rebalancer_enabled() const override;
+
+            /**
+             * @brief Clears all profiling accumulators before a profiled run.
+             *
+             * Zeroes every node's per-run timing in @p graph and the scheduler's
+             * per-worker time buckets, so the resulting report covers only the run
+             * about to start. The driver calls this only when profiling is on.
+             *
+             * @param graph The compiled plan whose node counters are reset.
+             */
+            void reset_profiling(CompiledGraph& graph) override;
+
+            /**
+             * @brief Fills a report's profiling breakdown after a profiled run.
+             *
+             * Reads each node's accumulated device/host time and invocation count
+             * into @p report.node_timings (skipping nodes that never ran), the
+             * per-worker time split into @p report.worker_timings, and derives
+             * scheduling_overhead_ms from the workers' completion-polling time.
+             *
+             * @param graph  The compiled plan whose node counters are read.
+             * @param report The report to populate; left untouched for nodes that
+             *               did not run.
+             */
+            void collect_profiling(CompiledGraph& graph, Core::RunReport& report) const override;
 
 #ifdef SR_DISTRIBUTED
             /** @brief Access to the persistent scheduler, so Master mode can attach the coordinator. */

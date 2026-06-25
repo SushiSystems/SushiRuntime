@@ -155,11 +155,25 @@ namespace SushiRuntime
                 }
 #endif
 
+                /**
+                 * @brief Turns per-node kernel timing capture on or off.
+                 *
+                 * Set once by the scheduler when it arms a run, from the context's
+                 * profiling choice. When off, the completion path reads no event
+                 * timestamps and touches no node counters. Read-only during a run, so
+                 * a plain bool is safe across the workers that poll.
+                 *
+                 * @param on True to accumulate device time and invocation counts.
+                 */
+                void set_profiling(bool on) noexcept { profiling_ = on; }
+
             private:
 #ifdef SR_DISTRIBUTED
                 /** @brief Optional per-completion observer (Master mode only). */
                 std::function<void(SushiRuntime::Scheduler::Task*)> on_node_complete_;
 #endif
+                /** @brief Whether to accumulate per-node kernel timing on completion. */
+                bool profiling_ = false;
                 /** @brief Counter for adaptive backoff strategy. */
                 size_t backoff_counter = 0;
                 /** @brief Maximum value for the backoff counter. */
@@ -212,6 +226,13 @@ namespace SushiRuntime
                             {
                                 active_events[i].event.wait();
                             }
+
+                            // The completion chokepoint every node passes through, so
+                            // the per-node invocation count and kernel device time are
+                            // accumulated here exactly once per dispatch. No-op unless
+                            // the run was armed for profiling.
+                            if (profiling_)
+                                accumulate_profiling(active_events[i]);
 
 #ifdef SR_DISTRIBUTED
                             // Observe completion before releasing successors, so a
@@ -268,6 +289,46 @@ namespace SushiRuntime
                 }
 
             private:
+                /**
+                 * @brief Accumulates a finished task's timing onto its node.
+                 *
+                 * Counts one invocation for every completed graph node (the sentinel
+                 * excepted, as it is plumbing, not a system) and adds the kernel's
+                 * device time when the event carries profiling info. A non-profiled or
+                 * inline-ready event has no device timing, so only the count is bumped;
+                 * a backend that cannot report profiling is tolerated, not fatal.
+                 *
+                 * @param pe The completed event/task pair being reaped.
+                 */
+                void accumulate_profiling(const PolledEvent& pe) noexcept
+                {
+                    if (!pe.task || !pe.task->is_graph_node())
+                        return;
+                    auto* node = static_cast<SushiRuntime::Graph::Node*>(pe.task);
+                    if (node->is_sentinel)
+                        return;
+
+                    node->prof_invocations.fetch_add(1, std::memory_order_relaxed);
+
+                    if (pe.event == sycl::event{})
+                        return;
+                    try
+                    {
+                        const auto start = pe.event.get_profiling_info<
+                            sycl::info::event_profiling::command_start>();
+                        const auto end = pe.event.get_profiling_info<
+                            sycl::info::event_profiling::command_end>();
+                        if (end > start)
+                            node->prof_device_ns.fetch_add(end - start,
+                                                           std::memory_order_relaxed);
+                    }
+                    catch (...)
+                    {
+                        // Backend without profiling support: keep the invocation count,
+                        // skip device time. Not an error.
+                    }
+                }
+
                 /**
                  * @brief Activates next nodes in the graph when a task finishes.
                  * @param task Finished task pointer.
