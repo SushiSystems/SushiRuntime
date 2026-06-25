@@ -1630,12 +1630,14 @@ namespace SushiRuntime
                  * @tparam T            Element type (trivially copyable for device use).
                  * @param count        Number of elements.
                  * @param device_index Target device queue; selects the owning context.
+                 * @param residency    Shared (host-addressable) or Device (resident).
                  * @return An owning Buffer<T> handle.
                  */
                 template <typename T>
-                Buffer<T> buffer(std::size_t count, std::size_t device_index = 0)
+                Buffer<T> buffer(std::size_t count, std::size_t device_index = 0,
+                                 Residency residency = Residency::Shared)
                 {
-                    return Buffer<T>(ctx_, count, device_index);
+                    return Buffer<T>(ctx_, count, device_index, residency);
                 }
 
                 /**
@@ -1648,12 +1650,14 @@ namespace SushiRuntime
                  * @tparam T            Element type (trivially copyable for device use).
                  * @param count        Number of elements in each of the two buffers.
                  * @param device_index Target device queue for both buffers.
+                 * @param residency    Shared (host-addressable) or Device (resident).
                  * @return An owning State<T> handle.
                  */
                 template <typename T>
-                State<T> state(std::size_t count, std::size_t device_index = 0)
+                State<T> state(std::size_t count, std::size_t device_index = 0,
+                               Residency residency = Residency::Shared)
                 {
-                    return State<T>(ctx_, count, device_index);
+                    return State<T>(ctx_, count, device_index, residency);
                 }
 
                 /** @brief Access to the underlying context for advanced use. */

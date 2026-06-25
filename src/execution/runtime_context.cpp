@@ -356,6 +356,26 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Allocates device-only USM on a specific device queue.
+         *
+         * @param bytes The size in bytes to allocate.
+         * @param device_index The index of the device to allocate on.
+         * @return void* Pointer to the allocated device memory.
+         * @throws std::runtime_error If the device index is out of bounds.
+         */
+        void* RuntimeContext::malloc_device_on(size_t bytes, size_t device_index)
+        {
+            sycl::queue& q = get_queue(device_index); // throws if out of bounds
+            void* p = sycl::malloc_device(bytes, q);
+            if (p)
+            {
+                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
+                impl_->usm_owner[p] = device_index;
+            }
+            return p;
+        }
+
+        /**
          * @brief Allocates shared USM memory on a specific NUMA node.
          *
          * @param bytes The size in bytes to allocate.
