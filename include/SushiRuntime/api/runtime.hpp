@@ -151,6 +151,62 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Opt-in late-binding controls for a task, evaluated once per step.
+         *
+         * Passed as the leading argument to add() to make a node's iteration size
+         * or its participation vary every step without recompiling the graph.
+         * when() gates whether the node runs at all (a sleeping island, an
+         * LOD-disabled system); sized() sets how many elements it iterates, which
+         * must stay within the capacity its buffers were allocated for. The two
+         * compose — when(pred).and_sized(count) — and each provider is polled on the
+         * driver thread before the plan replays, so the compiled topology is reused
+         * across steps and the graph compiles exactly once.
+         */
+        struct Dynamic
+        {
+            std::function<bool()>        when_pred;  /**< Empty: the node is always enabled. */
+            std::function<std::size_t()> count_fn;   /**< Empty: iterate the full baked range. */
+
+            /** @brief Adds (or replaces) the enable predicate; returns *this for chaining. */
+            Dynamic& and_when(std::function<bool()> pred)
+            {
+                when_pred = std::move(pred);
+                return *this;
+            }
+
+            /** @brief Adds (or replaces) the live-size provider; returns *this for chaining. */
+            Dynamic& and_sized(std::function<std::size_t()> count)
+            {
+                count_fn = std::move(count);
+                return *this;
+            }
+        };
+
+        /**
+         * @brief Builds a Dynamic that enables its node only while @p pred is true.
+         * @param pred Polled before each step; false skips the node that step.
+         * @return A Dynamic carrying the predicate, ready to pass to add().
+         */
+        inline Dynamic when(std::function<bool()> pred)
+        {
+            Dynamic d;
+            d.when_pred = std::move(pred);
+            return d;
+        }
+
+        /**
+         * @brief Builds a Dynamic that sets its node's live iteration size per step.
+         * @param count Polled before each step; must not exceed the baked capacity.
+         * @return A Dynamic carrying the size provider, ready to pass to add().
+         */
+        inline Dynamic sized(std::function<std::size_t()> count)
+        {
+            Dynamic d;
+            d.count_fn = std::move(count);
+            return d;
+        }
+
+        /**
          * @brief A kernel argument captured for read, with auto dependency tracking.
          *
          * Wraps a Buffer so add() can both register the read and hand the kernel the
@@ -641,6 +697,84 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Adds a late-bound per-element task with explicit tracking.
+                 *
+                 * The dynamic counterpart of the Reads/Writes per-element add: the
+                 * task is compiled once, but @p dyn lets its iteration size and
+                 * whether it runs vary every step with no recompile. Allocate the
+                 * touched buffers for the maximum (@p capacity) elements; sized()
+                 * then iterates only the live count each step, and when() can skip
+                 * the task entirely.
+                 *
+                 * @param dyn      Late-binding controls from when()/sized().
+                 * @param reads    Handles this task reads (their read keys).
+                 * @param writes   Handles this task writes (their write keys).
+                 * @param capacity Pre-sized upper bound; the live size must not exceed it.
+                 * @param fn       Callable invoked as fn(i) for each live index i.
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
+                Graph& add(Dynamic dyn, const Reads& reads, const Writes& writes,
+                           std::size_t capacity, F&& fn)
+                {
+                    return emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
+                                                    capacity, std::forward<F>(fn));
+                }
+
+                /**
+                 * @brief Adds a late-bound per-element task naming data by raw pointer.
+                 *
+                 * The raw-pointer form of the dynamic per-element add; see the
+                 * Reads/Writes overload for the late-binding semantics.
+                 *
+                 * @param dyn      Late-binding controls from when()/sized().
+                 * @param reads    Base pointers this task reads.
+                 * @param writes   Base pointers this task writes.
+                 * @param capacity Pre-sized upper bound; the live size must not exceed it.
+                 * @param fn       Callable invoked as fn(i) for each live index i.
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
+                Graph& add(Dynamic dyn, const std::vector<void*>& reads,
+                           const std::vector<void*>& writes, std::size_t capacity, F&& fn)
+                {
+                    return emit_dynamic_per_element(std::move(dyn),
+                        std::vector<Core::ResourceRegion>(reads.begin(), reads.end()),
+                        std::vector<Core::ResourceRegion>(writes.begin(), writes.end()),
+                        capacity, std::forward<F>(fn));
+                }
+
+                /**
+                 * @brief Adds a late-bound per-step update rule for a State.
+                 *
+                 * The dynamic counterpart of add(State, fn): the same read-current /
+                 * write-next stepped task, but @p dyn lets its active-element count
+                 * and whether it runs vary every step with no recompile. The State's
+                 * full allocation is the capacity; sized() iterates a prefix of it
+                 * (e.g. a changing number of active cells), and when() can skip the
+                 * step's kernel. The double-buffer swap is followed as in the static
+                 * form. Provide exactly one update rule per State per step.
+                 *
+                 * Note: the State still advances (swaps current/next) on a step its
+                 * when() disabled, so a skipped step leaves the un-written next field
+                 * current. This overload suits size variation; truly sleeping a field
+                 * across steps belongs to the streaming layer, not when().
+                 *
+                 * @tparam T  Element type of the State.
+                 * @param dyn Late-binding controls from when()/sized().
+                 * @param s   The state this rule evolves; must outlive the graph.
+                 * @param fn  Callable invoked as fn(i, const T* cur, T* next).
+                 * @return *this, for chaining.
+                 */
+                template <typename T, class F,
+                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
+                                                               const T*, T*>, int> = 0>
+                Graph& add(Dynamic dyn, State<T>& s, F&& fn)
+                {
+                    return emit_dynamic_state(std::move(dyn), s, std::forward<F>(fn));
+                }
+
+                /**
                  * @brief Adds an offloadable task: a named remote kernel with a
                  *        local fallback.
                  *
@@ -787,6 +921,16 @@ namespace SushiRuntime
 
                 /** @brief Number of update rules (tasks) added so far. */
                 std::size_t size() const noexcept { return task_count_; }
+
+                /**
+                 * @brief Number of times the graph has been compiled.
+                 *
+                 * Exposes the replay guarantee: a graph that only changes late-bound
+                 * size or enablement between steps recompiles zero extra times, so
+                 * this stays at 1 across a whole run after the first build.
+                 * @return The compile count since this Graph was created.
+                 */
+                std::size_t compile_count() const noexcept { return compiles_; }
 
                 /**
                  * @brief Runs the graph once, blocking until it completes.
@@ -965,6 +1109,12 @@ namespace SushiRuntime
                         for (auto& update_io : dist_io_updaters_)
                             update_io();
 
+                        // Refresh late-bound node controls (size, enablement) for
+                        // this step before replaying the compiled plan (no-op when
+                        // no dynamic task was added).
+                        for (auto& update_binding : binding_updaters_)
+                            update_binding();
+
                         reset_plan_state();
                         engine.execute(plan_); // lvalue -> non-consuming replay
 
@@ -1137,6 +1287,95 @@ namespace SushiRuntime
                     return *this;
                 }
 
+                // Emits a 1-D per-element task whose iteration size and enablement
+                // are late-bound through a LateBindings block. The kernel reads the
+                // live count at submit (USE_BAKED falls back to capacity), so the
+                // node follows per-step size changes without recompiling; the
+                // scheduler honours the enabled flag. The dependency regions cover
+                // the full capacity, so any live size within it is race-free.
+                template <class F>
+                Graph& emit_dynamic_per_element(Dynamic dyn,
+                                                std::vector<Core::ResourceRegion> reads,
+                                                std::vector<Core::ResourceRegion> writes,
+                                                std::size_t capacity, F&& fn)
+                {
+                    auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
+                    specs_.push_back([fn = std::forward<F>(fn), capacity, lb,
+                                      reads = std::move(reads),
+                                      writes = std::move(writes)](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, capacity, lb](sycl::handler& h)
+                        {
+                            const std::size_t live =
+                                lb->count.load(std::memory_order_relaxed);
+                            const std::size_t n =
+                                live == ::SushiRuntime::Graph::LateBindings::USE_BAKED
+                                    ? capacity : live;
+                            h.parallel_for(sycl::range<1>(n),
+                                           [fn](sycl::id<1> i) { fn(i[0]); });
+                        }, reads, writes, lb);
+                    });
+                    register_binding_updater(lb, std::move(dyn));
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                // Emits a 1-D State update rule with late-bound size and enablement.
+                // Mirrors emit_dynamic_per_element but reads the State's current/next
+                // pointers fresh each submit (following the swap) and registers the
+                // once-per-step advance, so a stepped field can vary its active count
+                // or sleep entirely with no recompile.
+                template <typename T, class F>
+                Graph& emit_dynamic_state(Dynamic dyn, State<T>& s, F&& fn)
+                {
+                    auto view = view_for(s);
+                    State<T>* sp = &s;
+                    auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
+
+                    specs_.push_back([fn = std::forward<F>(fn), view, sp, lb](BackingGraph& bg)
+                    {
+                        const std::size_t capacity = sp->size();
+                        bg.add_node([fn, view, lb, capacity](sycl::handler& h)
+                        {
+                            const T* cur = view->cur;
+                            T* next = view->next;
+                            const std::size_t live =
+                                lb->count.load(std::memory_order_relaxed);
+                            const std::size_t n =
+                                live == ::SushiRuntime::Graph::LateBindings::USE_BAKED
+                                    ? capacity : live;
+                            h.parallel_for(sycl::range<1>(n),
+                                           [=](sycl::id<1> i) { fn(i[0], cur, next); });
+                        }, { sp->read_key() }, { sp->write_key() }, lb);
+                    });
+
+                    register_advance(s, view);
+                    register_binding_updater(lb, std::move(dyn));
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                // Wires a Dynamic's providers to a node's bindings: pushes a per-step
+                // updater that polls when()/sized() on the driver thread and stores
+                // the results into the shared block the kernel and scheduler read.
+                // Skipped when the Dynamic carries no providers (the defaults — always
+                // enabled, full range — already hold), so an unused tag costs nothing.
+                void register_binding_updater(
+                    std::shared_ptr<::SushiRuntime::Graph::LateBindings> lb, Dynamic dyn)
+                {
+                    if (!dyn.when_pred && !dyn.count_fn)
+                        return;
+                    binding_updaters_.push_back([lb = std::move(lb), dyn = std::move(dyn)]()
+                    {
+                        if (dyn.when_pred)
+                            lb->enabled.store(dyn.when_pred(), std::memory_order_relaxed);
+                        if (dyn.count_fn)
+                            lb->count.store(dyn.count_fn(), std::memory_order_relaxed);
+                    });
+                }
+
                 // Emits a 1-D offloadable per-element task with a local fallback. The
                 // single funnel for both the raw-pointer and the Reads/Writes offload
                 // overloads. Setting op_id is what makes compile() consider the node
@@ -1187,6 +1426,7 @@ namespace SushiRuntime
                     plan_ = bg.compile();
                     plan_.capture_base_state();
                     dirty_ = false;
+                    ++compiles_;
                 }
 
                 // Restores the cached plan's per-run state so it can run again. The
@@ -1213,6 +1453,10 @@ namespace SushiRuntime
                 // step. Empty unless a distributed State step was added.
                 std::vector<std::function<void()>> dist_io_updaters_;
 
+                // One per dynamic (late-bound) task: refreshes its size/enable
+                // controls before each step. Empty unless a Dynamic add() was used.
+                std::vector<std::function<void()>> binding_updaters_;
+
                 // One shared StateView per State, captured by every kernel that
                 // touches it. Type-erased; view_for() casts back to the typed view.
                 std::unordered_map<const void*, std::shared_ptr<void>> state_views_;
@@ -1222,6 +1466,11 @@ namespace SushiRuntime
                 std::vector<std::function<void()>> view_resyncs_;
 
                 std::size_t task_count_ = 0;
+
+                // Number of times the backing graph has been compiled. A late-bound
+                // graph proves its value by holding this at 1 across a multi-step run
+                // whose sizes and enable flags change every step.
+                std::size_t compiles_ = 0;
 
                 // Cached compiled plan, valid while !dirty_; replayed across steps.
                 // It owns its own replay baseline (see capture_base_state/rearm).

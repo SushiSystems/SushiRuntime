@@ -30,6 +30,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/resource_region.hpp>
+#include <SushiRuntime/graph/late_bindings.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 
@@ -102,6 +103,28 @@ namespace SushiRuntime
                 void add_node(TaskWork work,
                              const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                              const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                             const std::vector<sycl::event>& dependencies = {});
+
+                /**
+                 * @brief Adds a device task carrying a late-binding block.
+                 *
+                 * The dependency-tracked overload above plus a per-step control
+                 * block: the same region ordering applies, but the node also holds
+                 * @p bindings so the scheduler can skip it when disabled this step
+                 * and the kernel can read its live iteration size. The compiled
+                 * topology stays fixed; only size and the enable flag vary per step,
+                 * so the graph is built once and replayed without recompiling.
+                 *
+                 * @param work Function that uses a sycl::handler to run work.
+                 * @param read_access Regions this task reads from.
+                 * @param write_access Regions this task writes to.
+                 * @param bindings Shared per-step controls; null behaves like the plain overload.
+                 * @param dependencies Additional manual events to wait for.
+                 */
+                void add_node(TaskWork work,
+                             const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                             const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                             std::shared_ptr<LateBindings> bindings,
                              const std::vector<sycl::event>& dependencies = {});
 
                 /**
