@@ -206,7 +206,7 @@ def _vendor_llvm_windows() -> tuple[str, str] | None:
     """
     dest = deps_dir() / "tools" / "llvm"
     tag = f"llvmorg-{LLVM_WINDOWS_VERSION}"
-    asset = f"clang+llvm-{LLVM_WINDOWS_VERSION}-x86_64-pc-windows-msvc.tar.xz"
+    asset = f"LLVM-{LLVM_WINDOWS_VERSION}-win64.exe"
     try:
         url = _gh_tagged_asset("llvm/llvm-project", tag, asset)
     except Exception as exc:
@@ -217,8 +217,15 @@ def _vendor_llvm_windows() -> tuple[str, str] | None:
         try:
             console.info(f"Downloading LLVM {LLVM_WINDOWS_VERSION} (~1 GB) into {dest} ...")
             _download(url, archive)
-            console.info("Extracting LLVM (this takes a minute) ...")
-            _extract_tarball(archive, dest)
+            console.info("Installing LLVM silently (this takes a minute) ...")
+            dest.mkdir(parents=True, exist_ok=True)
+            # NSIS installer requires elevation (WinError 740). We use PowerShell to 
+            # trigger the UAC prompt via -Verb RunAs so it can install silently.
+            ps_cmd = (
+                f"Start-Process -FilePath '{archive}' "
+                f"-ArgumentList '/S /D={dest.absolute()}' -Wait -Verb RunAs"
+            )
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], check=True)
         except Exception as exc:
             console.error(f"LLVM vendor failed: {exc}")
             shutil.rmtree(dest, ignore_errors=True)
@@ -294,6 +301,10 @@ def install_adaptivecpp(cfg: Config, mgr: IPackageManager | None,
         ]
         if clang_prefix:
             cfg_cmd.append(f"-DCLANG_INSTALL_PREFIX={clang_prefix}")
+            if cfg.is_windows:
+                vcpkg_tc = deps_dir() / "vcpkg" / "scripts" / "buildsystems" / "vcpkg.cmake"
+                if vcpkg_tc.is_file():
+                    cfg_cmd.append(f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_tc}")
         if cfg.ninja_exe:
             cfg_cmd.append(f"-DCMAKE_MAKE_PROGRAM={cfg.expand(cfg.ninja_exe)}")
 

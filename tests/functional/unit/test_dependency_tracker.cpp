@@ -171,3 +171,145 @@ TEST(Unit_DependencyTrackerTest, NoSelfDependency)
 
     tracker.reset();
 }
+
+using SushiRuntime::Core::ResourceRegion;
+
+/**
+ * @brief Tests that writes to disjoint sub-regions of one allocation stay parallel.
+ *
+ * Two writers touching non-overlapping byte ranges of the same base must not be
+ * ordered — the core win of region identity over base-pointer identity.
+ */
+TEST(Unit_DependencyTrackerTest, DisjointSubRegionsAreParallel)
+{
+    DependencyTracker tracker;
+    auto w1 = make_sushi<Node>();
+    auto w2 = make_sushi<Node>();
+
+    char base[64];
+    tracker.resolve(w1.get(), ResourceRegion{base, 0, 32}, true);
+    tracker.resolve(w2.get(), ResourceRegion{base, 32, 32}, true);
+
+    EXPECT_EQ(in_degree_of(w2), 0)
+        << "Writes to disjoint halves of one buffer must not serialize.";
+
+    tracker.reset();
+}
+
+/**
+ * @brief Tests that writes to overlapping sub-regions are ordered (WAW).
+ *
+ * Ranges [0,40) and [32,64) share bytes [32,40), so the second writer must
+ * depend on the first.
+ */
+TEST(Unit_DependencyTrackerTest, OverlappingSubRegionsAreOrdered)
+{
+    DependencyTracker tracker;
+    auto w1 = make_sushi<Node>();
+    auto w2 = make_sushi<Node>();
+
+    char base[64];
+    tracker.resolve(w1.get(), ResourceRegion{base, 0, 40}, true);
+    tracker.resolve(w2.get(), ResourceRegion{base, 32, 32}, true);
+
+    EXPECT_EQ(in_degree_of(w2), 1) << "Overlapping writes (WAW) must be ordered.";
+
+    tracker.reset();
+}
+
+/**
+ * @brief Tests that a whole-buffer access conflicts with any sub-region of it.
+ *
+ * A bare base pointer is the whole-buffer region, which contains every
+ * sub-region of the same allocation, so it serializes against them.
+ */
+TEST(Unit_DependencyTrackerTest, WholeBufferConflictsWithSubRegion)
+{
+    DependencyTracker tracker;
+    auto whole = make_sushi<Node>();
+    auto part  = make_sushi<Node>();
+
+    char base[64];
+    tracker.resolve(whole.get(), base, true);                 // whole-buffer write
+    tracker.resolve(part.get(), ResourceRegion{base, 16, 8}, true);
+
+    EXPECT_EQ(in_degree_of(part), 1)
+        << "A sub-region write must order after a prior whole-buffer write.";
+
+    tracker.reset();
+}
+
+/**
+ * @brief Tests that a read over a span depends on every overlapping prior write.
+ *
+ * A read of [0,64) follows two writers that each cover one half; stopping at the
+ * first writer found would drop one RAW edge. The read must depend on both.
+ */
+TEST(Unit_DependencyTrackerTest, ReadDependsOnAllOverlappingWrites)
+{
+    DependencyTracker tracker;
+    auto w_lo = make_sushi<Node>();
+    auto w_hi = make_sushi<Node>();
+    auto rd   = make_sushi<Node>();
+
+    char base[64];
+    tracker.resolve(w_lo.get(), ResourceRegion{base, 0, 32}, true);
+    tracker.resolve(w_hi.get(), ResourceRegion{base, 32, 32}, true);
+    tracker.resolve(rd.get(),   ResourceRegion{base, 0, 64}, false);
+
+    EXPECT_EQ(in_degree_of(rd), 2)
+        << "A read spanning both halves must depend on both half-writers (RAW).";
+
+    tracker.reset();
+}
+
+/**
+ * @brief Tests that the write walk does not stop at a partially-covering writer.
+ *
+ * History: a read of [0,16), then a write of [16,32), then a write of [0,32). The
+ * middle writer overlaps the final write but does not cover its [0,16) part, and
+ * it does not depend on the earlier read. Stopping the walk there would drop the
+ * WAR edge to the read and silently race. The final write must depend on both.
+ */
+TEST(Unit_DependencyTrackerTest, WriteWalkContinuesPastPartialWriter)
+{
+    DependencyTracker tracker;
+    auto rd = make_sushi<Node>();
+    auto wp = make_sushi<Node>();
+    auto w  = make_sushi<Node>();
+
+    char base[64];
+    tracker.resolve(rd.get(), ResourceRegion{base, 0, 16}, false);
+    tracker.resolve(wp.get(), ResourceRegion{base, 16, 16}, true);
+    tracker.resolve(w.get(),  ResourceRegion{base, 0, 32}, true);
+
+    EXPECT_EQ(in_degree_of(wp), 0)
+        << "The partial writer must not depend on the disjoint earlier read.";
+    EXPECT_EQ(in_degree_of(w), 2)
+        << "The covering write must order after both the partial writer and the read.";
+
+    tracker.reset();
+}
+
+/**
+ * @brief Tests that distinct allocations never serialize.
+ *
+ * Two writers to different base allocations must stay parallel even if their
+ * byte offsets coincide — overlap requires the same base.
+ */
+TEST(Unit_DependencyTrackerTest, DistinctAllocationsAreParallel)
+{
+    DependencyTracker tracker;
+    auto w1 = make_sushi<Node>();
+    auto w2 = make_sushi<Node>();
+
+    char base_a[64];
+    char base_b[64];
+    tracker.resolve(w1.get(), ResourceRegion{base_a, 0, 32}, true);
+    tracker.resolve(w2.get(), ResourceRegion{base_b, 0, 32}, true);
+
+    EXPECT_EQ(in_degree_of(w2), 0)
+        << "Writes to different allocations must never be ordered.";
+
+    tracker.reset();
+}

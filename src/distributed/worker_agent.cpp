@@ -391,7 +391,12 @@ namespace SushiRuntime
                 Graph::TaskGraph g(ctx);
                 const auto* k = kernel;
                 const auto  meta = msg.meta;
-                g.add_task(msg.meta, in_ptrs, out_ptrs,
+                // The dependency tracker keys on regions; a remote kernel's buffers
+                // are whole allocations, so each pointer maps to its whole-buffer
+                // region. The void* lists stay for the kernel invocation below.
+                g.add_task(msg.meta,
+                    std::vector<SushiRuntime::Core::ResourceRegion>(in_ptrs.begin(), in_ptrs.end()),
+                    std::vector<SushiRuntime::Core::ResourceRegion>(out_ptrs.begin(), out_ptrs.end()),
                     [k, in_ptrs, out_ptrs, meta](sycl::queue& q,
                         const std::vector<sycl::event>&) -> sycl::event
                     {

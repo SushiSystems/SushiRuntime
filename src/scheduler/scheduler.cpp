@@ -457,8 +457,8 @@ namespace SushiRuntime
                 void* anchor = nullptr;
                 if (node)
                 {
-                    if (!node->io_writes_.empty())     anchor = node->io_writes_.front();
-                    else if (!node->io_reads_.empty()) anchor = node->io_reads_.front();
+                    if (!node->io_writes_.empty())     anchor = node->io_writes_.front().base;
+                    else if (!node->io_reads_.empty()) anchor = node->io_reads_.front().base;
                 }
                 auto& q = anchor ? context.get_queue_for_ptr(anchor, target_numa_id)
                                  : context.get_numa_local_queue(target_numa_id);

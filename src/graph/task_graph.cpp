@@ -274,23 +274,23 @@ namespace SushiRuntime
          * @param write_access A list of USM pointers the task writes to.
          * @param dependencies An optional list of manual SYCL dependencies.
          */
-        void TaskGraph::add_node(TaskWork work, 
-                                 const std::vector<void*>& read_access, 
-                                 const std::vector<void*>& write_access,
+        void TaskGraph::add_node(TaskWork work,
+                                 const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                  const std::vector<sycl::event>& dependencies)
         {
             auto node = make_sushi<Node>();
             node->work = std::move(work);
             node->sycl_deps = dependencies;
-            
+
             // Resolve USM dependencies for reads and writes
-            for(void* ptr : read_access)
-                if (ptr) impl_->tracker.resolve(node.get(), ptr, false);
+            for (const auto& r : read_access)
+                if (r.base) impl_->tracker.resolve(node.get(), r, false);
 
-            for(void* ptr : write_access)
-                if (ptr) impl_->tracker.resolve(node.get(), ptr, true);
+            for (const auto& w : write_access)
+                if (w.base) impl_->tracker.resolve(node.get(), w, true);
 
-            // Retain the access lists on the node, exactly as add_task does. The
+            // Retain the access regions on the node, exactly as add_task does. The
             // scheduler uses them to route a KERNEL submit to the queue that owns
             // the USM; without them a kernel can run on a device whose context does
             // not own the data — a cross-context illegal access on heterogeneous
@@ -299,8 +299,11 @@ namespace SushiRuntime
             node->io_writes_ = write_access;
 
 #ifdef SR_DISTRIBUTED
-            node->dist_reads_  = read_access;
-            node->dist_writes_ = write_access;
+            // The distributed coherence model is whole-buffer, so offload resolves
+            // handles from the owning base of each region (sub-region offload is a
+            // later refinement).
+            for (const auto& r : read_access)  node->dist_reads_.push_back(r.base);
+            for (const auto& w : write_access) node->dist_writes_.push_back(w.base);
 #endif
 
             SR_LOG_DEBUG("Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
@@ -320,8 +323,8 @@ namespace SushiRuntime
          * @param dependencies An optional list of manual SYCL dependencies.
          */
         void TaskGraph::add_task(const TaskMetadata& meta,
-                                 const std::vector<void*>& read_access,
-                                 const std::vector<void*>& write_access,
+                                 const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                  TaskWork device_work,
                                  HostWork fallback_work,
                                  const std::vector<sycl::event>& dependencies)
@@ -363,23 +366,24 @@ namespace SushiRuntime
             }
             
             // Resolve USM dependencies utilizing Lock-Free Access History
-            for(void* ptr : read_access)
-                if (ptr) impl_->tracker.resolve(node.get(), ptr, false);
+            for (const auto& r : read_access)
+                if (r.base) impl_->tracker.resolve(node.get(), r, false);
 
-            for(void* ptr : write_access)
-                if (ptr) impl_->tracker.resolve(node.get(), ptr, true);
+            for (const auto& w : write_access)
+                if (w.base) impl_->tracker.resolve(node.get(), w, true);
 
-            // Retain the access lists on the node (every build). The scheduler
+            // Retain the access regions on the node (every build). The scheduler
             // uses them to route a KERNEL submit to the queue that owns the USM
             // (avoiding a cross-context illegal access on heterogeneous setups).
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
 #ifdef SR_DISTRIBUTED
-            // The distributed layer resolves these to serializable buffer handles
-            // for potential offload; same pointers, kept under the existing names.
-            node->dist_reads_  = read_access;
-            node->dist_writes_ = write_access;
+            // The distributed layer resolves the owning base of each region to a
+            // serializable buffer handle for potential offload (whole-buffer
+            // coherence; sub-region offload is a later refinement).
+            for (const auto& r : read_access)  node->dist_reads_.push_back(r.base);
+            for (const auto& w : write_access) node->dist_writes_.push_back(w.base);
 #endif
 
             SR_LOG_DEBUG("Semantic Node '{}' (Type: {}) added (R: {}, W: {}).",
@@ -400,8 +404,8 @@ namespace SushiRuntime
          * @param dependencies An optional list of manual SYCL dependencies.
          */
         void TaskGraph::add_task(const TaskMetadata& meta,
-                                 const std::vector<void*>& read_access,
-                                 const std::vector<void*>& write_access,
+                                 const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                  HostWork fallback_work,
                                  const std::vector<sycl::event>& dependencies)
         {
@@ -439,13 +443,15 @@ namespace SushiRuntime
             const std::vector<void*> reads  = live_reads  ? *live_reads  : std::vector<void*>{};
             const std::vector<void*> writes = live_writes ? *live_writes : std::vector<void*>{};
 
+            // A double-buffered offload node touches whole allocations that rotate
+            // each step, so each live pointer maps to a whole-buffer region.
             for (void* ptr : reads)
                 if (ptr) impl_->tracker.resolve(node.get(), ptr, false);
             for (void* ptr : writes)
                 if (ptr) impl_->tracker.resolve(node.get(), ptr, true);
 
-            node->io_reads_  = reads;
-            node->io_writes_ = writes;
+            node->io_reads_.assign(reads.begin(), reads.end());
+            node->io_writes_.assign(writes.begin(), writes.end());
 
 #ifdef SR_DISTRIBUTED
             node->dist_reads_   = reads;

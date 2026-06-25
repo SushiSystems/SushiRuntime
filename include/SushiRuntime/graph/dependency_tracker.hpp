@@ -28,6 +28,7 @@
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/resource_region.hpp>
 
 namespace SushiRuntime 
 {
@@ -40,11 +41,11 @@ namespace SushiRuntime
          *
          * Forms the basis for chronological dependency tracking by chaining read and write events together.
          */
-        struct AccessNode 
+        struct AccessNode
         {
             Node* task;
             bool is_write;
-            void* ptr;
+            SushiRuntime::Core::ResourceRegion region; /**< Byte interval this access touches. */
             AccessNode* prev; // Immutable once linked to the history
         };
 
@@ -86,16 +87,19 @@ namespace SushiRuntime
                 std::array<ResourceState, SHARD_COUNT> registry;
 
                 /**
-                 * @brief Maps a raw memory address to a specific internal shard index.
+                 * @brief Maps an allocation's identity to a specific internal shard index.
                  *
-                 * Applies a fast SplitMix64 bitwise hashing algorithm on the address bits to distribute pointers uniformly.
+                 * Shards on the owning allocation (its base), not the sub-region, so
+                 * every access to one allocation lands in the same chain and can be
+                 * compared by interval overlap. Applies a fast SplitMix64 bitwise hash
+                 * to distribute allocations uniformly.
                  *
-                 * @param ptr The memory address to hash.
+                 * @param base The owning allocation identity to hash.
                  * @return The computed array index corresponding to a specific shard.
                  */
-                inline size_t get_shard_idx(void* ptr) const 
+                inline size_t get_shard_idx(SushiRuntime::Core::ResourceId base) const
                 {
-                    uint64_t z = reinterpret_cast<uint64_t>(ptr);
+                    uint64_t z = reinterpret_cast<uint64_t>(base);
                     z += 0x9e3779b97f4a7c15;
                     z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
                     z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
@@ -118,15 +122,18 @@ namespace SushiRuntime
                 void reset();
 
                 /**
-                 * @brief Links a task into the implicit access dependency graph for a specific resource.
+                 * @brief Links a task into the implicit access dependency graph for a region.
                  *
-                 * Appends a new access node to the resource shard and wires appropriate predecessor constraints based on data flow rules.
+                 * Appends a new access node to the owning allocation's shard and wires
+                 * predecessor constraints to every earlier access whose region overlaps
+                 * @p region, following the RAW/WAR/WAW data-flow rules.
                  *
                  * @param node The current task node that requires execution ordering.
-                 * @param ptr The base pointer of the memory resource being accessed.
+                 * @param region The byte interval of the resource being accessed. A bare
+                 *               base pointer converts to the whole-buffer region.
                  * @param is_write Indicates whether the operation intends to modify the resource.
                  */
-                void resolve(Node* node, void* ptr, bool is_write);
+                void resolve(Node* node, const SushiRuntime::Core::ResourceRegion& region, bool is_write);
 
                 /**
                  * @brief Enforces an explicit execution ordering constraint between two tasks.
