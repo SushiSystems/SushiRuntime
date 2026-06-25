@@ -75,6 +75,7 @@ namespace SushiRuntime
         {
             // A. Overall status
             bool is_successful = true;                  /**< Whether the run completed without error. */
+            bool cancelled = false;                     /**< Whether the run stopped early on a cancellation request. */
             std::size_t total_tasks_executed = 0;       /**< Local (all NUMA) + remote tasks. */
 
             // B. Timing / bottleneck analysis

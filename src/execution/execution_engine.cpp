@@ -136,6 +136,35 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Requests cancellation of the active run.
+         *
+         * Forwards to the scheduler, which makes remaining tasks drain without
+         * executing while the sentinel still fires, so the blocked execute()
+         * returns promptly.
+         */
+        void ExecutionEngine::cancel()
+        {
+            impl_->scheduler.request_cancellation();
+        }
+
+        /**
+         * @brief Reports whether the active run has been cancelled.
+         * @return True once cancel() was called and before reset_cancellation().
+         */
+        bool ExecutionEngine::is_cancelled() const
+        {
+            return impl_->scheduler.run_cancelled();
+        }
+
+        /**
+         * @brief Clears the cancellation flag so the next run starts clean.
+         */
+        void ExecutionEngine::reset_cancellation()
+        {
+            impl_->scheduler.reset_cancellation();
+        }
+
+        /**
          * @brief Retrieves the current execution metrics.
          *
          * Aggregates completed task and steal counts across all workers.

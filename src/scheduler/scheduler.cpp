@@ -408,12 +408,14 @@ namespace SushiRuntime
         {
             if (!task) return;
 
-            // The current run has already failed: do not execute more kernels.
-            // Route the task through the poller flagged ready so its successors
-            // still fire and the DAG drains to the sentinel instead of deadlocking
-            // on an un-triggered successor. The sentinel itself is exempt — it must
-            // run to deliver the error and unblock execute().
-            if (run_failed_.load(std::memory_order_acquire))
+            // The current run is aborting (a task threw, or it was cancelled): do
+            // not execute more kernels. Route the task through the poller flagged
+            // ready so its successors still fire and the DAG drains to the sentinel
+            // instead of deadlocking on an un-triggered successor. The sentinel
+            // itself is exempt — it must run to deliver the outcome and unblock
+            // execute().
+            if (run_failed_.load(std::memory_order_acquire) ||
+                run_cancelled_.load(std::memory_order_acquire))
             {
                 bool is_sentinel = task->is_graph_node() &&
                                    static_cast<SushiRuntime::Graph::Node*>(task)->is_sentinel;

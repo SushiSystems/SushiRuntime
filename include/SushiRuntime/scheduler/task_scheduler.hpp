@@ -126,6 +126,17 @@ namespace SushiRuntime
                 std::mutex run_error_mutex_;
                 /** @brief First exception captured this run; delivered to the caller. */
                 std::exception_ptr run_error_;
+                /**
+                 * @brief Set when the active run is cancelled from another thread.
+                 *
+                 * Like run_failed_ it makes remaining tasks drain without executing
+                 * (the sentinel still runs), but the run completes normally rather
+                 * than throwing — the drive loop sees it and stops. Unlike
+                 * run_failed_ it is NOT cleared per step by arm_for_execution(): a
+                 * cancellation aborts the whole multi-step run, so it is cleared only
+                 * by reset_cancellation() at the start of a fresh run.
+                 */
+                std::atomic<bool> run_cancelled_{false};
                 /** @brief Poller to track SYCL events. */
                 EventPolling event_poller;
                 /** @brief Reference to the runtime context. */
@@ -218,6 +229,23 @@ namespace SushiRuntime
                  * @return The captured exception, or null if the run did not fail.
                  */
                 std::exception_ptr run_error();
+
+                /**
+                 * @brief Requests cancellation of the active run. Thread-safe.
+                 *
+                 * Remaining tasks drain without executing and the run completes
+                 * (the sentinel still fires); the driver stops launching new steps.
+                 */
+                void request_cancellation() { run_cancelled_.store(true, std::memory_order_release); }
+
+                /**
+                 * @brief Reports whether the active run has been cancelled.
+                 * @return True if request_cancellation() was called and not yet reset.
+                 */
+                bool run_cancelled() const { return run_cancelled_.load(std::memory_order_acquire); }
+
+                /** @brief Clears the cancellation flag at the start of a fresh run. */
+                void reset_cancellation() { run_cancelled_.store(false, std::memory_order_release); }
 
                 size_t get_worker_count() const override;
                 size_t get_queue_size(int worker_id) const override;
