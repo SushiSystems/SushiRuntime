@@ -80,6 +80,7 @@ add_executable(sr_functional_tests
     functional/integration/test_fluent_hardening.cpp
     functional/integration/test_late_bindings.cpp
     functional/integration/test_native_cpu_path.cpp
+    functional/integration/test_device_resident.cpp
 )
 # Distributed layer tests only exist when the layer is built. They are
 # hardware-free (protocol / in-process transport / registries), so they stay in

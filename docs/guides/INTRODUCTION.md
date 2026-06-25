@@ -171,6 +171,18 @@ The task is dispatched only after its predecessors complete, so the shared USM i
 reads is already up to date; its successors then run once it returns. Do not
 submit SYCL work from an `add_host` body — use a normal `add()` for that.
 
+**Device-resident data** keeps a large field on the GPU across steps instead of
+in host-addressable shared USM. Pass `Residency::Device`; the host then seeds and
+reads it through `write_range`/`read_range` (it is no longer directly indexable):
+
+```cpp
+auto field = rt.state<float>(N, 0, Residency::Device);   // stays on the device
+std::vector<float> seed(N, 0.0f);
+field.write_range(0, seed.data(), N);                    // seed from the host
+sim.run(10000);
+auto window = field.read_range(0, 256);                  // pull a window back
+```
+
 The fluent API is enough for most programs. The rest of this guide documents the
 lower-level task-graph API it is built on, for when you need full control over
 task bodies, host/device fallback, or explicit dependency lists.

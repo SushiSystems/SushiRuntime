@@ -196,6 +196,16 @@ complete, so the shared USM it reads is visible host-side. The default is the sa
 SYCL route (`submits_device_work() == true`); only `add_host()` opts in, so a host
 task that does submit a kernel is never misrouted.
 
+**Residency.** A `Buffer`/`State` allocates either host-addressable **shared** USM
+(the default) or device-resident **device** USM (`Residency::Device`, via
+`RuntimeContext::malloc_device_on`), chosen once at construction behind the same
+handle API. Device residency keeps a large field on its device across steps with
+no host migration; because device USM is not host-addressable, `operator[]` is
+debug-asserted and the host instead uses `read_range()`/`write_range()`, which
+copy a sub-range through the allocation's owning queue. Dependency tracking and
+queue routing are identical for both — the owner map already records the device,
+so kernels dispatch to it and the range copies use the same queue.
+
 ---
 
 ## 5. Core (`core/`)
