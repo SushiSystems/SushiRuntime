@@ -9,6 +9,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- Fluent API reference site: a repo-root `Doxyfile` scoped to the public
+  `include/SushiRuntime/api` surface, a hand-written manual landing
+  (`docs/api/mainpage.md`), and the getting-started guide build together into a
+  browsable scripting-style reference. Build it with `sr project doxygen`
+  (output in `docs/api-site/html`); a CI job builds it on every push/PR and
+  surfaces any undocumented public symbol.
 - Rebalancer opt-out: `Runtime::rebalancer(bool)` (and
   `ExecutionEngine::set_rebalancer_enabled` / `rebalancer_enabled`) turns the
   background thermal rebalancer on or off. It stays on by default for throughput;

@@ -212,7 +212,10 @@ Treat the following as hard requirements, not suggestions:
   `cli/dependencies.toml`, the `CMakeLists.txt` find call, and the `Dockerfile`
   apt line must move together.
 - **Public API carries Doxygen.** New or changed public functions follow the
-  Doxygen rules in §4. The header *is* documentation.
+  Doxygen rules in §4. The header *is* documentation — it feeds the fluent API
+  reference site (`sr project doxygen`, scoped to `include/SushiRuntime/api` by the
+  repo-root `Doxyfile`), so a missing `@param` on a public symbol is a doc gap CI
+  reports.
 
 Code samples in the guides are checked against the real API, mirroring what the
 integration tests do — a sample that no longer compiles is a broken doc. Before
