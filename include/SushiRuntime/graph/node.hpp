@@ -155,6 +155,17 @@ namespace SushiRuntime
             bool is_fused = false;
 
             /**
+             * @brief Marks the graph's completion sentinel.
+             *
+             * The sentinel delivers run completion (and, on a failed run, the
+             * error) through its host_work, so it must run even after a task
+             * exception flips the scheduler into drain-without-executing mode —
+             * skipping it would leave the completion promise unset and hang
+             * execute(). Set by ExecutionEngine when it wires the sentinel.
+             */
+            bool is_sentinel = false;
+
+            /**
              * @brief Raw USM read/write pointers this node touches.
              *
              * Retained on every build (not just distributed) so the scheduler
