@@ -426,6 +426,24 @@ namespace SushiRuntime
                 }
             }
 
+            // A late-bound node that is disabled this step (a sleeping island, an
+            // LOD-off system) runs no kernel: route it through the poller flagged
+            // ready so its successors fire and the DAG drains exactly as a completed
+            // node would. Toggling a subsystem costs no recompile. The relaxed load
+            // is safe — the step boundary's completion barrier and the acquire/release
+            // submit path supply the happens-before. The sentinel carries no
+            // bindings, so it is never skipped here.
+            if (task->is_graph_node())
+            {
+                auto* gnode = static_cast<SushiRuntime::Graph::Node*>(task);
+                if (gnode->bindings_ &&
+                    !gnode->bindings_->enabled.load(std::memory_order_relaxed))
+                {
+                    events.push({sycl::event{}, task, true});
+                    return;
+                }
+            }
+
             auto& tls_state = SushiRuntime::Memory::Detail::get_tls_state();
             if (tls_state.id >= 0 && static_cast<size_t>(tls_state.id) < Core::MAX_WORKER_THREADS) 
                 worker_completed_tasks[tls_state.id].fetch_add(1, std::memory_order_relaxed);
