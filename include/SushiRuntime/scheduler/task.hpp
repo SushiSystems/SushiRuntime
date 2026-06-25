@@ -90,6 +90,29 @@ namespace SushiRuntime
             virtual sycl::event execute_host(sycl::queue& /*q*/, const std::vector<sycl::event>& /*deps*/) { return {}; }
 
             /**
+             * @brief Whether this task submits SYCL device work and so needs a queue.
+             *
+             * The scheduler reads this to decide between two host-execution paths:
+             * true (the safe default for every task) routes through execute_host with
+             * a real queue, so a host_work lambda that itself submits a kernel is
+             * dispatched on the queue owning its data; false marks a pure-CPU task the
+             * scheduler runs natively via execute_native(), skipping queue acquisition
+             * entirely. Only override to false when the work provably touches no SYCL
+             * device API.
+             */
+            virtual bool submits_device_work() const noexcept { return true; }
+
+            /**
+             * @brief Native host execution: plain C++ run directly on the worker thread.
+             *
+             * Used only when submits_device_work() is false. The scheduler invokes
+             * this without a queue and reports an empty event, so completion flows
+             * through the same successor-release path as any other task. Default is a
+             * no-op for task types that never opt into the native path.
+             */
+            virtual void execute_native() {}
+
+            /**
              * @brief Splits the task into two. Returns the new task part.
              * @return optional sushi_ptr to the new task part.
              */

@@ -9,6 +9,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- Native CPU execution path: `Graph::add_host(...)` runs arbitrary host C++ that
+  submits no SYCL work (gameplay logic, AI, navigation, CPU-side broadphase)
+  directly on a worker thread, with no queue submission. The task is ordered into
+  the graph by the `Reads(...)`/`Writes(...)` it names (an untracked overload runs
+  every step), and completion flows through the same successor-release path as a
+  kernel — one completion contract, not a second scheduler. Backed by a
+  `Task::submits_device_work()` hint (safe default true) and `Task::execute_native()`;
+  the scheduler skips queue acquisition only when a node opts in. Throwing native
+  tasks fail the run through the existing error-isolation path and leave the pool
+  re-armable.
 - Late-bound graph tasks (persistent graph, no per-step recompile): a `Dynamic`
   tag — built with `API::when(predicate)` and/or `API::sized(count)` and passed
   as the leading argument to `Graph::add()` — lets a task's per-step **enablement**

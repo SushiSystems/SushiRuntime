@@ -191,6 +191,27 @@ namespace SushiRuntime
                                          const std::vector<sycl::event>& dependencies = {});
 
                 /**
+                 * @brief Adds a pure-CPU task run natively, with no SYCL submission.
+                 *
+                 * For host work that touches no device API — gameplay logic, AI,
+                 * navigation, the CPU half of a broadphase. The node is ordered by
+                 * the regions it reads/writes exactly like a kernel task, but the
+                 * scheduler runs @p work directly on a worker thread and reports an
+                 * empty event, so completion uses the same successor-release path as
+                 * any other node. By the time the node is dispatched its predecessor
+                 * events have completed, so the shared USM it reads is visible.
+                 *
+                 * @param read_access Regions this task reads from.
+                 * @param write_access Regions this task writes to.
+                 * @param work Callable run once on a worker thread; submits no SYCL work.
+                 * @param dependencies Additional manual events to wait for.
+                 */
+                void add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                                const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                                std::function<void()> work,
+                                const std::vector<sycl::event>& dependencies = {});
+
+                /**
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.
                  *
                  * Links leaf nodes to a sentinel completion node, identifies root nodes

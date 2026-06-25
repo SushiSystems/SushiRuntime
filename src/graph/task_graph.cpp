@@ -485,6 +485,48 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Adds a pure-CPU task run natively on a worker thread.
+         *
+         * @param read_access Regions this task reads from.
+         * @param write_access Regions this task writes to.
+         * @param work Callable run once on a worker thread; submits no SYCL work.
+         * @param dependencies An optional list of manual SYCL dependencies.
+         */
+        void TaskGraph::add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                                   const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                                   std::function<void()> work,
+                                   const std::vector<sycl::event>& dependencies)
+        {
+            auto node = make_sushi<Node>();
+            node->native_work          = std::move(work);
+            node->submits_device_work_ = false;
+            node->mode                 = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+            node->sycl_deps            = dependencies;
+
+            for (const auto& r : read_access)
+                if (r.base) impl_->tracker.resolve(node.get(), r, false);
+
+            for (const auto& w : write_access)
+                if (w.base) impl_->tracker.resolve(node.get(), w, true);
+
+            // Retain regions for dependency identity. Queue routing is unused for a
+            // native task (it acquires no queue), but the lists stay consistent with
+            // every other node and keep the distributed handle resolution working.
+            node->io_reads_  = read_access;
+            node->io_writes_ = write_access;
+
+#ifdef SR_DISTRIBUTED
+            for (const auto& r : read_access)  node->dist_reads_.push_back(r.base);
+            for (const auto& w : write_access) node->dist_writes_.push_back(w.base);
+#endif
+
+            SR_LOG_DEBUG("Native CPU node added (R: {}, W: {}).",
+                         read_access.size(), write_access.size());
+
+            impl_->push_node_lock_free(std::move(node));
+        }
+
+        /**
          * @brief Analyzes dependencies and compiles the graph for execution in O(1) logical time.
          *
          * Bypasses the heavy O(N) full graph traversal by exclusively processing 
