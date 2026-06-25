@@ -191,6 +191,7 @@ namespace SushiRuntime
             auto* sched_ptr = &impl_->scheduler;
 
             graph.sentinel->metadata.name = "graph_completion_sentinel";
+            graph.sentinel->is_sentinel   = true;
             graph.sentinel->mode          = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
             graph.sentinel->host_work     =
                 [sched_ptr, completion_signal, completion_event_promise]

@@ -410,12 +410,18 @@ namespace SushiRuntime
 
             // The current run has already failed: do not execute more kernels.
             // Route the task through the poller flagged ready so its successors
-            // still fire and the DAG drains to the sentinel (which then reports the
-            // error) instead of deadlocking on an un-triggered successor.
+            // still fire and the DAG drains to the sentinel instead of deadlocking
+            // on an un-triggered successor. The sentinel itself is exempt — it must
+            // run to deliver the error and unblock execute().
             if (run_failed_.load(std::memory_order_acquire))
             {
-                events.push({sycl::event{}, task, true});
-                return;
+                bool is_sentinel = task->is_graph_node() &&
+                                   static_cast<SushiRuntime::Graph::Node*>(task)->is_sentinel;
+                if (!is_sentinel)
+                {
+                    events.push({sycl::event{}, task, true});
+                    return;
+                }
             }
 
             auto& tls_state = SushiRuntime::Memory::Detail::get_tls_state();
