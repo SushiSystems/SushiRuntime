@@ -91,12 +91,13 @@ class DetectStep(Step):
         # what the build actually uses instead of a misleading MISSING.
         cfg = ctx.cfg
         configured = {
-            "cmake": cfg.expand(cfg.cmake_exe) if cfg.cmake_exe else "",
-            "ninja": cfg.expand(cfg.ninja_exe) if cfg.ninja_exe else "",
-            "pkg-config": cfg.expand(cfg.pkgconf_exe) if cfg.pkgconf_exe else "",
+            "cmake":     cfg.expand(cfg.cmake_exe)    if cfg.cmake_exe    else "",
+            "ninja":     cfg.expand(cfg.ninja_exe)    if cfg.ninja_exe    else "",
+            "pkg-config": cfg.expand(cfg.pkgconf_exe) if cfg.pkgconf_exe  else "",
+            "doxygen":   cfg.expand(cfg.doxygen_exe)  if cfg.doxygen_exe  else "",
         }
         for tool in ("python3" if plat != "windows" else "python",
-                     "git", "cmake", "ninja", "pkg-config"):
+                     "git", "cmake", "ninja", "pkg-config", "doxygen"):
             path = shutil.which(tool) or ""
             if not path and configured.get(tool) and Path(configured[tool]).is_file():
                 path = configured[tool]
@@ -263,19 +264,19 @@ class InstallDepsStep(Step):
 
         tool_ok = True
 
-        # cmake + ninja: always install portably into the deps folder (never
-        # system-wide via winget), so the whole install stays one deletable
+        # cmake, ninja, and doxygen: always install portably into the deps folder
+        # (never system-wide via winget), so the whole install stays one deletable
         # directory. The direct-download manager extracts them under deps/tools
         # and skips anything already on PATH.
-        portable = ["Kitware.CMake", "Ninja-build.Ninja"]
+        portable = ["Kitware.CMake", "Ninja-build.Ninja", "DimitriVanHeesch.Doxygen"]
         missing_portable = [
             pkg for pkg in portable if not shutil.which(WINGET_ID_TO_CMD.get(pkg, ""))
         ]
         if missing_portable and direct:
-            console.info("Installing CMake + Ninja portably into the deps folder ...")
+            console.info("Installing CMake, Ninja, and Doxygen portably into the deps folder ...")
             tool_ok = direct.install(missing_portable, ctx.dry_run)
         elif not missing_portable:
-            console.info("cmake + ninja already present, skipping.")
+            console.info("cmake + ninja + doxygen already present, skipping.")
 
         # git is a bootstrap prerequisite (needed to clone the repo and acpp), so
         # it stays a system tool: reuse an existing one, else install via winget.
@@ -551,6 +552,13 @@ class UninstallStep(Step):
             else:
                 shutil.rmtree(cmake_dir, ignore_errors=True)
                 console.info(f"Removed {cmake_dir}")
+        doxygen_dir = tools / "doxygen"
+        if doxygen_dir.is_dir():
+            if ctx.dry_run:
+                console.info(f"(dry-run) would remove {doxygen_dir}")
+            else:
+                shutil.rmtree(doxygen_dir, ignore_errors=True)
+                console.info(f"Removed {doxygen_dir}")
         if tools.is_dir() and not any(tools.iterdir()) and not ctx.dry_run:
             tools.rmdir()
 

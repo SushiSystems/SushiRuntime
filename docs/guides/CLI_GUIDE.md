@@ -214,8 +214,15 @@ warning.) Add `--asan` to run binaries from the `build-asan/` tree.
 
 ```bash
 sr project clean       # remove the build/ and build-asan/ trees
-sr project doxygen     # generate the Doxygen API documentation
+sr project doxygen     # build the fluent API reference into docs/api-site/html
 ```
+
+`sr project doxygen` runs Doxygen against the repo-root `Doxyfile` (scoped to the
+public `include/SushiRuntime/api` surface). Doxygen is an external tool, not
+vendored: install it (`winget install DimitriVanHeesch.Doxygen` on Windows,
+`apt-get install doxygen graphviz` on Linux, `brew install doxygen graphviz` on
+macOS) or point `doxygen_exe` in `cli/config.local.toml` at an existing binary.
+The command prints the right install line if it cannot find one.
 
 ## `sr docker` — the development container
 

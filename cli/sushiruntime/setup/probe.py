@@ -217,6 +217,14 @@ def _resolve_windows(cfg: Config) -> dict[str, str]:
     if pkgconf:
         values["pkgconf_exe"] = pkgconf
 
+    doxy = shutil.which("doxygen") or _first_existing([
+        str(_tools_dir() / "doxygen" / "doxygen.exe"),
+        r"C:/Program Files/doxygen/bin/doxygen.exe",
+        r"C:/Program Files (x86)/doxygen/bin/doxygen.exe",
+    ])
+    if doxy:
+        values["doxygen_exe"] = doxy
+
     _discover_installed_toolchains(cfg, values)
     return values
 

@@ -9,6 +9,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- Fluent API reference site: a repo-root `Doxyfile` scoped to the public
+  `include/SushiRuntime/api` surface, a hand-written manual landing
+  (`docs/api/mainpage.md`), and the getting-started guide build together into a
+  browsable scripting-style reference. Build it with `sr project doxygen`
+  (output in `docs/api-site/html`); a CI job builds it on every push/PR and
+  surfaces any undocumented public symbol.
+- Rebalancer opt-out: `Runtime::rebalancer(bool)` (and
+  `ExecutionEngine::set_rebalancer_enabled` / `rebalancer_enabled`) turns the
+  background thermal rebalancer on or off. It stays on by default for throughput;
+  turn it off for a low-jitter real-time frame or a deterministic/replay run,
+  removing the mid-run background thread and its run-to-run nondeterminism.
 - Device-resident state: `Buffer<T>`/`State<T>` (and the `rt.buffer<T>()` /
   `rt.state<T>()` factories) take an optional `Residency` — `Shared` (the default,
   host-addressable) or `Device` (stays resident on its device, no host migration).
@@ -58,6 +69,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   a specific device queue, so buffers used together share one context.
 
 ### Changed
+- The scheduler's per-task downcast no longer uses RTTI: `execute_task` resolves a
+  graph node through the virtual `is_graph_node()` tag and a `static_cast` instead
+  of `dynamic_cast`, removing the one hot-path RTTI query and matching the strategy
+  `EventPolling` already used.
 - `IExecutionEngine::execute` is now non-consuming: `execute(CompiledGraph&)`
   runs a graph in place (enabling replay), with an rvalue convenience overload
   for one-shot runs. Existing call sites that pass rvalues are unaffected.
