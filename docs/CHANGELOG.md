@@ -8,6 +8,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ## [Unreleased]
 
+### Changed
+- Reusable completion latch (§5.1): `ExecutionEngine::execute` no longer allocates a
+  `std::promise`/`std::future` pair (and a capturing sentinel closure) per step. One
+  mutex+condition_variable latch lives on the engine and is reset, armed, and waited
+  on each step with no heap allocation; the sentinel's `host_work` is wired once per
+  compiled plan instead of every call. Over a long replayed run this removes millions
+  of per-step allocations and the associated jitter — the real-time path (L1) — while
+  keeping the existing completion contract: the sentinel still drains the DAG,
+  re-arms the pool, and surfaces a task error to the caller (now rethrown from the
+  latch), so error isolation and cancellation behave exactly as before. The
+  always-empty `sycl::event` that `execute()` returned is unchanged (no caller used
+  it); the per-step event-promise plumbing behind it was removed.
+
 ### Added
 - RunReport observability (§5.5): opt-in profiling, chosen once at
   `Runtime::create({}, cfg)` with `RuntimeConfig::profiling = true`. When on, a run

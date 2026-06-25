@@ -635,16 +635,23 @@ The fluent run driver snapshots `metrics()` before and after a run to populate
 the `RunReport` steal counters.
 
 The default `ExecutionEngine` owns one persistent `TaskScheduler`: `execute()`
-injects the compiled graph's roots, arms the scheduler, and blocks on the
-sentinel's completion promise; it never recreates threads.
+injects the compiled graph's roots, arms the scheduler, and blocks on a single
+**reusable completion latch** until the sentinel signals; it never recreates
+threads. The latch (a mutex + condition_variable owned once by the engine) replaces
+the per-step `std::promise`/`std::future` pair the old path allocated on every step
+of a replayed run — for a million-step run that was millions of heap allocations and
+a thread hand-off per step, pure jitter on a real-time frame. The sentinel's
+`host_work` is wired once per compiled plan (it captures only the stable latch and
+scheduler pointers), so a replay reuses the closure instead of rebuilding it; a
+recompile makes a fresh sentinel that re-wires.
 
 **Error isolation.** A task exception aborts only its own run, not the pool. The
 worker records the first exception (`run_failed_` + `run_error_`) instead of
 latching `shutdown_requested`; every remaining node then drains through the
 completion path without executing, so the DAG still reaches the sentinel. The
-sentinel reads `run_failed()`, re-arms the pool, and delivers the error to the
-caller via `set_exception` on the completion promise. The pool stays alive and
-re-armable, so a fresh graph runs normally after a failed one.
+sentinel reads `run_failed()`, re-arms the pool, and delivers the error through the
+completion latch (the caller rethrows it). The pool stays alive and re-armable, so a
+fresh graph runs normally after a failed one.
 
 **Cancellation.** `Graph::cancel()` (thread-safe, callable while another thread
 blocks in `run`/`run_for`/`run_until`) sets `run_cancelled_`, which drives the
