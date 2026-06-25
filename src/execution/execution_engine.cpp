@@ -52,6 +52,9 @@ namespace SushiRuntime
             SushiRuntime::Scheduler::TaskScheduler scheduler;
             std::unique_ptr<SushiRuntime::Scheduler::WorkloadCoordinator> rebalancer;
 
+            /** @brief Whether the background rebalancer should be running. */
+            std::atomic<bool> rebalancer_on{true};
+
             /** @brief Guards against double-shutdown. */
             std::atomic<bool> is_shutdown{false};
 
@@ -162,6 +165,29 @@ namespace SushiRuntime
         void ExecutionEngine::reset_cancellation()
         {
             impl_->scheduler.reset_cancellation();
+        }
+
+        /**
+         * @brief Turns the background thermal rebalancer on or off.
+         *
+         * start()/stop() are idempotent on the coordinator, so toggling is safe.
+         * The flag records intent for rebalancer_enabled() without reaching into the
+         * coordinator's internal state.
+         */
+        void ExecutionEngine::set_rebalancer_enabled(bool enabled)
+        {
+            if (!impl_->rebalancer) return;
+            impl_->rebalancer_on.store(enabled, std::memory_order_relaxed);
+            if (enabled) impl_->rebalancer->start();
+            else         impl_->rebalancer->stop();
+        }
+
+        /**
+         * @brief Reports whether the background rebalancer is currently running.
+         */
+        bool ExecutionEngine::rebalancer_enabled() const
+        {
+            return impl_->rebalancer && impl_->rebalancer_on.load(std::memory_order_relaxed);
         }
 
         /**
