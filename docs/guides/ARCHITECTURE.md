@@ -113,10 +113,12 @@ do not need to reach into the lower layers.
   - `run_for(duration)` / `run_until(predicate)` — replay until a wall-clock
     budget elapses or a condition holds.
   - `try_run()` / `try_run(n)` — non-throwing; return `Result<RunReport, Error>`.
+  - `cancel()` — thread-safe; stops an in-progress run from another thread, the
+    run returns with `RunReport::cancelled` set (a clean stop, not an error).
   - `size()` — task count.
 
 - **`RunReport`** — filled after each `run()` / `try_run()`:
-  - `is_successful`, `total_tasks_executed`, `total_duration_ms`,
+  - `is_successful`, `cancelled`, `total_tasks_executed`, `total_duration_ms`,
     `graph_analysis_duration_ms`.
   - `numa_statistics` — `NumaNodeStatistics` per NUMA node: CPU/GPU task counts,
     `tasks_stolen_intra_numa`, `tasks_stolen_inter_numa`.
@@ -574,6 +576,14 @@ completion path without executing, so the DAG still reaches the sentinel. The
 sentinel reads `run_failed()`, re-arms the pool, and delivers the error to the
 caller via `set_exception` on the completion promise. The pool stays alive and
 re-armable, so a fresh graph runs normally after a failed one.
+
+**Cancellation.** `Graph::cancel()` (thread-safe, callable while another thread
+blocks in `run`/`run_for`/`run_until`) sets `run_cancelled_`, which drives the
+same drain-without-executing path — but the run ends *cleanly* (the sentinel
+calls `set_value`, no exception). The multi-step driver checks `is_cancelled()`
+and stops before the next step, flagging `RunReport::cancelled`. Unlike a failure,
+the flag is cleared per *run* (`reset_cancellation()` at the driver's start), not
+per step, since a cancel aborts the whole multi-step run.
 
 ---
 

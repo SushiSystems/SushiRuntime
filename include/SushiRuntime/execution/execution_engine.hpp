@@ -168,6 +168,29 @@ namespace SushiRuntime
              * Safe to call from any thread. Blocks until all inflight work is complete.
              */
             virtual void shutdown() = 0;
+
+            /**
+             * @brief Requests cancellation of the active run. Thread-safe.
+             *
+             * The in-flight execute() drains remaining work and returns; a multi-step
+             * driver then stops launching further steps. Default no-op so test
+             * doubles need not implement it.
+             */
+            virtual void cancel() {}
+
+            /**
+             * @brief Reports whether the current/last run was cancelled.
+             * @return True between a cancel() and the next reset_cancellation().
+             */
+            virtual bool is_cancelled() const { return false; }
+
+            /**
+             * @brief Clears cancellation state at the start of a fresh run.
+             *
+             * Called by the driver before the first step so a prior cancelled run
+             * does not poison the next. Default no-op.
+             */
+            virtual void reset_cancellation() {}
         };
 
         /**
@@ -224,6 +247,15 @@ namespace SushiRuntime
              * Idempotent — safe to call multiple times.
              */
             void shutdown() override;
+
+            /** @brief Requests cancellation of the active run via the scheduler. */
+            void cancel() override;
+
+            /** @brief Reports whether the active run has been cancelled. */
+            bool is_cancelled() const override;
+
+            /** @brief Clears the scheduler's cancellation flag for a fresh run. */
+            void reset_cancellation() override;
 
 #ifdef SR_DISTRIBUTED
             /** @brief Access to the persistent scheduler, so Master mode can attach the coordinator. */

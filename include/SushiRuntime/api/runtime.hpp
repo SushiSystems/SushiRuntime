@@ -864,6 +864,18 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Requests cancellation of an in-progress run, from any thread.
+                 *
+                 * Safe to call concurrently with a blocking run()/run_for()/run_until()
+                 * executing on another thread: the active step drains its remaining
+                 * tasks without launching new kernels and returns, the driver stops
+                 * before the next step, and the resulting RunReport has cancelled set.
+                 * A no-op when no run is active; the flag is cleared when the next run
+                 * starts. Cancellation is a clean stop, not an error — it does not throw.
+                 */
+                void cancel() { ctx_->get_execution_engine().cancel(); }
+
+                /**
                  * @brief Non-throwing single run.
                  * @return The RunReport on success, or an Error on failure.
                  */
@@ -959,11 +971,16 @@ namespace SushiRuntime
                         resync();
 
                     auto& engine = ctx_->get_execution_engine();
+
+                    // Start each run with a clean cancellation flag so a cancel that
+                    // ended a previous run does not abort this one.
+                    engine.reset_cancellation();
+
                     const auto before = engine.metrics();
                     const auto t0 = clock::now();
 
                     std::size_t executed = 0;
-                    while (keep_going(executed))
+                    while (keep_going(executed) && !engine.is_cancelled())
                     {
                         // Re-point any double-buffered offload node's live IO at this
                         // step's allocations before the plan runs (no-op otherwise).
@@ -985,8 +1002,10 @@ namespace SushiRuntime
                     const auto after = engine.metrics();
 
                     const std::size_t total_tasks = task_count_ * executed;
-                    return detail::build_run_report(*ctx_, before, after, total_tasks,
-                                                    compile_ms, ms(t0, t1));
+                    auto report = detail::build_run_report(*ctx_, before, after, total_tasks,
+                                                           compile_ms, ms(t0, t1));
+                    report.cancelled = engine.is_cancelled();
+                    return report;
                 }
 
                 // Returns the shared view for a State, creating it (and registering
