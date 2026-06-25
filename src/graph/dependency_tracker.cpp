@@ -56,64 +56,72 @@ namespace SushiRuntime
         /**
          * @brief Resolves memory dependencies for a task node.
          *
-         * Inserts the access into the lock-free history and traverses backwards
-         * to automatically resolve RAW, WAR, and WAW hazards.
+         * Inserts the access into the lock-free history and traverses backwards,
+         * ordering this node after every earlier access whose region overlaps,
+         * to resolve RAW, WAR, and WAW hazards. The walk stops early only once a
+         * prior writer is found that fully covers the accessed region: every
+         * earlier access to that range is then already ordered behind that writer
+         * transitively, so it needs no direct edge. A partially-overlapping writer
+         * does not end the walk, because an earlier access could touch the part of
+         * the region it leaves uncovered — stopping there would drop a real edge
+         * and silently race on sub-regions.
          *
          * @param node The graph node introducing the access.
-         * @param ptr The memory pointer being accessed.
+         * @param region The byte interval being accessed (whole buffer by default).
          * @param is_write True if the access is a write, false if it is a read.
          */
-        void DependencyTracker::resolve(Node* node, void* ptr, bool is_write) 
+        void DependencyTracker::resolve(Node* node, const SushiRuntime::Core::ResourceRegion& region, bool is_write)
         {
             SushiRuntime::Memory::EpochGuard guard;
-            
-            size_t idx = get_shard_idx(ptr);
+
+            size_t idx = get_shard_idx(region.base);
             auto& state = registry[idx];
 
-            AccessNode* current = new AccessNode{node, is_write, ptr, nullptr};
+            AccessNode* current = new AccessNode{node, is_write, region, nullptr};
             AccessNode* old_tail = state.tail.load(std::memory_order_relaxed);
-            
+
             // 1. Lock-Free Push to the chronologic access history
-            do 
+            do
             {
                 current->prev = old_tail;
-            } 
-            while (!state.tail.compare_exchange_weak(old_tail, current, 
-                                                     std::memory_order_acq_rel, 
+            }
+            while (!state.tail.compare_exchange_weak(old_tail, current,
+                                                     std::memory_order_acq_rel,
                                                      std::memory_order_relaxed));
 
             // 2. Lock-Free Traversal to build the dependency edges
             AccessNode* cursor = current->prev;
 
-            if (is_write) 
+            if (is_write)
             {
-                // WAW and WAR: Depend on all previous reads until we hit the first previous write.
-                while (cursor) 
+                // WAW and WAR: order after every overlapping prior access (read or
+                // write), stopping at the first prior writer that fully covers us.
+                while (cursor)
                 {
-                    if (cursor->ptr == ptr) 
+                    if (cursor->region.overlaps(region))
                     {
                         if (cursor->task != node)
                             add_dependency(cursor->task, node);
-                        
-                        if (cursor->is_write) break; // Found the preceding writer, stop traversing.
+
+                        if (cursor->is_write && cursor->region.contains(region))
+                            break; // Region fully covered; earlier accesses are ordered behind this writer.
                     }
                     cursor = cursor->prev;
                 }
-            } 
-            else 
+            }
+            else
             {
-                // RAW: Depend only on the most recent write. Skip all previous reads.
-                while (cursor) 
+                // RAW: order after every overlapping prior write (readers stay
+                // parallel), stopping once a covering writer is found.
+                while (cursor)
                 {
-                    if (cursor->ptr == ptr) 
+                    if (cursor->is_write && cursor->region.overlaps(region))
                     {
-                        if (cursor->is_write) 
-                        {
-                            if (cursor->task != node) 
-                                add_dependency(cursor->task, node);
+                        if (cursor->task != node)
+                            add_dependency(cursor->task, node);
 
-                            break; // Found the preceding writer, stop traversing.
-                        }
+                        if (cursor->region.contains(region))
+                            break; // The region's writes are fully accounted for.
                     }
                     cursor = cursor->prev;
                 }

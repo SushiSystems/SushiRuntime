@@ -27,6 +27,7 @@
 #include <memory>
 #include <utility>
 
+#include <SushiRuntime/core/resource_region.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime
@@ -157,11 +158,34 @@ namespace SushiRuntime
                  * @brief The dependency-tracking identity of this buffer.
                  *
                  * Graph::add() passes this to the dependency tracker as the
-                 * read/write key. It is the allocation's base address.
+                 * read/write key. It is the allocation's base address, which the
+                 * tracker treats as the whole-buffer region.
                  *
                  * @return The base pointer as a void*, or nullptr when empty.
                  */
                 void* dependency_key() const noexcept { return static_cast<void*>(ptr_); }
+
+                /**
+                 * @brief Names a sub-range of this buffer for fine-grained ordering.
+                 *
+                 * Two tasks declaring regions of the same buffer are serialized only
+                 * when their ranges overlap, so disjoint slices (an array's halves, a
+                 * grid's interior versus its halo) run in parallel. Pass the result to
+                 * Reads(...)/Writes(...) in place of the buffer itself. Offsets are in
+                 * elements; the buffer keeps the whole-buffer default when used bare.
+                 *
+                 * @param offset First element of the range.
+                 * @param count  Number of elements; clamped to what remains after @p offset.
+                 * @return A region keyed on this allocation, covering [offset, offset+count).
+                 */
+                Core::ResourceRegion region(std::size_t offset, std::size_t count) const noexcept
+                {
+                    const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
+                    if (count > avail) count = avail;
+                    return Core::ResourceRegion{static_cast<void*>(ptr_),
+                                                offset * sizeof(T),
+                                                count * sizeof(T)};
+                }
 
 #ifdef SR_DISTRIBUTED
                 /**

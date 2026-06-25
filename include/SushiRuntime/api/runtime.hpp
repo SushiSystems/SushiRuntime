@@ -101,18 +101,22 @@ namespace SushiRuntime
 
         namespace detail
         {
-            // Pulls the read/write dependency key out of either data handle. A
-            // Buffer has one base address; a State exposes its current buffer as the
-            // read key and its next buffer as the write key. These free functions let
-            // the Reads/Writes/In/Out wrappers accept both handle types uniformly.
+            // Pulls the read/write dependency region out of either data handle. A
+            // Buffer maps to its whole-buffer region; a State exposes its current
+            // buffer as the read region and its next buffer as the write region.
+            // These free functions let the Reads/Writes wrappers accept handles
+            // uniformly, and an explicit ResourceRegion (e.g. buf.region(off, len))
+            // passes through, so a caller can name a sub-range to read or write.
             template <typename T>
-            inline void* read_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
+            inline Core::ResourceRegion read_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
             template <typename T>
-            inline void* read_key_of(const State<T>& s) noexcept { return s.read_key(); }
+            inline Core::ResourceRegion read_key_of(const State<T>& s) noexcept { return s.read_key(); }
+            inline Core::ResourceRegion read_key_of(const Core::ResourceRegion& r) noexcept { return r; }
             template <typename T>
-            inline void* write_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
+            inline Core::ResourceRegion write_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
             template <typename T>
-            inline void* write_key_of(const State<T>& s) noexcept { return s.write_key(); }
+            inline Core::ResourceRegion write_key_of(const State<T>& s) noexcept { return s.write_key(); }
+            inline Core::ResourceRegion write_key_of(const Core::ResourceRegion& r) noexcept { return r; }
         } // namespace detail
 
         /**
@@ -125,9 +129,9 @@ namespace SushiRuntime
          */
         struct Reads
         {
-            std::vector<void*> keys;  /**< Read dependency keys, in argument order. */
+            std::vector<Core::ResourceRegion> keys;  /**< Read regions, in argument order. */
 
-            /** @brief Collects the read key of each handle passed. */
+            /** @brief Collects the read region of each handle or sub-region passed. */
             template <class... Handles>
             explicit Reads(const Handles&... hs) : keys{ detail::read_key_of(hs)... } {}
         };
@@ -139,9 +143,9 @@ namespace SushiRuntime
          */
         struct Writes
         {
-            std::vector<void*> keys;  /**< Write dependency keys, in argument order. */
+            std::vector<Core::ResourceRegion> keys;  /**< Write regions, in argument order. */
 
-            /** @brief Collects the write key of each handle passed. */
+            /** @brief Collects the write region of each handle or sub-region passed. */
             template <class... Handles>
             explicit Writes(const Handles&... hs) : keys{ detail::write_key_of(hs)... } {}
         };
@@ -251,10 +255,10 @@ namespace SushiRuntime
             // at compile time so the dependency tracker labels every coupled input
             // consistently with the canonical single-State overload.
             template <class StatesTuple, std::size_t... Is>
-            inline std::vector<void*> read_keys_of(const StatesTuple& states,
-                                                   std::index_sequence<Is...>)
+            inline std::vector<Core::ResourceRegion> read_keys_of(const StatesTuple& states,
+                                                                  std::index_sequence<Is...>)
             {
-                return std::vector<void*>{ std::get<Is>(states)->read_key()... };
+                return std::vector<Core::ResourceRegion>{ std::get<Is>(states)->read_key()... };
             }
         } // namespace detail
 
@@ -418,7 +422,8 @@ namespace SushiRuntime
                 Graph& add(const Reads& reads, const Writes& writes,
                            std::size_t n, F&& fn)
                 {
-                    return add(reads.keys, writes.keys, n, std::forward<F>(fn));
+                    return emit_per_element_tracked(reads.keys, writes.keys,
+                                                    n, std::forward<F>(fn));
                 }
 
                 /**
@@ -439,8 +444,8 @@ namespace SushiRuntime
                 Graph& add(const Reads& reads, const Writes& writes,
                            Extent<N> e, F&& fn)
                 {
-                    const std::vector<void*> r = reads.keys;
-                    const std::vector<void*> w = writes.keys;
+                    const std::vector<Core::ResourceRegion> r = reads.keys;
+                    const std::vector<Core::ResourceRegion> w = writes.keys;
                     specs_.push_back([fn = std::forward<F>(fn), e, r, w](BackingGraph& bg)
                     {
                         bg.add_node([fn, e](sycl::handler& h)
@@ -627,17 +632,12 @@ namespace SushiRuntime
                            const std::vector<void*>& writes,
                            std::size_t n, F&& fn)
                 {
-                    specs_.push_back([fn = std::forward<F>(fn), n, reads, writes](BackingGraph& bg)
-                    {
-                        bg.add_node([fn, n](sycl::handler& h)
-                        {
-                            h.parallel_for(sycl::range<1>(n),
-                                           [fn](sycl::id<1> i) { fn(i[0]); });
-                        }, reads, writes);
-                    });
-                    ++task_count_;
-                    dirty_ = true;
-                    return *this;
+                    // A bare base pointer is the whole-buffer region; convert and
+                    // funnel through the one tracked-task emitter.
+                    return emit_per_element_tracked(
+                        std::vector<Core::ResourceRegion>(reads.begin(), reads.end()),
+                        std::vector<Core::ResourceRegion>(writes.begin(), writes.end()),
+                        n, std::forward<F>(fn));
                 }
 
                 /**
@@ -673,33 +673,10 @@ namespace SushiRuntime
                            F&& local,
                            std::initializer_list<std::uint64_t> params = {})
                 {
-                    std::vector<std::uint64_t> pv(params);
-                    specs_.push_back([fn = std::forward<F>(local), n, reads, writes, op, pv]
-                                     (BackingGraph& bg)
-                    {
-                        ::SushiRuntime::Graph::TaskMetadata meta{};
-                        meta.name   = "fluent_offload";
-                        meta.op_id  = op;
-                        for (std::size_t i = 0; i < pv.size() &&
-                             i < ::SushiRuntime::Graph::TaskMetadata::K_MAX_PARAMS; ++i)
-                            meta.set_param<std::uint64_t>(static_cast<int>(i), pv[i]);
-
-                        // Host-fallback shape (queue + deps -> event): run locally as
-                        // a parallel_for when this task is not offloaded. Setting
-                        // op_id is what makes compile() consider it offloadable.
-                        bg.add_task(meta, reads, writes,
-                            [fn, n](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
-                            {
-                                return q.submit([&](sycl::handler& h)
-                                {
-                                    h.parallel_for(sycl::range<1>(n),
-                                                   [fn](sycl::id<1> i) { fn(i[0]); });
-                                });
-                            });
-                    });
-                    ++task_count_;
-                    dirty_ = true;
-                    return *this;
+                    return emit_offload_per_element(op, n,
+                        std::vector<Core::ResourceRegion>(reads.begin(), reads.end()),
+                        std::vector<Core::ResourceRegion>(writes.begin(), writes.end()),
+                        std::forward<F>(local), std::vector<std::uint64_t>(params));
                 }
 
                 /**
@@ -724,8 +701,9 @@ namespace SushiRuntime
                            F&& local,
                            std::initializer_list<std::uint64_t> params = {})
                 {
-                    return add(op, n, reads.keys, writes.keys,
-                               std::forward<F>(local), params);
+                    return emit_offload_per_element(op, n, reads.keys, writes.keys,
+                                                    std::forward<F>(local),
+                                                    std::vector<std::uint64_t>(params));
                 }
 
                 /**
@@ -1052,8 +1030,8 @@ namespace SushiRuntime
                 // write list according to the access it declares. An InOut counts
                 // toward both, so a read-modify-write task orders correctly.
                 template <class Cap>
-                static void collect_keys(std::vector<void*>& reads,
-                                         std::vector<void*>& writes, const Cap& c)
+                static void collect_keys(std::vector<Core::ResourceRegion>& reads,
+                                         std::vector<Core::ResourceRegion>& writes, const Cap& c)
                 {
                     if (Cap::reads)
                         reads.push_back(c.key);
@@ -1109,8 +1087,8 @@ namespace SushiRuntime
                 Graph& emit_captured(Extent<N> e, Cap0 c0, Tuple& tup,
                                      std::index_sequence<Is...>, F&& fn)
                 {
-                    std::vector<void*> reads;
-                    std::vector<void*> writes;
+                    std::vector<Core::ResourceRegion> reads;
+                    std::vector<Core::ResourceRegion> writes;
                     collect_keys(reads, writes, c0);
                     (collect_keys(reads, writes, std::get<Is>(tup)), ...);
 
@@ -1129,6 +1107,67 @@ namespace SushiRuntime
                                     fn, idx + off, ptrs, std::make_index_sequence<K>{});
                             });
                         }, reads, writes);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                // Emits a 1-D per-element tracked task. The single funnel for both
+                // the raw-pointer and the Reads/Writes explicit-tracking overloads,
+                // so the task records exactly one set of read/write regions however
+                // the caller named them.
+                template <class F>
+                Graph& emit_per_element_tracked(std::vector<Core::ResourceRegion> reads,
+                                                std::vector<Core::ResourceRegion> writes,
+                                                std::size_t n, F&& fn)
+                {
+                    specs_.push_back([fn = std::forward<F>(fn), n,
+                                      reads = std::move(reads),
+                                      writes = std::move(writes)](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, n](sycl::handler& h)
+                        {
+                            h.parallel_for(sycl::range<1>(n),
+                                           [fn](sycl::id<1> i) { fn(i[0]); });
+                        }, reads, writes);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                // Emits a 1-D offloadable per-element task with a local fallback. The
+                // single funnel for both the raw-pointer and the Reads/Writes offload
+                // overloads. Setting op_id is what makes compile() consider the node
+                // offloadable; otherwise the local parallel_for runs.
+                template <class F>
+                Graph& emit_offload_per_element(::SushiRuntime::Graph::OpID op, std::size_t n,
+                                                std::vector<Core::ResourceRegion> reads,
+                                                std::vector<Core::ResourceRegion> writes,
+                                                F&& local, std::vector<std::uint64_t> pv)
+                {
+                    specs_.push_back([fn = std::forward<F>(local), n, op,
+                                      reads = std::move(reads),
+                                      writes = std::move(writes),
+                                      pv = std::move(pv)](BackingGraph& bg)
+                    {
+                        ::SushiRuntime::Graph::TaskMetadata meta{};
+                        meta.name   = "fluent_offload";
+                        meta.op_id  = op;
+                        for (std::size_t i = 0; i < pv.size() &&
+                             i < ::SushiRuntime::Graph::TaskMetadata::K_MAX_PARAMS; ++i)
+                            meta.set_param<std::uint64_t>(static_cast<int>(i), pv[i]);
+
+                        bg.add_task(meta, reads, writes,
+                            [fn, n](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
+                            {
+                                return q.submit([&](sycl::handler& h)
+                                {
+                                    h.parallel_for(sycl::range<1>(n),
+                                                   [fn](sycl::id<1> i) { fn(i[0]); });
+                                });
+                            });
                     });
                     ++task_count_;
                     dirty_ = true;
