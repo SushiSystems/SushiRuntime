@@ -456,11 +456,17 @@ namespace SushiRuntime
                 std::vector<sycl::event> deps;
                 SushiRuntime::Graph::Node* node = nullptr;
 
-                if ((node = dynamic_cast<SushiRuntime::Graph::Node*>(task)))
+                // Downcast through the virtual is_graph_node() type tag, not RTTI:
+                // this runs for every dispatched task, and dynamic_cast here was the
+                // one hot-path RTTI query left. EventPolling already uses the same
+                // tag, so the two downcast sites now share one strategy.
+                if (task->is_graph_node())
                 {
+                    node = static_cast<SushiRuntime::Graph::Node*>(task);
+
                     if (node->metadata.numa_affinity >= 0)
                         target_numa_id = node->metadata.numa_affinity;
-                    
+
                     deps = node->sycl_deps.to_vector();
                 }
 

@@ -191,6 +191,17 @@ namespace SushiRuntime
              * does not poison the next. Default no-op.
              */
             virtual void reset_cancellation() {}
+
+            /**
+             * @brief Turns the background thermal rebalancer on or off, if any.
+             *
+             * Default no-op so engines without a rebalancer (and test doubles) need
+             * not implement it. @param enabled True to run it, false to stop it.
+             */
+            virtual void set_rebalancer_enabled(bool /*enabled*/) {}
+
+            /** @brief Whether a background rebalancer is running. Default false. */
+            virtual bool rebalancer_enabled() const { return false; }
         };
 
         /**
@@ -256,6 +267,22 @@ namespace SushiRuntime
 
             /** @brief Clears the scheduler's cancellation flag for a fresh run. */
             void reset_cancellation() override;
+
+            /**
+             * @brief Turns the background thermal rebalancer on or off.
+             *
+             * The rebalancer migrates tasks between workers for throughput, but it
+             * is a background thread doing work mid-run and a source of run-to-run
+             * nondeterminism. Disable it for a low-jitter real-time frame or a
+             * deterministic/replay run; leave it on (the default) for batch
+             * throughput. Safe to call between runs.
+             *
+             * @param enabled True to run the rebalancer, false to stop it.
+             */
+            void set_rebalancer_enabled(bool enabled) override;
+
+            /** @brief Whether the background rebalancer is currently running. */
+            bool rebalancer_enabled() const override;
 
 #ifdef SR_DISTRIBUTED
             /** @brief Access to the persistent scheduler, so Master mode can attach the coordinator. */

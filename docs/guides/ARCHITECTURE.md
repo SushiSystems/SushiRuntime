@@ -558,6 +558,12 @@ the signature of a thermally-throttled or slow core — and toward the least-loa
 worker, while **leaving a long-but-fast-draining queue alone**. The strategy is
 replaceable at runtime (`set_strategy`).
 
+It is on by default but **opt-out**: `Runtime::rebalancer(false)` (via
+`ExecutionEngine::set_rebalancer_enabled`) stops the background thread. Disable it
+for a low-jitter real-time frame or a deterministic/replay run, where mid-run task
+migration is itself a source of run-to-run variation; leave it on for batch
+throughput.
+
 ---
 
 ## 10. Execution (`execution/`)

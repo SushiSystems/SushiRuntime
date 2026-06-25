@@ -1660,6 +1660,22 @@ namespace SushiRuntime
                     return State<T>(ctx_, count, device_index, residency);
                 }
 
+                /**
+                 * @brief Enables or disables the background thermal rebalancer.
+                 *
+                 * On (the default) trades run-to-run determinism for throughput by
+                 * migrating tasks between workers. Turn it off for a low-jitter
+                 * real-time frame or a deterministic/replay run. Safe between runs.
+                 *
+                 * @param enabled True to run the rebalancer, false to stop it.
+                 * @return *this, for chaining.
+                 */
+                Runtime& rebalancer(bool enabled)
+                {
+                    ctx_->get_execution_engine().set_rebalancer_enabled(enabled);
+                    return *this;
+                }
+
                 /** @brief Access to the underlying context for advanced use. */
                 Execution::RuntimeContext& context() noexcept { return *ctx_; }
 
