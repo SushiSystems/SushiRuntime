@@ -31,6 +31,7 @@
 #include <thread>
 #include <vector>
 #include <queue>
+#include <exception>
 #include <sycl/sycl.hpp>
 #include <condition_variable>
 #include <SushiRuntime/core/common.hpp>
@@ -111,14 +112,26 @@ namespace SushiRuntime
                 std::atomic<bool> running{false};
                 /** @brief Signals that the pool should drain and shut down. */
                 std::atomic<bool> shutdown_requested{false};
+                /**
+                 * @brief Set when a task throws during the current run.
+                 *
+                 * Aborts only the current run — remaining tasks drain without
+                 * executing so the DAG still reaches the sentinel — while leaving
+                 * the worker pool alive and re-armable. Distinct from
+                 * shutdown_requested, which permanently tears the pool down.
+                 * Cleared by arm_for_execution() at the start of each round.
+                 */
+                std::atomic<bool> run_failed_{false};
+                /** @brief Guards run_error_ on the cold failure path. */
+                std::mutex run_error_mutex_;
+                /** @brief First exception captured this run; delivered to the caller. */
+                std::exception_ptr run_error_;
                 /** @brief Poller to track SYCL events. */
                 EventPolling event_poller;
                 /** @brief Reference to the runtime context. */
                 SushiRuntime::Execution::RuntimeContext& context;
                 /** @brief Worker threads. */
                 std::array<std::thread, Core::MAX_WORKER_THREADS> workers;
-                /** @brief Callback for error handling. */
-                std::function<void(std::exception_ptr)> error_callback;
                 /** @brief Cache-line aligned atomic counters for tracking completed tasks per worker. */
                 alignas(Core::CACHE_LINE_SIZE) std::atomic<size_t> worker_completed_tasks[Core::MAX_WORKER_THREADS];
 
@@ -140,6 +153,8 @@ namespace SushiRuntime
 
                 /** @brief Executes a single task and tracks its events. */
                 void execute_task(Task* task, EventPolling::ActiveEventList& events);
+                /** @brief Records the first exception of the run and flips run_failed_. */
+                void record_run_error(std::exception_ptr ep);
                 /** @brief Looks for a task to steal from another thread's queue. */
                 Task* find_task_to_steal(int th_id);
                 /** @brief Moves pending submissions into the local worker queue. */
@@ -186,9 +201,23 @@ namespace SushiRuntime
                 /** @brief Submits a new task to the injector queue. */
                 void submit(Task* task);
 
-                /** @brief Sets the error callback. */
-                void set_error_callback(std::function<void(std::exception_ptr)> cb) 
-                { error_callback = cb; }
+                /**
+                 * @brief Reports whether a task threw during the current run.
+                 *
+                 * Read by the completion sentinel to deliver the error to the caller
+                 * instead of success. Cleared each round by arm_for_execution().
+                 * @return True if the current run has failed.
+                 */
+                bool run_failed() const { return run_failed_.load(std::memory_order_acquire); }
+
+                /**
+                 * @brief Returns the first exception captured during the current run.
+                 *
+                 * Synchronizes with the failing worker via run_error_mutex_, so the
+                 * value is visible once run_failed() reads true.
+                 * @return The captured exception, or null if the run did not fail.
+                 */
+                std::exception_ptr run_error();
 
                 size_t get_worker_count() const override;
                 size_t get_queue_size(int worker_id) const override;

@@ -425,9 +425,13 @@ Runs the ready tasks. A work-stealing scheduler with a persistent worker pool.
 
 ### 9.1 `TaskScheduler`
 
-- One **work-stealing `Deque`** per worker (`worker_queues[MAX_WORKER_THREADS]`).
-  A worker pushes/pops its own deque LIFO and **steals** from others' deque ends
-  FIFO when idle.
+- One **work-stealing `Deque`** per worker (`worker_queues[MAX_WORKER_THREADS]`,
+  defined in `scheduler/work_stealing_deque.hpp`). A worker pushes/pops its own
+  deque LIFO and **steals** from others' deque ends FIFO when idle. The ring is a
+  fixed `CAPACITY = 262144` slots; because `push` is single-producer (owner-only),
+  a full ring spills the surplus into an owner-private overflow buffer and `pop`
+  drains it back in as space frees — a task is **never dropped**, since a dropped
+  task would leave its successors' `in_degree` above zero and deadlock the run.
 - A global **injector**: a mutex-guarded `pending_submissions` deque for external
   submissions plus a `priority_submissions` `std::priority_queue` so a
   high-`priority` task can jump ahead of a backlog (the `PriorityBypass` tests).
@@ -456,8 +460,10 @@ benchmarks). `steal_victim_order()` is a test introspection hook.
 ### 9.3 `EventPolling` — turning device completion into readiness
 
 The CPU side can't block on every GPU kernel. After a worker submits a kernel it
-records the `sycl::event` in an `ActiveEventList` (`MAX_EVENTS = 256`, O(1)
-swap-remove). `poll_events` checks statuses with **adaptive backoff** (a
+records the `sycl::event` in an `ActiveEventList` (O(1) swap-remove). The list
+keeps an inline `INLINE_CAP = 256` fast path and **spills to the heap** beyond it,
+so `push` never fails: dropping an event would orphan its successors and deadlock
+the run. `poll_events` checks statuses with **adaptive backoff** (a
 `backoff_counter` up to `MAX_BACKOFF = 64`, yielding past 16) so an idle poller
 doesn't spin.
 
@@ -560,6 +566,14 @@ the `RunReport` steal counters.
 The default `ExecutionEngine` owns one persistent `TaskScheduler`: `execute()`
 injects the compiled graph's roots, arms the scheduler, and blocks on the
 sentinel's completion promise; it never recreates threads.
+
+**Error isolation.** A task exception aborts only its own run, not the pool. The
+worker records the first exception (`run_failed_` + `run_error_`) instead of
+latching `shutdown_requested`; every remaining node then drains through the
+completion path without executing, so the DAG still reaches the sentinel. The
+sentinel reads `run_failed()`, re-arms the pool, and delivers the error to the
+caller via `set_exception` on the completion promise. The pool stays alive and
+re-armable, so a fresh graph runs normally after a failed one.
 
 ---
 
