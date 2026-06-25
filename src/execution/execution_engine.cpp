@@ -190,18 +190,6 @@ namespace SushiRuntime
 
             auto* sched_ptr = &impl_->scheduler;
 
-            impl_->scheduler.set_error_callback([completion_signal](std::exception_ptr ep) 
-            {
-                try 
-                {
-                    completion_signal->set_exception(ep);
-                } 
-                catch (const std::future_error&) 
-                {
-                    // If the sentinel is already completed (set_value called), this will throw an error; ignore it.
-                }
-            });
-
             graph.sentinel->metadata.name = "graph_completion_sentinel";
             graph.sentinel->mode          = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
             graph.sentinel->host_work     =
@@ -222,9 +210,21 @@ namespace SushiRuntime
                         if (e != sycl::event{})
                             e.wait();
 
+                    // Read the run outcome before re-arming: arm_for_execution()
+                    // clears run_failed_ for the next round, so capture it first.
+                    // A failed run still drains every node to this sentinel (the
+                    // failed task and all later ones are routed through completion),
+                    // so reaching here means the run has quiesced either way.
+                    const bool failed = sched_ptr->run_failed();
+                    std::exception_ptr err = failed ? sched_ptr->run_error() : nullptr;
+
                     sched_ptr->arm_for_execution(); // re-arm for the NEXT round
+
                     completion_event_promise->set_value(sycl::event{});
-                    completion_signal->set_value();
+                    if (failed)
+                        completion_signal->set_exception(err);
+                    else
+                        completion_signal->set_value();
                     return {};
                 };
 
@@ -242,15 +242,18 @@ namespace SushiRuntime
             // Step 3: Block the calling thread until the sentinel fires.
             // -----------------------------------------------------------------
 
-            try 
+            try
             {
-                completion_signal_future.wait(); // Hala bloklar, ama artık error_callback ile de açılabilir.
-                completion_signal_future.get();  // Eğer exception set edilmişse, BURADA fırlatılır!
+                // The sentinel always fires — a failed run still drains every node
+                // to it — and delivers either set_value (success) or set_exception
+                // (the first task error), so get() returns or rethrows here.
+                completion_signal_future.wait();
+                completion_signal_future.get();
             }
             catch (const std::exception& e)
             {
                 SR_LOG_ERROR("Graph execution aborted due to an internal error: {}", e.what());
-                throw; // Kullanıcı koduna hatayı taşı (Deadlock engellendi)
+                throw; // Surface the error to user code; the pool stays re-armable.
             }
 
             sycl::event completion_event = completion_event_future.get();

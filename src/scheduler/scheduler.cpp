@@ -156,6 +156,17 @@ namespace SushiRuntime
             // Signal workers that a new execution round has started.
             // This is called by ExecutionEngine before submitting root nodes,
             // and again by the sentinel's host_task to re-arm for the next round.
+            //
+            // Clear any failure carried over from a previous run: a task exception
+            // aborts only its own run (drain-to-sentinel), so the pool must start
+            // each new round clean. The sentinel reads run_failed()/run_error()
+            // before calling this, so clearing here does not race that read.
+            {
+                std::lock_guard<std::mutex> lock(run_error_mutex_);
+                run_error_ = nullptr;
+            }
+            run_failed_.store(false, std::memory_order_release);
+
             running.store(true, std::memory_order_release);
             pending_cv.notify_all();
         }
@@ -393,11 +404,21 @@ namespace SushiRuntime
          * @param task Pointer to the task to execute.
          * @param events The list of active events to track completion.
          */
-        void TaskScheduler::execute_task(Task* task, EventPolling::ActiveEventList& events) 
+        void TaskScheduler::execute_task(Task* task, EventPolling::ActiveEventList& events)
         {
             if (!task) return;
 
-            auto& tls_state = SushiRuntime::Memory::Detail::get_tls_state(); 
+            // The current run has already failed: do not execute more kernels.
+            // Route the task through the poller flagged ready so its successors
+            // still fire and the DAG drains to the sentinel (which then reports the
+            // error) instead of deadlocking on an un-triggered successor.
+            if (run_failed_.load(std::memory_order_acquire))
+            {
+                events.push({sycl::event{}, task, true});
+                return;
+            }
+
+            auto& tls_state = SushiRuntime::Memory::Detail::get_tls_state();
             if (tls_state.id >= 0 && static_cast<size_t>(tls_state.id) < Core::MAX_WORKER_THREADS) 
                 worker_completed_tasks[tls_state.id].fetch_add(1, std::memory_order_relaxed);
 
@@ -460,17 +481,49 @@ namespace SushiRuntime
                 const bool ready = (e == sycl::event{});
                 events.push({e, task, ready});
             } 
-            catch (...) 
+            catch (...)
             {
-                SR_LOG_ERROR("Critical exception caught during task execution: {}", task->get_name());
-                
-                if (error_callback) 
-                    error_callback(std::current_exception());
-                
-                // Diğer worker'ların durması için acil durum sinyali
-                shutdown_requested.store(true, std::memory_order_release);
-                running.store(false, std::memory_order_release);
+                SR_LOG_ERROR("Task '{}' threw; aborting the current run.", task->get_name());
+
+                // Fail only this run — record the first exception and flip
+                // run_failed_ — without latching shutdown_requested, so the pool
+                // survives and stays re-armable for the next graph.
+                record_run_error(std::current_exception());
+
+                // Route the failed task through the poller as ready so its
+                // successors still fire; combined with the run_failed_ skip path
+                // above, the whole DAG drains to the sentinel rather than hanging.
+                events.push({sycl::event{}, task, true});
             }
+        }
+
+        /**
+         * @brief Records the first exception of the current run and flips run_failed_.
+         *
+         * Only the first failing task wins; later exceptions are dropped. The mutex
+         * makes the exception write and the flag publish atomic relative to other
+         * workers, and its release pairs with the acquire in run_failed()/run_error()
+         * so the sentinel sees a fully-written exception.
+         * @param ep The exception thrown by the task.
+         */
+        void TaskScheduler::record_run_error(std::exception_ptr ep)
+        {
+            std::lock_guard<std::mutex> lock(run_error_mutex_);
+            if (!run_failed_.load(std::memory_order_relaxed))
+            {
+                run_error_ = ep;
+                run_failed_.store(true, std::memory_order_release);
+            }
+        }
+
+        /**
+         * @brief Returns the first exception captured during the current run.
+         * @return The captured exception, or null if the run did not fail.
+         */
+        std::exception_ptr TaskScheduler::run_error()
+        {
+            std::lock_guard<std::mutex> lock(run_error_mutex_);
+            return run_error_;
         }
 
         /**

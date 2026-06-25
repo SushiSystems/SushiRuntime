@@ -71,6 +71,7 @@ add_executable(sr_functional_tests
     functional/integration/test_async_execution.cpp
     functional/integration/test_heterogeneous_pipeline.cpp
     functional/integration/test_scheduler_integration.cpp
+    functional/integration/test_error_isolation.cpp
     functional/integration/test_workload_coordinator.cpp
     functional/integration/test_device_pipeline.cpp
     functional/integration/test_fluent_lifecycle.cpp
