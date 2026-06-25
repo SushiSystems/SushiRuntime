@@ -41,6 +41,5 @@ CTestTestfile.cmake
 _deps/
 
 # Docs
-Doxyfile
 html/
 latex/
