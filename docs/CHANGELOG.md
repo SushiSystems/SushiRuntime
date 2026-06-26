@@ -130,6 +130,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   task-graph API is documented as the lower-level foundation.
 
 ### Fixed
+- Flaky `Integration_FluentAPI.RunForRunsMultipleStepsWithinBudget`: the test asserted
+  that a trivial kernel completes more than one step within a 50ms `run_for` budget, but
+  `run_for` fixes its deadline before the first step, so the one-off JIT compilation and
+  queue/device setup on a cold dispatch alone overran the budget and only one step ran.
+  It passed only when an earlier test in the same process had already warmed the device,
+  so it failed deterministically when `sr project test` ran it in its own ctest process.
+  The test now warms the kernel before timing, measuring steady-state throughput as
+  intended.
 - Fluent handle allocation no longer round-robins across devices: pinning each
   graph's data to one device fixes a cross-context illegal access (observed as
   `CUDA_ERROR_ILLEGAL_ADDRESS`) when a kernel touched two co-allocated buffers
