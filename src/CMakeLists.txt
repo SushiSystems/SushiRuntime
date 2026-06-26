@@ -24,8 +24,8 @@ add_library(sushiruntime SHARED ${SRC_FILES})
 
 # --- Include Directories ---
 # --- Include Directories ---
-target_include_directories(sushiruntime PUBLIC 
-    "${CMAKE_SOURCE_DIR}/include"
+target_include_directories(sushiruntime PUBLIC
+    "${PROJECT_SOURCE_DIR}/include"
 )
 
 
@@ -97,6 +97,6 @@ install(TARGETS sushiruntime
     INCLUDES DESTINATION include
 )
 
-install(DIRECTORY "${CMAKE_SOURCE_DIR}/include/" 
+install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/"
     DESTINATION include
 )
