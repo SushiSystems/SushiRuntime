@@ -616,6 +616,15 @@ CUDA queue) is an illegal cross-context access. This is why `Node` retains
 owns its data. Allocating through `RuntimeContext` (not bare
 `sycl::malloc_shared`) is what makes that routing possible.
 
+A single kernel can run on only one context, so a node whose buffers straddle a
+device boundary cannot be expressed correctly. On a node's first dispatch the
+scheduler checks (via `context_index_for_ptr`) that all its regions share one
+context and, if not, fails the run with a precise `invalid_graph` error rather than
+letting the kernel fault — the result is cached per node, so replay pays nothing.
+Genuine cross-device execution (a logical array split across devices, data moving
+with the work) is a domain-decomposition concern deferred to WP-5; until then this
+guard enforces co-location, the contract the layer above must honour.
+
 ### `IExecutionEngine` / `ExecutionEngine`
 
 `IExecutionEngine` is the "how to run a graph" strategy seam, separate from

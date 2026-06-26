@@ -32,6 +32,7 @@
 #include <chrono>
 #include <cstdint>
 #include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
@@ -571,6 +572,44 @@ namespace SushiRuntime
                     if (!node->io_writes_.empty())     anchor = node->io_writes_.front().base;
                     else if (!node->io_reads_.empty()) anchor = node->io_reads_.front().base;
                 }
+
+                // One-time co-location check: a single kernel cannot dereference USM
+                // from two non-peer device contexts, so a node whose regions straddle
+                // a device boundary would hit an illegal cross-context access. Fail
+                // the run with a precise error instead. The result is cached on the
+                // node (dispatched serially across steps, so a plain flag is safe), so
+                // steady-state replay pays nothing. Cross-device execution itself is a
+                // WP-5 concern (region ownership + halo exchange); until then this
+                // enforces the co-location contract the layer above must honour.
+                if (node && !node->locality_checked_)
+                {
+                    const int anchor_ctx = context.context_index_for_ptr(anchor);
+                    bool spans = false;
+                    if (anchor_ctx >= 0)
+                    {
+                        auto off_anchor = [&](const std::vector<Core::ResourceRegion>& regs)
+                        {
+                            for (const auto& r : regs)
+                            {
+                                if (!r.base) continue;
+                                const int c = context.context_index_for_ptr(r.base);
+                                if (c >= 0 && c != anchor_ctx) return true;
+                            }
+                            return false;
+                        };
+                        spans = off_anchor(node->io_reads_) || off_anchor(node->io_writes_);
+                    }
+                    if (spans)
+                        // Not cached: a still-misconfigured graph must fail again on a
+                        // later run, not slip through once the flag is set.
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::invalid_graph,
+                            "A task's buffers span multiple device contexts; co-locate "
+                            "them on one device (cross-device execution is not yet "
+                            "supported)."});
+                    node->locality_checked_ = true; // co-located; never re-check
+                }
+
                 auto& q = anchor ? context.get_queue_for_ptr(anchor, target_numa_id)
                                  : context.get_numa_local_queue(target_numa_id);
 
