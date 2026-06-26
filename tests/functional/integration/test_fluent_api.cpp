@@ -121,7 +121,7 @@ TEST(Integration_FluentAPI, RunForRunsAtLeastOneStep)
 }
 
 // run_for with a real budget: multiple steps should complete and the report
-// must reflect them. A tight loop kernel is used so many steps fit in 50ms.
+// must reflect them. This measures steady-state throughput, not cold start.
 TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
 {
     constexpr std::size_t N = 8;
@@ -133,6 +133,13 @@ TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
 
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+
+    // Warm the kernel before timing. The first dispatch pays one-off JIT
+    // compilation and queue/device setup that can alone exceed the 50ms budget;
+    // run_for fixes the deadline before its first step, so an unwarmed kernel
+    // overshoots and stops after a single step. The steady-state cost of this
+    // trivial kernel is sub-millisecond, so a warmed run fits many steps.
+    g.run();
 
     auto report = g.run_for(std::chrono::milliseconds(50));
 
