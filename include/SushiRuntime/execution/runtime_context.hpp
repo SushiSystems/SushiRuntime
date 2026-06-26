@@ -176,6 +176,20 @@ namespace SushiRuntime
                 sycl::queue& get_queue_for_ptr(void* ptr, int fallback_numa = 0);
 
                 /**
+                 * @brief Returns the device-queue index whose context owns @p ptr.
+                 *
+                 * The integer counterpart of get_queue_for_ptr: lets the scheduler
+                 * tell whether two of a node's pointers live on the same context
+                 * (equal indices) or straddle a device boundary, without comparing
+                 * queue objects. The index is the one get_queue()/malloc_shared_on()
+                 * use, so it can re-allocate a staging copy on the owning device.
+                 *
+                 * @param ptr A USM pointer allocated through this context.
+                 * @return The owning device-queue index, or -1 if @p ptr is unknown.
+                 */
+                int context_index_for_ptr(void* ptr) noexcept;
+
+                /**
                  * @brief Allocates shared USM and records its owning queue.
                  *
                  * Prefer this over a bare sycl::malloc_shared when the data will
