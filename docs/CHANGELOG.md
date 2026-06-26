@@ -8,6 +8,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ## [Unreleased]
 
+### Added
+- Cross-context co-location guard (§5.4): a single SYCL kernel cannot dereference USM
+  from two non-peer device contexts. The scheduler now verifies, on a node's first
+  dispatch, that all of its buffers share one device context, and fails the run with a
+  precise `invalid_graph` error if they straddle a boundary — instead of letting the
+  kernel hit an illegal cross-context access. The result is cached per node, so
+  steady-state replay pays nothing. Full cross-device execution (splitting data with
+  the work via region ownership and halo exchange) is deferred to WP-5; this enforces
+  the co-location contract until then. New `RuntimeContext::context_index_for_ptr`.
+- Game-engine worked example (`tests/.../test_game_engine_example.cpp`): a 4096-entity
+  particle world — gravity, integration, floor collision, and deferred culling — built
+  entirely on the fluent API, where the four systems are ordered purely by the
+  component buffers they read and write (the dependency tracker is the system
+  scheduler), compiled once and replayed per frame, and checked against a scalar
+  reference. A concrete demonstration that the task graph behaves like a game engine.
+
 ### Changed
 - Reusable completion latch (§5.1): `ExecutionEngine::execute` no longer allocates a
   `std::promise`/`std::future` pair (and a capturing sentinel closure) per step. One

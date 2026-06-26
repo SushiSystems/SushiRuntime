@@ -501,6 +501,19 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Returns the owning device-queue index for a USM pointer, or -1.
+         */
+        int RuntimeContext::context_index_for_ptr(void* ptr) noexcept
+        {
+            if (!ptr) return -1;
+            std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
+            auto it = impl_->usm_owner.find(ptr);
+            if (it != impl_->usm_owner.end() && it->second < impl_->all_queues.size())
+                return static_cast<int>(it->second);
+            return -1;
+        }
+
+        /**
          * @brief Frees memory that was allocated via USM.
          *
          * Releases the memory using the appropriate context queue that owns it.

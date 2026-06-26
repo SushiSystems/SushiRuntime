@@ -195,6 +195,18 @@ namespace SushiRuntime
             std::vector<SushiRuntime::Core::ResourceRegion> io_writes_;
 
             /**
+             * @brief Set once the node's data has been checked for co-location.
+             *
+             * The scheduler verifies on a node's first dispatch that all its USM
+             * lives on one device context — a single kernel cannot touch two
+             * non-peer contexts at once — and caches the result here so later steps
+             * pay nothing. A node is dispatched serially across steps, so a plain
+             * flag needs no synchronisation. (Cross-device execution is a WP-5
+             * concern; until then co-location is the contract this guard enforces.)
+             */
+            bool locality_checked_ = false;
+
+            /**
              * @brief Late-bound per-step controls (enabled flag and live size).
              *
              * Null for an ordinary node, so the scheduler's hot path pays one
