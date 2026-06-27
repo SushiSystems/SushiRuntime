@@ -48,25 +48,25 @@ layers never depend up.
 
 ```
         ┌─────────────────────────────────────────────────────────┐
-        │  api/         Runtime · API::Graph                        │  fluent entry point,
-        │               RunReport · Error · Errc                    │  error types
+        │  api/         Runtime · API::Graph · DynamicGraph       │  fluent entry point,
+        │               RunReport · Error · Errc                  │  error types
         ├─────────────────────────────────────────────────────────┤
-        │  execution/   RuntimeContext · IExecutionEngine           │  owns everything,
-        │               ExecutionEngine · CompiledGraph             │  drives a run
-        │               ExecutionMetrics                            │
+        │  execution/   RuntimeContext · IExecutionEngine         │  owns everything,
+        │               ExecutionEngine · CompiledGraph           │  drives a run
+        │               ExecutionMetrics                          │
         ├─────────────────────────────────────────────────────────┤
-        │  graph/       TaskGraph · Node · DependencyTracker        │  build + analyze DAG
+        │  graph/       TaskGraph · Node · DependencyTracker      │  build + analyze DAG
         ├─────────────────────────────────────────────────────────┤
-        │  scheduler/   TaskScheduler · Task/RangeTask              │  run ready tasks
-        │               EventPolling · WorkloadCoordinator          │  (work stealing)
+        │  scheduler/   TaskScheduler · Task/RangeTask            │  run ready tasks
+        │               EventPolling · WorkloadCoordinator        │  (work stealing)
         ├──────────────────────┬──────────────────────────────────┤
-        │  memory/             │  topology/                         │  resources +
-        │  USMAllocator        │  HardwareDiscovery · NUMAMapper    │  hardware model
-        │  BitmaskMemoryPool   │  ITopologyProvider                 │
-        │  EpochManager (EBR)  │  INumaDistanceModel · affinity     │
+        │  memory/             │  topology/                       │  resources +
+        │  USMAllocator        │  HardwareDiscovery · NUMAMapper  │  hardware model
+        │  BitmaskMemoryPool   │  ITopologyProvider               │
+        │  EpochManager (EBR)  │  INumaDistanceModel · affinity   │
         ├──────────────────────┴──────────────────────────────────┤
-        │  core/   RefCounted · sushi_ptr · logger · common         │  foundations
-        │          Error · Result · RunReport · compat shims        │
+        │  core/   RefCounted · sushi_ptr · logger · common       │  foundations
+        │          Error · Result · RunReport · compat shims      │
         └─────────────────────────────────────────────────────────┘
            distributed/ (optional, SR_ENABLE_DISTRIBUTED) sits beside
            execution/scheduler and is invisible when the flag is off.
@@ -116,6 +116,15 @@ do not need to reach into the lower layers.
   - `cancel()` — thread-safe; stops an in-progress run from another thread, the
     run returns with `RunReport::cancelled` set (a clean stop, not an error).
   - `size()` — task count.
+
+- **`API::DynamicGraph`** — the mutable, region-partitioned graph from
+  `runtime.dynamic_graph()`, for streaming workloads. `region(key)` returns an
+  `API::Region` (which reuses `Graph`'s `add()` surface) to record work on a
+  partition; `drop(key)` removes one; `has_region(key)`, `region_count()`, and
+  `size()` report structure. `run()` / `run(n)` / `run_for` / `run_until` /
+  `try_run` / `cancel` mirror `Graph`. The composer recomposes only what changed
+  between steps, and `compile_count()` advances once per mutation, not per region;
+  cross-region ordering follows ascending region key (lower key = producer).
 
 - **`RunReport`** — filled after each `run()` / `try_run()`:
   - `is_successful`, `cancelled`, `total_tasks_executed`, `total_duration_ms`,
@@ -858,7 +867,7 @@ helper is a no-op stub and `-fsycl` is applied globally.
 ```
 include/SushiRuntime/      Public API (the headers this document describes)
   api/         Runtime (fluent entry point), Buffer/State handles, API::Graph,
-               RunReport, Error, Errc
+               API::DynamicGraph / Region, RunReport, Error, Errc
   core/        RefCounted, sushi_ptr, logger, common constants, OpID, export macro,
                Error/Result/RunReport, compat shims (bit, span, sycl_compat)
   topology/    HardwareDiscovery, NUMAMapper, ITopologyProvider/INumaDistanceModel,

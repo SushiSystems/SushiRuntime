@@ -135,8 +135,14 @@ namespace SushiRuntime
                 /** @brief Number of live regions (excludes pending drops). */
                 std::size_t region_count() const noexcept { return regions_.size(); }
 
-                /** @brief Total tasks across all live regions, as of the last commit. */
-                std::size_t size() const noexcept { return task_count_; }
+                /** @brief Total tasks currently recorded across all live regions. */
+                std::size_t size() const noexcept
+                {
+                    std::size_t total = 0;
+                    for (const auto& kv : regions_)
+                        total += static_cast<const Graph&>(*kv.second).task_count_;
+                    return total;
+                }
 
                 /**
                  * @brief Number of times the combined plan has been (re)composed.
