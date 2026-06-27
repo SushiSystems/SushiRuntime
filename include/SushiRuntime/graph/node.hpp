@@ -317,6 +317,34 @@ namespace SushiRuntime
                                                               std::memory_order_relaxed));
             }
 
+            /**
+             * @brief Clears all dependency edges so the node can be re-wired.
+             *
+             * A node built once and replayed across graph compositions (the
+             * dynamic region graph re-stitches the same node objects every commit)
+             * must start each wiring pass with no predecessors or successors, or
+             * edges from the previous composition would accumulate. Drops the
+             * in-degree to zero, empties the inline successor buffer, and frees the
+             * lock-free spillover list. Called only at a step boundary with no
+             * worker touching the node, so relaxed ordering and a plain free of the
+             * list are safe.
+             */
+            void reset_edges() noexcept
+            {
+                in_degree.store(0, std::memory_order_relaxed);
+                inline_successor_count.store(0, std::memory_order_relaxed);
+                for (auto& s : inline_successors)
+                    s = nullptr;
+
+                SuccessorNode* curr = successor_list.exchange(nullptr, std::memory_order_relaxed);
+                while (curr)
+                {
+                    SuccessorNode* next = curr->next;
+                    delete curr;
+                    curr = next;
+                }
+            }
+
             /** @brief Returns the execution mode for this node. */
             ExecutionMode get_execution_mode() const override   { return mode; }
 

@@ -158,6 +158,28 @@ sim.add(API::when([&] { return enabled; }).and_sized([&] { return active; }),
         [p = out.data()](std::size_t i) { /* runs only while enabled, over active */ });
 ```
 
+**Dynamic region graphs** let the *set* of work change between steps, for
+streaming open worlds where cells appear and disappear. `rt.dynamic_graph()`
+returns a graph partitioned into **regions** keyed by an id of your choosing (a
+packed cell coordinate, a chunk id). Record work on a region with the same `add()`
+surface, and drop a region when it streams out — mutations take effect at the next
+step boundary, and only the regions that changed are rebuilt:
+
+```cpp
+auto world = rt.dynamic_graph();
+world.region(cell_id).add(API::Reads(terrain), API::Writes(height), N,
+                          [p = height.data()](std::size_t i) { /* ... */ });
+world.run(steps);            // composes the live regions into one plan, then replays
+
+world.region(new_cell).add(/* ... */);   // streams a cell in
+world.drop(old_cell);                     // streams a cell out
+world.run(steps);            // recomposes once; unchanged cells are not rebuilt
+```
+
+Regions that share a buffer are ordered automatically across the boundary, exactly
+as tasks within one graph are. `world.compile_count()` stays 1 across an unmutated
+run and rises by one per mutation, not per region.
+
 **Native CPU tasks** run plain host C++ — gameplay logic, AI, navigation — with
 no SYCL submission, ordered into the graph by the data they touch. Use
 `add_host()` and name the data with `Reads(...)`/`Writes(...)`:

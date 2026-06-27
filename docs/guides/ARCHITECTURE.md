@@ -48,25 +48,25 @@ layers never depend up.
 
 ```
         ┌─────────────────────────────────────────────────────────┐
-        │  api/         Runtime · API::Graph                        │  fluent entry point,
-        │               RunReport · Error · Errc                    │  error types
+        │  api/         Runtime · API::Graph · DynamicGraph       │  fluent entry point,
+        │               RunReport · Error · Errc                  │  error types
         ├─────────────────────────────────────────────────────────┤
-        │  execution/   RuntimeContext · IExecutionEngine           │  owns everything,
-        │               ExecutionEngine · CompiledGraph             │  drives a run
-        │               ExecutionMetrics                            │
+        │  execution/   RuntimeContext · IExecutionEngine         │  owns everything,
+        │               ExecutionEngine · CompiledGraph           │  drives a run
+        │               ExecutionMetrics                          │
         ├─────────────────────────────────────────────────────────┤
-        │  graph/       TaskGraph · Node · DependencyTracker        │  build + analyze DAG
+        │  graph/       TaskGraph · Node · DependencyTracker      │  build + analyze DAG
         ├─────────────────────────────────────────────────────────┤
-        │  scheduler/   TaskScheduler · Task/RangeTask              │  run ready tasks
-        │               EventPolling · WorkloadCoordinator          │  (work stealing)
+        │  scheduler/   TaskScheduler · Task/RangeTask            │  run ready tasks
+        │               EventPolling · WorkloadCoordinator        │  (work stealing)
         ├──────────────────────┬──────────────────────────────────┤
-        │  memory/             │  topology/                         │  resources +
-        │  USMAllocator        │  HardwareDiscovery · NUMAMapper    │  hardware model
-        │  BitmaskMemoryPool   │  ITopologyProvider                 │
-        │  EpochManager (EBR)  │  INumaDistanceModel · affinity     │
+        │  memory/             │  topology/                       │  resources +
+        │  USMAllocator        │  HardwareDiscovery · NUMAMapper  │  hardware model
+        │  BitmaskMemoryPool   │  ITopologyProvider               │
+        │  EpochManager (EBR)  │  INumaDistanceModel · affinity   │
         ├──────────────────────┴──────────────────────────────────┤
-        │  core/   RefCounted · sushi_ptr · logger · common         │  foundations
-        │          Error · Result · RunReport · compat shims        │
+        │  core/   RefCounted · sushi_ptr · logger · common       │  foundations
+        │          Error · Result · RunReport · compat shims      │
         └─────────────────────────────────────────────────────────┘
            distributed/ (optional, SR_ENABLE_DISTRIBUTED) sits beside
            execution/scheduler and is invisible when the flag is off.
@@ -116,6 +116,15 @@ do not need to reach into the lower layers.
   - `cancel()` — thread-safe; stops an in-progress run from another thread, the
     run returns with `RunReport::cancelled` set (a clean stop, not an error).
   - `size()` — task count.
+
+- **`API::DynamicGraph`** — the mutable, region-partitioned graph from
+  `runtime.dynamic_graph()`, for streaming workloads. `region(key)` returns an
+  `API::Region` (which reuses `Graph`'s `add()` surface) to record work on a
+  partition; `drop(key)` removes one; `has_region(key)`, `region_count()`, and
+  `size()` report structure. `run()` / `run(n)` / `run_for` / `run_until` /
+  `try_run` / `cancel` mirror `Graph`. The composer recomposes only what changed
+  between steps, and `compile_count()` advances once per mutation, not per region;
+  cross-region ordering follows ascending region key (lower key = producer).
 
 - **`RunReport`** — filled after each `run()` / `try_run()`:
   - `is_successful`, `cancelled`, `total_tasks_executed`, `total_duration_ms`,
@@ -195,6 +204,29 @@ ECS-style graph that spawns/destroys entities or sleeps subsystems per frame
 compiles once — `Graph::compile_count()` stays 1. Bindings may change size/enable
 but **not** which resources a node touches, since that would invalidate the
 dependency edges fixed at compile.
+
+**Dynamic region graph.** Late binding varies size and enablement but keeps a
+fixed topology; a streaming open world also needs the *set* of work to change —
+cells stream in and out as the player moves. `Runtime::dynamic_graph()` returns an
+`API::DynamicGraph`, which partitions work into **regions** keyed by a caller id
+(`region(key)` records tasks with the static graph's `add()` surface; `drop(key)`
+removes one). A `Region` is implemented in terms of `API::Graph` by private
+inheritance, so it reuses every `add()` overload and adds no second recording path.
+Mutations apply at a step boundary, never against the running DAG. The composer
+builds each region's nodes once and caches them (`TaskGraph::take_nodes()`), so an
+unchanged region is never rebuilt; at commit it adopts every live region's nodes
+into one backing graph (`TaskGraph::adopt()`, which `reset_edges()` each node then
+re-resolves its retained `io_reads_`/`io_writes_`) and compiles in a single
+dependency pass. Because `DependencyTracker` shards on the owning allocation, a
+buffer shared by two regions yields a cross-region edge for free, with no double
+counting. `DynamicGraph::compile_count()` stays 1 across an unmutated run and
+advances by one per mutation, not per region. Cross-region ordering follows
+ascending region key — the lower-keyed region is the producer — so a hard
+dataflow dependency that crosses regions keys the producer below the consumer,
+exactly as the static graph relies on add() order within one graph. The first version's wiring pass is
+global (every node re-adopted each commit); a true delta-stitch of only the
+boundary edges is a later optimisation the seam already allows. The runtime owns
+this mechanism; the policy of *which* region streams when belongs to the consumer.
 
 **Native CPU tasks.** A host task that submits no device work need not go through
 a SYCL queue. When a `Node` reports `submits_device_work() == false` (set by the
@@ -835,7 +867,7 @@ helper is a no-op stub and `-fsycl` is applied globally.
 ```
 include/SushiRuntime/      Public API (the headers this document describes)
   api/         Runtime (fluent entry point), Buffer/State handles, API::Graph,
-               RunReport, Error, Errc
+               API::DynamicGraph / Region, RunReport, Error, Errc
   core/        RefCounted, sushi_ptr, logger, common constants, OpID, export macro,
                Error/Result/RunReport, compat shims (bit, span, sycl_compat)
   topology/    HardwareDiscovery, NUMAMapper, ITopologyProvider/INumaDistanceModel,

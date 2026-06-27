@@ -368,8 +368,8 @@ The code is organized into layers under `include/SushiRuntime/` and `src/`.
 ### Public API (`api/`)
 The fluent entry point that most users should start from:
 - `Runtime` — static `create()` factory; owns the `RuntimeContext`. Exposes
-  `graph()`, `context()`, and the typed data factories `buffer<T>()` /
-  `state<T>()`.
+  `graph()`, `dynamic_graph()`, `context()`, and the typed data factories
+  `buffer<T>()` / `state<T>()`.
 - `Buffer<T>` / `State<T>` — owning handles to shared USM. `State<T>` is a
   double-buffered field for stepped workloads. Passing a handle to `add()`
   registers the task's reads and writes automatically.
@@ -379,6 +379,11 @@ The fluent entry point that most users should start from:
   `NdRange<N>` work-groups, and explicit `Reads`/`Writes`/`In`/`Out`/`InOut`
   dependency wrappers. `run()` / `run(n)` / `run_for()` / `run_until()` compile
   once and replay; `try_run()` / `try_run(n)` are the non-throwing forms.
+- `API::DynamicGraph` — the mutable counterpart for streaming, open-world
+  workloads. `dynamic_graph()` returns one; `region(key)` records work on a
+  partition with the same `add()` surface and `drop(key)` removes one. Regions
+  added or dropped between steps recompose only what changed — an unchanged region
+  is never rebuilt — and regions sharing a buffer are ordered across the boundary.
 - `RunReport` — timing and steal statistics returned after each run.
 - `Errc` / `Error` / `SushiException` — the error type hierarchy. `run()`
   throws; `try_run()` returns `Result<RunReport, Error>` without throwing.

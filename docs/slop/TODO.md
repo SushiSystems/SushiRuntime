@@ -146,6 +146,23 @@ error-recovery or interactive scenarios.
 
 ## Future work (out of v1 scope)
 
+**True O(Region) dynamic-graph compose (boundary delta-stitch).** The dynamic
+region graph (`Runtime::dynamic_graph()`) currently amortises node *construction*
+— an unchanged region's kernels are never rebuilt — but its commit re-adopts every
+live region's nodes into one backing graph and re-resolves dependencies, so the
+wiring pass is `O(total nodes)`. For a world of 10⁵+ nodes a single cell streaming
+in re-scans everything. The target is `O(changed region + affected boundaries)`:
+(1) each `Region` compiles and caches its own sub-`CompiledGraph` (intra edges
+baked once, never touched again); (2) each region exposes a boundary interface —
+per shared allocation, its entry pin (first accessor) and exit pins (last
+writer/reader); (3) a shared-base registry (`base → {RegionKey}`) tracks which
+regions co-touch an allocation, and `commit()` re-wires only the boundary edges of
+the changed/dropped region's shared bases by restoring the affected pins to
+intra-only state and re-deriving cross-region edges over the pins. Reuses the
+existing `reset_edges()` / `add_successor` / `DependencyTracker` seams; needs no
+scheduler hot-path change. This is the AAA streaming target; design agreed, owns
+its own branch and build/test iteration.
+
 **Python bindings.** A pybind11 (or nanobind) wrapper around the C++ fluent API
 would allow direct interop with NumPy, PyTorch, and Jupyter. The binding entry
 point would be `python/src/module.cpp` + `bind_runtime.cpp` + `bind_graph.cpp`,
