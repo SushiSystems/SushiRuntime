@@ -225,6 +225,36 @@ namespace SushiRuntime
                  */
                 SushiRuntime::Execution::CompiledGraph compile();
 
+                /**
+                 * @brief Hands off the built nodes without finalising a plan.
+                 *
+                 * Drains the insertion stacks and returns the node objects exactly
+                 * as inserted, without resolving roots/leaves or wiring a sentinel.
+                 * The dynamic region graph builds a region's nodes once with this,
+                 * caches them, and re-stitches them across compositions with adopt()
+                 * — so a region that did not change is never rebuilt. The returned
+                 * nodes keep whatever edges insertion produced; the caller is
+                 * expected to reset_edges() before re-wiring (adopt() does).
+                 *
+                 * @return The region's nodes, in insertion order. Empty if none.
+                 */
+                std::vector<sushi_ptr<SushiRuntime::Graph::Node>> take_nodes();
+
+                /**
+                 * @brief Re-inserts a pre-built node and resolves its data edges here.
+                 *
+                 * The composition counterpart to add_node(): takes a node built
+                 * elsewhere (a cached region node), clears its stale edges, and
+                 * resolves its retained io_reads_/io_writes_ against this graph's
+                 * dependency tracker so a single compile() wires the whole world —
+                 * intra- and cross-region edges — in one pass with no double count.
+                 * Shares ownership (sushi_ptr is ref-counted), so the source cache
+                 * and the resulting CompiledGraph both keep the node alive.
+                 *
+                 * @param node The pre-built node to wire into this graph.
+                 */
+                void adopt(sushi_ptr<SushiRuntime::Graph::Node> node);
+
             private:
                 struct Impl;
                 sushi_ptr<Impl> impl_;

@@ -21,6 +21,7 @@
 /* permissions and limitations under the License.                         */
 /**************************************************************************/
 
+#include <algorithm>
 #include <future>
 #include <memory>
 #include <stdexcept>
@@ -600,6 +601,64 @@ namespace SushiRuntime
 
             SR_LOG_INFO("DAG compilation completed successfully.");
             return graph;
+        }
+
+        /**
+         * @brief Hands off the built nodes without resolving roots/leaves or a sentinel.
+         *
+         * @return The nodes in insertion order; the insertion stacks are left empty.
+         */
+        std::vector<sushi_ptr<Node>> TaskGraph::take_nodes()
+        {
+            std::vector<sushi_ptr<Node>> out;
+
+            NodeEntry* head = impl_->all_nodes.exchange(nullptr, std::memory_order_acquire);
+            while (head)
+            {
+                out.push_back(std::move(head->node));
+                NodeEntry* next = head->next;
+                delete head;
+                head = next;
+            }
+
+            // The root/leaf candidate stacks and the tracker history only matter for
+            // compile(); drop them so this graph is a clean, reusable builder.
+            RawNodeEntry* pr = impl_->potential_roots.exchange(nullptr, std::memory_order_acquire);
+            while (pr) { RawNodeEntry* n = pr->next; delete pr; pr = n; }
+
+            RawNodeEntry* pl = impl_->potential_leaves.exchange(nullptr, std::memory_order_acquire);
+            while (pl) { RawNodeEntry* n = pl->next; delete pl; pl = n; }
+
+            impl_->tracker.reset();
+
+            // push_node_lock_free is a LIFO stack, so the drain above is in reverse
+            // insertion order. The composer re-resolves dependencies in adoption
+            // order, so it must see nodes as the caller added them; restore that.
+            std::reverse(out.begin(), out.end());
+            return out;
+        }
+
+        /**
+         * @brief Re-inserts a pre-built node and resolves its retained io edges here.
+         *
+         * @param node The cached node to wire into this graph's dependency history.
+         */
+        void TaskGraph::adopt(sushi_ptr<Node> node)
+        {
+            if (!node)
+                return;
+
+            // Start from a clean slate: a cached node carries edges from the previous
+            // composition that this pass must not double-count.
+            node->reset_edges();
+
+            for (const auto& r : node->io_reads_)
+                if (r.base) impl_->tracker.resolve(node.get(), r, false);
+
+            for (const auto& w : node->io_writes_)
+                if (w.base) impl_->tracker.resolve(node.get(), w, true);
+
+            impl_->push_node_lock_free(std::move(node));
         }
 
     } // namespace Graph
