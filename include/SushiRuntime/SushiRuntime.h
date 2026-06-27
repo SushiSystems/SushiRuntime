@@ -65,3 +65,8 @@
 
 // Fluent v1 API (Runtime / graph()) — the surface most users program against.
 #include "api/runtime.hpp"
+
+// Dynamic region-partitioned graph (Runtime::dynamic_graph()) for streaming,
+// mutating workloads such as an open-world simulation.
+#include "api/region.hpp"
+#include "api/dynamic_graph.hpp"

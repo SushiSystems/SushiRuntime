@@ -9,6 +9,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- Dynamic region-partitioned graph (`Runtime::dynamic_graph()`): the mutable
+  counterpart to the static `graph()`, for streaming, open-world workloads where the
+  set of work changes between steps. Work is grouped into regions keyed by a caller id
+  (a spatial cell or streaming chunk); `DynamicGraph::region(key)` records tasks with
+  the same fluent `add()` surface as a static graph, and `drop(key)` removes a region.
+  Mutations are applied at a step boundary, never against the running DAG. The composer
+  builds each region's nodes once and caches them — an unchanged region is never
+  rebuilt — then adopts every live region's nodes into one backing graph and compiles
+  in a single dependency pass, so intra- and cross-region edges (regions sharing a
+  buffer) are wired together with no double counting. `compile_count()` holds at 1
+  across an unmutated multi-step run and advances by exactly one per mutation, not per
+  region. New `TaskGraph::take_nodes()`/`adopt()` and `Graph::Node::reset_edges()`
+  support node reuse across compositions. New `Region`/`DynamicGraph` API headers
+  (`api/region.hpp`, `api/dynamic_graph.hpp`). The runtime owns the mechanism; *which*
+  region streams when is a consumer (SushiEngine) policy.
 - Cross-context co-location guard (§5.4): a single SYCL kernel cannot dereference USM
   from two non-peer device contexts. The scheduler now verifies, on a node's first
   dispatch, that all of its buffers share one device context, and fails the run with a

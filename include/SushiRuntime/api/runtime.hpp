@@ -65,6 +65,13 @@ namespace SushiRuntime
         // avoid clashing with the API::Graph class name below.
         using BackingGraph = ::SushiRuntime::Graph::TaskGraph;
 
+        // The dynamic (region-based) graph and its mutation unit. Declared here so
+        // the static Graph can befriend them: a Region reuses Graph's whole add()
+        // surface by deriving from it, and the DynamicGraph composer reads a
+        // region's recorded specs and per-step updaters to stitch one plan.
+        class Region;
+        class DynamicGraph;
+
         // The three callable shapes the fluent add() overloads accept, expressed
         // as C++17 SFINAE traits over std::is_invocable_v (the C++20 concepts they
         // replace read the same, only as `requires`-clauses). enable_if on each
@@ -1073,6 +1080,12 @@ namespace SushiRuntime
 
             private:
                 friend class Runtime;
+                // A Region IS a recorder: it derives from Graph to inherit every
+                // add() overload, so it needs the protected-by-friendship ctor and
+                // access to the recorded specs/updaters. The DynamicGraph composer
+                // reads those same members to build one combined plan.
+                friend class Region;
+                friend class DynamicGraph;
 
                 explicit Graph(std::shared_ptr<Execution::RuntimeContext> ctx)
                     : ctx_(std::move(ctx))
@@ -1661,6 +1674,19 @@ namespace SushiRuntime
                  * @return A fluent Graph; add tasks, then run() or try_run().
                  */
                 Graph graph() { return Graph(ctx_); }
+
+                /**
+                 * @brief Starts a new dynamic, region-partitioned graph.
+                 *
+                 * The mutable counterpart to graph(): work is grouped into regions
+                 * (region(key)) that can be added or dropped between steps, so a
+                 * streaming open world re-stitches only the cells that changed
+                 * instead of recompiling the whole graph. Defined out of line in
+                 * dynamic_graph.hpp once DynamicGraph is a complete type.
+                 *
+                 * @return A fluent DynamicGraph; populate regions, then run().
+                 */
+                DynamicGraph dynamic_graph();
 
                 /**
                  * @brief Allocates a typed shared-USM buffer owned by this runtime.
