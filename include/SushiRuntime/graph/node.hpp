@@ -155,7 +155,64 @@ namespace SushiRuntime
 
             /** @brief Number of incoming dependencies. */
             std::atomic<int32_t> in_degree{0};
-            
+
+            /**
+             * @brief Predecessor count from edges internal to the owning region.
+             *
+             * The dynamic region graph splits a node's dependencies into a stable
+             * intra-region layer and a recomputable cross-region (boundary) layer.
+             * This holds the intra count, captured once when the region is compiled
+             * (it equals in_degree right after the region's own dependency pass) and
+             * never touched again while the region is unchanged. Each step resets the
+             * live in_degree to intra_in_degree + boundary_in_degree, so the boundary
+             * layer can be re-stitched without disturbing the frozen interior. Zero
+             * for nodes built by the static graph, which never reads it.
+             */
+            int32_t intra_in_degree = 0;
+
+            /**
+             * @brief Predecessor count from cross-region (boundary) edges.
+             *
+             * Maintained incrementally by the dynamic graph's composer as boundary
+             * edges are added and removed when neighbouring regions stream in or out.
+             * Summed with intra_in_degree to re-arm the node each step. The static
+             * graph never sets it, so its nodes carry only intra/baseline degree.
+             */
+            std::atomic<int32_t> boundary_in_degree{0};
+
+            /**
+             * @brief Cross-region successors released in addition to the intra ones.
+             *
+             * The composer wires a boundary edge by appending the target here and
+             * bumping the target's boundary_in_degree. The scheduler's
+             * trigger_successors walks this list alongside the inline/spillover intra
+             * successors, decrementing each target's in_degree. Mutated only at a
+             * step boundary (no worker running), read-only during a step, so a plain
+             * vector needs no synchronisation. Empty for every static-graph node and
+             * for any dynamic node that exports nothing across a region boundary.
+             */
+            std::vector<Node*> boundary_successors;
+
+            /**
+             * @brief True when this node has no successor internal to its region.
+             *
+             * Bookkeeping for the dynamic region graph: an intra-leaf is a candidate
+             * to link to the completion sentinel, but only while it also has no
+             * cross-region successor. Set once when the region is compiled; combined
+             * with the live boundary successor count to decide sentinel linkage.
+             */
+            bool intra_leaf = false;
+
+            /**
+             * @brief Whether this node currently releases the dynamic completion sentinel.
+             *
+             * The composer keeps the sentinel wired to exactly the current leaves (no
+             * intra and no cross-region successor), so completion is detected without
+             * every node hammering one counter. Flipped as boundary edges make a leaf
+             * gain or lose an exported successor.
+             */
+            bool sentinel_linked = false;
+
             /** @brief Head of the lock-free successor list (for spillover). */
             std::atomic<SuccessorNode*> successor_list{nullptr};
 
@@ -318,31 +375,34 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Clears all dependency edges so the node can be re-wired.
+             * @brief Clears only the cross-region boundary layer of this node.
              *
-             * A node built once and replayed across graph compositions (the
-             * dynamic region graph re-stitches the same node objects every commit)
-             * must start each wiring pass with no predecessors or successors, or
-             * edges from the previous composition would accumulate. Drops the
-             * in-degree to zero, empties the inline successor buffer, and frees the
-             * lock-free spillover list. Called only at a step boundary with no
-             * worker touching the node, so relaxed ordering and a plain free of the
-             * list are safe.
+             * Drops the boundary predecessor count and the boundary successor list,
+             * leaving the frozen intra-region edges untouched. The dynamic composer
+             * calls this on a pin before re-deriving the boundary edges of a base
+             * that became dirty, so a node touching several shared bases keeps the
+             * boundary edges of the bases that did not change (those are re-applied
+             * by the per-base rewire). Safe at a step boundary only.
              */
-            void reset_edges() noexcept
+            void clear_boundary() noexcept
             {
-                in_degree.store(0, std::memory_order_relaxed);
-                inline_successor_count.store(0, std::memory_order_relaxed);
-                for (auto& s : inline_successors)
-                    s = nullptr;
+                boundary_in_degree.store(0, std::memory_order_relaxed);
+                boundary_successors.clear();
+            }
 
-                SuccessorNode* curr = successor_list.exchange(nullptr, std::memory_order_relaxed);
-                while (curr)
-                {
-                    SuccessorNode* next = curr->next;
-                    delete curr;
-                    curr = next;
-                }
+            /**
+             * @brief Re-arms the live in-degree from the two-layer baseline.
+             *
+             * Sets in_degree to intra_in_degree + boundary_in_degree, the count the
+             * scheduler decrements as predecessors complete. The dynamic graph calls
+             * this for every node before each replayed step, the equivalent of
+             * CompiledGraph::rearm for a plan whose boundary layer is maintained
+             * incrementally rather than snapshotted.
+             */
+            void arm_in_degree() noexcept
+            {
+                in_degree.store(intra_in_degree + boundary_in_degree.load(std::memory_order_relaxed),
+                                std::memory_order_relaxed);
             }
 
             /** @brief Returns the execution mode for this node. */

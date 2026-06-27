@@ -206,3 +206,142 @@ TEST(Integration_DynamicGraph, SingleRecomposePerMutation)
             ASSERT_EQ(bufs[r][i], expected) << "region " << r << " at i=" << i;
         }
 }
+
+// A three-hop cross-region chain over three buffers: region 0 writes x, region 1
+// reads x and writes y, region 2 reads y and writes z. Each hop is a separate
+// boundary; the composer must order 0 -> 1 -> 2 so z carries the value threaded
+// through both hops: z[i] == 2*(i+1) + 1.
+TEST(Integration_DynamicGraph, ThreeRegionChainThreadsValue)
+{
+    constexpr std::size_t N = 24;
+
+    auto rt = Runtime::create();
+    rt.rebalancer(false);
+
+    auto x = rt.buffer<int>(N);
+    auto y = rt.buffer<int>(N);
+    auto z = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = 0; z[i] = 0; }
+
+    int* px = x.data();
+    int* py = y.data();
+    int* pz = z.data();
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add(API::Reads{}, API::Writes(x), N,
+                        [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
+    world.region(1).add(API::Reads(x), API::Writes(y), N,
+                        [px, py](std::size_t i) { py[i] = px[i] * 2; });
+    world.region(2).add(API::Reads(y), API::Writes(z), N,
+                        [py, pz](std::size_t i) { pz[i] = py[i] + 1; });
+
+    world.run();
+
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(z[i], static_cast<int>(2 * (i + 1) + 1)) << "at i=" << i;
+}
+
+// One producer writes base; two consumer regions both READ base (and write their
+// own outputs). The two readers share no hazard, so the composer must not order
+// them against each other — both simply see the producer's writes. Correctness is
+// the observable here: each reader's output reflects base.
+TEST(Integration_DynamicGraph, ReadReadSharingStaysConsistent)
+{
+    constexpr std::size_t N = 24;
+
+    auto rt = Runtime::create();
+    rt.rebalancer(false);
+
+    auto base = rt.buffer<int>(N);
+    auto o1   = rt.buffer<int>(N);
+    auto o2   = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i) { base[i] = 0; o1[i] = 0; o2[i] = 0; }
+
+    int* pb = base.data();
+    int* p1 = o1.data();
+    int* p2 = o2.data();
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add(API::Reads{}, API::Writes(base), N,
+                        [pb](std::size_t i) { pb[i] = static_cast<int>(i) + 1; });
+    world.region(1).add(API::Reads(base), API::Writes(o1), N,
+                        [pb, p1](std::size_t i) { p1[i] = pb[i] + 10; });
+    world.region(2).add(API::Reads(base), API::Writes(o2), N,
+                        [pb, p2](std::size_t i) { p2[i] = pb[i] + 100; });
+
+    world.run();
+
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        ASSERT_EQ(o1[i], static_cast<int>(i) + 1 + 10)  << "reader 1 at i=" << i;
+        ASSERT_EQ(o2[i], static_cast<int>(i) + 1 + 100) << "reader 2 at i=" << i;
+    }
+}
+
+// Streaming a consumer in next to an existing producer must re-stitch the
+// producer's boundary: region 0 (writes x) runs alone first, then region 1
+// (reads x) streams in and on the next run observes x. Exercises the neighbour
+// re-wire path — an unchanged region's exit pin gaining a cross-region successor.
+TEST(Integration_DynamicGraph, StreamInConsumerRewiresProducer)
+{
+    constexpr std::size_t N = 16;
+
+    auto rt = Runtime::create();
+    rt.rebalancer(false);
+
+    auto x = rt.buffer<int>(N);
+    auto y = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = -1; }
+
+    int* px = x.data();
+    int* py = y.data();
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add(API::Reads{}, API::Writes(x), N,
+                        [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
+    world.run();
+    EXPECT_EQ(world.compile_count(), 1u);
+
+    world.region(1).add(API::Reads(x), API::Writes(y), N,
+                        [px, py](std::size_t i) { py[i] = px[i] * 3; });
+    world.run();
+    EXPECT_EQ(world.compile_count(), 2u) << "streaming a sharer in recomposes once.";
+
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(y[i], static_cast<int>(i + 1) * 3) << "at i=" << i;
+}
+
+// Dropping the producer must cleanly un-wire the boundary and leave the consumer
+// runnable (now without an upstream edge). Region 1 keeps running after region 0
+// is dropped; the run does not deadlock or fault.
+TEST(Integration_DynamicGraph, DropProducerLeavesConsumerRunnable)
+{
+    constexpr std::size_t N = 16;
+
+    auto rt = Runtime::create();
+    rt.rebalancer(false);
+
+    auto x = rt.buffer<int>(N);
+    auto y = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i) { x[i] = 7; y[i] = 0; }
+
+    int* px = x.data();
+    int* py = y.data();
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add(API::Reads{}, API::Writes(x), N,
+                        [px](std::size_t i) { px[i] = static_cast<int>(i); });
+    world.region(1).add(API::Reads(x), API::Writes(y), N,
+                        [px, py](std::size_t i) { py[i] += px[i]; });
+    world.run();
+
+    world.drop(0);
+    EXPECT_FALSE(world.has_region(0));
+    world.run();                 // consumer alone; must not deadlock
+
+    EXPECT_EQ(world.region_count(), 1u);
+    // y accumulated px across two steps; the exact value is not the point — the
+    // point is the run completed and the consumer kept executing.
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(y[i], static_cast<int>(i) * 2) << "at i=" << i;
+}

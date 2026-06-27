@@ -212,21 +212,36 @@ cells stream in and out as the player moves. `Runtime::dynamic_graph()` returns 
 (`region(key)` records tasks with the static graph's `add()` surface; `drop(key)`
 removes one). A `Region` is implemented in terms of `API::Graph` by private
 inheritance, so it reuses every `add()` overload and adds no second recording path.
-Mutations apply at a step boundary, never against the running DAG. The composer
-builds each region's nodes once and caches them (`TaskGraph::take_nodes()`), so an
-unchanged region is never rebuilt; at commit it adopts every live region's nodes
-into one backing graph (`TaskGraph::adopt()`, which `reset_edges()` each node then
-re-resolves its retained `io_reads_`/`io_writes_`) and compiles in a single
-dependency pass. Because `DependencyTracker` shards on the owning allocation, a
-buffer shared by two regions yields a cross-region edge for free, with no double
-counting. `DynamicGraph::compile_count()` stays 1 across an unmutated run and
-advances by one per mutation, not per region. Cross-region ordering follows
-ascending region key — the lower-keyed region is the producer — so a hard
-dataflow dependency that crosses regions keys the producer below the consumer,
-exactly as the static graph relies on add() order within one graph. The first version's wiring pass is
-global (every node re-adopted each commit); a true delta-stitch of only the
-boundary edges is a later optimisation the seam already allows. The runtime owns
-this mechanism; the policy of *which* region streams when belongs to the consumer.
+Mutations apply at a step boundary, never against the running DAG.
+
+The composition is incremental in two layers. Each region compiles once to a
+cached sub-graph (`TaskGraph::take_nodes()`) whose **interior** edges — the
+dependencies between tasks of the same region — are baked into the node objects
+and never touched again while the region is unchanged. Dependencies that **cross**
+a region boundary live in a separate layer on each node: `Node::boundary_in_degree`
+adds to the intra count the node already carries, and `Node::boundary_successors`
+is walked by the scheduler's `trigger_successors` alongside the inline/spillover
+intra successors. The composer owns this boundary layer. When a region streams in
+or out, only its own nodes are (re)built and only the allocations it *shares* with
+other regions are re-stitched: the composer un-wires those bases' boundary edges,
+rebuilds the changed region, and re-derives just those bases' cross-region edges.
+A node's live `in_degree` is re-armed each step as `intra_in_degree +
+boundary_in_degree` (`Node::arm_in_degree`), and the entry/root set and the
+completion sentinel's leaf links are maintained incrementally as boundary edges
+appear and vanish — so a commit costs O(changed region + affected boundary pins)
+and never re-scans the untouched world.
+
+Cross-region edges are derived per shared allocation by walking the regions that
+touch it in ascending key order, threading the producer (last writer) and pending
+readers through so RAW/WAR/WAW are honoured while two regions that only read the
+same buffer stay parallel. A region's boundary interface is the entry pins (first
+touchers, which receive incoming edges) and exit pins (last writers/reads, which
+source the next region's edges), computed once per region build. The lower-keyed
+region is therefore the producer; key the producer below the consumer for a hard
+cross-region dataflow dependency, exactly as the static graph relies on add() order
+within one graph. `DynamicGraph::compile_count()` stays 1 across an unmutated run
+and advances by one per mutation, not per region. The runtime owns this mechanism;
+the policy of *which* region streams when belongs to the consumer.
 
 **Native CPU tasks.** A host task that submits no device work need not go through
 a SYCL queue. When a `Node` reports `submits_device_work() == false` (set by the

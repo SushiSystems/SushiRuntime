@@ -23,19 +23,23 @@
 
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <SushiRuntime/api/region.hpp>
 #include <SushiRuntime/api/runtime.hpp>
-#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/graph/node.hpp>
 
 namespace SushiRuntime
@@ -43,30 +47,32 @@ namespace SushiRuntime
     namespace API
     {
         /**
-         * @brief A graph partitioned into regions that can change between steps.
+         * @brief A graph partitioned into regions that stream in and out cheaply.
          *
-         * The mutable counterpart to the static Graph. Work is grouped into regions
-         * keyed by a caller-chosen id (a spatial cell, an island, a streaming
-         * chunk); region(key) hands back a Region to record tasks on, and drop(key)
-         * removes one. Mutations are applied at a step boundary, never against the
-         * running DAG, so the lock-free scheduler invariants are untouched.
+         * The mutable counterpart to the static Graph, built for an open world: work
+         * is grouped into regions keyed by a caller id (a spatial cell, a streaming
+         * chunk). region(key) records tasks with the static graph's add() surface;
+         * drop(key) removes one. Mutations are applied at a step boundary, never
+         * against the running DAG, so the lock-free scheduler is untouched.
          *
-         * The composer is what makes streaming cheap. Each region's nodes are built
-         * once and cached; a region that did not change is never rebuilt. At commit
-         * the cached nodes from every live region are adopted into one backing graph
-         * and compiled in a single dependency pass — the tracker shards on the
-         * owning allocation, so intra- and cross-region edges fall out together with
-         * no double counting. The combined plan is then replayed across steps like
-         * the static graph's, with every region's per-step State/late-binding
-         * updaters driven in the same order.
+         * The composition is **incremental in the changed region and its boundary**,
+         * not the world. Each region compiles to a cached sub-graph whose interior
+         * (intra-region) edges are baked once and never touched again while the
+         * region is unchanged. Dependencies that cross a region boundary — two
+         * regions sharing a buffer — live in a separate layer on each node
+         * (Node::boundary_in_degree / boundary_successors) that the composer
+         * maintains. When a region streams in or out only its own nodes are rebuilt
+         * and only the boundary edges of the allocations it shares are re-derived;
+         * the interior of every other region, and every boundary that did not
+         * change, is left exactly as it was. Commit therefore costs
+         * O(changed region + affected boundary pins), independent of the size of the
+         * untouched world.
          *
-         * Cross-region ordering follows ascending region key. Where the static
-         * graph orders two tasks that touch the same buffer by their add() order,
-         * the dynamic graph adopts region nodes in key order, so the lower-keyed
-         * region is the producer: when a hard dataflow dependency crosses regions,
-         * key the producer below the consumer. Tasks within one region keep their
-         * add() order. Independent regions (the common open-world case) need no
-         * such care.
+         * Cross-region ordering follows ascending region key: for an allocation two
+         * regions share, the lower-keyed region is the producer. Read/read sharing
+         * stays parallel (no edge between two regions that only read the same
+         * buffer); only true RAW/WAR/WAW hazards across regions are serialized.
+         * Tasks within one region keep their add() order.
          *
          * Obtain one from Runtime::dynamic_graph(). Moveable, not copyable.
          */
@@ -84,9 +90,9 @@ namespace SushiRuntime
                 /**
                  * @brief Returns the region for @p key, creating it if absent.
                  *
-                 * A fresh region starts empty; record work on it with the same
-                 * add() surface as a static graph. Creating a region marks the graph
-                 * for recomposition at the next step boundary.
+                 * The returned region records work with the same add() surface as a
+                 * static graph. Accessing a region marks it to be (re)built at the
+                 * next step boundary, since the caller accesses it to add work.
                  *
                  * @param key Identity of the region; stable across steps.
                  * @return A reference to the region, valid until the region is dropped.
@@ -95,18 +101,16 @@ namespace SushiRuntime
                 {
                     auto it = regions_.find(key);
                     if (it == regions_.end())
-                    {
                         it = regions_.emplace(key,
                             std::unique_ptr<Region>(new Region(ctx_))).first;
-                        structural_dirty_ = true;
-                    }
+                    dirty_regions_.insert(key);
                     return *it->second;
                 }
 
                 /**
-                 * @brief Returns whether a region with @p key currently exists.
+                 * @brief Returns whether a live region with @p key exists.
                  * @param key Region identity to test.
-                 * @return True if the region is present and not pending a drop.
+                 * @return True if the region is present.
                  */
                 bool has_region(RegionKey key) const noexcept
                 {
@@ -116,10 +120,10 @@ namespace SushiRuntime
                 /**
                  * @brief Removes the region for @p key from the live set.
                  *
-                 * Takes effect immediately on the graph's structure (region() and
-                 * has_region() no longer see it); the combined plan it leaves is
-                 * recomposed at the next run, so a region is never removed from a DAG
-                 * that is mid-step. Dropping a region that does not exist is a no-op.
+                 * Takes effect on the structure immediately (region()/has_region no
+                 * longer see it); the boundary it leaves is re-stitched at the next
+                 * run, so a region is never removed from a DAG that is mid-step.
+                 * Dropping an absent region is a no-op.
                  *
                  * @param key Identity of the region to remove.
                  */
@@ -127,12 +131,12 @@ namespace SushiRuntime
                 {
                     if (regions_.erase(key) != 0)
                     {
-                        region_nodes_.erase(key);
-                        structural_dirty_ = true;
+                        dirty_regions_.erase(key);
+                        dropped_.insert(key);
                     }
                 }
 
-                /** @brief Number of live regions (excludes pending drops). */
+                /** @brief Number of live regions. */
                 std::size_t region_count() const noexcept { return regions_.size(); }
 
                 /** @brief Total tasks currently recorded across all live regions. */
@@ -145,11 +149,11 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Number of times the combined plan has been (re)composed.
+                 * @brief Number of times the plan has been (re)composed.
                  *
-                 * The amortisation guarantee: a multi-step run that does not mutate
-                 * any region holds this at 1, and mutating one region of many
-                 * recomposes once without rebuilding the unchanged regions' nodes.
+                 * Holds at 1 across a multi-step run that mutates nothing, and rises
+                 * by one per commit (a run that follows at least one mutation),
+                 * regardless of how many regions exist.
                  * @return The composition count since this graph was created.
                  */
                 std::size_t compile_count() const noexcept { return compiles_; }
@@ -163,11 +167,6 @@ namespace SushiRuntime
 
                 /**
                  * @brief Runs @p steps successive steps, blocking until done.
-                 *
-                 * Pending mutations are applied and the plan recomposed (only if
-                 * something changed) before the first step; the combined plan is then
-                 * replayed for each step, advancing every region's States.
-                 *
                  * @param steps Number of steps to run.
                  * @return A RunReport aggregating the whole run.
                  * @throws Core::SushiException on any synchronous or device error.
@@ -224,8 +223,11 @@ namespace SushiRuntime
             private:
                 friend class Runtime;
 
+                using Node = ::SushiRuntime::Graph::Node;
+                using Base = ::SushiRuntime::Core::ResourceId;  // allocation identity (void*)
+
                 explicit DynamicGraph(std::shared_ptr<Execution::RuntimeContext> ctx)
-                    : ctx_(std::move(ctx))
+                    : ctx_(std::move(ctx)), sentinel_(make_sushi<Node>())
                 {
                 }
 
@@ -237,81 +239,389 @@ namespace SushiRuntime
                     return *r;
                 }
 
-                // Reaches a region's Graph subobject. DynamicGraph is a friend of
-                // both Region (for the private-base conversion) and Graph (for its
-                // recorded specs and updater vectors).
+                // Reaches a region's Graph subobject. DynamicGraph is a friend of both
+                // Region (for the private-base conversion) and Graph (for its specs
+                // and per-step updater vectors).
                 static Graph& as_graph(Region& r) noexcept { return static_cast<Graph&>(r); }
 
-                // True when a structural change (region added/dropped) or any region
-                // gaining tasks means the combined plan must be rebuilt.
-                bool needs_commit() const
+                // The boundary access summary of one region for one shared allocation.
+                // Computed once when the region is built and consulted (read-only) by
+                // the cross-region wiring of every base the region shares. Entry pins
+                // receive incoming cross-region edges; exit pins are the sources for
+                // the next region's edges. Splitting read from write keeps two regions
+                // that only read the same buffer parallel.
+                struct BaseAccess
                 {
-                    if (structural_dirty_ || !committed_once_)
-                        return true;
-                    for (const auto& kv : regions_)
-                        if (static_cast<const Graph&>(*kv.second).dirty_)
-                            return true;
-                    return false;
+                    std::vector<Node*> entry_read;   // first touchers that only read (RAW targets)
+                    std::vector<Node*> entry_write;  // first touchers that write (WAW/WAR targets)
+                    std::vector<Node*> exit_write;    // last writers (RAW/WAW sources)
+                    std::vector<Node*> exit_read;     // last reads not shadowed by a later write (WAR sources)
+                    bool writes = false;
+                    bool reads  = false;
+                };
+
+                // The cached compiled sub-graph of one region: its nodes (intra edges
+                // baked), its intra-roots, and its per-shared-base boundary summary.
+                struct RegionState
+                {
+                    std::vector<sushi_ptr<Node>> nodes;
+                    std::vector<Node*>           intra_roots;
+                    std::map<Base, BaseAccess>   access;
+                };
+
+                // One recorded cross-region edge, kept per base so a base can be
+                // un-wired in isolation when it becomes dirty.
+                struct BoundaryEdge { Node* from; Node* to; };
+
+                // Walks a node's intra successors (inline buffer then lock-free
+                // spillover) and calls fn(succ) for each. Used only at commit, single
+                // threaded, so a relaxed load of the spillover head is fine.
+                template <class Fn>
+                static void for_each_intra_successor(Node* n, Fn&& fn)
+                {
+                    const int32_t count = n->inline_successor_count.load(std::memory_order_relaxed);
+                    const int32_t max_idx = std::min<int32_t>(count, Node::MAX_INLINE_SUCCESSORS);
+                    for (int32_t i = 0; i < max_idx; ++i)
+                        if (n->inline_successors[i]) fn(n->inline_successors[i]);
+                    for (auto* s = n->successor_list.load(std::memory_order_relaxed); s; s = s->next)
+                        if (s->target) fn(s->target);
                 }
 
-                // Rebuilds only the regions whose tasks changed, then composes every
-                // live region's cached nodes into one plan in a single wiring pass.
-                void commit()
+                // Links a leaf node to the completion sentinel: appends the sentinel
+                // to its boundary successors and counts it on the sentinel's baseline
+                // (kept in intra_in_degree, the sentinel having no other predecessor).
+                void link_sentinel(Node* n)
                 {
-                    // Rebuild node objects only for regions that changed (or are new).
-                    // Unchanged regions keep their cached, already-built kernels.
-                    for (auto& kv : regions_)
+                    if (n->sentinel_linked) return;
+                    n->boundary_successors.push_back(sentinel_.get());
+                    sentinel_->intra_in_degree += 1;
+                    n->sentinel_linked = true;
+                }
+
+                // Removes a node's sentinel link (it gained a real successor or is
+                // being torn down).
+                void unlink_sentinel(Node* n)
+                {
+                    if (!n->sentinel_linked) return;
+                    auto& v = n->boundary_successors;
+                    for (auto it = v.begin(); it != v.end(); ++it)
+                        if (*it == sentinel_.get()) { v.erase(it); break; }
+                    sentinel_->intra_in_degree -= 1;
+                    n->sentinel_linked = false;
+                }
+
+                // Adds one cross-region edge from->to for base b. A node that gains an
+                // exported successor stops being a leaf, so it drops its sentinel link;
+                // a node that gains a cross-region predecessor stops being a root.
+                void add_cross_edge(Node* from, Node* to, Base b)
+                {
+                    if (from->sentinel_linked)
+                        unlink_sentinel(from);
+                    from->boundary_successors.push_back(to);
+
+                    const int32_t prev = to->boundary_in_degree.fetch_add(1, std::memory_order_relaxed);
+                    if (prev == 0 && to->intra_in_degree == 0)
+                        roots_.erase(to);
+
+                    base_edges_[b].push_back({from, to});
+                }
+
+                // Removes one previously recorded cross-region edge from->to. Reverses
+                // both the root and the sentinel bookkeeping of add_cross_edge.
+                void remove_cross_edge(Node* from, Node* to)
+                {
+                    auto& v = from->boundary_successors;
+                    for (auto it = v.begin(); it != v.end(); ++it)
+                        if (*it == to) { v.erase(it); break; }
+
+                    const int32_t prev = to->boundary_in_degree.fetch_sub(1, std::memory_order_relaxed);
+                    if (prev == 1 && to->intra_in_degree == 0)
+                        roots_.insert(to);
+
+                    // `from` may have just lost its last exported successor; if it is an
+                    // intra-leaf with no remaining cross-region successor it becomes a
+                    // true leaf again and must release the sentinel.
+                    if (from->intra_leaf && !from->sentinel_linked && from->boundary_successors.empty())
+                        link_sentinel(from);
+                }
+
+                // (Re)derives the cross-region edges for one shared allocation. Self
+                // contained: it first un-wires the base's current edges, then walks
+                // the regions touching it in ascending key order, threading the
+                // producer (last writer) and the pending readers through so RAW/WAR/WAW
+                // are honoured and read/read stays parallel. A base whose endpoints
+                // include a torn-down node is un-wired earlier (while those nodes are
+                // still alive); the undo here is then a no-op on an empty list.
+                void rewire_base(Base b)
+                {
+                    auto eit = base_edges_.find(b);
+                    if (eit != base_edges_.end())
                     {
-                        Graph& g = as_graph(*kv.second);
-                        const bool missing = region_nodes_.find(kv.first) == region_nodes_.end();
-                        if (g.dirty_ || missing)
+                        for (auto& e : eit->second)
+                            remove_cross_edge(e.from, e.to);
+                        eit->second.clear();
+                    }
+
+                    auto rit = base_regions_.find(b);
+                    if (rit == base_regions_.end() || rit->second.size() < 2)
+                        return;  // not shared: nothing crosses a boundary
+
+                    std::vector<Node*> last_writer;   // exit writers of the most recent writing region
+                    std::vector<Node*> pending_read;  // exit readers accumulated since that writer
+
+                    for (RegionKey k : rit->second)   // std::set: ascending key = producer first
+                    {
+                        auto sit = states_.find(k);
+                        if (sit == states_.end()) continue;
+                        auto ait = sit->second.access.find(b);
+                        if (ait == sit->second.access.end()) continue;
+                        const BaseAccess& a = ait->second;
+
+                        if (a.reads)
+                            for (Node* w : last_writer)
+                                for (Node* r : a.entry_read)
+                                    add_cross_edge(w, r, b);   // RAW
+
+                        if (a.writes)
                         {
-                            BackingGraph bg(*ctx_);
-                            for (auto& spec : g.specs_)
-                                spec(bg);
-                            region_nodes_[kv.first] = bg.take_nodes();
-                            g.dirty_ = false;
+                            for (Node* w : last_writer)
+                                for (Node* d : a.entry_write)
+                                    add_cross_edge(w, d, b);   // WAW
+                            for (Node* rr : pending_read)
+                                for (Node* d : a.entry_write)
+                                    add_cross_edge(rr, d, b);  // WAR
+                        }
+
+                        if (a.writes)
+                        {
+                            last_writer = a.exit_write;       // new producer
+                            pending_read = a.exit_read;       // its own unshadowed reads
+                        }
+                        else if (a.reads)
+                        {
+                            pending_read.insert(pending_read.end(),
+                                                a.exit_read.begin(), a.exit_read.end());
                         }
                     }
+                }
 
-                    // Aggregate every live region's per-step updaters in region-key
-                    // order so each State advances exactly once and late bindings
-                    // refresh, just as in the static graph's single-region case.
-                    view_resyncs_.clear();
-                    step_advancers_.clear();
-                    binding_updaters_.clear();
-                    dist_io_updaters_.clear();
-                    task_count_ = 0;
+                // Builds (or rebuilds) the cached sub-graph of one region from its
+                // recorded specs: bakes intra edges, captures the intra in-degree and
+                // leaf flag of every node, gathers intra-roots, and computes the
+                // per-shared-base boundary summary. O(region).
+                void build_region(RegionKey k)
+                {
+                    Graph& g = as_graph(*regions_.at(k));
 
-                    for (auto& kv : regions_)
+                    BackingGraph bg(*ctx_);
+                    for (auto& spec : g.specs_)
+                        spec(bg);
+
+                    RegionState st;
+                    st.nodes = bg.take_nodes();   // intra edges baked; insertion order
+
+                    for (auto& np : st.nodes)
                     {
-                        Graph& g = as_graph(*kv.second);
-                        append(view_resyncs_, g.view_resyncs_);
-                        append(step_advancers_, g.step_advancers_);
-                        append(binding_updaters_, g.binding_updaters_);
-                        append(dist_io_updaters_, g.dist_io_updaters_);
-                        task_count_ += g.task_count_;
+                        Node* n = np.get();
+                        n->intra_in_degree = n->in_degree.load(std::memory_order_relaxed);
+                        n->boundary_in_degree.store(0, std::memory_order_relaxed);
+                        n->boundary_successors.clear();
+                        n->sentinel_linked = false;
+                        n->intra_leaf =
+                            n->inline_successor_count.load(std::memory_order_relaxed) == 0 &&
+                            n->successor_list.load(std::memory_order_relaxed) == nullptr;
+                        n->plan_index = plan_index_counter_++;
+                        if (n->intra_in_degree == 0)
+                            st.intra_roots.push_back(n);
                     }
 
-                    // Compose: adopt the cached nodes (shared ownership) into one
-                    // backing graph and compile in a single dependency pass.
-                    BackingGraph world(*ctx_);
-                    for (auto& kv : region_nodes_)
-                        for (auto& node : kv.second)
-                            world.adopt(node);
+                    compute_access(st);
+                    states_[k] = std::move(st);
+                }
 
-                    plan_ = world.compile();
-                    plan_.capture_base_state();
+                // Fills a region's per-base boundary summary. For each allocation the
+                // region touches it classifies the region's accessor nodes into entry
+                // pins (no intra predecessor also touching the base) and exit pins (no
+                // intra successor that writes the base), split by read vs write.
+                void compute_access(RegionState& st)
+                {
+                    struct Acc { bool reads = false; bool writes = false; };
+                    std::map<Base, std::unordered_map<Node*, Acc>> per_base;
 
-                    structural_dirty_ = false;
-                    committed_once_   = true;
+                    for (auto& np : st.nodes)
+                    {
+                        Node* n = np.get();
+                        for (const auto& r : n->io_reads_)
+                            if (r.base) per_base[r.base][n].reads = true;
+                        for (const auto& w : n->io_writes_)
+                            if (w.base) per_base[w.base][n].writes = true;
+                    }
+
+                    for (auto& bm : per_base)
+                    {
+                        const Base b = bm.first;
+                        auto& m = bm.second;   // node -> Acc for this base
+
+                        std::unordered_set<Node*> has_base_pred;       // has an intra pred touching b
+                        std::unordered_set<Node*> has_writing_succ;    // has an intra succ that writes b
+
+                        for (auto& nm : m)
+                        {
+                            Node* n = nm.first;
+                            for_each_intra_successor(n, [&](Node* s)
+                            {
+                                auto f = m.find(s);
+                                if (f == m.end()) return;   // successor does not touch b
+                                has_base_pred.insert(s);
+                                if (f->second.writes) has_writing_succ.insert(n);
+                            });
+                        }
+
+                        BaseAccess ba;
+                        for (auto& nm : m)
+                        {
+                            Node* n = nm.first;
+                            const Acc acc = nm.second;
+                            ba.reads  |= acc.reads;
+                            ba.writes |= acc.writes;
+
+                            const bool entry = has_base_pred.find(n) == has_base_pred.end();
+                            if (entry)
+                            {
+                                if (acc.writes)     ba.entry_write.push_back(n);
+                                else if (acc.reads) ba.entry_read.push_back(n);
+                            }
+                            const bool shadowed = has_writing_succ.find(n) != has_writing_succ.end();
+                            if (acc.writes && !shadowed) ba.exit_write.push_back(n);
+                            if (acc.reads  && !shadowed) ba.exit_read.push_back(n);
+                        }
+                        st.access.emplace(b, std::move(ba));
+                    }
+                }
+
+                // Removes a region's contribution to the shared structures: drops its
+                // nodes from the root set and the sentinel, and unregisters it from the
+                // bases it touched (marking each dirty). Its cross-region edges must
+                // already have been undone. Frees the region's node objects.
+                void teardown_region(RegionKey k)
+                {
+                    auto sit = states_.find(k);
+                    if (sit == states_.end()) return;
+
+                    for (auto& np : sit->second.nodes)
+                    {
+                        Node* n = np.get();
+                        roots_.erase(n);
+                        unlink_sentinel(n);
+                    }
+                    for (auto& ba : sit->second.access)
+                    {
+                        auto rit = base_regions_.find(ba.first);
+                        if (rit != base_regions_.end())
+                        {
+                            rit->second.erase(k);
+                            if (rit->second.empty()) base_regions_.erase(rit);
+                        }
+                    }
+                    states_.erase(sit);
+                }
+
+                // True when a structural change or a region gaining tasks means the
+                // plan must be recomposed.
+                bool needs_commit() const
+                {
+                    return !committed_once_ || !dirty_regions_.empty() || !dropped_.empty();
+                }
+
+                // Re-stitches the plan touching only the changed regions and the
+                // boundaries of the allocations they share. See the class brief for
+                // the cost argument.
+                void commit()
+                {
+                    // The set of regions whose old state must be torn down, and the
+                    // set of bases that therefore need re-wiring.
+                    std::set<RegionKey> teardown(dirty_regions_.begin(), dirty_regions_.end());
+                    teardown.insert(dropped_.begin(), dropped_.end());
+
+                    std::set<Base> dirty_bases;
+                    for (RegionKey k : teardown)
+                    {
+                        auto sit = states_.find(k);
+                        if (sit != states_.end())
+                            for (auto& ba : sit->second.access)
+                                dirty_bases.insert(ba.first);
+                    }
+
+                    // Undo every cross-region edge on a dirty base while all endpoints
+                    // are still alive, so freeing torn-down nodes leaves no dangling
+                    // pointer in any other node's boundary list.
+                    for (Base b : dirty_bases)
+                    {
+                        auto eit = base_edges_.find(b);
+                        if (eit == base_edges_.end()) continue;
+                        for (auto& e : eit->second)
+                            remove_cross_edge(e.from, e.to);
+                        eit->second.clear();
+                    }
+
+                    // Tear down old state (drops + rebuilt regions).
+                    for (RegionKey k : teardown)
+                        teardown_region(k);
+
+                    // Rebuild the regions that are still present; register them on the
+                    // bases they touch (marking those dirty) and seed roots/sentinel.
+                    for (RegionKey k : dirty_regions_)
+                    {
+                        if (regions_.find(k) == regions_.end()) continue;  // dropped, not re-created
+                        build_region(k);
+                        RegionState& st = states_.at(k);
+                        for (auto& ba : st.access)
+                        {
+                            base_regions_[ba.first].insert(k);
+                            dirty_bases.insert(ba.first);
+                        }
+                        for (Node* r : st.intra_roots)
+                            roots_.insert(r);   // fresh nodes carry no boundary in-degree yet
+                        for (auto& np : st.nodes)
+                            if (np->intra_leaf) link_sentinel(np.get());
+                    }
+
+                    // Re-derive the boundary edges of every dirty allocation.
+                    for (Base b : dirty_bases)
+                        rewire_base(b);
+
+                    dirty_regions_.clear();
+                    dropped_.clear();
+
+                    // Publish the plan the engine runs: roots to inject and the shared
+                    // sentinel to wait on. all_nodes is only read by the profiler, so
+                    // it is gathered solely when profiling is on.
+                    plan_.roots.assign(roots_.begin(), roots_.end());
+                    plan_.sentinel = sentinel_;
+                    plan_.all_nodes.clear();
+                    if (ctx_->profiling_enabled())
+                        for (auto& kv : states_)
+                            for (auto& np : kv.second.nodes)
+                                plan_.all_nodes.push_back(np);
+
+                    committed_once_ = true;
                     ++compiles_;
                 }
 
-                static void append(std::vector<std::function<void()>>& dst,
-                                   const std::vector<std::function<void()>>& src)
+                // Re-arms every node's live in-degree from the two-layer baseline and
+                // refreshes the per-step State / late-binding updaters. O(total) per
+                // step, which is inherent to replaying the whole plan.
+                void rearm()
                 {
-                    dst.insert(dst.end(), src.begin(), src.end());
+                    for (auto& kv : states_)
+                        for (auto& np : kv.second.nodes)
+                            np->arm_in_degree();
+                    sentinel_->arm_in_degree();
+#ifdef SR_DISTRIBUTED
+                    for (auto& kv : states_)
+                        for (auto& np : kv.second.nodes)
+                            np->offload_attempts_.store(0, std::memory_order_relaxed);
+#endif
                 }
 
                 template <class KeepGoing>
@@ -360,10 +670,13 @@ namespace SushiRuntime
                         compile_ms = ms(c0, clock::now());
                     }
 
-                    if (task_count_ == 0)
+                    if (plan_.roots.empty())
                         throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
-                                                              "DynamicGraph has no tasks to run."});
+                                                              "DynamicGraph has no runnable tasks."});
 
+                    // Aggregate every live region's per-step updaters (State advance,
+                    // late-binding refresh, distributed live-IO) in region-key order.
+                    refresh_updaters();
                     for (auto& resync : view_resyncs_)
                         resync();
 
@@ -379,6 +692,7 @@ namespace SushiRuntime
                     const std::size_t h2d_before = ctx_->host_to_device_bytes();
                     const auto t0 = clock::now();
 
+                    std::size_t task_count = size();
                     std::size_t executed = 0;
                     while (keep_going(executed) && !engine.is_cancelled())
                     {
@@ -387,7 +701,7 @@ namespace SushiRuntime
                         for (auto& update_binding : binding_updaters_)
                             update_binding();
 
-                        plan_.rearm();
+                        rearm();
                         engine.execute(plan_);
 
                         for (auto& advance : step_advancers_)
@@ -398,8 +712,8 @@ namespace SushiRuntime
                     const auto t1 = clock::now();
                     const auto after = engine.metrics();
 
-                    const std::size_t total_tasks = task_count_ * executed;
-                    auto report = detail::build_run_report(*ctx_, before, after, total_tasks,
+                    auto report = detail::build_run_report(*ctx_, before, after,
+                                                           task_count * executed,
                                                            compile_ms, ms(t0, t1));
                     report.cancelled = engine.is_cancelled();
                     report.device_to_host_bytes = ctx_->device_to_host_bytes() - d2h_before;
@@ -410,27 +724,69 @@ namespace SushiRuntime
                     return report;
                 }
 
+                // Rebuilds the aggregated per-step updater lists from every live
+                // region. Cheap (proportional to the number of stateful tasks, which
+                // are iterated every step anyway) and kept here so a region added or
+                // dropped is reflected before the next run.
+                void refresh_updaters()
+                {
+                    view_resyncs_.clear();
+                    step_advancers_.clear();
+                    binding_updaters_.clear();
+                    dist_io_updaters_.clear();
+                    for (auto& kv : regions_)
+                    {
+                        Graph& g = as_graph(*kv.second);
+                        append(view_resyncs_, g.view_resyncs_);
+                        append(step_advancers_, g.step_advancers_);
+                        append(binding_updaters_, g.binding_updaters_);
+                        append(dist_io_updaters_, g.dist_io_updaters_);
+                    }
+                }
+
+                static void append(std::vector<std::function<void()>>& dst,
+                                   const std::vector<std::function<void()>>& src)
+                {
+                    dst.insert(dst.end(), src.begin(), src.end());
+                }
+
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
 
-                // Live regions, ordered by key so composition and updater aggregation
-                // are deterministic. unique_ptr keeps Region addresses stable across
-                // insertions and lets DynamicGraph use Region's private constructor.
+                // Live regions (the recorders), ordered by key for deterministic
+                // composition. unique_ptr keeps Region addresses stable and lets the
+                // composer use Region's private constructor.
                 std::map<RegionKey, std::unique_ptr<Region>> regions_;
 
-                // Cached built nodes per region, shared with the combined plan. A
-                // region is only rebuilt into this map when its tasks change.
-                std::map<RegionKey, std::vector<sushi_ptr<::SushiRuntime::Graph::Node>>> region_nodes_;
+                // Cached compiled sub-graph per region, the lifetime owner of the
+                // nodes the plan runs.
+                std::map<RegionKey, RegionState> states_;
 
-                // Per-step updaters aggregated from every live region at commit.
+                // Which regions touch each allocation, and the cross-region edges
+                // recorded per allocation so a single base can be un-wired in isolation.
+                std::map<Base, std::set<RegionKey>>      base_regions_;
+                std::map<Base, std::vector<BoundaryEdge>> base_edges_;
+
+                // Current DAG entry points (intra_in_degree == 0 and boundary_in_degree
+                // == 0), maintained incrementally as boundary edges and regions change.
+                std::unordered_set<Node*> roots_;
+
+                // The single completion sentinel, persistent across commits; its
+                // baseline in-degree (kept in intra_in_degree) is the current leaf count.
+                sushi_ptr<Node> sentinel_;
+
+                // Pending structural changes applied at the next commit.
+                std::set<RegionKey> dirty_regions_;
+                std::set<RegionKey> dropped_;
+
+                // Per-step updaters aggregated from every live region before each run.
                 std::vector<std::function<void()>> view_resyncs_;
                 std::vector<std::function<void()>> step_advancers_;
                 std::vector<std::function<void()>> binding_updaters_;
                 std::vector<std::function<void()>> dist_io_updaters_;
 
                 Execution::CompiledGraph plan_;
-                std::size_t task_count_ = 0;
                 std::size_t compiles_ = 0;
-                bool structural_dirty_ = false;
+                std::size_t plan_index_counter_ = 0;
                 bool committed_once_ = false;
         };
 
