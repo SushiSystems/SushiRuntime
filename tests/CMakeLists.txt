@@ -86,6 +86,7 @@ add_executable(sr_functional_tests
     functional/integration/test_completion_latch.cpp
     functional/integration/test_cross_context_guard.cpp
     functional/integration/test_game_engine_example.cpp
+    functional/integration/test_dynamic_graph.cpp
 )
 # Distributed layer tests only exist when the layer is built. They are
 # hardware-free (protocol / in-process transport / registries), so they stay in
@@ -145,6 +146,7 @@ if(SR_BUILD_BENCHMARKS)
         benchmark/performance/test_scheduler_dispatch_perf.cpp
         benchmark/performance/test_steal_numa_effect_perf.cpp
         benchmark/performance/test_graph_compile_perf.cpp
+        benchmark/performance/test_dynamic_graph_perf.cpp
     )
     # Distributed offload benchmark only exists when the layer is built.
     if(SR_ENABLE_DISTRIBUTED)
