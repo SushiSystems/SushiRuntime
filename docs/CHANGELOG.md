@@ -14,16 +14,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   set of work changes between steps. Work is grouped into regions keyed by a caller id
   (a spatial cell or streaming chunk); `DynamicGraph::region(key)` records tasks with
   the same fluent `add()` surface as a static graph, and `drop(key)` removes a region.
-  Mutations are applied at a step boundary, never against the running DAG. The composer
-  builds each region's nodes once and caches them — an unchanged region is never
-  rebuilt — then adopts every live region's nodes into one backing graph and compiles
-  in a single dependency pass, so intra- and cross-region edges (regions sharing a
-  buffer) are wired together with no double counting. `compile_count()` holds at 1
-  across an unmutated multi-step run and advances by exactly one per mutation, not per
-  region. New `TaskGraph::take_nodes()`/`adopt()` and `Graph::Node::reset_edges()`
-  support node reuse across compositions. New `Region`/`DynamicGraph` API headers
-  (`api/region.hpp`, `api/dynamic_graph.hpp`). The runtime owns the mechanism; *which*
-  region streams when is a consumer (SushiEngine) policy.
+  Mutations are applied at a step boundary, never against the running DAG. The
+  composition is incremental in the changed region and its boundary: each region
+  compiles once to a cached sub-graph whose interior (intra-region) edges are baked
+  into the node objects and never re-touched while it is unchanged, and dependencies
+  that cross a region boundary live in a separate layer on the node
+  (`Node::boundary_in_degree` / `boundary_successors`, walked by the scheduler's
+  `trigger_successors`). When a region streams in or out only its own nodes are
+  rebuilt and only the boundaries of the allocations it *shares* are re-stitched, so
+  a commit costs O(changed region + affected boundary pins), independent of the size
+  of the untouched world. Cross-region edges are derived per shared allocation in
+  ascending region-key order (the lower-keyed region is the producer), honouring
+  RAW/WAR/WAW while leaving read/read sharing parallel; the root set and the
+  completion sentinel's leaf links are maintained incrementally. `compile_count()`
+  holds at 1 across an unmutated multi-step run and advances by exactly one per
+  mutation, not per region. New `TaskGraph::take_nodes()`, `Node::arm_in_degree` /
+  `clear_boundary`, and `Region` / `DynamicGraph` API headers (`api/region.hpp`,
+  `api/dynamic_graph.hpp`). The runtime owns the mechanism; *which* region streams
+  when is a consumer (SushiEngine) policy.
 - Cross-context co-location guard (§5.4): a single SYCL kernel cannot dereference USM
   from two non-peer device contexts. The scheduler now verifies, on a node's first
   dispatch, that all of its buffers share one device context, and fails the run with a

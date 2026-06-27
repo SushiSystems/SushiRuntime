@@ -119,10 +119,13 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     constexpr size_t N     = 2048;
     constexpr float  SCALE = 3.0f;
 
-    // Allocate through the runtime so the scheduler dispatches the kernel to
-    // the queue that owns the USM (no cross-context access).
-    float*  data = ctx.malloc_shared<float>(N);
-    double* sum  = ctx.malloc_shared<double>(1);
+    // Pin both buffers to one device so they share a context: the Reduce task
+    // touches data and sum together, and the co-location guard requires a task's
+    // buffers to live on one device. malloc_shared(numa) round-robins across the
+    // devices on a NUMA node, which would scatter the two across contexts on a
+    // multi-device host; malloc_shared_on fixes the device.
+    float*  data = static_cast<float*>(ctx.malloc_shared_on(N * sizeof(float), 0));
+    double* sum  = static_cast<double*>(ctx.malloc_shared_on(sizeof(double), 0));
     ASSERT_NE(data, nullptr);
     ASSERT_NE(sum, nullptr);
 

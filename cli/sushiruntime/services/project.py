@@ -142,7 +142,9 @@ def _run_drained(cmd: list[str], env: dict[str, str], cwd: Path) -> int:
         return 1
     assert proc.stdout is not None
     for line in proc.stdout:
-        console.console.print(line.rstrip("\n"), highlight=False, soft_wrap=True)
+        # markup=False: child output (ctest/GTest logs) carries literal "[file:line]"
+        # tags that Rich would otherwise parse as console markup and abort on.
+        console.console.print(line.rstrip("\n"), markup=False, highlight=False, soft_wrap=True)
     return proc.wait()
 
 

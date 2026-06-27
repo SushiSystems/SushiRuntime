@@ -360,18 +360,34 @@ namespace SushiRuntime
 
                     // iterate through spillover successors in a lock-free way
                     auto* curr = node->successor_list.load(std::memory_order_acquire);
-                    while(curr) 
+                    while(curr)
                     {
                         auto* succ = curr->target;
-                        
+
                         // if all dependencies are met, push the node to the queue
-                        if(succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1) 
+                        if(succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
                         {
                             succ->add_ref();
                             queue.push(succ);
                         }
-                        
+
                         curr = curr->next;
+                    }
+
+                    // Cross-region (boundary) successors of the dynamic region graph.
+                    // This vector is mutated only at a step boundary, with no worker
+                    // running, and is read-only here, so it needs no atomics of its
+                    // own; the per-target in_degree decrement carries the same
+                    // acq_rel ordering as the intra successors above. Empty (and so
+                    // skipped) for every static-graph node and every dynamic node
+                    // that exports nothing across a boundary.
+                    for (auto* succ : node->boundary_successors)
+                    {
+                        if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                        {
+                            succ->add_ref();
+                            queue.push(succ);
+                        }
                     }
                 }
         };
