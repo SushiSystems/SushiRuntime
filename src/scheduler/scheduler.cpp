@@ -962,6 +962,14 @@ namespace SushiRuntime
                 curr = curr->next;
             }
 
+            // Cross-region boundary successors (dynamic region graph), released the
+            // same way; empty for ordinary offloaded nodes.
+            for (auto* succ : node->boundary_successors)
+            {
+                if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                    submit(succ);
+            }
+
             // Drop the scheduling reference that was transferred to the
             // coordinator when the node was offloaded.
             node->release();
