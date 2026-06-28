@@ -2,7 +2,7 @@
 
 SushiRuntime is a C++17 runtime library for task-based parallel computing on heterogeneous hardware. You describe your work as a graph of tasks, declare which memory each task reads and writes, and the runtime figures out a safe execution order, then runs the independent parts in parallel across CPU and GPU devices using SYCL.
 
-It is built around three ideas:
+It is built around four ideas:
 
 - **Automatic dependency tracking.** You don't wire up dependencies by hand. Tasks declare their memory accesses, and the runtime detects read-after-write, write-after-read, and write-after-write hazards for you.
 - **Topology awareness.** The runtime discovers your hardware (CPUs, GPUs, NUMA nodes) and maps devices to the NUMA nodes they are physically attached to, so work and memory can stay close together.
@@ -57,7 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/sushisystems/sushiruntime/main/inst
 irm https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.ps1 | iex
 ```
 
-The installer is a SOLID, dependency-injected pipeline
+The installer runs as a phased pipeline
 (`detect -> install -> configure -> verify`). You can run any phase on its own:
 
 ```bash
@@ -472,6 +472,8 @@ cli/                    Python `sr` / `sushiruntime` CLI package (Typer + rich)
 .github/workflows/      CI: functional tests per push, benchmarks nightly
 docs/                   Changelog, guides, and the fluent API reference (api/, Doxyfile)
 Dockerfile              CUDA + Clang/LLVM SYCL build environment
+dependencies/           Local install target for toolchains, tools, and vcpkg packages
+                        (populated by the installer; gitignored)
 ```
 
 ## Distributed execution (optional)

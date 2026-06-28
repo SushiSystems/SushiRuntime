@@ -290,23 +290,76 @@ marketing, no adjectives selling the change, no "this finally makes X great".
 
 ## 7. Adding a C++ dependency
 
-All C++ library dependencies live in a single manifest, `cli/dependencies.toml`
-(the installer's source of truth). Add a table:
+All C++ library dependencies live in a single manifest,
+[`cli/dependencies.toml`](cli/dependencies.toml) — the installer's source of
+truth. The installer reads this file, checks what is already present via
+`check_cmd` or the platform package manager, and installs only what is missing.
+No dependency name lives in the installer code.
+
+### Manifest entry
+
+Add a top-level TOML table. Every field except `description` is optional and
+defaults to the value shown:
 
 ```toml
 [mylib]
-description   = "What it is"
-required      = true
-linux_apt     = ["libmylib-dev"]
-windows_vcpkg = ["mylib"]
-check_cmd     = ["pkg-config", "--exists", "mylib"]   # optional idempotency check
+description   = "What it is and why it is needed"   # shown by `sr setup detect`
+required      = true          # false → warn on missing, don't abort the build
+gpu_only      = false         # true → only installed when `sr setup install --gpu` is passed
+linux_apt     = ["libmylib-dev"]          # apt package names; [] = not needed on Linux
+windows_vcpkg = ["mylib"]                 # vcpkg port names;  [] = not needed on Windows
+check_cmd     = ["pkg-config", "--exists", "mylib"]  # optional — exit 0 means already installed
 ```
 
-The installer picks it up automatically. If the *build* needs it, also add the
-`find_package` / `pkg_check_modules` call in `CMakeLists.txt`; if the Docker image
-needs it, add it to the `Dockerfile` apt line.
+**Field reference:**
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `description` | string | — | Human-readable purpose; shown in `sr setup detect` output. |
+| `required` | bool | `true` | `false` → a missing package logs a warning and continues. |
+| `gpu_only` | bool | `false` | `true` → entry is skipped unless `--gpu` is passed to `sr setup install`. |
+| `linux_apt` | string list | `[]` | apt package names. Empty list means the dep is not needed on Linux. |
+| `windows_vcpkg` | string list | `[]` | vcpkg port names. Empty list means the dep is not needed on Windows. |
+| `check_cmd` | string list | `[]` | Argv to run; exit 0 is treated as "already installed" and skips the package manager. Omit when there is no reliable command-line check. |
+
+**Platform-only entries.** Leave the other platform's list empty to install a
+dependency on only one platform:
+
+```toml
+[linuxonly]
+description   = "Only needed on Linux"
+linux_apt     = ["libfoo-dev"]
+windows_vcpkg = []            # not installed on Windows
+```
+
+### What else to touch
+
+Adding an entry to the manifest is enough for `sr setup` to pull in the
+package. The build system and Docker image are intentionally outside the
+manifest's scope — update them separately if needed:
+
+1. **`CMakeLists.txt`** — if the C++ build needs to find the library, add a
+   `find_package(mylib REQUIRED)` or `pkg_check_modules(mylib REQUIRED mylib)`
+   call, and link the relevant targets against it.
+2. **`Dockerfile`** — if the Docker image needs the library at image-build time,
+   add it to the `apt-get install` line in the `Dockerfile`.
+
+These three files move together for any library the C++ build and the container
+both consume.
+
+### Verifying the addition
+
+After editing the manifest, run `sr setup detect` to confirm the entry is parsed
+and displayed correctly, then `sr setup install` to install it on the current
+platform:
+
+```bash
+sr setup detect       # confirm the entry appears in the dependency table
+sr setup install      # install it (skipped automatically if check_cmd passes)
+```
 
 ---
+
 
 ## 8. Reporting bugs and requesting features
 
