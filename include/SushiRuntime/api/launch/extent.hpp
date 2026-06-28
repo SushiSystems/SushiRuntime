@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* launch.hpp                                                             */
+/* extent.hpp                                                              */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -23,8 +23,8 @@
 
 #pragma once
 
-#include <array>
 #include <cstddef>
+#include <type_traits>
 
 #include <sycl/sycl.hpp>
 
@@ -94,47 +94,8 @@ namespace SushiRuntime
         template <int N>
         Extent(sycl::range<N>, sycl::id<N>) -> Extent<N>;
 
-        /**
-         * @brief An nd_range launch: a global iteration box tiled by a local size.
-         *
-         * NdRange unlocks the work-group execution model — barriers, local (shared)
-         * memory, and sub-group operations — for callers who need tiled kernels
-         * (e.g. blocked matrix multiply, shared-memory stencils). The fluent
-         * overload that accepts one hands the kernel a sycl::nd_item<N>, exactly as
-         * a raw SYCL nd_range parallel_for would.
-         *
-         * Each global dimension must be a whole multiple of the matching local
-         * dimension, per the SYCL requirement; the runtime does not pad.
-         *
-         * @tparam N Number of dimensions (1, 2, or 3).
-         */
-        template <int N>
-        struct NdRange
-        {
-            static_assert(N >= 1 && N <= 3, "NdRange supports 1, 2, or 3 dimensions.");
-
-            sycl::range<N> global;  /**< Total work-items per dimension. */
-            sycl::range<N> local;   /**< Work-group size per dimension. */
-
-            /** @brief Builds the launch from global and local ranges. */
-            NdRange(sycl::range<N> g, sycl::range<N> l) : global(g), local(l) {}
-
-            /** @brief The SYCL nd_range this launch describes. */
-            sycl::nd_range<N> to_nd_range() const noexcept
-            {
-                return sycl::nd_range<N>(global, local);
-            }
-
-            /** @brief Total number of work-items (product of the global sizes). */
-            std::size_t count() const noexcept { return global.size(); }
-        };
-
-        template <int N>
-        NdRange(sycl::range<N>, sycl::range<N>) -> NdRange<N>;
-
     } // namespace API
 
     using API::Extent;
-    using API::NdRange;
 
 } // namespace SushiRuntime

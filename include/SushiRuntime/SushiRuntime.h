@@ -63,10 +63,8 @@
 #include "scheduler/event_polling.hpp"
 #include "scheduler/rebalancer_interfaces.hpp"
 
-// Fluent v1 API (Runtime / graph()) — the surface most users program against.
-#include "api/runtime.hpp"
-
-// Dynamic region-partitioned graph (Runtime::dynamic_graph()) for streaming,
-// mutating workloads such as an open-world simulation.
-#include "api/region.hpp"
-#include "api/dynamic_graph.hpp"
+// Fluent v1 API — the surface most users program against. The single umbrella
+// pulls in the data handles, launch geometry, data-flow vocabulary, the chainable
+// builders (Graph / Region / DynamicGraph for streaming, mutating worlds), and the
+// Runtime entry point.
+#include "api/fluent.hpp"

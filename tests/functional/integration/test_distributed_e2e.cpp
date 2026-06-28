@@ -39,7 +39,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/sycl_compat.hpp>
-#include <SushiRuntime/api/runtime.hpp>
+#include <SushiRuntime/api/fluent.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
