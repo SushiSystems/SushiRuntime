@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* runtime.hpp                                                            */
+/* graph.hpp                                                              */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -29,18 +29,22 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
-#include <thread>
 #include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/api/buffer.hpp>
-#include <SushiRuntime/api/launch.hpp>
+#include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/data/state.hpp>
+#include <SushiRuntime/api/launch/extent.hpp>
+#include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/api/detail/run_report_builder.hpp>
+#include <SushiRuntime/api/detail/callable_traits.hpp>
+#include <SushiRuntime/api/detail/step_machinery.hpp>
+#include <SushiRuntime/api/vocabulary/dependencies.hpp>
+#include <SushiRuntime/api/vocabulary/captures.hpp>
+#include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -52,278 +56,18 @@
 
 namespace SushiRuntime
 {
-    /**
-     * @brief The fluent, public v1 API: a Runtime that hands out chainable graphs.
-     *
-     * This layer sits on top of RuntimeContext / TaskGraph / the execution engine
-     * and is the surface users program against. It is header-only and template-
-     * based, so it works identically across every supported SYCL toolchain.
-     */
     namespace API
     {
         // The lower-level graph builder this layer wraps. Spelled out fully to
         // avoid clashing with the API::Graph class name below.
         using BackingGraph = ::SushiRuntime::Graph::TaskGraph;
 
-        // The dynamic (region-based) graph and its mutation unit. Declared here so
-        // the static Graph can befriend them: a Region reuses Graph's whole add()
+        // The dynamic (region-based) graph and its mutation unit. Forward-declared
+        // so the static Graph can befriend them: a Region reuses Graph add()
         // surface by deriving from it, and the DynamicGraph composer reads a
-        // region's recorded specs and per-step updaters to stitch one plan.
+        // recorded specs and per-step updaters to stitch one plan.
         class Region;
         class DynamicGraph;
-
-        // The three callable shapes the fluent add() overloads accept, expressed
-        // as C++17 SFINAE traits over std::is_invocable_v (the C++20 concepts they
-        // replace read the same, only as `requires`-clauses). enable_if on each
-        // add() selects exactly one. A wrong signature removes every overload, so
-        // the compiler reports "no matching call" — less pointed than a concept
-        // diagnostic but still naming the offending callable.
-
-        /**
-         * @brief A function callable once per element index: void(size_t).
-         *
-         * Submitted as a SYCL parallel_for over [0, n); the runtime picks the
-         * device and the work-group mapping. Excludes the range-kernel shape so the
-         * two add(size_t, F) overloads stay mutually exclusive.
-         */
-        template <class F>
-        inline constexpr bool is_per_element_v =
-            std::is_invocable_v<F, std::size_t> &&
-            !std::is_invocable_v<F, std::size_t, std::size_t, sycl::handler&>;
-
-        /**
-         * @brief A raw kernel that drives a sycl::handler directly: void(sycl::handler&).
-         */
-        template <class F>
-        inline constexpr bool is_raw_kernel_v =
-            std::is_invocable_v<F, sycl::handler&>;
-
-        /**
-         * @brief A range kernel that receives its bounds and a handler:
-         *        void(size_t begin, size_t end, sycl::handler&).
-         */
-        template <class F>
-        inline constexpr bool is_range_kernel_v =
-            std::is_invocable_v<F, std::size_t, std::size_t, sycl::handler&>;
-
-        namespace detail
-        {
-            // Pulls the read/write dependency region out of either data handle. A
-            // Buffer maps to its whole-buffer region; a State exposes its current
-            // buffer as the read region and its next buffer as the write region.
-            // These free functions let the Reads/Writes wrappers accept handles
-            // uniformly, and an explicit ResourceRegion (e.g. buf.region(off, len))
-            // passes through, so a caller can name a sub-range to read or write.
-            template <typename T>
-            inline Core::ResourceRegion read_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
-            template <typename T>
-            inline Core::ResourceRegion read_key_of(const State<T>& s) noexcept { return s.read_key(); }
-            inline Core::ResourceRegion read_key_of(const Core::ResourceRegion& r) noexcept { return r; }
-            template <typename T>
-            inline Core::ResourceRegion write_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
-            template <typename T>
-            inline Core::ResourceRegion write_key_of(const State<T>& s) noexcept { return s.write_key(); }
-            inline Core::ResourceRegion write_key_of(const Core::ResourceRegion& r) noexcept { return r; }
-        } // namespace detail
-
-        /**
-         * @brief Names the data a task reads, as a list of dependency keys.
-         *
-         * The ergonomic counterpart to a hand-built std::vector<void*>: pass the
-         * Buffers and States a task reads and this collects their read keys, so the
-         * caller never spells dependency_key()/read_key() by hand. Used by the
-         * explicit-tracking and offload add() overloads to order tasks by data.
-         */
-        struct Reads
-        {
-            std::vector<Core::ResourceRegion> keys;  /**< Read regions, in argument order. */
-
-            /** @brief Collects the read region of each handle or sub-region passed. */
-            template <class... Handles>
-            explicit Reads(const Handles&... hs) : keys{ detail::read_key_of(hs)... } {}
-        };
-
-        /**
-         * @brief Names the data a task writes, as a list of dependency keys.
-         *
-         * As Reads, but gathers write keys (a State contributes its next buffer).
-         */
-        struct Writes
-        {
-            std::vector<Core::ResourceRegion> keys;  /**< Write regions, in argument order. */
-
-            /** @brief Collects the write region of each handle or sub-region passed. */
-            template <class... Handles>
-            explicit Writes(const Handles&... hs) : keys{ detail::write_key_of(hs)... } {}
-        };
-
-        /**
-         * @brief Opt-in late-binding controls for a task, evaluated once per step.
-         *
-         * Passed as the leading argument to add() to make a node's iteration size
-         * or its participation vary every step without recompiling the graph.
-         * when() gates whether the node runs at all (a sleeping island, an
-         * LOD-disabled system); sized() sets how many elements it iterates, which
-         * must stay within the capacity its buffers were allocated for. The two
-         * compose — when(pred).and_sized(count) — and each provider is polled on the
-         * driver thread before the plan replays, so the compiled topology is reused
-         * across steps and the graph compiles exactly once.
-         */
-        struct Dynamic
-        {
-            std::function<bool()>        when_pred;  /**< Empty: the node is always enabled. */
-            std::function<std::size_t()> count_fn;   /**< Empty: iterate the full baked range. */
-
-            /** @brief Adds (or replaces) the enable predicate; returns *this for chaining. */
-            Dynamic& and_when(std::function<bool()> pred)
-            {
-                when_pred = std::move(pred);
-                return *this;
-            }
-
-            /** @brief Adds (or replaces) the live-size provider; returns *this for chaining. */
-            Dynamic& and_sized(std::function<std::size_t()> count)
-            {
-                count_fn = std::move(count);
-                return *this;
-            }
-        };
-
-        /**
-         * @brief Builds a Dynamic that enables its node only while @p pred is true.
-         * @param pred Polled before each step; false skips the node that step.
-         * @return A Dynamic carrying the predicate, ready to pass to add().
-         */
-        inline Dynamic when(std::function<bool()> pred)
-        {
-            Dynamic d;
-            d.when_pred = std::move(pred);
-            return d;
-        }
-
-        /**
-         * @brief Builds a Dynamic that sets its node's live iteration size per step.
-         * @param count Polled before each step; must not exceed the baked capacity.
-         * @return A Dynamic carrying the size provider, ready to pass to add().
-         */
-        inline Dynamic sized(std::function<std::size_t()> count)
-        {
-            Dynamic d;
-            d.count_fn = std::move(count);
-            return d;
-        }
-
-        /**
-         * @brief A kernel argument captured for read, with auto dependency tracking.
-         *
-         * Wraps a Buffer so add() can both register the read and hand the kernel the
-         * raw element pointer — the caller writes the data flow once and gets pointer
-         * capture and dependency ordering together. @ref ACCESS marks the intent.
-         *
-         * @tparam T Element type of the wrapped buffer.
-         */
-        template <typename T>
-        struct In
-        {
-            const T* ptr;  /**< Element pointer handed to the kernel. */
-            void* key;     /**< Read dependency key for this argument. */
-            static constexpr bool reads = true;   /**< Contributes a read key. */
-            static constexpr bool writes = false; /**< Contributes no write key. */
-
-            /** @brief Captures @p b as a read-only kernel argument. */
-            In(const Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()) {}
-        };
-
-        /**
-         * @brief A kernel argument captured for write, with auto dependency tracking.
-         * @tparam T Element type of the wrapped buffer.
-         */
-        template <typename T>
-        struct Out
-        {
-            T* ptr;        /**< Element pointer handed to the kernel. */
-            void* key;     /**< Write dependency key for this argument. */
-            static constexpr bool reads = false;  /**< Contributes no read key. */
-            static constexpr bool writes = true;  /**< Contributes a write key. */
-
-            /** @brief Captures @p b as a write-only kernel argument. */
-            Out(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()) {}
-        };
-
-        /**
-         * @brief A kernel argument captured for read-modify-write tracking.
-         * @tparam T Element type of the wrapped buffer.
-         */
-        template <typename T>
-        struct InOut
-        {
-            T* ptr;        /**< Element pointer handed to the kernel. */
-            void* key;     /**< Dependency key counted as both read and write. */
-            static constexpr bool reads = true;   /**< Contributes a read key. */
-            static constexpr bool writes = true;  /**< Contributes a write key. */
-
-            /** @brief Captures @p b as a read-and-write kernel argument. */
-            InOut(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()) {}
-        };
-
-        // Class-template argument deduction so the wrapper element type follows the
-        // buffer: In(buf), Out(buf), InOut(buf) need no <T>.
-        template <typename T> In(const Buffer<T>&) -> In<T>;
-        template <typename T> Out(Buffer<T>&) -> Out<T>;
-        template <typename T> InOut(Buffer<T>&) -> InOut<T>;
-
-        namespace detail
-        {
-            // True for the In/Out/InOut kernel-argument wrappers. Lets the
-            // auto-capture add() overload tell its capture arguments from the
-            // trailing callable.
-            template <class T> struct is_capture : std::false_type {};
-            template <class T> struct is_capture<In<T>>    : std::true_type {};
-            template <class T> struct is_capture<Out<T>>   : std::true_type {};
-            template <class T> struct is_capture<InOut<T>> : std::true_type {};
-            template <class T>
-            inline constexpr bool is_capture_v = is_capture<std::decay_t<T>>::value;
-
-            // Calls fn(idx, ptr0, ptr1, ...) by unpacking the captured pointer
-            // tuple. Kept free so it is usable from inside a device lambda; all
-            // operations (std::get over a tuple of pointers) are device-safe.
-            template <class Fn, int N, class Tuple, std::size_t... Is>
-            inline void invoke_with_pointers(const Fn& fn, sycl::id<N> idx,
-                                             const Tuple& ptrs, std::index_sequence<Is...>)
-            {
-                fn(idx, std::get<Is>(ptrs)...);
-            }
-
-            // Reads each coupled-input view's current pointer into a plain tuple,
-            // host-side at submit time. A StateView holds the live current/next
-            // pointers for the step, so dereferencing here (not in the kernel) lets
-            // the device lambda capture raw pointers and still follow the swap.
-            template <class Views, std::size_t... Is>
-            inline auto views_current(const Views& views, std::index_sequence<Is...>)
-            {
-                return std::make_tuple(std::get<Is>(views)->cur...);
-            }
-
-            // Calls fn(i, cur, next, in0, in1, ...) by unpacking the read-input
-            // pointer tuple. Device-safe: every tuple element is a raw pointer.
-            template <class Fn, class T, class Tuple, std::size_t... Is>
-            inline void invoke_state(const Fn& fn, std::size_t i,
-                                     const T* cur, T* next,
-                                     const Tuple& ins, std::index_sequence<Is...>)
-            {
-                fn(i, cur, next, std::get<Is>(ins)...);
-            }
-
-            // Gathers the read keys of a tuple of State pointers, in order. Called
-            // at compile time so the dependency tracker labels every coupled input
-            // consistently with the canonical single-State overload.
-            template <class StatesTuple, std::size_t... Is>
-            inline std::vector<Core::ResourceRegion> read_keys_of(const StatesTuple& states,
-                                                                  std::index_sequence<Is...>)
-            {
-                return std::vector<Core::ResourceRegion>{ std::get<Is>(states)->read_key()... };
-            }
-        } // namespace detail
 
         /**
          * @brief A chainable graph of tasks built fluently, then run.
@@ -576,7 +320,7 @@ namespace SushiRuntime
                                                                const T*, T*>, int> = 0>
                 Graph& add(State<T>& s, F&& fn)
                 {
-                    auto view = view_for(s);
+                    auto view = steps_.view_for(s);
                     State<T>* sp = &s;
 
                     specs_.push_back([fn = std::forward<F>(fn), view, sp](BackingGraph& bg)
@@ -592,7 +336,7 @@ namespace SushiRuntime
                         }, { sp->read_key() }, { sp->write_key() });
                     });
 
-                    register_advance(s, view);
+                    steps_.register_advance(s, view);
                     ++task_count_;
                     dirty_ = true;
                     return *this;
@@ -618,7 +362,7 @@ namespace SushiRuntime
                               sycl::id<N>, const T*, T*>, int> = 0>
                 Graph& add(State<T>& s, Extent<N> e, F&& fn)
                 {
-                    auto view = view_for(s);
+                    auto view = steps_.view_for(s);
                     State<T>* sp = &s;
 
                     specs_.push_back([fn = std::forward<F>(fn), view, sp, e](BackingGraph& bg)
@@ -635,7 +379,7 @@ namespace SushiRuntime
                         }, { sp->read_key() }, { sp->write_key() });
                     });
 
-                    register_advance(s, view);
+                    steps_.register_advance(s, view);
                     ++task_count_;
                     dirty_ = true;
                     return *this;
@@ -927,7 +671,7 @@ namespace SushiRuntime
                 Graph& add(::SushiRuntime::Graph::OpID op, State<T>& s, F&& local,
                            std::initializer_list<std::uint64_t> params = {})
                 {
-                    auto view = view_for(s);
+                    auto view = steps_.view_for(s);
                     State<T>* sp = &s;
                     auto live_reads  = std::make_shared<std::vector<void*>>(
                         std::vector<void*>{ s.read_key() });
@@ -965,11 +709,11 @@ namespace SushiRuntime
                             });
                     });
 
-                    register_advance(s, view);
+                    steps_.register_advance(s, view);
 
                     // Re-point the live IO at the step's current/next allocations
                     // before each step so the coordinator resolves the right handles.
-                    dist_io_updaters_.push_back([view, live_reads, live_writes]()
+                    steps_.add_dist_io_updater([view, live_reads, live_writes]()
                     {
                         (*live_reads)[0]  = view->cur;
                         (*live_writes)[0] = view->next;
@@ -1156,8 +900,7 @@ namespace SushiRuntime
                     // Point every State view at its current/next buffers before the
                     // first step. Covers both a fresh build and a replay continuing
                     // from a previous run.
-                    for (auto& resync : view_resyncs_)
-                        resync();
+                    steps_.resync();
 
                     auto& engine = ctx_->get_execution_engine();
 
@@ -1179,16 +922,10 @@ namespace SushiRuntime
                     std::size_t executed = 0;
                     while (keep_going(executed) && !engine.is_cancelled())
                     {
-                        // Re-point any double-buffered offload node's live IO at this
-                        // step's allocations before the plan runs (no-op otherwise).
-                        for (auto& update_io : dist_io_updaters_)
-                            update_io();
-
-                        // Refresh late-bound node controls (size, enablement) for
-                        // this step before replaying the compiled plan (no-op when
-                        // no dynamic task was added).
-                        for (auto& update_binding : binding_updaters_)
-                            update_binding();
+                        // Re-point any double-buffered offload node's live IO and
+                        // refresh late-bound node controls (size, enablement) for this
+                        // step before replaying the compiled plan (no-op otherwise).
+                        steps_.before_step();
 
                         reset_plan_state();
                         engine.execute(plan_); // lvalue -> non-consuming replay
@@ -1196,8 +933,7 @@ namespace SushiRuntime
                         // Advance every State after the step so its just-written
                         // next field becomes current — both for the following step
                         // and for the caller reading current() once the run ends.
-                        for (auto& advance : step_advancers_)
-                            advance();
+                        steps_.after_step();
                         ++executed;
                     }
 
@@ -1218,46 +954,6 @@ namespace SushiRuntime
                     if (profiling)
                         engine.collect_profiling(plan_, report);
                     return report;
-                }
-
-                // Returns the shared view for a State, creating it (and registering
-                // its resync) on first use. Every kernel touching a State captures
-                // the same view, so one advancer keeps all references current — the
-                // basis for correct coupled (multi-field) updates.
-                template <typename T>
-                std::shared_ptr<detail::StateView<T>> view_for(State<T>& s)
-                {
-                    const void* key = &s;
-                    auto it = state_views_.find(key);
-                    if (it != state_views_.end())
-                        return std::static_pointer_cast<detail::StateView<T>>(it->second);
-
-                    auto view = std::make_shared<detail::StateView<T>>();
-                    state_views_.emplace(key, view);
-                    State<T>* sp = &s;
-                    view_resyncs_.push_back([sp, view]()
-                    {
-                        view->cur = sp->current();
-                        view->next = sp->next();
-                    });
-                    return view;
-                }
-
-                // Registers the once-per-step advance for a written State. Deduped so
-                // a State advances exactly once per step (one update rule per field).
-                template <typename T>
-                void register_advance(State<T>& s, std::shared_ptr<detail::StateView<T>> view)
-                {
-                    const void* key = &s;
-                    if (!advanced_states_.insert(key).second)
-                        return;
-                    State<T>* sp = &s;
-                    step_advancers_.push_back([sp, view]()
-                    {
-                        sp->advance();
-                        view->cur = sp->current();
-                        view->next = sp->next();
-                    });
                 }
 
                 // Appends a capture wrapper's dependency key to the read and/or
@@ -1283,8 +979,8 @@ namespace SushiRuntime
                     constexpr std::size_t K = 1 + sizeof...(Is);  // number of read inputs
                     using Seq = std::make_index_sequence<K>;
 
-                    auto ov = view_for(out);
-                    auto views = std::make_tuple(view_for(in0), view_for(std::get<Is>(tup))...);
+                    auto ov = steps_.view_for(out);
+                    auto views = std::make_tuple(steps_.view_for(in0), steps_.view_for(std::get<Is>(tup))...);
                     auto states = std::make_tuple(&out, &in0, &std::get<Is>(tup)...);
                     State<T>* op = &out;
 
@@ -1308,7 +1004,7 @@ namespace SushiRuntime
                         }, reads, { op->write_key() });
                     });
 
-                    register_advance(out, ov);
+                    steps_.register_advance(out, ov);
                     ++task_count_;
                     dirty_ = true;
                     return *this;
@@ -1399,7 +1095,7 @@ namespace SushiRuntime
                                            [fn](sycl::id<1> i) { fn(i[0]); });
                         }, reads, writes, lb);
                     });
-                    register_binding_updater(lb, std::move(dyn));
+                    steps_.register_binding_updater(lb, std::move(dyn));
                     ++task_count_;
                     dirty_ = true;
                     return *this;
@@ -1413,7 +1109,7 @@ namespace SushiRuntime
                 template <typename T, class F>
                 Graph& emit_dynamic_state(Dynamic dyn, State<T>& s, F&& fn)
                 {
-                    auto view = view_for(s);
+                    auto view = steps_.view_for(s);
                     State<T>* sp = &s;
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
 
@@ -1434,30 +1130,11 @@ namespace SushiRuntime
                         }, { sp->read_key() }, { sp->write_key() }, lb);
                     });
 
-                    register_advance(s, view);
-                    register_binding_updater(lb, std::move(dyn));
+                    steps_.register_advance(s, view);
+                    steps_.register_binding_updater(lb, std::move(dyn));
                     ++task_count_;
                     dirty_ = true;
                     return *this;
-                }
-
-                // Wires a Dynamic's providers to a node's bindings: pushes a per-step
-                // updater that polls when()/sized() on the driver thread and stores
-                // the results into the shared block the kernel and scheduler read.
-                // Skipped when the Dynamic carries no providers (the defaults — always
-                // enabled, full range — already hold), so an unused tag costs nothing.
-                void register_binding_updater(
-                    std::shared_ptr<::SushiRuntime::Graph::LateBindings> lb, Dynamic dyn)
-                {
-                    if (!dyn.when_pred && !dyn.count_fn)
-                        return;
-                    binding_updaters_.push_back([lb = std::move(lb), dyn = std::move(dyn)]()
-                    {
-                        if (dyn.when_pred)
-                            lb->enabled.store(dyn.when_pred(), std::memory_order_relaxed);
-                        if (dyn.count_fn)
-                            lb->count.store(dyn.count_fn(), std::memory_order_relaxed);
-                    });
                 }
 
                 // Emits a 1-D offloadable per-element task with a local fallback. The
@@ -1528,26 +1205,11 @@ namespace SushiRuntime
                 // rebuild and recompile when mutated.
                 std::vector<std::function<void(BackingGraph&)>> specs_;
 
-                // One per State update rule: advances the state and re-points its
-                // view at the swapped buffers, run once per step boundary by run(n).
-                std::vector<std::function<void()>> step_advancers_;
-
-                // One per double-buffered offload rule: re-points the node's live IO
-                // pointer lists at the step's current/next allocations before each
-                // step. Empty unless a distributed State step was added.
-                std::vector<std::function<void()>> dist_io_updaters_;
-
-                // One per dynamic (late-bound) task: refreshes its size/enable
-                // controls before each step. Empty unless a Dynamic add() was used.
-                std::vector<std::function<void()>> binding_updaters_;
-
-                // One shared StateView per State, captured by every kernel that
-                // touches it. Type-erased; view_for() casts back to the typed view.
-                std::unordered_map<const void*, std::shared_ptr<void>> state_views_;
-                // States that already have an advancer (one writer per State).
-                std::unordered_set<const void*> advanced_states_;
-                // Points each view at its state's current/next; run before each run.
-                std::vector<std::function<void()>> view_resyncs_;
+                // The per-step lifecycle: State double-buffer views, advancers,
+                // late-binding refreshers, and distributed live-IO re-pointers. Owns
+                // the ordering invariant run around each replayed step, shared with
+                // the DynamicGraph composer so both drive the loop identically.
+                detail::StepMachinery steps_;
 
                 std::size_t task_count_ = 0;
 
@@ -1562,239 +1224,5 @@ namespace SushiRuntime
                 bool dirty_ = true;
         };
 
-#ifdef SR_DISTRIBUTED
-        /**
-         * @brief Fluent handle to a Master-mode distributed cluster.
-         *
-         * Returned by Runtime::cluster(), which promotes the runtime to Master and
-         * wires the transport. This handle bundles the cluster's tuning knobs and
-         * telemetry so callers do not reach into RuntimeContext's distributed_*
-         * surface directly. Offloadable tasks are still added with op_id-bearing
-         * task metadata; this handle governs the cluster, not the graph.
-         */
-        class Cluster
-        {
-            public:
-                /**
-                 * @brief Blocks until @p n workers have registered, or the timeout.
-                 * @return true if the cluster reached @p n live workers in time.
-                 */
-                bool wait_for_workers(int n, std::chrono::milliseconds timeout)
-                {
-                    const auto deadline = std::chrono::steady_clock::now() + timeout;
-                    while (ctx_->distributed_alive_workers() < n)
-                    {
-                        if (std::chrono::steady_clock::now() >= deadline)
-                            return false;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                    }
-                    return true;
-                }
-
-                /** @brief Live (registered) worker count. */
-                int alive_workers() const { return ctx_->distributed_alive_workers(); }
-
-                /** @brief Sets the worker-silence timeout (see RuntimeContext). */
-                Cluster& liveness_timeout(std::chrono::milliseconds t)
-                {
-                    ctx_->distributed_set_liveness_timeout(t);
-                    return *this;
-                }
-
-                /** @brief Sets the per-task offload deadline (see RuntimeContext). */
-                Cluster& task_deadline(std::chrono::milliseconds t)
-                {
-                    ctx_->distributed_set_task_deadline(t);
-                    return *this;
-                }
-
-                /** @brief Tasks shipped to workers. */
-                std::uint64_t offloaded() const { return ctx_->distributed_offloaded_count(); }
-                /** @brief Offloadable tasks the policy kept local. */
-                std::uint64_t declined() const { return ctx_->distributed_declined_count(); }
-                /** @brief Tasks re-injected after a worker death / deadline / failure. */
-                std::uint64_t redispatched() const { return ctx_->distributed_redispatched_count(); }
-                /** @brief Writebacks rejected by the version fence. */
-                std::uint64_t stale_writebacks() const { return ctx_->distributed_stale_writeback_count(); }
-
-            private:
-                friend class Runtime;
-                explicit Cluster(std::shared_ptr<Execution::RuntimeContext> ctx)
-                    : ctx_(std::move(ctx)) {}
-                std::shared_ptr<Execution::RuntimeContext> ctx_;
-        };
-#endif // SR_DISTRIBUTED
-
-        /**
-         * @brief Optional runtime-wide settings chosen once at Runtime::create().
-         *
-         * Separate from the hardware filter so settings that shape the whole runtime
-         * (rather than which devices are selected) have a home that can grow without
-         * touching create()'s signature again. Every field defaults to the
-         * zero-overhead behaviour, so passing nothing keeps the previous semantics.
-         */
-        struct RuntimeConfig
-        {
-            /**
-             * @brief Build queues with profiling so RunReport carries device timing.
-             *
-             * Construction-time because SYCL queues are created once and not rebuilt
-             * to toggle profiling. Off by default: the queues and the dispatch hot
-             * path are then exactly as without this struct, reading no timestamps.
-             */
-            bool profiling = false;
-        };
-
-        /**
-         * @brief Entry point of the fluent API: owns hardware and hands out graphs.
-         *
-         * Create one with Runtime::create(), then call graph() to build work.
-         * The runtime owns the RuntimeContext (hardware, queues, engine); graphs
-         * borrow it, so the Runtime must outlive every graph it produces.
-         */
-        class Runtime
-        {
-            public:
-                /**
-                 * @brief Creates a runtime with default device selection.
-                 * @param config         Device-class filter passed to hardware discovery.
-                 * @param runtime_config Runtime-wide settings (e.g. profiling); defaults
-                 *                        to the zero-overhead behaviour.
-                 * @return A ready Runtime.
-                 */
-                static Runtime create(const Topology::HardwareFilterConfig& config = {},
-                                      const RuntimeConfig& runtime_config = {})
-                {
-                    return Runtime(std::make_shared<Execution::RuntimeContext>(
-                        config, nullptr, nullptr, runtime_config.profiling));
-                }
-
-                /**
-                 * @brief Starts a new, empty graph bound to this runtime.
-                 * @return A fluent Graph; add tasks, then run() or try_run().
-                 */
-                Graph graph() { return Graph(ctx_); }
-
-                /**
-                 * @brief Starts a new dynamic, region-partitioned graph.
-                 *
-                 * The mutable counterpart to graph(): work is grouped into regions
-                 * (region(key)) that can be added or dropped between steps, so a
-                 * streaming open world re-stitches only the cells that changed
-                 * instead of recompiling the whole graph. Defined out of line in
-                 * dynamic_graph.hpp once DynamicGraph is a complete type.
-                 *
-                 * @return A fluent DynamicGraph; populate regions, then run().
-                 */
-                DynamicGraph dynamic_graph();
-
-                /**
-                 * @brief Allocates a typed shared-USM buffer owned by this runtime.
-                 *
-                 * The buffer borrows the runtime's context for allocation and
-                 * frees itself on destruction, so it must not outlive the Runtime.
-                 *
-                 * @tparam T            Element type (trivially copyable for device use).
-                 * @param count        Number of elements.
-                 * @param device_index Target device queue; selects the owning context.
-                 * @param residency    Shared (host-addressable) or Device (resident).
-                 * @return An owning Buffer<T> handle.
-                 */
-                template <typename T>
-                Buffer<T> buffer(std::size_t count, std::size_t device_index = 0,
-                                 Residency residency = Residency::Shared)
-                {
-                    return Buffer<T>(ctx_, count, device_index, residency);
-                }
-
-                /**
-                 * @brief Allocates a double-buffered, time-evolving State field.
-                 *
-                 * Use this for data a stepped graph reads as "current" and writes
-                 * as "next"; the runtime swaps the two each step. Like buffer(),
-                 * it must not outlive the Runtime.
-                 *
-                 * @tparam T            Element type (trivially copyable for device use).
-                 * @param count        Number of elements in each of the two buffers.
-                 * @param device_index Target device queue for both buffers.
-                 * @param residency    Shared (host-addressable) or Device (resident).
-                 * @return An owning State<T> handle.
-                 */
-                template <typename T>
-                State<T> state(std::size_t count, std::size_t device_index = 0,
-                               Residency residency = Residency::Shared)
-                {
-                    return State<T>(ctx_, count, device_index, residency);
-                }
-
-                /**
-                 * @brief Enables or disables the background thermal rebalancer.
-                 *
-                 * On (the default) trades run-to-run determinism for throughput by
-                 * migrating tasks between workers. Turn it off for a low-jitter
-                 * real-time frame or a deterministic/replay run. Safe between runs.
-                 *
-                 * @param enabled True to run the rebalancer, false to stop it.
-                 * @return *this, for chaining.
-                 */
-                Runtime& rebalancer(bool enabled)
-                {
-                    ctx_->get_execution_engine().set_rebalancer_enabled(enabled);
-                    return *this;
-                }
-
-                /** @brief Access to the underlying context for advanced use. */
-                Execution::RuntimeContext& context() noexcept { return *ctx_; }
-
-#ifdef SR_DISTRIBUTED
-                /**
-                 * @brief Promotes this runtime to a distributed Master and returns
-                 *        a Cluster handle governing it.
-                 *
-                 * Thin fluent wrapper over RuntimeContext::enable_distributed_master:
-                 * wires the transport and starts serving. Until called, the runtime
-                 * is a fully offline single machine (zero distributed overhead).
-                 *
-                 * @param transport Connected master-side transport (one peer per worker).
-                 * @param kernels   Registry shared with this binary's kernels.
-                 * @param policy    Offload policy (null → LeastLoadedOffloadPolicy).
-                 * @return A Cluster handle for tuning and telemetry.
-                 */
-                Cluster cluster(std::shared_ptr<Distributed::ITransport> transport,
-                                sushi_ptr<Distributed::KernelRegistry> kernels,
-                                std::shared_ptr<Distributed::IOffloadPolicy> policy = nullptr)
-                {
-                    ctx_->enable_distributed_master(std::move(transport),
-                                                    std::move(kernels), std::move(policy));
-                    return Cluster(ctx_);
-                }
-#endif // SR_DISTRIBUTED
-
-            private:
-                explicit Runtime(std::shared_ptr<Execution::RuntimeContext> ctx)
-                    : ctx_(std::move(ctx))
-                {
-                }
-
-                std::shared_ptr<Execution::RuntimeContext> ctx_;
-        };
-
     } // namespace API
-
-    // Promote the entry points into the SushiRuntime namespace so users write
-    // `Runtime::create()` after `using namespace SushiRuntime;`. The graph type
-    // stays API::Graph (reached through auto) because the name Graph already
-    // denotes a namespace at this scope.
-    using API::Runtime;
-    using API::RuntimeConfig;
-    using API::Reads;
-    using API::Writes;
-    using API::In;
-    using API::Out;
-    using API::InOut;
-    using Core::Error;
-    using Core::Errc;
-    using Core::RunReport;
-    using Core::SushiException;
-
 } // namespace SushiRuntime

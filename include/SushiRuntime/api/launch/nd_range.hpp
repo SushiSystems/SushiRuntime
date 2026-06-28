@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* region.hpp                                                             */
+/* nd_range.hpp                                                              */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -23,45 +23,54 @@
 
 #pragma once
 
-#include <memory>
-#include <SushiRuntime/api/runtime.hpp>
+#include <cstddef>
+
+#include <sycl/sycl.hpp>
 
 namespace SushiRuntime
 {
     namespace API
     {
         /**
-         * @brief One mutable partition of a DynamicGraph, recorded like a Graph.
+         * @brief An nd_range launch: a global iteration box tiled by a local size.
          *
-         * A region is the unit of mutation for the dynamic graph: a streaming open
-         * world groups its work into spatial cells, and a cell is added or dropped
-         * as it streams in or out without recompiling the rest of the world. To
-         * avoid a second way of recording tasks, Region is implemented in terms of
-         * the static Graph by private inheritance and re-exposes only the task-
-         * building surface (add(), size()). It does not run itself — a region is
-         * driven by its owning DynamicGraph, which composes every live region's
-         * nodes into one plan and steps them together — so Graph's run() family is
-         * intentionally hidden. Obtain one from DynamicGraph::region(); it is not
-         * copyable or movable and lives in the DynamicGraph that owns it.
+         * NdRange unlocks the work-group execution model — barriers, local (shared)
+         * memory, and sub-group operations — for callers who need tiled kernels
+         * (e.g. blocked matrix multiply, shared-memory stencils). The fluent
+         * overload that accepts one hands the kernel a sycl::nd_item<N>, exactly as
+         * a raw SYCL nd_range parallel_for would.
+         *
+         * Each global dimension must be a whole multiple of the matching local
+         * dimension, per the SYCL requirement; the runtime does not pad.
+         *
+         * @tparam N Number of dimensions (1, 2, or 3).
          */
-        class Region : private Graph
+        template <int N>
+        struct NdRange
         {
-            public:
-                // The whole fluent task-building surface, inherited unchanged from
-                // Graph. Every add() overload (per-element, N-D, State, capture,
-                // tracked, dynamic, offload) and size() come through verbatim, so a
-                // region records work exactly as a static graph does.
-                using Graph::add;
-                using Graph::size;
+            static_assert(N >= 1 && N <= 3, "NdRange supports 1, 2, or 3 dimensions.");
 
-            private:
-                friend class DynamicGraph;
+            sycl::range<N> global;  /**< Total work-items per dimension. */
+            sycl::range<N> local;   /**< Work-group size per dimension. */
 
-                explicit Region(std::shared_ptr<Execution::RuntimeContext> ctx)
-                    : Graph(std::move(ctx))
-                {
-                }
+            /** @brief Builds the launch from global and local ranges. */
+            NdRange(sycl::range<N> g, sycl::range<N> l) : global(g), local(l) {}
+
+            /** @brief The SYCL nd_range this launch describes. */
+            sycl::nd_range<N> to_nd_range() const noexcept
+            {
+                return sycl::nd_range<N>(global, local);
+            }
+
+            /** @brief Total number of work-items (product of the global sizes). */
+            std::size_t count() const noexcept { return global.size(); }
         };
 
+        template <int N>
+        NdRange(sycl::range<N>, sycl::range<N>) -> NdRange<N>;
+
     } // namespace API
+
+    using API::NdRange;
+
 } // namespace SushiRuntime

@@ -109,7 +109,9 @@ The codebase has a deliberate, consistent style. Match the file you're editing.
   memory order and say what it synchronizes with. These are the comments we keep.
 - **Naming.** Types `PascalCase`, functions/variables `snake_case`, members
   trailing underscore (`impl_`), constants `UPPER_SNAKE`. Follow the surrounding
-  code.
+  code. No abbreviated type or struct names — `Statistics` not `Stats`,
+  `Execution` not `Exec`, `Coordinate` not `Coord`. The namespace for the
+  public API layer is `API`, not `Api`.
 - **Every source file carries the Apache 2.0 license header** used across the
   tree. Copy it verbatim into new files.
 

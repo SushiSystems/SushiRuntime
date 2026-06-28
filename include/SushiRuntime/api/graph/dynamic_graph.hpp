@@ -36,8 +36,8 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/api/region.hpp>
-#include <SushiRuntime/api/runtime.hpp>
+#include <SushiRuntime/api/graph/region.hpp>
+#include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/graph/node.hpp>
@@ -677,8 +677,7 @@ namespace SushiRuntime
                     // Aggregate every live region's per-step updaters (State advance,
                     // late-binding refresh, distributed live-IO) in region-key order.
                     refresh_updaters();
-                    for (auto& resync : view_resyncs_)
-                        resync();
+                    steps_.resync();
 
                     auto& engine = ctx_->get_execution_engine();
                     engine.reset_cancellation();
@@ -696,16 +695,12 @@ namespace SushiRuntime
                     std::size_t executed = 0;
                     while (keep_going(executed) && !engine.is_cancelled())
                     {
-                        for (auto& update_io : dist_io_updaters_)
-                            update_io();
-                        for (auto& update_binding : binding_updaters_)
-                            update_binding();
+                        steps_.before_step();
 
                         rearm();
                         engine.execute(plan_);
 
-                        for (auto& advance : step_advancers_)
-                            advance();
+                        steps_.after_step();
                         ++executed;
                     }
 
@@ -730,24 +725,9 @@ namespace SushiRuntime
                 // dropped is reflected before the next run.
                 void refresh_updaters()
                 {
-                    view_resyncs_.clear();
-                    step_advancers_.clear();
-                    binding_updaters_.clear();
-                    dist_io_updaters_.clear();
+                    steps_.reset_updaters();
                     for (auto& kv : regions_)
-                    {
-                        Graph& g = as_graph(*kv.second);
-                        append(view_resyncs_, g.view_resyncs_);
-                        append(step_advancers_, g.step_advancers_);
-                        append(binding_updaters_, g.binding_updaters_);
-                        append(dist_io_updaters_, g.dist_io_updaters_);
-                    }
-                }
-
-                static void append(std::vector<std::function<void()>>& dst,
-                                   const std::vector<std::function<void()>>& src)
-                {
-                    dst.insert(dst.end(), src.begin(), src.end());
+                        steps_.aggregate_from(as_graph(*kv.second).steps_);
                 }
 
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
@@ -778,11 +758,10 @@ namespace SushiRuntime
                 std::set<RegionKey> dirty_regions_;
                 std::set<RegionKey> dropped_;
 
-                // Per-step updaters aggregated from every live region before each run.
-                std::vector<std::function<void()>> view_resyncs_;
-                std::vector<std::function<void()>> step_advancers_;
-                std::vector<std::function<void()>> binding_updaters_;
-                std::vector<std::function<void()>> dist_io_updaters_;
+                // Per-step lifecycle aggregated from every live region before each
+                // run; the same machinery the static Graph uses, so both drivers run
+                // the identical per-step hook order.
+                detail::StepMachinery steps_;
 
                 Execution::CompiledGraph plan_;
                 std::size_t compiles_ = 0;
