@@ -42,21 +42,21 @@ TEST(Integration_DeviceResident, BufferRoundTrip)
     constexpr std::size_t N = 128;
 
     auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N, 0, Residency::Device);
+    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
 
     EXPECT_EQ(buf.residency(), Residency::Device);
     EXPECT_FALSE(buf.host_accessible());
 
     std::vector<int> seed(N);
     std::iota(seed.begin(), seed.end(), 0);     // 0,1,2,...
-    buf.write_range(0, seed.data(), N);
+    buf.write_range({0, N}, seed.data());
 
     int* p = buf.data();
     auto g = rt.graph();
     g.add(API::Reads(buf), API::Writes(buf), N, [p](std::size_t i) { p[i] *= 2; });
     g.run();
 
-    const std::vector<int> out = buf.read_range(0, N);
+    const std::vector<int> out = buf.read_range({0, N});
     ASSERT_EQ(out.size(), N);
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(out[i], static_cast<int>(i) * 2) << "at i=" << i;
@@ -68,13 +68,13 @@ TEST(Integration_DeviceResident, SelectiveReadback)
     constexpr std::size_t N = 64;
 
     auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N, 0, Residency::Device);
+    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
 
     std::vector<int> seed(N);
     std::iota(seed.begin(), seed.end(), 100);   // 100,101,...
-    buf.write_range(0, seed.data(), N);
+    buf.write_range({0, N}, seed.data());
 
-    const std::vector<int> window = buf.read_range(8, 4);
+    const std::vector<int> window = buf.read_range({8, 4});
     ASSERT_EQ(window.size(), 4u);
     for (std::size_t k = 0; k < 4; ++k)
         EXPECT_EQ(window[k], static_cast<int>(108 + k));
@@ -89,19 +89,19 @@ TEST(Integration_DeviceResident, StateStepsResident)
     constexpr std::size_t STEPS = 5;
 
     auto rt    = Runtime::create();
-    auto field = rt.state<int>(N, 0, Residency::Device);
+    auto field = rt.state<int>(N, DeviceIndex{0}, Residency::Device);
 
     EXPECT_EQ(field.residency(), Residency::Device);
     EXPECT_FALSE(field.host_accessible());
 
     std::vector<int> seed(N, 0);
-    field.write_range(0, seed.data(), N);
+    field.write_range({0, N}, seed.data());
 
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
     g.run(STEPS);
 
-    const std::vector<int> out = field.read_range(0, N);
+    const std::vector<int> out = field.read_range({0, N});
     ASSERT_EQ(out.size(), N);
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(out[i], static_cast<int>(STEPS)) << "at i=" << i;
@@ -122,7 +122,40 @@ TEST(Integration_DeviceResident, SharedDefaultUnchanged)
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = static_cast<int>(i);           // direct host indexing still valid
 
-    const std::vector<int> out = buf.read_range(0, N);
+    const std::vector<int> out = buf.read_range({0, N});
     for (std::size_t i = 0; i < N; ++i)
         EXPECT_EQ(out[i], static_cast<int>(i));
+}
+
+// host() is the branch-free bulk seam for shared USM: one residency check, then
+// unchecked indexing over the whole buffer.
+TEST(Integration_DeviceResident, HostSpanIndexesSharedBuffer)
+{
+    constexpr std::size_t N = 16;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+
+    auto view = buf.host();
+    ASSERT_EQ(view.size(), N);
+    for (std::size_t i = 0; i < N; ++i)
+        view[i] = static_cast<int>(i * 2);
+
+    const std::vector<int> out = buf.read_range({0, N});
+    for (std::size_t i = 0; i < N; ++i)
+        EXPECT_EQ(out[i], static_cast<int>(i * 2));
+}
+
+// A device-resident buffer is not host-addressable: host indexing now throws a
+// deterministic error in every build instead of dereferencing into UB.
+TEST(Integration_DeviceResident, HostAccessOnDeviceThrows)
+{
+    constexpr std::size_t N = 16;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
+    ASSERT_FALSE(buf.host_accessible());
+
+    EXPECT_THROW((void)buf[0], Core::SushiException);
+    EXPECT_THROW((void)buf.host(), Core::SushiException);
 }

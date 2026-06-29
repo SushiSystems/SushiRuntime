@@ -91,7 +91,7 @@ namespace SushiRuntime
                  * @param residency    Shared (host-addressable) or Device (resident).
                  */
                 State(std::shared_ptr<Execution::RuntimeContext> ctx,
-                      std::size_t count, std::size_t device_index = 0,
+                      std::size_t count, DeviceIndex device_index = DeviceIndex{0},
                       Residency residency = Residency::Shared)
                     : cur_(ctx, count, device_index, residency),
                       next_(std::move(ctx), count, device_index, residency)
@@ -116,8 +116,39 @@ namespace SushiRuntime
                 /** @brief Write dependency key (the next buffer's base address). */
                 void* write_key() const noexcept { return next_.dependency_key(); }
 
-                /** @brief Host-side access to the current state's elements (shared only). */
-                T& operator[](std::size_t i) const noexcept { return cur_[i]; }
+                /**
+                 * @brief A weak observer of this State's allocation lifetime.
+                 *
+                 * Mirrors Buffer::liveness(): a graph that records this State holds the
+                 * observer to detect a State freed before a run. The current field's
+                 * token stands for the State — both fields are freed together with it.
+                 *
+                 * @return A weak observer of the State's allocations, empty when empty.
+                 */
+                Core::LivenessObserver liveness() const noexcept { return cur_.liveness(); }
+
+                /**
+                 * @brief Host-side access to the current field's elements (shared only).
+                 *
+                 * Delegates to the current buffer, so a device-resident State throws
+                 * rather than dereferencing non-host-addressable memory. @see Buffer::operator[].
+                 *
+                 * @param i Element index into the current field.
+                 * @return A reference to element @p i of the current field.
+                 * @throws SushiException If the State is device-resident.
+                 */
+                T& operator[](std::size_t i) const { return cur_[i]; }
+
+                /**
+                 * @brief A host-addressable view over the current field (shared only).
+                 *
+                 * The branch-free bulk seam for host access to the current state, mirroring
+                 * Buffer::host(): one residency check, then unchecked indexing.
+                 *
+                 * @return A span over the current field, valid while this State lives.
+                 * @throws SushiException If the State is device-resident.
+                 */
+                span<T> host() const { return cur_.host(); }
 
                 /** @brief Where both fields live (shared or device-resident). */
                 Residency residency() const noexcept { return cur_.residency(); }
@@ -132,13 +163,12 @@ namespace SushiRuntime
                  * window of the current state for telemetry or IO without host-mapping
                  * the whole field. @see Buffer::read_range.
                  *
-                 * @param offset First element to read.
-                 * @param count  Number of elements; clamped to the field size.
+                 * @param range Element window to read; count is clamped to the field size.
                  * @return A host vector holding the copied elements.
                  */
-                std::vector<T> read_range(std::size_t offset, std::size_t count) const
+                std::vector<T> read_range(ElementRange range) const
                 {
-                    return cur_.read_range(offset, count);
+                    return cur_.read_range(range);
                 }
 
                 /**
@@ -147,13 +177,12 @@ namespace SushiRuntime
                  * The way to initialise a device-resident State the host cannot index.
                  * @see Buffer::write_range.
                  *
-                 * @param offset First element to write.
-                 * @param src    Host source of at least @p count elements.
-                 * @param count  Number of elements; clamped to the field size.
+                 * @param range Element window to write; count is clamped to the field size.
+                 * @param src   Host source of at least range.count elements.
                  */
-                void write_range(std::size_t offset, const T* src, std::size_t count)
+                void write_range(ElementRange range, const T* src)
                 {
-                    cur_.write_range(offset, src, count);
+                    cur_.write_range(range, src);
                 }
 
                 /**

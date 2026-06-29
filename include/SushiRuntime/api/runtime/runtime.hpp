@@ -58,6 +58,53 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief A narrow, read-only view of runtime-internal state.
+         *
+         * The supported way to read the few internal facts a caller legitimately
+         * needs — device count, profiling/rebalancer state, cumulative transfer
+         * bytes — without exposing the whole RuntimeContext. Obtained from
+         * Runtime::advanced(); it borrows the context, so it must not outlive the
+         * Runtime. For anything beyond this surface, Runtime::unsafe_context() is the
+         * deliberate escape hatch.
+         */
+        class AdvancedControls
+        {
+            public:
+                /** @brief Wraps the runtime's context for read-only inspection. */
+                explicit AdvancedControls(Execution::RuntimeContext& ctx) noexcept
+                    : ctx_(ctx)
+                {
+                }
+
+                /** @brief Number of device queues the runtime selected. */
+                std::size_t device_count() const { return ctx_.device_count(); }
+
+                /** @brief True when queues were built with profiling enabled. */
+                bool profiling_enabled() const noexcept { return ctx_.profiling_enabled(); }
+
+                /** @brief True while the background thermal rebalancer is running. */
+                bool rebalancer_enabled() const
+                {
+                    return ctx_.get_execution_engine().rebalancer_enabled();
+                }
+
+                /** @brief Cumulative bytes copied host->device by explicit transfers. */
+                std::size_t host_to_device_bytes() const noexcept
+                {
+                    return ctx_.host_to_device_bytes();
+                }
+
+                /** @brief Cumulative bytes copied device->host by explicit transfers. */
+                std::size_t device_to_host_bytes() const noexcept
+                {
+                    return ctx_.device_to_host_bytes();
+                }
+
+            private:
+                Execution::RuntimeContext& ctx_;
+        };
+
+        /**
          * @brief Entry point of the fluent API: owns hardware and hands out graphs.
          *
          * Create one with Runtime::create(), then call graph() to build work.
@@ -113,7 +160,7 @@ namespace SushiRuntime
                  * @return An owning Buffer<T> handle.
                  */
                 template <typename T>
-                Buffer<T> buffer(std::size_t count, std::size_t device_index = 0,
+                Buffer<T> buffer(std::size_t count, DeviceIndex device_index = DeviceIndex{0},
                                  Residency residency = Residency::Shared)
                 {
                     return Buffer<T>(ctx_, count, device_index, residency);
@@ -133,7 +180,7 @@ namespace SushiRuntime
                  * @return An owning State<T> handle.
                  */
                 template <typename T>
-                State<T> state(std::size_t count, std::size_t device_index = 0,
+                State<T> state(std::size_t count, DeviceIndex device_index = DeviceIndex{0},
                                Residency residency = Residency::Shared)
                 {
                     return State<T>(ctx_, count, device_index, residency);
@@ -155,8 +202,23 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                /** @brief Access to the underlying context for advanced use. */
-                Execution::RuntimeContext& context() noexcept { return *ctx_; }
+                /**
+                 * @brief A narrow, supported view of runtime-internal state.
+                 * @return An AdvancedControls borrowing this runtime's context.
+                 */
+                AdvancedControls advanced() noexcept { return AdvancedControls(*ctx_); }
+
+                /**
+                 * @brief The full runtime context — the deliberate escape hatch.
+                 *
+                 * Exposes the internal RuntimeContext for uses the fluent surface and
+                 * advanced() do not cover. The name is a warning: code that reaches
+                 * here couples to a non-public type and may break across versions.
+                 * Prefer the fluent API or advanced().
+                 *
+                 * @return A reference to the underlying context, owned by this Runtime.
+                 */
+                Execution::RuntimeContext& unsafe_context() noexcept { return *ctx_; }
 
 #ifdef SR_DISTRIBUTED
                 /**
