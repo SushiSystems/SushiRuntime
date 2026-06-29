@@ -189,36 +189,40 @@ namespace SushiRuntime
                 if (!n || n->metadata.op_id.value == 0) continue;
                 if (!ctx.distributed_supports(n->metadata.op_id)) continue;
 
+                // The node carried op_id through a tracked add, so its offload state
+                // already exists; offload() returns it without a fresh allocation.
+                OffloadState& off = n->offload();
+
                 // A double-buffered node resolves its handles from live pointers at
                 // dispatch, so do not bake them here. Mark it offloadable only when
                 // every buffer it currently touches is registered; otherwise leave it
                 // local (the host fallback still runs).
-                if (n->live_reads_ || n->live_writes_)
+                if (off.live_reads || off.live_writes)
                 {
                     bool live_ok = true;
-                    if (n->live_reads_)
-                        for (void* p : *n->live_reads_)
+                    if (off.live_reads)
+                        for (void* p : *off.live_reads)
                             if (!ctx.distributed_buffer(p)) { live_ok = false; break; }
-                    if (live_ok && n->live_writes_)
-                        for (void* p : *n->live_writes_)
+                    if (live_ok && off.live_writes)
+                        for (void* p : *off.live_writes)
                             if (!ctx.distributed_buffer(p)) { live_ok = false; break; }
                     if (!live_ok) continue;
 
-                    n->offloadable_ = true;
-                    n->remote_op_   = n->metadata.op_id;
+                    off.offloadable = true;
+                    off.remote_op   = n->metadata.op_id;
                     continue;
                 }
 
                 std::vector<SushiRuntime::Distributed::BufferHandle> ins, outs;
                 bool ok = true;
 
-                for (void* p : n->dist_reads_)
+                for (void* p : off.reads)
                 {
                     auto h = ctx.distributed_buffer(p);
                     if (!h) { ok = false; break; }
                     ins.push_back(*h);
                 }
-                if (ok) for (void* p : n->dist_writes_)
+                if (ok) for (void* p : off.writes)
                 {
                     auto h = ctx.distributed_buffer(p);
                     if (!h) { ok = false; break; }
@@ -226,10 +230,10 @@ namespace SushiRuntime
                 }
                 if (!ok) continue;
 
-                n->offloadable_  = true;
-                n->remote_op_    = n->metadata.op_id;
-                n->in_handles_   = std::move(ins);
-                n->out_handles_  = std::move(outs);
+                off.offloadable = true;
+                off.remote_op   = n->metadata.op_id;
+                off.in_handles  = std::move(ins);
+                off.out_handles = std::move(outs);
             }
         }
 #endif
@@ -322,8 +326,8 @@ namespace SushiRuntime
             // The distributed coherence model is whole-buffer, so offload resolves
             // handles from the owning base of each region (sub-region offload is a
             // later refinement).
-            for (const auto& r : read_access)  node->dist_reads_.push_back(r.base);
-            for (const auto& w : write_access) node->dist_writes_.push_back(w.base);
+            for (const auto& r : read_access)  node->offload().reads.push_back(r.base);
+            for (const auto& w : write_access) node->offload().writes.push_back(w.base);
 #endif
 
             SR_LOG_DEBUG("Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
@@ -402,8 +406,8 @@ namespace SushiRuntime
             // The distributed layer resolves the owning base of each region to a
             // serializable buffer handle for potential offload (whole-buffer
             // coherence; sub-region offload is a later refinement).
-            for (const auto& r : read_access)  node->dist_reads_.push_back(r.base);
-            for (const auto& w : write_access) node->dist_writes_.push_back(w.base);
+            for (const auto& r : read_access)  node->offload().reads.push_back(r.base);
+            for (const auto& w : write_access) node->offload().writes.push_back(w.base);
 #endif
 
             SR_LOG_DEBUG("Semantic Node '{}' (Type: {}) added (R: {}, W: {}).",
@@ -474,12 +478,13 @@ namespace SushiRuntime
             node->io_writes_.assign(writes.begin(), writes.end());
 
 #ifdef SR_DISTRIBUTED
-            node->dist_reads_   = reads;
-            node->dist_writes_  = writes;
+            auto& off = node->offload();
+            off.reads   = reads;
+            off.writes  = writes;
             // The live lists drive dispatch-time handle resolution so the node
             // follows the double-buffer swap without recompiling.
-            node->live_reads_   = std::move(live_reads);
-            node->live_writes_  = std::move(live_writes);
+            off.live_reads   = std::move(live_reads);
+            off.live_writes  = std::move(live_writes);
 #endif
 
             impl_->push_node_lock_free(std::move(node));
@@ -517,8 +522,8 @@ namespace SushiRuntime
             node->io_writes_ = write_access;
 
 #ifdef SR_DISTRIBUTED
-            for (const auto& r : read_access)  node->dist_reads_.push_back(r.base);
-            for (const auto& w : write_access) node->dist_writes_.push_back(w.base);
+            for (const auto& r : read_access)  node->offload().reads.push_back(r.base);
+            for (const auto& w : write_access) node->offload().writes.push_back(w.base);
 #endif
 
             SR_LOG_DEBUG("Native CPU node added (R: {}, W: {}).",
