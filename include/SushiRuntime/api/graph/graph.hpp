@@ -46,6 +46,7 @@
 #include <SushiRuntime/api/vocabulary/captures.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/resource_liveness.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
@@ -229,6 +230,8 @@ namespace SushiRuntime
                 Graph& add(const Reads& reads, const Writes& writes,
                            std::size_t n, F&& fn)
                 {
+                    observe(reads);
+                    observe(writes);
                     return emit_per_element_tracked(reads.keys, writes.keys,
                                                     n, std::forward<F>(fn));
                 }
@@ -251,6 +254,8 @@ namespace SushiRuntime
                 Graph& add(const Reads& reads, const Writes& writes,
                            Extent<N> e, F&& fn)
                 {
+                    observe(reads);
+                    observe(writes);
                     const std::vector<Core::ResourceRegion> r = reads.keys;
                     const std::vector<Core::ResourceRegion> w = writes.keys;
                     specs_.push_back([fn = std::forward<F>(fn), e, r, w](BackingGraph& bg)
@@ -320,6 +325,7 @@ namespace SushiRuntime
                                                                const T*, T*>, int> = 0>
                 Graph& add(State<T>& s, F&& fn)
                 {
+                    observe_state(s);
                     auto view = steps_.view_for(s);
                     State<T>* sp = &s;
 
@@ -362,6 +368,7 @@ namespace SushiRuntime
                               sycl::id<N>, const T*, T*>, int> = 0>
                 Graph& add(State<T>& s, Extent<N> e, F&& fn)
                 {
+                    observe_state(s);
                     auto view = steps_.view_for(s);
                     State<T>* sp = &s;
 
@@ -468,6 +475,8 @@ namespace SushiRuntime
                 Graph& add(Dynamic dyn, const Reads& reads, const Writes& writes,
                            std::size_t capacity, F&& fn)
                 {
+                    observe(reads);
+                    observe(writes);
                     return emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
                                                     capacity, std::forward<F>(fn));
                 }
@@ -522,6 +531,7 @@ namespace SushiRuntime
                                                                const T*, T*>, int> = 0>
                 Graph& add(Dynamic dyn, State<T>& s, F&& fn)
                 {
+                    observe_state(s);
                     return emit_dynamic_state(std::move(dyn), s, std::forward<F>(fn));
                 }
 
@@ -545,6 +555,8 @@ namespace SushiRuntime
                 template <class F, std::enable_if_t<std::is_invocable_v<F>, int> = 0>
                 Graph& add_host(const Reads& reads, const Writes& writes, F&& fn)
                 {
+                    observe(reads);
+                    observe(writes);
                     std::vector<Core::ResourceRegion> r = reads.keys;
                     std::vector<Core::ResourceRegion> w = writes.keys;
                     specs_.push_back([fn = std::forward<F>(fn), r, w](BackingGraph& bg)
@@ -640,6 +652,8 @@ namespace SushiRuntime
                            F&& local,
                            std::initializer_list<std::uint64_t> params = {})
                 {
+                    observe(reads);
+                    observe(writes);
                     return emit_offload_per_element(op, n, reads.keys, writes.keys,
                                                     std::forward<F>(local),
                                                     std::vector<std::uint64_t>(params));
@@ -671,6 +685,7 @@ namespace SushiRuntime
                 Graph& add(::SushiRuntime::Graph::OpID op, State<T>& s, F&& local,
                            std::initializer_list<std::uint64_t> params = {})
                 {
+                    observe_state(s);
                     auto view = steps_.view_for(s);
                     State<T>* sp = &s;
                     auto live_reads  = std::make_shared<std::vector<void*>>(
@@ -857,6 +872,9 @@ namespace SushiRuntime
                     if (task_count_ == 0)
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "Graph has no tasks to run."});
+                    if (has_dangling_resource())
+                        return Core::make_error(Core::Error{Core::Errc::dangling_resource,
+                            "Graph references a Buffer/State freed before the run."});
                     try
                     {
                         return drive_impl(keep_going);
@@ -969,6 +987,43 @@ namespace SushiRuntime
                         writes.push_back(c.key);
                 }
 
+                // Records the liveness observers of the typed handles a task touches,
+                // so a run can detect a handle freed before it ran. Raw-pointer and
+                // bare-region overloads contribute none — naming data by raw pointer
+                // opts out of lifetime tracking, by design.
+                void observe(const Reads& r)
+                {
+                    observers_.insert(observers_.end(), r.lives.begin(), r.lives.end());
+                }
+                void observe(const Writes& w)
+                {
+                    observers_.insert(observers_.end(), w.lives.begin(), w.lives.end());
+                }
+                template <typename T>
+                void observe_state(const State<T>& s)
+                {
+                    Core::LivenessObserver o = s.liveness();
+                    if (!o.expired())
+                        observers_.push_back(std::move(o));
+                }
+                template <class Cap>
+                void observe_capture(const Cap& c)
+                {
+                    if (!c.life.expired())
+                        observers_.push_back(c.life);
+                }
+
+                // True when any recorded handle's allocation has been freed. Checked
+                // once per run so a graph outliving its data fails cleanly instead of
+                // dispatching against released memory.
+                bool has_dangling_resource() const
+                {
+                    for (const auto& o : observers_)
+                        if (o.expired())
+                            return true;
+                    return false;
+                }
+
                 // Emits the node for the variadic coupled-State overload once the
                 // trailing callable has been split from the read States. @p ins
                 // selects the further read States out of @p tup; @p in0 is the first.
@@ -978,6 +1033,10 @@ namespace SushiRuntime
                 {
                     constexpr std::size_t K = 1 + sizeof...(Is);  // number of read inputs
                     using Seq = std::make_index_sequence<K>;
+
+                    observe_state(out);
+                    observe_state(in0);
+                    (observe_state(std::get<Is>(tup)), ...);
 
                     auto ov = steps_.view_for(out);
                     auto views = std::make_tuple(steps_.view_for(in0), steps_.view_for(std::get<Is>(tup))...);
@@ -1021,6 +1080,9 @@ namespace SushiRuntime
                     std::vector<Core::ResourceRegion> writes;
                     collect_keys(reads, writes, c0);
                     (collect_keys(reads, writes, std::get<Is>(tup)), ...);
+
+                    observe_capture(c0);
+                    (observe_capture(std::get<Is>(tup)), ...);
 
                     auto ptrs = std::make_tuple(c0.ptr, std::get<Is>(tup).ptr...);
                     constexpr std::size_t K = 1 + sizeof...(Is);
@@ -1204,6 +1266,11 @@ namespace SushiRuntime
                 // backing graph. The fluent Graph is the source of truth so it can
                 // rebuild and recompile when mutated.
                 std::vector<std::function<void(BackingGraph&)>> specs_;
+
+                // Liveness observers of every typed handle the recorded tasks touch.
+                // Checked once per run to catch a Buffer/State freed before the graph
+                // ran. Empty for a graph built only from raw-pointer overloads.
+                std::vector<Core::LivenessObserver> observers_;
 
                 // The per-step lifecycle: State double-buffer views, advancers,
                 // late-binding refreshers, and distributed live-IO re-pointers. Owns

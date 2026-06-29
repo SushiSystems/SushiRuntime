@@ -90,8 +90,10 @@ do not need to reach into the lower layers.
 - **`API::Runtime`** — owns a `RuntimeContext` and provides the graph and data
   factories. `Runtime::create(config = {})` returns a `Runtime`;
   `runtime.graph()` returns an `API::Graph`; `runtime.buffer<T>(n)` /
-  `runtime.state<T>(n)` allocate typed handles; `runtime.context()` gives a
-  reference to the underlying `RuntimeContext` for direct queue or allocator
+  `runtime.state<T>(n)` allocate typed handles; `runtime.advanced()` exposes a
+  narrow read-only view of internal state (device count, profiling/rebalancer
+  flags, transfer bytes), and `runtime.unsafe_context()` is the deliberate escape
+  hatch that returns the underlying `RuntimeContext` for direct queue or allocator
   access.
 
 - **`Buffer<T>` / `State<T>`** — owning handles to shared USM, pinned to one
@@ -258,9 +260,10 @@ task that does submit a kernel is never misrouted.
 (the default) or device-resident **device** USM (`Residency::Device`, via
 `RuntimeContext::malloc_device_on`), chosen once at construction behind the same
 handle API. Device residency keeps a large field on its device across steps with
-no host migration; because device USM is not host-addressable, `operator[]` is
-debug-asserted and the host instead uses `read_range()`/`write_range()`, which
-copy a sub-range through the allocation's owning queue. Dependency tracking and
+no host migration; because device USM is not host-addressable, `operator[]` (and
+the bulk `host()` view) throw a deterministic `invalid_access` error on a
+device-resident handle, and the host instead uses `read_range()`/`write_range()`,
+which copy a sub-range through the allocation's owning queue. Dependency tracking and
 queue routing are identical for both — the owner map already records the device,
 so kernels dispatch to it and the range copies use the same queue.
 

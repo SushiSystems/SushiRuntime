@@ -50,6 +50,7 @@ add_executable(sr_functional_tests
     common/test_main.cpp
 
     functional/unit/test_logger.cpp
+    functional/unit/test_delegate.cpp
     functional/unit/test_topology.cpp
     functional/unit/test_topology_abstraction.cpp
     functional/unit/test_nvidia_topology.cpp

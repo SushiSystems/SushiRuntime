@@ -24,8 +24,9 @@
 #pragma once
 
 #include <cstddef>
-#include <functional>
 #include <utility>
+
+#include <SushiRuntime/core/delegate.hpp>
 
 namespace SushiRuntime
 {
@@ -42,24 +43,55 @@ namespace SushiRuntime
          * compose — when(pred).and_sized(count) — and each provider is polled on the
          * driver thread before the plan replays, so the compiled topology is reused
          * across steps and the graph compiles exactly once.
+         *
+         * The providers are stored in allocation-free Core::Delegate slots, so a
+         * Dynamic is move-only (a stored provider has one owner). Build one from a
+         * when()/sized() temporary and pass it straight to add(), or std::move a
+         * named Dynamic into the call.
          */
         struct Dynamic
         {
-            std::function<bool()>        when_pred;  /**< Empty: the node is always enabled. */
-            std::function<std::size_t()> count_fn;   /**< Empty: iterate the full baked range. */
+            /** @brief Inline storage for each provider; a predicate captures little. */
+            static constexpr std::size_t PROVIDER_CAPACITY = 48;
 
-            /** @brief Adds (or replaces) the enable predicate; returns *this for chaining. */
-            Dynamic& and_when(std::function<bool()> pred)
+            using WhenProvider  = Core::Delegate<bool(), PROVIDER_CAPACITY>;
+            using CountProvider = Core::Delegate<std::size_t(), PROVIDER_CAPACITY>;
+
+            WhenProvider  when_pred;  /**< Empty: the node is always enabled. */
+            CountProvider count_fn;   /**< Empty: iterate the full baked range. */
+
+            // The chaining setters are ref-qualified so a move-only Dynamic chains in
+            // both shapes: mutating a named Dynamic in place (the lvalue overload
+            // returns a reference) and building one inline — when(p).and_sized(c) —
+            // where the rvalue overload returns by value so the result moves straight
+            // into add()'s by-value parameter.
+
+            /** @brief Sets the enable predicate on a named Dynamic; returns *this. */
+            Dynamic& and_when(WhenProvider pred) &
             {
                 when_pred = std::move(pred);
                 return *this;
             }
 
-            /** @brief Adds (or replaces) the live-size provider; returns *this for chaining. */
-            Dynamic& and_sized(std::function<std::size_t()> count)
+            /** @brief Sets the enable predicate while chaining inline; returns by value. */
+            Dynamic and_when(WhenProvider pred) &&
+            {
+                when_pred = std::move(pred);
+                return std::move(*this);
+            }
+
+            /** @brief Sets the live-size provider on a named Dynamic; returns *this. */
+            Dynamic& and_sized(CountProvider count) &
             {
                 count_fn = std::move(count);
                 return *this;
+            }
+
+            /** @brief Sets the live-size provider while chaining inline; returns by value. */
+            Dynamic and_sized(CountProvider count) &&
+            {
+                count_fn = std::move(count);
+                return std::move(*this);
             }
         };
 
@@ -68,7 +100,7 @@ namespace SushiRuntime
          * @param pred Polled before each step; false skips the node that step.
          * @return A Dynamic carrying the predicate, ready to pass to add().
          */
-        inline Dynamic when(std::function<bool()> pred)
+        inline Dynamic when(Dynamic::WhenProvider pred)
         {
             Dynamic d;
             d.when_pred = std::move(pred);
@@ -80,7 +112,7 @@ namespace SushiRuntime
          * @param count Polled before each step; must not exceed the baked capacity.
          * @return A Dynamic carrying the size provider, ready to pass to add().
          */
-        inline Dynamic sized(std::function<std::size_t()> count)
+        inline Dynamic sized(Dynamic::CountProvider count)
         {
             Dynamic d;
             d.count_fn = std::move(count);

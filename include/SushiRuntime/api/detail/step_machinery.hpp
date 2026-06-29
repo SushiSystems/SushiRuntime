@@ -23,7 +23,6 @@
 
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -32,6 +31,7 @@
 
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
+#include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/graph/node.hpp>
 
 namespace SushiRuntime
@@ -60,6 +60,11 @@ namespace SushiRuntime
             class StepMachinery
             {
                 public:
+                    // A per-step hook stored without heap allocation. Capacity covers
+                    // the largest hook: a binding updater that captures a whole Dynamic
+                    // (two ~64-byte provider slots) plus a LateBindings shared pointer.
+                    using StepHook = Core::Delegate<void(), 176>;
+
                     // Returns the shared view for a State, creating it (and registering
                     // its resync) on first use. Every kernel touching a State captures
                     // the same view, so one advancer keeps all references current — the
@@ -121,7 +126,7 @@ namespace SushiRuntime
 
                     // Records a re-point hook for a double-buffered offload node, run
                     // before each step so the coordinator resolves the step's handles.
-                    void add_dist_io_updater(std::function<void()> updater)
+                    void add_dist_io_updater(StepHook updater)
                     {
                         dist_io_updaters_.push_back(std::move(updater));
                     }
@@ -132,6 +137,8 @@ namespace SushiRuntime
                     {
                         for (auto& r : view_resyncs_)
                             r();
+                        for (const StepMachinery* s : aggregated_)
+                            s->resync();
                     }
 
                     // Runs the pre-execute hooks for one step: re-point any distributed
@@ -142,6 +149,8 @@ namespace SushiRuntime
                             update_io();
                         for (auto& update_binding : binding_updaters_)
                             update_binding();
+                        for (const StepMachinery* s : aggregated_)
+                            s->before_step();
                     }
 
                     // Advances every written State after a step so its just-written next
@@ -150,53 +159,51 @@ namespace SushiRuntime
                     {
                         for (auto& advance : step_advancers_)
                             advance();
+                        for (const StepMachinery* s : aggregated_)
+                            s->after_step();
                     }
 
-                    // Clears the aggregated per-step hook lists. The State bookkeeping
-                    // maps are left untouched: the composer re-aggregates the hooks from
-                    // each region's own StepMachinery, which still owns the views.
+                    // Clears this machinery's aggregation of other machineries. A
+                    // composer calls this then re-aggregates the live regions before a
+                    // run; a region's own hooks (and the State bookkeeping that owns the
+                    // views) are untouched, since the region still owns them.
                     void reset_updaters()
                     {
-                        view_resyncs_.clear();
-                        step_advancers_.clear();
-                        binding_updaters_.clear();
-                        dist_io_updaters_.clear();
+                        aggregated_.clear();
                     }
 
-                    // Appends another machinery's per-step hooks onto this one, so a
-                    // composer can gather every live region's hooks into a single driver.
+                    // References another machinery's per-step hooks from this one, so a
+                    // composer drives every live region's hooks without copying them
+                    // (the hooks are move-only). The referenced machinery must outlive
+                    // every run driven through this one — it is the region's own,
+                    // owned for the region's lifetime.
                     void aggregate_from(const StepMachinery& other)
                     {
-                        append(view_resyncs_, other.view_resyncs_);
-                        append(step_advancers_, other.step_advancers_);
-                        append(binding_updaters_, other.binding_updaters_);
-                        append(dist_io_updaters_, other.dist_io_updaters_);
+                        aggregated_.push_back(&other);
                     }
 
                 private:
-                    static void append(std::vector<std::function<void()>>& dst,
-                                       const std::vector<std::function<void()>>& src)
-                    {
-                        dst.insert(dst.end(), src.begin(), src.end());
-                    }
-
                     // One shared StateView per State, captured by every kernel that
                     // touches it. Type-erased; view_for() casts back to the typed view.
                     std::unordered_map<const void*, std::shared_ptr<void>> state_views_;
                     // States that already have an advancer (one writer per State).
                     std::unordered_set<const void*> advanced_states_;
                     // Points each view at its state's current/next; run before each run.
-                    std::vector<std::function<void()>> view_resyncs_;
+                    std::vector<StepHook> view_resyncs_;
                     // One per State update rule: advances the state and re-points its
                     // view at the swapped buffers, run once per step boundary by run(n).
-                    std::vector<std::function<void()>> step_advancers_;
+                    std::vector<StepHook> step_advancers_;
                     // One per dynamic (late-bound) task: refreshes its size/enable
                     // controls before each step. Empty unless a Dynamic add() was used.
-                    std::vector<std::function<void()>> binding_updaters_;
+                    std::vector<StepHook> binding_updaters_;
                     // One per double-buffered offload rule: re-points the node's live IO
                     // pointer lists at the step's current/next allocations before each
                     // step. Empty unless a distributed State step was added.
-                    std::vector<std::function<void()>> dist_io_updaters_;
+                    std::vector<StepHook> dist_io_updaters_;
+                    // Other machineries this one drives in addition to its own hooks. A
+                    // composer aggregates each live region's machinery here; empty for a
+                    // region's or a static graph's own machinery.
+                    std::vector<const StepMachinery*> aggregated_;
             };
         } // namespace detail
     } // namespace API
