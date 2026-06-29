@@ -30,7 +30,7 @@
 //   - Reads/Writes over Buffer::region() sub-region tracking
 //   - Buffer<T> standalone allocation and graph use
 //   - Graph::size()
-//   - Runtime::context() accessor
+//   - Runtime::advanced() / unsafe_context() accessors
 //   - run(0) edge case
 
 #include <atomic>
@@ -258,9 +258,9 @@ TEST(Integration_FluentAPI, SubRegionDisjointWritesThenWholeRead)
     auto g = rt.graph();
 
     // Lower half := 1, upper half := 2. Disjoint regions of buf -> unordered.
-    g.add(Reads(), Writes(buf.region(0, N / 2)), N / 2,
+    g.add(Reads(), Writes(buf.region({0, N / 2})), N / 2,
           [p](std::size_t i) { p[i] = 1; });
-    g.add(Reads(), Writes(buf.region(N / 2, N / 2)), N / 2,
+    g.add(Reads(), Writes(buf.region({N / 2, N / 2})), N / 2,
           [p](std::size_t i) { p[N / 2 + i] = 2; });
 
     // Whole-buffer read overlaps both halves -> ordered after both writers.
@@ -334,15 +334,17 @@ TEST(Integration_FluentAPI, GraphSizeTracksAdds)
     EXPECT_EQ(g.size(), 2u);
 }
 
-// Runtime::context() must return a reference to the same RuntimeContext
-// the fluent Runtime wraps. Verified by comparing device counts.
+// Runtime::unsafe_context() must return a reference to the same RuntimeContext
+// the fluent Runtime wraps, and advanced() must read through to it. Verified by
+// comparing device counts.
 TEST(Integration_FluentAPI, ContextAccessorIsConsistent)
 {
     auto rt = Runtime::create();
-    Execution::RuntimeContext& ctx = rt.context();
+    Execution::RuntimeContext& ctx = rt.unsafe_context();
 
     // device_count() should be > 0 (at least a CPU device is always present).
     EXPECT_GE(ctx.device_count(), 1u);
+    EXPECT_EQ(rt.advanced().device_count(), ctx.device_count());
 }
 
 // run(0) is documented as "zero steps" — it must return immediately and the

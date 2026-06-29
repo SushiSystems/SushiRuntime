@@ -9,6 +9,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- `Core::Delegate<Sig, Capacity>` — a move-only, allocation-free type-erased callable
+  that replaces `std::function` for the runtime's stored closures. It holds the target
+  in a fixed inline buffer with a hand-written three-entry vtable (invoke / move /
+  destroy), carries no RTTI, and never allocates: a capture too large for `Capacity` is
+  a compile error, not a silent heap spill. The late-binding `Dynamic` providers and
+  the per-step `StepMachinery` hooks now store `Delegate`s, so no per-step heap
+  allocation or `std::function` indirection remains on those paths.
+- `Buffer::host()` / `State::host()` — a branch-free bulk host view (`span<T>`) over a
+  shared buffer: the residency is checked once at acquisition, then the span indexes
+  with no further checks. Device-resident handles throw `invalid_access` (see Changed).
+- Dangling-resource detection: a `Buffer`/`State` now owns a `Core::Liveness` token and
+  a graph weakly observes it for every typed handle a task records. A run that
+  references a handle freed beforehand returns a `dangling_resource` error through
+  `try_run()` instead of dispatching a kernel against released memory. Raw-pointer
+  overloads opt out of tracking by design.
+- `DeviceIndex` and `ElementRange` strong types (`api/data/buffer.hpp`): a device
+  selector can no longer be confused with an element count, and a transfer/sub-range
+  window is one named value instead of a pair of bare `std::size_t` arguments.
+- `Runtime::advanced()` returns an `AdvancedControls` facade — a narrow, read-only view
+  of internal state (device count, profiling/rebalancer flags, transfer bytes) — so
+  callers no longer reach through the whole `RuntimeContext` for these.
 - Dynamic region-partitioned graph (`Runtime::dynamic_graph()`): the mutable
   counterpart to the static `graph()`, for streaming, open-world workloads where the
   set of work changes between steps. Work is grouped into regions keyed by a caller id
@@ -48,6 +69,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   reference. A concrete demonstration that the task graph behaves like a game engine.
 
 ### Changed
+- API hardening pass (source-breaking, no API freeze). `Buffer`/`State`/`Runtime`
+  `buffer()`/`state()` take a `DeviceIndex` instead of a bare `std::size_t` device
+  argument; `read_range`/`write_range`/`Buffer::region` take an `ElementRange` instead
+  of bare offset/count pairs (`buf.read_range({0, n})`, `buf.region({off, len})`).
+  `Buffer::operator[]` and the new `host()` throw `invalid_access` on a device-resident
+  handle in every build, where indexing was previously debug-asserted and undefined in
+  release. `Dynamic` is now move-only (its providers are `Delegate`s): pass a
+  `when()`/`sized()` temporary, or `std::move` a named `Dynamic`, into `add()`.
+  `Runtime::context()` is renamed `Runtime::unsafe_context()` to flag the
+  encapsulation escape hatch; routine reads move to `Runtime::advanced()`.
 - Grouped `Graph::Node`'s non-core concerns into cohesive sub-structs so each
   subsystem owns its own slice instead of editing one flat node: the dynamic graph's
   cross-region boundary fields move into `RegionLink Node::region`, the profiling

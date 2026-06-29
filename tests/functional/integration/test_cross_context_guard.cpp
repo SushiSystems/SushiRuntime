@@ -39,12 +39,12 @@ TEST(Integration_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
     constexpr std::size_t N = 256;
 
     auto rt = Runtime::create();
-    if (rt.context().device_count() < 2)
+    if (rt.advanced().device_count() < 2)
         GTEST_SKIP() << "needs at least two device contexts to straddle a boundary";
 
     // Two buffers pinned to different device queues (and thus contexts).
-    auto a = rt.buffer<int>(N, 0);
-    auto b = rt.buffer<int>(N, 1);
+    auto a = rt.buffer<int>(N, DeviceIndex{0});
+    auto b = rt.buffer<int>(N, DeviceIndex{1});
     int* pb = b.data();
     const int* pa = a.data();
 

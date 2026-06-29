@@ -198,11 +198,11 @@ in host-addressable shared USM. Pass `Residency::Device`; the host then seeds an
 reads it through `write_range`/`read_range` (it is no longer directly indexable):
 
 ```cpp
-auto field = rt.state<float>(N, 0, Residency::Device);   // stays on the device
+auto field = rt.state<float>(N, DeviceIndex{0}, Residency::Device);  // stays on the device
 std::vector<float> seed(N, 0.0f);
-field.write_range(0, seed.data(), N);                    // seed from the host
+field.write_range({0, N}, seed.data());                  // seed from the host
 sim.run(10000);
-auto window = field.read_range(0, 256);                  // pull a window back
+auto window = field.read_range({0, 256});                // pull a window back
 ```
 
 The fluent API is enough for most programs. The rest of this guide documents the
@@ -667,7 +667,7 @@ analysis can't see.
 
 The analysis works on **regions**, not whole buffers: two tasks are serialized
 only when their byte ranges actually overlap. Name a sub-range with
-`buffer.region(offset, count)` and pass it to `Reads(...)`/`Writes(...)`, and the
+`buffer.region({offset, count})` and pass it to `Reads(...)`/`Writes(...)`, and the
 runtime will run tasks on disjoint slices of one buffer in parallel — an array's
 two halves, or a grid's interior and its halo. A whole buffer (the default when
 you pass a handle) overlaps every slice of itself, so it stays conservative.
