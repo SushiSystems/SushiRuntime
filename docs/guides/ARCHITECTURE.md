@@ -218,15 +218,16 @@ The composition is incremental in two layers. Each region compiles once to a
 cached sub-graph (`TaskGraph::take_nodes()`) whose **interior** edges — the
 dependencies between tasks of the same region — are baked into the node objects
 and never touched again while the region is unchanged. Dependencies that **cross**
-a region boundary live in a separate layer on each node: `Node::boundary_in_degree`
-adds to the intra count the node already carries, and `Node::boundary_successors`
-is walked by the scheduler's `trigger_successors` alongside the inline/spillover
-intra successors. The composer owns this boundary layer. When a region streams in
-or out, only its own nodes are (re)built and only the allocations it *shares* with
-other regions are re-stitched: the composer un-wires those bases' boundary edges,
-rebuilds the changed region, and re-derives just those bases' cross-region edges.
-A node's live `in_degree` is re-armed each step as `intra_in_degree +
-boundary_in_degree` (`Node::arm_in_degree`), and the entry/root set and the
+a region boundary live in a separate layer on each node, grouped into a
+`RegionLink Node::region`: `region.boundary_in_degree` adds to the intra count the
+node already carries, and `region.boundary_successors` is walked by the scheduler's
+`trigger_successors` alongside the inline/spillover intra successors. The composer
+owns this boundary layer. When a region streams in or out, only its own nodes are
+(re)built and only the allocations it *shares* with other regions are re-stitched:
+the composer un-wires those bases' boundary edges, rebuilds the changed region, and
+re-derives just those bases' cross-region edges. A node's live `in_degree` is
+re-armed each step as `region.intra_in_degree + region.boundary_in_degree`
+(`Node::arm_in_degree`), and the entry/root set and the
 completion sentinel's leaf links are maintained incrementally as boundary edges
 appear and vanish — so a commit costs O(changed region + affected boundary pins)
 and never re-scans the untouched world.
@@ -468,8 +469,20 @@ Builds and analyzes the task DAG.
   inline before spilling to a vector;
 - `bool is_fused` — marks the node as the product of kernel fusion; set by the
   API layer, reserved for a future fusion pass;
-- `uint32_t offload_attempts_` (atomic, distributed builds only) — how many times
-  this node has been offered to a remote worker; capped to prevent infinite retry.
+- non-core concerns are grouped into cohesive sub-structs so each subsystem owns
+  its own slice rather than editing one flat node: `RegionLink region` (the dynamic
+  graph's cross-region boundary layer — `intra_in_degree`, `boundary_in_degree`,
+  `boundary_successors`, leaf/sentinel flags) and `NodeProfiling profiling`
+  (`invocations` / `device_ns` / `host_ns`, written only when profiling is on), both
+  inline;
+- `std::unique_ptr<NodeExtensions> ext_` — one **unconditional** pointer to lazily
+  allocated optional state, so `Node`'s layout never depends on a build flag. The
+  distributed `OffloadState` (`offloadable`, `remote_op`, the buffer handles, the
+  `attempts` retry cap) lives in `NodeExtensions` and is reached through
+  `Node::offload()` (mutable, allocates on first use) and `Node::offload_state()`
+  (read, nullable). A standalone build never allocates it and pulls in no distributed
+  symbol; either way `sizeof(Node)` is identical, so the flag no longer changes the
+  node's ABI.
 
 `add_successor` is lock-free: it bumps an atomic index into the inline array, and
 only on overflow allocates a `SuccessorNode` and CAS-pushes it onto the list.
@@ -527,7 +540,7 @@ either a host-work body or a device body + host fallback.
   *owns* every node (`sushi_ptr`) to keep them alive for the whole run — internal
   dependencies use raw `Node*`, so premature destruction would be use-after-free;
 - in Master mode (distributed builds), also **stamps** which nodes are offloadable
-  and initializes `offload_attempts_`.
+  and initializes `offload.attempts`.
 
 ---
 

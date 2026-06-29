@@ -60,7 +60,7 @@ namespace SushiRuntime
          * (intra-region) edges are baked once and never touched again while the
          * region is unchanged. Dependencies that cross a region boundary — two
          * regions sharing a buffer — live in a separate layer on each node
-         * (Node::boundary_in_degree / boundary_successors) that the composer
+         * (Node::region, a RegionLink) that the composer
          * maintains. When a region streams in or out only its own nodes are rebuilt
          * and only the boundary edges of the allocations it shares are re-derived;
          * the interior of every other region, and every boundary that did not
@@ -289,25 +289,25 @@ namespace SushiRuntime
 
                 // Links a leaf node to the completion sentinel: appends the sentinel
                 // to its boundary successors and counts it on the sentinel's baseline
-                // (kept in intra_in_degree, the sentinel having no other predecessor).
+                // (kept in region.intra_in_degree, the sentinel having no other predecessor).
                 void link_sentinel(Node* n)
                 {
-                    if (n->sentinel_linked) return;
-                    n->boundary_successors.push_back(sentinel_.get());
-                    sentinel_->intra_in_degree += 1;
-                    n->sentinel_linked = true;
+                    if (n->region.sentinel_linked) return;
+                    n->region.boundary_successors.push_back(sentinel_.get());
+                    sentinel_->region.intra_in_degree += 1;
+                    n->region.sentinel_linked = true;
                 }
 
                 // Removes a node's sentinel link (it gained a real successor or is
                 // being torn down).
                 void unlink_sentinel(Node* n)
                 {
-                    if (!n->sentinel_linked) return;
-                    auto& v = n->boundary_successors;
+                    if (!n->region.sentinel_linked) return;
+                    auto& v = n->region.boundary_successors;
                     for (auto it = v.begin(); it != v.end(); ++it)
                         if (*it == sentinel_.get()) { v.erase(it); break; }
-                    sentinel_->intra_in_degree -= 1;
-                    n->sentinel_linked = false;
+                    sentinel_->region.intra_in_degree -= 1;
+                    n->region.sentinel_linked = false;
                 }
 
                 // Adds one cross-region edge from->to for base b. A node that gains an
@@ -315,12 +315,12 @@ namespace SushiRuntime
                 // a node that gains a cross-region predecessor stops being a root.
                 void add_cross_edge(Node* from, Node* to, Base b)
                 {
-                    if (from->sentinel_linked)
+                    if (from->region.sentinel_linked)
                         unlink_sentinel(from);
-                    from->boundary_successors.push_back(to);
+                    from->region.boundary_successors.push_back(to);
 
-                    const int32_t prev = to->boundary_in_degree.fetch_add(1, std::memory_order_relaxed);
-                    if (prev == 0 && to->intra_in_degree == 0)
+                    const int32_t prev = to->region.boundary_in_degree.fetch_add(1, std::memory_order_relaxed);
+                    if (prev == 0 && to->region.intra_in_degree == 0)
                         roots_.erase(to);
 
                     base_edges_[b].push_back({from, to});
@@ -330,18 +330,18 @@ namespace SushiRuntime
                 // both the root and the sentinel bookkeeping of add_cross_edge.
                 void remove_cross_edge(Node* from, Node* to)
                 {
-                    auto& v = from->boundary_successors;
+                    auto& v = from->region.boundary_successors;
                     for (auto it = v.begin(); it != v.end(); ++it)
                         if (*it == to) { v.erase(it); break; }
 
-                    const int32_t prev = to->boundary_in_degree.fetch_sub(1, std::memory_order_relaxed);
-                    if (prev == 1 && to->intra_in_degree == 0)
+                    const int32_t prev = to->region.boundary_in_degree.fetch_sub(1, std::memory_order_relaxed);
+                    if (prev == 1 && to->region.intra_in_degree == 0)
                         roots_.insert(to);
 
                     // `from` may have just lost its last exported successor; if it is an
                     // intra-leaf with no remaining cross-region successor it becomes a
                     // true leaf again and must release the sentinel.
-                    if (from->intra_leaf && !from->sentinel_linked && from->boundary_successors.empty())
+                    if (from->region.intra_leaf && !from->region.sentinel_linked && from->region.boundary_successors.empty())
                         link_sentinel(from);
                 }
 
@@ -423,15 +423,15 @@ namespace SushiRuntime
                     for (auto& np : st.nodes)
                     {
                         Node* n = np.get();
-                        n->intra_in_degree = n->in_degree.load(std::memory_order_relaxed);
-                        n->boundary_in_degree.store(0, std::memory_order_relaxed);
-                        n->boundary_successors.clear();
-                        n->sentinel_linked = false;
-                        n->intra_leaf =
+                        n->region.intra_in_degree = n->in_degree.load(std::memory_order_relaxed);
+                        n->region.boundary_in_degree.store(0, std::memory_order_relaxed);
+                        n->region.boundary_successors.clear();
+                        n->region.sentinel_linked = false;
+                        n->region.intra_leaf =
                             n->inline_successor_count.load(std::memory_order_relaxed) == 0 &&
                             n->successor_list.load(std::memory_order_relaxed) == nullptr;
                         n->plan_index = plan_index_counter_++;
-                        if (n->intra_in_degree == 0)
+                        if (n->region.intra_in_degree == 0)
                             st.intra_roots.push_back(n);
                     }
 
@@ -583,7 +583,7 @@ namespace SushiRuntime
                         for (Node* r : st.intra_roots)
                             roots_.insert(r);   // fresh nodes carry no boundary in-degree yet
                         for (auto& np : st.nodes)
-                            if (np->intra_leaf) link_sentinel(np.get());
+                            if (np->region.intra_leaf) link_sentinel(np.get());
                     }
 
                     // Re-derive the boundary edges of every dirty allocation.
@@ -620,7 +620,8 @@ namespace SushiRuntime
 #ifdef SR_DISTRIBUTED
                     for (auto& kv : states_)
                         for (auto& np : kv.second.nodes)
-                            np->offload_attempts_.store(0, std::memory_order_relaxed);
+                            if (auto* off = np->offload_state())
+                                off->attempts.store(0, std::memory_order_relaxed);
 #endif
                 }
 
@@ -746,12 +747,13 @@ namespace SushiRuntime
                 std::map<Base, std::set<RegionKey>>      base_regions_;
                 std::map<Base, std::vector<BoundaryEdge>> base_edges_;
 
-                // Current DAG entry points (intra_in_degree == 0 and boundary_in_degree
-                // == 0), maintained incrementally as boundary edges and regions change.
+                // Current DAG entry points (region.intra_in_degree == 0 and
+                // region.boundary_in_degree == 0), maintained incrementally as
+                // boundary edges and regions change.
                 std::unordered_set<Node*> roots_;
 
                 // The single completion sentinel, persistent across commits; its
-                // baseline in-degree (kept in intra_in_degree) is the current leaf count.
+                // baseline in-degree (kept in region.intra_in_degree) is the current leaf count.
                 sushi_ptr<Node> sentinel_;
 
                 // Pending structural changes applied at the next commit.

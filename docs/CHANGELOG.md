@@ -19,7 +19,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   compiles once to a cached sub-graph whose interior (intra-region) edges are baked
   into the node objects and never re-touched while it is unchanged, and dependencies
   that cross a region boundary live in a separate layer on the node
-  (`Node::boundary_in_degree` / `boundary_successors`, walked by the scheduler's
+  (`Node::region`, a `RegionLink`, walked by the scheduler's
   `trigger_successors`). When a region streams in or out only its own nodes are
   rebuilt and only the boundaries of the allocations it *shares* are re-stitched, so
   a commit costs O(changed region + affected boundary pins), independent of the size
@@ -29,9 +29,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   completion sentinel's leaf links are maintained incrementally. `compile_count()`
   holds at 1 across an unmutated multi-step run and advances by exactly one per
   mutation, not per region. New `TaskGraph::take_nodes()`, `Node::arm_in_degree` /
-  `clear_boundary`, and `Region` / `DynamicGraph` API headers (`api/region.hpp`,
-  `api/dynamic_graph.hpp`). The runtime owns the mechanism; *which* region streams
-  when is a consumer (SushiEngine) policy.
+  `RegionLink::clear`, and `Region` / `DynamicGraph` API headers
+  (`api/graph/region.hpp`, `api/graph/dynamic_graph.hpp`). The runtime owns the
+  mechanism; *which* region streams when is a consumer (SushiEngine) policy.
 - Cross-context co-location guard (§5.4): a single SYCL kernel cannot dereference USM
   from two non-peer device contexts. The scheduler now verifies, on a node's first
   dispatch, that all of its buffers share one device context, and fails the run with a
@@ -48,6 +48,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   reference. A concrete demonstration that the task graph behaves like a game engine.
 
 ### Changed
+- Grouped `Graph::Node`'s non-core concerns into cohesive sub-structs so each
+  subsystem owns its own slice instead of editing one flat node: the dynamic graph's
+  cross-region boundary fields move into `RegionLink Node::region`, the profiling
+  accumulators into `NodeProfiling Node::profiling`, and the distributed offload state
+  (distributed builds only) into `OffloadState Node::offload`. Field accesses are now
+  `node.region.boundary_successors`, `node.profiling.invocations`,
+  `node.offload().offloadable`, and so on; `Node::clear_boundary()` became
+  `RegionLink::clear()`. Internal-only — no public API, behaviour, or hot-path change;
+  the scheduler still walks the same inline fields at the same offsets.
+- Made `Graph::Node`'s layout independent of `SR_DISTRIBUTED`. The offload state now
+  lives in a lazily-allocated `NodeExtensions` reached through one unconditional
+  `Node::ext_` pointer (`OffloadState Node::offload()` / `offload_state()`), instead
+  of an `#ifdef`'d inline member that changed `sizeof(Node)` between builds. A
+  standalone build never allocates the extensions and pulls in no distributed symbol;
+  a distributed build allocates them lazily when a node first records offload state.
+  This removes the build-flag ABI coupling on `Node` — the library and its consumers
+  now agree on `sizeof(Node)` whether or not the distributed layer is compiled in.
 - Reusable completion latch (§5.1): `ExecutionEngine::execute` no longer allocates a
   `std::promise`/`std::future` pair (and a capturing sentinel closure) per step. One
   mutex+condition_variable latch lives on the engine and is reset, armed, and waited

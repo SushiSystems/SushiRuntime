@@ -261,9 +261,9 @@ namespace SushiRuntime
         {
             for (auto& n : graph.all_nodes)
             {
-                n->prof_invocations.store(0, std::memory_order_relaxed);
-                n->prof_device_ns.store(0, std::memory_order_relaxed);
-                n->prof_host_ns.store(0, std::memory_order_relaxed);
+                n->profiling.invocations.store(0, std::memory_order_relaxed);
+                n->profiling.device_ns.store(0, std::memory_order_relaxed);
+                n->profiling.host_ns.store(0, std::memory_order_relaxed);
             }
             impl_->scheduler.reset_worker_times();
         }
@@ -277,15 +277,15 @@ namespace SushiRuntime
             for (auto& n : graph.all_nodes)
             {
                 if (n->is_sentinel) continue;
-                const std::uint64_t inv = n->prof_invocations.load(std::memory_order_relaxed);
+                const std::uint64_t inv = n->profiling.invocations.load(std::memory_order_relaxed);
                 if (inv == 0) continue;
 
                 Core::NodeTiming t;
                 t.plan_index  = n->plan_index;
                 t.name        = n->metadata.name;
                 t.invocations = static_cast<std::size_t>(inv);
-                t.device_ms   = n->prof_device_ns.load(std::memory_order_relaxed) / 1.0e6;
-                t.host_ms     = n->prof_host_ns.load(std::memory_order_relaxed) / 1.0e6;
+                t.device_ms   = n->profiling.device_ns.load(std::memory_order_relaxed) / 1.0e6;
+                t.host_ms     = n->profiling.host_ns.load(std::memory_order_relaxed) / 1.0e6;
                 report.node_timings.push_back(std::move(t));
             }
 
@@ -493,7 +493,8 @@ namespace SushiRuntime
                                           std::memory_order_relaxed);
 #ifdef SR_DISTRIBUTED
             for (auto& n : all_nodes)
-                n->offload_attempts_.store(0, std::memory_order_relaxed);
+                if (auto* off = n->offload_state())
+                    off->attempts.store(0, std::memory_order_relaxed);
 #endif
         }
 

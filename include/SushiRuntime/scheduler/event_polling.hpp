@@ -308,7 +308,7 @@ namespace SushiRuntime
                     if (node->is_sentinel)
                         return;
 
-                    node->prof_invocations.fetch_add(1, std::memory_order_relaxed);
+                    node->profiling.invocations.fetch_add(1, std::memory_order_relaxed);
 
                     if (pe.event == sycl::event{})
                         return;
@@ -319,8 +319,8 @@ namespace SushiRuntime
                         const auto end = pe.event.get_profiling_info<
                             sycl::info::event_profiling::command_end>();
                         if (end > start)
-                            node->prof_device_ns.fetch_add(end - start,
-                                                           std::memory_order_relaxed);
+                            node->profiling.device_ns.fetch_add(end - start,
+                                                                std::memory_order_relaxed);
                     }
                     catch (...)
                     {
@@ -381,7 +381,7 @@ namespace SushiRuntime
                     // acq_rel ordering as the intra successors above. Empty (and so
                     // skipped) for every static-graph node and every dynamic node
                     // that exports nothing across a boundary.
-                    for (auto* succ : node->boundary_successors)
+                    for (auto* succ : node->region.boundary_successors)
                     {
                         if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
                         {
