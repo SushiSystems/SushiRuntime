@@ -188,3 +188,28 @@ TEST(Integration_FluentLifecycle, EmptyGraphIsInvalid)
     ASSERT_FALSE(r);
     EXPECT_EQ(r.error().code, Errc::invalid_graph);
 }
+
+/**
+ * @brief A graph that outlives a Buffer it recorded fails cleanly, not with UB.
+ *
+ * The graph tracks the liveness of every typed handle it touches, so a run after
+ * the Buffer was freed returns a dangling_resource error through try_run() instead
+ * of dispatching a kernel against released memory.
+ */
+TEST(Integration_FluentLifecycle, DanglingResourceIsReported)
+{
+    constexpr std::size_t N = 64;
+
+    auto rt  = Runtime::create();
+    auto sim = rt.graph();
+
+    {
+        auto buf = rt.buffer<int>(N);
+        int* p = buf.data();
+        sim.add(Reads(), Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    }   // buf is destroyed here, before the graph runs
+
+    auto r = sim.try_run();
+    ASSERT_FALSE(r);
+    EXPECT_EQ(r.error().code, Errc::dangling_resource);
+}

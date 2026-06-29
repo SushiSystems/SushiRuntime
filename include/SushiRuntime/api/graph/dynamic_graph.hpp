@@ -631,6 +631,10 @@ namespace SushiRuntime
                     if (regions_.empty())
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "DynamicGraph has no regions to run."});
+                    for (const auto& kv : regions_)
+                        if (static_cast<const Graph&>(*kv.second).has_dangling_resource())
+                            return Core::make_error(Core::Error{Core::Errc::dangling_resource,
+                                "DynamicGraph region references a Buffer/State freed before the run."});
                     try
                     {
                         return drive_impl(keep_going);

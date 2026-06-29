@@ -23,20 +23,48 @@
 
 #pragma once
 
-#include <cassert>
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/resource_liveness.hpp>
 #include <SushiRuntime/core/resource_region.hpp>
+#include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/core/strong_id.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime
 {
     namespace API
     {
+        /**
+         * @brief Which device queue an allocation is pinned to.
+         *
+         * A strong typedef so a device selector cannot be confused with an element
+         * count or an offset at a call site — buffer(count, DeviceIndex{1}) reads
+         * unambiguously and a swapped argument is a compile error, not a silent
+         * allocation on the wrong device.
+         */
+        using DeviceIndex = Core::StrongId<struct DeviceIndexTag>;
+
+        /**
+         * @brief A half-open element range [offset, offset + count) into a handle.
+         *
+         * Names a window of a Buffer or State for the transfer and sub-region calls.
+         * Bundling the two counts into one named value keeps a caller from passing
+         * them in the wrong order — the failure a pair of bare std::size_t arguments
+         * invites. Counts are in elements, not bytes.
+         */
+        struct ElementRange
+        {
+            std::size_t offset = 0;  /**< First element of the range. */
+            std::size_t count = 0;   /**< Number of elements in the range. */
+        };
+
         /**
          * @brief Where a Buffer/State keeps its memory across steps.
          *
@@ -93,16 +121,17 @@ namespace SushiRuntime
                  * @param residency    Shared (host-addressable) or Device (resident).
                  */
                 Buffer(std::shared_ptr<Execution::RuntimeContext> ctx,
-                       std::size_t count, std::size_t device_index = 0,
+                       std::size_t count, DeviceIndex device_index = DeviceIndex{0},
                        Residency residency = Residency::Shared)
                     : ctx_(std::move(ctx)),
                       ptr_(static_cast<T*>(
                           residency == Residency::Device
-                              ? ctx_->malloc_device_on(count * sizeof(T), device_index)
-                              : ctx_->malloc_shared_on(count * sizeof(T), device_index))),
+                              ? ctx_->malloc_device_on(count * sizeof(T), device_index.value())
+                              : ctx_->malloc_shared_on(count * sizeof(T), device_index.value()))),
                       size_(count),
                       device_index_(device_index),
-                      residency_(residency)
+                      residency_(residency),
+                      liveness_(Core::make_liveness())
                 {
                 }
 
@@ -121,7 +150,8 @@ namespace SushiRuntime
                       ptr_(other.ptr_),
                       size_(other.size_),
                       device_index_(other.device_index_),
-                      residency_(other.residency_)
+                      residency_(other.residency_),
+                      liveness_(std::move(other.liveness_))
                 {
                     other.ptr_ = nullptr;
                     other.size_ = 0;
@@ -138,6 +168,7 @@ namespace SushiRuntime
                         size_ = other.size_;
                         device_index_ = other.device_index_;
                         residency_ = other.residency_;
+                        liveness_ = std::move(other.liveness_);
                         other.ptr_ = nullptr;
                         other.size_ = 0;
                     }
@@ -154,7 +185,7 @@ namespace SushiRuntime
                 bool empty() const noexcept { return ptr_ == nullptr; }
 
                 /** @brief Device queue index the allocation is pinned to. */
-                std::size_t device_index() const noexcept { return device_index_; }
+                DeviceIndex device_index() const noexcept { return device_index_; }
 
                 /** @brief Where the allocation lives (shared or device-resident). */
                 Residency residency() const noexcept { return residency_; }
@@ -165,15 +196,40 @@ namespace SushiRuntime
                 /**
                  * @brief Host-side element access; valid only for shared USM.
                  *
-                 * Device-resident memory is not host-addressable: dereferencing it on
-                 * the host is undefined, so this asserts host_accessible() in debug
-                 * builds. For device residency use read_range()/write_range() instead.
+                 * Device-resident memory is not host-addressable, so indexing it on the
+                 * host is invalid. Rather than dereference into undefined behaviour, this
+                 * throws on a device-resident buffer — a deterministic failure in every
+                 * build, not just a debug assert. For device residency use
+                 * read_range()/write_range(), or host() for a bulk host view. Kernels
+                 * capture data() directly and never go through this operator, so the
+                 * residency check costs nothing on the device path.
+                 *
+                 * @param i Element index to access.
+                 * @return A reference to element @p i.
+                 * @throws SushiException If the buffer is device-resident.
                  */
-                T& operator[](std::size_t i) const noexcept
+                T& operator[](std::size_t i) const
                 {
-                    assert(host_accessible() &&
-                           "device-resident buffer is not host-indexable; use read_range/write_range");
+                    require_host_accessible("Buffer::operator[]");
                     return ptr_[i];
+                }
+
+                /**
+                 * @brief A host-addressable view over the whole buffer.
+                 *
+                 * The branch-free bulk seam for host code: the residency is checked once,
+                 * here, and the returned span indexes with no further checks — seed or
+                 * read back in a tight loop without paying per-element validation. Valid
+                 * only for shared USM; a device-resident buffer throws, since its memory
+                 * is not host-addressable (use read_range()/write_range() there).
+                 *
+                 * @return A span over all elements, valid while this buffer lives.
+                 * @throws SushiException If the buffer is device-resident.
+                 */
+                span<T> host() const
+                {
+                    require_host_accessible("Buffer::host");
+                    return span<T>(ptr_, size_);
                 }
 
                 /**
@@ -185,12 +241,13 @@ namespace SushiRuntime
                  * Synchronous: the copy is waited on before returning. The range is
                  * clamped to what the buffer holds.
                  *
-                 * @param offset First element to read.
-                 * @param count  Number of elements to read; clamped to the remainder.
+                 * @param range Element window to read; count is clamped to the remainder.
                  * @return A host vector holding the copied elements.
                  */
-                std::vector<T> read_range(std::size_t offset, std::size_t count) const
+                std::vector<T> read_range(ElementRange range) const
                 {
+                    const std::size_t offset = range.offset;
+                    std::size_t count = range.count;
                     const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
                     if (count > avail) count = avail;
                     std::vector<T> out(count);
@@ -210,12 +267,13 @@ namespace SushiRuntime
                  * buffer the host cannot index. Synchronous: the copy is waited on
                  * before returning. The range is clamped to what the buffer holds.
                  *
-                 * @param offset First element to write.
-                 * @param src    Host source of at least @p count elements.
-                 * @param count  Number of elements to write; clamped to the remainder.
+                 * @param range Element window to write; count is clamped to the remainder.
+                 * @param src   Host source of at least range.count elements.
                  */
-                void write_range(std::size_t offset, const T* src, std::size_t count)
+                void write_range(ElementRange range, const T* src)
                 {
+                    const std::size_t offset = range.offset;
+                    std::size_t count = range.count;
                     const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
                     if (count > avail) count = avail;
                     if (count && ptr_ && ctx_ && src)
@@ -238,6 +296,19 @@ namespace SushiRuntime
                 void* dependency_key() const noexcept { return static_cast<void*>(ptr_); }
 
                 /**
+                 * @brief A weak observer of this buffer's allocation lifetime.
+                 *
+                 * A graph that records this buffer keeps the returned observer; it stays
+                 * valid while the buffer lives and expires when the buffer is destroyed
+                 * or moved-from. That lets a run detect a buffer freed before it ran and
+                 * fail cleanly instead of dispatching against released memory. Empty for
+                 * a handle that owns no allocation.
+                 *
+                 * @return A weak observer of the allocation, empty when this handle is empty.
+                 */
+                Core::LivenessObserver liveness() const noexcept { return liveness_; }
+
+                /**
                  * @brief Names a sub-range of this buffer for fine-grained ordering.
                  *
                  * Two tasks declaring regions of the same buffer are serialized only
@@ -246,12 +317,13 @@ namespace SushiRuntime
                  * Reads(...)/Writes(...) in place of the buffer itself. Offsets are in
                  * elements; the buffer keeps the whole-buffer default when used bare.
                  *
-                 * @param offset First element of the range.
-                 * @param count  Number of elements; clamped to what remains after @p offset.
-                 * @return A region keyed on this allocation, covering [offset, offset+count).
+                 * @param range Element window to name; count is clamped to the remainder.
+                 * @return A region keyed on this allocation, covering the element window.
                  */
-                Core::ResourceRegion region(std::size_t offset, std::size_t count) const noexcept
+                Core::ResourceRegion region(ElementRange range) const noexcept
                 {
+                    const std::size_t offset = range.offset;
+                    std::size_t count = range.count;
                     const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
                     if (count > avail) count = avail;
                     return Core::ResourceRegion{static_cast<void*>(ptr_),
@@ -295,6 +367,17 @@ namespace SushiRuntime
 #endif // SR_DISTRIBUTED
 
             private:
+                /** @brief Throws an invalid_access error when host indexing is invalid. */
+                void require_host_accessible(const char* where) const
+                {
+                    if (!host_accessible())
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::invalid_access,
+                            std::string(where) +
+                            ": device-resident buffer is not host-addressable; "
+                            "use read_range()/write_range()."});
+                }
+
                 /** @brief Frees the owned allocation and clears the handle. */
                 void reset() noexcept
                 {
@@ -302,18 +385,24 @@ namespace SushiRuntime
                         ctx_->free_usm(ptr_);
                     ptr_ = nullptr;
                     size_ = 0;
+                    // Drop the token so any graph observing this allocation sees it
+                    // expire — the signal that the buffer no longer backs its pointer.
+                    liveness_.reset();
                 }
 
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
                 T* ptr_ = nullptr;
                 std::size_t size_ = 0;
-                std::size_t device_index_ = 0;
+                DeviceIndex device_index_ = DeviceIndex{0};
                 Residency residency_ = Residency::Shared;
+                Core::LivenessToken liveness_;
         };
 
     } // namespace API
 
     using API::Buffer;
     using API::Residency;
+    using API::DeviceIndex;
+    using API::ElementRange;
 
 } // namespace SushiRuntime

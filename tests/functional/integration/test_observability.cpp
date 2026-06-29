@@ -47,7 +47,7 @@ TEST(Integration_Observability, ProfilingOffLeavesBreakdownEmpty)
     constexpr std::size_t N = 256;
 
     auto rt  = Runtime::create();                 // no profiling
-    EXPECT_FALSE(rt.context().profiling_enabled());
+    EXPECT_FALSE(rt.advanced().profiling_enabled());
 
     auto buf = rt.buffer<int>(N);
     int* p = buf.data();
@@ -66,7 +66,7 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
     constexpr std::size_t STEPS = 8;
 
     auto rt = Runtime::create({}, profiling_config());
-    ASSERT_TRUE(rt.context().profiling_enabled());
+    ASSERT_TRUE(rt.advanced().profiling_enabled());
 
     auto a = rt.buffer<float>(N);
     auto b = rt.buffer<float>(N);
@@ -128,12 +128,12 @@ TEST(Integration_Observability, ExplicitTransfersAreAccounted)
 
     // The context counts the runtime-issued copies directly.
     std::vector<int> src(N, 7);
-    buf.write_range(0, src.data(), N);
-    EXPECT_EQ(rt.context().host_to_device_bytes(), N * sizeof(int));
+    buf.write_range({0, N}, src.data());
+    EXPECT_EQ(rt.advanced().host_to_device_bytes(), N * sizeof(int));
 
-    auto out = buf.read_range(0, N);
+    auto out = buf.read_range({0, N});
     ASSERT_EQ(out.size(), N);
-    EXPECT_EQ(rt.context().device_to_host_bytes(), N * sizeof(int));
+    EXPECT_EQ(rt.advanced().device_to_host_bytes(), N * sizeof(int));
 }
 
 TEST(Integration_Observability, TransferBytesAttributedToTheRunWindow)
@@ -147,7 +147,7 @@ TEST(Integration_Observability, TransferBytesAttributedToTheRunWindow)
     // A host node that pushes data during the run: the bytes land in this run's
     // window, not before it.
     auto g = rt.graph();
-    g.add_host([&buf, &src]() { buf.write_range(0, src.data(), N); });
+    g.add_host([&buf, &src]() { buf.write_range({0, N}, src.data()); });
     auto rep = g.run();
 
     EXPECT_EQ(rep.host_to_device_bytes, N * sizeof(int));

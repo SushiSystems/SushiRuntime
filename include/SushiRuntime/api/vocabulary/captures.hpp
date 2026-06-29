@@ -26,6 +26,7 @@
 #include <type_traits>
 
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/core/resource_liveness.hpp>
 
 namespace SushiRuntime
 {
@@ -45,11 +46,12 @@ namespace SushiRuntime
         {
             const T* ptr;  /**< Element pointer handed to the kernel. */
             void* key;     /**< Read dependency key for this argument. */
+            Core::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
             static constexpr bool reads = true;   /**< Contributes a read key. */
             static constexpr bool writes = false; /**< Contributes no write key. */
 
             /** @brief Captures @p b as a read-only kernel argument. */
-            In(const Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()) {}
+            In(const Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
         };
 
         /**
@@ -61,11 +63,12 @@ namespace SushiRuntime
         {
             T* ptr;        /**< Element pointer handed to the kernel. */
             void* key;     /**< Write dependency key for this argument. */
+            Core::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
             static constexpr bool reads = false;  /**< Contributes no read key. */
             static constexpr bool writes = true;  /**< Contributes a write key. */
 
             /** @brief Captures @p b as a write-only kernel argument. */
-            Out(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()) {}
+            Out(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
         };
 
         /**
@@ -77,11 +80,12 @@ namespace SushiRuntime
         {
             T* ptr;        /**< Element pointer handed to the kernel. */
             void* key;     /**< Dependency key counted as both read and write. */
+            Core::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
             static constexpr bool reads = true;   /**< Contributes a read key. */
             static constexpr bool writes = true;  /**< Contributes a write key. */
 
             /** @brief Captures @p b as a read-and-write kernel argument. */
-            InOut(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()) {}
+            InOut(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
         };
 
         // Class-template argument deduction so the wrapper element type follows the

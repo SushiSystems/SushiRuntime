@@ -38,7 +38,7 @@ TEST(Integration_PerfControls, RebalancerToggleKeepsExecutionCorrect)
     auto rt = Runtime::create();
 
     // On by default.
-    EXPECT_TRUE(rt.context().get_execution_engine().rebalancer_enabled());
+    EXPECT_TRUE(rt.advanced().rebalancer_enabled());
 
     auto buf = rt.buffer<int>(N);
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
@@ -50,14 +50,14 @@ TEST(Integration_PerfControls, RebalancerToggleKeepsExecutionCorrect)
 
     // Disabled: a run still produces correct results without the background thread.
     rt.rebalancer(false);
-    EXPECT_FALSE(rt.context().get_execution_engine().rebalancer_enabled());
+    EXPECT_FALSE(rt.advanced().rebalancer_enabled());
     g.run();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer off, at i=" << i;
 
     // Re-enabled: still correct, and the flag reflects the change.
     rt.rebalancer(true);
-    EXPECT_TRUE(rt.context().get_execution_engine().rebalancer_enabled());
+    EXPECT_TRUE(rt.advanced().rebalancer_enabled());
     g.run();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer on, at i=" << i;
