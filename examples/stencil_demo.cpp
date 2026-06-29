@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* fluent_stencil_2d.cpp                                                  */
+/* stencil_demo.cpp                                                       */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,9 +22,9 @@
 /**************************************************************************/
 
 // A 2-D heat-diffusion stencil written entirely against the fluent API: a
-// double-buffered State, a multidimensional Extent that updates only the
-// interior (the fixed Dirichlet border is the halo it skips), and a stepped run.
-// No raw sycl::handler, no manual ping-pong.
+// double-buffered State, a multidimensional Extent that updates only the interior
+// (the fixed Dirichlet border is the halo it skips), and a stepped run. No raw
+// sycl::handler, no manual ping-pong.
 
 #include <cstdio>
 

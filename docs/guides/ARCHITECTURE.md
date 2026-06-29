@@ -914,7 +914,8 @@ include/SushiRuntime/      Public API (the headers this document describes)
                BufferRegistry, coordinator, worker agent, IOffloadPolicy, WorkerStats
 src/                       Implementations of the above
 tests/                     functional/ (unit, integration, regression) + benchmark/
-examples/                  distributed_demo (distributed builds only)
+examples/                  fluent tutorials: quickstart + *_demo (always built);
+                           distributed_demo (distributed builds only)
 docs/                      guides + these architecture/process docs
 ```
 

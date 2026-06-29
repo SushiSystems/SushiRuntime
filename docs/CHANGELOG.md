@@ -61,12 +61,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   steady-state replay pays nothing. Full cross-device execution (splitting data with
   the work via region ownership and halo exchange) is deferred to WP-5; this enforces
   the co-location contract until then. New `RuntimeContext::context_index_for_ptr`.
-- Game-engine worked example (`tests/.../test_game_engine_example.cpp`): a 4096-entity
+- Game-engine worked example (`examples/game_engine_demo.cpp`): a 4096-entity
   particle world — gravity, integration, floor collision, and deferred culling — built
   entirely on the fluent API, where the four systems are ordered purely by the
   component buffers they read and write (the dependency tracker is the system
   scheduler), compiled once and replayed per frame, and checked against a scalar
   reference. A concrete demonstration that the task graph behaves like a game engine.
+- Reorganised the `examples/` tree onto the fluent API under one naming rule —
+  `quickstart.cpp` plus `<topic>_demo.cpp`: `quickstart` (1-D heat State),
+  `vecadd_demo` (buffers and automatic dependency ordering), `stencil_demo` (2-D
+  interior-only stencil, formerly `fluent_stencil_2d.cpp`), `coupled_fields_demo`
+  (Jacobi coupled States), `game_engine_demo` (the ECS frame loop, moved out of the
+  test suite), `streaming_world_demo` (a dynamic region graph that streams tiles in
+  and out), and `distributed_demo` (unchanged). The old `fluent_quickstart.cpp` and
+  `fluent_stencil_2d.cpp` and their `sr_fluent_*` targets are replaced; the
+  `test_game_engine_example` integration test is removed in favour of the runnable
+  example.
 
 ### Changed
 - API hardening pass (source-breaking, no API freeze). `Buffer`/`State`/`Runtime`
