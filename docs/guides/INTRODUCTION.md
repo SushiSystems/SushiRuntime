@@ -330,7 +330,7 @@ applies the SYCL flags for you. Drop your `.cpp` into `examples/` and add it to
 add_executable(my_first_program my_first_program.cpp)
 target_link_libraries(my_first_program PRIVATE sushiruntime)
 set_target_properties(my_first_program PROPERTIES
-    CXX_STANDARD 20
+    CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON)
 add_sycl_to_target(TARGET my_first_program SOURCES my_first_program.cpp)
 ```

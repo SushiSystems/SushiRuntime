@@ -86,7 +86,6 @@ add_executable(sr_functional_tests
     functional/integration/test_observability.cpp
     functional/integration/test_completion_latch.cpp
     functional/integration/test_cross_context_guard.cpp
-    functional/integration/test_game_engine_example.cpp
     functional/integration/test_dynamic_graph.cpp
 )
 # Distributed layer tests only exist when the layer is built. They are

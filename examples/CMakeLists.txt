@@ -1,48 +1,35 @@
 cmake_minimum_required(VERSION 3.20)
 
-# The fluent quick-start and 2-D stencil always build; the distributed demo only
-# when the distributed layer is enabled (it links the master/worker entry points).
+# Each example is one self-contained binary linked against the library with the
+# SYCL flags applied. The standalone tutorials always build; the distributed demo
+# only when the master-worker layer is enabled (it links the distributed entry
+# points). Target names follow the file names: quickstart.cpp -> sr_quickstart,
+# <topic>_demo.cpp -> sr_<topic>_demo.
 
-add_executable(sr_fluent_quickstart fluent_quickstart.cpp)
-target_link_libraries(sr_fluent_quickstart PRIVATE sushiruntime)
-set_target_properties(sr_fluent_quickstart PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON)
-add_sycl_to_target(TARGET sr_fluent_quickstart SOURCES fluent_quickstart.cpp)
-if(WIN32)
-    add_custom_command(TARGET sr_fluent_quickstart POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:sushiruntime>
-            $<TARGET_FILE_DIR:sr_fluent_quickstart>)
-endif()
-
-add_executable(sr_fluent_stencil_2d fluent_stencil_2d.cpp)
-target_link_libraries(sr_fluent_stencil_2d PRIVATE sushiruntime)
-set_target_properties(sr_fluent_stencil_2d PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON)
-add_sycl_to_target(TARGET sr_fluent_stencil_2d SOURCES fluent_stencil_2d.cpp)
-if(WIN32)
-    add_custom_command(TARGET sr_fluent_stencil_2d POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:sushiruntime>
-            $<TARGET_FILE_DIR:sr_fluent_stencil_2d>)
-endif()
-
-if(SR_ENABLE_DISTRIBUTED)
-    add_executable(sr_distributed_demo distributed_demo.cpp)
-    target_link_libraries(sr_distributed_demo PRIVATE sushiruntime)
-    set_target_properties(sr_distributed_demo PROPERTIES
+# Builds one example target from a single source file, applying the C++17
+# standard, the SYCL flags, the library link, and the Windows runtime-DLL copy.
+function(sushi_add_example name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE sushiruntime)
+    set_target_properties(${name} PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON)
-
-    # Apply SYCL flags under the Intel oneAPI toolchain (no-op stub elsewhere).
-    add_sycl_to_target(TARGET sr_distributed_demo SOURCES distributed_demo.cpp)
-
+    add_sycl_to_target(TARGET ${name} SOURCES ${source})
     if(WIN32)
-        add_custom_command(TARGET sr_distributed_demo POST_BUILD
+        add_custom_command(TARGET ${name} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_FILE:sushiruntime>
-                $<TARGET_FILE_DIR:sr_distributed_demo>)
+                $<TARGET_FILE_DIR:${name}>)
     endif()
+endfunction()
+
+sushi_add_example(sr_quickstart             quickstart.cpp)
+sushi_add_example(sr_vecadd_demo            vecadd_demo.cpp)
+sushi_add_example(sr_stencil_demo           stencil_demo.cpp)
+sushi_add_example(sr_coupled_fields_demo    coupled_fields_demo.cpp)
+sushi_add_example(sr_game_engine_demo       game_engine_demo.cpp)
+sushi_add_example(sr_streaming_world_demo   streaming_world_demo.cpp)
+
+if(SR_ENABLE_DISTRIBUTED)
+    sushi_add_example(sr_distributed_demo distributed_demo.cpp)
 endif()

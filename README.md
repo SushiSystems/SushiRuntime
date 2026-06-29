@@ -311,7 +311,7 @@ g.add(NdRange{ sycl::range<2>(W, H), sycl::range<2>(4, 4) },
       [p](sycl::nd_item<2> it) { /* it.get_global_id(0), it.get_local_id(1), ... */ });
 
 // Interior-only (halo) stencil over a State: iterate the (W-2)x(H-2) box at (1,1);
-// the one-cell border stays fixed. See examples/fluent_stencil_2d.cpp.
+// the one-cell border stays fixed. See examples/stencil_demo.cpp.
 Extent<2> interior{ sycl::range<2>(W - 2, H - 2), sycl::id<2>(1, 1) };
 g.add(field, interior, [](sycl::id<2> idx, const float* cur, float* next) { /* ... */ });
 ```
@@ -368,7 +368,8 @@ The code is organized into layers under `include/SushiRuntime/` and `src/`.
 ### Public API (`api/`)
 The fluent entry point that most users should start from:
 - `Runtime` — static `create()` factory; owns the `RuntimeContext`. Exposes
-  `graph()`, `dynamic_graph()`, `context()`, and the typed data factories
+  `graph()`, `dynamic_graph()`, `advanced()` (a read-only view of internal state),
+  `unsafe_context()` (the deliberate escape hatch), and the typed data factories
   `buffer<T>()` / `state<T>()`.
 - `Buffer<T>` / `State<T>` — owning handles to shared USM. `State<T>` is a
   double-buffered field for stepped workloads. Passing a handle to `add()`
@@ -377,8 +378,13 @@ The fluent entry point that most users should start from:
   or raw kernels, `State` / `Buffer` handles (including coupled multi-field
   rules), multidimensional `Extent<N>` boxes (with halo offsets) and tiled
   `NdRange<N>` work-groups, and explicit `Reads`/`Writes`/`In`/`Out`/`InOut`
-  dependency wrappers. `run()` / `run(n)` / `run_for()` / `run_until()` compile
-  once and replay; `try_run()` / `try_run(n)` are the non-throwing forms.
+  dependency wrappers. `add_host()` runs native CPU work ordered by the data it
+  touches; a leading `API::when()`/`sized()` (`Dynamic`) late-binds a task's
+  enablement and iteration size without recompiling; an `OpID` overload marks a
+  task offloadable with a local fallback. `buffer()`/`state()` take an optional
+  `Residency` for device-resident data. `run()` / `run(n)` / `run_for()` /
+  `run_until()` compile once and replay; `cancel()` stops a run from another
+  thread; `try_run()` / `try_run(n)` are the non-throwing forms.
 - `API::DynamicGraph` — the mutable counterpart for streaming, open-world
   workloads. `dynamic_graph()` returns one; `region(key)` records work on a
   partition with the same `add()` surface and `drop(key)` removes one. Regions
@@ -462,8 +468,10 @@ include/SushiRuntime/   Public headers (this is the API surface)
                         transports, KernelRegistry, BufferRegistry, coordinator, worker agent,
                         IOffloadPolicy, WorkerStats)
 src/                    Implementations of the above
-examples/               Sample apps: fluent quick-start and 2-D stencil (always
-                        built); distributed master/worker demo (distributed builds only)
+examples/               Tutorial apps, all on the fluent API: quickstart, vecadd_demo,
+                        stencil_demo, coupled_fields_demo, game_engine_demo,
+                        streaming_world_demo (always built); distributed_demo
+                        (distributed builds only)
 tests/
   common/               Shared GoogleTest entry point and helpers
   functional/           unit / regression / integration (fast, CI)
