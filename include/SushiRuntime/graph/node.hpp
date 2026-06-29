@@ -119,6 +119,156 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Cross-region (boundary) dependency layer for the dynamic graph.
+         *
+         * The dynamic region graph splits a node's dependencies into a stable
+         * intra-region interior, baked once when the region compiles, and a
+         * recomputable cross-region boundary layer the composer maintains as
+         * neighbouring regions stream in and out. A static-graph node leaves every
+         * field at its default and never reads this layer.
+         */
+        struct RegionLink
+        {
+            /**
+             * @brief Predecessor count from edges internal to the owning region.
+             *
+             * Captured once when the region is compiled — it equals the live
+             * in_degree right after the region's own dependency pass — and never
+             * touched again while the region is unchanged.
+             */
+            int32_t intra_in_degree = 0;
+
+            /**
+             * @brief Predecessor count from cross-region (boundary) edges.
+             *
+             * Maintained incrementally by the composer as boundary edges are added
+             * and removed; summed with intra_in_degree to re-arm the node each step.
+             */
+            std::atomic<int32_t> boundary_in_degree{0};
+
+            /**
+             * @brief Cross-region successors released in addition to the intra ones.
+             *
+             * The scheduler's trigger_successors walks this list alongside the
+             * inline/spillover intra successors, decrementing each target's
+             * in_degree. Mutated only at a step boundary (no worker running) and
+             * read-only during a step, so a plain vector needs no synchronisation.
+             */
+            std::vector<Node*> boundary_successors;
+
+            /**
+             * @brief True when this node has no successor internal to its region.
+             *
+             * An intra-leaf is a candidate to link to the completion sentinel, but
+             * only while it also has no cross-region successor. Set once when the
+             * region is compiled.
+             */
+            bool intra_leaf = false;
+
+            /**
+             * @brief Whether this node currently releases the completion sentinel.
+             *
+             * The composer keeps the sentinel wired to exactly the current leaves
+             * (no intra and no cross-region successor). Flipped as boundary edges
+             * make a leaf gain or lose an exported successor.
+             */
+            bool sentinel_linked = false;
+
+            /**
+             * @brief Clears only the cross-region boundary layer.
+             *
+             * Drops the boundary predecessor count and the boundary successor list,
+             * leaving the frozen intra-region edges untouched. The composer calls
+             * this on a pin before re-deriving the boundary edges of a base that
+             * became dirty. Safe at a step boundary only.
+             */
+            void clear() noexcept
+            {
+                boundary_in_degree.store(0, std::memory_order_relaxed);
+                boundary_successors.clear();
+            }
+        };
+
+        /**
+         * @brief Per-run profiling accumulators, summed across a run's steps.
+         *
+         * Written only when the runtime was built with profiling on; otherwise the
+         * dispatch and completion paths never touch them. Relaxed atomics: each is a
+         * monotonic counter accumulated as steps replay and read once at the run
+         * boundary, with no ordering dependency on other state. A given step's
+         * completion is reaped by exactly one worker, but different steps may be
+         * reaped by different workers, so the adds are atomic.
+         */
+        struct NodeProfiling
+        {
+            std::atomic<std::uint64_t> invocations{0};  /**< Dispatch count over the run. */
+            std::atomic<std::uint64_t> device_ns{0};    /**< Summed kernel device time (ns). */
+            std::atomic<std::uint64_t> host_ns{0};      /**< Summed native/host wall time (ns). */
+        };
+
+#ifdef SR_DISTRIBUTED
+        /**
+         * @brief Distributed offload state, stamped by TaskGraph::compile().
+         *
+         * Only meaningful in Master mode. offloadable stays false for the vast
+         * majority of (small, local) tasks, so the scheduler's hot path pays just a
+         * single bool load before falling through to local execution.
+         */
+        struct OffloadState
+        {
+            /** @brief Whether this node may ship to a worker (else it runs locally). */
+            bool offloadable = false;
+            /** @brief Remote kernel id used when offloading (valid iff offloadable). */
+            OpID remote_op;
+            /** @brief Serializable handles for the buffers this node reads / writes. */
+            std::vector<SushiRuntime::Distributed::BufferHandle> in_handles;
+            std::vector<SushiRuntime::Distributed::BufferHandle> out_handles;
+            /** @brief Raw read/write USM pointers retained so compile() can resolve handles. */
+            std::vector<void*> reads;
+            std::vector<void*> writes;
+
+            /**
+             * @brief Live read/write pointers for a double-buffered offload node.
+             *
+             * A State node rotates which allocation it reads and writes every step,
+             * so the fluent layer re-points these before each step and the
+             * coordinator resolves handles from them at dispatch — keeping the
+             * compiled plan replayable while following the swap. Null for every
+             * ordinary node, whose fixed handles are baked into in_handles/out_handles.
+             */
+            std::shared_ptr<std::vector<void*>> live_reads;
+            std::shared_ptr<std::vector<void*>> live_writes;
+
+            /**
+             * @brief How many times this node has been (re)dispatched to a worker.
+             *
+             * After a worker death or a failed remote result the node is
+             * re-dispatched; once attempts exceed a cap the coordinator pins it
+             * local (offloadable cleared) so a kernel that consistently fails
+             * remotely cannot loop forever.
+             */
+            std::atomic<uint32_t> attempts{0};
+        };
+#endif
+
+        /**
+         * @brief Optional, lazily-allocated per-node state kept off the node body.
+         *
+         * Holds concerns absent on most nodes — and, for the distributed offload
+         * state, absent entirely in a standalone build. Keeping them behind one
+         * pointer fixes Node's layout independent of build flags: SR_DISTRIBUTED
+         * changes what a NodeExtensions contains, never sizeof(Node), so the library
+         * and its consumers agree on Node's ABI whether or not the distributed layer
+         * is compiled in. Empty (and never allocated) in a standalone build.
+         */
+        struct NodeExtensions
+        {
+#ifdef SR_DISTRIBUTED
+            OffloadState offload;
+#endif
+        };
+
+        /**
          * @brief One node in the compiled task DAG.
          *
          * Inherits from Task so the scheduler can dispatch it without knowing the DAG
@@ -157,61 +307,16 @@ namespace SushiRuntime
             std::atomic<int32_t> in_degree{0};
 
             /**
-             * @brief Predecessor count from edges internal to the owning region.
+             * @brief Cross-region (boundary) dependency layer.
              *
              * The dynamic region graph splits a node's dependencies into a stable
-             * intra-region layer and a recomputable cross-region (boundary) layer.
-             * This holds the intra count, captured once when the region is compiled
-             * (it equals in_degree right after the region's own dependency pass) and
-             * never touched again while the region is unchanged. Each step resets the
-             * live in_degree to intra_in_degree + boundary_in_degree, so the boundary
-             * layer can be re-stitched without disturbing the frozen interior. Zero
-             * for nodes built by the static graph, which never reads it.
+             * intra-region interior and a recomputable cross-region boundary layer;
+             * this holds the latter (see RegionLink). Each step resets the live
+             * in_degree to region.intra_in_degree + region.boundary_in_degree, so the
+             * boundary layer can be re-stitched without disturbing the frozen
+             * interior. Left at its defaults by the static graph, which never reads it.
              */
-            int32_t intra_in_degree = 0;
-
-            /**
-             * @brief Predecessor count from cross-region (boundary) edges.
-             *
-             * Maintained incrementally by the dynamic graph's composer as boundary
-             * edges are added and removed when neighbouring regions stream in or out.
-             * Summed with intra_in_degree to re-arm the node each step. The static
-             * graph never sets it, so its nodes carry only intra/baseline degree.
-             */
-            std::atomic<int32_t> boundary_in_degree{0};
-
-            /**
-             * @brief Cross-region successors released in addition to the intra ones.
-             *
-             * The composer wires a boundary edge by appending the target here and
-             * bumping the target's boundary_in_degree. The scheduler's
-             * trigger_successors walks this list alongside the inline/spillover intra
-             * successors, decrementing each target's in_degree. Mutated only at a
-             * step boundary (no worker running), read-only during a step, so a plain
-             * vector needs no synchronisation. Empty for every static-graph node and
-             * for any dynamic node that exports nothing across a region boundary.
-             */
-            std::vector<Node*> boundary_successors;
-
-            /**
-             * @brief True when this node has no successor internal to its region.
-             *
-             * Bookkeeping for the dynamic region graph: an intra-leaf is a candidate
-             * to link to the completion sentinel, but only while it also has no
-             * cross-region successor. Set once when the region is compiled; combined
-             * with the live boundary successor count to decide sentinel linkage.
-             */
-            bool intra_leaf = false;
-
-            /**
-             * @brief Whether this node currently releases the dynamic completion sentinel.
-             *
-             * The composer keeps the sentinel wired to exactly the current leaves (no
-             * intra and no cross-region successor), so completion is detected without
-             * every node hammering one counter. Flipped as boundary edges make a leaf
-             * gain or lose an exported successor.
-             */
-            bool sentinel_linked = false;
+            RegionLink region;
 
             /** @brief Head of the lock-free successor list (for spillover). */
             std::atomic<SuccessorNode*> successor_list{nullptr};
@@ -286,62 +391,18 @@ namespace SushiRuntime
              */
             std::size_t plan_index = 0;
 
-            /**
-             * @brief Profiling accumulators, summed across a run's steps.
-             *
-             * Written only when the runtime was built with profiling on; otherwise
-             * the dispatch and completion paths never touch them. Relaxed atomics:
-             * each is a monotonic counter accumulated as steps replay and read once
-             * at the run boundary, with no ordering dependency on other state. A
-             * given step's completion is reaped by exactly one worker, but different
-             * steps may be reaped by different workers, so the adds are atomic.
-             */
-            std::atomic<std::uint64_t> prof_invocations{0};  /**< Dispatch count over the run. */
-            std::atomic<std::uint64_t> prof_device_ns{0};    /**< Summed kernel device time (ns). */
-            std::atomic<std::uint64_t> prof_host_ns{0};      /**< Summed native/host wall time (ns). */
-
-#ifdef SR_DISTRIBUTED
-            /**
-             * @brief Distributed offload metadata, stamped by TaskGraph::compile().
-             *
-             * Only meaningful in Master mode. offloadable_ stays false for the
-             * vast majority of (small, local) tasks, so the scheduler's hot path
-             * pays just a single bool load before falling through to local exec.
-             */
-            bool offloadable_ = false;
-            /** @brief Remote kernel id used when offloading (valid iff offloadable_). */
-            OpID remote_op_;
-            /** @brief Serializable handles for the buffers this node reads / writes. */
-            std::vector<SushiRuntime::Distributed::BufferHandle> in_handles_;
-            std::vector<SushiRuntime::Distributed::BufferHandle> out_handles_;
-            /** @brief Raw read/write USM pointers retained so compile() can resolve handles. */
-            std::vector<void*> dist_reads_;
-            std::vector<void*> dist_writes_;
+            /** @brief Per-run profiling accumulators (see NodeProfiling). */
+            NodeProfiling profiling;
 
             /**
-             * @brief Live read/write pointers for a double-buffered offload node.
+             * @brief Lazily-allocated optional state (see NodeExtensions).
              *
-             * Ordinary offload nodes touch fixed allocations, so compile() bakes
-             * their handles once into in_handles_/out_handles_. A double-buffered
-             * (State) node instead rotates which allocation it reads and writes every
-             * step, so baking would address the wrong buffer on alternating steps.
-             * When these are set, the fluent layer re-points them at the step's
-             * current/next allocations before each step and the coordinator resolves
-             * handles from them at dispatch — keeping the compiled plan replayable
-             * while following the swap. Null for every ordinary node.
+             * Null on most nodes and on every node in a standalone build. Present
+             * unconditionally so Node's layout never depends on a build flag; the
+             * distributed offload state lives here, reached through offload() /
+             * offload_state().
              */
-            std::shared_ptr<std::vector<void*>> live_reads_;
-            std::shared_ptr<std::vector<void*>> live_writes_;
-            /**
-             * @brief How many times this node has been (re)dispatched to a worker.
-             *
-             * Incremented on every offload. After a worker death or a failed
-             * remote result, the node is re-dispatched; once attempts exceed a
-             * cap the coordinator pins it local (offloadable_ cleared) so a kernel
-             * that consistently fails remotely cannot loop forever.
-             */
-            std::atomic<uint32_t> offload_attempts_{0};
-#endif
+            std::unique_ptr<NodeExtensions> ext_;
 
             /**
              * @brief Registers @p target as a successor of this node.
@@ -375,35 +436,59 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Clears only the cross-region boundary layer of this node.
-             *
-             * Drops the boundary predecessor count and the boundary successor list,
-             * leaving the frozen intra-region edges untouched. The dynamic composer
-             * calls this on a pin before re-deriving the boundary edges of a base
-             * that became dirty, so a node touching several shared bases keeps the
-             * boundary edges of the bases that did not change (those are re-applied
-             * by the per-base rewire). Safe at a step boundary only.
-             */
-            void clear_boundary() noexcept
-            {
-                boundary_in_degree.store(0, std::memory_order_relaxed);
-                boundary_successors.clear();
-            }
-
-            /**
              * @brief Re-arms the live in-degree from the two-layer baseline.
              *
-             * Sets in_degree to intra_in_degree + boundary_in_degree, the count the
-             * scheduler decrements as predecessors complete. The dynamic graph calls
-             * this for every node before each replayed step, the equivalent of
-             * CompiledGraph::rearm for a plan whose boundary layer is maintained
-             * incrementally rather than snapshotted.
+             * Sets in_degree to region.intra_in_degree + region.boundary_in_degree,
+             * the count the scheduler decrements as predecessors complete. The
+             * dynamic graph calls this for every node before each replayed step, the
+             * equivalent of CompiledGraph::rearm for a plan whose boundary layer is
+             * maintained incrementally rather than snapshotted.
              */
             void arm_in_degree() noexcept
             {
-                in_degree.store(intra_in_degree + boundary_in_degree.load(std::memory_order_relaxed),
+                in_degree.store(region.intra_in_degree
+                                + region.boundary_in_degree.load(std::memory_order_relaxed),
                                 std::memory_order_relaxed);
             }
+
+#ifdef SR_DISTRIBUTED
+            /**
+             * @brief Returns the offload state, allocating the extensions on demand.
+             *
+             * The mutable entry point for the distributed build paths that populate
+             * or update offload metadata. The first call allocates this node's
+             * NodeExtensions; later calls reuse it.
+             *
+             * @return Reference to this node's offload state.
+             */
+            OffloadState& offload()
+            {
+                if (!ext_)
+                    ext_ = std::make_unique<NodeExtensions>();
+                return ext_->offload;
+            }
+
+            /**
+             * @brief Returns the offload state if present, else nullptr.
+             *
+             * A node that never offloads never allocates its extensions, so the read
+             * paths (the scheduler's offloadable check, the completion observer) read
+             * a null return as "not offloadable / nothing to bump" without forcing an
+             * allocation.
+             *
+             * @return Pointer to the offload state, or nullptr if this node has none.
+             */
+            OffloadState* offload_state() noexcept
+            {
+                return ext_ ? &ext_->offload : nullptr;
+            }
+
+            /** @brief Const overload of offload_state(). */
+            const OffloadState* offload_state() const noexcept
+            {
+                return ext_ ? &ext_->offload : nullptr;
+            }
+#endif
 
             /** @brief Returns the execution mode for this node. */
             ExecutionMode get_execution_mode() const override   { return mode; }

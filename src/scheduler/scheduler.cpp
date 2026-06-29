@@ -417,7 +417,8 @@ namespace SushiRuntime
                         if (coordinator_ && task->is_graph_node())
                         {
                             auto* gnode = static_cast<SushiRuntime::Graph::Node*>(task);
-                            if (gnode->offloadable_)
+                            auto* off = gnode->offload_state();
+                            if (off && off->offloadable)
                                 offloaded = coordinator_->try_offload(gnode);
                         }
                         if (!offloaded)
@@ -545,7 +546,7 @@ namespace SushiRuntime
                         const auto h0 = std::chrono::steady_clock::now();
                         node->execute_native();
                         const auto h1 = std::chrono::steady_clock::now();
-                        node->prof_host_ns.fetch_add(
+                        node->profiling.host_ns.fetch_add(
                             static_cast<std::uint64_t>(
                                 std::chrono::duration_cast<std::chrono::nanoseconds>(h1 - h0).count()),
                             std::memory_order_relaxed);
@@ -894,8 +895,9 @@ namespace SushiRuntime
                     {
                         if (!t || !t->is_graph_node()) return;
                         auto* n = static_cast<SushiRuntime::Graph::Node*>(t);
-                        for (void* p : n->dist_writes_)
-                            context.bump_distributed_buffer(p);
+                        if (auto* off = n->offload_state())
+                            for (void* p : off->writes)
+                                context.bump_distributed_buffer(p);
                     });
 
                 // Lets the coordinator re-inject a node orphaned by a dead worker
@@ -938,8 +940,9 @@ namespace SushiRuntime
             // The offloaded write landed back in the master's authoritative buffer
             // (eager writeback) before this fired; advance its version so later
             // dependents re-pull, mirroring the local-completion observer.
-            for (void* p : node->dist_writes_)
-                context.bump_distributed_buffer(p);
+            if (auto* off = node->offload_state())
+                for (void* p : off->writes)
+                    context.bump_distributed_buffer(p);
 
             // Mirror EventPolling::trigger_successors, but route ready successors
             // through submit() (thread-safe injector) since this runs on the
@@ -964,7 +967,7 @@ namespace SushiRuntime
 
             // Cross-region boundary successors (dynamic region graph), released the
             // same way; empty for ordinary offloaded nodes.
-            for (auto* succ : node->boundary_successors)
+            for (auto* succ : node->region.boundary_successors)
             {
                 if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
                     submit(succ);

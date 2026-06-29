@@ -652,12 +652,16 @@ namespace SushiRuntime
         {
             if (!node) return false;
 
+            // The scheduler only calls this for a node flagged offloadable, so its
+            // offload state already exists; offload() returns it without allocating.
+            Graph::OffloadState& off = node->offload();
+
             // A node that has already failed remotely too many times (dead worker
             // or kernel error) is pinned local: clear its offload flag so this and
             // future dispatch attempts run it on the home machine.
-            if (node->offload_attempts_.load(std::memory_order_relaxed) >= MAX_OFFLOAD_ATTEMPTS)
+            if (off.attempts.load(std::memory_order_relaxed) >= MAX_OFFLOAD_ATTEMPTS)
             {
-                node->offloadable_ = false;
+                off.offloadable = false;
                 impl_->declined_count.fetch_add(1, std::memory_order_relaxed);
                 return false;
             }
@@ -666,7 +670,7 @@ namespace SushiRuntime
             // buffer written since compile() carries a newer version, which is
             // exactly what tells a worker its cached copy is stale.
             TaskDispatchMsg msg;
-            msg.op_id = node->remote_op_;
+            msg.op_id = off.remote_op;
             msg.meta  = node->metadata;
 
             // A double-buffered node carries no baked handles; resolve them from its
@@ -674,19 +678,19 @@ namespace SushiRuntime
             // registered makes the task fall back to local execution.
             std::vector<BufferHandle> in_handles;
             std::vector<BufferHandle> out_handles;
-            const bool dynamic_io = static_cast<bool>(node->live_reads_) ||
-                                    static_cast<bool>(node->live_writes_);
+            const bool dynamic_io = static_cast<bool>(off.live_reads) ||
+                                    static_cast<bool>(off.live_writes);
             if (dynamic_io)
             {
-                if (node->live_reads_)
-                    for (void* p : *node->live_reads_)
+                if (off.live_reads)
+                    for (void* p : *off.live_reads)
                     {
                         auto h = impl_->buffers->lookup(p);
                         if (!h) { impl_->declined_count.fetch_add(1, std::memory_order_relaxed); return false; }
                         in_handles.push_back(*h);
                     }
-                if (node->live_writes_)
-                    for (void* p : *node->live_writes_)
+                if (off.live_writes)
+                    for (void* p : *off.live_writes)
                     {
                         auto h = impl_->buffers->lookup(p);
                         if (!h) { impl_->declined_count.fetch_add(1, std::memory_order_relaxed); return false; }
@@ -695,8 +699,8 @@ namespace SushiRuntime
             }
             else
             {
-                in_handles  = node->in_handles_;
-                out_handles = node->out_handles_;
+                in_handles  = off.in_handles;
+                out_handles = off.out_handles;
             }
 
             uint64_t est_bytes = 0;
@@ -739,7 +743,7 @@ namespace SushiRuntime
                 msg.outputs.push_back(cur);
             }
 
-            node->offload_attempts_.fetch_add(1, std::memory_order_relaxed);
+            off.attempts.fetch_add(1, std::memory_order_relaxed);
 
             auto bytes = msg.serialize();
             impl_->transport->send(chosen, MsgType::TASK_DISPATCH, bytes);
