@@ -52,7 +52,7 @@ def _toolchain_installed(name: str, cfg) -> bool:
 
 def _install_hint(name: str) -> str:
     """The command that installs the profile providing toolchain *name*."""
-    return f"sr setup --profile {_PROFILE_FOR.get(name, 'normal')}"
+    return f"ss install --profile {_PROFILE_FOR.get(name, 'normal')}"
 
 
 def show() -> int:

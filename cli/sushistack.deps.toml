@@ -1,0 +1,59 @@
+# SushiRuntime dependency fragment — the dependencies the runtime itself owns,
+# declared in the runtime repo (under cli/) so they travel with it and can be
+# reasoned about standalone. `ss` aggregates this with the SushiStack base
+# fragment when the runtime is part of the workspace (cloned in, or registered
+# via `ss link`), then downloads everything into the shared dependencies/ tree.
+#
+# The SYCL toolchains live here, not in SushiStack's base, because they exist
+# *because of the runtime*: SushiRuntime is the SYCL program. SushiStack itself
+# has no SYCL/compute dependencies — it only provisions what the modules declare.
+#
+# Field reference:
+#   description    Human-readable purpose (shown by `ss doctor` / `sr doctor`).
+#   required       false => a missing one warns but does not stop the build.
+#   gpu_only       true  => only installed when GPU support is requested.
+#   linux_apt      apt package names; empty list = not an apt/vcpkg package.
+#   windows_vcpkg  vcpkg port names; empty list = not an apt/vcpkg package.
+#   check_cmd      Optional command; exit 0 means "already installed".
+#
+# Toolchains with empty package lists (intel-llvm, adaptivecpp, oneapi, cuda) are
+# not apt/vcpkg ports — `ss install` fetches them with its toolchain installer.
+# They appear here so the dependency picture is complete and `ss`/`sr doctor`
+# report them as the runtime's dependencies.
+
+[hwloc]
+description   = "Hardware locality library (topology / NUMA discovery). The runtime links it for the hardware topology layer."
+required      = true
+linux_apt     = ["libhwloc-dev"]
+windows_vcpkg = ["hwloc"]
+check_cmd     = ["pkg-config", "--exists", "hwloc"]
+
+[intel-llvm]
+description   = "intel/llvm SYCL toolchain (clang++ -fsycl), the primary SYCL compiler. Fetched as a nightly bundle by ss install."
+required      = true
+linux_apt     = []
+windows_vcpkg = []
+
+[adaptivecpp]
+description   = "AdaptiveCpp (acpp) — secondary SYCL toolchain. Built from source / distro package; not in vcpkg."
+required      = true
+linux_apt     = []
+windows_vcpkg = []
+check_cmd     = ["acpp", "--version"]
+
+[oneapi]
+description   = "Intel oneAPI DPC++ compiler (icx/icpx) — heavy third SYCL toolchain (several GB)."
+required      = true
+linux_apt     = []
+windows_vcpkg = []
+
+[cuda]
+# Ubuntu apt ships nvidia-cuda-toolkit 11.x, which is incompatible with the
+# intel/llvm nightly bundle (requires CUDA 12.x). Install from NVIDIA's official
+# runfile or use the nvidia/cuda Docker base image — do not rely on apt here.
+description   = "NVIDIA CUDA toolkit (SYCL nvptx64 backend; arch via SR_CUDA_ARCH, default 61). From NVIDIA's official runfile, not Ubuntu apt."
+required      = false
+gpu_only      = true
+linux_apt     = []
+windows_vcpkg = []
+check_cmd     = ["nvcc", "--version"]

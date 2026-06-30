@@ -44,22 +44,50 @@ def config_dir(root: Path | None = None) -> Path:
             return root / name
     return root / "cli"
 
+def sushistack_home(root: Path | None = None) -> Path | None:
+    """Locate the enclosing SushiStack workspace root, or None when standalone.
+
+    SushiStack is the umbrella that provisions one shared dependency tree for the
+    whole stack. When the runtime is checked out inside a workspace
+    (``<workspace>/sushiruntime``), its toolchain and vcpkg come from
+    ``<workspace>/dependencies`` rather than a repo-local tree. Resolution:
+    ``SUSHISTACK_HOME`` env var, then a walk up for the ``.sushistack`` marker.
+    """
+    env = os.environ.get("SUSHISTACK_HOME")
+    if env:
+        return Path(os.path.expandvars(os.path.expanduser(env))).resolve()
+    try:
+        start = root or find_project_root()
+    except SystemExit:
+        return None
+    for d in (start, *start.parents):
+        if (d / ".sushistack").is_file():
+            return d
+    return None
+
+
 def deps_dir() -> Path:
-    """The single self-contained directory for everything ``sr setup`` downloads.
+    """The single self-contained directory the shared toolchain lives in.
 
     Everything vendorable — the intel/llvm bundle, AdaptiveCpp, a portable CMake
     and Ninja, and the vcpkg tree with its C++ library ports — lands under here,
     so a user can see exactly what was fetched and reclaim it all by deleting one
-    folder. Defaults to ``<repo>/dependencies`` (git-ignored); override with
-    ``SR_DEPS_DIR``. Falls back to a user-local path when not inside a checkout.
+    folder. Inside a SushiStack workspace this is the shared
+    ``<workspace>/dependencies`` (provisioned by ``ss install`` and used by every
+    module); standalone it is ``<repo>/dependencies`` (git-ignored). Override with
+    ``SUSHISTACK_DEPS_DIR`` (``SR_DEPS_DIR`` is still honoured). Falls back to a
+    user-local path when not inside a checkout.
 
     System-level prerequisites that cannot live in one folder (the host C++
     compiler — MSVC+SDK on Windows, gcc and a few -dev packages on Linux — and
     CUDA) are intentionally *not* placed here; the installer reports them instead.
     """
-    override = os.environ.get("SR_DEPS_DIR")
+    override = os.environ.get("SUSHISTACK_DEPS_DIR") or os.environ.get("SR_DEPS_DIR")
     if override:
         return Path(override)
+    home = sushistack_home()
+    if home:
+        return home / "dependencies"
     try:
         return find_project_root() / "dependencies"
     except SystemExit:
@@ -222,14 +250,35 @@ def _merge_tool_table(doc: dict, plat: str) -> dict:
     return merged
 
 
+def _shared_config_local() -> Path | None:
+    """The workspace-shared config.local.toml ``ss install`` writes, if any.
+
+    Inside a SushiStack workspace the machine-specific tool paths (compiler,
+    vcpkg, cmake) are resolved once by ``ss`` and written to ``<home>/cli/
+    config.local.toml``; every module reads them from there so nothing is
+    configured twice.
+    """
+    home = sushistack_home()
+    return (home / "cli" / "config.local.toml") if home else None
+
+
 def load_config() -> Config:
-    """Load and resolve the layered configuration for the current platform."""
+    """Load and resolve the layered configuration for the current platform.
+
+    Precedence (low to high): repo config.toml -> workspace-shared
+    config.local.toml (written by ``ss``) -> repo config.local.toml -> env.
+    """
     plat = platform.system().lower()  # 'windows' | 'linux' | 'darwin'
 
     cfg_dir = config_dir()
     values: dict = {}
-    for fname in ("config.toml", "config.local.toml"):
-        doc = _read_toml(cfg_dir / fname)
+    shared = _shared_config_local()
+    sources = [cfg_dir / "config.toml"]
+    if shared is not None:
+        sources.append(shared)
+    sources.append(cfg_dir / "config.local.toml")
+    for path in sources:
+        doc = _read_toml(path)
         if doc:
             values.update(_merge_tool_table(doc, plat))
 
