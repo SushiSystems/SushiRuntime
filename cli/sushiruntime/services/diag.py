@@ -1,9 +1,9 @@
 """Diagnostic commands: inspect the resolved config and the build environment.
 
 These are read-only troubleshooting helpers. When a build picks the "wrong"
-compiler or a path looks off, `sr config show` answers *what* the CLI resolved
+compiler or a path looks off, `sr config` answers *what* the CLI resolved
 and *where each value came from* (default / config.toml / env override), and
-`sr env dump` answers *which environment* cmake/ctest actually run under.
+`sr env` answers *which environment* cmake/ctest actually run under.
 """
 
 from __future__ import annotations

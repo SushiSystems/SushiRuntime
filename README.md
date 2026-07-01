@@ -26,65 +26,35 @@ It is built around four ideas:
   `host_task` invocation; on a C++20/23 toolchain these thin out to standard
   aliases.
 
-On Windows, C++ library dependencies are resolved through **vcpkg**; CMake and Ninja are installed via winget by `install.ps1` if missing. On Linux they come from the system package manager (apt).
+C++ library dependencies and SYCL toolchains are provisioned by
+[SushiStack](https://sushisystems.io) (the `ss` CLI), which owns dependency
+installation for the whole stack (not just this repo) into one shared,
+workspace-level `dependencies/` tree.
 
 ## Quick start (one script)
 
 On a fresh machine you can go from nothing to a working build with a single
-command. The script bootstraps Python/Git, installs the `sr` CLI, then runs the
-installer pipeline (`sr setup all`) which installs every remaining dependency,
-generates `cli/config.local.toml`, and builds + smoke-tests the project.
-
-Linux (Debian/Ubuntu):
+command. SushiStack's bootstrap script installs Python/Git, installs `ss`, then
+runs `ss install` to fetch every toolchain and library the workspace's modules
+declare (SushiRuntime declares its own in `cli/sushistack.deps.toml`):
 
 ```bash
-bash install.sh            # add --gpu for CUDA, --dry-run to preview
-```
-
-Windows (PowerShell):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1   # add -Gpu / -DryRun
-```
-
-Both also work straight from the web on a bare machine:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.sh | bash
+curl -fsSL https://sushisystems.io/install.sh | bash
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/sushisystems/sushiruntime/main/install.ps1 | iex
+irm https://sushisystems.io/install.ps1 | iex
 ```
 
-The installer runs as a phased pipeline
-(`detect -> install -> configure -> verify`). You can run any phase on its own:
-
-```bash
-sr setup detect       # inventory tools, compiler, dependencies, GPU
-sr setup install      # install missing deps (apt | winget + vcpkg)
-sr setup configure    # write config.local.toml from probed tool paths
-sr setup verify       # build + functional smoke test
-```
+See the [SushiStack](https://sushisystems.io) docs for linking an existing
+checkout of this repo into a workspace (`ss link`) instead of a fresh clone,
+and for `ss doctor` / `ss status` to inspect what's installed.
 
 ### Adding a dependency
 
-All C++ library dependencies live in a single manifest, `cli/dependencies.toml`
-(the installer's source of truth). To add one, add a table:
-
-```toml
-[mylib]
-description   = "What it is"
-required      = true
-linux_apt     = ["libmylib-dev"]
-windows_vcpkg = ["mylib"]
-check_cmd     = ["pkg-config", "--exists", "mylib"]   # optional idempotency check
-```
-
-The installer picks it up automatically; no installer code changes. If the build
-itself needs it, also add the `find_package`/`pkg_check_modules` call in
-`CMakeLists.txt`, and if the Docker image needs it, add it to the `Dockerfile`
-apt line (those are build/image logic, intentionally outside the manifest).
+See [CONTRIBUTING.md §7](CONTRIBUTING.md#7-adding-a-c-dependency) — dependencies
+are declared in this repo's `cli/sushistack.deps.toml` fragment, which `ss`
+aggregates and installs.
 
 ## Building
 
@@ -115,18 +85,18 @@ The selection flows to CMake as `-DSR_SYCL_TOOLCHAIN`, and the build derives the
 matching compiler unless you pin one in config. Then build:
 
 ```bash
-sr project build                      # release (default)
-sr project build --type debug         # debug build
-sr project build --type relwithdebinfo
-sr project build --type asan          # isolated build-asan tree, CUDA off
-sr project build --distributed        # enable the master-worker layer
-sr project build --no-cuda            # disable CUDA backend (Linux)
-sr project build --no-test            # skip compiling the test suite
-sr project build --force              # fall back to clang++/clang when the
+sr build                      # release (default)
+sr build --type debug         # debug build
+sr build --type relwithdebinfo
+sr build --type asan          # isolated build-asan tree, CUDA off
+sr build --distributed        # enable the master-worker layer
+sr build --no-cuda            # disable CUDA backend (Linux)
+sr build --no-test            # skip compiling the test suite
+sr build --force              # fall back to clang++/clang when the
                                       # selected toolchain compiler is missing
 ```
 
-Add `--clean` to wipe the build tree first. `sr project clean` removes both
+Add `--clean` to wipe the build tree first. `sr clean` removes both
 `build/` and `build-asan/` trees entirely. To uninstall: `pipx uninstall sushiruntime-cli`.
 
 ### Building with CMake directly
@@ -152,7 +122,7 @@ To target NVIDIA GPUs through SYCL's CUDA backend, configure with
 `-DSR_ENABLE_CUDA=ON`. The architecture is configurable via `-DSR_CUDA_ARCH=<cc>`
 (default `61` for Pascal; e.g. `86` for Ampere).
 
-To build the optional distributed master-worker layer, configure with `-DSR_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr project build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
+To build the optional distributed master-worker layer, configure with `-DSR_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
 
 ### Docker
 
@@ -166,15 +136,15 @@ sr docker run               # add --admin for --privileged (profiling)
 sr docker run --no-gpu      # omit --gpus all (headless / CI environments)
 ```
 
-The `oneapi` toolchain is opt-in because `icpx` is large: build with `--oneapi`, then `sr toolchain oneapi && sr project build` works inside the container (the CLI sources oneAPI's `setvars.sh` automatically).
+The `oneapi` toolchain is opt-in because `icpx` is large: build with `--oneapi`, then `sr toolchain oneapi && sr build` works inside the container (the CLI sources oneAPI's `setvars.sh` automatically).
 
 ### Other CLI commands
 
 ```bash
-sr config show         # print resolved config with per-field source annotation
-sr env dump            # print the environment cmake/ctest/run subprocesses see
-sr env dump --asan     # same for the build-asan/ tree
-sr project doxygen     # build the fluent API reference site into docs/api-site/html
+sr config         # print resolved config with per-field source annotation
+sr env            # print the environment cmake/ctest/run subprocesses see
+sr env --asan     # same for the build-asan/ tree
+sr doxygen     # build the fluent API reference site into docs/api-site/html
 ```
 
 ## Running the tests
@@ -188,26 +158,26 @@ Run them through the CLI or with `ctest`:
 
 ```bash
 # via CLI — umbrella suites
-sr project test --suite functional           # unit + integration + regression
-sr project test --suite benchmark            # stress + performance
-sr project test --suite all
+sr test --suite functional           # unit + integration + regression
+sr test --suite benchmark            # stress + performance
+sr test --suite all
 
 # fine-grained suite labels (subset of functional or benchmark)
-sr project test --suite unit
-sr project test --suite integration
-sr project test --suite regression
-sr project test --suite stress
-sr project test --suite performance
+sr test --suite unit
+sr test --suite integration
+sr test --suite regression
+sr test --suite stress
+sr test --suite performance
 
-sr project test --suite functional --filter 'Steal.*'   # ctest -R over test names
-sr project test --suite functional --asan    # run against the build-asan/ tree
-sr project test --suite functional --repeat 5  # re-run until first failure (flaky hunt)
+sr test --suite functional --filter 'Steal.*'   # ctest -R over test names
+sr test --suite functional --asan    # run against the build-asan/ tree
+sr test --suite functional --repeat 5  # re-run until first failure (flaky hunt)
 
 # or run a binary directly
-sr project run sr_functional_tests
-sr project run sr_benchmark_tests -- --gtest_filter='AllocatorBench.*'
-sr project run --sort                        # pick an executable interactively
-sr project run sr_functional_tests --asan    # run from build-asan/, with ASAN env set
+sr run sr_functional_tests
+sr run sr_benchmark_tests -- --gtest_filter='AllocatorBench.*'
+sr run --sort                        # pick an executable interactively
+sr run sr_functional_tests --asan    # run from build-asan/, with ASAN env set
 
 # via ctest, by label
 ctest --test-dir build -L functional
@@ -486,16 +456,16 @@ dependencies/           Local install target for toolchains, tools, and vcpkg pa
 
 ## Distributed execution (optional)
 
-A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSR_ENABLE_DISTRIBUTED=ON` / `sr project build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design.
+A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSR_ENABLE_DISTRIBUTED=ON` / `sr build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design.
 
 The same binary runs in either role; the `sr` CLI forwards `--distributed=master|worker` to your application's `main()`, which constructs the `RuntimeContext` accordingly. A runnable demo (`examples/distributed_demo.cpp` → `sr_distributed_demo`) offloads a vector-add across one or more workers:
 
 ```bash
-sr project build --distributed
+sr build --distributed
 
 # Two processes on one host (worker retries until the master is up):
-sr project run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555 &
-sr project run sr_distributed_demo --distributed=master --port=5555 --workers=1
+sr run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555 &
+sr run sr_distributed_demo --distributed=master --port=5555 --workers=1
 
 # Across machines: run the master on one box and point each worker's
 # --master at the master's IP.
@@ -515,7 +485,7 @@ none is. `cluster.offloaded()` / `declined()` report what actually happened; see
 The distributed tests (protocol, transports, buffer coherence, and SYCL end-to-end offload including multi-worker fan-out and TCP loopback) are part of the functional suite when the layer is enabled:
 
 ```bash
-sr project run sr_functional_tests --gtest_filter='Distributed*'
+sr run sr_functional_tests --gtest_filter='Distributed*'
 ```
 
 ## License

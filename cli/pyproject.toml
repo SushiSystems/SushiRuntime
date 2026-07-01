@@ -24,7 +24,7 @@ include = ["sushiruntime*"]
 
 # The CLI always runs from inside a checkout (every command resolves the repo
 # root via find_project_root), so the dependency manifest is read straight from
-# the repo's cli/dependencies.toml — there is no need to ship it in the wheel.
+# the repo's cli/sushistack.deps.toml — there is no need to ship it in the wheel.
 
 [tool.setuptools.package-data]
 sushiruntime = ["py.typed"]
