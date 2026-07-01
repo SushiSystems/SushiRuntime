@@ -30,7 +30,34 @@ set(SR_GPU_OFFLOAD_ADDED FALSE)
 
 # Per-vendor arch knobs, replacing the old hardcoded sm_61. Each backend reads its
 # own; unrelated backends ignore theirs.
-set(SR_CUDA_ARCH "61" CACHE STRING
+#
+# SR_CUDA_ARCH's default is probed from nvidia-smi (the installed card's actual
+# compute capability) rather than hardcoded, so a build on non-Pascal hardware
+# targets the right architecture without a manual -DSR_CUDA_ARCH=. This only
+# fixes arch *mismatch*; it cannot make an installed CUDA toolkit support an
+# architecture it has dropped (e.g. CUDA 13 removed sm_6x/Pascal outright) —
+# that failure still surfaces at the ptxas link step and requires a compatible
+# toolkit install (see cli/sushistack/setup/package_managers.py::ensure_cuda_toolkit).
+if(NOT DEFINED SR_CUDA_ARCH)
+    set(_sr_cuda_arch_default "61")
+    find_program(_sr_nvidia_smi nvidia-smi)
+    if(_sr_nvidia_smi)
+        execute_process(
+            COMMAND ${_sr_nvidia_smi} --query-gpu=compute_cap --format=csv,noheader
+            OUTPUT_VARIABLE _sr_compute_cap
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+        # First line only (multi-GPU machines list one per line); "7.5" -> "75".
+        if(_sr_compute_cap MATCHES "^([0-9]+)\\.([0-9]+)")
+            set(_sr_cuda_arch_default "${CMAKE_MATCH_1}${CMAKE_MATCH_2}")
+            message(STATUS "GPU auto-detect: nvidia-smi reports compute capability "
+                           "${CMAKE_MATCH_1}.${CMAKE_MATCH_2} -> SR_CUDA_ARCH=${_sr_cuda_arch_default}")
+        endif()
+    endif()
+    set(SR_CUDA_ARCH "${_sr_cuda_arch_default}")
+endif()
+set(SR_CUDA_ARCH "${SR_CUDA_ARCH}" CACHE STRING
     "CUDA compute capability for the SYCL nvptx64 backend (e.g. 61, 80, 86)")
 set(SR_AMD_ARCH "gfx1030" CACHE STRING
     "AMD GPU arch for the SYCL amdgcn backend (e.g. gfx906, gfx1030, gfx1100)")
