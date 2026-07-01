@@ -9,7 +9,7 @@
 # has no SYCL/compute dependencies — it only provisions what the modules declare.
 #
 # Field reference:
-#   description    Human-readable purpose (shown by `ss doctor` / `sr doctor`).
+#   description    Human-readable purpose (shown by `ss doctor`).
 #   required       false => a missing one warns but does not stop the build.
 #   gpu_only       true  => only installed when GPU support is requested.
 #   linux_apt      apt package names; empty list = not an apt/vcpkg package.
@@ -18,7 +18,7 @@
 #
 # Toolchains with empty package lists (intel-llvm, adaptivecpp, oneapi, cuda) are
 # not apt/vcpkg ports — `ss install` fetches them with its toolchain installer.
-# They appear here so the dependency picture is complete and `ss`/`sr doctor`
+# They appear here so the dependency picture is complete and `ss`
 # report them as the runtime's dependencies.
 
 [hwloc]

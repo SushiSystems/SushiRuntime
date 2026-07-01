@@ -82,7 +82,7 @@ ENV PATH="/opt/adaptivecpp/bin:$PATH"
 # configured above for the OpenCL CPU runtime, so this only adds the compiler
 # package. It installs under /opt/intel/oneapi; the `sr` CLI sources its
 # setvars.sh automatically (cli/config.toml [tool.linux] oneapi_root) so
-# `sr toolchain oneapi && sr project build` works with no extra steps.
+# `sr toolchain oneapi && sr build` works with no extra steps.
 ARG WITH_ONEAPI=0
 RUN if [ "$WITH_ONEAPI" = "1" ]; then \
         apt-get update && \
@@ -127,10 +127,10 @@ RUN /usr/bin/python3 -m pip install --no-cache-dir --upgrade pip setuptools whee
 # `sr` CLI are installed. Build on demand inside the container — there is no point
 # baking a build into the image:
 #   sr toolchain intel-llvm   # or: adaptivecpp
-#   sr project build
+#   sr build
 # The default toolchain is intel-llvm; switch with `sr toolchain`. The oneAPI
 # toolchain (icpx) is available only when the image was built with WITH_ONEAPI=1
-# (`sr docker build --oneapi`); then `sr toolchain oneapi && sr project build`
+# (`sr docker build --oneapi`); then `sr toolchain oneapi && sr build`
 # works (the CLI sources /opt/intel/oneapi/setvars.sh on its own).
 
 CMD ["/bin/bash"]

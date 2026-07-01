@@ -23,21 +23,22 @@ API and mirrors what the project's own integration tests do.
 
 ### Install and build in one command
 
-On a fresh machine you can go from nothing to a built, smoke-tested project with
-a single script. It bootstraps Python/Git, installs the `sr` CLI, then runs the
-installer pipeline (`sr setup all`), which installs every dependency, writes your
-machine config, and builds and tests the project.
+On a fresh machine you can go from nothing to a built project with a single
+script. [SushiStack](https://sushisystems.io) owns dependency provisioning for
+the whole stack: its bootstrap script installs Python/Git, installs the `ss`
+CLI, then runs `ss install` to fetch every toolchain and library the workspace
+needs (SushiRuntime declares its own in `cli/sushistack.deps.toml`).
 
 **Linux (Debian/Ubuntu):**
 
 ```bash
-bash install.sh            # add --gpu for CUDA, --dry-run to preview
+curl -fsSL https://sushisystems.io/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1   # add -Gpu / -DryRun
+irm https://sushisystems.io/install.ps1 | iex
 ```
 
 ### Or, if you already have a SYCL toolchain
@@ -47,21 +48,21 @@ Install the CLI and build directly:
 ```bash
 python cli/install.py        # puts `sr` and `sushiruntime` on your PATH
 sr toolchain intel-llvm      # pick a SYCL toolchain (the default; or adaptivecpp / oneapi)
-sr project build             # Release build (the default)
-sr project test              # run the fast functional test suite
+sr build             # Release build (the default)
+sr test              # run the fast functional test suite
 ```
 
 You'll need a SYCL 2020 compiler — intel-llvm (`clang++ -fsycl`, primary),
 AdaptiveCpp (`acpp`), or Intel oneAPI DPC++ — plus CMake 3.20+, hwloc, and
 GoogleTest. Pick the toolchain with `sr toolchain`. The CLI reads your toolchain
-paths from `cli/config.local.toml`; `sr setup configure` generates that file for you.
+paths from `cli/config.local.toml`; `ss install` generates that file for you.
 See the [README](../../README.md) for the full requirements list and the CMake
 options if you want to skip the CLI.
 
 Verify everything works:
 
 ```bash
-sr project test --suite functional
+sr test --suite functional
 ```
 
 If the functional suite passes, you're ready to write code.
@@ -338,11 +339,11 @@ add_sycl_to_target(TARGET my_first_program SOURCES my_first_program.cpp)
 Then build and run through the CLI:
 
 ```bash
-sr project build
-sr project run my_first_program
+sr build
+sr run my_first_program
 ```
 
-`sr project run` matches the target name exactly first, then by substring, so a
+`sr run` matches the target name exactly first, then by substring, so a
 partial name works too.
 
 ### Abstracting the task bodies into functions
@@ -763,4 +764,4 @@ you express an in-place update, and it keeps the task correctly ordered between
   feature in this guide. `test_fluent_lifecycle.cpp` covers the fluent API
   (handles, stepping, coupling); `test_sycl_execution.cpp` and `test_graph.cpp`
   are the best starting points for the lower-level API.
-- **`sr project doxygen`** — generate the full API reference from the headers.
+- **`sr doxygen`** — generate the full API reference from the headers.

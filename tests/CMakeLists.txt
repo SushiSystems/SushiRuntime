@@ -107,7 +107,7 @@ sushi_configure_test_target(sr_functional_tests)
 #
 # Each group carries a SINGLE label. The "functional" umbrella is expressed by
 # the consumer as a label regex (`ctest -L 'unit|integration|regression'`, which
-# is what `sr project test --suite functional` runs) rather than a second label
+# is what `sr test --suite functional` runs) rather than a second label
 # baked in here: a two-element LABELS list (e.g. "unit;functional") is silently
 # flattened to two separate one-element labels by this CMake version's
 # GoogleTestAddTests.cmake (it loses the list escaping when re-expanding the
