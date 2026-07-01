@@ -373,6 +373,17 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
     return args
 
 
+def _cuda_usable() -> bool:
+    """True when an NVIDIA CUDA toolchain can actually build the nvptx64 backend.
+
+    The SYCL CUDA backend needs the CUDA toolkit's libdevice, so a mere NVIDIA
+    driver (nvidia-smi) is not enough — nvcc must be present. Checking nvcc keeps
+    the Linux build GPU-agnostic: NVIDIA + CUDA => GPU build, anything else =>
+    the CPU/OpenCL path, with no confusing libdevice error.
+    """
+    return shutil.which("nvcc") is not None
+
+
 def build(build_type: BuildType, distributed: bool = False,
           no_cuda: bool = False, clean: bool = False, force: bool = False,
           tests: bool = True) -> int:
@@ -398,8 +409,20 @@ def build(build_type: BuildType, distributed: bool = False,
         cuda = "OFF"
         if no_cuda:
             console.warn("--no-cuda is a no-op on Windows (CUDA is always OFF).")
+    elif no_cuda or asan:
+        cuda = "OFF"
+    elif _cuda_usable():
+        cuda = "ON"
     else:
-        cuda = "OFF" if (no_cuda or asan) else "ON"
+        # GPU-agnostic default: without an NVIDIA GPU + CUDA toolkit the nvptx64
+        # backend can't build (clang: "cannot find libdevice for sm_61"), so fall
+        # back to the CPU/OpenCL (SPIR) path instead of hard-failing. Provision
+        # CUDA with `ss install --gpu`, or force it with a rebuild once nvcc is on
+        # PATH; pass --no-cuda to silence this.
+        cuda = "OFF"
+        console.warn("No usable CUDA toolkit detected (nvcc missing); building the "
+                     "CPU/OpenCL path. Run `ss install` to provision the GPU stack, "
+                     "or pass --no-cuda to silence this.")
 
     if cfg.is_windows and build_type in (BuildType.debug, BuildType.relwithdebinfo):
         console.warn(f"--type {build_type.value} enables TSan, which is untested "
