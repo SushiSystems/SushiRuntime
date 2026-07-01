@@ -12,12 +12,13 @@ from __future__ import annotations
 import os
 import platform
 
-try:
-    import tomllib  # Python 3.11+
-except ModuleNotFoundError:  # Python 3.10 fallback
-    import tomli as tomllib
 from dataclasses import dataclass, fields
 from pathlib import Path
+
+# Domain-agnostic config plumbing (marker walk-up, [tool] TOML layering) shared
+# by every Sushi* CLI. This repo keeps only its own schema below.
+from sushicli.workspace import has_marker, load_layered, read_toml, resolve_env_path, walk_up
+
 
 def find_project_root(start: Path | None = None) -> Path:
     """Locate the repo root by walking up from CWD until CMakeLists.txt is found.
@@ -26,14 +27,13 @@ def find_project_root(start: Path | None = None) -> Path:
     tells us nothing about where the project lives — the invocation directory
     does. Run any `sr` command from anywhere inside the checkout.
     """
-    cur = (start or Path.cwd()).resolve()
-    for d in (cur, *cur.parents):
-        if (d / "CMakeLists.txt").is_file():
-            return d
-    raise SystemExit(
-        "Not inside a SushiRuntime project: no CMakeLists.txt found in the "
-        "current directory or any parent. cd into the repo and try again."
-    )
+    root = walk_up(start or Path.cwd(), has_marker("CMakeLists.txt"))
+    if root is None:
+        raise SystemExit(
+            "Not inside a SushiRuntime project: no CMakeLists.txt found in the "
+            "current directory or any parent. cd into the repo and try again."
+        )
+    return root
 
 
 def config_dir(root: Path | None = None) -> Path:
@@ -53,17 +53,14 @@ def sushistack_home(root: Path | None = None) -> Path | None:
     ``<workspace>/dependencies`` rather than a repo-local tree. Resolution:
     ``SUSHISTACK_HOME`` env var, then a walk up for the ``.sushistack`` marker.
     """
-    env = os.environ.get("SUSHISTACK_HOME")
-    if env:
-        return Path(os.path.expandvars(os.path.expanduser(env))).resolve()
+    home = resolve_env_path("SUSHISTACK_HOME")
+    if home:
+        return home
     try:
         start = root or find_project_root()
     except SystemExit:
         return None
-    for d in (start, *start.parents):
-        if (d / ".sushistack").is_file():
-            return d
-    return None
+    return walk_up(start, has_marker(".sushistack"))
 
 
 def deps_dir() -> Path:
@@ -75,14 +72,14 @@ def deps_dir() -> Path:
     folder. Inside a SushiStack workspace this is the shared
     ``<workspace>/dependencies`` (provisioned by ``ss install`` and used by every
     module); standalone it is ``<repo>/dependencies`` (git-ignored). Override with
-    ``SUSHISTACK_DEPS_DIR`` (``SR_DEPS_DIR`` is still honoured). Falls back to a
-    user-local path when not inside a checkout.
+    ``SUSHISTACK_DEPS_DIR``. Falls back to a user-local path when not inside a
+    checkout.
 
     System-level prerequisites that cannot live in one folder (the host C++
     compiler — MSVC+SDK on Windows, gcc and a few -dev packages on Linux — and
     CUDA) are intentionally *not* placed here; the installer reports them instead.
     """
-    override = os.environ.get("SUSHISTACK_DEPS_DIR") or os.environ.get("SR_DEPS_DIR")
+    override = os.environ.get("SUSHISTACK_DEPS_DIR")
     if override:
         return Path(override)
     home = sushistack_home()
@@ -215,23 +212,6 @@ class Config:
         return str(Path(bin_dir) / "clang++.exe") if bin_dir else "clang++"
 
 
-def _read_toml(path: Path) -> dict:
-    if not path.is_file():
-        return {}
-    with path.open("rb") as fh:
-        return tomllib.load(fh)
-
-
-def _merge_tool_table(doc: dict, plat: str) -> dict:
-    """Merge common [tool] with [tool.<platform>] (platform wins)."""
-    tool = dict(doc.get("tool", {}))
-    merged = {k: v for k, v in tool.items() if not isinstance(v, dict)}
-    plat_table = tool.get(plat, {})
-    if isinstance(plat_table, dict):
-        merged.update(plat_table)
-    return merged
-
-
 def _shared_config_local() -> Path | None:
     """The workspace-shared config.local.toml ``ss install`` writes, if any.
 
@@ -253,25 +233,12 @@ def load_config() -> Config:
     plat = platform.system().lower()  # 'windows' | 'linux' | 'darwin'
 
     cfg_dir = config_dir()
-    values: dict = {}
     shared = _shared_config_local()
     sources = [cfg_dir / "config.toml"]
     if shared is not None:
         sources.append(shared)
     sources.append(cfg_dir / "config.local.toml")
-    for path in sources:
-        doc = _read_toml(path)
-        if doc:
-            values.update(_merge_tool_table(doc, plat))
-
-    # Env overrides (highest precedence below CLI flags).
-    for field_name, env_var in _ENV_OVERRIDES.items():
-        if env_var in os.environ:
-            values[field_name] = os.environ[env_var]
-
-    # Coerce booleans that may arrive as strings from env.
-    if isinstance(values.get("use_vcpkg"), str):
-        values["use_vcpkg"] = values["use_vcpkg"].strip().lower() in ("1", "true", "yes", "on")
+    values = load_layered(sources, plat, _ENV_OVERRIDES, bool_keys=("use_vcpkg",))
 
     known = {f.name for f in fields(Config)}
     cfg = Config(**{k: v for k, v in values.items() if k in known})
@@ -293,7 +260,7 @@ def set_toolchain(toolchain: str) -> Path:
         raise ValueError(f"Unknown toolchain '{toolchain}'. Choose one of {', '.join(TOOLCHAINS)}.")
 
     target = config_dir() / "config.local.toml"
-    doc = _read_toml(target)
+    doc = read_toml(target)
     tool = dict(doc.get("tool", {}))
     tool["toolchain"] = toolchain
 

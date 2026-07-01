@@ -58,19 +58,13 @@ aggregates and installs.
 
 ## Building
 
-The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. The easiest install is the helper script (Windows → pipx, Linux/macOS → pip into the current environment):
+The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. Install it through the umbrella — the single install seam for the whole stack (it sets up an isolated pipx venv and wires in the shared `sushicli` presentation layer):
 
 ```bash
-python cli/install.py                 # add --editable for a dev install
+ss install-cli sushiruntime           # add --no-editable for a non-dev install
 ```
 
-Or install the package directly:
-
-```bash
-pipx install ./cli                    # or: pip install ./cli  inside a venv/conda env
-```
-
-Either way you get two equivalent commands on your PATH: **`sr`** (short) and **`sushiruntime`** (long). Toolchain paths are read from `cli/config.toml` (committed, shared defaults). Machine-specific absolute paths (oneAPI/VS roots, vcpkg, compiler locations) go in a gitignored `cli/config.local.toml` using the same `[tool.<platform>]` section layout — copy the commented Windows block from `config.toml` as a starting point.
+This gives you two equivalent commands on your PATH: **`sr`** (short) and **`sushiruntime`** (long). Toolchain paths are read from `cli/config.toml` (committed, shared defaults). Machine-specific absolute paths (oneAPI/VS roots, vcpkg, compiler locations) go in a gitignored `cli/config.local.toml` using the same `[tool.<platform>]` section layout — copy the commented Windows block from `config.toml` as a starting point.
 
 Pick which SYCL toolchain to build with (persisted to `cli/config.local.toml`):
 
