@@ -279,7 +279,7 @@ def _resolve_compiler(cfg: Config, force: bool,
 
 
 def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
-                          cuda: str, dist: str, asan: bool, tests: bool,
+                          gpu_backend: str, dist: str, asan: bool, tests: bool,
                           cc: str, cxx: str) -> list[str]:
     args = [
         _cmake(cfg), "-B", str(build_dir), "-G", cfg.generator,
@@ -287,7 +287,11 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
         f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_C_COMPILER={cc}",
         f"-DCMAKE_CXX_COMPILER={cxx}",
-        f"-DSR_ENABLE_CUDA={cuda}",
+        # GPU-agnostic: CMake's cmake/gpu/DetectGpu resolves the vendor
+        # (nvidia->cuda / amd->rocm / intel / cpu). "auto" lets it detect; "cpu"
+        # forces the portable OpenCL path (--no-cuda / ASan). This is the single
+        # source of truth — the CLI no longer probes nvcc itself.
+        f"-DSR_GPU_BACKEND={gpu_backend}",
         f"-DSR_ENABLE_DISTRIBUTED={dist}",
         f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
     ]
@@ -354,7 +358,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         f"-DCMAKE_C_COMPILER={cxx}",
         f"-DPKG_CONFIG_EXECUTABLE={cfg.expand(cfg.pkgconf_exe)}",
         f"-DCMAKE_PREFIX_PATH={vcpkg}/installed/{triplet}",
-        "-DSR_ENABLE_CUDA=OFF",  # no nvptx toolchain on the Windows host
+        "-DSR_GPU_BACKEND=cpu",  # no nvptx toolchain on the Windows host
         f"-DSR_ENABLE_DISTRIBUTED={dist}",
         f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
         "-DSYCL_LIB_SUFFIX=9",
@@ -371,17 +375,6 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
             f"-DCMAKE_C_FLAGS={asan_flags.strip()}",
         ]
     return args
-
-
-def _cuda_usable() -> bool:
-    """True when an NVIDIA CUDA toolchain can actually build the nvptx64 backend.
-
-    The SYCL CUDA backend needs the CUDA toolkit's libdevice, so a mere NVIDIA
-    driver (nvidia-smi) is not enough — nvcc must be present. Checking nvcc keeps
-    the Linux build GPU-agnostic: NVIDIA + CUDA => GPU build, anything else =>
-    the CPU/OpenCL path, with no confusing libdevice error.
-    """
-    return shutil.which("nvcc") is not None
 
 
 def build(build_type: BuildType, distributed: bool = False,
@@ -404,25 +397,20 @@ def build(build_type: BuildType, distributed: bool = False,
         console.info("AddressSanitizer: ON (isolated build-asan tree, CUDA OFF)")
     console.info(f"Tests: {'ON' if tests else 'OFF'}")
 
-    # CUDA: Linux defaults ON (unless --no-cuda or ASan); Windows is always OFF.
+    # GPU backend selection is delegated to CMake (cmake/gpu/DetectGpu): on Linux
+    # "auto" detects the vendor (nvidia->cuda / amd->rocm / intel / cpu) and, when
+    # no accelerator toolkit is present, builds the portable CPU/OpenCL path — so a
+    # missing CUDA toolkit no longer hard-fails with "cannot find libdevice".
+    # Windows has no nvptx toolchain, so it is always the CPU path; ASan and
+    # --no-cuda force CPU too.
     if cfg.is_windows:
-        cuda = "OFF"
+        gpu_backend = "cpu"
         if no_cuda:
-            console.warn("--no-cuda is a no-op on Windows (CUDA is always OFF).")
+            console.warn("--no-cuda is a no-op on Windows (GPU backend is always CPU/OpenCL).")
     elif no_cuda or asan:
-        cuda = "OFF"
-    elif _cuda_usable():
-        cuda = "ON"
+        gpu_backend = "cpu"
     else:
-        # GPU-agnostic default: without an NVIDIA GPU + CUDA toolkit the nvptx64
-        # backend can't build (clang: "cannot find libdevice for sm_61"), so fall
-        # back to the CPU/OpenCL (SPIR) path instead of hard-failing. Provision
-        # CUDA with `ss install --gpu`, or force it with a rebuild once nvcc is on
-        # PATH; pass --no-cuda to silence this.
-        cuda = "OFF"
-        console.warn("No usable CUDA toolkit detected (nvcc missing); building the "
-                     "CPU/OpenCL path. Run `ss install` to provision the GPU stack, "
-                     "or pass --no-cuda to silence this.")
+        gpu_backend = "auto"
 
     if cfg.is_windows and build_type in (BuildType.debug, BuildType.relwithdebinfo):
         console.warn(f"--type {build_type.value} enables TSan, which is untested "
@@ -432,7 +420,7 @@ def build(build_type: BuildType, distributed: bool = False,
 
     if _needs_configure(build_dir, cfg.generator, dist, root):
         console.info(f"Configuring CMake... (type={build_type.value}, "
-                     f"distributed={dist}, cuda={cuda})")
+                     f"distributed={dist}, gpu={gpu_backend})")
         if build_dir.is_dir():
             shutil.rmtree(build_dir, ignore_errors=True)
         if cfg.is_windows:
@@ -445,7 +433,7 @@ def build(build_type: BuildType, distributed: bool = False,
                 return 1
             cc, cxx = resolved
             args = _configure_args_linux(cfg, build_dir, cmake_build_type,
-                                         cuda, dist, asan, tests, cc, cxx)
+                                         gpu_backend, dist, asan, tests, cc, cxx)
         rc = _run(args, env, cwd=root)
         if rc != 0:
             console.error("CMake configure failed.")
