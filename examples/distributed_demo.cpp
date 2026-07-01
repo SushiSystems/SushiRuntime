@@ -25,8 +25,8 @@
 // selected by --distributed=master|worker. Workers connect over TCP and run a
 // registered "vec.add" kernel; the master offloads a vector-add and checks it.
 //
-//   sr project run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555
-//   sr project run sr_distributed_demo --distributed=master --port=5555 --workers=1
+//   sr run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555
+//   sr run sr_distributed_demo --distributed=master --port=5555 --workers=1
 
 #include <atomic>
 #include <chrono>

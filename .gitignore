@@ -1,5 +1,5 @@
 [Bb]uild/
-# Sanitizer build trees (sr project build --type asan)
+# Sanitizer build trees (sr build --type asan)
 build-asan/
 build-tsan/
 bin/

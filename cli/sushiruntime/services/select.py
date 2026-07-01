@@ -114,5 +114,5 @@ def select(toolchain: str) -> int:
             console.info("oneAPI is the heavy profile (several GB) and only comes "
                          "with [cyan]--profile full[/cyan]; the default install does not include it.")
     else:
-        console.info("Run [cyan]sr project build --clean[/cyan] to reconfigure with the new toolchain.")
+        console.info("Run [cyan]sr build --clean[/cyan] to reconfigure with the new toolchain.")
     return 0

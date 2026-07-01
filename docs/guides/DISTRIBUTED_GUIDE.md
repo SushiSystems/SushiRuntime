@@ -49,7 +49,7 @@ It is guarded by the CMake option `SR_ENABLE_DISTRIBUTED` (default **OFF**),
 which defines the `SR_DISTRIBUTED` macro. Turn it on via the CLI:
 
 ```bash
-sr project build --distributed
+sr build --distributed
 ```
 
 or with CMake directly:
@@ -67,9 +67,9 @@ The distributed unit/integration tests join the functional suite only when the
 layer is enabled:
 
 ```bash
-sr project build --distributed
-sr project test --suite functional --distributed
-sr project run sr_functional_tests -- --gtest_filter='*Distributed*'
+sr build --distributed
+sr test --suite functional --distributed
+sr run sr_functional_tests -- --gtest_filter='*Distributed*'
 ```
 
 ---
@@ -84,8 +84,8 @@ builds) offloads a vector-add.
 **Two processes on one host** (the worker retries until the master is up):
 
 ```bash
-sr project run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555 &
-sr project run sr_distributed_demo --distributed=master --port=5555 --workers=1
+sr run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555 &
+sr run sr_distributed_demo --distributed=master --port=5555 --workers=1
 ```
 
 **Across machines:** run the master on one box, then start a worker on each other
@@ -93,10 +93,10 @@ box pointing `--master` at the master's IP:
 
 ```bash
 # on the master host
-sr project run sr_distributed_demo --distributed=master --port=5555 --workers=4
+sr run sr_distributed_demo --distributed=master --port=5555 --workers=4
 
 # on each worker host
-sr project run sr_distributed_demo --distributed=worker --master=10.0.0.1:5555
+sr run sr_distributed_demo --distributed=worker --master=10.0.0.1:5555
 ```
 
 Demo flags: `--port` (master listen port; `0` lets the OS pick), `--workers`
@@ -388,6 +388,6 @@ and asserts byte-identical results every run.
   rest of the runtime, and why it is zero-cost when off.
 - [`INTRODUCTION.md`](INTRODUCTION.md) — the standalone programming model the
   workers run internally.
-- [`CLI_GUIDE.md`](CLI_GUIDE.md) — `sr project build --distributed`,
-  `sr project run ... --distributed=ROLE`.
+- [`CLI_GUIDE.md`](CLI_GUIDE.md) — `sr build --distributed`,
+  `sr run ... --distributed=ROLE`.
 - `examples/distributed_demo.cpp` — the runnable master/worker reference.

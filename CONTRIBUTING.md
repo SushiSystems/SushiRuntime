@@ -15,12 +15,16 @@ project's **Apache License, Version 2.0** (see [`LICENSE`](LICENSE)).
 
 ## 1. Getting set up
 
-The fastest path from a fresh machine to a built, smoke-tested tree is the
-one-shot installer:
+The fastest path from a fresh machine to a built tree is SushiStack's one-shot
+installer, which installs `ss` (SushiStack owns dependency provisioning for the
+whole stack) and runs `ss install`:
 
 ```bash
-bash install.sh            # Linux/macOS  (add --gpu for CUDA)
-powershell -ExecutionPolicy Bypass -File install.ps1   # Windows (add -Gpu)
+curl -fsSL https://sushisystems.io/install.sh | bash
+```
+
+```powershell
+irm https://sushisystems.io/install.ps1 | iex
 ```
 
 If you already have a SYCL toolchain (Intel oneAPI DPC++ or an intel/llvm
@@ -29,8 +33,8 @@ directly:
 
 ```bash
 python cli/install.py        # puts `sr` / `sushiruntime` on PATH
-sr project build             # Release (default)
-sr project test              # fast functional suite
+sr build             # Release (default)
+sr test              # fast functional suite
 ```
 
 See [`docs/guides/CLI_GUIDE.md`](docs/guides/CLI_GUIDE.md) for the full command
@@ -53,31 +57,31 @@ reference and how machine-specific toolchain paths are resolved
 ## 3. Building and testing your change
 
 ```bash
-sr project build                  # Release
-sr project build --type debug     # Debug
-sr project build --type asan      # AddressSanitizer (isolated build-asan/ tree)
-sr project build --distributed    # also compile the master-worker layer
+sr build                  # Release
+sr build --type debug     # Debug
+sr build --type asan      # AddressSanitizer (isolated build-asan/ tree)
+sr build --distributed    # also compile the master-worker layer
 
-sr project test --suite functional        # unit + regression + integration (run this often)
-sr project test --suite benchmark          # stress + performance (heavier)
-sr project test --suite all
-sr project test --suite functional --filter 'Steal.*'   # ctest -R over test names
+sr test --suite functional        # unit + regression + integration (run this often)
+sr test --suite benchmark          # stress + performance (heavier)
+sr test --suite all
+sr test --suite functional --filter 'Steal.*'   # ctest -R over test names
 ```
 
 Expectations for a mergeable change:
 
-1. **The functional suite passes** (`sr project test --suite functional`). It runs
+1. **The functional suite passes** (`sr test --suite functional`). It runs
    in CI on every push/PR.
 2. **Concurrency changes are checked under sanitizers.** Anything touching the
    scheduler, memory pool, EBR, dependency tracker, or refcounting must pass an
-   ASan build (`sr project build --type asan && sr project test --asan`). TSan
+   ASan build (`sr build --type asan && sr test --asan`). TSan
    (`--type debug`) is strongly encouraged for lock-free changes. Use
-   `sr project test --repeat N` to hunt flakiness.
+   `sr test --repeat N` to hunt flakiness.
 3. **New behavior ships with tests.** Put fast, deterministic tests in
    `tests/functional/` (unit/regression/integration); heavy stress/perf probes go
    in `tests/benchmark/`. Fixed bugs get a sentinel in
    `tests/functional/regression/`.
-4. **Distributed changes** are validated with `sr project build --distributed` and
+4. **Distributed changes** are validated with `sr build --distributed` and
    the `*Distributed*` tests, which run the full protocol over the in-process
    fabric and TCP loopback without needing a cluster.
 
@@ -204,18 +208,18 @@ Treat the following as hard requirements, not suggestions:
 - **Any CLI change updates the CLI docs.** If you add, rename, or change a
   `sr` / `sushiruntime` command, flag, or its output, update
   [`docs/guides/CLI_GUIDE.md`](docs/guides/CLI_GUIDE.md) — the full command
-  reference — *and* the build/test/setup snippets in this file and the README that
+  reference — *and* the build/test snippets in this file and the README that
   invoke it. Command help text (Typer `--help`) and the guide must agree.
 - **Distributed changes update the distributed guide.** A change to the
   master-worker layer, its protocol, or its environment flags
   (`SUSHI_ENABLE_DISTRIBUTED`, deadlines, version fencing) updates
   [`docs/guides/DISTRIBUTED_GUIDE.md`](docs/guides/DISTRIBUTED_GUIDE.md).
 - **A new dependency updates the dependency surface.** See §7 — the entry in
-  `cli/dependencies.toml`, the `CMakeLists.txt` find call, and the `Dockerfile`
+  `cli/sushistack.deps.toml`, the `CMakeLists.txt` find call, and the `Dockerfile`
   apt line must move together.
 - **Public API carries Doxygen.** New or changed public functions follow the
   Doxygen rules in §4. The header *is* documentation — it feeds the fluent API
-  reference site (`sr project doxygen`, scoped to `include/SushiRuntime/api` by the
+  reference site (`sr doxygen`, scoped to `include/SushiRuntime/api` by the
   repo-root `Doxyfile`), so a missing `@param` on a public symbol is a doc gap CI
   reports.
 
@@ -290,11 +294,12 @@ marketing, no adjectives selling the change, no "this finally makes X great".
 
 ## 7. Adding a C++ dependency
 
-All C++ library dependencies live in a single manifest,
-[`cli/dependencies.toml`](cli/dependencies.toml) — the installer's source of
-truth. The installer reads this file, checks what is already present via
-`check_cmd` or the platform package manager, and installs only what is missing.
-No dependency name lives in the installer code.
+Dependency provisioning is owned by [SushiStack](https://sushisystems.io) (the
+`ss` CLI), not this repo — it installs shared toolchains and libraries for the
+whole stack into one workspace-level `dependencies/` tree. SushiRuntime only
+*declares* the dependencies it needs, in its own manifest fragment,
+[`cli/sushistack.deps.toml`](cli/sushistack.deps.toml), which `ss` aggregates
+alongside every other module's fragment.
 
 ### Manifest entry
 
@@ -303,9 +308,9 @@ defaults to the value shown:
 
 ```toml
 [mylib]
-description   = "What it is and why it is needed"   # shown by `sr setup detect`
+description   = "What it is and why it is needed"   # shown by `ss doctor`
 required      = true          # false → warn on missing, don't abort the build
-gpu_only      = false         # true → only installed when `sr setup install --gpu` is passed
+gpu_only      = false         # true → only relevant when GPU support is requested
 linux_apt     = ["libmylib-dev"]          # apt package names; [] = not needed on Linux
 windows_vcpkg = ["mylib"]                 # vcpkg port names;  [] = not needed on Windows
 check_cmd     = ["pkg-config", "--exists", "mylib"]  # optional — exit 0 means already installed
@@ -315,9 +320,9 @@ check_cmd     = ["pkg-config", "--exists", "mylib"]  # optional — exit 0 means
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `description` | string | — | Human-readable purpose; shown in `sr setup detect` output. |
+| `description` | string | — | Human-readable purpose; shown in `ss doctor` output. |
 | `required` | bool | `true` | `false` → a missing package logs a warning and continues. |
-| `gpu_only` | bool | `false` | `true` → entry is skipped unless `--gpu` is passed to `sr setup install`. |
+| `gpu_only` | bool | `false` | `true` → entry is only relevant when GPU support is requested. |
 | `linux_apt` | string list | `[]` | apt package names. Empty list means the dep is not needed on Linux. |
 | `windows_vcpkg` | string list | `[]` | vcpkg port names. Empty list means the dep is not needed on Windows. |
 | `check_cmd` | string list | `[]` | Argv to run; exit 0 is treated as "already installed" and skips the package manager. Omit when there is no reliable command-line check. |
@@ -334,7 +339,7 @@ windows_vcpkg = []            # not installed on Windows
 
 ### What else to touch
 
-Adding an entry to the manifest is enough for `sr setup` to pull in the
+Adding an entry to the manifest is enough for `ss install` to pull in the
 package. The build system and Docker image are intentionally outside the
 manifest's scope — update them separately if needed:
 
@@ -349,13 +354,12 @@ both consume.
 
 ### Verifying the addition
 
-After editing the manifest, run `sr setup detect` to confirm the entry is parsed
-and displayed correctly, then `sr setup install` to install it on the current
-platform:
+After editing the manifest, run `ss doctor` to confirm the entry is parsed and
+displayed correctly, then `ss install` to install it on the current platform:
 
 ```bash
-sr setup detect       # confirm the entry appears in the dependency table
-sr setup install      # install it (skipped automatically if check_cmd passes)
+ss doctor       # confirm the entry appears in the dependency table
+ss install      # install it (skipped automatically if check_cmd passes)
 ```
 
 ---

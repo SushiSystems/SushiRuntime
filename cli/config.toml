@@ -10,7 +10,7 @@
 # common `[tool]` section automatically.
 
 [tool]
-# Default executable for `sr project run` with no target.
+# Default executable for `sr run` with no target.
 target_bin = "sr_functional_tests"
 
 [tool.linux]
@@ -36,8 +36,8 @@ target_bin = "sr_functional_tests.exe"
 # pkgconf_exe  = "C:/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe"
 # cmake_exe    = "C:/Users/<you>/scoop/shims/cmake.exe"
 # ctest_exe    = "C:/Users/<you>/scoop/shims/ctest.exe"
-# SYCL toolchains installed by `sr setup` (intel-llvm is the default):
+# SYCL toolchains installed by `ss install` (intel-llvm is the default):
 #   llvm_root  = intel/llvm bundle root holding bin/clang++.exe (intel-llvm)
 #   acpp_exe   = AdaptiveCpp's acpp launcher (adaptivecpp)
-# llvm_root    = "C:/Users/<you>/AppData/Local/SushiRuntime/toolchains/llvm-sycl"
-# acpp_exe     = "C:/Users/<you>/AppData/Local/SushiRuntime/toolchains/adaptivecpp/bin/acpp.bat"
+# llvm_root    = "<SUSHISTACK_HOME>/dependencies/toolchains/llvm-sycl"
+# acpp_exe     = "<SUSHISTACK_HOME>/dependencies/toolchains/adaptivecpp/bin/acpp.bat"
