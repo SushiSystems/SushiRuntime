@@ -21,14 +21,6 @@ _DESCRIPTIONS = {
     "oneapi": "Intel oneAPI (icpx / icx-cl). For VTune/Advisor profiling.",
 }
 
-# The smallest install profile that provides each toolchain — what to tell a user
-# whose selected toolchain is not installed yet.
-_PROFILE_FOR = {
-    "intel-llvm": "normal",
-    "adaptivecpp": "lightweight",
-    "oneapi": "full",
-}
-
 
 def _toolchain_installed(name: str, cfg) -> bool:
     """Best-effort check: is the compiler for *name* actually present?"""
@@ -51,8 +43,8 @@ def _toolchain_installed(name: str, cfg) -> bool:
 
 
 def _install_hint(name: str) -> str:
-    """The command that installs the profile providing toolchain *name*."""
-    return f"ss install --profile {_PROFILE_FOR.get(name, 'normal')}"
+    """The command that installs toolchain *name*."""
+    return f"ss install --customize   (pick '{name}')"
 
 
 def show() -> int:
@@ -60,7 +52,7 @@ def show() -> int:
     cfg = load_config()
     console.header("SYCL Toolchains")
 
-    table = Table(show_header=True, header_style="bold magenta")
+    table = Table(show_header=True, header_style=console.accent)
     table.add_column("", width=3, justify="center")          # active marker
     table.add_column("Toolchain", style="bold")
     table.add_column("Status")
@@ -111,8 +103,8 @@ def select(toolchain: str) -> int:
             f"    [bold cyan]{hint}[/bold cyan]"
         )
         if toolchain == "oneapi":
-            console.info("oneAPI is the heavy profile (several GB) and only comes "
-                         "with [cyan]--profile full[/cyan]; the default install does not include it.")
+            console.info("oneAPI is several GB; use [cyan]ss install --customize[/cyan] "
+                         "to install it on its own instead of everything.")
     else:
         console.info("Run [cyan]sr build --clean[/cyan] to reconfigure with the new toolchain.")
     return 0

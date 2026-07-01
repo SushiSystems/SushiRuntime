@@ -55,7 +55,7 @@ def config_show() -> int:
     # Reverse map: field -> env var, to flag env-sourced values.
     env_for = {field: var for field, var in _ENV_OVERRIDES.items()}
 
-    table = Table(show_header=True, header_style="bold magenta")
+    table = Table(show_header=True, header_style=console.accent)
     table.add_column("Setting")
     table.add_column("Value")
     table.add_column("Source")
@@ -97,7 +97,7 @@ def env_dump(show_all: bool = False, asan: bool = False) -> int:
 
     shown = {k: v for k, v in sorted(env.items()) if keep(k)}
 
-    table = Table(show_header=True, header_style="bold magenta")
+    table = Table(show_header=True, header_style=console.accent)
     table.add_column("Variable")
     table.add_column("Value", overflow="fold")
     for k, v in shown.items():
