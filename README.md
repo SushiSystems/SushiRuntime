@@ -46,6 +46,9 @@ curl -fsSL https://sushisystems.io/install.sh | bash
 irm https://sushisystems.io/install.ps1 | iex
 ```
 
+On Windows use `irm`, not `curl` — in PowerShell `curl` is an alias for
+`Invoke-WebRequest` and does not pipe a script the same way.
+
 See the [SushiStack](https://sushisystems.io) docs for linking an existing
 checkout of this repo into a workspace (`ss link`) instead of a fresh clone,
 and for `ss doctor` / `ss status` to inspect what's installed.
