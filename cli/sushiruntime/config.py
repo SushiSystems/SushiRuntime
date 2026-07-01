@@ -110,24 +110,6 @@ TOOLCHAIN_COMPILERS = {
     "oneapi": ("icx", "icpx"),
 }
 
-# Install profiles for `sr setup --profile`. Each picks which SYCL toolchains
-# the installer provisions and which one ends up active, trading footprint for
-# breadth:
-#   lightweight - AdaptiveCpp only (smallest; acpp's single-pass SSCP path is the
-#                 only realistic route to a sub-GB toolchain), active = adaptivecpp.
-#   normal      - intel/llvm bundle + AdaptiveCpp, active = intel-llvm (default).
-#   full        - the above plus the heavy Intel oneAPI DPC++ compiler.
-PROFILES = ("lightweight", "normal", "full")
-
-# profile -> which toolchains to install and which to activate. ``intel_llvm`` /
-# ``acpp`` / ``oneapi`` gate each installer; ``active`` is written as the default
-# SR_SYCL_TOOLCHAIN so the very next build uses a compiler the profile installed.
-PROFILE_SPECS = {
-    "lightweight": {"intel_llvm": False, "acpp": True, "oneapi": False, "active": "adaptivecpp"},
-    "normal":      {"intel_llvm": True,  "acpp": True, "oneapi": False, "active": "intel-llvm"},
-    "full":        {"intel_llvm": True,  "acpp": True, "oneapi": True,  "active": "intel-llvm"},
-}
-
 # Maps a Config field to the SR_* env var that overrides it.
 _ENV_OVERRIDES = {
     "toolchain": "SR_SYCL_TOOLCHAIN",
@@ -178,7 +160,7 @@ class Config:
     # intel/llvm nightly bundle root (holds bin/clang++) for the intel-llvm
     # toolchain, and the AdaptiveCpp compiler for the adaptivecpp toolchain.
     # On Windows these are how the non-oneAPI toolchains provide a SYCL compiler;
-    # they are discovered by `sr setup` and written to config.local.toml.
+    # they are discovered by `ss install` and written to config.local.toml.
     llvm_root: str = ""
     acpp_exe: str = ""
     pkgconf_exe: str = ""
@@ -304,7 +286,7 @@ def set_toolchain(toolchain: str) -> Path:
     """Persist the selected SYCL toolchain into config.local.toml.
 
     Writes a top-level ``[tool] toolchain = "..."`` key, preserving any existing
-    ``[tool.<platform>]`` tables written by `sr setup configure`. Returns the
+    ``[tool.<platform>]`` tables written by `ss install`. Returns the
     path that was written.
     """
     if toolchain not in TOOLCHAINS:
@@ -320,7 +302,7 @@ def set_toolchain(toolchain: str) -> Path:
 
     lines = [
         "# Managed by the SushiRuntime CLI. `sr toolchain` writes the toolchain key;",
-        "# `sr setup configure` writes the [tool.<platform>] tool paths.",
+        "# `ss install` writes the [tool.<platform>] tool paths.",
         "",
         "[tool]",
     ]

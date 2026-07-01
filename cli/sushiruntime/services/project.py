@@ -109,7 +109,7 @@ def _run(cmd: list[str], env: dict[str, str], cwd: Path) -> int:
             f"Executable not found: '{cmd[0]}'.\n"
             f"  - it is not on PATH and no explicit path is configured.\n"
             f"  - set its path in config.local.toml (e.g. cmake_exe / ctest_exe / ninja_exe), or\n"
-            f"  - re-run `sr setup configure` to auto-detect it.")
+            f"  - re-run `ss doctor` to check the shared dependency tree.")
         return 1
 
 
@@ -138,7 +138,7 @@ def _run_drained(cmd: list[str], env: dict[str, str], cwd: Path) -> int:
             f"Executable not found: '{cmd[0]}'.\n"
             f"  - it is not on PATH and no explicit path is configured.\n"
             f"  - set its path in config.local.toml (e.g. cmake_exe / ctest_exe / ninja_exe), or\n"
-            f"  - re-run `sr setup configure` to auto-detect it.")
+            f"  - re-run `ss doctor` to check the shared dependency tree.")
         return 1
     assert proc.stdout is not None
     for line in proc.stdout:
@@ -319,12 +319,12 @@ def _check_windows_compiler(cfg: Config, env: dict[str, str]) -> int:
     if found:
         return 0
     hint = {
-        "adaptivecpp": "AdaptiveCpp (acpp) is not installed. Build it with "
-                       "`sr setup install`, or switch back with `sr toolchain intel-llvm`.",
+        "adaptivecpp": "AdaptiveCpp (acpp) is not installed. Install it with "
+                       "`ss install`, or switch back with `sr toolchain intel-llvm`.",
         "intel-llvm": "The intel/llvm bundle (clang++) is not installed. Install it "
-                      "with `sr setup install`.",
+                      "with `ss install`.",
         "oneapi": "Intel oneAPI (icx-cl) is not installed. Install it with "
-                  "`sr setup install --oneapi`, or set icx_compiler in config.local.toml.",
+                  "`ss install`, or set icx_compiler in config.local.toml.",
     }.get(cfg.toolchain, "")
     console.error(
         f"Toolchain '{cfg.toolchain}' compiler '{cxx}' was not found.\n  - {hint}")
@@ -447,13 +447,13 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
     cfg = load_config()
     build_dir = _build_dir(root, asan)
     if not build_dir.is_dir():
-        console.error(f"{build_dir.name}/ not found. Run `sr project build` first.")
+        console.error(f"{build_dir.name}/ not found. Run `sr build` first.")
         return 1
     if _stale_build_tree(build_dir, root):
         console.error(
             f"{build_dir.name}/ was configured for a different source path "
             "(e.g. a Docker volume build reused on this host).\n"
-            "  - run `sr project build` to reconfigure it cleanly first.")
+            "  - run `sr build` to reconfigure it cleanly first.")
         return 1
     if distributed:
         console.info("Note: distributed tests only exist if built with --distributed.")
@@ -485,7 +485,7 @@ def run(target: str | None = None, sort: bool = False,
     cfg = load_config()
     build_dir = _build_dir(root, asan)
     if not build_dir.is_dir():
-        console.error(f"{build_dir.name}/ not found. Run `sr project build` first.")
+        console.error(f"{build_dir.name}/ not found. Run `sr build` first.")
         return 1
 
     env = load_build_env(cfg, build_dir)
