@@ -28,8 +28,14 @@ if(_sr_backend STREQUAL "auto")
     # The SYCL CUDA/nvptx and amdgcn passes need the vendor toolkit's device
     # libraries (libdevice / ROCm device libs), so a mere driver is not enough:
     # probe for the *compiler* toolchain, not the runtime.
-    find_program(SR_NVCC nvcc)
-    find_program(SR_HIPCC NAMES hipcc rocminfo)
+    # The apt CUDA/ROCm toolkits do not add themselves to PATH, so also look in
+    # their well-known install prefixes (/usr/local/cuda* for nvcc, /opt/rocm*
+    # for hipcc) — otherwise auto-detect wrongly falls back to CPU on a machine
+    # that actually has the toolkit installed.
+    find_program(SR_NVCC nvcc
+        PATHS /usr/local/cuda/bin /usr/local/cuda-*/bin)
+    find_program(SR_HIPCC NAMES hipcc rocminfo
+        PATHS /opt/rocm/bin /opt/rocm-*/bin)
     if(SR_NVCC)
         set(_sr_backend "cuda")
     elseif(SR_HIPCC)
