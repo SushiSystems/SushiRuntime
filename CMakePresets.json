@@ -10,7 +10,8 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "SR_SYCL_TOOLCHAIN": "intel-llvm",
-                "CMAKE_CXX_COMPILER": "clang++"
+                "CMAKE_CXX_COMPILER": "clang++",
+                "SR_GPU_BACKEND": "auto"
             }
         },
         {
@@ -22,7 +23,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "SR_SYCL_TOOLCHAIN": "adaptivecpp",
-                "ACPP_TARGETS": "generic"
+                "SR_GPU_BACKEND": "auto"
             }
         },
         {
@@ -34,7 +35,8 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "SR_SYCL_TOOLCHAIN": "oneapi",
-                "CMAKE_CXX_FLAGS": "-fsycl"
+                "CMAKE_CXX_FLAGS": "-fsycl",
+                "SR_GPU_BACKEND": "auto"
             },
             "environment": {
                 "_comment": "Run oneAPI setvars.bat (or source setvars.sh) before configuring so CMPLR_ROOT/PATH/INCLUDE/LIB are populated. The build no longer hardcodes the oneAPI install path."
