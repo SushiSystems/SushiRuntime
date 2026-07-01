@@ -11,6 +11,8 @@
 # Field reference:
 #   description    Human-readable purpose (shown by `ss doctor`).
 #   required       false => a missing one warns but does not stop the build.
+#   provides       Capability tag; deps sharing one are interchangeable any-of
+#                  alternatives for readiness (any one present => satisfied).
 #   gpu_only       true  => only installed when GPU support is requested.
 #   linux_apt      apt package names; empty list = not an apt/vcpkg package.
 #   windows_vcpkg  vcpkg port names; empty list = not an apt/vcpkg package.
@@ -31,12 +33,14 @@ check_cmd     = ["pkg-config", "--exists", "hwloc"]
 [intel-llvm]
 description   = "intel/llvm SYCL toolchain (clang++ -fsycl), the primary SYCL compiler. Fetched as a nightly bundle by ss install."
 required      = true
+provides      = "sycl-toolchain"
 linux_apt     = []
 windows_vcpkg = []
 
 [adaptivecpp]
 description   = "AdaptiveCpp (acpp) — secondary SYCL toolchain. Built from source / distro package; not in vcpkg."
 required      = true
+provides      = "sycl-toolchain"
 linux_apt     = []
 windows_vcpkg = []
 check_cmd     = ["acpp", "--version"]
@@ -44,6 +48,7 @@ check_cmd     = ["acpp", "--version"]
 [oneapi]
 description   = "Intel oneAPI DPC++ compiler (icx/icpx) — heavy third SYCL toolchain (several GB)."
 required      = true
+provides      = "sycl-toolchain"
 linux_apt     = []
 windows_vcpkg = []
 
