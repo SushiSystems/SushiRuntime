@@ -121,6 +121,7 @@ _ENV_OVERRIDES = {
     "ninja_exe": "SR_NINJA",
     "cmake_exe": "SR_CMAKE",
     "ctest_exe": "SR_CTEST",
+    "rc_exe": "SR_RC",
     "icx_compiler": "SR_ICX",
     "llvm_root": "SR_LLVM_ROOT",
     "acpp_exe": "SR_ACPP",
