@@ -363,6 +363,8 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
         "-DSYCL_LIB_SUFFIX=9",
     ]
+    if cfg.rc_exe:
+        args.append(f"-DCMAKE_RC_COMPILER={cfg.expand(cfg.rc_exe)}")
     # AdaptiveCpp (acpp) injects its own SYCL flags via add_sycl_to_target; the
     # -fsycl flag is only meaningful to the clang-based intel-llvm/oneapi drivers.
     if cfg.toolchain == "adaptivecpp":
