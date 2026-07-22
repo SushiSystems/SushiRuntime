@@ -11,7 +11,10 @@
 
 add_library(sushi_sanitizers INTERFACE)
 
-if(NOT (MSVC OR (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")))
+# CMake reports the intel/llvm SYCL clang++ as CMAKE_CXX_COMPILER_ID "Clang"
+# (not "IntelLLVM"), so the Windows exclusion below must match on "Clang"
+# generally, not a toolchain-specific id.
+if(NOT (MSVC OR (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")))
     if(CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
         target_compile_options(sushi_sanitizers INTERFACE -fsanitize=thread)
         target_link_options(sushi_sanitizers INTERFACE -fsanitize=thread)
