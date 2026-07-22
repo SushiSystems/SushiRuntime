@@ -104,9 +104,15 @@ If you prefer to skip the wrapper:
 # intel-llvm (primary). A SYCL-enabled clang++ is picked up automatically.
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DSR_SYCL_TOOLCHAIN=intel-llvm
+  -DSR_SYCL_TOOLCHAIN=intel-llvm \
+  -DSR_BUILD_TESTS=ON            # tests are OFF by default here; the `sr` wrapper turns them ON
 cmake --build build --config Release
 ```
+
+> **Note:** `SR_BUILD_TESTS` defaults to **OFF** for a bare library build, so a
+> direct `cmake` invocation without `-DSR_BUILD_TESTS=ON` produces no test
+> binaries and `ctest` finds nothing to run. (`sr build` enables it for you;
+> `sr build --no-test` opts out.)
 
 Use a CMake preset to switch toolchains: `cmake --preset intel-llvm` (`clang++
 -fsycl`), `--preset adaptivecpp`, or `--preset oneapi` (run the oneAPI `setvars`
@@ -115,9 +121,13 @@ On Windows, vcpkg is discovered from the `VCPKG_ROOT` environment variable
 (falling back to `C:/vcpkg` only if it exists); the oneAPI compiler is resolved
 from `CMPLR_ROOT` — no paths are hardcoded.
 
-To target NVIDIA GPUs through SYCL's CUDA backend, configure with
-`-DSR_ENABLE_CUDA=ON`. The architecture is configurable via `-DSR_CUDA_ARCH=<cc>`
-(default `61` for Pascal; e.g. `86` for Ampere).
+The GPU backend is selected by `-DSR_GPU_BACKEND=<auto|cuda|rocm|intel|cpu|none>`
+(default `auto`, which detects the installed toolkit — NVIDIA CUDA, AMD ROCm,
+Intel — and otherwise builds the portable CPU/OpenCL path). To force NVIDIA GPUs,
+configure with `-DSR_GPU_BACKEND=cuda`; the architecture is set via
+`-DSR_CUDA_ARCH=<cc>` (default `61` for Pascal; e.g. `86` for Ampere, and itself
+auto-detected from `nvidia-smi` when a CUDA GPU is present). The older
+`-DSR_ENABLE_CUDA=ON` still works as a legacy alias for `-DSR_GPU_BACKEND=cuda`.
 
 To build the optional distributed master-worker layer, configure with `-DSR_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
 

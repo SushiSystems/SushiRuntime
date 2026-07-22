@@ -197,7 +197,13 @@ namespace SushiRuntime
                 SushiRuntime::span<const std::byte> get_blob()
                 {
                     uint64_t bytes = get<uint64_t>();
-                    if (!ok_ || pos_ + bytes > data_.size())
+                    // Bounds-check WITHOUT computing pos_ + bytes: `bytes` is an
+                    // attacker-controlled 64-bit wire value, so pos_ + bytes can
+                    // overflow and wrap to a small value that passes the check,
+                    // yielding a ~2^64-long subspan (OOB read / bad_alloc downstream).
+                    // The subtraction is safe because the invariant pos_ <= size()
+                    // always holds (the cursor only advances within bounds).
+                    if (!ok_ || bytes > data_.size() - pos_)
                     {
                         ok_ = false;
                         return {};
@@ -238,7 +244,16 @@ namespace SushiRuntime
                 ByteWriter w;
                 w.put(task_id);
                 w.put(op_id.value);
-                w.put(meta);
+                // Serialize meta's POD fields but NOT its `name` (a `const char*`):
+                // a pointer into the master's address space is a wild pointer on the
+                // worker and an ASLR information leak on the wire. The worker never
+                // dereferences a dispatched task's name, so it is dropped here and
+                // restored to a generic default on deserialize.
+                w.put(meta.task_type);
+                w.put(meta.op_id);
+                w.put(meta.priority);
+                w.put(meta.numa_affinity);
+                for (uint64_t p : meta.params) w.put(p);
                 w.put<uint32_t>(static_cast<uint32_t>(inputs.size()));
                 for (const auto& h : inputs)  w.put(h);
                 w.put<uint32_t>(static_cast<uint32_t>(outputs.size()));
@@ -250,9 +265,15 @@ namespace SushiRuntime
             {
                 ByteReader r(bytes);
                 TaskDispatchMsg m;
-                m.task_id     = r.get<uint64_t>();
-                m.op_id.value = r.get<uint32_t>();
-                m.meta        = r.get<Graph::TaskMetadata>();
+                m.task_id         = r.get<uint64_t>();
+                m.op_id.value     = r.get<uint32_t>();
+                // name is intentionally left at its default literal — never
+                // reconstruct the master's pointer (see serialize()).
+                m.meta.task_type     = r.get<Graph::TaskType>();
+                m.meta.op_id         = r.get<Graph::OpID>();
+                m.meta.priority      = r.get<int>();
+                m.meta.numa_affinity = r.get<int>();
+                for (uint64_t& p : m.meta.params) p = r.get<uint64_t>();
                 uint32_t ni   = r.get<uint32_t>();
                 for (uint32_t i = 0; i < ni && r.ok(); ++i) m.inputs.push_back(r.get<BufferHandle>());
                 uint32_t no   = r.get<uint32_t>();

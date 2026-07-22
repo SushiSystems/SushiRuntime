@@ -140,8 +140,19 @@ namespace SushiRuntime
          * @brief Starts the task scheduler.
          * Spawns worker threads that wait for tasks to be submitted.
          */
-        void TaskScheduler::start() 
+        void TaskScheduler::start()
         {
+            // Spawn workers exactly once. A second start() would assign over live,
+            // joinable std::thread handles (std::terminate) and spin up a second set
+            // of owners for the per-worker Chase-Lev deques, silently violating their
+            // single-producer invariant.
+            bool expected = false;
+            if (!threads_started_.compare_exchange_strong(expected, true))
+            {
+                SR_LOG_WARN("TaskScheduler::start() called more than once; ignoring.");
+                return;
+            }
+
             // Workers begin in a waiting state. arm_for_execution() must be called
             // before any work is submitted to signal the pool to begin processing.
             for(size_t i=0; i<num_workers; ++i)
@@ -221,6 +232,8 @@ namespace SushiRuntime
                 if (task)
                     task->release();
             }
+            pending_count_.store(0, std::memory_order_relaxed);
+            priority_count_.store(0, std::memory_order_relaxed);
         }
 
         /**
@@ -240,8 +253,12 @@ namespace SushiRuntime
          */
         bool TaskScheduler::has_pending_submissions()
         {
-            std::lock_guard<std::mutex> lock(pending_mutex);
-            return !pending_submissions.empty() || !priority_submissions.empty();
+            // Lock-free: the shadow counters are the source of truth for emptiness
+            // and are only mutated under pending_mutex. This keeps the idle/shutdown
+            // liveness checks off the global lock, which the armed-idle pool polls
+            // frequently between runs.
+            return pending_count_.load(std::memory_order_relaxed) != 0
+                || priority_count_.load(std::memory_order_relaxed) != 0;
         }
 
         /**
@@ -261,11 +278,17 @@ namespace SushiRuntime
             if (my_queue->size() >= Deque::CAPACITY / 2)
                 return;
 
-            // Grab a reasonable batch to prevent local deque overflow 
+            // Lock-free fast path: skip the global mutex entirely when the injector
+            // is empty (the steady-state case). See pending_count_ for why a stale
+            // read is safe.
+            if (pending_count_.load(std::memory_order_relaxed) == 0)
+                return;
+
+            // Grab a reasonable batch to prevent local deque overflow
             // and ensure fair load distribution among all workers.
-            constexpr size_t BATCH_SIZE = 4096; 
+            constexpr size_t BATCH_SIZE = 4096;
             std::vector<Task*> batch;
-            
+
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);
                 if (pending_submissions.empty()) return;
@@ -278,6 +301,7 @@ namespace SushiRuntime
                     batch.push_back(pending_submissions.front());
                     pending_submissions.pop_front();
                 }
+                pending_count_.store(pending_submissions.size(), std::memory_order_relaxed);
 
                 // If there's still work left in the global injector, wake up another worker
                 if (!pending_submissions.empty())
@@ -363,21 +387,40 @@ namespace SushiRuntime
                 {
                     SushiRuntime::Memory::EpochGuard epoch_guard;
 
-                    if (prof)
+                    // poll_events touches SYCL events (get_info/wait), which can
+                    // surface an async or device error. Uncaught, it would escape
+                    // this std::thread body and call std::terminate. Route it
+                    // through record_run_error like execute_task does: fail the
+                    // current run, keep the pool re-armable.
+                    try
                     {
-                        const auto p0 = sclock::now();
-                        event_poller.poll_events(active_events, *my_queue);
-                        add_ns(wt.polling_ns, p0, sclock::now());
+                        if (prof)
+                        {
+                            const auto p0 = sclock::now();
+                            event_poller.poll_events(active_events, *my_queue);
+                            add_ns(wt.polling_ns, p0, sclock::now());
+                        }
+                        else
+                            event_poller.poll_events(active_events, *my_queue);
                     }
-                    else
-                        event_poller.poll_events(active_events, *my_queue);
+                    catch (...)
+                    {
+                        SR_LOG_ERROR("poll_events threw; aborting the current run.");
+                        record_run_error(std::current_exception());
+                    }
 
+                    // Lock-free fast path: only contend for the global mutex when a
+                    // priority submission actually exists (the rare case). Priority
+                    // bypass is uncommon, so this keeps the per-iteration cost at one
+                    // relaxed atomic load instead of a global lock acquisition.
+                    if (priority_count_.load(std::memory_order_relaxed) > 0)
                     {
                         std::lock_guard<std::mutex> lock(pending_mutex);
                         if (!priority_submissions.empty())
                         {
                             task = priority_submissions.top();
                             priority_submissions.pop();
+                            priority_count_.store(priority_submissions.size(), std::memory_order_relaxed);
                         }
                     }
 
@@ -424,12 +467,12 @@ namespace SushiRuntime
                         if (!offloaded)
                         {
                             const auto b0 = prof ? sclock::now() : sclock::time_point{};
-                            execute_task(task, active_events);
+                            execute_task(task, thread_id, active_events);
                             if (prof) add_ns(wt.busy_ns, b0, sclock::now());
                         }
 #else
                         const auto b0 = prof ? sclock::now() : sclock::time_point{};
-                        execute_task(task, active_events);
+                        execute_task(task, thread_id, active_events);
                         if (prof) add_ns(wt.busy_ns, b0, sclock::now());
 #endif
                     }
@@ -454,11 +497,13 @@ namespace SushiRuntime
         }
 
         /** 
-         * @brief Executes a single task and tracks its events. 
+         * @brief Executes a single task and tracks its events.
          * @param task Pointer to the task to execute.
+         * @param worker_id The executing worker's id (scheduler worker id, not the
+         *        EBR slot id), used for per-worker completion accounting.
          * @param events The list of active events to track completion.
          */
-        void TaskScheduler::execute_task(Task* task, EventPolling::ActiveEventList& events)
+        void TaskScheduler::execute_task(Task* task, int worker_id, EventPolling::ActiveEventList& events)
         {
             if (!task) return;
 
@@ -498,9 +543,14 @@ namespace SushiRuntime
                 }
             }
 
-            auto& tls_state = SushiRuntime::Memory::Detail::get_tls_state();
-            if (tls_state.id >= 0 && static_cast<size_t>(tls_state.id) < Core::MAX_WORKER_THREADS) 
-                worker_completed_tasks[tls_state.id].fetch_add(1, std::memory_order_relaxed);
+            // Count the completion against the EXECUTING WORKER's id, not the EBR
+            // slot id. EBR ids are handed out in order of first epoch touch across
+            // all threads (a non-worker thread that compiles the graph takes slot 0
+            // and shifts every worker), so keying by EBR id credited the wrong
+            // worker and fed the thermal strategy bogus per-worker rates. The read
+            // side (completed_tasks_for) already uses the worker id.
+            if (worker_id >= 0 && static_cast<size_t>(worker_id) < Core::MAX_WORKER_THREADS)
+                worker_completed_tasks[worker_id].value.fetch_add(1, std::memory_order_relaxed);
 
             try 
             {
@@ -637,8 +687,10 @@ namespace SushiRuntime
                 // push() never drops: the list spills to the heap past its inline
                 // capacity. Dropping an event here would leave the task's successors
                 // permanently un-triggered and deadlock the run.
+                // ready == "no real event" (inline host work); has_event is its
+                // inverse, cached so the poll loop never reconstructs sycl::event{}.
                 const bool ready = (e == sycl::event{});
-                events.push({e, task, ready});
+                events.push({e, task, ready, /*has_event=*/!ready});
             } 
             catch (...)
             {
@@ -794,11 +846,17 @@ namespace SushiRuntime
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);
                 if (task->get_priority() > 0)
+                {
                     priority_submissions.push(task);
+                    priority_count_.store(priority_submissions.size(), std::memory_order_relaxed);
+                }
                 else
+                {
                     pending_submissions.push_back(task);
+                    pending_count_.store(pending_submissions.size(), std::memory_order_relaxed);
+                }
             }
-            
+
             // Wake a worker up if they are heavily sleeping
             pending_cv.notify_one();
         }
@@ -832,7 +890,7 @@ namespace SushiRuntime
         size_t TaskScheduler::get_completion_rate(int worker_id) const 
         {
             if (worker_id < 0 || worker_id >= static_cast<int>(num_workers)) return 0;
-            return worker_completed_tasks[worker_id].load(std::memory_order_relaxed);
+            return worker_completed_tasks[worker_id].value.load(std::memory_order_relaxed);
         }
 
         /**
@@ -862,10 +920,11 @@ namespace SushiRuntime
             {
                 {
                     std::lock_guard<std::mutex> lock(pending_mutex);
-                    for (Task* t : rescued_tasks) 
+                    for (Task* t : rescued_tasks)
                     {
                         priority_submissions.push(t);
                     }
+                    priority_count_.store(priority_submissions.size(), std::memory_order_relaxed);
                 }
                 // Uyuyan / boşta bekleyen tüm soğuk worker'ları uyandır
                 pending_cv.notify_all(); 

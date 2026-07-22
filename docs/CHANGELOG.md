@@ -77,48 +77,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   `fluent_stencil_2d.cpp` and their `sr_fluent_*` targets are replaced; the
   `test_game_engine_example` integration test is removed in favour of the runnable
   example.
-
-### Changed
-- API hardening pass (source-breaking, no API freeze). `Buffer`/`State`/`Runtime`
-  `buffer()`/`state()` take a `DeviceIndex` instead of a bare `std::size_t` device
-  argument; `read_range`/`write_range`/`Buffer::region` take an `ElementRange` instead
-  of bare offset/count pairs (`buf.read_range({0, n})`, `buf.region({off, len})`).
-  `Buffer::operator[]` and the new `host()` throw `invalid_access` on a device-resident
-  handle in every build, where indexing was previously debug-asserted and undefined in
-  release. `Dynamic` is now move-only (its providers are `Delegate`s): pass a
-  `when()`/`sized()` temporary, or `std::move` a named `Dynamic`, into `add()`.
-  `Runtime::context()` is renamed `Runtime::unsafe_context()` to flag the
-  encapsulation escape hatch; routine reads move to `Runtime::advanced()`.
-- Grouped `Graph::Node`'s non-core concerns into cohesive sub-structs so each
-  subsystem owns its own slice instead of editing one flat node: the dynamic graph's
-  cross-region boundary fields move into `RegionLink Node::region`, the profiling
-  accumulators into `NodeProfiling Node::profiling`, and the distributed offload state
-  (distributed builds only) into `OffloadState Node::offload`. Field accesses are now
-  `node.region.boundary_successors`, `node.profiling.invocations`,
-  `node.offload().offloadable`, and so on; `Node::clear_boundary()` became
-  `RegionLink::clear()`. Internal-only — no public API, behaviour, or hot-path change;
-  the scheduler still walks the same inline fields at the same offsets.
-- Made `Graph::Node`'s layout independent of `SR_DISTRIBUTED`. The offload state now
-  lives in a lazily-allocated `NodeExtensions` reached through one unconditional
-  `Node::ext_` pointer (`OffloadState Node::offload()` / `offload_state()`), instead
-  of an `#ifdef`'d inline member that changed `sizeof(Node)` between builds. A
-  standalone build never allocates the extensions and pulls in no distributed symbol;
-  a distributed build allocates them lazily when a node first records offload state.
-  This removes the build-flag ABI coupling on `Node` — the library and its consumers
-  now agree on `sizeof(Node)` whether or not the distributed layer is compiled in.
-- Reusable completion latch (§5.1): `ExecutionEngine::execute` no longer allocates a
-  `std::promise`/`std::future` pair (and a capturing sentinel closure) per step. One
-  mutex+condition_variable latch lives on the engine and is reset, armed, and waited
-  on each step with no heap allocation; the sentinel's `host_work` is wired once per
-  compiled plan instead of every call. Over a long replayed run this removes millions
-  of per-step allocations and the associated jitter — the real-time path (L1) — while
-  keeping the existing completion contract: the sentinel still drains the DAG,
-  re-arms the pool, and surfaces a task error to the caller (now rethrown from the
-  latch), so error isolation and cancellation behave exactly as before. The
-  always-empty `sycl::event` that `execute()` returned is unchanged (no caller used
-  it); the per-step event-promise plumbing behind it was removed.
-
-### Added
 - RunReport observability (§5.5): opt-in profiling, chosen once at
   `Runtime::create({}, cfg)` with `RuntimeConfig::profiling = true`. When on, a run
   report carries a per-node breakdown (`node_timings`: device vs host time and
@@ -136,7 +94,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 - Fluent API reference site: a repo-root `Doxyfile` scoped to the public
   `include/SushiRuntime/api` surface, a hand-written manual landing
   (`docs/api/mainpage.md`), and the getting-started guide build together into a
-  browsable scripting-style reference. Build it with `sr project doxygen`
+  browsable scripting-style reference. Build it with `sr doxygen`
   (output in `docs/api-site/html`); a CI job builds it on every push/PR and
   surfaces any undocumented public symbol.
 - Rebalancer opt-out: `Runtime::rebalancer(bool)` (and
@@ -193,6 +151,53 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   a specific device queue, so buffers used together share one context.
 
 ### Changed
+- GPU backend selection is now vendor-agnostic: a single `SR_GPU_BACKEND`
+  (`auto`/`cuda`/`rocm`/`intel`/`cpu`/`none`) resolves in a modular `cmake/gpu/`
+  layer to one vendor strategy, with auto-detect probing the host compiler
+  toolchain (and off-`PATH` `nvcc`/`hipcc` install prefixes). Adds ROCm/AMD and
+  Intel GPU backends alongside CUDA; `SR_CUDA_ARCH` is auto-detected from
+  `nvidia-smi`. `-DSR_ENABLE_CUDA=ON` is kept as a legacy alias for
+  `SR_GPU_BACKEND=cuda`.
+- CLI presentation moved to the shared `sushicli` layer; the CLI is installed with
+  `ss install-cli sushiruntime` (the old `cli/install.py` script was removed).
+- API hardening pass (source-breaking, no API freeze). `Buffer`/`State`/`Runtime`
+  `buffer()`/`state()` take a `DeviceIndex` instead of a bare `std::size_t` device
+  argument; `read_range`/`write_range`/`Buffer::region` take an `ElementRange` instead
+  of bare offset/count pairs (`buf.read_range({0, n})`, `buf.region({off, len})`).
+  `Buffer::operator[]` and the new `host()` throw `invalid_access` on a device-resident
+  handle in every build, where indexing was previously debug-asserted and undefined in
+  release. `Dynamic` is now move-only (its providers are `Delegate`s): pass a
+  `when()`/`sized()` temporary, or `std::move` a named `Dynamic`, into `add()`.
+  `Runtime::context()` is renamed `Runtime::unsafe_context()` to flag the
+  encapsulation escape hatch; routine reads move to `Runtime::advanced()`.
+- Grouped `Graph::Node`'s non-core concerns into cohesive sub-structs so each
+  subsystem owns its own slice instead of editing one flat node: the dynamic graph's
+  cross-region boundary fields move into `RegionLink Node::region`, the profiling
+  accumulators into `NodeProfiling Node::profiling`, and the distributed offload state
+  (distributed builds only) into `OffloadState Node::offload`. Field accesses are now
+  `node.region.boundary_successors`, `node.profiling.invocations`,
+  `node.offload().offloadable`, and so on; `Node::clear_boundary()` became
+  `RegionLink::clear()`. Internal-only — no public API, behaviour, or hot-path change;
+  the scheduler still walks the same inline fields at the same offsets.
+- Made `Graph::Node`'s layout independent of `SR_DISTRIBUTED`. The offload state now
+  lives in a lazily-allocated `NodeExtensions` reached through one unconditional
+  `Node::ext_` pointer (`OffloadState Node::offload()` / `offload_state()`), instead
+  of an `#ifdef`'d inline member that changed `sizeof(Node)` between builds. A
+  standalone build never allocates the extensions and pulls in no distributed symbol;
+  a distributed build allocates them lazily when a node first records offload state.
+  This removes the build-flag ABI coupling on `Node` — the library and its consumers
+  now agree on `sizeof(Node)` whether or not the distributed layer is compiled in.
+- Reusable completion latch (§5.1): `ExecutionEngine::execute` no longer allocates a
+  `std::promise`/`std::future` pair (and a capturing sentinel closure) per step. One
+  mutex+condition_variable latch lives on the engine and is reset, armed, and waited
+  on each step with no heap allocation; the sentinel's `host_work` is wired once per
+  compiled plan instead of every call. Over a long replayed run this removes millions
+  of per-step allocations and the associated jitter — the real-time path (L1) — while
+  keeping the existing completion contract: the sentinel still drains the DAG,
+  re-arms the pool, and surfaces a task error to the caller (now rethrown from the
+  latch), so error isolation and cancellation behave exactly as before. The
+  always-empty `sycl::event` that `execute()` returned is unchanged (no caller used
+  it); the per-step event-promise plumbing behind it was removed.
 - The scheduler's per-task downcast no longer uses RTTI: `execute_task` resolves a
   graph node through the virtual `is_graph_node()` tag and a `static_cast` instead
   of `dynamic_cast`, removing the one hot-path RTTI query and matching the strategy
@@ -211,12 +216,103 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   task-graph API is documented as the lower-level foundation.
 
 ### Fixed
+- Memory-safety hardening of the concurrency and distributed layers:
+  - EBR `enter()` now issues a `seq_cst` fence after publishing its epoch slot, so
+    a reader's slot is globally visible before it dereferences shared structure —
+    closing a Dekker-style store/load race that could let a concurrent reclaim
+    free a node still in use.
+  - `EpochGuard` is re-entrant: a nested guard no longer clears the thread's epoch
+    slot mid-critical-section (per-thread nesting counter).
+  - Per-worker poll backoff/stall state moved off the shared `EventPolling`
+    instance onto each worker's `ActiveEventList`, removing a data race that could
+    wrap a counter and hang a run.
+  - Documented the recorded-handle move hazard: a graph records a `Buffer`/`State`
+    by object address, so moving one after `Graph::add()` (or reallocating a
+    container that holds it) leaves the graph pointing at the old address. The move
+    operations and `add()` now warn against it (the liveness token travels with the
+    value by design, so this case cannot be auto-detected).
+  - `WorkloadCoordinator::set_strategy()` is synchronised against the monitor
+    thread, fixing a use-after-free when swapping strategies at runtime.
+  - `ExecutionEngine::execute()` rejects a concurrent run instead of corrupting the
+    shared completion latch.
+  - `TaskGraph::compile()` drains the dependency tracker before throwing on a
+    root-less graph (and `DependencyTracker` reclaims on destruction), preventing a
+    use-after-free on a later `add_node()` after a failed compile.
+- Distributed wire protocol robustness (unauthenticated trust boundary):
+  - `ByteReader::get_blob` bounds-checks the length prefix without an overflowing
+    addition, so a hostile 64-bit length can no longer yield an out-of-bounds span
+    or a `~2^64`-byte allocation.
+  - The worker's `BUFFER_PUSH` handler clamps its `memcpy` to the allocated size
+    (matching the master), closing a heap/USM overflow from mismatched wire fields.
+  - Cache-buffer allocations are validated against `MAX_FRAME_BYTES` and their
+    null returns handled; the worker message pump contains any deserialize/alloc
+    throw instead of terminating the process.
+  - The scheduler routes a throw from `poll_events` through `record_run_error`
+    rather than letting it escape the worker thread and terminate the process.
+  - `TaskDispatchMsg` no longer serializes `TaskMetadata::name` (a raw `const char*`)
+    onto the wire — a wild pointer on the worker and an ASLR leak; the POD fields
+    are serialized field-by-field and the name restored to a default.
+- Correctness:
+  - `TaskGraph::compile()` now rejects dependency cycles. A non-empty root set is
+    necessary but not sufficient; a disjoint cycle would leave nodes unschedulable
+    and hang the run on completion. A Kahn's-algorithm reachability pass (paid once
+    per compile, amortized over every replay) detects and fails it loudly.
+  - Per-worker completed-task counters are keyed by the executing worker id, not the
+    EBR slot id (which shifts when a non-worker thread touches the reclaimer first),
+    so the thermal rebalancer reasons over the right worker's rate.
+  - Pool pages are allocated with `aligned_alloc_shared(DEFAULT_ALIGNMENT, …)` so a
+    pooled block honours an alignment request up to `DEFAULT_ALIGNMENT` (a plain
+    `malloc_shared` only guaranteed the backend's natural alignment).
+  - `Buffer` construction throws `allocation_failed` on OOM instead of silently
+    holding a null pointer (which would drop the region from the tracker and then
+    fault in-kernel).
+  - `add_successor` publishes the successor slot before the count (release), closing
+    a latent window where a concurrent `trigger_successors` could see an
+    incremented count but a still-null slot and skip a decrement.
+  - `Node::is_fused` (never read or written) and the "kernel fusion" claim in
+    `TaskGraph`'s docs are removed — an advertised feature that did not exist.
+  - `~Runtime` swallows a late async device error from `wait_and_throw()` instead of
+    terminating the process from a noexcept destructor; `USMManagerImpl` stores its
+    queue by value (was a dangling reference in teardown); the allocator registry
+    slot is cleared with a compare-exchange so a slot-colliding live allocator is not
+    unregistered; `TaskScheduler::start()` is guarded against double-spawn.
+  - TCP master bounds accepted connections with `SO_RCVTIMEO`, so a peer that
+    connects but never sends cannot hold a worker slot forever.
+- Performance:
+  - The global `pending_mutex` is no longer taken on every dispatch iteration: two
+    relaxed shadow counters let a worker skip the lock when the injector queues are
+    empty (the steady state), de-serializing submit throughput on many cores.
+  - Per-step INFO logging in `execute()` dropped to DEBUG (compiled out in release),
+    so a million-step `run(n)` no longer emits millions of log records.
+  - `worker_completed_tasks` is one cache line per counter (was false-shared) and
+    zero-initialized (was indeterminate in C++17).
+  - The poll loop caches whether an event is real (`has_event`) instead of
+    constructing a throwaway `sycl::event{}` per entry per poll.
+- Build/CI:
+  - Cleared the stale compile-feature requirement on the imported GTest targets so a
+    bleeding-edge Clang (whose feature table CMake doesn't know) can configure the
+    test suite instead of failing at generate.
+  - The functional CI lane builds the tests (`SR_BUILD_TESTS=ON`) and the distributed
+    layer (`SR_ENABLE_DISTRIBUTED=ON`) — previously it built and ran nothing; added a
+    ThreadSanitizer lane and a Python CLI lint/test lane.
+- Tests: added malformed-input/fuzz coverage for the wire protocol (overflowing and
+  truncated blobs, garbage frames); the allocator stress test now asserts global
+  pointer uniqueness (no double-hand-out); the distributed fan-out test asserts the
+  offload total rather than a flaky exact per-worker split; added a Python CLI test
+  suite (lazy console + project-root resolution).
+- CLI: the console is initialised lazily, so `sr --help`, `sr toolchain`, and other
+  commands no longer abort with "Not inside a SushiRuntime project" when run outside
+  a checkout. The reconfigure stamp now keys on `(distributed, build_type, gpu_backend,
+  tests)`, so `sr build -t release` then `-t debug` reconfigures instead of silently
+  reusing the Release tree; `sr test` clears an inherited `CUDA_LAUNCH_BLOCKING` (as
+  `sr run` already did) so it cannot serialize the async/overlap tests. The tracked
+  `cli/sushiruntime_cli.egg-info/` build artifacts were untracked.
 - Flaky `Integration_FluentAPI.RunForRunsMultipleStepsWithinBudget`: the test asserted
   that a trivial kernel completes more than one step within a 50ms `run_for` budget, but
   `run_for` fixes its deadline before the first step, so the one-off JIT compilation and
   queue/device setup on a cold dispatch alone overran the budget and only one step ran.
   It passed only when an earlier test in the same process had already warmed the device,
-  so it failed deterministically when `sr project test` ran it in its own ctest process.
+  so it failed deterministically when `sr test` ran it in its own ctest process.
   The test now warms the kernel before timing, measuring steady-state throughput as
   intended.
 - Fluent handle allocation no longer round-robins across devices: pinning each

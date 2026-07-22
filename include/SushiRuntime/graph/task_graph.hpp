@@ -57,8 +57,7 @@ namespace SushiRuntime
          * @brief Manages and optimizes dependencies between async tasks.
          * 
          * TaskGraph collects work (kernels), analyzes data dependencies,
-         * and executes them in the best order on the hardware. 
-         * It can also perform optimizations like kernel fusion.
+         * and executes them in the best order on the hardware.
          */
         class SUSHIRUNTIME_API TaskGraph 
         {

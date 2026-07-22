@@ -33,6 +33,7 @@
 #include <condition_variable>
 #include <unordered_map>
 #include <unordered_set>
+#include <stdexcept>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
@@ -146,6 +147,20 @@ namespace SushiRuntime
             void on_message(int peer, MsgType type, SushiRuntime::span<const std::byte> payload);
 
             /**
+             * @brief Allocates a shared USM buffer for the cache after validating
+             *        the wire-supplied size.
+             *
+             * The size arrives from an untrusted peer. Reject anything above the
+             * frame cap and treat a failed allocation as an error rather than
+             * returning a null pointer that a later memcpy would dereference.
+             * Both throws are contained by the pump-thread guard in start().
+             *
+             * @param size_bytes Requested allocation size from the wire.
+             * @return A non-null pointer to shared USM memory.
+             */
+            void* alloc_cache_buffer(uint64_t size_bytes);
+
+            /**
              * @brief Continuously dequeues and executes dispatch jobs.
              */
             void exec_loop();
@@ -230,6 +245,19 @@ namespace SushiRuntime
          * @param h The BufferHandle describing the output buffer.
          * @return A void pointer to the allocated memory.
          */
+        void* WorkerAgent::Impl::alloc_cache_buffer(uint64_t size_bytes)
+        {
+            if (size_bytes > MAX_FRAME_BYTES)
+                throw std::runtime_error(
+                    "BufferHandle size_bytes exceeds MAX_FRAME_BYTES");
+            void* p = sycl::malloc_shared(size_bytes, ctx.get_queue(0));
+            // malloc_shared can legitimately return null on OOM; without this
+            // check a later memcpy into the cache entry would segfault.
+            if (!p && size_bytes != 0)
+                throw std::runtime_error("USM allocation for cache buffer failed");
+            return p;
+        }
+
         void* WorkerAgent::Impl::resolve_output(const BufferHandle& h)
         {
             std::lock_guard<std::mutex> lk(cache_mtx);
@@ -237,7 +265,7 @@ namespace SushiRuntime
             if (!e.ptr || e.size != h.size_bytes)
             {
                 if (e.ptr) sycl::free(e.ptr, ctx.get_queue(0));
-                e.ptr  = sycl::malloc_shared(h.size_bytes, ctx.get_queue(0));
+                e.ptr  = alloc_cache_buffer(h.size_bytes);
                 e.size = h.size_bytes;
             }
             e.version = h.version;
@@ -320,10 +348,17 @@ namespace SushiRuntime
                         if (!e.ptr || e.size != push.handle.size_bytes)
                         {
                             if (e.ptr) sycl::free(e.ptr, ctx.get_queue(0));
-                            e.ptr  = sycl::malloc_shared(push.handle.size_bytes, ctx.get_queue(0));
+                            e.ptr  = alloc_cache_buffer(push.handle.size_bytes);
                             e.size = push.handle.size_bytes;
                         }
-                        std::memcpy(e.ptr, push.data.data(), push.data.size());
+                        // Clamp the copy to the allocated size. handle.size_bytes
+                        // (which sized e.ptr) and data.size() are INDEPENDENT wire
+                        // fields; a hostile/buggy peer can send size_bytes=16 with a
+                        // 1 MiB blob, overflowing the USM allocation. Mirror the
+                        // master-side clamp in distributed_coordinator.cpp.
+                        uint64_t n = push.data.size();
+                        if (n > e.size) n = e.size;
+                        std::memcpy(e.ptr, push.data.data(), n);
                         e.version = push.handle.version;
                     }
                     cache_cv.notify_all();
@@ -575,7 +610,27 @@ namespace SushiRuntime
             impl_->transport->on_message(
                 [raw](int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
                 {
-                    raw->on_message(peer, type, payload);
+                    // The message handler runs on the transport's pump thread. A
+                    // throw from here (malformed wire input → bad_alloc, a failed
+                    // SYCL allocation, a hostile blob) would escape the thread body
+                    // and call std::terminate, taking down the whole process on a
+                    // single bad message. Contain it: log and drop the message.
+                    try
+                    {
+                        raw->on_message(peer, type, payload);
+                    }
+                    catch (const std::exception& ex)
+                    {
+                        SR_LOG_WARN("Worker dropped a message from peer {} "
+                                    "(type {}): {}", peer,
+                                    static_cast<int>(type), ex.what());
+                    }
+                    catch (...)
+                    {
+                        SR_LOG_WARN("Worker dropped a message from peer {} "
+                                    "(type {}): unknown error.", peer,
+                                    static_cast<int>(type));
+                    }
                 });
             impl_->transport->start();
 
