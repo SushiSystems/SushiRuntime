@@ -27,6 +27,8 @@
 #include <vector>
 #include <thread>
 #include <atomic>
+#include <future>
+#include <unordered_set>
 #include <gtest/gtest.h>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -49,7 +51,12 @@ TEST(Stress_USMAllocatorStress, ConcurrentAllocationContention)
     constexpr size_t ALLOCS_PER_THREAD = 5000;
     constexpr size_t ALLOC_SIZE        = 256; // hits bucket index 1
 
-    auto worker_func = [&allocator]()
+    // Each thread keeps its allocations LIVE (no interleaved deallocate) and
+    // returns them, so after the join we can assert every pointer is unique.
+    // The header promises "no double-hand-out"; the previous version only
+    // checked ptr != nullptr in each thread's private vector, so two threads
+    // simultaneously handed the same block would still have passed.
+    auto worker_func = [&allocator]() -> std::vector<void*>
     {
         std::vector<void*> local_ptrs;
         local_ptrs.reserve(ALLOCS_PER_THREAD);
@@ -63,22 +70,29 @@ TEST(Stress_USMAllocatorStress, ConcurrentAllocationContention)
         }
 
         std::this_thread::yield();
-
-        for (void* ptr : local_ptrs)
-            allocator->deallocate(ptr);
+        return local_ptrs;
     };
 
-    std::vector<std::thread> threads;
+    std::vector<std::future<std::vector<void*>>> futures;
     for (int i = 0; i < NUM_THREADS; ++i)
-        threads.emplace_back(worker_func);
+        futures.emplace_back(std::async(std::launch::async, worker_func));
 
-    for (auto& t : threads)
-        if (t.joinable())
-            t.join();
+    std::vector<void*> all_ptrs;
+    all_ptrs.reserve(NUM_THREADS * ALLOCS_PER_THREAD);
+    for (auto& f : futures)
+    {
+        std::vector<void*> chunk = f.get();
+        all_ptrs.insert(all_ptrs.end(), chunk.begin(), chunk.end());
+    }
 
-    // Finishing without a deadlock or segfault means the bitmask CAS path
-    // handled the contention correctly.
-    SUCCEED();
+    // No pointer may have been handed out to two threads while both held it.
+    std::unordered_set<void*> unique_ptrs(all_ptrs.begin(), all_ptrs.end());
+    EXPECT_EQ(unique_ptrs.size(), all_ptrs.size())
+        << "Allocator handed the same live block to more than one thread "
+           "(double-hand-out).";
+
+    for (void* ptr : all_ptrs)
+        allocator->deallocate(ptr);
 }
 
 /**

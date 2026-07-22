@@ -20,6 +20,21 @@ cmake_minimum_required(VERSION 3.22) # gtest_discover_tests(TEST_FILTER ...)
 
 option(SR_BUILD_BENCHMARKS "Build the heavy stress/performance test suite (CI fast lane sets OFF)" ON)
 
+# Work around "No known features for CXX compiler Clang <ver>" at generate time.
+# A bleeding-edge clang (e.g. 23.0.0 from the intel/llvm nightly) is newer than
+# this CMake's compiler-feature database, so "Detecting CXX compile features"
+# fails and CMake cannot resolve the INTERFACE_COMPILE_FEATURES (cxx_std_14) that
+# the imported GTest targets carry — erroring for any target that links them.
+# The whole tree already pins CMAKE_CXX_STANDARD=17 (see cmake/ProjectOptions),
+# so that feature requirement is redundant; clear it on the GTest targets so the
+# generate step succeeds. The library itself configures fine because it never
+# links GTest.
+foreach(_sr_gtest_tgt GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
+    if(TARGET ${_sr_gtest_tgt})
+        set_target_properties(${_sr_gtest_tgt} PROPERTIES INTERFACE_COMPILE_FEATURES "")
+    endif()
+endforeach()
+
 set(SR_TEST_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common")
 
 # Re-applies the cross-cutting target settings to a test binary: include dir for

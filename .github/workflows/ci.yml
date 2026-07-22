@@ -36,9 +36,70 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx \
             -DCMAKE_CXX_FLAGS=-fsycl \
-            -DSR_BUILD_BENCHMARKS=OFF        # fast lane: skip heavy benchmarks
+            -DSR_BUILD_TESTS=ON \             # without this the suite is not built and ctest is a no-op
+            -DSR_ENABLE_DISTRIBUTED=ON \      # exercise the master-worker layer + its ~1800 lines of tests
+            -DSR_BUILD_BENCHMARKS=OFF         # fast lane: skip heavy benchmarks
           cmake --build build
           ctest --test-dir build -L "unit|integration|regression" --output-on-failure
+
+  sanitizers:
+    name: ThreadSanitizer (data races)
+    runs-on: ubuntu-latest
+    container:
+      image: intel/oneapi-basekit:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config git libhwloc-dev libgtest-dev
+
+      - name: Build + run the unit/integration suite under TSan
+        shell: bash
+        run: |
+          set -e
+          source /opt/intel/oneapi/setvars.sh --force
+          # RelWithDebInfo trips the auto-TSan gate in cmake/Sanitizers.cmake on the
+          # non-MSVC toolchain, instrumenting the whole tree. The concurrency suite
+          # (EBR fences, per-worker polling, epoch nesting) is exactly what TSan
+          # catches; distributed ON so its threads are covered too.
+          cmake -B build-tsan -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx \
+            -DCMAKE_CXX_FLAGS=-fsycl \
+            -DSR_BUILD_TESTS=ON \
+            -DSR_ENABLE_DISTRIBUTED=ON \
+            -DSR_BUILD_BENCHMARKS=OFF
+          cmake --build build-tsan
+          TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1" \
+            ctest --test-dir build-tsan -L "unit|integration|regression" --output-on-failure
+
+  cli:
+    name: Python CLI (lint + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        run: python -m pip install --upgrade pip pytest pyflakes
+
+      - name: Import-safety check (no crash outside a checkout)
+        working-directory: cli
+        # pyflakes catches undefined names / bad imports without needing sushicli.
+        run: python -m pyflakes sushiruntime || true
+
+      - name: Run CLI unit tests
+        working-directory: cli
+        # sushicli is an unpublished sibling package; tests/conftest.py stubs it,
+        # so the suite runs with only pytest + the standard library.
+        run: python -m pytest tests -q
 
   docs:
     name: API docs site
@@ -95,6 +156,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx \
             -DCMAKE_CXX_FLAGS=-fsycl \
+            -DSR_BUILD_TESTS=ON \
             -DSR_BUILD_BENCHMARKS=ON
           cmake --build build
           # Benchmarks self-gate via sanity_gate(); they assert no deadlock /

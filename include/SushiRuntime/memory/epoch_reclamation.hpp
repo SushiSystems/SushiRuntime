@@ -61,6 +61,18 @@ namespace SushiRuntime
             struct EpochThreadLocalState 
             {
                 int id = -1;
+
+                /**
+                 * @brief Re-entrancy depth of enter()/exit() on this thread.
+                 *
+                 * enter() only publishes the epoch slot on the outermost entry
+                 * (0 -> 1) and exit() only clears it on the outermost exit
+                 * (1 -> 0). Without this, a nested guard's exit() would zero the
+                 * slot mid-critical-section, letting another thread reclaim nodes
+                 * the outer guard is still traversing (use-after-free).
+                 */
+                uint32_t nest_depth = 0;
+
                 RetiredNode* retire_list = nullptr;
                 size_t retire_count = 0;
                 static constexpr size_t RETIRE_THRESHOLD = 128; 
@@ -281,8 +293,25 @@ namespace SushiRuntime
             {
                 auto& tls_state = Detail::get_tls_state();
                 if (tls_state.id == -1) tls_state.id = register_thread();
+
+                // Re-entrant: only the outermost enter() publishes the slot. A
+                // nested guard (e.g. DependencyTracker::resolve() invoked from a
+                // worker task that already holds a dispatch-loop guard) must not
+                // re-stamp, and its matching exit() must not clear the slot early.
+                if (tls_state.nest_depth++ > 0)
+                    return;
+
                 uint64_t current = global_epoch_.load(std::memory_order_acquire);
                 thread_slots_[tls_state.id].epoch.store(current, std::memory_order_release);
+                // The release store above does NOT stop this thread's subsequent
+                // shared-structure reads from being reordered ahead of the slot
+                // becoming globally visible (store-buffer forwarding on x86 TSO,
+                // free reordering on ARM). Without a full fence a concurrent
+                // retire()/reclaim could miss this slot and free a node we are
+                // about to dereference — a classic Dekker-style store/load race.
+                // A seq_cst fence orders the slot publication before any later
+                // load, matching production EBRs (folly, crossbeam).
+                std::atomic_thread_fence(std::memory_order_seq_cst);
             }
 
             /**
@@ -294,10 +323,14 @@ namespace SushiRuntime
             inline void exit()
             {
                 auto& tls_state = Detail::get_tls_state();
-                if (tls_state.id != -1) 
-                {
-                    thread_slots_[tls_state.id].epoch.store(0, std::memory_order_release);
-                }
+                if (tls_state.id == -1) return;
+
+                // Balance enter(): only the outermost exit() clears the slot.
+                // Guard against an unmatched exit() underflowing the counter.
+                if (tls_state.nest_depth == 0) return;
+                if (--tls_state.nest_depth > 0) return;
+
+                thread_slots_[tls_state.id].epoch.store(0, std::memory_order_release);
             }
 
             template<typename T>

@@ -328,9 +328,6 @@ namespace SushiRuntime
             
             /** @brief SYCL events this node depends on (heap-free for small amounts). */
             SmallEventVector sycl_deps;
-            
-            /** @brief Flag to indicate if the node is fused with others. */
-            bool is_fused = false;
 
             /**
              * @brief Marks the graph's completion sentinel.
@@ -416,12 +413,26 @@ namespace SushiRuntime
              */
             void add_successor(Node* target) noexcept
             {
-                int32_t idx = inline_successor_count.fetch_add(1, std::memory_order_relaxed);
+                // Single-writer per node: successors are wired at graph build /
+                // step-boundary time, never concurrently with another add_successor
+                // on the same node. That lets us PUBLISH THE SLOT BEFORE THE COUNT:
+                // write inline_successors[idx], then release-store the incremented
+                // count. A concurrent reader in trigger_successors acquire-loads the
+                // count and, on seeing idx+1, is guaranteed to also see the slot
+                // write — closing the window where it read an incremented count but a
+                // still-null slot and silently skipped the successor (a missed
+                // in_degree decrement -> deadlock). The previous relaxed fetch_add
+                // published the count first, exposing that window.
+                int32_t idx = inline_successor_count.load(std::memory_order_relaxed);
                 if (idx < MAX_INLINE_SUCCESSORS)
                 {
                     inline_successors[idx] = target;
+                    inline_successor_count.store(idx + 1, std::memory_order_release);
                     return;
                 }
+                // Past the inline capacity: still reserve the slot number so the
+                // count reflects the spilled entries, then push onto the list below.
+                inline_successor_count.store(idx + 1, std::memory_order_release);
 
                 // Spillover to heap-allocated lock-free linked list
                 SuccessorNode* new_node = new SuccessorNode{target, nullptr};

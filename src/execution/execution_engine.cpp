@@ -123,6 +123,15 @@ namespace SushiRuntime
             std::atomic<bool> is_shutdown{false};
 
             /**
+             * @brief Serialises graph runs: execute() shares one CompletionLatch,
+             *        sentinel and scheduler-arm state, so two concurrent runs would
+             *        clobber each other (a reset erasing the other's pending
+             *        completion, a sentinel waking the wrong waiter). Detect and
+             *        reject overlap rather than corrupt it.
+             */
+            std::atomic<bool> run_in_progress{false};
+
+            /**
              * @brief Constructs the internal implementation.
              *
              * Starts the task scheduler and workload rebalancer.
@@ -352,7 +361,25 @@ namespace SushiRuntime
             SR_THROW_IF(impl_->is_shutdown.load(std::memory_order_acquire), "Execute called after shutdown.");
             SR_THROW_IF(graph.roots.empty(), "Received a compiled graph with no root nodes.");
 
-            SR_LOG_INFO("Executing graph ({} root nodes).", graph.roots.size());
+            // Reject a concurrent run before touching any shared run state. If the
+            // exchange returns true another run owns the engine, so we throw WITHOUT
+            // installing the reset guard — that run still owns the flag. On success
+            // the RAII guard clears it on every exit path, including the rethrow.
+            SR_THROW_IF(impl_->run_in_progress.exchange(true, std::memory_order_acquire),
+                        "ExecutionEngine::execute() is not reentrant: a graph run is "
+                        "already in progress on this engine.");
+            struct RunGuard
+            {
+                std::atomic<bool>& flag;
+                ~RunGuard() { flag.store(false, std::memory_order_release); }
+            } run_guard{impl_->run_in_progress};
+
+            // DEBUG, not INFO: execute() runs once per replayed step, so under a
+            // million-step run(n) an INFO here would emit millions of log records
+            // (ostringstream + timestamp + global mutex + condvar notify each),
+            // defeating the allocation-free CompletionLatch. Compiled out in
+            // release (ACTIVE_LOG_LEVEL = INFO there).
+            SR_LOG_DEBUG("Executing graph ({} root nodes).", graph.roots.size());
 
             // -----------------------------------------------------------------
             // Step 1: Wire the sentinel's host_work once. It captures only stable
@@ -426,7 +453,7 @@ namespace SushiRuntime
                 std::rethrow_exception(impl_->completion.error);
             }
 
-            SR_LOG_INFO("Graph execution completed.");
+            SR_LOG_DEBUG("Graph execution completed."); // per-step; see the DEBUG note above
             return sycl::event{};
         }
 
