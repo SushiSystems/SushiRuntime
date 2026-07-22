@@ -27,6 +27,7 @@
 #include <stdexcept>
 #include <atomic>
 #include <vector>
+#include <unordered_map>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/core/logger.hpp>
@@ -594,7 +595,73 @@ namespace SushiRuntime
             if (graph.roots.empty())
             {
                 SR_LOG_ERROR("Task graph has no root nodes. The graph may contain a cycle or unresolved dependencies.");
+                // Drain the tracker BEFORE the throw. `graph` (and every Node it
+                // owns) is destroyed as this exception unwinds, but the tracker's
+                // AccessNodes still hold raw task pointers into those nodes. This
+                // TaskGraph survives a failed compile(), so a later add_node() ->
+                // resolve() would traverse the history and add_dependency() to
+                // freed pointers — a use-after-free write. reset() retires the
+                // AccessNodes and clears the shard tails, so the next resolve()
+                // starts from an empty (and valid) history.
+                impl_->tracker.reset();
                 throw std::runtime_error("Task graph has no root nodes.");
+            }
+
+            // Cycle guard. A non-empty root set is necessary but NOT sufficient: a
+            // graph can have a valid root AND a disjoint dependency cycle whose nodes
+            // never reach in_degree 0, so they are never dispatched and completion
+            // never fires — the run hangs forever on the sentinel. Simulate the
+            // runtime drain (Kahn's algorithm) over a shadow of the in-degrees; if
+            // any node is unreachable it sits in such a cycle. This is O(N+E) but
+            // paid once at compile, amortized over every replay of the plan.
+            {
+                std::unordered_map<Node*, int32_t> shadow_indeg;
+                shadow_indeg.reserve(graph.all_nodes.size());
+                for (auto& n : graph.all_nodes)
+                    shadow_indeg.emplace(n.get(),
+                        n->in_degree.load(std::memory_order_relaxed));
+
+                std::vector<Node*> ready(graph.roots.begin(), graph.roots.end());
+                size_t drained = 0;
+
+                auto relax_successor = [&](Node* succ)
+                {
+                    auto it = shadow_indeg.find(succ);
+                    if (it == shadow_indeg.end()) return;   // sentinel / external
+                    if (--(it->second) == 0)
+                        ready.push_back(succ);
+                };
+
+                while (!ready.empty())
+                {
+                    Node* n = ready.back();
+                    ready.pop_back();
+                    ++drained;
+
+                    const int32_t inl = std::min<int32_t>(
+                        n->inline_successor_count.load(std::memory_order_relaxed),
+                        Node::MAX_INLINE_SUCCESSORS);
+                    for (int32_t i = 0; i < inl; ++i)
+                        if (n->inline_successors[i]) relax_successor(n->inline_successors[i]);
+
+                    for (auto* s = n->successor_list.load(std::memory_order_relaxed);
+                         s; s = s->next)
+                        if (s->target) relax_successor(s->target);
+
+                    for (auto* succ : n->region.boundary_successors)
+                        if (succ) relax_successor(succ);
+                }
+
+                if (drained != graph.all_nodes.size())
+                {
+                    SR_LOG_ERROR("Task graph contains a dependency cycle: {} of {} "
+                                 "nodes are unreachable and would hang the run.",
+                                 graph.all_nodes.size() - drained,
+                                 graph.all_nodes.size());
+                    impl_->tracker.reset(); // same UAF-avoidance as the no-roots path
+                    throw std::runtime_error(
+                        "Task graph contains a dependency cycle (unschedulable nodes).");
+                }
             }
 
             graph.sentinel = std::move(sentinel);

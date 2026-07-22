@@ -27,6 +27,7 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <mutex>
 
 namespace SushiRuntime
 {
@@ -46,6 +47,12 @@ namespace SushiRuntime
             private:
                 const ITelemetryProvider& telemetry_;
                 ITaskMigrator& migrator_;
+
+                // strategy_mtx_ guards strategy_ against a concurrent set_strategy()
+                // destroying the object the monitor thread is mid-call on. Held
+                // only across the (fast) evaluate_and_rebalance call and the swap,
+                // never across the 5 ms sleep.
+                mutable std::mutex strategy_mtx_;
                 std::unique_ptr<IRebalanceStrategy> strategy_;
 
                 std::atomic<bool> running_{false};
@@ -55,7 +62,11 @@ namespace SushiRuntime
                 {
                     while (running_.load(std::memory_order_relaxed))
                     {
-                        strategy_->evaluate_and_rebalance(telemetry_, migrator_);
+                        {
+                            std::lock_guard<std::mutex> lk(strategy_mtx_);
+                            if (strategy_)
+                                strategy_->evaluate_and_rebalance(telemetry_, migrator_);
+                        }
                         std::this_thread::sleep_for(std::chrono::milliseconds(5));
                     }
                 }
@@ -102,7 +113,15 @@ namespace SushiRuntime
                  */
                 void set_strategy(std::unique_ptr<IRebalanceStrategy> new_strategy)
                 {
-                    strategy_ = std::move(new_strategy);
+                    std::unique_ptr<IRebalanceStrategy> old;
+                    {
+                        std::lock_guard<std::mutex> lk(strategy_mtx_);
+                        old = std::move(strategy_);
+                        strategy_ = std::move(new_strategy);
+                    }
+                    // old is destroyed here, outside the lock and guaranteed not to
+                    // be in use by monitor_loop (which holds the same mutex around
+                    // its evaluate_and_rebalance call).
                 }
         };
     }

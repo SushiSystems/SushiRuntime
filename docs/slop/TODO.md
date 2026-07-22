@@ -14,15 +14,12 @@ before the allocator is torn down, making the destructor safe by ordering, or ad
 a liveness check in the destructor. This is a correctness risk; it must be resolved
 before v1.0.0.
 
-**#30 — EventPolling 256-event cap**
+**#30 — EventPolling 256-event cap — RESOLVED**
 
-`ActiveEventList` has a fixed capacity of `MAX_EVENTS = 256`. When the list is
-full and a new event arrives, the overflow path logs a warning and drops the event.
-A dropped event's successors never become ready — a silent, permanent deadlock on
-graphs with more than 256 concurrent in-flight events. Inspect the overflow path
-and either: (a) block until a slot is free, or (b) grow the list dynamically. If
-the current behavior is already safe, document it in code. If it is not, this is a
-correctness bug.
+`ActiveEventList` no longer drops events. It keeps 256 entries inline (no
+allocation in the common case) and spills the overflow into a heap vector; its
+`push()` never fails and never drops. The 256 is now an inline fast-path capacity,
+not a hard cap, so the deadlock this item described cannot occur.
 
 **#33 — EventPolling `Task*` → `Node*` downcast**
 
@@ -82,11 +79,6 @@ before the freeze.
   `cmake` invocation (without the CLI) produces a library-only build with no test
   binary. Either flip the default to `ON` or add an explicit note in the
   "Building with CMake directly" section of the README.
-- **`cpp_standard_migration.md` location.** Move
-  `docs/slop/cpp_standard_migration.md` to `docs/guides/CPP_STANDARD_MIGRATION.md`
-  and add a reference from `CONTRIBUTING.md`. It is the authoritative per-feature
-  checklist for restoring C++20 and C++23 facilities and should not be buried in
-  planning artifacts.
 
 **Doxygen conformance sweep.** Every public function in `include/SushiRuntime/`
 must conform to the rule in `CONTRIBUTING.md §4`: state why and how in plain
@@ -135,12 +127,12 @@ This adds SYCL submission overhead to plain CPU work. Whether bypassing SYCL for
 host work matters at v1 workload sizes is a judgment call. Document the current
 behavior and the trade-off.
 
-**#37 — No DAG cancellation**
+**#37 — No DAG cancellation — RESOLVED**
 
-Once a graph is submitted it runs to completion. An `atomic<bool>` cancellation
-flag on `RuntimeContext`, checked by workers and `EventPolling`, would let a caller
-abort a long-running graph. Not needed for v1 use cases, but a known gap for
-error-recovery or interactive scenarios.
+`Graph::cancel()` / `DynamicGraph::cancel()` exist (`api/graph/graph.hpp`,
+`api/graph/dynamic_graph.hpp`), routing to `ExecutionEngine::cancel()`: the active
+step drains without launching further work and the pool stays re-armable. Covered
+by `Integration_Cancellation`.
 
 ---
 

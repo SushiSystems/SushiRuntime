@@ -127,9 +127,11 @@ ctx.register_distributed_buffer(out, n * sizeof(float));
 > policy)` promotes the runtime to Master and returns an `API::Cluster` handle that
 > bundles the tuning knobs and telemetry (`wait_for_workers`, `task_deadline`,
 > `liveness_timeout`, `offloaded()`/`stale_writebacks()`/…), and
-> `Buffer<T>::distributed()` registers a buffer inline. `State<T>` has no
-> `distributed()` — its per-step pointer swap is incompatible with the
-> version-by-pointer coherence model, so stage a `Buffer` instead.
+> `Buffer<T>::distributed()` registers a buffer inline. `State<T>::distributed()`
+> does the same for a stepped field: it registers *both* of the State's
+> allocations, which keep stable handles for the State's lifetime while only the
+> read-vs-write role rotates each step, so the offload path follows the live
+> pointers. Both are no-ops when the handle is empty.
 
 Until `enable_distributed_master` is called, the context behaves exactly as
 Standalone (zero overhead). A task becomes offloadable only if its

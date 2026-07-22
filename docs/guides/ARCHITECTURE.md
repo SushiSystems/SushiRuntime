@@ -862,10 +862,32 @@ To make the layering concrete, here is one device task —
 | CMake option | Default | Effect |
 |--------------|---------|--------|
 | `SR_SYCL_TOOLCHAIN` | intel-llvm | SYCL toolchain: `intel-llvm`, `adaptivecpp`, or `oneapi` |
+| `SR_GPU_BACKEND` | auto | GPU compute backend: `auto`, `cuda`, `rocm`, `intel`, `cpu`, or `none` |
 | `SR_CUDA_ARCH` | 61 | CUDA compute capability for the nvptx64 backend (e.g. 80, 86) |
-| `SR_ENABLE_CUDA` | OFF | SYCL CUDA backend (arch via `SR_CUDA_ARCH`) |
+| `SR_ENABLE_CUDA` | OFF | **Legacy alias** for `SR_GPU_BACKEND=cuda`; kept for back-compat |
 | `SR_ENABLE_DISTRIBUTED` | OFF | compile the master-worker layer |
+| `SR_BUILD_TESTS` | OFF | build the test suite (`sr build` turns this ON; pass `--no-test` to skip) |
 | `SR_BUILD_BENCHMARKS` | ON | build the heavy `sr_benchmark_tests` binary |
+
+### GPU backend selection
+
+`SR_GPU_BACKEND` is the single knob that picks the accelerator target; it
+resolves in `cmake/gpu/` to exactly one vendor strategy:
+
+- **`auto`** (default) — probe the host *compiler* toolchain (not just a driver):
+  `nvcc` → `cuda`, else `hipcc`/`rocminfo` → `rocm`, else the portable
+  **`cpu`** (OpenCL / `spir64` JIT) path. The apt CUDA and ROCm toolkits do not
+  add themselves to `PATH`, so auto-detect also searches their well-known
+  prefixes (`/usr/local/cuda*`, `/opt/rocm*`).
+- **`cuda`** — SYCL CUDA (nvptx64 `sm_${SR_CUDA_ARCH}`).
+- **`rocm`** — AMD ROCm/HIP (amdgcn).
+- **`intel`** — Intel GPU (Level Zero).
+- **`cpu`** / **`none`** — CPU/OpenCL fallback (`none` also skips any offload triple).
+
+The CLI wraps this: `sr build` passes `SR_GPU_BACKEND=auto` and reads the
+resolved backend back, so the vendor logic lives in one place (`cmake/gpu/`)
+rather than being duplicated in Python. `SR_CUDA_ARCH` is itself auto-detected
+from `nvidia-smi` when a CUDA GPU is present.
 
 Three SYCL toolchains are supported, selected by `SR_SYCL_TOOLCHAIN`:
 **intel-llvm** (`clang++ -fsycl` from the intel/llvm nightly bundle, primary,

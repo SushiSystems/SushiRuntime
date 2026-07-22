@@ -30,6 +30,8 @@
 #include <chrono>
 #include <vector>
 #include <cstring>
+#include <cstdint>
+#include <limits>
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/distributed/protocol.hpp>
@@ -323,4 +325,96 @@ TEST(Unit_DistributedTest, PolicyTreatsZeroFreeMemAsUnknown)
     auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
     ASSERT_TRUE(pick.has_value());
     EXPECT_EQ(*pick, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Malformed / hostile wire input.
+//
+// The distributed layer sits on an unauthenticated trust boundary, so every
+// deserialize path must survive garbage without crashing, over-reading, or
+// allocating an attacker-chosen amount. These tests exercise the surfaces the
+// C1/C3/H7 bugs lived on: an oversized/overflowing blob length prefix, a
+// truncated stream, and an empty payload.
+// ---------------------------------------------------------------------------
+
+// A blob length prefix so large that pos_ + bytes wraps around must be rejected
+// by the bounds check (bytes > size - pos, no addition) rather than yielding a
+// ~2^64-long span. This is the exact regression behind C3.
+TEST(Unit_DistributedProtocolFuzz, GetBlobRejectsOverflowingLength)
+{
+    ByteWriter w;
+    w.put<uint64_t>(std::numeric_limits<uint64_t>::max()); // absurd length prefix
+    w.put<uint8_t>(0x11);                                  // one real trailing byte
+    auto bytes = w.take();
+
+    ByteReader r(as_bytes(bytes));
+    auto blob = r.get_blob();
+    EXPECT_TRUE(blob.empty());   // no giant span handed back
+    EXPECT_FALSE(r.ok());        // reader is poisoned, not advanced past the end
+}
+
+// A length prefix that is merely larger than what remains (not overflowing) is
+// still out of bounds and must fail cleanly.
+TEST(Unit_DistributedProtocolFuzz, GetBlobRejectsOversizedLength)
+{
+    ByteWriter w;
+    w.put<uint64_t>(1024);       // claims 1 KiB...
+    w.put<uint8_t>(0x22);        // ...but only 1 byte follows
+    auto bytes = w.take();
+
+    ByteReader r(as_bytes(bytes));
+    auto blob = r.get_blob();
+    EXPECT_TRUE(blob.empty());
+    EXPECT_FALSE(r.ok());
+}
+
+// BufferPushMsg::deserialize on a hostile oversized length must not crash or
+// attempt a 2^64-byte allocation; it should surface an empty payload.
+TEST(Unit_DistributedProtocolFuzz, BufferPushSurvivesOverflowingBlobLength)
+{
+    ByteWriter w;
+    w.put(BufferHandle{ GlobalBufferID{7}, 1, 16 });        // handle says 16 bytes
+    w.put<uint64_t>(std::numeric_limits<uint64_t>::max());  // blob says ~2^64
+    auto bytes = w.take();
+
+    BufferPushMsg m = BufferPushMsg::deserialize(as_bytes(bytes)); // must not crash
+    EXPECT_TRUE(m.data.empty());
+}
+
+// A truncated stream (handle only, no blob) deserializes to an empty payload,
+// not an over-read.
+TEST(Unit_DistributedProtocolFuzz, BufferPushSurvivesTruncatedStream)
+{
+    ByteWriter w;
+    w.put(BufferHandle{ GlobalBufferID{3}, 1, 128 });  // handle, then nothing
+    auto bytes = w.take();
+
+    BufferPushMsg m = BufferPushMsg::deserialize(as_bytes(bytes));
+    EXPECT_TRUE(m.data.empty());
+}
+
+// A TaskResultMsg claiming more outputs than the buffer can hold must stop at
+// the first failed extraction rather than looping past the end.
+TEST(Unit_DistributedProtocolFuzz, TaskResultSurvivesTruncatedOutputs)
+{
+    ByteWriter w;
+    w.put<uint64_t>(99);   // task_id
+    w.put<uint8_t>(1);     // success
+    w.put<uint32_t>(1000); // claims 1000 outputs, but the stream ends here
+    auto bytes = w.take();
+
+    TaskResultMsg m = TaskResultMsg::deserialize(as_bytes(bytes)); // must not crash
+    EXPECT_LT(m.outputs.size(), 1000u);
+    EXPECT_EQ(m.outputs.size(), m.output_data.size());
+}
+
+// Deserializing an empty payload is a no-op that yields empty fields, never a
+// read out of bounds.
+TEST(Unit_DistributedProtocolFuzz, DeserializeEmptyPayloadIsSafe)
+{
+    std::vector<std::byte> empty;
+    BufferPushMsg  bp = BufferPushMsg::deserialize(as_bytes(empty));
+    TaskResultMsg  tr = TaskResultMsg::deserialize(as_bytes(empty));
+    EXPECT_TRUE(bp.data.empty());
+    EXPECT_TRUE(tr.outputs.empty());
 }

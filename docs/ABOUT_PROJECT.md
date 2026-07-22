@@ -45,9 +45,10 @@ Three workload shapes drive the design:
   at full scale.
 - **Deterministic stepping** — the same input sequence must produce bit-identical
   output across runs and across machines. This is the foundation for multiplayer
-  lockstep and replay. The runtime supports a deterministic execution mode where task
-  order and floating-point reduction order are fixed, separate from the default
-  throughput-optimized path.
+  lockstep and replay. A deterministic execution mode — fixing task order and
+  floating-point reduction order, separate from the default throughput-optimized
+  path — is a planned goal (WP-4 on the roadmap), not yet implemented: there is
+  currently no such mode, API, or flag in the runtime.
 
 ```
 One step of a simulation loop
@@ -79,9 +80,10 @@ GPUs from the same codebase. The current toolchain is intel-llvm (nightly bundle
 with oneAPI as an opt-in for Intel-specific paths.
 
 SYCL 2020 is the programming model. It is an open ISO standard on top of standard
-C++, with no vendor-specific syntax at the API boundary. The backend is AdaptiveCpp
-(formerly hipSYCL), which compiles a single SYCL source to CUDA, HIP, and CPU
-targets in one pass.
+C++, with no vendor-specific syntax at the API boundary. The primary toolchain is
+intel/llvm `clang++ -fsycl`; AdaptiveCpp (formerly hipSYCL) and Intel oneAPI are
+also supported. Any of them compiles a single SYCL source to CUDA, HIP/ROCm, Intel,
+and CPU targets, so the same kernel runs across vendors without a rewrite.
 
 The practical consequence: a simulation kernel written once runs on a gaming GPU
 today and on a different vendor's data-center hardware tomorrow without a rewrite.

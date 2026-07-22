@@ -167,9 +167,25 @@ namespace SushiRuntime
                     engine.reset();
                 }
 
-                for (auto& q : all_queues) 
+                for (auto& q : all_queues)
                 {
-                    q.wait_and_throw();
+                    // Swallow a late async device error here: this runs in the
+                    // Runtime destructor (implicitly noexcept), so a throwing
+                    // wait_and_throw() would call std::terminate. We are tearing
+                    // down and cannot surface it to a caller — log and continue so
+                    // the remaining queues still drain and resources still free.
+                    try
+                    {
+                        q.wait_and_throw();
+                    }
+                    catch (const std::exception& ex)
+                    {
+                        SR_LOG_WARN("Async device error during shutdown drain: {}", ex.what());
+                    }
+                    catch (...)
+                    {
+                        SR_LOG_WARN("Unknown async device error during shutdown drain.");
+                    }
                 }
 
                 /** @brief Cleanup atomic pointers manually. */
