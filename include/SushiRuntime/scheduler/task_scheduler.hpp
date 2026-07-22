@@ -104,6 +104,22 @@ namespace SushiRuntime
                 std::mutex pending_mutex;
                 std::condition_variable pending_cv;
                 /**
+                 * @brief Lock-free shadow sizes of the two injector queues.
+                 *
+                 * Every worker checks the injectors on every dispatch iteration, but
+                 * the common steady state is "both empty" — priority bypass is rare
+                 * and external submissions arrive in bursts. Taking pending_mutex
+                 * unconditionally turned that check into a single global cache line
+                 * ping-ponging across all cores, throttling submit throughput.
+                 * These counters shadow the container sizes and are mutated only
+                 * under pending_mutex, so the hot path can read them relaxed and skip
+                 * the lock entirely when they are zero. A stale zero is harmless: the
+                 * enqueuer always notify()s and the loop re-checks; a stale non-zero
+                 * just takes the lock and finds nothing (rare).
+                 */
+                std::atomic<size_t> pending_count_{0};
+                std::atomic<size_t> priority_count_{0};
+                /**
                  * @brief Controls the worker loop.
                  *
                  * Workers exit their loop when this is false AND no inflight events
@@ -113,6 +129,10 @@ namespace SushiRuntime
                 std::atomic<bool> running{false};
                 /** @brief Signals that the pool should drain and shut down. */
                 std::atomic<bool> shutdown_requested{false};
+                /** @brief Guards start() so worker threads are spawned exactly once;
+                 *  a second call would overwrite live std::thread handles (terminate)
+                 *  and break the Chase-Lev single-owner-per-deque invariant. */
+                std::atomic<bool> threads_started_{false};
                 /**
                  * @brief Set when a task throws during the current run.
                  *
@@ -144,8 +164,21 @@ namespace SushiRuntime
                 SushiRuntime::Execution::RuntimeContext& context;
                 /** @brief Worker threads. */
                 std::array<std::thread, Core::MAX_WORKER_THREADS> workers;
-                /** @brief Cache-line aligned atomic counters for tracking completed tasks per worker. */
-                alignas(Core::CACHE_LINE_SIZE) std::atomic<size_t> worker_completed_tasks[Core::MAX_WORKER_THREADS];
+                /**
+                 * @brief Per-worker completed-task counter, each on its own cache line.
+                 *
+                 * The previous `alignas(CACHE_LINE_SIZE) atomic<size_t>[]` aligned only
+                 * the array's start, so eight 8-byte counters shared one cache line and
+                 * false-shared under contention; the elements were also default-
+                 * constructed with an indeterminate value in C++17, feeding the thermal
+                 * strategy garbage rates. Wrapping each counter in a cache-line-aligned,
+                 * zero-initialised struct (mirroring WorkerTimeBuckets) fixes both.
+                 */
+                struct alignas(Core::CACHE_LINE_SIZE) WorkerCompletedCounter
+                {
+                    std::atomic<size_t> value{0};
+                };
+                WorkerCompletedCounter worker_completed_tasks[Core::MAX_WORKER_THREADS];
 
                 /**
                  * @brief Per-worker accumulated time buckets (nanoseconds).
@@ -183,8 +216,11 @@ namespace SushiRuntime
                 /** @brief Successful steals from a remote-node victim. */
                 std::atomic<size_t> remote_steals_{0};
 
-                /** @brief Executes a single task and tracks its events. */
-                void execute_task(Task* task, EventPolling::ActiveEventList& events);
+                /** @brief Executes a single task and tracks its events.
+                 *  @param worker_id The id of the executing worker (for per-worker
+                 *         completion accounting — must be the scheduler's worker id,
+                 *         not the EBR slot id). */
+                void execute_task(Task* task, int worker_id, EventPolling::ActiveEventList& events);
                 /** @brief Records the first exception of the run and flips run_failed_. */
                 void record_run_error(std::exception_ptr ep);
                 /** @brief Looks for a task to steal from another thread's queue. */

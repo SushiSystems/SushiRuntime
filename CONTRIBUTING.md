@@ -32,7 +32,7 @@ If you already have a SYCL toolchain (Intel oneAPI DPC++ or an intel/llvm
 directly:
 
 ```bash
-python cli/install.py        # puts `sr` / `sushiruntime` on PATH
+ss install-cli sushiruntime  # puts `sr` / `sushiruntime` on PATH
 sr build             # Release (default)
 sr test              # fast functional suite
 ```
@@ -211,8 +211,9 @@ Treat the following as hard requirements, not suggestions:
   reference — *and* the build/test snippets in this file and the README that
   invoke it. Command help text (Typer `--help`) and the guide must agree.
 - **Distributed changes update the distributed guide.** A change to the
-  master-worker layer, its protocol, or its environment flags
-  (`SUSHI_ENABLE_DISTRIBUTED`, deadlines, version fencing) updates
+  master-worker layer, its protocol, its build switch (the CMake option
+  `SR_ENABLE_DISTRIBUTED`, exposed as `sr build --distributed`), or its runtime
+  knobs (deadlines, version fencing) updates
   [`docs/guides/DISTRIBUTED_GUIDE.md`](docs/guides/DISTRIBUTED_GUIDE.md).
 - **A new dependency updates the dependency surface.** See §7 — the entry in
   `cli/sushistack.deps.toml`, the `CMakeLists.txt` find call, and the `Dockerfile`

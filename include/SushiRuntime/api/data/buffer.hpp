@@ -133,6 +133,15 @@ namespace SushiRuntime
                       residency_(residency),
                       liveness_(Core::make_liveness())
                 {
+                    // Fail loudly on allocation failure. A silent null ptr_ would
+                    // make dependency_key() null (so the tracker skips this region,
+                    // losing ordering) and then fault when a kernel dereferences it.
+                    if (count > 0 && ptr_ == nullptr)
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::allocation_failed,
+                            "Buffer allocation of " +
+                            std::to_string(count * sizeof(T)) +
+                            " bytes failed (out of USM memory)."});
                 }
 
                 /** @brief Frees the owned allocation, if any. */
@@ -144,7 +153,23 @@ namespace SushiRuntime
                 Buffer(const Buffer&) = delete;
                 Buffer& operator=(const Buffer&) = delete;
 
-                /** @brief Takes ownership of @p other's allocation. */
+                /**
+                 * @brief Takes ownership of @p other's allocation.
+                 *
+                 * The liveness token moves WITH the allocation, by design: replay and
+                 * factory patterns (`auto s = rt.state<T>(n)`, returning a handle,
+                 * moving one into place before recording it) rely on the token
+                 * following the value.
+                 *
+                 * @warning A fluent graph records a handle by its object ADDRESS
+                 * (State kernels capture `&state` and dereference it each step). Once
+                 * a Buffer/State has been passed to `Graph::add(...)`, do NOT move it
+                 * (or store it in a container that may reallocate, e.g. push_back into
+                 * a `std::vector<State>` after recording an element): the graph keeps
+                 * pointing at the old address while the object lives at the new one,
+                 * and — because the token travels with the value — the liveness guard
+                 * cannot detect it. Keep recorded handles fixed for the graph's life.
+                 */
                 Buffer(Buffer&& other) noexcept
                     : ctx_(std::move(other.ctx_)),
                       ptr_(other.ptr_),
@@ -171,6 +196,7 @@ namespace SushiRuntime
                         liveness_ = std::move(other.liveness_);
                         other.ptr_ = nullptr;
                         other.size_ = 0;
+                        other.liveness_.reset();
                     }
                     return *this;
                 }

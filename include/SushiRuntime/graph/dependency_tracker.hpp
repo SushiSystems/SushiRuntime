@@ -115,6 +115,17 @@ namespace SushiRuntime
                 DependencyTracker() = default;
 
                 /**
+                 * @brief Reclaims any access history left behind on destruction.
+                 *
+                 * compile() normally calls reset() explicitly on its success path,
+                 * but a graph destroyed without ever compiling (or one whose
+                 * compile() failed and was then abandoned) would otherwise leak its
+                 * per-access AccessNodes. reset() is idempotent, so running it here
+                 * as well is safe.
+                 */
+                ~DependencyTracker() { reset(); }
+
+                /**
                  * @brief Resets the dependency tracking states and reclaims memory.
                  *
                  * Safely traverses and deallocates all lock-free access history chains.

@@ -260,7 +260,15 @@ namespace SushiRuntime
                     // freed page. A flush that starts after this sees the null slot.
                     std::unique_lock<std::shared_timed_mutex> teardown_lock(g_flush_mutex);
 
-                    g_allocator_registry[allocator_id_ % 256].store(nullptr, std::memory_order_release);
+                    // Only clear the slot if it still points to US. Allocator ids
+                    // collide modulo 256, so a longer-lived allocator sharing this
+                    // slot could have overwritten our registration; an unconditional
+                    // store(nullptr) would then unregister IT, stranding its
+                    // remote-frees and leaking its pool. compare_exchange leaves a
+                    // slot owned by someone else untouched.
+                    USMManagerImpl* self = this;
+                    g_allocator_registry[allocator_id_ % 256].compare_exchange_strong(
+                        self, nullptr, std::memory_order_release, std::memory_order_relaxed);
 
                     // Drain any remote-free queues into the page bitmasks before
                     // releasing the underlying SYCL allocations. Skipping this
@@ -523,7 +531,12 @@ namespace SushiRuntime
                 bool owns_id(uint64_t id) const { return allocator_id_ == id; }
 
             private:
-                sycl::queue& queue_;
+                // Stored BY VALUE, not by reference: sycl::queue is a lightweight
+                // handle (shared-ownership internally), and the destructor calls
+                // sycl::free(..., queue_). A reference member would dangle — and the
+                // free would be a use-after-free — if the referenced queue were
+                // destroyed before this allocator. A value copy keeps it alive.
+                sycl::queue queue_;
                 int numa_id_;
                 uint64_t allocator_id_;
                 BitmaskMemoryPool pool_;
@@ -761,7 +774,15 @@ namespace SushiRuntime
                     for (int p = 0; p < PAGES_PER_EXPANSION; ++p)
                     {
                         void* raw = nullptr;
-                        try { raw = sycl::malloc_shared(page_size, queue_); } catch (...) {}
+                        // Align the page to DEFAULT_ALIGNMENT (128). The pool accepts
+                        // requests with alignment <= DEFAULT_ALIGNMENT, and blocks sit
+                        // at offsets that are multiples of slot_size (128/256/1024/
+                        // 4096 — all multiples of 128). A plain malloc_shared only
+                        // guarantees the backend's natural alignment (often 16), so a
+                        // caller asking for 64/128-byte alignment could get a 16-byte-
+                        // aligned block. Aligning the page start to 128 makes every
+                        // block honour the promise.
+                        try { raw = sycl::aligned_alloc_shared(DEFAULT_ALIGNMENT, page_size, queue_); } catch (...) {}
 
                         if (!raw)
                         {

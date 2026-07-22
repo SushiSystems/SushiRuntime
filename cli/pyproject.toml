@@ -14,12 +14,12 @@ dependencies = [
     "tomli>=2.0; python_version < '3.11'",
 ]
 
-# sushicli (shared CLI presentation layer, see D:/Projects/sushicli) is
-# intentionally NOT listed above: it isn't published to any index, so a bare
-# "sushicli>=0.1.0" dependency can't be resolved by pip/pipx from a clean
-# environment. `pip install -e cli` expects it already installed once in the
-# same environment (`pip install -e ../sushicli`); `python cli/install.py`
-# (pipx, isolated venv) injects it automatically from the sibling checkout.
+# sushicli (shared CLI presentation layer, a sibling checkout) is intentionally
+# NOT listed above: it isn't published to any index, so a bare "sushicli>=0.1.0"
+# dependency can't be resolved by pip/pipx from a clean environment.
+# `pip install -e cli` expects it already installed once in the same environment
+# (`pip install -e ../sushicli`); `ss install-cli sushiruntime` (pipx, isolated
+# venv) injects it automatically from the sibling checkout.
 
 [project.scripts]
 sr = "sushiruntime.cli:app"

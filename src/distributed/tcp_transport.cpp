@@ -115,6 +115,32 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Bounds blocking reads with a receive timeout (SO_RCVTIMEO).
+             *
+             * Without this a peer that connects and then never sends (or sends a
+             * partial frame) parks read_n forever, permanently occupying a worker
+             * slot — a trivial connection-slot denial of service. With a timeout an
+             * idle recv fails, tears the connection down, and frees the slot.
+             *
+             * @param s       Socket to configure.
+             * @param seconds Idle-read timeout in seconds.
+             */
+            void set_recv_timeout(socket_t s, int seconds)
+            {
+#if defined(_WIN32)
+                DWORD ms = static_cast<DWORD>(seconds) * 1000u;
+                ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
+                             reinterpret_cast<const char*>(&ms), sizeof(ms));
+#else
+                struct timeval tv;
+                tv.tv_sec  = seconds;
+                tv.tv_usec = 0;
+                ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
+                             reinterpret_cast<const char*>(&tv), sizeof(tv));
+#endif
+            }
+
+            /**
              * @brief Performs a blocking read of an exact byte count from a socket.
              * Continues reading until the requested number of bytes is received or an error occurs.
              * @param s The socket_t descriptor to read from.
@@ -251,6 +277,9 @@ namespace SushiRuntime
                     socket_t s = ::accept(listen_sock, nullptr, nullptr);
                     if (s == INVALID_SOCK) break;
                     set_nodelay(s);
+                    // Bound idle reads so a peer that connects but never sends cannot
+                    // hold this worker slot forever (connection-slot DoS).
+                    set_recv_timeout(s, 30);
                     peers[static_cast<size_t>(i)] = s;
                     readers.emplace_back([this, s, i] { reader_loop(s, i); });
                     SR_LOG_INFO("TCP master accepted worker {}.", i);

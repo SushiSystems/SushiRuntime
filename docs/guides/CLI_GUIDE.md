@@ -24,7 +24,7 @@ They are identical; use whichever you prefer. Every example below uses `sr`.
 To install:
 
 ```bash
-python cli/install.py            # add --editable for a live dev install
+ss install-cli sushiruntime      # add --no-editable for a non-dev install
 ```
 
 On Windows this installs through **pipx**; on Linux and macOS it installs with

@@ -62,6 +62,17 @@ namespace SushiRuntime
                      * operations are not observable via command_execution_status.
                      */
                     bool ready = false;
+
+                    /**
+                     * @brief Whether `event` is a real SYCL event (vs. an empty
+                     *        default one for inline host work).
+                     *
+                     * Cached at push time so the poll loop can decide whether to
+                     * wait()/query without constructing a throwaway `sycl::event{}`
+                     * on every iteration — that default construction can heap-
+                     * allocate in DPC++, and the comparison runs per event per poll.
+                     */
+                    bool has_event = false;
                 };
 
                 /**
@@ -82,6 +93,18 @@ namespace SushiRuntime
                     PolledEvent inline_events[INLINE_CAP];   /**< Inline fast-path storage. */
                     size_t inline_count = 0;                 /**< Entries held inline (≤ INLINE_CAP). */
                     std::vector<PolledEvent> spill;          /**< Overflow storage, used only past INLINE_CAP. */
+
+                    // Backoff/stall state is intrinsically per-worker: it tracks the
+                    // polling cadence of the one thread that owns this list. It lives
+                    // here (not on the shared EventPolling instance) so concurrent
+                    // pollers cannot race on it — an interleaved decrement could wrap
+                    // a counter to ~2^64 and wedge every future poll into the
+                    // early-return branch, stranding in-flight events and hanging the
+                    // run.
+                    /** @brief Counter for adaptive backoff strategy. */
+                    size_t backoff_counter = 0;
+                    /** @brief Consecutive no-progress polls, used to drive lazy events. */
+                    size_t stall_polls_ = 0;
 
                     /** @brief Total number of tracked events, inline plus spilled. */
                     size_t size() const { return inline_count + spill.size(); }
@@ -174,12 +197,8 @@ namespace SushiRuntime
 #endif
                 /** @brief Whether to accumulate per-node kernel timing on completion. */
                 bool profiling_ = false;
-                /** @brief Counter for adaptive backoff strategy. */
-                size_t backoff_counter = 0;
                 /** @brief Maximum value for the backoff counter. */
                 static constexpr size_t MAX_BACKOFF = 64;
-                /** @brief Consecutive no-progress polls, used to drive lazy events. */
-                size_t stall_polls_ = 0;
                 /** @brief No-progress polls before forcing a blocking wait. */
                 static constexpr size_t STALL_DRIVE_THRESHOLD = 32;
 
@@ -197,8 +216,13 @@ namespace SushiRuntime
                 {
                     if (active_events.is_empty()) return;
 
+                    // Backoff/stall state is per-worker: read it from the caller's
+                    // own ActiveEventList, not from this shared instance.
+                    size_t& backoff_counter = active_events.backoff_counter;
+                    size_t& stall_polls_ = active_events.stall_polls_;
+
                     // skip checks if backoff is active to reduce overhead
-                    if (backoff_counter > 0) 
+                    if (backoff_counter > 0)
                     {
                         if (backoff_counter > 16)
                             std::this_thread::yield();
@@ -222,7 +246,7 @@ namespace SushiRuntime
                             // might return true before implicit USM data migrations are fully visible.
                             // Since we already know it's complete, calling wait() is instantaneous
                             // but guarantees the SYCL runtime flushes memory visibility.
-                            if (active_events[i].event != sycl::event{})
+                            if (active_events[i].has_event)
                             {
                                 active_events[i].event.wait();
                             }
@@ -276,7 +300,7 @@ namespace SushiRuntime
                         if (++stall_polls_ >= STALL_DRIVE_THRESHOLD && !active_events.is_empty())
                         {
                             auto& oldest = active_events[0];
-                            if (oldest.event != sycl::event{})
+                            if (oldest.has_event)
                             {
                                 try { oldest.event.wait(); }
                                 catch (...) { SR_LOG_WARN("Stall-drive wait() threw; treating event as complete."); }
@@ -310,7 +334,7 @@ namespace SushiRuntime
 
                     node->profiling.invocations.fetch_add(1, std::memory_order_relaxed);
 
-                    if (pe.event == sycl::event{})
+                    if (!pe.has_event)
                         return;
                     try
                     {

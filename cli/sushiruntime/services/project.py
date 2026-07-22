@@ -202,7 +202,19 @@ def _stale_build_tree(build_dir: Path, root: Path) -> bool:
         os.path.normcase(os.path.normpath(str(root)))
 
 
-def _needs_configure(build_dir: Path, generator: str, dist: str,
+def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
+                     tests: bool) -> str:
+    """A stable key of every configure-affecting knob.
+
+    A single-config generator (Ninja) bakes the build type into the cache, so a
+    stamp that tracked only ``dist`` let ``-t release`` then ``-t debug`` reuse
+    the tree and silently hand back a Release binary. Keying on the full tuple
+    forces a reconfigure whenever any of these change.
+    """
+    return f"{dist}|{build_type}|{gpu_backend}|{'ON' if tests else 'OFF'}"
+
+
+def _needs_configure(build_dir: Path, generator: str, stamp_key: str,
                      root: Path) -> bool:
     if not build_dir.is_dir():
         return True
@@ -215,8 +227,10 @@ def _needs_configure(build_dir: Path, generator: str, dist: str,
         return True
     stamp = build_dir / STAMP_NAME
     if stamp.is_file():
-        return stamp.read_text().strip() != dist
-    return dist != "OFF"
+        return stamp.read_text().strip() != stamp_key
+    # No stamp (a pre-upgrade tree or a hand-run cmake): reconfigure once so the
+    # tree is known to match the requested configuration.
+    return True
 
 
 def _resolve_compiler(cfg: Config, force: bool,
@@ -420,9 +434,10 @@ def build(build_type: BuildType, distributed: bool = False,
 
     env = load_build_env(cfg, build_dir)
 
-    if _needs_configure(build_dir, cfg.generator, dist, root):
+    stamp_key = _configure_stamp(dist, cmake_build_type, gpu_backend, tests)
+    if _needs_configure(build_dir, cfg.generator, stamp_key, root):
         console.info(f"Configuring CMake... (type={build_type.value}, "
-                     f"distributed={dist}, gpu={gpu_backend})")
+                     f"distributed={dist}, gpu={gpu_backend}, tests={'ON' if tests else 'OFF'})")
         if build_dir.is_dir():
             shutil.rmtree(build_dir, ignore_errors=True)
         if cfg.is_windows:
@@ -441,7 +456,7 @@ def build(build_type: BuildType, distributed: bool = False,
             console.error("CMake configure failed.")
             return rc
         build_dir.mkdir(parents=True, exist_ok=True)
-        (build_dir / STAMP_NAME).write_text(dist)
+        (build_dir / STAMP_NAME).write_text(stamp_key)
 
     console.info("Building...")
     rc = _run([_cmake(cfg), "--build", str(build_dir), "--config", cmake_build_type],
@@ -475,6 +490,9 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
     # ctest spawns the test binaries, so it hits the same run-time UR mismatch as
     # `run`; neutralize setvars' LD_LIBRARY_PATH for the oneAPI build.
     _neutralize_runtime_ld(cfg, env)
+    # Same reason as `run`: a stray CUDA_LAUNCH_BLOCKING=1 serializes every kernel
+    # and silently breaks the async/overlap tests, so clear any inherited value.
+    env.pop("CUDA_LAUNCH_BLOCKING", None)
     cmd = [_ctest(cfg), "--test-dir", str(build_dir), "--output-on-failure"]
     if suite != Suite.all:
         cmd += ["-L", _SUITE_LABEL_REGEX[suite]]

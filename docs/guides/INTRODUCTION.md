@@ -46,7 +46,7 @@ irm https://sushisystems.io/install.ps1 | iex
 Install the CLI and build directly:
 
 ```bash
-python cli/install.py        # puts `sr` and `sushiruntime` on your PATH
+ss install-cli sushiruntime  # puts `sr` and `sushiruntime` on your PATH
 sr toolchain intel-llvm      # pick a SYCL toolchain (the default; or adaptivecpp / oneapi)
 sr build             # Release build (the default)
 sr test              # run the fast functional test suite
