@@ -162,6 +162,9 @@ if(SR_BUILD_BENCHMARKS)
         benchmark/performance/test_steal_numa_effect_perf.cpp
         benchmark/performance/test_graph_compile_perf.cpp
         benchmark/performance/test_dynamic_graph_perf.cpp
+        benchmark/performance/test_recompose_churn_perf.cpp
+        benchmark/performance/test_root_fanout_perf.cpp
+        benchmark/performance/test_wide_fanout_perf.cpp
     )
     # Distributed offload benchmark only exists when the layer is built.
     if(SR_ENABLE_DISTRIBUTED)
