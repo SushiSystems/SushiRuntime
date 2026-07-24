@@ -198,7 +198,7 @@ namespace SushiRuntime
                 WorkerTimeBuckets worker_time_[Core::MAX_WORKER_THREADS];
 
                 /** @brief Whether the active run accumulates per-worker time buckets. */
-                bool profiling_active_ = false;
+                std::atomic<bool> profiling_active_{false};
 
                 // --- NUMA-aware hierarchical stealing (built once at construction) ---
                 /** @brief NUMA node of each worker (= node of the core it is pinned to). */
