@@ -117,8 +117,14 @@ namespace SushiRuntime
 
                 items[b & MASK].store(task, std::memory_order_relaxed);
 
-                std::atomic_thread_fence(std::memory_order_release);
-                bottom.store(b + 1, std::memory_order_relaxed);
+                // Publish the slot write by releasing it through the bottom store
+                // rather than a standalone release fence. The two are equivalent for
+                // correctness — a stealer's acquire load of bottom orders the slot
+                // write before its own read — but a release store on the very
+                // variable the consumer acquires is synchronization ThreadSanitizer
+                // models precisely, whereas it does not fully track standalone
+                // atomic_thread_fence and falsely flags the published task as racy.
+                bottom.store(b + 1, std::memory_order_release);
             }
 
             /**
@@ -209,8 +215,9 @@ namespace SushiRuntime
                     overflow_.pop_back();
 
                     items[b & MASK].store(task, std::memory_order_relaxed);
-                    std::atomic_thread_fence(std::memory_order_release);
-                    bottom.store(++b, std::memory_order_relaxed);
+                    // Release through the bottom store, as in push() — see the note
+                    // there on why this replaces a standalone release fence.
+                    bottom.store(++b, std::memory_order_release);
 
                     // Refresh the stolen-from end so a burst of steals lets us keep
                     // draining rather than bailing on a stale full reading.
