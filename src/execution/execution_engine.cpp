@@ -438,8 +438,9 @@ namespace SushiRuntime
             impl_->completion.reset();
             impl_->scheduler.arm_for_execution();
 
-            for (auto* root : graph.roots)
-                impl_->scheduler.submit(root);
+            // One batched injector pass instead of one submit() (lock + notify) per
+            // root — the per-step root-injection cost no longer scales with fan-out.
+            impl_->scheduler.submit_batch(graph.roots);
 
             // -----------------------------------------------------------------
             // Step 3: Block until the sentinel signals the latch, then surface a

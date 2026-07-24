@@ -366,6 +366,21 @@ namespace SushiRuntime
             bool locality_checked_ = false;
 
             /**
+             * @brief Cached owning-queue index for this node's anchor USM, or -1.
+             *
+             * Resolved once on the node's first dispatch (alongside locality_checked_,
+             * from the same context_index_for_ptr lookup) when the anchor is a pointer
+             * this context allocated. Later steps route straight to
+             * RuntimeContext::get_queue(index) instead of get_queue_for_ptr(), which
+             * takes a process-global mutex on every device dispatch. -1 keeps the
+             * introspection / NUMA round-robin fallback for pointers this context did
+             * not allocate (rare). Stable across replay: all_queues never changes and
+             * the node's anchor buffer is fixed, so the index cannot go stale.
+             * Dispatched serially per node, so a plain int needs no synchronisation.
+             */
+            int cached_queue_index_ = -1;
+
+            /**
              * @brief Late-bound per-step controls (enabled flag and live size).
              *
              * Null for an ordinary node, so the scheduler's hot path pays one

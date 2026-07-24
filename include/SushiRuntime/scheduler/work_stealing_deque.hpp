@@ -75,7 +75,13 @@ namespace SushiRuntime
         public:
             Deque() : top(0), bottom(0)
             {
-                items = new std::atomic<Task*>[CAPACITY]();
+                // Default-initialize (no trailing "()"): a slot is always written by
+                // push() before any consumer can read it (push stores the slot, then
+                // publishes via the release store on bottom; steal()/pop() only read
+                // items[i] for i < bottom), so zeroing all CAPACITY slots up front is
+                // wasted work — it faults in the whole 2 MB ring eagerly. Leaving them
+                // indeterminate lets the pages fault lazily as the deque actually grows.
+                items = new std::atomic<Task*>[CAPACITY];
             }
 
             ~Deque() override
@@ -173,6 +179,19 @@ namespace SushiRuntime
              */
             Task* steal()
             {
+                // Relaxed emptiness pre-check. A stealer scanning idle peers — and
+                // every worker at end-of-step quiescence — hits empty victims far
+                // more often than not, and the full protocol below pays a seq_cst
+                // fence (an MFENCE on x86) on every attempt. Skip it when the ring is
+                // obviously empty. This can only ever make steal() fail spuriously,
+                // which the caller already tolerates (it retries / scans other
+                // victims and the owner still makes progress); it never returns a
+                // stale task, because the fenced protocol below re-reads and
+                // re-validates via the top CAS before returning anything.
+                if (top.load(std::memory_order_relaxed) >=
+                    bottom.load(std::memory_order_relaxed))
+                    return nullptr;
+
                 int64_t t = top.load(std::memory_order_acquire);
                 std::atomic_thread_fence(std::memory_order_seq_cst);
                 int64_t b = bottom.load(std::memory_order_acquire);

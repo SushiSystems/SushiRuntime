@@ -673,11 +673,22 @@ namespace SushiRuntime
                             "A task's buffers span multiple device contexts; co-locate "
                             "them on one device (cross-device execution is not yet "
                             "supported)."});
+
+                    // Cache the owning-queue index resolved from the same lookup, so
+                    // steady-state replay routes via get_queue(index) (a bare
+                    // all_queues[] read) instead of get_queue_for_ptr(), which takes a
+                    // process-global mutex on every device dispatch. Only the
+                    // authoritative map hit (anchor_ctx >= 0) is cached; a map miss
+                    // keeps the introspection / round-robin fallback below.
+                    node->cached_queue_index_ = anchor_ctx;
                     node->locality_checked_ = true; // co-located; never re-check
                 }
 
-                auto& q = anchor ? context.get_queue_for_ptr(anchor, target_numa_id)
-                                 : context.get_numa_local_queue(target_numa_id);
+                auto& q =
+                    (node && node->cached_queue_index_ >= 0)
+                        ? context.get_queue(static_cast<size_t>(node->cached_queue_index_))
+                        : (anchor ? context.get_queue_for_ptr(anchor, target_numa_id)
+                                  : context.get_numa_local_queue(target_numa_id));
 
                 sycl::event e;
                 if (task->get_execution_mode() == Task::ExecutionMode::HOST)
@@ -879,6 +890,54 @@ namespace SushiRuntime
 
             // Wake a worker up if they are heavily sleeping
             pending_cv.notify_one();
+        }
+
+        /**
+         * @brief Submits a batch of root nodes under one injector pass.
+         *
+         * Mirrors submit() exactly per node — add_ref, priority split, quiescence
+         * count — but amortizes the fixed cost across the whole root set: one
+         * pending_mutex acquisition, a single inflight_ increment, and one wake
+         * burst instead of (roots) of each. The inflight_ increment stays inside the
+         * locked region, so tasks are counted before any worker can drain them —
+         * the same happens-before submit() relies on.
+         */
+        void TaskScheduler::submit_batch(const std::vector<Graph::Node*>& roots)
+        {
+            if (roots.empty()) return;
+
+            size_t normal_added = 0;
+            size_t priority_added = 0;
+            {
+                std::lock_guard<std::mutex> lock(pending_mutex);
+                for (Graph::Node* node : roots)
+                {
+                    if (!node) continue;
+                    Task* task = node; // Node derives from Task
+                    task->add_ref();
+                    if (task->get_priority() > 0)
+                    {
+                        priority_submissions.push(task);
+                        ++priority_added;
+                    }
+                    else
+                    {
+                        pending_submissions.push_back(task);
+                        ++normal_added;
+                    }
+                }
+                inflight_.fetch_add(static_cast<long long>(normal_added + priority_added),
+                                    std::memory_order_relaxed);
+                if (normal_added)
+                    pending_count_.store(pending_submissions.size(), std::memory_order_relaxed);
+                if (priority_added)
+                    priority_count_.store(priority_submissions.size(), std::memory_order_relaxed);
+            }
+
+            // One wake for the whole batch: roots are independent and there are
+            // num_workers threads, so a single notify_all replaces the per-root
+            // notify_one storm. Idle workers that find no work simply re-sleep.
+            pending_cv.notify_all();
         }
 
         /**
