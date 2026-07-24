@@ -277,7 +277,7 @@ namespace SushiRuntime
                     {
                         for (int i = 0; i < NUM_BUCKETS; ++i)
                         {
-                            void* head = thread_slots_[t].remote_free_head[i].exchange(
+                            void* head = thread_slots_[t].remote_free_.heads[i].exchange(
                                 nullptr, std::memory_order_acquire);
                             while (head)
                             {
@@ -381,7 +381,7 @@ namespace SushiRuntime
                         // freed-block chain walk itself is unavoidable (one cross-core
                         // read per reclaimed pointer), but it now happens once per
                         // ~BATCH_SIZE allocates, not every one.
-                        if (thread_slots_[slot].remote_free_head[bucket_idx].load(
+                        if (thread_slots_[slot].remote_free_.heads[bucket_idx].load(
                                 std::memory_order_relaxed) != nullptr)
                         {
                             drain_remote_free_into_magazine(slot, bucket_idx);
@@ -581,17 +581,25 @@ namespace SushiRuntime
                     std::atomic<bool>        expanding[NUM_BUCKETS];
 
                     /**
-                     * @brief Head of the per-bucket remote-free intrusive stack.
+                     * @brief Per-bucket remote-free intrusive stack heads, on their
+                     *        own cache line.
                      *
                      * Producers (other threads freeing into this slot) push onto
-                     * this stack via CAS; the next-pointer is stored in the
-                     * freed memory itself. The slot owner drains the entire
-                     * stack with one exchange() on its next allocate.
+                     * these stacks via CAS; the next-pointer is stored in the freed
+                     * memory itself. The slot owner drains the entire stack with one
+                     * exchange() on its next allocate.
                      *
-                     * Padding via the surrounding alignas keeps this off the
-                     * cache lines used by root_pages and expanding.
+                     * These are written by REMOTE threads on every cross-thread free,
+                     * whereas root_pages/expanding are read by the OWNER on its hot
+                     * allocate path. The struct's outer alignas only aligns its start,
+                     * so without a dedicated inner cache line the heads shared a line
+                     * with root_pages and every remote free invalidated the owner's
+                     * fast-path line (false sharing). The nested alignas isolates them.
                      */
-                    std::atomic<void*> remote_free_head[NUM_BUCKETS];
+                    struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) RemoteFreeHeads
+                    {
+                        std::atomic<void*> heads[NUM_BUCKETS];
+                    } remote_free_;
 
                     ThreadPoolSlot()
                     {
@@ -599,7 +607,7 @@ namespace SushiRuntime
                         {
                             root_pages[i].store(nullptr, std::memory_order_relaxed);
                             expanding[i].store(false,   std::memory_order_relaxed);
-                            remote_free_head[i].store(nullptr, std::memory_order_relaxed);
+                            remote_free_.heads[i].store(nullptr, std::memory_order_relaxed);
                         }
                     }
                 };
@@ -609,9 +617,6 @@ namespace SushiRuntime
                 // TCMalloc style Radix Tree: O(1) pointer → sayfa çözümlemesi
                 LockFreePageMap page_map_;
 
-                static constexpr size_t MAX_PAGES = 4096;
-                std::atomic<MemoryPage*> global_pages_[MAX_PAGES] = {nullptr};
-                std::atomic<int>         global_page_count_{0};
 
                 /**
                  * @brief Gets the bucket index for a given allocation size.
@@ -661,7 +666,7 @@ namespace SushiRuntime
                  */
                 inline void push_remote_free(int slot, int bucket_idx, void* ptr) noexcept
                 {
-                    auto& head = thread_slots_[slot].remote_free_head[bucket_idx];
+                    auto& head = thread_slots_[slot].remote_free_.heads[bucket_idx];
                     void* old_head = head.load(std::memory_order_relaxed);
                     do {
                         *static_cast<void**>(ptr) = old_head;
@@ -688,7 +693,7 @@ namespace SushiRuntime
                  */
                 inline void drain_remote_free_into_magazine(int slot, int bucket_idx) noexcept
                 {
-                    void* head = thread_slots_[slot].remote_free_head[bucket_idx].exchange(
+                    void* head = thread_slots_[slot].remote_free_.heads[bucket_idx].exchange(
                         nullptr, std::memory_order_acquire);
 
                     int processed = 0;
@@ -738,7 +743,7 @@ namespace SushiRuntime
                     while (*static_cast<void**>(tail) != nullptr)
                         tail = *static_cast<void**>(tail);
 
-                    auto& head_atomic = thread_slots_[slot].remote_free_head[bucket_idx];
+                    auto& head_atomic = thread_slots_[slot].remote_free_.heads[bucket_idx];
                     void* old_head = head_atomic.load(std::memory_order_relaxed);
                     do {
                         *static_cast<void**>(tail) = old_head;
@@ -810,10 +815,6 @@ namespace SushiRuntime
                                    old_root, new_page,
                                    std::memory_order_release,
                                    std::memory_order_relaxed));
-
-                        int p_idx = global_page_count_.fetch_add(1, std::memory_order_relaxed);
-                        if (static_cast<size_t>(p_idx) < MAX_PAGES)
-                            global_pages_[p_idx].store(new_page, std::memory_order_release);
 
                         page_map_.set(raw, page_size, new_page);
                         ++pages_opened;

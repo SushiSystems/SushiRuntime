@@ -24,7 +24,6 @@
 #pragma once
 
 #include <atomic>
-#include <iostream>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/logger.hpp>
 

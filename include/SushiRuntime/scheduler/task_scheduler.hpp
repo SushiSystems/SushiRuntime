@@ -289,6 +289,20 @@ namespace SushiRuntime
                 void submit(Task* task);
 
                 /**
+                 * @brief Submits a batch of root nodes in a single injector pass.
+                 *
+                 * Each step re-injects every root through submit(), paying one
+                 * pending_mutex acquire and one condition-variable notify per root.
+                 * This collapses a step's whole root set into one lock acquisition,
+                 * one inflight_ increment, and one wake burst — the injector cost then
+                 * no longer scales with root fan-out. Semantically identical to calling
+                 * submit() per root (same add_ref, same quiescence accounting, same
+                 * priority split). The single-task submit() remains for the coordinator
+                 * re-injection path, so there is still one injector seam per shape.
+                 */
+                void submit_batch(const std::vector<SushiRuntime::Graph::Node*>& roots);
+
+                /**
                  * @brief Blocks until the current run has fully drained.
                  *
                  * Returns once every task submitted for the run has been reaped by
