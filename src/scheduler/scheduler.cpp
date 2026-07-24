@@ -186,7 +186,7 @@ namespace SushiRuntime
             // and stays free of timestamp reads otherwise.
             const bool prof = context.profiling_enabled();
             event_poller.set_profiling(prof);
-            profiling_active_ = prof;
+            profiling_active_.store(prof, std::memory_order_release);
 
             running.store(true, std::memory_order_release);
             pending_cv.notify_all();
@@ -357,11 +357,7 @@ namespace SushiRuntime
             {
                 const bool is_running = running.load(std::memory_order_acquire);
                 const bool is_shutdown = shutdown_requested.load(std::memory_order_acquire);
-                // Read after the acquire above: arm_for_execution() writes
-                // profiling_active_ then publishes it with the release store to
-                // running, so observing running here makes that write visible without
-                // a separate atomic.
-                const bool prof = profiling_active_;
+                const bool prof = profiling_active_.load(std::memory_order_acquire);
 
                 // IDLE / waiting-for-arm phase: no work, not yet signalled.
                 if (!is_running && !is_shutdown && active_events.is_empty() && !has_pending_submissions())
