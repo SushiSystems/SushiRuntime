@@ -25,6 +25,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -182,21 +184,84 @@ namespace SushiRuntime
                  * @brief Turns per-node kernel timing capture on or off.
                  *
                  * Set once by the scheduler when it arms a run, from the context's
-                 * profiling choice. When off, the completion path reads no event
-                 * timestamps and touches no node counters. Read-only during a run, so
-                 * a plain bool is safe across the workers that poll.
+                 * profiling choice. The re-arm at the end of a run happens on a
+                 * worker thread (the sentinel's host_work), concurrently with other
+                 * workers polling, so this is an atomic release/acquire rather than a
+                 * plain bool.
                  *
                  * @param on True to accumulate device time and invocation counts.
                  */
-                void set_profiling(bool on) noexcept { profiling_ = on; }
+                void set_profiling(bool on) noexcept { profiling_.store(on, std::memory_order_release); }
+
+                /**
+                 * @brief Wires the scheduler's run-quiescence tracker into the poller.
+                 *
+                 * The poller is the single chokepoint where a task's scheduling life
+                 * ends (release on completion) and where new ready successors are
+                 * born (trigger_successors). It therefore owns the increment/decrement
+                 * of the in-flight counter the scheduler blocks on to know a run has
+                 * fully drained — see TaskScheduler::wait_quiescent(). Null tracker
+                 * (never wired) makes every hook a no-op.
+                 *
+                 * @param counter In-flight task counter owned by the scheduler.
+                 * @param mutex   Guards the wait predicate against a lost wakeup.
+                 * @param cv      Signalled when the counter reaches zero.
+                 */
+                void set_inflight_tracker(std::atomic<long long>* counter,
+                                          std::mutex* mutex,
+                                          std::condition_variable* cv) noexcept
+                {
+                    inflight_ = counter;
+                    quiesce_mutex_ = mutex;
+                    quiesce_cv_ = cv;
+                }
 
             private:
+                /**
+                 * @brief Records one newly-ready task that will later be reaped here.
+                 *
+                 * Paired one-to-one with drop_inflight(): every task that reaches
+                 * poll_events' release did so via submit() or a successor push, and is
+                 * counted exactly once.
+                 */
+                void add_inflight() noexcept
+                {
+                    if (inflight_) inflight_->fetch_add(1, std::memory_order_relaxed);
+                }
+
+                /**
+                 * @brief Accounts for one task leaving the run and wakes the waiter on
+                 *        the last one.
+                 *
+                 * The brief lock closes the classic lost-wakeup window: a waiter that
+                 * reads a non-zero count just before this store would otherwise sleep
+                 * past the notify. Locking the same mutex it waits under orders the
+                 * store ahead of its predicate re-check.
+                 */
+                void drop_inflight() noexcept
+                {
+                    if (!inflight_) return;
+                    if (inflight_->fetch_sub(1, std::memory_order_acq_rel) == 1)
+                    {
+                        if (quiesce_mutex_ && quiesce_cv_)
+                        {
+                            { std::lock_guard<std::mutex> lock(*quiesce_mutex_); }
+                            quiesce_cv_->notify_all();
+                        }
+                    }
+                }
+
+                /** @brief In-flight run-quiescence tracker (scheduler-owned, may be null). */
+                std::atomic<long long>*  inflight_ = nullptr;
+                std::mutex*              quiesce_mutex_ = nullptr;
+                std::condition_variable* quiesce_cv_ = nullptr;
+
 #ifdef SR_DISTRIBUTED
                 /** @brief Optional per-completion observer (Master mode only). */
                 std::function<void(SushiRuntime::Scheduler::Task*)> on_node_complete_;
 #endif
                 /** @brief Whether to accumulate per-node kernel timing on completion. */
-                bool profiling_ = false;
+                std::atomic<bool> profiling_{false};
                 /** @brief Maximum value for the backoff counter. */
                 static constexpr size_t MAX_BACKOFF = 64;
                 /** @brief No-progress polls before forcing a blocking wait. */
@@ -231,6 +296,8 @@ namespace SushiRuntime
                         return;
                     }
 
+                    const bool profiling = profiling_.load(std::memory_order_acquire);
+
                     bool progress = false;
                     for (size_t i = 0; i < active_events.size(); )
                     {
@@ -255,7 +322,7 @@ namespace SushiRuntime
                             // the per-node invocation count and kernel device time are
                             // accumulated here exactly once per dispatch. No-op unless
                             // the run was armed for profiling.
-                            if (profiling_)
+                            if (profiling)
                                 accumulate_profiling(active_events[i]);
 
 #ifdef SR_DISTRIBUTED
@@ -269,6 +336,13 @@ namespace SushiRuntime
 
                             if (active_events[i].task)
                                 active_events[i].task->release();
+
+                            // This task's scheduling life ends here: account for it
+                            // after its successors are born (add_inflight in
+                            // trigger_successors) so the count never dips to zero
+                            // mid-graph and only reaches zero once the terminal
+                            // sentinel is reaped.
+                            drop_inflight();
 
                             active_events.remove_at(i); // O(1): swaps with the last entry
                             progress = true;
@@ -375,9 +449,10 @@ namespace SushiRuntime
                     for (int32_t i = 0; i < max_idx; ++i)
                     {
                         auto* succ = node->inline_successors[i];
-                        if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1) 
+                        if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
                         {
                             succ->add_ref();
+                            add_inflight();
                             queue.push(succ);
                         }
                     }
@@ -392,6 +467,7 @@ namespace SushiRuntime
                         if(succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
                         {
                             succ->add_ref();
+                            add_inflight();
                             queue.push(succ);
                         }
 
@@ -410,6 +486,7 @@ namespace SushiRuntime
                         if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
                         {
                             succ->add_ref();
+                            add_inflight();
                             queue.push(succ);
                         }
                     }

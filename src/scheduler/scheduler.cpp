@@ -73,6 +73,10 @@ namespace SushiRuntime
 
             build_steal_topology();
 
+            // The poller owns the increment/decrement of the run-quiescence counter
+            // (it is where tasks are born as successors and reaped on completion).
+            event_poller.set_inflight_tracker(&inflight_, &quiesce_mutex_, &quiesce_cv_);
+
             SR_LOG_INFO("Task scheduler initialized with {} worker queues and threads.", num_workers);
         }
 
@@ -466,6 +470,21 @@ namespace SushiRuntime
                             execute_task(task, thread_id, active_events);
                             if (prof) add_ns(wt.busy_ns, b0, sclock::now());
                         }
+                        else
+                        {
+                            // The node left the local poll path — it will not be
+                            // reaped here — so retire its quiescence count now. Its
+                            // remote-completion re-triggers successors through the
+                            // ordinary submit()/poll cycle, which counts them afresh.
+                            // Any transient dip to zero this causes is harmless: the
+                            // sentinel cannot fire (and so nobody waits on the counter)
+                            // until every offloaded node's result has landed.
+                            if (inflight_.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                            {
+                                std::lock_guard<std::mutex> lock(quiesce_mutex_);
+                                quiesce_cv_.notify_all();
+                            }
+                        }
 #else
                         const auto b0 = prof ? sclock::now() : sclock::time_point{};
                         execute_task(task, thread_id, active_events);
@@ -837,6 +856,11 @@ namespace SushiRuntime
 
             task->add_ref();
 
+            // Count the task into the run before it becomes reachable to workers, so
+            // the quiescence counter can never miss it. Balanced by the poller's
+            // release on completion (or the offload decrement in Master mode).
+            inflight_.fetch_add(1, std::memory_order_relaxed);
+
             // External submissions go into a dedicated injector queue so we do not
             // violate the single-producer constraint of the per-worker Chase-Lev deques.
             {
@@ -855,6 +879,22 @@ namespace SushiRuntime
 
             // Wake a worker up if they are heavily sleeping
             pending_cv.notify_one();
+        }
+
+        /**
+         * @brief Blocks until every task submitted for the run has been reaped.
+         *
+         * See the header and inflight_. The predicate reads the counter under the
+         * same mutex the poller locks before notifying, so a decrement to zero that
+         * lands just before this thread parks is never missed.
+         */
+        void TaskScheduler::wait_quiescent()
+        {
+            std::unique_lock<std::mutex> lock(quiesce_mutex_);
+            quiesce_cv_.wait(lock, [this]
+            {
+                return inflight_.load(std::memory_order_acquire) <= 0;
+            });
         }
 
         /**
