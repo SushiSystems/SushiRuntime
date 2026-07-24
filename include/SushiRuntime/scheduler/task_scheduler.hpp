@@ -200,6 +200,25 @@ namespace SushiRuntime
                 /** @brief Whether the active run accumulates per-worker time buckets. */
                 std::atomic<bool> profiling_active_{false};
 
+                /**
+                 * @brief Tasks submitted for the run but not yet reaped.
+                 *
+                 * The completion sentinel signals the caller from its host_work,
+                 * which runs on a worker thread *before* that worker (and its peers)
+                 * have finished the poll bookkeeping — trigger_successors + release —
+                 * for the run's final nodes. Returning from execute() then destroys
+                 * the CompiledGraph while those workers still touch its nodes: a
+                 * use-after-free the TSan lane catches in Node::~Node. This counter,
+                 * incremented at submit()/successor-push and decremented after each
+                 * poll release, reaches zero only once every node has been fully
+                 * finalized; wait_quiescent() blocks the caller on that.
+                 */
+                std::atomic<long long> inflight_{0};
+                /** @brief Guards the wait_quiescent() predicate against lost wakeups. */
+                std::mutex quiesce_mutex_;
+                /** @brief Signalled by the poller when inflight_ reaches zero. */
+                std::condition_variable quiesce_cv_;
+
                 // --- NUMA-aware hierarchical stealing (built once at construction) ---
                 /** @brief NUMA node of each worker (= node of the core it is pinned to). */
                 std::vector<int> worker_numa_;
@@ -268,6 +287,18 @@ namespace SushiRuntime
 
                 /** @brief Submits a new task to the injector queue. */
                 void submit(Task* task);
+
+                /**
+                 * @brief Blocks until the current run has fully drained.
+                 *
+                 * Returns once every task submitted for the run has been reaped by
+                 * the poller, i.e. no worker still touches a graph node. The caller
+                 * (ExecutionEngine::execute) invokes this after the sentinel signals
+                 * completion and before it destroys the CompiledGraph, closing the
+                 * window in which a worker finalizing the run's last nodes races the
+                 * graph's destruction. See inflight_.
+                 */
+                void wait_quiescent();
 
                 /**
                  * @brief Reports whether a task threw during the current run.

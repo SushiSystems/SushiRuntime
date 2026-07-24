@@ -447,6 +447,14 @@ namespace SushiRuntime
             // -----------------------------------------------------------------
             impl_->completion.wait();
 
+            // The sentinel signals the latch from its host_work, which runs on a
+            // worker thread before that worker (and its peers) finish the poll
+            // bookkeeping for the run's last nodes. Wait for the pool to fully drain
+            // before returning: the caller may destroy this CompiledGraph the instant
+            // execute() returns, and a worker still inside trigger_successors/release
+            // would then touch freed nodes.
+            impl_->scheduler.wait_quiescent();
+
             if (impl_->completion.failed)
             {
                 SR_LOG_ERROR("Graph execution aborted due to a task error.");

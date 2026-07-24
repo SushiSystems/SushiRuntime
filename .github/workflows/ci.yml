@@ -73,7 +73,13 @@ jobs:
             -DSR_ENABLE_DISTRIBUTED=ON \
             -DSR_BUILD_BENCHMARKS=OFF
           cmake --build build-tsan
-          TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1" \
+          # ignore_noninstrumented_modules: the Intel SYCL runtime, oneTBB and the
+          # OpenCL host device (libsycl / libtbb / libintelocl) are linked
+          # uninstrumented, so TSan cannot reason about their internal
+          # synchronization and reports false races inside their own thread pools
+          # (host-task pool cv, TBB worker memcpy). This flag scopes TSan to our
+          # instrumented code, where the races we actually own live.
+          TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1" \
             ctest --test-dir build-tsan -L "unit|integration|regression" --output-on-failure
 
   cli:
