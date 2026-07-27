@@ -7,7 +7,7 @@ request merged.
 By contributing you agree that your contributions are licensed under the
 project's **Apache License, Version 2.0** (see [`LICENSE`](LICENSE)).
 
-> New to the codebase? Read [`docs/guides/ARCHITECTURE.md`](docs/guides/ARCHITECTURE.md)
+> New to the codebase? Read [`ARCHITECTURE.md`](ARCHITECTURE.md)
 > first — it explains the layers, the lock-free data structures, the work-stealing
 > scheduler, and the memory model that a non-trivial change will touch.
 
@@ -37,7 +37,7 @@ sr build             # Release (default)
 sr test              # fast functional suite
 ```
 
-See [`docs/guides/CLI_GUIDE.md`](docs/guides/CLI_GUIDE.md) for the full command
+See [`CLI_GUIDE.md`](CLI_GUIDE.md) for the full command
 reference and how machine-specific toolchain paths are resolved
 (`cli/config.local.toml`).
 
@@ -193,30 +193,33 @@ existing sentence false, fixing that sentence is part of the change.
 
 Treat the following as hard requirements, not suggestions:
 
-- **Every change updates [`docs/CHANGELOG.md`](docs/CHANGELOG.md).** Add an entry
+- **Changelog entries start at v1.0.0.** The project has not yet been assigned a
+  semantic version — we are in prototype stage. Do not add entries to
+  [`CHANGELOG.md`](CHANGELOG.md) until the project cuts its v1.0.0
+  release. Once versioned, every change updates the changelog with an entry
   under `## [Unreleased]` in the right group (`Added` / `Changed` / `Fixed` /
-  `Removed` / `Deprecated`). This is the one file *no* user-visible change may
-  skip.
+  `Removed` / `Deprecated`). This will be the one file *no* user-visible change
+  may skip.
 - **A new or changed feature updates the user-facing guides.** When you add,
   rename, or change the behavior of public API, you must update
-  [`docs/guides/INTRODUCTION.md`](docs/guides/INTRODUCTION.md) (the getting-started
+  [`INTRODUCTION.md`](INTRODUCTION.md) (the getting-started
   tour and its code samples must compile against the current API) and
-  [`docs/guides/ARCHITECTURE.md`](docs/guides/ARCHITECTURE.md) (every class,
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) (every class,
   constant, and algorithm it names must still exist). Update the top-level
   [`README.md`](README.md) when the change touches what the project *is* or how a
   first-time reader gets started.
 - **Any CLI change updates the CLI docs.** If you add, rename, or change a
   `sr` / `sushiruntime` command, flag, or its output, update
-  [`docs/guides/CLI_GUIDE.md`](docs/guides/CLI_GUIDE.md) — the full command
+  [`CLI_GUIDE.md`](CLI_GUIDE.md) — the full command
   reference — *and* the build/test snippets in this file and the README that
   invoke it. Command help text (Typer `--help`) and the guide must agree.
 - **Distributed changes update the distributed guide.** A change to the
   master-worker layer, its protocol, its build switch (the CMake option
   `SR_ENABLE_DISTRIBUTED`, exposed as `sr build --distributed`), or its runtime
   knobs (deadlines, version fencing) updates
-  [`docs/guides/DISTRIBUTED_GUIDE.md`](docs/guides/DISTRIBUTED_GUIDE.md).
+  [`DISTRIBUTED_GUIDE.md`](DISTRIBUTED_GUIDE.md).
 - **A new dependency updates the dependency surface.** See §7 — the entry in
-  `cli/sushistack.deps.toml`, the `CMakeLists.txt` find call, and the `Dockerfile`
+  `../cli/sushistack.deps.toml`, the `CMakeLists.txt` find call, and the `Dockerfile`
   apt line must move together.
 - **Public API carries Doxygen.** New or changed public functions follow the
   Doxygen rules in §4. The header *is* documentation — it feeds the fluent API
@@ -299,7 +302,7 @@ Dependency provisioning is owned by [SushiStack](https://sushisystems.io) (the
 `ss` CLI), not this repo — it installs shared toolchains and libraries for the
 whole stack into one workspace-level `dependencies/` tree. SushiRuntime only
 *declares* the dependencies it needs, in its own manifest fragment,
-[`cli/sushistack.deps.toml`](cli/sushistack.deps.toml), which `ss` aggregates
+[`cli/sushistack.deps.toml`](../cli/sushistack.deps.toml), which `ss` aggregates
 alongside every other module's fragment.
 
 ### Manifest entry

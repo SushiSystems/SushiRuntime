@@ -236,4 +236,4 @@ sr env --asan     # inspect the build-asan/ tree's environment instead
 
 The CLI is a convenience, not a requirement — it only runs CMake and CTest for
 you. If you'd rather drive CMake yourself, see the **Building with CMake
-directly** section of the top-level [README](../../README.md).
+directly** section of the top-level [README](README.md).
