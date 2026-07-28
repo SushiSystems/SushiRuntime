@@ -66,9 +66,37 @@ namespace SushiRuntime
          * guarantees no flush touches an allocator's pages while they are being
          * freed, and any flush that starts after teardown sees a null registry
          * slot and becomes a no-op — so a thread that outlives its RuntimeContext
-         * can still exit cleanly.
+         * can still exit cleanly. Reached through flush_mutex() rather than as a
+         * plain global, because the lock has to outlive static destruction; see
+         * there for why.
          */
-        static std::shared_timed_mutex g_flush_mutex;
+        /**
+         * @brief Returns the flush lock, which is deliberately never destroyed.
+         *
+         * The lock above is only useful if it outlives every possible flush, and a
+         * flush can happen later than static destruction: ThreadLocalMagazine is
+         * thread_local, so its destructor runs at THREAD exit, and a thread that
+         * outlives main() exits after this translation unit's statics would have
+         * been destroyed. A namespace-scope std::shared_timed_mutex would by then
+         * be a destroyed object, and locking it — in the one path that exists to
+         * make teardown safe — would be exactly the use-after-free the lock was
+         * added to prevent.
+         *
+         * Allocating it once and never freeing it removes that window entirely. The
+         * cost is one leaked mutex for the life of the process; the alternative is a
+         * crash whose reproduction depends on thread lifetimes. Everything else this
+         * file keeps at namespace scope (the registry array, the callback pointer)
+         * is trivially destructible and therefore already immune.
+         *
+         * @return The process-wide flush lock, valid for as long as the process is.
+         */
+        static std::shared_timed_mutex& flush_mutex()
+        {
+            // Function-local static: thread-safe initialisation, and the pointer
+            // itself is trivially destructible, so nothing runs at exit.
+            static std::shared_timed_mutex* const lock = new std::shared_timed_mutex();
+            return *lock;
+        }
 
         /**
          * @brief Global callback function to flush a magazine batch.
@@ -258,7 +286,7 @@ namespace SushiRuntime
                     // allocator completes, and makes the registry-null below
                     // visible before pages are freed, so no flush can touch a
                     // freed page. A flush that starts after this sees the null slot.
-                    std::unique_lock<std::shared_timed_mutex> teardown_lock(g_flush_mutex);
+                    std::unique_lock<std::shared_timed_mutex> teardown_lock(flush_mutex());
 
                     // Only clear the slot if it still points to US. Allocator ids
                     // collide modulo 256, so a longer-lived allocator sharing this
@@ -828,10 +856,10 @@ namespace SushiRuntime
         void global_flush_magazine(uint64_t alloc_id, int bucket_idx, void** ptrs, size_t count)
         {
             // Shared lock: many threads may flush concurrently, but all are
-            // excluded while an allocator tears down (see g_flush_mutex). Once the
+            // excluded while an allocator tears down (see flush_mutex). Once the
             // lock is held, a destroyed allocator's slot reads null and a collided
             // slot fails owns_id, so the flush safely no-ops in both cases.
-            std::shared_lock<std::shared_timed_mutex> flush_lock(g_flush_mutex);
+            std::shared_lock<std::shared_timed_mutex> flush_lock(flush_mutex());
 
             USMManagerImpl* mgr = g_allocator_registry[alloc_id % 256].load(std::memory_order_acquire);
             if (mgr && mgr->owns_id(alloc_id))
