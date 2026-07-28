@@ -148,8 +148,8 @@ TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
     EXPECT_GE(report.total_duration_ms, 0.0);
 }
 
-// add(fn) where fn takes sycl::handler& directly (raw kernel overload). The
-// kernel must run and produce the expected values.
+// add_untracked(fn) where fn takes sycl::handler& directly (the raw kernel
+// overload). The kernel must run and produce the expected values.
 TEST(Integration_FluentAPI, RawHandlerKernelAdd)
 {
     constexpr std::size_t N = 128;
@@ -162,7 +162,7 @@ TEST(Integration_FluentAPI, RawHandlerKernelAdd)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add([p](sycl::handler& h)
+    g.add_untracked([p](sycl::handler& h)
     {
         h.parallel_for(sycl::range<1>(N), [p](sycl::id<1> i)
         {
@@ -176,8 +176,8 @@ TEST(Integration_FluentAPI, RawHandlerKernelAdd)
         ASSERT_EQ(buf[i], static_cast<int>(i * 2)) << "at i=" << i;
 }
 
-// add(n, fn) where fn receives (begin, end, sycl::handler&) — the range kernel
-// overload. The fn must see begin=0 and end=N and launch its own work.
+// add_untracked(n, fn) where fn receives (begin, end, sycl::handler&) — the
+// range kernel overload. The fn must see begin=0 and end=N and launch its own work.
 TEST(Integration_FluentAPI, RangeKernelAdd)
 {
     constexpr std::size_t N = 64;
@@ -190,7 +190,7 @@ TEST(Integration_FluentAPI, RangeKernelAdd)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(N, [p](std::size_t begin, std::size_t end, sycl::handler& h)
+    g.add_untracked(N, [p](std::size_t begin, std::size_t end, sycl::handler& h)
     {
         h.parallel_for(sycl::range<1>(end - begin), [p, begin](sycl::id<1> idx)
         {
@@ -226,6 +226,98 @@ TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
 
     // Task 2: square in place (RAW on p -> must run after task 1)
     g.add({ key }, { key }, N, [p](std::size_t i) { p[i] = p[i] * p[i]; });
+
+    g.run();
+
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
+}
+
+// The tracked range-kernel overload: the same writer/squarer pair as
+// PointerTrackedAddOrdering, but the second task drives the handler itself. It
+// must still be ordered after the writer by the declared Reads/Writes; an
+// untracked overload here would let the square race the write.
+TEST(Integration_FluentAPI, TrackedRangeKernelOrdering)
+{
+    constexpr std::size_t N = 32;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i)
+        buf[i] = 0;
+
+    int* p = buf.data();
+
+    auto g = rt.graph();
+    g.add(Reads(), Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(Reads(buf), Writes(buf), N,
+          [p](std::size_t begin, std::size_t end, sycl::handler& h)
+    {
+        h.parallel_for(sycl::range<1>(end - begin), [p, begin](sycl::id<1> idx)
+        {
+            const std::size_t i = begin + idx[0];
+            p[i] = p[i] * p[i];
+        });
+    });
+
+    g.run();
+
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
+}
+
+// The tracked raw-kernel overload: the reader owns the whole command group and
+// is still ordered after the writer by its declared regions.
+TEST(Integration_FluentAPI, TrackedRawKernelOrdering)
+{
+    constexpr std::size_t N = 32;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i)
+        buf[i] = 0;
+
+    int* p = buf.data();
+
+    auto g = rt.graph();
+    g.add(Reads(), Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(Reads(buf), Writes(buf), [p](sycl::handler& h)
+    {
+        h.parallel_for(sycl::range<1>(N), [p](sycl::id<1> idx)
+        {
+            p[idx[0]] = p[idx[0]] * p[idx[0]];
+        });
+    });
+
+    g.run();
+
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
+}
+
+// The tracked NdRange overload: a tiled work-group kernel no longer has to give
+// up dependency tracking to get an nd_item. Ordered after the writer, and the
+// nd_item indexing must still cover the whole global range.
+TEST(Integration_FluentAPI, TrackedNdRangeOrdering)
+{
+    constexpr std::size_t N = 64;   // tiles by 16
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i)
+        buf[i] = 0;
+
+    int* p = buf.data();
+
+    auto g = rt.graph();
+    g.add(Reads(), Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(Reads(buf), Writes(buf),
+          NdRange{ sycl::range<1>(N), sycl::range<1>(16) },
+          [p](sycl::nd_item<1> it)
+    {
+        const std::size_t i = it.get_global_id(0);
+        p[i] = p[i] * p[i];
+    });
 
     g.run();
 

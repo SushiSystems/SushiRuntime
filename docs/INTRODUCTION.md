@@ -128,6 +128,23 @@ For data that does not evolve step to step, use `rt.buffer<T>(n)` instead of
 `rt.state<T>(n)`. Both are owning handles to shared USM; both register their
 reads and writes automatically when passed to `add()`.
 
+**Everything spelled `add()` is ordered by the data it names.** A bare kernel is
+not: a per-element callable is `void(std::size_t)` capturing raw USM pointers, so
+nothing in its type says what it touches and the runtime cannot infer it. Those
+shapes are spelled `add_untracked()` — they record no regions, so the task is
+both a root and a leaf, ordered against nothing:
+
+```cpp
+g.add_untracked(N, [p](std::size_t i) { p[i] = 0; });   // ordered against nothing
+g.add(API::Reads(src), API::Writes(dst), N,             // ordered by src and dst
+      [ps, pd](std::size_t i) { pd[i] = ps[i]; });
+```
+
+`add_untracked` is the right choice for genuinely self-contained work and the
+wrong one the moment another task in the same graph shares data with it. Every
+launch shape has both forms, so reaching for the untracked one is a decision, not
+an oversight.
+
 **Coupled fields** read one another within a step. Every read sees the previous
 step's data (a Jacobi update): each field advances only after the whole step's
 kernels have run, so writing one field never changes what another reads in the

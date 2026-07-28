@@ -87,13 +87,24 @@ namespace SushiRuntime
                 Graph& operator=(const Graph&) = delete;
 
                 /**
-                 * @brief Adds a per-element task run as a parallel_for over [0, n).
+                 * @brief Adds a per-element task that participates in no ordering.
+                 *
+                 * The dependency-blind form of add(Reads, Writes, n, fn): a
+                 * per-element callable is void(std::size_t) capturing raw USM
+                 * pointers, so nothing in its type says what it touches and the
+                 * runtime cannot infer it. This overload therefore records no read or
+                 * write regions — the task is both a root and a leaf, ordered against
+                 * nothing. Correct for self-contained work (seeding a buffer no other
+                 * task in this graph reads, a benchmark kernel); wrong the moment
+                 * another task shares data with it. Name the data with
+                 * Reads(...)/Writes(...) and use add() whenever ordering matters.
+                 *
                  * @param n  Number of elements (the iteration range).
                  * @param fn Callable invoked as fn(i) for each index i.
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                Graph& add(std::size_t n, F&& fn)
+                Graph& add_untracked(std::size_t n, F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), n](BackingGraph& bg)
                     {
@@ -109,13 +120,18 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a range task; fn receives the bounds and the handler.
+                 * @brief Adds an unordered range task; fn receives bounds and handler.
+                 *
+                 * The dependency-blind counterpart of
+                 * add(Reads, Writes, n, range_kernel); see add_untracked(n, fn) for
+                 * why the regions cannot be inferred and when this is the right choice.
+                 *
                  * @param n  Upper bound; fn is called as fn(0, n, handler).
                  * @param fn Callable invoked as fn(begin, end, sycl::handler&).
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
-                Graph& add(std::size_t n, F&& fn)
+                Graph& add_untracked(std::size_t n, F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), n](BackingGraph& bg)
                     {
@@ -130,12 +146,17 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a raw kernel that drives the sycl::handler itself.
+                 * @brief Adds an unordered raw kernel that drives the handler itself.
+                 *
+                 * The dependency-blind counterpart of add(Reads, Writes, raw_kernel);
+                 * see add_untracked(n, fn) for why the regions cannot be inferred and
+                 * when this is the right choice.
+                 *
                  * @param fn Callable invoked as fn(sycl::handler&).
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
-                Graph& add(F&& fn)
+                Graph& add_untracked(F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn)](BackingGraph& bg)
                     {
@@ -147,15 +168,16 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a multidimensional per-element task over an Extent.
+                 * @brief Adds an unordered multidimensional task over an Extent.
                  *
-                 * The 2-D/3-D counterpart of add(std::size_t, fn): the runtime
-                 * submits a parallel_for over the Extent's box and invokes @p fn with
-                 * the global sycl::id of each work-item. When the Extent carries an
-                 * origin offset the iteration covers only that sub-box, so a kernel
-                 * can skip a halo or touch just a ghost layer. Plain 1-D counts keep
-                 * using the std::size_t overloads; pass a 1-D Extent only when you
-                 * want an origin offset.
+                 * The 2-D/3-D counterpart of add_untracked(std::size_t, fn): the
+                 * runtime submits a parallel_for over the Extent's box and invokes
+                 * @p fn with the global sycl::id of each work-item. When the Extent
+                 * carries an origin offset the iteration covers only that sub-box, so
+                 * a kernel can skip a halo or touch just a ghost layer. Plain 1-D
+                 * counts keep using the std::size_t overloads; pass a 1-D Extent only
+                 * when you want an origin offset. Records no regions — use
+                 * add(Reads, Writes, Extent, fn) when the task must be ordered.
                  *
                  * @tparam N  Iteration rank (1, 2, or 3).
                  * @param e   The iteration box (extent and origin offset).
@@ -164,7 +186,7 @@ namespace SushiRuntime
                  */
                 template <int N, class F,
                           std::enable_if_t<std::is_invocable_v<F, sycl::id<N>>, int> = 0>
-                Graph& add(Extent<N> e, F&& fn)
+                Graph& add_untracked(Extent<N> e, F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), e](BackingGraph& bg)
                     {
@@ -181,13 +203,14 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a tiled task over an NdRange (work-group execution).
+                 * @brief Adds an unordered tiled task over an NdRange.
                  *
                  * Submits a parallel_for over the NdRange and hands @p fn a
                  * sycl::nd_item<N>, exposing the work-group model — barriers, local
                  * (shared) memory, sub-groups — that a flat parallel_for cannot. Use
                  * it for blocked algorithms (tiled GEMM, shared-memory stencils)
-                 * where neighbouring work-items must cooperate.
+                 * where neighbouring work-items must cooperate. Records no regions —
+                 * use add(Reads, Writes, NdRange, fn) when the task must be ordered.
                  *
                  * @tparam N  Iteration rank (1, 2, or 3).
                  * @param r   Global and local ranges; global must tile by local.
@@ -196,7 +219,7 @@ namespace SushiRuntime
                  */
                 template <int N, class F,
                           std::enable_if_t<std::is_invocable_v<F, sycl::nd_item<N>>, int> = 0>
-                Graph& add(NdRange<N> r, F&& fn)
+                Graph& add_untracked(NdRange<N> r, F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), r](BackingGraph& bg)
                     {
@@ -266,6 +289,109 @@ namespace SushiRuntime
                             h.parallel_for(e.extent,
                                            [fn, off](sycl::id<N> idx) { fn(idx + off); });
                         }, r, w);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a tiled NdRange task with handle-based tracking.
+                 *
+                 * The ordered counterpart of add_untracked(NdRange, fn): the same
+                 * work-group execution model — barriers, local memory, sub-groups —
+                 * but the task is ordered against the rest of the graph by the
+                 * regions it declares, so a tiled kernel is no longer forced to give
+                 * up dependency tracking to get an nd_item.
+                 *
+                 * @tparam N  Iteration rank (1, 2, or 3).
+                 * @param reads  Handles this task reads (their read keys).
+                 * @param writes Handles this task writes (their write keys).
+                 * @param r   Global and local ranges; global must tile by local.
+                 * @param fn  Callable invoked as fn(sycl::nd_item<N>) per work-item.
+                 * @return *this, for chaining.
+                 */
+                template <int N, class F,
+                          std::enable_if_t<std::is_invocable_v<F, sycl::nd_item<N>>, int> = 0>
+                Graph& add(const Reads& reads, const Writes& writes,
+                           NdRange<N> r, F&& fn)
+                {
+                    observe(reads);
+                    observe(writes);
+                    const std::vector<Core::ResourceRegion> rk = reads.keys;
+                    const std::vector<Core::ResourceRegion> wk = writes.keys;
+                    specs_.push_back([fn = std::forward<F>(fn), r, rk, wk](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, r](sycl::handler& h)
+                        {
+                            h.parallel_for(r.to_nd_range(),
+                                           [fn](sycl::nd_item<N> it) { fn(it); });
+                        }, rk, wk);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a range task with handle-based tracking.
+                 *
+                 * The ordered counterpart of add_untracked(n, range_kernel): @p fn
+                 * still drives the sycl::handler over [0, n) itself — the escape
+                 * hatch for a kernel the per-element form cannot express — but the
+                 * regions it declares order it against the rest of the graph.
+                 *
+                 * @param reads  Handles this task reads (their read keys).
+                 * @param writes Handles this task writes (their write keys).
+                 * @param n      Upper bound; fn is called as fn(0, n, handler).
+                 * @param fn     Callable invoked as fn(begin, end, sycl::handler&).
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
+                Graph& add(const Reads& reads, const Writes& writes,
+                           std::size_t n, F&& fn)
+                {
+                    observe(reads);
+                    observe(writes);
+                    const std::vector<Core::ResourceRegion> rk = reads.keys;
+                    const std::vector<Core::ResourceRegion> wk = writes.keys;
+                    specs_.push_back([fn = std::forward<F>(fn), n, rk, wk](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, n](sycl::handler& h)
+                        {
+                            fn(std::size_t{0}, n, h);
+                        }, rk, wk);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a raw kernel with handle-based tracking.
+                 *
+                 * The ordered counterpart of add_untracked(raw_kernel): @p fn owns
+                 * the whole command group — its own parallel_for, local accessors,
+                 * a memcpy — while the declared regions still order it. Reach for it
+                 * when no other overload's launch shape fits; prefer the shaped
+                 * overloads otherwise, since they cannot get the launch geometry and
+                 * the declared data out of step.
+                 *
+                 * @param reads  Handles this task reads (their read keys).
+                 * @param writes Handles this task writes (their write keys).
+                 * @param fn     Callable invoked as fn(sycl::handler&).
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
+                Graph& add(const Reads& reads, const Writes& writes, F&& fn)
+                {
+                    observe(reads);
+                    observe(writes);
+                    const std::vector<Core::ResourceRegion> rk = reads.keys;
+                    const std::vector<Core::ResourceRegion> wk = writes.keys;
+                    specs_.push_back([fn = std::forward<F>(fn), rk, wk](BackingGraph& bg)
+                    {
+                        bg.add_node(fn, rk, wk);
                     });
                     ++task_count_;
                     dirty_ = true;

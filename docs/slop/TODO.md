@@ -33,25 +33,16 @@ own successor release. If the code was already changed differently, close this i
 
 ## API surface (before the v1.0.0 freeze)
 
-**Fluent API dependency tracking — choose one option**
+**Fluent API dependency tracking — RESOLVED (Option A)**
 
-`API::Graph::add()` calls `add_node()` without read/write pointer lists. Tasks
-added through the fluent API do not participate in automatic RAW/WAR/WAW dependency
-detection unless a handle-based overload is used. The current state is undocumented,
-which means a user who follows the README's "intended entry point" and expects
-ordering will get silent mis-ordering on raw kernels. Pick one:
-
-- **Option A.** Add `add(Reads{…}, Writes{…}, …)` overloads to `API::Graph` that
-  forward pointer lists to `add_task()`. Makes dependency tracking work through
-  the fluent path unconditionally.
-- **Option B.** Document explicitly in `INTRODUCTION.md` and `README.md` that the
-  fluent API does not infer dependencies from raw kernels and direct users who need
-  it to `TaskGraph::add_task()`. The handle-based overloads (`In`, `Out`, `InOut`,
-  `Reads`, `Writes`) already register accesses correctly; only the raw kernel
-  overloads are silent.
-
-Neither option involves a behavior change to the scheduler; both are documentation
-or thin API additions.
+Every launch shape now has a tracked overload — `add(Reads, Writes, n, range_fn)`,
+`add(Reads, Writes, raw_kernel)` and `add(Reads, Writes, NdRange<N>, fn)` were the
+three that were missing — and the five dependency-blind overloads are spelled
+`add_untracked(...)`. Inference was never possible (a per-element callable captures
+its USM pointers by value, so its type says nothing about what it touches), so
+Option A is delivered as "always offer a tracked form, and make the untracked one
+name itself" rather than as automatic detection. Rationale and the sweep are in
+[`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](PHYSICS_SUBSTRATE_IMPLEMENTATION.md) §1.
 
 **`Core::Result<T,E>` as the permanent public type**
 

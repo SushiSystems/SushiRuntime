@@ -242,12 +242,19 @@ sim.run(1'000'000);                          // compile once, replay a million s
 bound the run by wall-clock time or a predicate. The graph is compiled the first
 time it runs and after any change to it, then replayed without recompiling.
 
-Other ways to add work:
+Other ways to add work. A per-element or raw kernel captures its USM pointers, so
+nothing in its type says what it touches and the runtime cannot infer the ordering
+— those overloads are spelled `add_untracked` to say so at the call site. Name the
+data with `Reads{...}`/`Writes{...}` and the same shapes are ordered:
 
 ```cpp
 auto g = rt.graph();
-g.add(1024, [](std::size_t i) { /* per-element kernel over [0, n) */ });
-g.add([](sycl::handler& h) { /* raw SYCL kernel */ });
+g.add_untracked(1024, [](std::size_t i) { /* per-element, ordered against nothing */ });
+g.add_untracked([](sycl::handler& h) { /* raw SYCL kernel, ordered against nothing */ });
+
+// The same two shapes, ordered by the data they declare:
+g.add(Reads(src), Writes(dst), 1024, [ps, pd](std::size_t i) { pd[i] = ps[i]; });
+g.add(Reads(src), Writes(dst), [ps, pd](sycl::handler& h) { /* ... */ });
 
 auto report = g.run();      // throws SushiException on error
 auto result = g.try_run();  // non-throwing: Result<RunReport, Error>
@@ -281,10 +288,12 @@ size for tiling and local memory.
 
 ```cpp
 // 2-D per-element map: the kernel sees a sycl::id<2> over the whole box.
-g.add(Extent{W, H}, [p](sycl::id<2> idx) { p[idx[1] * W + idx[0]] = /* ... */; });
+g.add_untracked(Extent{W, H}, [p](sycl::id<2> idx) { p[idx[1] * W + idx[0]] = /* ... */; });
 
 // Tiled work-group kernel: global WxH, local 4x4, kernel sees sycl::nd_item<2>.
-g.add(NdRange{ sycl::range<2>(W, H), sycl::range<2>(4, 4) },
+// Pass Reads/Writes first (as below) to have it ordered against the rest of the graph.
+g.add(Reads(src), Writes(dst),
+      NdRange{ sycl::range<2>(W, H), sycl::range<2>(4, 4) },
       [p](sycl::nd_item<2> it) { /* it.get_global_id(0), it.get_local_id(1), ... */ });
 
 // Interior-only (halo) stencil over a State: iterate the (W-2)x(H-2) box at (1,1);
