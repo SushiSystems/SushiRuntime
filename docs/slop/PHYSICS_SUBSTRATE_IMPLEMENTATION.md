@@ -7,6 +7,9 @@ is proved). Branch: `feature/physics-substrate-seams`.
 
 **Scope.** R1, R2, R3 and R5 are built. R4, R6 and R7 are not, and §6 says why.
 
+**Status: complete**, one commit per item, with the caveat in §5 that the sanitizer lane is not
+runnable on this toolchain and R3 has therefore not been under ASan.
+
 ---
 
 ## 0. What changed between the request and this plan
@@ -271,8 +274,25 @@ Each item lands with the test that would fail without it.
 | R1 | a count exceeding capacity fails the run with a message naming both numbers | Silent truncation |
 | R3 | `test_dynamic_graph.cpp` — two regions writing disjoint element ranges of one buffer are not ordered against each other; overlapping ranges still are | The disjoint pair serializes |
 
-All under `sr test --suite functional`, plus an ASan pass (`sr build --type asan && sr test --asan`)
-because R3 touches the boundary layer the scheduler reads.
+All under `sr test --suite functional`, which goes from 154 to 174 tests, all passing.
+
+**The sanitizer lane did not run, and could not.** `sr build --type asan` fails at configure on this
+machine: the intel/llvm SYCL toolchain ships no compiler-rt runtimes on Windows
+(`lib/clang/21/lib/` does not exist, so `clang_rt.asan_dynamic.lib` cannot be linked). TSan is
+excluded by the project's own policy on the same toolchain — `cmake/Sanitizers.cmake:17` skips it for
+`WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"`. Both lanes are Linux/CI-only here, so R3 has not
+been under a sanitizer and **should be before this merges**.
+
+What was done instead, since R3 touches the boundary layer the scheduler reads: the concurrency-
+sensitive tests (`DynamicGraph`, `DeviceCount`, `FixedOrderReduce`, `FluentAPI` — 42 cases) were run
+under `sr test --repeat 15` with no failures. That hunts flakiness; it does not find a use-after-free,
+so it is a weaker check, not a substitute.
+
+One test deserves its own note: `DisjointRangeRegionsAreNotOrdered` asserts the *absence* of an edge,
+which nothing in the public API can observe directly, so it proves it behaviourally — two region
+tasks rendezvous on a shared counter with a bounded deadline and each records whether it saw the
+other arrive. It was verified to fail when the overlap test is temporarily coarsened back to
+allocation granularity, so it is not a test that would pass either way.
 
 ---
 

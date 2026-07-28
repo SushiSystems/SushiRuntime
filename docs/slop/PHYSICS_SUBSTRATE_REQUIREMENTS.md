@@ -1,8 +1,25 @@
 # What a AAA Physics Engine Needs From SushiRuntime — Engineering Request
 
-**Status:** research + engineering request. No runtime code has been changed by this document.
-Every claim is anchored to a location in the current tree (`file:line`) so it can be verified
-independently, in the style of `SIMULATION_ENGINE_SUBSTRATE_PLAN.md`.
+**Status: R1, R2, R3 and R5 are built** on `feature/physics-substrate-seams`; see
+[`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](PHYSICS_SUBSTRATE_IMPLEMENTATION.md) for the design and
+[the section below](#delivery) for what each one became. R4, R6 and R7 remain open, and the reasons
+they were left out are recorded in that plan's §6.
+
+The rest of this document is the original request, kept as written so the reasoning behind each ask
+stays auditable. Every claim is anchored to a location in the tree (`file:line`) so it can be
+verified independently, in the style of `SIMULATION_ENGINE_SUBSTRATE_PLAN.md`.
+
+## Delivery
+
+| # | Gap | Outcome |
+|---|---|---|
+| **R1** | Device-driven iteration count | **Built.** `API::sized_from_device(counter, index)`. The count is resolved at *dispatch* rather than at the step boundary, which the request document did not realise was possible: a node's command group is built on a worker only after `EventPolling` waited on every predecessor's event, so a value a predecessor kernel wrote is already visible. That makes both proposed designs unnecessary — no second `run()`, no readback stall, no host node in a device chain, and no launch at worst-case width. The counter is registered as a read of the consuming task, so the producer edge is structural, not a convention. |
+| **R2** | Fixed-order deterministic reductions | **Built.** `Graph::add_reduce` and `Graph::add_segmented_reduce`, plus `Sum`/`Minimum`/`Maximum`. A fixed 256-element tile fold repeated over the partials; the combination order is a function of the element layout alone. |
+| **R3** | Sub-range ordering at the region boundary | **Built.** The boundary pins carry their byte intervals and every hazard test is an interval overlap, so two regions writing disjoint element ranges of one allocation gain no edge. One region per simulation island is now viable. |
+| **R5** | Dependency tracking on every overload | **Built, as Option A.** Every launch shape has a tracked overload (three were missing), and the five dependency-blind ones are spelled `add_untracked`. Inference was never possible for a callable that captures its USM pointers, so "always offer a tracked form, and make the untracked one name itself" is the honest reading of Option A. |
+| **R4** | Asynchronous step | **Open.** PERF; gates nothing. Owning a driver thread means re-deciding how cancellation, the non-reentrancy guard and the completion latch interact — its own change. |
+| **R6** | Late-bound base offset | **Open.** Convenience, not capability; workable today through an index-indirection buffer. |
+| **R7** | `ThreadLocalMagazine` teardown | **Open**, tracked as `TODO.md` #29 on its own merits. |
 
 **Origin.** SushiEngine is planning a full rigid + soft body physics system
 (`sushiengine/docs/slop/physics_system.md`): unified substepping XPBD, joints and articulated
@@ -93,6 +110,11 @@ That leaves three shapes:
 
 The engine plan takes (2) so it is not blocked on this repo, and its `RuntimeGraphBuilder` seam is
 written so switching to (3) is one file.
+
+> **Outcome.** None of the three was needed. This analysis missed *when* a node's command group is
+> built: on a worker at dispatch, after `EventPolling::poll_events` has waited on every predecessor's
+> event. The count can therefore simply be read there. See the Delivery table above and
+> `PHYSICS_SUBSTRATE_IMPLEMENTATION.md` §0; the two designs below were not built.
 
 ### Two possible designs
 
