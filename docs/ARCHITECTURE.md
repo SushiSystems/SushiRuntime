@@ -281,11 +281,23 @@ appear and vanish — so a commit costs O(changed region + affected boundary pin
 and never re-scans the untouched world.
 
 Cross-region edges are derived per shared allocation by walking the regions that
-touch it in ascending key order, threading the producer (last writer) and pending
-readers through so RAW/WAR/WAW are honoured while two regions that only read the
-same buffer stay parallel. A region's boundary interface is the entry pins (first
-touchers, which receive incoming edges) and exit pins (last writers/reads, which
-source the next region's edges), computed once per region build. The lower-keyed
+touch it in ascending key order, threading the live writers and pending readers
+through so RAW/WAR/WAW are honoured while two regions that only read the same
+buffer stay parallel. A region's boundary interface is the entry pins (first
+touchers, which receive incoming edges) and exit pins (unshadowed writes/reads,
+which source the next region's edges), computed once per region build.
+
+Each pin carries the **byte intervals** it touches, and every hazard test is an
+interval overlap, so two regions writing disjoint element ranges of one
+allocation gain no edge at all. That is what makes one-region-per-simulation-
+island viable: islands are disjoint index ranges of a shared entity column rather
+than separate allocations, so an allocation-granular boundary would serialize
+islands that never meet — and per-island allocations would cost a copy on every
+island merge and split. Where interval arithmetic would get expensive the layer
+rounds toward keeping a pin live (a writer is retired only when one later write
+interval fully contains it, and a node counts as an entry pin unless an intra
+predecessor overlaps it), because an extra cross edge costs parallelism while a
+missing one is a data race. The lower-keyed
 region is therefore the producer; key the producer below the consumer for a hard
 cross-region dataflow dependency, exactly as the static graph relies on add() order
 within one graph. `DynamicGraph::compile_count()` stays 1 across an unmutated run

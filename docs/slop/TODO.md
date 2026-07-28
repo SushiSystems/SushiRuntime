@@ -130,15 +130,14 @@ by `Integration_Cancellation`.
 ## Future work (out of v1 scope)
 
 **Dynamic-graph boundary refinements.** The dynamic region graph composes in
-O(changed region + affected boundary pins). Two refinements remain: (a) cross-region
-ordering keys on the whole allocation, not sub-ranges — two regions writing disjoint
-halves of one buffer are serialized though they need not be (the intra tracker
-already handles sub-ranges; lifting it to the boundary means carrying the entry/exit
-pins' byte intervals); (b) distributed offload is not stamped for dynamic-graph
-nodes (the dynamic composer bypasses `TaskGraph::compile`, where `stamp_offloadable`
-runs), so an offloadable op recorded on a region runs its local fallback under
-`SR_ENABLE_DISTRIBUTED` instead of shipping to a worker. Neither blocks the
-single-node real-time target.
+O(changed region + affected boundary pins). Sub-range boundary ordering is now
+done — the entry/exit pins carry their byte intervals and every hazard test is an
+interval overlap, so two regions writing disjoint element ranges of one buffer are
+no longer serialized. One refinement remains: distributed offload is not stamped
+for dynamic-graph nodes (the dynamic composer bypasses `TaskGraph::compile`, where
+`stamp_offloadable` runs), so an offloadable op recorded on a region runs its local
+fallback under `SR_ENABLE_DISTRIBUTED` instead of shipping to a worker. It does not
+block the single-node real-time target.
 
 **Python bindings.** A pybind11 (or nanobind) wrapper around the C++ fluent API
 would allow direct interop with NumPy, PyTorch, and Jupyter. The binding entry
