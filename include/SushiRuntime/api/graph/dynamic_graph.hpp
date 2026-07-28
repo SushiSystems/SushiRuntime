@@ -37,6 +37,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/graph/region.hpp>
+#include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -228,8 +229,135 @@ namespace SushiRuntime
                  */
                 void cancel() { ctx_->get_execution_engine().cancel(); }
 
+                /**
+                 * @brief Starts one step and returns without waiting for it.
+                 *
+                 * Mirrors Graph::run_async(): the step goes to the worker pool and
+                 * this returns, so the caller can extract the previous step's state
+                 * while this one runs and then settle up through the handle. Any
+                 * pending structural change (a region added or dropped) is committed
+                 * before the step is submitted, exactly as a synchronous run does.
+                 *
+                 * The handle must not outlive this graph, and its destructor waits
+                 * for the step rather than letting the plan be destroyed underneath
+                 * the workers - see RunHandle.
+                 *
+                 * @return A handle for the step now in flight.
+                 * @throws Core::SushiException If there are no regions or no runnable
+                 *         tasks, a region references a freed Buffer/State, the engine
+                 *         does not support asynchronous runs, or a run is already in
+                 *         progress.
+                 */
+                RunHandle<DynamicGraph> run_async()
+                {
+                    if (regions_.empty())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "DynamicGraph has no regions to run."});
+                    if (async_step_pending_)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "A step started with run_async() is still in flight; wait "
+                            "on its handle before starting another."});
+                    for (const auto& kv : regions_)
+                        if (static_cast<const Graph&>(*kv.second).has_dangling_resource())
+                            throw Core::SushiException(Core::Error{Core::Errc::dangling_resource,
+                                "DynamicGraph region references a Buffer/State freed "
+                                "before the run."});
+
+                    auto& engine = ctx_->get_execution_engine();
+                    if (!engine.supports_asynchronous_run())
+                        throw Core::SushiException(Core::Error{Core::Errc::unsupported,
+                            "The active execution engine does not support run_async()."});
+
+                    using clock = std::chrono::steady_clock;
+                    detail::AsyncRunState state;
+
+                    if (needs_commit())
+                    {
+                        const auto compose_started = clock::now();
+                        commit();
+                        state.compile_ms = std::chrono::duration<double, std::milli>(
+                            clock::now() - compose_started).count();
+                    }
+
+                    if (plan_.roots.empty())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                                                              "DynamicGraph has no runnable tasks."});
+
+                    refresh_updaters();
+                    steps_.resync();
+                    engine.reset_cancellation();
+                    if (ctx_->profiling_enabled())
+                        engine.reset_profiling(plan_);
+
+                    state.before = engine.metrics();
+                    state.device_to_host_before = ctx_->device_to_host_bytes();
+                    state.host_to_device_before = ctx_->host_to_device_bytes();
+                    state.task_count = size();
+
+                    steps_.before_step();
+                    rearm();
+                    state.started = clock::now();
+                    engine.submit(plan_);
+
+                    async_step_pending_ = true;
+                    return RunHandle<DynamicGraph>(this, state);
+                }
+
             private:
                 friend class Runtime;
+                // The handle run_async() returns settles the step through the two
+                // private members below, which is the whole of its access.
+                template <class Owner> friend class RunHandle;
+
+                /** @brief The engine a pending asynchronous step is running on. */
+                Execution::IExecutionEngine& async_engine()
+                {
+                    return ctx_->get_execution_engine();
+                }
+
+                /**
+                 * @brief Releases the in-flight marker for a step that ended badly.
+                 *
+                 * See Graph::discard_async_step: a task exception must not leave the
+                 * graph permanently refusing to run.
+                 */
+                void discard_async_step() noexcept { async_step_pending_ = false; }
+
+                /**
+                 * @brief Closes out an asynchronous step once the engine reports done.
+                 *
+                 * The counterpart of Graph::finish_async_step for the composed plan:
+                 * every live region's States advance here, after the step genuinely
+                 * finished, so an asynchronous step is observationally identical to a
+                 * synchronous one.
+                 *
+                 * @param state What run_async() recorded when it submitted the step.
+                 * @return The report for the step.
+                 */
+                Core::RunReport finish_async_step(const detail::AsyncRunState& state)
+                {
+                    const auto finished = std::chrono::steady_clock::now();
+                    auto& engine = ctx_->get_execution_engine();
+
+                    async_step_pending_ = false;
+                    steps_.after_step();
+
+                    const auto after = engine.metrics();
+                    auto report = detail::build_run_report(
+                        *ctx_, state.before, after, state.task_count, state.compile_ms,
+                        std::chrono::duration<double, std::milli>(
+                            finished - state.started).count());
+
+                    report.cancelled = engine.is_cancelled();
+                    report.device_to_host_bytes =
+                        ctx_->device_to_host_bytes() - state.device_to_host_before;
+                    report.host_to_device_bytes =
+                        ctx_->host_to_device_bytes() - state.host_to_device_before;
+
+                    if (ctx_->profiling_enabled())
+                        engine.collect_profiling(plan_, report);
+                    return report;
+                }
 
                 using Node = ::SushiRuntime::Graph::Node;
                 using Base = ::SushiRuntime::Core::ResourceId;  // allocation identity (void*)
@@ -748,6 +876,13 @@ namespace SushiRuntime
                     if (regions_.empty())
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "DynamicGraph has no regions to run."});
+                    // Before anything touches the plan: rearm() rewrites every
+                    // node's in-degree, which would corrupt a step the workers are
+                    // still executing. See Graph::drive().
+                    if (async_step_pending_)
+                        return Core::make_error(Core::Error{Core::Errc::invalid_graph,
+                            "A step started with run_async() is still in flight; wait "
+                            "on its handle before running this graph again."});
                     for (const auto& kv : regions_)
                         if (static_cast<const Graph&>(*kv.second).has_dangling_resource())
                             return Core::make_error(Core::Error{Core::Errc::dangling_resource,
@@ -887,6 +1022,10 @@ namespace SushiRuntime
                 detail::StepMachinery steps_;
 
                 Execution::CompiledGraph plan_;
+
+                // True between run_async() and the settling of its handle; see
+                // Graph::async_step_pending_.
+                bool async_step_pending_ = false;
                 std::size_t compiles_ = 0;
                 std::size_t plan_index_counter_ = 0;
                 bool committed_once_ = false;

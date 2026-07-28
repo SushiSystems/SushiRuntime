@@ -44,6 +44,7 @@
 #include <SushiRuntime/api/detail/callable_traits.hpp>
 #include <SushiRuntime/api/detail/fixed_order_reduce.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
+#include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
@@ -598,6 +599,12 @@ namespace SushiRuntime
                  * run in one composition with no worst-case launch width. The counter
                  * is registered as one of this task's reads, so the producer is
                  * necessarily ordered before it.
+                 *
+                 * based_at() / based_at_device() move where the node starts, for a
+                 * slice whose offset shifts between steps — a graph colour, say. The
+                 * callable still receives absolute indices, and the window must fit
+                 * the capacity: one that does not fails the run rather than reading
+                 * past the end.
                  *
                  * @param dyn      Late-binding controls from when()/sized().
                  * @param reads    Handles this task reads (their read keys).
@@ -1160,6 +1167,89 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Starts one step and returns without waiting for it.
+                 *
+                 * The asynchronous counterpart of run(). The step is handed to the
+                 * worker pool and this returns immediately, so the caller can do
+                 * work that needs no workers — extracting the previous step's state
+                 * for a renderer or an audio system — while this one runs, then
+                 * settle up through the returned handle:
+                 *
+                 * ```cpp
+                 * auto step = simulation.run_async();
+                 * extract_previous_frame();
+                 * Core::RunReport report = step.wait();
+                 * ```
+                 *
+                 * One step only: the multi-step drivers (run(n), run_for, run_until)
+                 * stay synchronous, because their per-step host work has to happen
+                 * between steps and there is nothing for the caller to overlap with
+                 * in the middle of a batch. A step is one tick, which is the
+                 * granularity a frame actually wants.
+                 *
+                 * The handle must not outlive this graph, and its destructor waits
+                 * for the step rather than letting the plan be destroyed underneath
+                 * the workers — see RunHandle.
+                 *
+                 * @return A handle for the step now in flight.
+                 * @throws Core::SushiException If the graph has no tasks, references
+                 *         a freed Buffer/State, the engine does not support
+                 *         asynchronous runs, or a run is already in progress.
+                 */
+                RunHandle<Graph> run_async()
+                {
+                    if (task_count_ == 0)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                                                                "Graph has no tasks to run."});
+                    if (async_step_pending_)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "A step started with run_async() is still in flight; wait "
+                            "on its handle before starting another."});
+                    if (has_dangling_resource())
+                        throw Core::SushiException(Core::Error{Core::Errc::dangling_resource,
+                            "Graph references a Buffer/State freed before the run."});
+
+                    auto& engine = ctx_->get_execution_engine();
+                    if (!engine.supports_asynchronous_run())
+                        throw Core::SushiException(Core::Error{Core::Errc::unsupported,
+                            "The active execution engine does not support run_async()."});
+
+                    using clock = std::chrono::steady_clock;
+                    detail::AsyncRunState state;
+
+                    if (dirty_)
+                    {
+                        const auto compile_started = clock::now();
+                        build_plan();
+                        state.compile_ms = std::chrono::duration<double, std::milli>(
+                            clock::now() - compile_started).count();
+                    }
+
+                    // Same pre-step order as the synchronous driver: point the State
+                    // views at their buffers, clear a previous run's cancellation,
+                    // zero the profiling accumulators, then refresh the late-bound
+                    // controls. Diverging here would make an asynchronous step mean
+                    // something subtly different from a synchronous one.
+                    steps_.resync();
+                    engine.reset_cancellation();
+                    if (ctx_->profiling_enabled())
+                        engine.reset_profiling(plan_);
+
+                    state.before = engine.metrics();
+                    state.device_to_host_before = ctx_->device_to_host_bytes();
+                    state.host_to_device_before = ctx_->host_to_device_bytes();
+                    state.task_count = task_count_;
+
+                    steps_.before_step();
+                    reset_plan_state();
+                    state.started = clock::now();
+                    engine.submit(plan_);
+
+                    async_step_pending_ = true;
+                    return RunHandle<Graph>(this, state);
+                }
+
+                /**
                  * @brief Requests cancellation of an in-progress run, from any thread.
                  *
                  * Safe to call concurrently with a blocking run()/run_for()/run_until()
@@ -1199,6 +1289,62 @@ namespace SushiRuntime
                 // reads those same members to build one combined plan.
                 friend class Region;
                 friend class DynamicGraph;
+                // The handle run_async() returns settles the step through the two
+                // private members below, which is the whole of its access.
+                template <class Owner> friend class RunHandle;
+
+                /** @brief The engine a pending asynchronous step is running on. */
+                Execution::IExecutionEngine& async_engine()
+                {
+                    return ctx_->get_execution_engine();
+                }
+
+                /**
+                 * @brief Releases the in-flight marker for a step that ended badly.
+                 *
+                 * A task exception leaves the step over but unsettled: no report, no
+                 * State advance. The graph must still become runnable again, or one
+                 * throwing kernel would permanently refuse every later run.
+                 */
+                void discard_async_step() noexcept { async_step_pending_ = false; }
+
+                /**
+                 * @brief Closes out an asynchronous step once the engine reports done.
+                 *
+                 * The tail of drive_impl's loop body plus its report building, split
+                 * out because those happen in a different call from the submission.
+                 * Advancing every State here — not at submit — is what makes an
+                 * asynchronous step observationally identical to a synchronous one:
+                 * the just-written field becomes current only after the step has
+                 * genuinely finished.
+                 *
+                 * @param state What run_async() recorded when it submitted the step.
+                 * @return The report for the step.
+                 */
+                Core::RunReport finish_async_step(const detail::AsyncRunState& state)
+                {
+                    const auto finished = std::chrono::steady_clock::now();
+                    auto& engine = ctx_->get_execution_engine();
+
+                    async_step_pending_ = false;
+                    steps_.after_step();
+
+                    const auto after = engine.metrics();
+                    auto report = detail::build_run_report(
+                        *ctx_, state.before, after, state.task_count, state.compile_ms,
+                        std::chrono::duration<double, std::milli>(
+                            finished - state.started).count());
+
+                    report.cancelled = engine.is_cancelled();
+                    report.device_to_host_bytes =
+                        ctx_->device_to_host_bytes() - state.device_to_host_before;
+                    report.host_to_device_bytes =
+                        ctx_->host_to_device_bytes() - state.host_to_device_before;
+
+                    if (ctx_->profiling_enabled())
+                        engine.collect_profiling(plan_, report);
+                    return report;
+                }
 
                 explicit Graph(std::shared_ptr<Execution::RuntimeContext> ctx)
                     : ctx_(std::move(ctx))
@@ -1226,6 +1372,16 @@ namespace SushiRuntime
                     if (task_count_ == 0)
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "Graph has no tasks to run."});
+                    // Before anything touches the plan. A synchronous run re-arms
+                    // every node's in-degree, so letting one start while an
+                    // asynchronous step is still executing would rewrite the
+                    // scheduling state of the DAG the workers are walking — a much
+                    // worse failure than the engine's own reentrancy rejection,
+                    // which only fires later, after the damage.
+                    if (async_step_pending_)
+                        return Core::make_error(Core::Error{Core::Errc::invalid_graph,
+                            "A step started with run_async() is still in flight; wait "
+                            "on its handle before running this graph again."});
                     if (has_dangling_resource())
                         return Core::make_error(Core::Error{Core::Errc::dangling_resource,
                             "Graph references a Buffer/State freed before the run."});
@@ -1483,7 +1639,17 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                // Resolves a late-bound node's iteration size at dispatch. Prefers a
+                // The half-open element window a late-bound node iterates this step:
+                // where it starts and how many elements it covers. The two are
+                // resolved and validated together, because only their combination
+                // says whether the node stays inside the buffers it was compiled for.
+                struct LiveRange
+                {
+                    std::size_t base = 0;
+                    std::size_t count = 0;
+                };
+
+                // Resolves a late-bound node's iteration window at dispatch. Prefers a
                 // device-written count when one was named, because that is the only
                 // source that can carry a number the device produced earlier in the
                 // same step; otherwise falls back to the step-boundary count (with
@@ -1491,28 +1657,44 @@ namespace SushiRuntime
                 // thread while the node's command group is being built, which is
                 // after every predecessor's event completed — the reason reading
                 // device-written memory here is sound.
-                static std::size_t resolve_live_size(
+                static LiveRange resolve_live_range(
                     const ::SushiRuntime::Graph::LateBindings& lb, std::size_t capacity)
                 {
+                    LiveRange range;
+
+                    range.base = (lb.device_base != nullptr)
+                        ? static_cast<std::size_t>(lb.device_base[lb.device_base_index])
+                        : lb.base.load(std::memory_order_relaxed);
+
                     if (lb.device_count != nullptr)
                     {
-                        const std::size_t n =
+                        range.count =
                             static_cast<std::size_t>(lb.device_count[lb.device_count_index]);
-                        if (n > capacity)
-                            // Truncating instead would silently drop work — exactly
-                            // the failure the device-count seam exists to prevent.
-                            throw Core::SushiException(Core::Error{
-                                Core::Errc::invalid_graph,
-                                "A late-bound task's device-supplied count (" +
-                                std::to_string(n) + ") exceeds the capacity it was "
-                                "compiled for (" + std::to_string(capacity) +
-                                "); allocate the task's buffers for the worst case."});
-                        return n;
+                    }
+                    else
+                    {
+                        const std::size_t live = lb.count.load(std::memory_order_relaxed);
+                        // USE_BAKED means "the rest of the capacity", which with a
+                        // base means the rest from there, not the whole buffer.
+                        range.count =
+                            (live == ::SushiRuntime::Graph::LateBindings::USE_BAKED)
+                                ? capacity - (range.base < capacity ? range.base : capacity)
+                                : live;
                     }
 
-                    const std::size_t live = lb.count.load(std::memory_order_relaxed);
-                    return live == ::SushiRuntime::Graph::LateBindings::USE_BAKED
-                        ? capacity : live;
+                    // The window must fit. Clamping instead would silently drop work
+                    // - exactly the failure these seams exist to prevent - and
+                    // running past the end would corrupt whatever follows.
+                    if (range.base > capacity || range.count > capacity - range.base)
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::invalid_graph,
+                            "A late-bound task's live window starts at " +
+                            std::to_string(range.base) + " and covers " +
+                            std::to_string(range.count) +
+                            " elements, which does not fit the capacity it was "
+                            "compiled for (" + std::to_string(capacity) +
+                            "); size the task's buffers for the worst case."});
+                    return range;
                 }
 
                 // Submits a late-bound node's kernel over its live size. A step with
@@ -1521,14 +1703,19 @@ namespace SushiRuntime
                 // empty count submits an empty kernel instead: the node still
                 // completes and still releases its successors.
                 template <class F>
-                static void submit_live_range(sycl::handler& h, std::size_t n, const F& fn)
+                static void submit_live_range(sycl::handler& h, LiveRange range, const F& fn)
                 {
-                    if (n == 0)
+                    if (range.count == 0)
                     {
                         h.single_task([]() {});
                         return;
                     }
-                    h.parallel_for(sycl::range<1>(n), [fn](sycl::id<1> i) { fn(i[0]); });
+                    // The offset is applied here rather than by the caller, so a
+                    // kernel written against absolute indices stays correct whether
+                    // or not its node happens to carry a base.
+                    const std::size_t base = range.base;
+                    h.parallel_for(sycl::range<1>(range.count),
+                                   [fn, base](sycl::id<1> i) { fn(base + i[0]); });
                 }
 
                 // Emits a 1-D per-element task whose iteration size and enablement
@@ -1546,7 +1733,7 @@ namespace SushiRuntime
                                                 std::size_t capacity, F&& fn)
                 {
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
-                    adopt_device_count(*lb, dyn, reads);
+                    adopt_device_bindings(*lb, dyn, reads);
 
                     specs_.push_back([fn = std::forward<F>(fn), capacity, lb,
                                       reads = std::move(reads),
@@ -1554,7 +1741,7 @@ namespace SushiRuntime
                     {
                         bg.add_node([fn, capacity, lb](sycl::handler& h)
                         {
-                            submit_live_range(h, resolve_live_size(*lb, capacity), fn);
+                            submit_live_range(h, resolve_live_range(*lb, capacity), fn);
                         }, reads, writes, lb);
                     });
                     steps_.register_binding_updater(lb, std::move(dyn));
@@ -1568,21 +1755,33 @@ namespace SushiRuntime
                 // than asking the caller for it is what makes "the producer runs
                 // first" a property of the graph instead of a documented convention:
                 // the read region orders this node behind whoever writes the count.
-                static void adopt_device_count(::SushiRuntime::Graph::LateBindings& lb,
-                                               const Dynamic& dyn,
-                                               std::vector<Core::ResourceRegion>& reads)
+                static void adopt_device_bindings(::SushiRuntime::Graph::LateBindings& lb,
+                                                  const Dynamic& dyn,
+                                                  std::vector<Core::ResourceRegion>& reads)
                 {
-                    if (dyn.device_count == nullptr)
-                        return;
+                    if (dyn.device_count != nullptr)
+                    {
+                        lb.device_count = dyn.device_count;
+                        lb.device_count_index = dyn.device_count_index;
+                        register_device_slot(dyn.device_count, dyn.device_count_index, reads);
+                    }
+                    if (dyn.device_base != nullptr)
+                    {
+                        lb.device_base = dyn.device_base;
+                        lb.device_base_index = dyn.device_base_index;
+                        register_device_slot(dyn.device_base, dyn.device_base_index, reads);
+                    }
+                }
 
-                    lb.device_count = dyn.device_count;
-                    lb.device_count_index = dyn.device_count_index;
-
-                    // Name just the one element, so two nodes reading different
-                    // counters out of one buffer are not ordered against each other.
+                // Names one four-byte slot as a read of the node that will consume it.
+                // Just the one element, not the whole buffer, so two nodes reading
+                // different slots out of one buffer stay unordered against each other.
+                static void register_device_slot(const std::uint32_t* slot, std::size_t index,
+                                                 std::vector<Core::ResourceRegion>& reads)
+                {
                     reads.push_back(Core::ResourceRegion{
-                        const_cast<void*>(static_cast<const void*>(dyn.device_count)),
-                        dyn.device_count_index * sizeof(std::uint32_t),
+                        const_cast<void*>(static_cast<const void*>(slot)),
+                        index * sizeof(std::uint32_t),
                         sizeof(std::uint32_t)});
                 }
 
@@ -1599,7 +1798,7 @@ namespace SushiRuntime
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
 
                     std::vector<Core::ResourceRegion> reads{ s.read_key() };
-                    adopt_device_count(*lb, dyn, reads);
+                    adopt_device_bindings(*lb, dyn, reads);
 
                     specs_.push_back([fn = std::forward<F>(fn), view, sp, lb,
                                       reads = std::move(reads)](BackingGraph& bg)
@@ -1609,14 +1808,15 @@ namespace SushiRuntime
                         {
                             const T* cur = view->cur;
                             T* next = view->next;
-                            const std::size_t n = resolve_live_size(*lb, capacity);
-                            if (n == 0)
+                            const LiveRange range = resolve_live_range(*lb, capacity);
+                            if (range.count == 0)
                             {
                                 h.single_task([]() {});
                                 return;
                             }
-                            h.parallel_for(sycl::range<1>(n),
-                                           [=](sycl::id<1> i) { fn(i[0], cur, next); });
+                            const std::size_t base = range.base;
+                            h.parallel_for(sycl::range<1>(range.count),
+                                           [=](sycl::id<1> i) { fn(base + i[0], cur, next); });
                         }, reads, { sp->write_key() }, lb);
                     });
 
@@ -1713,6 +1913,11 @@ namespace SushiRuntime
                 detail::StepMachinery steps_;
 
                 std::size_t task_count_ = 0;
+
+                // True between run_async() and the settling of its handle. Guards
+                // the plan against a second run re-arming nodes the workers are
+                // still walking; see drive().
+                bool async_step_pending_ = false;
 
                 // Number of times the backing graph has been compiled. A late-bound
                 // graph proves its value by holding this at 1 across a multi-step run

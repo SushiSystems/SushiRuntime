@@ -36,6 +36,41 @@ namespace SushiRuntime
 {
     namespace API
     {
+        namespace detail
+        {
+            /**
+             * @brief Validates a buffer slot a late-bound control will read at dispatch.
+             *
+             * Both device-sourced controls have the same two preconditions, and both
+             * are worth failing on at the call site rather than mid-run: a
+             * device-resident buffer is not host-addressable, so reading it where the
+             * kernel is submitted would be undefined behaviour, and an out-of-range
+             * index would read whatever follows the allocation.
+             *
+             * @param slot  Buffer holding the value; must be host-addressable.
+             * @param index Element index within @p slot.
+             * @param what  Name of the calling factory, for the error message.
+             * @return A pointer to the buffer's first element.
+             * @throws Core::SushiException If @p slot is device-resident or @p index
+             *         is out of range.
+             */
+            inline const std::uint32_t* checked_device_slot(
+                const Buffer<std::uint32_t>& slot, std::size_t index, const char* what)
+            {
+                if (!slot.host_accessible())
+                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                        std::string(what) + ": the buffer is device-resident, but the "
+                        "value is read on the host at dispatch; allocate it with "
+                        "Residency::Shared."});
+                if (index >= slot.size())
+                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                        std::string(what) + ": index " + std::to_string(index) +
+                        " is out of range for a buffer of " +
+                        std::to_string(slot.size()) + " elements."});
+                return slot.data();
+            }
+        } // namespace detail
+
         /**
          * @brief Opt-in late-binding controls for a task, evaluated once per step.
          *
@@ -60,6 +95,7 @@ namespace SushiRuntime
 
             using WhenProvider  = Core::Delegate<bool(), PROVIDER_CAPACITY>;
             using CountProvider = Core::Delegate<std::size_t(), PROVIDER_CAPACITY>;
+            using BaseProvider  = Core::Delegate<std::size_t(), PROVIDER_CAPACITY>;
 
             WhenProvider  when_pred;  /**< Empty: the node is always enabled. */
             CountProvider count_fn;   /**< Empty: iterate the full baked range. */
@@ -75,6 +111,19 @@ namespace SushiRuntime
 
             /** @brief Element index of the live count within device_count. */
             std::size_t device_count_index = 0;
+
+            BaseProvider base_fn;     /**< Empty: iterate from element zero. */
+
+            /**
+             * @brief Host-readable slot a predecessor writes the live base into.
+             *
+             * Set by based_at_device(); null otherwise. When set it replaces
+             * base_fn, for the same reason sized_from_device() replaces count_fn.
+             */
+            const std::uint32_t* device_base = nullptr;
+
+            /** @brief Element index of the live base within device_base. */
+            std::size_t device_base_index = 0;
 
             // The chaining setters are ref-qualified so a move-only Dynamic chains in
             // both shapes: mutating a named Dynamic in place (the lvalue overload
@@ -135,6 +184,48 @@ namespace SushiRuntime
                 count_fn = CountProvider{};
                 return std::move(*this);
             }
+
+            /** @brief Sets the first-element provider on a named Dynamic; returns *this. */
+            Dynamic& and_based_at(BaseProvider base) &
+            {
+                base_fn = std::move(base);
+                device_base = nullptr;
+                return *this;
+            }
+
+            /** @brief Sets the first-element provider while chaining inline. */
+            Dynamic and_based_at(BaseProvider base) &&
+            {
+                base_fn = std::move(base);
+                device_base = nullptr;
+                return std::move(*this);
+            }
+
+            /**
+             * @brief Points a named Dynamic at a device-written base; returns *this.
+             *
+             * Drops any host-side based_at() provider, since the two cannot both
+             * decide where the node starts.
+             * @param slot  Host-readable slot a predecessor writes.
+             * @param index Element index of the base within @p slot.
+             * @return *this, for chaining.
+             */
+            Dynamic& and_based_at_device(const std::uint32_t* slot, std::size_t index) &
+            {
+                device_base = slot;
+                device_base_index = index;
+                base_fn = BaseProvider{};
+                return *this;
+            }
+
+            /** @brief Points a Dynamic at a device-written base while chaining inline. */
+            Dynamic and_based_at_device(const std::uint32_t* slot, std::size_t index) &&
+            {
+                device_base = slot;
+                device_base_index = index;
+                base_fn = BaseProvider{};
+                return std::move(*this);
+            }
         };
 
         /**
@@ -193,20 +284,63 @@ namespace SushiRuntime
         inline Dynamic sized_from_device(const Buffer<std::uint32_t>& counter,
                                          std::size_t index = 0)
         {
-            if (!counter.host_accessible())
-                throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                    "sized_from_device: the counter buffer is device-resident, but the "
-                    "iteration size is read on the host at dispatch; allocate it with "
-                    "Residency::Shared."});
-            if (index >= counter.size())
-                throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                    "sized_from_device: index " + std::to_string(index) +
-                    " is out of range for a counter buffer of " +
-                    std::to_string(counter.size()) + " elements."});
-
             Dynamic d;
-            d.device_count = counter.data();
+            d.device_count = detail::checked_device_slot(counter, index, "sized_from_device");
             d.device_count_index = index;
+            return d;
+        }
+
+        /**
+         * @brief Builds a Dynamic whose node starts at a per-step element offset.
+         *
+         * sized() says how many elements a node iterates; this says from where. The
+         * pair is what a graph-coloured solver needs: each colour is a contiguous
+         * slice of one constraint buffer, and every colour's offset shifts as soon
+         * as constraints are added or removed. Without it the kernel has to reach
+         * its own work through an index-indirection buffer, paying an extra load
+         * per element for something the launch could have carried for free.
+         *
+         * The offset is applied by the runtime, so the callable still receives
+         * absolute indices: `fn(base + i)` for i in [0, count). The window must fit
+         * inside the capacity the node was compiled for; one that does not fails
+         * the run rather than reading past the end.
+         *
+         * Composes with when() and sized()/sized_from_device().
+         *
+         * @param base Polled before each step; the first element to iterate.
+         * @return A Dynamic carrying the base provider, ready to pass to add().
+         */
+        inline Dynamic based_at(Dynamic::BaseProvider base)
+        {
+            Dynamic d;
+            d.base_fn = std::move(base);
+            return d;
+        }
+
+        /**
+         * @brief Builds a Dynamic whose base comes from a slot the device wrote.
+         *
+         * The device-sourced form of based_at(), and the companion of
+         * sized_from_device(): a colouring pass that computes both a slice's offset
+         * and its length on the device hands over both the same way, and the slot is
+         * registered as one of the consuming task's reads so the producer is
+         * necessarily ordered first.
+         *
+         * Replaces any based_at() provider on the same Dynamic; when() and the size
+         * controls still compose.
+         *
+         * @param slot  Host-readable buffer a predecessor writes the base into.
+         * @param index Element index of the base within @p slot.
+         * @return A Dynamic carrying the device base source, ready to pass to add().
+         * @throws Core::SushiException If @p slot is device-resident or @p index is
+         *         out of range.
+         */
+        inline Dynamic based_at_device(const Buffer<std::uint32_t>& slot,
+                                       std::size_t index = 0)
+        {
+            Dynamic d;
+            d.device_base = detail::checked_device_slot(slot, index, "based_at_device");
+            d.device_base_index = index;
             return d;
         }
 
