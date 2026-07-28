@@ -17,7 +17,7 @@ import subprocess
 from pathlib import Path
 
 from . import console
-from .config import Config
+from .config import Config, find_project_root
 
 CACHE_NAME = ".sushi_env.json"
 
@@ -201,6 +201,27 @@ def _snapshot_linux(cfg: Config) -> dict[str, str] | None:
     return env
 
 
+def _inject_sanitizer_options(env: dict[str, str]) -> None:
+    """Point LeakSanitizer at the repo's suppression file, if it has one.
+
+    LeakSanitizer runs as part of AddressSanitizer on Linux and reports at process
+    exit, so a third-party library that leaks its one-time initialisation makes
+    every ASan test process exit non-zero — the tests themselves pass and then the
+    binary fails, which reads as a broken suite rather than a known upstream leak.
+    Pointing LSan at the checked-in suppression list keeps real leaks failing while
+    the known ones stay quiet. Set unconditionally: a non-ASan build never reads
+    the variable, and LeakSanitizer does not exist on Windows at all.
+    """
+    if "LSAN_OPTIONS" in env:
+        return  # a caller who set it explicitly outranks us
+    try:
+        suppressions = find_project_root() / "tests" / "lsan_suppressions.txt"
+    except SystemExit:
+        return  # not inside a checkout; nothing to point at
+    if suppressions.is_file():
+        env["LSAN_OPTIONS"] = f"suppressions={suppressions.as_posix()}"
+
+
 def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
     """Return the environment for build/test/run subprocesses.
 
@@ -218,6 +239,7 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
             if cached.get("key") == key:
                 env = _merge_env(dict(os.environ), cached["env"])
                 _inject_toolchain_paths(cfg, env)
+                _inject_sanitizer_options(env)
                 return env
         except (json.JSONDecodeError, OSError, KeyError):
             pass  # fall through and rebuild
@@ -228,6 +250,7 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
     if not snapshot:
         env = dict(os.environ)
         _inject_toolchain_paths(cfg, env)
+        _inject_sanitizer_options(env)
         return env
 
     try:
@@ -237,4 +260,5 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
 
     env = _merge_env(dict(os.environ), snapshot)
     _inject_toolchain_paths(cfg, env)
+    _inject_sanitizer_options(env)
     return env
