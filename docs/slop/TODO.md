@@ -4,15 +4,24 @@
 
 ## Correctness (blockers before v1.0.0)
 
-**#29 — ThreadLocalMagazine teardown ordering**
+**#29 — ThreadLocalMagazine teardown ordering — RESOLVED**
 
-`ThreadLocalMagazine` is `thread_local`. Its destructor tries to return live USM
-slots to the owning `BitmaskMemoryPool`. If `RuntimeContext` (and therefore the
-allocator that owns those pages) has already been destroyed, this is a
-use-after-free. Either prove that `RuntimeContext::shutdown()` drains all threads
-before the allocator is torn down, making the destructor safe by ordering, or add
-a liveness check in the destructor. This is a correctness risk; it must be resolved
-before v1.0.0.
+The liveness check this item asked for was already in place, and is now complete.
+A flush takes `flush_mutex()` shared, reads the allocator out of the registry and
+verifies `owns_id`, so it no-ops once that allocator is gone; an allocator's
+destructor takes the same lock exclusively for its whole teardown and clears its
+registry slot (by compare-exchange, so a slot a collided id has since claimed is
+left alone) before freeing pages. A thread outliving its `RuntimeContext`
+therefore flushes into a null slot rather than into freed memory.
+
+What was missing was one level further out. The lock was a namespace-scope
+`std::shared_timed_mutex`, and a `thread_local` magazine's destructor runs at
+*thread* exit — which, for a thread outliving `main()`, is after static
+destruction. Locking a destroyed mutex in the very path that exists to make
+teardown safe is the same use-after-free one level up. `flush_mutex()` now
+allocates it once and never frees it; everything else this file keeps at
+namespace scope is trivially destructible and already immune. Covered by
+`Regression_Sentinel.MagazineFlushSurvivesRuntimeTeardown`.
 
 **#30 — EventPolling 256-event cap — RESOLVED**
 

@@ -25,12 +25,15 @@
 // so a future change cannot silently reintroduce it.
 
 #include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <gtest/gtest.h>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
+#include <SushiRuntime/SushiRuntime.h>
 
 #include "../../common/test_helpers.hpp"
 
@@ -104,4 +107,64 @@ TEST(Regression_Sentinel, Epoch_OrphanedNodesReclaimed)
 
     EXPECT_GT(destroyed->load(), 0)
         << "Orphaned nodes from an exited thread were not reclaimed (leak regression).";
+}
+
+
+// A thread that allocated through a Runtime, and is still alive when that
+// Runtime is destroyed, flushes its ThreadLocalMagazine at thread exit — into an
+// allocator that no longer exists. That is the shape a long-running simulation
+// process hits (TODO #29): a worker outliving the context it allocated from.
+//
+// The guarantee under test is that the flush becomes a no-op instead of touching
+// freed pages: the allocator's destructor holds the flush lock exclusively while
+// it clears its registry slot, so a later flush finds a null slot and returns.
+// Without it this test is a use-after-free — visible under ASan, and a crash
+// often enough without it.
+TEST(Regression_Sentinel, MagazineFlushSurvivesRuntimeTeardown)
+{
+    std::mutex gate_mutex;
+    std::condition_variable gate;
+    bool allocated = false;
+    bool runtime_gone = false;
+
+    std::thread outliver;
+
+    {
+        auto rt = SushiRuntime::Runtime::create();
+
+        outliver = std::thread([&]()
+        {
+            // Allocate and free enough to populate this thread's magazine, so its
+            // exit-time flush has something to hand back.
+            {
+                auto scratch = rt.buffer<int>(4096);
+                for (std::size_t i = 0; i < 64; ++i)
+                    scratch[i] = static_cast<int>(i);
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(gate_mutex);
+                allocated = true;
+            }
+            gate.notify_one();
+
+            // Stay alive until the Runtime — and its allocator — are gone.
+            std::unique_lock<std::mutex> lock(gate_mutex);
+            gate.wait(lock, [&] { return runtime_gone; });
+        });
+
+        std::unique_lock<std::mutex> lock(gate_mutex);
+        gate.wait(lock, [&] { return allocated; });
+    }   // Runtime destroyed here, while the other thread still holds a magazine.
+
+    {
+        std::lock_guard<std::mutex> lock(gate_mutex);
+        runtime_gone = true;
+    }
+    gate.notify_one();
+
+    // The thread's magazine flushes as it exits. Reaching this line without a
+    // fault IS the assertion; the EXPECT documents that we got here on purpose.
+    outliver.join();
+    SUCCEED() << "a magazine flushed after its allocator was destroyed";
 }
