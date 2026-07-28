@@ -22,8 +22,8 @@
 /**************************************************************************/
 
 // Coverage for the hardened fluent surface:
-//   - add(Extent<2>, fn) multidimensional per-element map
-//   - add(NdRange<2>, fn) tiled work-group kernel
+//   - add_untracked(Extent<2>, fn) multidimensional per-element map
+//   - add_untracked(NdRange<2>, fn) tiled work-group kernel
 //   - add(State, Extent<2>, fn) multidimensional stepped stencil
 //   - add(out, in0, in1, fn) variadic coupled update (3 read fields)
 //   - add(Reads, Writes, n, fn) handle-based dependency wrappers
@@ -37,7 +37,7 @@
 
 using namespace SushiRuntime;
 
-// add(Extent<2>, fn): the kernel sees a sycl::id<2> covering the whole box and
+// add_untracked(Extent<2>, fn): the kernel sees a sycl::id<2> covering the whole box and
 // writes a row-major linear index, proving 2-D iteration and indexing.
 TEST(Integration_FluentHardening, Extent2DPerElementMap)
 {
@@ -51,7 +51,7 @@ TEST(Integration_FluentHardening, Extent2DPerElementMap)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(Extent{W, H}, [p](sycl::id<2> idx)
+    g.add_untracked(Extent{W, H}, [p](sycl::id<2> idx)
     {
         const std::size_t x = idx[0];
         const std::size_t y = idx[1];
@@ -63,7 +63,7 @@ TEST(Integration_FluentHardening, Extent2DPerElementMap)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
 }
 
-// add(NdRange<2>, fn): a tiled kernel that uses the work-group model. Each item
+// add_untracked(NdRange<2>, fn): a tiled kernel using the work-group model. Each item
 // writes its global linear index; correctness proves nd_item indexing works.
 TEST(Integration_FluentHardening, NdRange2DTiledKernel)
 {
@@ -77,8 +77,8 @@ TEST(Integration_FluentHardening, NdRange2DTiledKernel)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(NdRange{ sycl::range<2>(W, H), sycl::range<2>(4, 4) },
-          [p](sycl::nd_item<2> it)
+    g.add_untracked(NdRange{ sycl::range<2>(W, H), sycl::range<2>(4, 4) },
+                    [p](sycl::nd_item<2> it)
     {
         const std::size_t x = it.get_global_id(0);
         const std::size_t y = it.get_global_id(1);

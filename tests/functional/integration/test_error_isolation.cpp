@@ -40,7 +40,7 @@ namespace
     void run_good_graph(Runtime& rt, int* p, std::size_t n)
     {
         auto g = rt.graph();
-        g.add(n, [p](std::size_t i) { p[i] = 42; });
+        g.add_untracked(n, [p](std::size_t i) { p[i] = 42; });
         g.run();
     }
 }
@@ -57,7 +57,7 @@ TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
     // the error to the caller rather than hang.
     {
         auto g = rt.graph();
-        g.add([](sycl::handler&) { throw std::runtime_error("boom"); });
+        g.add_untracked([](sycl::handler&) { throw std::runtime_error("boom"); });
         EXPECT_THROW(g.run(), SushiException);
     }
 
@@ -85,7 +85,7 @@ TEST(Integration_ErrorIsolation, RuntimeSurvivesRepeatedFailures)
     {
         {
             auto bad = rt.graph();
-            bad.add([](sycl::handler&) { throw std::runtime_error("boom"); });
+            bad.add_untracked([](sycl::handler&) { throw std::runtime_error("boom"); });
             EXPECT_THROW(bad.run(), SushiException) << "round " << round;
         }
 

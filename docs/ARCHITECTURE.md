@@ -101,15 +101,28 @@ do not need to reach into the lower layers.
   (current/next) for stepped workloads. Passing a handle to `add()` registers the
   task's reads and writes automatically.
 
-- **`API::Graph`** — chainable builder. `add()` overloads cover:
-  - `add(n, per_element_fn)` — per-element kernel (receives one index).
-  - `add(n, range_fn)` — range kernel; `fn(0, n, handler)` drives the handler.
-  - `add(raw_kernel_fn)` — raw callback for full control.
+- **`API::Graph`** — chainable builder. Everything spelled `add()` is ordered by
+  the data it names; the shapes whose data cannot be inferred are spelled
+  `add_untracked()` so choosing one is deliberate rather than accidental:
   - `add(state, fn)` — a stepped update rule; `fn(i, cur, next)` reads the
     current field and writes the next, with the dependency tracked.
   - `add(out, in0[, in1], fn)` — a coupled rule reading one or two other fields
     (Jacobi: every read sees the previous step's data).
   - `add(reads, writes, n, fn)` — per-element kernel with explicit access lists.
+  - `add(reads, writes, n, range_fn)` — range kernel; `fn(0, n, handler)` drives
+    the handler itself, ordered by the declared lists.
+  - `add(reads, writes, raw_kernel_fn)` — raw callback for full control, ordered.
+  - `add(reads, writes, extent, fn)` / `add(reads, writes, nd_range, fn)` — the
+    multidimensional and tiled shapes, ordered.
+  - `add(extent, In(a), Out(b), fn)` — captures register the access *and* hand
+    the kernel the raw pointers.
+  - `add_untracked(n, fn)` / `add_untracked(n, range_fn)` /
+    `add_untracked(raw_kernel_fn)` / `add_untracked(extent, fn)` /
+    `add_untracked(nd_range, fn)` — the same launch shapes with no declared data.
+    A per-element or raw callable captures its USM pointers by value, so nothing
+    in its type says what it touches and the runtime cannot infer the ordering.
+    These record no regions: the task is both a root and a leaf. Correct for
+    self-contained work, wrong the moment another task shares data with it.
   - `run()` / `run(n)` — compile (once) and replay 1 or `n` steps; returns a
     `RunReport`; throws `SushiException` on error.
   - `run_for(duration)` / `run_until(predicate)` — replay until a wall-clock
