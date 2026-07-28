@@ -48,7 +48,8 @@ namespace SushiRuntime
             kernel_failed,      /**< A kernel faulted on the device (async channel). */
             device_lost,        /**< The target device disappeared or became unusable. */
             invalid_access,     /**< A handle was accessed in a way its residency forbids. */
-            dangling_resource   /**< A run referenced a handle whose allocation was freed. */
+            dangling_resource,  /**< A run referenced a handle whose allocation was freed. */
+            unsupported         /**< The active implementation does not offer the requested capability. */
         };
 
         /**
@@ -71,6 +72,7 @@ namespace SushiRuntime
                 case Errc::device_lost:       return "device_lost";
                 case Errc::invalid_access:    return "invalid_access";
                 case Errc::dangling_resource: return "dangling_resource";
+                case Errc::unsupported:       return "unsupported";
             }
             return "unknown";
         }

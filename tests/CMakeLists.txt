@@ -97,6 +97,7 @@ add_executable(sr_functional_tests
     functional/integration/test_fluent_hardening.cpp
     functional/integration/test_late_bindings.cpp
     functional/integration/test_device_count.cpp
+    functional/integration/test_async_step.cpp
     functional/integration/test_native_cpu_path.cpp
     functional/integration/test_device_resident.cpp
     functional/integration/test_perf_controls.cpp

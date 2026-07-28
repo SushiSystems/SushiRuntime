@@ -85,6 +85,34 @@ namespace SushiRuntime
 
             /** @brief Element index of the live count within device_count. */
             std::size_t device_count_index = 0;
+
+            /**
+             * @brief First element this step iterates; the kernel adds it to each index.
+             *
+             * count says how many, this says from where. Graph colouring is the
+             * case that needs it: each colour is a contiguous slice of one
+             * constraint buffer, and the slices shift every time the constraint set
+             * changes, so a node pinned to a baked offset would need an
+             * index-indirection buffer and an extra load per element to find its
+             * own work. Zero for an ordinary node, which then iterates from the
+             * start exactly as before.
+             */
+            std::atomic<std::size_t> base{0};
+
+            /**
+             * @brief Host-readable location a predecessor writes the live base into.
+             *
+             * The device-sourced counterpart of base, and the companion of
+             * device_count: a pass that computes both a colour's offset and its
+             * length on the device should be able to hand over both the same way.
+             * Read at dispatch under the same reasoning (and the same
+             * host-addressable requirement) as device_count. Null on every ordinary
+             * node, in which case the atomic base above is used.
+             */
+            const std::uint32_t* device_base = nullptr;
+
+            /** @brief Element index of the live base within device_base. */
+            std::size_t device_base_index = 0;
         };
 
     } // namespace Graph
