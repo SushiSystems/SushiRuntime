@@ -135,12 +135,34 @@ def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
         if root and Path(root).is_dir():
             bins.append(str(Path(root) / "bin"))
             libs.append(str(Path(root) / "lib"))
+            if cfg.is_windows:
+                # compiler-rt ships AddressSanitizer's runtime as a DLL beside its
+                # import library, so an instrumented binary cannot even start
+                # unless that directory is on PATH. Added for every intel-llvm
+                # environment: the directory holds nothing but compiler-rt, so it
+                # is inert for a non-sanitized build, and the alternative — adding
+                # it only for `--asan` — would leave `sr run` on an ASan binary
+                # failing with a bare "DLL not found".
+                bins.extend(str(p) for p in
+                            sorted((Path(root) / "lib" / "clang").glob("*/lib/windows")))
     elif cfg.toolchain == "adaptivecpp":
         acpp = cfg.expand(cfg.acpp_exe)
         if acpp and Path(acpp).is_file():
             acpp_root = Path(acpp).parent.parent
             bins.append(str(Path(acpp).parent))
             libs.append(str(acpp_root / "lib"))
+    # vcpkg's applocal deployment copies a target's DIRECT dependents next to it,
+    # so a library pulled in transitively (hwloc, reached through sushiruntime.dll
+    # rather than by the test executable) can be missing from a fresh build tree
+    # and the binary then fails to start with a bare "DLL not found". Putting the
+    # port bin dir on PATH makes any freshly built binary runnable regardless of
+    # what got copied where; it does not replace deployment for a shipped build.
+    if cfg.is_windows and cfg.use_vcpkg and cfg.vcpkg_root:
+        vcpkg_bin = (Path(cfg.expand(cfg.vcpkg_root)) / "installed"
+                     / cfg.vcpkg_triplet / "bin")
+        if vcpkg_bin.is_dir():
+            bins.append(str(vcpkg_bin))
+
     bins = [d for d in bins if Path(d).is_dir()]
     _prepend_path(env, "PATH", bins)
     if not cfg.is_windows:

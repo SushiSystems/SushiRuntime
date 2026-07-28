@@ -113,6 +113,32 @@ The `--type` (`-t`) option accepts `release`, `debug`, `relwithdebinfo`, or
 directory with CUDA disabled, so it never collides with your normal `build/`
 tree. Flags can be combined, e.g. `sr build --type debug --clean`.
 
+The ASan tree also excludes the benchmark suite. That suite installs a global
+`operator new`/`delete` replacement to count allocations, which is exactly what
+AddressSanitizer replaces — the two collide as a duplicate-symbol link error on
+Windows — and ASan's redzones and quarantine would make its timings meaningless
+anyway. Run benchmarks from the ordinary `build/` tree.
+
+**AddressSanitizer on Windows** needs an intel/llvm bundle that ships
+compiler-rt. Bundles have not always carried it on Windows: if
+`lib/clang/<version>/lib/windows/clang_rt.asan_dynamic-x86_64.lib` is missing
+from your toolchain, the link fails and the fix is a newer bundle, not a newer
+LLVM. Two further details are handled by the CLI and worth knowing about:
+
+- `-fsanitize=address` is passed as `-Xarch_host -fsanitize=address`, because
+  `-fsycl` compiles every translation unit for the host *and* for the SPIR-V
+  device, and there is no device AddressSanitizer. Passed unqualified it draws a
+  `-Woption-ignored` that `-Werror` turns into a build failure.
+- MSVC's STL container annotations are disabled
+  (`_DISABLE_STRING_ANNOTATION` / `_DISABLE_VECTOR_ANNOTATION`), because they
+  require `stl_asan.lib`, which ships with the Visual Studio "C++
+  AddressSanitizer" component rather than with the compiler. The cost is
+  container-overflow detection inside `std::string` and `std::vector`; heap
+  overflow, stack overflow, use-after-free and double-free are unaffected.
+
+TSan has no Windows support upstream, so `--type debug`'s ThreadSanitizer is a
+Linux-only lane (see `cmake/Sanitizers.cmake`).
+
 The test suite is compiled by default. Pass `--no-test` to skip it
 (`SR_BUILD_TESTS=OFF`) for a faster, library-only build — useful when you only
 need the runtime to profile or to debug a kernel under `compute-sanitizer`.
