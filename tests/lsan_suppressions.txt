@@ -1,0 +1,17 @@
+# LeakSanitizer suppressions for the ASan lane (`sr build --type asan`).
+#
+# Only third-party leaks belong here. A leak in SushiRuntime is a bug to fix, not
+# an entry to add — every line below must name a library we do not build, and say
+# why the leak is real but not ours.
+#
+# Intel's OpenCL CPU runtime allocates a small, fixed set of objects the first
+# time a device is opened and never frees them, so every test process that builds
+# a Runtime exits with roughly 1.4 KB leaked in ~115 allocations. The stack has no
+# SushiRuntime frame in it at all: frame #0 is ASan's interceptor and frame #1 is
+# already inside libintelocl. It is constant in size (it does not grow with the
+# number of graphs, buffers or steps), which is what distinguishes a one-time
+# runtime initialisation from an actual leak in the code under test.
+#
+# LeakSanitizer is Linux-only, so this file has no effect on the Windows lane —
+# which is exactly why the Windows lane cannot stand in for this one.
+leak:libintelocl
