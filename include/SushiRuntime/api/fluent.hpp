@@ -31,7 +31,8 @@
  * the single public include that pulls them together:
  *   - data/        the data handles (Buffer, State)
  *   - launch/      the iteration geometry (Extent, NdRange)
- *   - vocabulary/  the data-flow DSL (Reads/Writes, In/Out/InOut, Dynamic)
+ *   - vocabulary/  the data-flow DSL (Reads/Writes, In/Out/InOut, Dynamic) and
+ *                  the reduction combiners (Sum, Minimum, Maximum)
  *   - graph/       the chainable builders (Graph, Region, DynamicGraph)
  *   - runtime/     the Runtime entry point, RuntimeConfig, and the Cluster handle
  *   - detail/      callable traits, the per-step StepMachinery, report building
@@ -43,6 +44,7 @@
 #include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>
+#include <SushiRuntime/api/vocabulary/combine.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/graph/region.hpp>

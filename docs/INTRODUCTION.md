@@ -198,6 +198,31 @@ Regions that share a buffer are ordered automatically across the boundary, exact
 as tasks within one graph are. `world.compile_count()` stays 1 across an unmutated
 run and rises by one per mutation, not per region.
 
+**Reductions with a fixed combination order** give a sum, minimum or maximum
+whose bit pattern is reproducible. An ordinary parallel reduce combines values in
+whatever order the schedule happened to produce, so its floating-point result can
+differ between two runs of the same input — fine for a diagnostic, fatal for a
+simulation whose replay must reproduce state exactly. `add_reduce` folds fixed
+256-element tiles left to right and repeats over the partials, so which values
+meet which depends only on the element count:
+
+```cpp
+auto total = rt.buffer<float>(1);
+g.add_reduce(values, total, N, Sum<float>{});   // also Minimum<T>, Maximum<T>
+```
+
+`add_segmented_reduce` gives the same guarantee over a ragged array — per-body,
+per-cell, per-vertex accumulation — using the usual CSR boundary array of
+`count + 1` offsets, where segment `s` covers `values[offsets[s] .. offsets[s+1])`:
+
+```cpp
+g.add_segmented_reduce(contributions, offsets, per_body, body_count, Sum<float>{});
+```
+
+Both are ordinary tracked tasks, so a consumer that reads the output is ordered
+after the whole reduction. Pass an explicit identity as the last argument when
+the combiner is a lambda rather than one of the three built-ins.
+
 **Native CPU tasks** run plain host C++ — gameplay logic, AI, navigation — with
 no SYCL submission, ordered into the graph by the data they touch. Use
 `add_host()` and name the data with `Reads(...)`/`Writes(...)`:
