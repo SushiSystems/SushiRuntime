@@ -7,8 +7,8 @@ is proved). Branch: `feature/physics-substrate-seams`.
 
 **Scope.** R1, R2, R3 and R5 are built. R4, R6 and R7 are not, and §6 says why.
 
-**Status: complete**, one commit per item, with the caveat in §5 that the sanitizer lane is not
-runnable on this toolchain and R3 has therefore not been under ASan.
+**Status: complete**, one commit per item. The functional suite goes from 154 to 174 tests, all
+passing, and the whole tree passes under AddressSanitizer with no report (§5).
 
 ---
 
@@ -276,17 +276,30 @@ Each item lands with the test that would fail without it.
 
 All under `sr test --suite functional`, which goes from 154 to 174 tests, all passing.
 
-**The sanitizer lane did not run, and could not.** `sr build --type asan` fails at configure on this
-machine: the intel/llvm SYCL toolchain ships no compiler-rt runtimes on Windows
-(`lib/clang/21/lib/` does not exist, so `clang_rt.asan_dynamic.lib` cannot be linked). TSan is
-excluded by the project's own policy on the same toolchain — `cmake/Sanitizers.cmake:17` skips it for
-`WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"`. Both lanes are Linux/CI-only here, so R3 has not
-been under a sanitizer and **should be before this merges**.
+**AddressSanitizer: 174/174, no report.** This took making the lane work at all, which is worth
+recording because the first read of the failure was wrong.
 
-What was done instead, since R3 touches the boundary layer the scheduler reads: the concurrency-
-sensitive tests (`DynamicGraph`, `DeviceCount`, `FixedOrderReduce`, `FluentAPI` — 42 cases) were run
-under `sr test --repeat 15` with no failures. That hunts flakiness; it does not find a use-after-free,
-so it is a weaker check, not a substitute.
+`sr build --type asan` failed at configure with `clang_rt.asan_dynamic.lib: no such file`, which
+looked like "the SYCL toolchain ships no compiler-rt on Windows". It does ship it — the bundle in use
+was simply seven months old (2025-12-29, clang 21, no `lib/clang/21/lib/` at all). The current
+nightly carries `lib/clang/23/lib/windows/clang_rt.asan_dynamic-x86_64.lib`, so the fix was a newer
+bundle, not the 899 MB `clang+llvm-21.1.8` tarball that grafting a matching runtime would have cost —
+and grafting would have been a version gamble on the ASan ABI besides.
+
+Three further things blocked the lane, all now fixed in the CLI (`fix(cli): make the AddressSanitizer
+lane work on Windows`): `-fsanitize=address` had to become `-Xarch_host -fsanitize=address` because
+`-fsycl` also compiles for SPIR-V, where there is no ASan; MSVC's STL container annotations had to be
+turned off because `stl_asan.lib` ships with a Visual Studio component rather than the compiler; and
+the benchmark suite had to leave the ASan tree because it replaces `operator new`/`delete` to count
+allocations, which is what ASan replaces.
+
+TSan remains Linux-only — it has no Windows support upstream and
+`cmake/Sanitizers.cmake:17` skips it for `WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"`.
+
+Also run, before the sanitizer lane existed: the concurrency-sensitive tests (`DynamicGraph`,
+`DeviceCount`, `FixedOrderReduce`, `FluentAPI` — 42 cases) under `sr test --repeat 15`, with no
+failures. That hunts flakiness rather than memory errors, so it complements ASan rather than
+standing in for it.
 
 One test deserves its own note: `DisjointRangeRegionsAreNotOrdered` asserts the *absence* of an edge,
 which nothing in the public API can observe directly, so it proves it behaviourally — two region
