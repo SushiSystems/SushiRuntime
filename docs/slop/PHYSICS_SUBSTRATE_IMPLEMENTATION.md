@@ -1,14 +1,23 @@
 # Physics Substrate Seams — Implementation Plan
 
-**Status:** implementation plan for the four gaps raised in
+**Status:** implementation plan for the seven gaps raised in
 [`PHYSICS_SUBSTRATE_REQUIREMENTS.md`](PHYSICS_SUBSTRATE_REQUIREMENTS.md). That document is the
 *request* (what is missing and how badly); this one is the *plan* (what is built, where, and how it
 is proved). Branch: `feature/physics-substrate-seams`.
 
-**Scope.** R1, R2, R3 and R5 are built. R4, R6 and R7 are not, and §6 says why.
+**Scope.** All seven items are built. §6 records what the last three turned out to be, including
+one that was mostly already fixed.
 
-**Status: complete**, one commit per item. The functional suite goes from 154 to 174 tests, all
-passing, and the whole tree passes under AddressSanitizer with no report (§5).
+**Status: complete and verified.** The functional suite goes from 154 to 190 tests, all passing, and
+the tree passes under AddressSanitizer with no memory-error report (§5 for what that does and does
+not cover, which is less than the number suggests).
+
+The last three items were written with the build left to the maintainer, so they reached a compiler
+only after they were finished. That surfaced exactly one defect, and it is the kind only a compiler
+finds: R6's third late-bound control pushed the binding-updater closure past `StepHook`'s inline
+`Delegate` capacity. The literal 176 was replaced by `sizeof(Dynamic) + sizeof(shared_ptr)`, so a
+fourth control widens the storage instead of breaking every translation unit that includes the
+fluent header.
 
 ---
 
@@ -273,11 +282,29 @@ Each item lands with the test that would fail without it.
 | R1 | `test_device_count.cpp` — node 1 writes a count, node 2 iterates exactly that many elements, in one `run()`, with the count varying every step and `compile_count()` staying at 1 | Node 2 iterates the previous step's count, or the capacity |
 | R1 | a count exceeding capacity fails the run with a message naming both numbers | Silent truncation |
 | R3 | `test_dynamic_graph.cpp` — two regions writing disjoint element ranges of one buffer are not ordered against each other; overlapping ranges still are | The disjoint pair serializes |
+| R4 | `test_async_step.cpp` — the step's own task observes a flag the caller sets after `run_async()` returned | `run_async()` blocked, so the flag was never set in time |
+| R4 | a synchronous `run()` during an in-flight step is refused before the plan is touched | The running DAG's in-degrees are rewritten under the workers |
+| R6 | `test_late_bindings.cpp` — a moving window touches exactly `[base, base + count)` with absolute indices, and one running off the end fails the run | Elements outside the window run, or the tail is silently dropped |
+| R7 | `test_regression.cpp` — a thread that allocated through a Runtime exits after that Runtime is destroyed | Use-after-free in the exit-time magazine flush |
 
-All under `sr test --suite functional`, which goes from 154 to 174 tests, all passing.
+All under `sr test --suite functional`, which goes from 154 to 190 tests, all passing.
 
-**AddressSanitizer: 174/174, no report.** This took making the lane work at all, which is worth
-recording because the first read of the failure was wrong.
+**AddressSanitizer: no memory-error report**, measured on Windows at 174 tests (before the last
+three items landed). Two qualifications belong with that number, because it is easy to over-read.
+
+First, **LeakSanitizer is Linux-only**, so the Windows lane checks memory errors and not leaks. Run
+on Linux, the same tree reports ~1.4 KB leaked in ~115 allocations at every process exit, with a
+stack whose first frame outside ASan's interceptor is already inside `libintelocl.so` — Intel's
+OpenCL CPU runtime leaking its one-time initialisation, with no SushiRuntime frame anywhere in it.
+It is constant in size, which is what separates a runtime's initialisation from a leak in the code
+under test. `tests/lsan_suppressions.txt` suppresses it by module and the CLI points `LSAN_OPTIONS`
+at that file; suppressing a third-party leak keeps real leak detection working, whereas
+`detect_leaks=0` would have thrown it away. That suppression has not itself been re-run yet.
+
+Second, AddressSanitizer found **no** heap overflow, use-after-free or double-free anywhere — which
+is the result R3's boundary rewrite needed, and the part of the number that actually matters.
+
+Making the lane work at all is worth recording, because the first read of the failure was wrong.
 
 `sr build --type asan` failed at configure with `clang_rt.asan_dynamic.lib: no such file`, which
 looked like "the SYCL toolchain ships no compiler-rt on Windows". It does ship it — the bundle in use
@@ -309,16 +336,56 @@ allocation granularity, so it is not a test that would pass either way.
 
 ---
 
-## 6. Deliberately not in this change
+## 6. The last three
 
-- **R4 — asynchronous step.** `run()` blocking is correct for a fixed-step simulation thread; what
-  it costs is *overlap* with the render/audio extract. Making it asynchronous means owning a driver
-  thread and re-deciding how cancellation, the non-reentrancy guard
-  (`ExecutionEngine::Impl::run_in_progress`) and the completion latch interact. That is its own
-  change with its own risk, and mixing it into a correctness-focused branch would make both harder
-  to review. PERF, and it gates nothing.
-- **R6 — late-bound base offset.** Convenience, not capability: a graph-coloured constraint slice is
-  addressable today through an index-indirection buffer at one extra load per element. It is small
-  enough to fold into a later change and does not justify widening this one.
-- **R7 — `ThreadLocalMagazine` teardown.** Already tracked as `TODO.md` #29, a v1.0.0 correctness
-  blocker in its own right. Nothing about the physics changes its priority.
+Added after the first four, and each turned out smaller than its description.
+
+### R4 — asynchronous step
+
+The framing that made this look expensive was "owning a driver thread". There is no thread to own.
+The work is already done by the persistent worker pool; `ExecutionEngine::execute()` submits the
+roots and then *blocks on a latch*, and the blocking is the only thing it adds. So it split into
+`submit()` + `complete()`, with `execute()` defined as their composition — one sequence, not two
+that can drift — and `run_async()` is those two halves with the caller's own work in between.
+
+Three things had to be got right rather than assumed:
+
+- **The step's lifecycle belongs to `wait()`, not to submit.** Every State advances there, so an
+  asynchronous step ends exactly where a synchronous one would. A test asserts the advance has *not*
+  happened between the two calls.
+- **A discarded handle still finishes the step.** `RunHandle`'s destructor waits, because the
+  compiled plan must not be torn down while workers hold pointers into its nodes. That makes the
+  safe usage the natural one — declare the handle after the graph and ordinary scoping does the
+  rest — at the documented cost that a dropped handle drops the outcome, including a task exception.
+- **A second run while a step is in flight is rejected *before anything touches the plan*.** This is
+  the one that would have been a real bug: `drive_impl` re-arms every node's in-degree before the
+  engine's own reentrancy check fires, so a synchronous `run()` during an asynchronous step would
+  have rewritten the scheduling state of the DAG the workers were walking. The guard sits at the top
+  of `drive()`, and is released even when the step ends by throwing — a failing step must not become
+  a permanently failing graph.
+
+### R6 — late-bound base offset
+
+`sized()` says how many elements, `based_at()` says from where; `based_at_device()` is the
+device-sourced form, mirroring `sized_from_device()` so a colouring pass that computes a slice's
+offset and its length on the device hands over both the same way.
+
+The decision worth recording is that base and count are resolved and validated **together**
+(`resolve_live_range`), not separately. Only their combination says whether the node stays inside
+the buffers it was compiled for, and a window that runs off the end fails the run rather than
+clamping — the same rule as R1, for the same reason: a silently truncated colour is a silently
+dropped constraint. The runtime applies the offset, so callables still receive absolute indices and
+a kernel written without knowing bases exist stays correct.
+
+### R7 — `ThreadLocalMagazine` teardown
+
+Most of this was already fixed, which is worth saying plainly rather than claiming the whole item.
+`flush_mutex()` (shared for a flush, exclusive for an allocator's teardown) plus a registry slot
+cleared by compare-exchange already meant a magazine flushing after its allocator died found a null
+slot and no-oped.
+
+What remained was one level further out: the lock was a namespace-scope `std::shared_timed_mutex`,
+and a `thread_local` magazine's destructor runs at *thread* exit — after static destruction, for a
+thread outliving `main()`. Locking a destroyed mutex in the one path that exists to make teardown
+safe is the same use-after-free, moved up a level. It is now allocated once and never freed; every
+other namespace-scope object on that path is trivially destructible and already immune.

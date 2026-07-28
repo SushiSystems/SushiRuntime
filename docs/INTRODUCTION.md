@@ -124,6 +124,27 @@ and `try_run(n)` are the non-throwing forms, returning `Result<RunReport, Error>
 instead of throwing `SushiException`. The graph is compiled the first time it
 runs and after any change to it, then replayed without recompiling.
 
+**Overlapping a step with other work.** `run()` blocks for the whole step, which
+is right for a simulation thread with nothing else to do — but a frame usually
+does have something else: extracting the previous step's state for a renderer or
+an audio system, which needs no worker threads at all. `run_async()` starts the
+step and returns a handle instead:
+
+```cpp
+auto step = sim.run_async();
+extract_previous_frame();          // overlaps with the step
+Core::RunReport report = step.wait();
+```
+
+`wait()` is where the step is finished: every State advances there, so an
+asynchronous step ends in exactly the same place a synchronous one would. The
+handle is move-only and waits in its destructor if you drop it, because the
+compiled plan cannot be torn down while workers are still in it — which also
+means a dropped handle drops the outcome, including a task exception. `ready()`
+answers "would waiting return immediately" without blocking, and `try_wait()` is
+the non-throwing form. One step may be in flight at a time; starting another
+while a handle is pending is refused rather than silently interleaved.
+
 For data that does not evolve step to step, use `rt.buffer<T>(n)` instead of
 `rt.state<T>(n)`. Both are owning handles to shared USM; both register their
 reads and writes automatically when passed to `add()`.
@@ -197,6 +218,24 @@ The counter is registered as a read of the consuming task, so you do not have to
 name it in `Reads(...)` to get the ordering — forgetting it is not possible. Size
 the task's buffers for the worst case: a count above that capacity fails the run
 with a message naming both numbers rather than quietly dropping the surplus.
+
+`sized()` says *how many* elements a task iterates; `API::based_at(provider)`
+says *from where*. Together they name a moving window into one buffer, which is
+what a graph-coloured solver wants — each colour is a contiguous slice whose
+offset shifts whenever the constraint set changes:
+
+```cpp
+g.add(API::based_at([&] { return colour_offset; })
+          .and_sized([&] { return colour_size; }),
+      API::Reads(), API::Writes(constraints), CAPACITY,
+      [c = constraints.data()](std::size_t i) { /* i is the ABSOLUTE index */ });
+```
+
+The runtime applies the offset, so your kernel still receives absolute indices
+and does not need to know a base exists. `API::based_at_device(slot)` takes the
+offset from a slot a kernel wrote, exactly as `sized_from_device` does for the
+count. The window has to fit the capacity — one that runs off the end fails the
+run rather than reading past it.
 
 **Dynamic region graphs** let the *set* of work change between steps, for
 streaming open worlds where cells appear and disappear. `rt.dynamic_graph()`
