@@ -592,6 +592,13 @@ namespace SushiRuntime
                  * then iterates only the live count each step, and when() can skip
                  * the task entirely.
                  *
+                 * sized_from_device() takes the count from a slot a predecessor
+                 * kernel wrote instead of from the host, which is what lets a
+                 * produce-then-consume chain (broadphase to narrowphase to solver)
+                 * run in one composition with no worst-case launch width. The counter
+                 * is registered as one of this task's reads, so the producer is
+                 * necessarily ordered before it.
+                 *
                  * @param dyn      Late-binding controls from when()/sized().
                  * @param reads    Handles this task reads (their read keys).
                  * @param writes   Handles this task writes (their write keys).
@@ -1476,12 +1483,62 @@ namespace SushiRuntime
                     return *this;
                 }
 
+                // Resolves a late-bound node's iteration size at dispatch. Prefers a
+                // device-written count when one was named, because that is the only
+                // source that can carry a number the device produced earlier in the
+                // same step; otherwise falls back to the step-boundary count (with
+                // USE_BAKED meaning the full compiled capacity). Runs on a worker
+                // thread while the node's command group is being built, which is
+                // after every predecessor's event completed — the reason reading
+                // device-written memory here is sound.
+                static std::size_t resolve_live_size(
+                    const ::SushiRuntime::Graph::LateBindings& lb, std::size_t capacity)
+                {
+                    if (lb.device_count != nullptr)
+                    {
+                        const std::size_t n =
+                            static_cast<std::size_t>(lb.device_count[lb.device_count_index]);
+                        if (n > capacity)
+                            // Truncating instead would silently drop work — exactly
+                            // the failure the device-count seam exists to prevent.
+                            throw Core::SushiException(Core::Error{
+                                Core::Errc::invalid_graph,
+                                "A late-bound task's device-supplied count (" +
+                                std::to_string(n) + ") exceeds the capacity it was "
+                                "compiled for (" + std::to_string(capacity) +
+                                "); allocate the task's buffers for the worst case."});
+                        return n;
+                    }
+
+                    const std::size_t live = lb.count.load(std::memory_order_relaxed);
+                    return live == ::SushiRuntime::Graph::LateBindings::USE_BAKED
+                        ? capacity : live;
+                }
+
+                // Submits a late-bound node's kernel over its live size. A step with
+                // nothing to do is ordinary (a tick with no contacts), and a
+                // zero-width parallel_for is not portable across SYCL backends, so an
+                // empty count submits an empty kernel instead: the node still
+                // completes and still releases its successors.
+                template <class F>
+                static void submit_live_range(sycl::handler& h, std::size_t n, const F& fn)
+                {
+                    if (n == 0)
+                    {
+                        h.single_task([]() {});
+                        return;
+                    }
+                    h.parallel_for(sycl::range<1>(n), [fn](sycl::id<1> i) { fn(i[0]); });
+                }
+
                 // Emits a 1-D per-element task whose iteration size and enablement
-                // are late-bound through a LateBindings block. The kernel reads the
-                // live count at submit (USE_BAKED falls back to capacity), so the
-                // node follows per-step size changes without recompiling; the
-                // scheduler honours the enabled flag. The dependency regions cover
-                // the full capacity, so any live size within it is race-free.
+                // are late-bound through a LateBindings block. The kernel resolves the
+                // live count at submit, so the node follows per-step size changes —
+                // from the host, or from a count a predecessor kernel just wrote —
+                // without recompiling; the scheduler honours the enabled flag. The
+                // dependency regions cover the full capacity, so any live size within
+                // it is race-free, and a device count source adds itself to the reads
+                // so the producer is necessarily a predecessor.
                 template <class F>
                 Graph& emit_dynamic_per_element(Dynamic dyn,
                                                 std::vector<Core::ResourceRegion> reads,
@@ -1489,25 +1546,44 @@ namespace SushiRuntime
                                                 std::size_t capacity, F&& fn)
                 {
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
+                    adopt_device_count(*lb, dyn, reads);
+
                     specs_.push_back([fn = std::forward<F>(fn), capacity, lb,
                                       reads = std::move(reads),
                                       writes = std::move(writes)](BackingGraph& bg)
                     {
                         bg.add_node([fn, capacity, lb](sycl::handler& h)
                         {
-                            const std::size_t live =
-                                lb->count.load(std::memory_order_relaxed);
-                            const std::size_t n =
-                                live == ::SushiRuntime::Graph::LateBindings::USE_BAKED
-                                    ? capacity : live;
-                            h.parallel_for(sycl::range<1>(n),
-                                           [fn](sycl::id<1> i) { fn(i[0]); });
+                            submit_live_range(h, resolve_live_size(*lb, capacity), fn);
                         }, reads, writes, lb);
                     });
                     steps_.register_binding_updater(lb, std::move(dyn));
                     ++task_count_;
                     dirty_ = true;
                     return *this;
+                }
+
+                // Copies a Dynamic's device count source onto the node's bindings and
+                // registers that slot as a read. Doing the registration here rather
+                // than asking the caller for it is what makes "the producer runs
+                // first" a property of the graph instead of a documented convention:
+                // the read region orders this node behind whoever writes the count.
+                static void adopt_device_count(::SushiRuntime::Graph::LateBindings& lb,
+                                               const Dynamic& dyn,
+                                               std::vector<Core::ResourceRegion>& reads)
+                {
+                    if (dyn.device_count == nullptr)
+                        return;
+
+                    lb.device_count = dyn.device_count;
+                    lb.device_count_index = dyn.device_count_index;
+
+                    // Name just the one element, so two nodes reading different
+                    // counters out of one buffer are not ordered against each other.
+                    reads.push_back(Core::ResourceRegion{
+                        const_cast<void*>(static_cast<const void*>(dyn.device_count)),
+                        dyn.device_count_index * sizeof(std::uint32_t),
+                        sizeof(std::uint32_t)});
                 }
 
                 // Emits a 1-D State update rule with late-bound size and enablement.
@@ -1522,21 +1598,26 @@ namespace SushiRuntime
                     State<T>* sp = &s;
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
 
-                    specs_.push_back([fn = std::forward<F>(fn), view, sp, lb](BackingGraph& bg)
+                    std::vector<Core::ResourceRegion> reads{ s.read_key() };
+                    adopt_device_count(*lb, dyn, reads);
+
+                    specs_.push_back([fn = std::forward<F>(fn), view, sp, lb,
+                                      reads = std::move(reads)](BackingGraph& bg)
                     {
                         const std::size_t capacity = sp->size();
                         bg.add_node([fn, view, lb, capacity](sycl::handler& h)
                         {
                             const T* cur = view->cur;
                             T* next = view->next;
-                            const std::size_t live =
-                                lb->count.load(std::memory_order_relaxed);
-                            const std::size_t n =
-                                live == ::SushiRuntime::Graph::LateBindings::USE_BAKED
-                                    ? capacity : live;
+                            const std::size_t n = resolve_live_size(*lb, capacity);
+                            if (n == 0)
+                            {
+                                h.single_task([]() {});
+                                return;
+                            }
                             h.parallel_for(sycl::range<1>(n),
                                            [=](sycl::id<1> i) { fn(i[0], cur, next); });
-                        }, { sp->read_key() }, { sp->write_key() }, lb);
+                        }, reads, { sp->write_key() }, lb);
                     });
 
                     steps_.register_advance(s, view);

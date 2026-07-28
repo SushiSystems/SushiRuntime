@@ -176,6 +176,28 @@ sim.add(API::when([&] { return enabled; }).and_sized([&] { return active; }),
         [p = out.data()](std::size_t i) { /* runs only while enabled, over active */ });
 ```
 
+`sized()` is polled on the host before each step, so it can only carry a count
+your code already has. When the count is produced *by a kernel earlier in the same
+step* — a broadphase writing how many collision pairs it found, and a narrowphase
+that must iterate exactly that many — use `API::sized_from_device(counter)`
+instead. The count is read when the task is dispatched, which is after its
+predecessors have completed, so the value is the one this step just wrote:
+
+```cpp
+auto counter = rt.buffer<std::uint32_t>(1);   // must be shared, not device-resident
+
+g.add(API::Reads(world), API::Writes(counter), N,
+      [c = counter.data()](std::size_t) { /* ... c[0] = pairs_found; */ });
+
+g.add(API::sized_from_device(counter), API::Reads(), API::Writes(pairs), CAPACITY,
+      [p = pairs.data()](std::size_t i) { /* runs exactly pairs_found times */ });
+```
+
+The counter is registered as a read of the consuming task, so you do not have to
+name it in `Reads(...)` to get the ordering — forgetting it is not possible. Size
+the task's buffers for the worst case: a count above that capacity fails the run
+with a message naming both numbers rather than quietly dropping the surplus.
+
 **Dynamic region graphs** let the *set* of work change between steps, for
 streaming open worlds where cells appear and disappear. `rt.dynamic_graph()`
 returns a graph partitioned into **regions** keyed by an id of your choosing (a

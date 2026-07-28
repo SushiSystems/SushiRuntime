@@ -231,6 +231,28 @@ compiles once — `Graph::compile_count()` stays 1. Bindings may change size/ena
 but **not** which resources a node touches, since that would invalidate the
 dependency edges fixed at compile.
 
+**Counts the device produces.** `sized()` is polled on the driver thread at the
+step boundary, so it can only carry a number the host already knows. A
+producer/consumer chain does not have one: a broadphase writes its pair count
+mid-step and the narrowphase must iterate exactly that many. `LateBindings` there-
+fore also carries a `device_count` pointer — a host-readable slot a predecessor
+kernel writes — set by `API::sized_from_device(counter)`.
+
+This is sound because of *when* a node's command group is built. `execute_task`
+constructs it on a worker at dispatch, and a node is only dispatched once
+`EventPolling::poll_events` has seen every predecessor's event complete and called
+`event.wait()` on it. By that point the predecessor's USM writes are visible, so
+the count can simply be read. The result is one composition per tick with no
+mid-step readback and no launch at worst-case width, and `compile_count()` still
+1 while the count changes every step.
+
+Two constraints are enforced rather than documented: the counter must be shared
+(host-addressable) USM, rejected at the call site otherwise; and a live count
+above the node's compiled capacity fails the run rather than truncating, since
+silently dropping work is the failure this seam exists to prevent. The counter's
+element is registered as one of the consuming task's reads, so the producer is
+necessarily a predecessor — the ordering is structural, not a convention.
+
 **Dynamic region graph.** Late binding varies size and enablement but keeps a
 fixed topology; a streaming open world also needs the *set* of work to change —
 cells stream in and out as the player moves. `Runtime::dynamic_graph()` returns an
