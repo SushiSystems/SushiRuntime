@@ -29,6 +29,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -41,6 +42,7 @@
 #include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/api/detail/run_report_builder.hpp>
 #include <SushiRuntime/api/detail/callable_traits.hpp>
+#include <SushiRuntime/api/detail/fixed_order_reduce.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>
@@ -718,6 +720,225 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Adds a reduction whose combination order never varies.
+                 *
+                 * Reduces the first @p n elements of @p input into @p output[0] with
+                 * a result that is bit-identical across runs, worker counts, devices
+                 * and steal patterns — the property a replayable simulation needs
+                 * from every accumulation that feeds its state, and the one a
+                 * schedule-driven parallel reduce cannot give.
+                 *
+                 * It works by folding fixed-size tiles: each work-item combines a
+                 * contiguous run of at most 256 values left to right, the partials
+                 * are folded the same way, and that repeats until one value remains.
+                 * Which values meet which therefore depends only on @p n and that
+                 * tile size — never on how the work was scheduled. The intermediate
+                 * levels use scratch this graph allocates and owns, on the same
+                 * device and with the same residency as @p input.
+                 *
+                 * @tparam T       Element type.
+                 * @tparam Combine Binary functor; must be trivially copyable so it can
+                 *                 be captured into a device kernel.
+                 * @param input    Values to reduce; must hold at least @p n elements.
+                 * @param output   Destination; element 0 receives the result.
+                 * @param n        Number of leading elements of @p input to reduce.
+                 * @param op       The combiner, e.g. Sum<float>{}.
+                 * @param identity Result when @p n is zero; never enters the
+                 *                 arithmetic otherwise.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException If @p n exceeds @p input's size, if
+                 *         @p output is empty, or if scratch cannot be allocated.
+                 */
+                template <typename T, class Combine>
+                Graph& add_reduce(const Buffer<T>& input, const Buffer<T>& output,
+                                  std::size_t n, Combine op, T identity)
+                {
+                    if (n > input.size())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_reduce: n (" + std::to_string(n) +
+                            ") exceeds the input buffer's size (" +
+                            std::to_string(input.size()) + ")."});
+                    if (output.size() == 0)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_reduce: the output buffer holds no elements."});
+
+                    T* out_base = output.data();
+                    if (n == 0)
+                    {
+                        // Nothing to fold: the identity is the whole answer. Still a
+                        // real node, so downstream readers order after it as usual.
+                        return add(Reads(), Writes(output), std::size_t{1},
+                                   [out_base, identity](std::size_t)
+                                   {
+                                       out_base[0] = identity;
+                                   });
+                    }
+
+                    const std::vector<detail::ReduceLevel> levels = detail::plan_reduction(n);
+                    const std::size_t scratch_count = detail::reduce_scratch_count(levels);
+
+                    T* scratch = nullptr;
+                    if (scratch_count != 0)
+                    {
+                        std::shared_ptr<T> owned = detail::make_reduce_scratch<T>(
+                            ctx_, scratch_count, input.device_index(), input.residency());
+                        scratch = owned.get();
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(owned));
+                    }
+
+                    const T* in_base = input.data();
+                    void* scratch_key = static_cast<void*>(scratch);
+                    constexpr std::size_t tile = detail::REDUCE_TILE;
+
+                    for (std::size_t i = 0; i < levels.size(); ++i)
+                    {
+                        const detail::ReduceLevel& level = levels[i];
+                        const bool first = (i == 0);
+                        const bool last  = (i + 1 == levels.size());
+
+                        const T* src = first ? in_base : (scratch + level.in_offset);
+                        T* dst = last ? out_base : (scratch + level.out_offset);
+                        const std::size_t in_count = level.in_count;
+
+                        const Reads reads = first
+                            ? Reads(input)
+                            : Reads(Core::ResourceRegion{scratch_key,
+                                                         level.in_offset * sizeof(T),
+                                                         level.in_count * sizeof(T)});
+                        const Writes writes = last
+                            ? Writes(output)
+                            : Writes(Core::ResourceRegion{scratch_key,
+                                                          level.out_offset * sizeof(T),
+                                                          level.out_count * sizeof(T)});
+
+                        add(reads, writes, level.out_count,
+                            [src, dst, in_count, op](std::size_t t)
+                            {
+                                const std::size_t begin = t * tile;
+                                std::size_t end = begin + tile;
+                                if (end > in_count) end = in_count;
+                                dst[t] = detail::fold_tile(op, src, begin, end);
+                            });
+                    }
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a fixed-order reduction using the combiner's identity.
+                 *
+                 * The shorthand for the built-in combiners (Sum, Minimum, Maximum),
+                 * which each declare the value their reduction produces over no
+                 * elements. A combiner without a static identity() — a lambda, say —
+                 * must use the overload that takes the identity explicitly.
+                 *
+                 * @tparam T       Element type.
+                 * @tparam Combine Binary functor exposing a static identity().
+                 * @param input  Values to reduce; must hold at least @p n elements.
+                 * @param output Destination; element 0 receives the result.
+                 * @param n      Number of leading elements of @p input to reduce.
+                 * @param op     The combiner, e.g. Sum<float>{}.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException As the five-argument overload.
+                 */
+                template <typename T, class Combine>
+                Graph& add_reduce(const Buffer<T>& input, const Buffer<T>& output,
+                                  std::size_t n, Combine op)
+                {
+                    return add_reduce(input, output, n, op, Combine::identity());
+                }
+
+                /**
+                 * @brief Reduces each segment of a ragged array, in a fixed order.
+                 *
+                 * The scatter-accumulate shape a simulation actually needs: per-body
+                 * contact impulses, per-vertex contributions from the elements
+                 * sharing that vertex. @p segment_offsets is the usual CSR-style
+                 * boundary array of @p segment_count + 1 entries, so segment s covers
+                 * values [offsets[s], offsets[s+1]) and @p output[s] receives its
+                 * fold.
+                 *
+                 * One work-item per segment folds that segment left to right, so
+                 * there are no atomics and no cross-work-item combining and the
+                 * result is reproducible by construction. The trade-off is load
+                 * balance: a segment of ten thousand values and a segment of one cost
+                 * one work-item each. The caller owns the layout, and determinism is
+                 * the contract, so the imbalance is left visible rather than traded
+                 * away for a split that would break the ordering guarantee.
+                 *
+                 * @tparam T       Element type of the values and the result.
+                 * @tparam Combine Binary functor; must be trivially copyable.
+                 * @param values          The concatenated segment contents.
+                 * @param segment_offsets Boundaries; must hold @p segment_count + 1
+                 *                        entries, non-decreasing, the last no larger
+                 *                        than @p values' size.
+                 * @param output          Destination; must hold @p segment_count entries.
+                 * @param segment_count   Number of segments to reduce.
+                 * @param op              The combiner, e.g. Sum<float>{}.
+                 * @param identity        Result for an empty segment.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException If @p segment_offsets or @p output is
+                 *         too small for @p segment_count.
+                 */
+                template <typename T, class Combine>
+                Graph& add_segmented_reduce(const Buffer<T>& values,
+                                            const Buffer<std::uint32_t>& segment_offsets,
+                                            const Buffer<T>& output,
+                                            std::size_t segment_count,
+                                            Combine op, T identity)
+                {
+                    if (segment_offsets.size() < segment_count + 1)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_segmented_reduce: segment_offsets holds " +
+                            std::to_string(segment_offsets.size()) + " entries but " +
+                            std::to_string(segment_count + 1) + " are required."});
+                    if (output.size() < segment_count)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_segmented_reduce: output holds " +
+                            std::to_string(output.size()) + " entries but " +
+                            std::to_string(segment_count) + " are required."});
+
+                    const T* value_base = values.data();
+                    const std::uint32_t* offset_base = segment_offsets.data();
+                    T* out_base = output.data();
+
+                    return add(Reads(values, segment_offsets), Writes(output), segment_count,
+                               [value_base, offset_base, out_base, op, identity](std::size_t s)
+                               {
+                                   const std::size_t begin = offset_base[s];
+                                   const std::size_t end = offset_base[s + 1];
+                                   out_base[s] = (end > begin)
+                                       ? detail::fold_tile(op, value_base, begin, end)
+                                       : identity;
+                               });
+                }
+
+                /**
+                 * @brief Reduces each segment using the combiner's identity.
+                 *
+                 * The shorthand form; see the overload taking an explicit identity for
+                 * the layout contract and the load-balance trade-off.
+                 *
+                 * @tparam T       Element type of the values and the result.
+                 * @tparam Combine Binary functor exposing a static identity().
+                 * @param values          The concatenated segment contents.
+                 * @param segment_offsets Boundaries; @p segment_count + 1 entries.
+                 * @param output          Destination; @p segment_count entries.
+                 * @param segment_count   Number of segments to reduce.
+                 * @param op              The combiner, e.g. Sum<float>{}.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException As the six-argument overload.
+                 */
+                template <typename T, class Combine>
+                Graph& add_segmented_reduce(const Buffer<T>& values,
+                                            const Buffer<std::uint32_t>& segment_offsets,
+                                            const Buffer<T>& output,
+                                            std::size_t segment_count, Combine op)
+                {
+                    return add_segmented_reduce(values, segment_offsets, output,
+                                                segment_count, op, Combine::identity());
+                }
+
+                /**
                  * @brief Adds an offloadable task: a named remote kernel with a
                  *        local fallback.
                  *
@@ -1392,6 +1613,12 @@ namespace SushiRuntime
                 // backing graph. The fluent Graph is the source of truth so it can
                 // rebuild and recompile when mutated.
                 std::vector<std::function<void(BackingGraph&)>> specs_;
+
+                // USM scratch owned by the reduction tasks recorded on this graph.
+                // Allocated when the task is recorded, not when the plan compiles, so
+                // the pointer its kernels captured stays valid across a recompile and
+                // across the DynamicGraph composer rebuilding a region from its specs.
+                std::vector<std::shared_ptr<void>> reduce_scratch_;
 
                 // Liveness observers of every typed handle the recorded tasks touch.
                 // Checked once per run to catch a Buffer/State freed before the graph

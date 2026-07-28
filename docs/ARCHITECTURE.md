@@ -116,6 +116,17 @@ do not need to reach into the lower layers.
     multidimensional and tiled shapes, ordered.
   - `add(extent, In(a), Out(b), fn)` — captures register the access *and* hand
     the kernel the raw pointers.
+  - `add_reduce(input, output, n, op[, identity])` — a reduction whose
+    combination order is a function of the element layout alone, so the result
+    is bit-identical across runs, worker counts and steal patterns. It folds
+    fixed 256-element tiles left to right and repeats over the partials; each
+    level is one ordinary tracked node reading the previous level's scratch
+    window. `Sum`, `Minimum` and `Maximum` are provided; any trivially copyable
+    binary functor works.
+  - `add_segmented_reduce(values, segment_offsets, output, count, op[, identity])`
+    — the same guarantee over a CSR-style ragged array, one work-item per
+    segment. No atomics and no cross-work-item combining, at the cost of load
+    balance when segment lengths differ sharply.
   - `add_untracked(n, fn)` / `add_untracked(n, range_fn)` /
     `add_untracked(raw_kernel_fn)` / `add_untracked(extent, fn)` /
     `add_untracked(nd_range, fn)` — the same launch shapes with no declared data.
