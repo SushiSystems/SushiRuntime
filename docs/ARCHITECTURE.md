@@ -139,6 +139,15 @@ do not need to reach into the lower layers.
   - `run_for(duration)` / `run_until(predicate)` — replay until a wall-clock
     budget elapses or a condition holds.
   - `try_run()` / `try_run(n)` — non-throwing; return `Result<RunReport, Error>`.
+  - `run_async()` — start one step and return without waiting, so the caller can
+    do work that needs no workers (extracting the previous step's state for a
+    renderer or an audio system) while this one runs. Returns a move-only
+    `RunHandle` whose `wait()` finishes the step's lifecycle — the State advance
+    happens there, not at submit — and returns the `RunReport`. Its destructor
+    waits if `wait()` was not called, since the compiled plan must not be
+    destroyed while workers hold pointers into it. One step at a time: starting
+    another while a handle is pending is rejected before anything touches the
+    plan, because re-arming in-degrees under a running DAG would corrupt it.
   - `cancel()` — thread-safe; stops an in-progress run from another thread, the
     run returns with `RunReport::cancelled` set (a clean stop, not an error).
   - `size()` — task count.
@@ -213,13 +222,25 @@ A program's lifecycle is always the same three phases, and they must not overlap
    `CompiledGraph` for each step — resetting node in-degrees between steps — so a
    multi-step run pays the build cost only once.
 
+   `execute()` is literally `submit()` followed by `complete()`: the work is done
+   by the persistent worker pool either way, and the only thing `execute()` adds
+   is the blocking. Splitting the two is what `run_async()` is built on — no extra
+   thread is involved, because there was never a thread to add. `submit()` takes
+   the engine's non-reentrancy flag and `complete()` releases it, including on the
+   path where a task exception is rethrown, so one failing kernel does not close
+   the engine permanently. `IExecutionEngine` reports the capability through
+   `supports_asynchronous_run()` rather than assuming it, so a strategy with no
+   meaningful start/finish split (a dry-run or replay engine) is not forced to
+   fake one.
+
 > **Threading rule:** Phase 1 (`add_node`/`add_task`) and Phase 2 (`compile()`)
 > are **not** thread-safe relative to each other. Build the entire graph, then
 > compile, then execute.
 
-**Late-bound replay.** The compiled plan is static in topology, but two per-node
-properties may change between steps without recompiling: the **iteration size**
-and whether the node **runs at all**. A node may carry a `Graph::LateBindings
+**Late-bound replay.** The compiled plan is static in topology, but three
+per-node properties may change between steps without recompiling: the
+**iteration size**, the **first element** it iterates, and whether the node
+**runs at all**. A node may carry a `Graph::LateBindings
 { enabled, count }` block (a `std::shared_ptr` the fluent layer re-points each
 step); the scheduler skips a disabled node by routing it through the poller as
 instantly complete (its successors still fire, so the DAG drains), and the kernel
@@ -252,6 +273,19 @@ above the node's compiled capacity fails the run rather than truncating, since
 silently dropping work is the failure this seam exists to prevent. The counter's
 element is registered as one of the consuming task's reads, so the producer is
 necessarily a predecessor — the ordering is structural, not a convention.
+
+**Where the node starts.** `count` says how many elements, `base` says from
+where. Graph colouring is the case that needs it: each colour is a contiguous
+slice of one constraint buffer, and every slice shifts as soon as the constraint
+set changes, so a node pinned to a baked offset has to reach its own work through
+an index-indirection buffer — an extra load per element for something the launch
+can carry for free. `API::based_at(provider)` sets it from the host and
+`API::based_at_device(slot)` from a slot a predecessor wrote, mirroring
+`sized()` / `sized_from_device()` exactly. The runtime applies the offset, so the
+callable still receives absolute indices and a kernel written without knowing
+about bases stays correct. Base and count are resolved and validated **together**
+at dispatch, because only their combination says whether the node stays inside
+the buffers it was compiled for; a window that runs off the end fails the run.
 
 **Dynamic region graph.** Late binding varies size and enablement but keeps a
 fixed topology; a streaming open world also needs the *set* of work to change —

@@ -1,9 +1,8 @@
 # What a AAA Physics Engine Needs From SushiRuntime — Engineering Request
 
-**Status: R1, R2, R3 and R5 are built** on `feature/physics-substrate-seams`; see
+**Status: all seven are addressed** on `feature/physics-substrate-seams`; see
 [`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](PHYSICS_SUBSTRATE_IMPLEMENTATION.md) for the design and
-[the section below](#delivery) for what each one became. R4, R6 and R7 remain open, and the reasons
-they were left out are recorded in that plan's §6.
+[the section below](#delivery) for what each one became.
 
 The rest of this document is the original request, kept as written so the reasoning behind each ask
 stays auditable. Every claim is anchored to a location in the tree (`file:line`) so it can be
@@ -17,9 +16,9 @@ verified independently, in the style of `SIMULATION_ENGINE_SUBSTRATE_PLAN.md`.
 | **R2** | Fixed-order deterministic reductions | **Built.** `Graph::add_reduce` and `Graph::add_segmented_reduce`, plus `Sum`/`Minimum`/`Maximum`. A fixed 256-element tile fold repeated over the partials; the combination order is a function of the element layout alone. |
 | **R3** | Sub-range ordering at the region boundary | **Built.** The boundary pins carry their byte intervals and every hazard test is an interval overlap, so two regions writing disjoint element ranges of one allocation gain no edge. One region per simulation island is now viable. |
 | **R5** | Dependency tracking on every overload | **Built, as Option A.** Every launch shape has a tracked overload (three were missing), and the five dependency-blind ones are spelled `add_untracked`. Inference was never possible for a callable that captures its USM pointers, so "always offer a tracked form, and make the untracked one name itself" is the honest reading of Option A. |
-| **R4** | Asynchronous step | **Open.** PERF; gates nothing. Owning a driver thread means re-deciding how cancellation, the non-reentrancy guard and the completion latch interact — its own change. |
-| **R6** | Late-bound base offset | **Open.** Convenience, not capability; workable today through an index-indirection buffer. |
-| **R7** | `ThreadLocalMagazine` teardown | **Open**, tracked as `TODO.md` #29 on its own merits. |
+| **R4** | **Asynchronous step** | **Built** — `Graph::run_async()` / `DynamicGraph::run_async()` returning a move-only `RunHandle`. No driver thread was needed: the work was always on the worker pool and `execute()` only added the blocking, so it split into `submit()` + `complete()` and the asynchronous path is those two halves with the caller's own work in between. |
+| **R6** | **Late-bound base offset** | **Built** — `API::based_at(provider)` and `API::based_at_device(slot)`, mirroring `sized()` / `sized_from_device()`. Base and count are resolved and validated together at dispatch, since only their combination says whether the node stays inside its buffers. |
+| **R7** | **`ThreadLocalMagazine` teardown** | **Built** — and the interesting half was already there. The registry-plus-lock protocol already made a flush into a destroyed allocator a no-op; what was missing was that the lock itself was a namespace-scope mutex, and a `thread_local` destructor runs after static destruction for a thread outliving `main()`. It is now allocated once and never freed. |
 
 **Origin.** SushiEngine is planning a full rigid + soft body physics system
 (`sushiengine/docs/slop/physics_system.md`): unified substepping XPBD, joints and articulated
