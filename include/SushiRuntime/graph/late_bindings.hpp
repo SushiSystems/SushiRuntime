@@ -25,6 +25,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 
 namespace SushiRuntime
 {
@@ -58,6 +59,32 @@ namespace SushiRuntime
 
             /** @brief Live iteration size for this step, or USE_BAKED for the full baked range. */
             std::atomic<std::size_t> count{USE_BAKED};
+
+            /**
+             * @brief Host-readable location a predecessor writes the live count to.
+             *
+             * The count above answers "how many elements does the host already know
+             * we want". This answers the harder question a producer/consumer chain
+             * asks: how many did the *device* just produce. A broadphase writes its
+             * pair count, and the narrowphase that consumes it must iterate exactly
+             * that many — a number that does not exist yet when the step boundary
+             * polls the host-side providers.
+             *
+             * It works because a node's command group is built on a worker at
+             * dispatch, and a node is only dispatched once every predecessor's event
+             * has completed and been waited on, so a value a predecessor kernel wrote
+             * is visible here. Null on every ordinary node, in which case the
+             * atomic count above is used.
+             *
+             * Written once when the task is recorded — before any run — and only read
+             * afterwards, so unlike the two fields above it needs no atomicity. The
+             * allocation must be host-addressable (shared USM); the API that sets it
+             * rejects a device-resident buffer at the call site.
+             */
+            const std::uint32_t* device_count = nullptr;
+
+            /** @brief Element index of the live count within device_count. */
+            std::size_t device_count_index = 0;
         };
 
     } // namespace Graph

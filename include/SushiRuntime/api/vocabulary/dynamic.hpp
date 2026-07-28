@@ -24,9 +24,13 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
 #include <utility>
 
+#include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/core/delegate.hpp>
+#include <SushiRuntime/core/error.hpp>
 
 namespace SushiRuntime
 {
@@ -59,6 +63,18 @@ namespace SushiRuntime
 
             WhenProvider  when_pred;  /**< Empty: the node is always enabled. */
             CountProvider count_fn;   /**< Empty: iterate the full baked range. */
+
+            /**
+             * @brief Host-readable slot a predecessor writes the live count into.
+             *
+             * Set by sized_from_device(); null otherwise. When set it takes the place
+             * of count_fn entirely, because the two answer different questions and
+             * only one can win — see sized_from_device().
+             */
+            const std::uint32_t* device_count = nullptr;
+
+            /** @brief Element index of the live count within device_count. */
+            std::size_t device_count_index = 0;
 
             // The chaining setters are ref-qualified so a move-only Dynamic chains in
             // both shapes: mutating a named Dynamic in place (the lvalue overload
@@ -93,6 +109,32 @@ namespace SushiRuntime
                 count_fn = std::move(count);
                 return std::move(*this);
             }
+
+            /**
+             * @brief Points a named Dynamic at a device-written count; returns *this.
+             *
+             * Drops any host-side sized() provider, since the two cannot both decide
+             * the iteration size. See sized_from_device() for the contract.
+             * @param counter Host-readable slot a predecessor writes.
+             * @param index   Element index of the count within @p counter.
+             * @return *this, for chaining.
+             */
+            Dynamic& and_sized_from_device(const std::uint32_t* counter, std::size_t index) &
+            {
+                device_count = counter;
+                device_count_index = index;
+                count_fn = CountProvider{};
+                return *this;
+            }
+
+            /** @brief Points a Dynamic at a device-written count while chaining inline. */
+            Dynamic and_sized_from_device(const std::uint32_t* counter, std::size_t index) &&
+            {
+                device_count = counter;
+                device_count_index = index;
+                count_fn = CountProvider{};
+                return std::move(*this);
+            }
         };
 
         /**
@@ -116,6 +158,55 @@ namespace SushiRuntime
         {
             Dynamic d;
             d.count_fn = std::move(count);
+            return d;
+        }
+
+        /**
+         * @brief Builds a Dynamic whose size comes from a count the device produced.
+         *
+         * sized() answers "how many elements does the host already know we want",
+         * polled at the step boundary. This answers the question a producer/consumer
+         * chain actually asks: how many did the *device* just produce. A broadphase
+         * writes its pair count and the narrowphase must iterate exactly that many —
+         * a number that does not exist yet when the step boundary runs, so a
+         * host-side provider cannot supply it without a mid-step readback or a
+         * second run.
+         *
+         * The count is instead read when the node is dispatched, which is after every
+         * predecessor's event has completed, so a value a predecessor kernel wrote is
+         * visible. The task that consumes the count is automatically ordered after
+         * whoever writes @p counter, because add() registers @p counter as one of its
+         * reads — the ordering is structural, not a note the caller must remember.
+         *
+         * Two constraints, both enforced rather than documented: @p counter must be
+         * host-addressable (shared USM), checked here; and the live count must not
+         * exceed the capacity the node was compiled for, checked at dispatch, where
+         * exceeding it fails the run rather than silently truncating the work.
+         *
+         * Replaces any sized() provider on the same Dynamic; when() still composes.
+         *
+         * @param counter Host-readable buffer a predecessor writes the count into.
+         * @param index   Element index of the count within @p counter.
+         * @return A Dynamic carrying the device count source, ready to pass to add().
+         * @throws Core::SushiException If @p counter is device-resident or empty.
+         */
+        inline Dynamic sized_from_device(const Buffer<std::uint32_t>& counter,
+                                         std::size_t index = 0)
+        {
+            if (!counter.host_accessible())
+                throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                    "sized_from_device: the counter buffer is device-resident, but the "
+                    "iteration size is read on the host at dispatch; allocate it with "
+                    "Residency::Shared."});
+            if (index >= counter.size())
+                throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                    "sized_from_device: index " + std::to_string(index) +
+                    " is out of range for a counter buffer of " +
+                    std::to_string(counter.size()) + " elements."});
+
+            Dynamic d;
+            d.device_count = counter.data();
+            d.device_count_index = index;
             return d;
         }
 
