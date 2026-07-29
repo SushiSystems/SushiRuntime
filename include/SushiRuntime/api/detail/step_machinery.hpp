@@ -60,10 +60,15 @@ namespace SushiRuntime
             class StepMachinery
             {
                 public:
-                    // A per-step hook stored without heap allocation. Capacity covers
-                    // the largest hook: a binding updater that captures a whole Dynamic
-                    // (two ~64-byte provider slots) plus a LateBindings shared pointer.
-                    using StepHook = Core::Delegate<void(), 176>;
+                    // A per-step hook stored without heap allocation. The capacity is
+                    // derived from the largest hook rather than written as a literal: a
+                    // binding updater captures a whole Dynamic (one provider slot per
+                    // late-bound control) plus a LateBindings shared pointer, so adding
+                    // a control widens this automatically instead of tripping
+                    // Delegate's static_assert in every translation unit.
+                    using StepHook = Core::Delegate<void(),
+                        sizeof(Dynamic) +
+                        sizeof(std::shared_ptr<::SushiRuntime::Graph::LateBindings>)>;
 
                     // Returns the shared view for a State, creating it (and registering
                     // its resync) on first use. Every kernel touching a State captures
@@ -113,7 +118,7 @@ namespace SushiRuntime
                     void register_binding_updater(
                         std::shared_ptr<::SushiRuntime::Graph::LateBindings> lb, Dynamic dyn)
                     {
-                        if (!dyn.when_pred && !dyn.count_fn)
+                        if (!dyn.when_pred && !dyn.count_fn && !dyn.base_fn)
                             return;
                         binding_updaters_.push_back([lb = std::move(lb), dyn = std::move(dyn)]()
                         {
@@ -121,6 +126,8 @@ namespace SushiRuntime
                                 lb->enabled.store(dyn.when_pred(), std::memory_order_relaxed);
                             if (dyn.count_fn)
                                 lb->count.store(dyn.count_fn(), std::memory_order_relaxed);
+                            if (dyn.base_fn)
+                                lb->base.store(dyn.base_fn(), std::memory_order_relaxed);
                         });
                     }
 

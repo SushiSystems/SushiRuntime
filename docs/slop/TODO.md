@@ -4,15 +4,24 @@
 
 ## Correctness (blockers before v1.0.0)
 
-**#29 — ThreadLocalMagazine teardown ordering**
+**#29 — ThreadLocalMagazine teardown ordering — RESOLVED**
 
-`ThreadLocalMagazine` is `thread_local`. Its destructor tries to return live USM
-slots to the owning `BitmaskMemoryPool`. If `RuntimeContext` (and therefore the
-allocator that owns those pages) has already been destroyed, this is a
-use-after-free. Either prove that `RuntimeContext::shutdown()` drains all threads
-before the allocator is torn down, making the destructor safe by ordering, or add
-a liveness check in the destructor. This is a correctness risk; it must be resolved
-before v1.0.0.
+The liveness check this item asked for was already in place, and is now complete.
+A flush takes `flush_mutex()` shared, reads the allocator out of the registry and
+verifies `owns_id`, so it no-ops once that allocator is gone; an allocator's
+destructor takes the same lock exclusively for its whole teardown and clears its
+registry slot (by compare-exchange, so a slot a collided id has since claimed is
+left alone) before freeing pages. A thread outliving its `RuntimeContext`
+therefore flushes into a null slot rather than into freed memory.
+
+What was missing was one level further out. The lock was a namespace-scope
+`std::shared_timed_mutex`, and a `thread_local` magazine's destructor runs at
+*thread* exit — which, for a thread outliving `main()`, is after static
+destruction. Locking a destroyed mutex in the very path that exists to make
+teardown safe is the same use-after-free one level up. `flush_mutex()` now
+allocates it once and never frees it; everything else this file keeps at
+namespace scope is trivially destructible and already immune. Covered by
+`Regression_Sentinel.MagazineFlushSurvivesRuntimeTeardown`.
 
 **#30 — EventPolling 256-event cap — RESOLVED**
 
@@ -33,25 +42,16 @@ own successor release. If the code was already changed differently, close this i
 
 ## API surface (before the v1.0.0 freeze)
 
-**Fluent API dependency tracking — choose one option**
+**Fluent API dependency tracking — RESOLVED (Option A)**
 
-`API::Graph::add()` calls `add_node()` without read/write pointer lists. Tasks
-added through the fluent API do not participate in automatic RAW/WAR/WAW dependency
-detection unless a handle-based overload is used. The current state is undocumented,
-which means a user who follows the README's "intended entry point" and expects
-ordering will get silent mis-ordering on raw kernels. Pick one:
-
-- **Option A.** Add `add(Reads{…}, Writes{…}, …)` overloads to `API::Graph` that
-  forward pointer lists to `add_task()`. Makes dependency tracking work through
-  the fluent path unconditionally.
-- **Option B.** Document explicitly in `INTRODUCTION.md` and `README.md` that the
-  fluent API does not infer dependencies from raw kernels and direct users who need
-  it to `TaskGraph::add_task()`. The handle-based overloads (`In`, `Out`, `InOut`,
-  `Reads`, `Writes`) already register accesses correctly; only the raw kernel
-  overloads are silent.
-
-Neither option involves a behavior change to the scheduler; both are documentation
-or thin API additions.
+Every launch shape now has a tracked overload — `add(Reads, Writes, n, range_fn)`,
+`add(Reads, Writes, raw_kernel)` and `add(Reads, Writes, NdRange<N>, fn)` were the
+three that were missing — and the five dependency-blind overloads are spelled
+`add_untracked(...)`. Inference was never possible (a per-element callable captures
+its USM pointers by value, so its type says nothing about what it touches), so
+Option A is delivered as "always offer a tracked form, and make the untracked one
+name itself" rather than as automatic detection. Rationale and the sweep are in
+[`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](PHYSICS_SUBSTRATE_IMPLEMENTATION.md) §1.
 
 **`Core::Result<T,E>` as the permanent public type**
 
@@ -139,15 +139,14 @@ by `Integration_Cancellation`.
 ## Future work (out of v1 scope)
 
 **Dynamic-graph boundary refinements.** The dynamic region graph composes in
-O(changed region + affected boundary pins). Two refinements remain: (a) cross-region
-ordering keys on the whole allocation, not sub-ranges — two regions writing disjoint
-halves of one buffer are serialized though they need not be (the intra tracker
-already handles sub-ranges; lifting it to the boundary means carrying the entry/exit
-pins' byte intervals); (b) distributed offload is not stamped for dynamic-graph
-nodes (the dynamic composer bypasses `TaskGraph::compile`, where `stamp_offloadable`
-runs), so an offloadable op recorded on a region runs its local fallback under
-`SR_ENABLE_DISTRIBUTED` instead of shipping to a worker. Neither blocks the
-single-node real-time target.
+O(changed region + affected boundary pins). Sub-range boundary ordering is now
+done — the entry/exit pins carry their byte intervals and every hazard test is an
+interval overlap, so two regions writing disjoint element ranges of one buffer are
+no longer serialized. One refinement remains: distributed offload is not stamped
+for dynamic-graph nodes (the dynamic composer bypasses `TaskGraph::compile`, where
+`stamp_offloadable` runs), so an offloadable op recorded on a region runs its local
+fallback under `SR_ENABLE_DISTRIBUTED` instead of shipping to a worker. It does not
+block the single-node real-time target.
 
 **Python bindings.** A pybind11 (or nanobind) wrapper around the C++ fluent API
 would allow direct interop with NumPy, PyTorch, and Jupyter. The binding entry

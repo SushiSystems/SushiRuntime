@@ -95,6 +95,19 @@ namespace SushiRuntime
                 std::unique_lock<std::mutex> lock(mutex);
                 cv.wait(lock, [this] { return done; });
             }
+
+            /**
+             * @brief Reports whether the run has finished, without blocking.
+             *
+             * The asynchronous path's way of asking "would waiting stall me?", so a
+             * caller can choose between overlapping more work and settling up.
+             * @return True once signal() has published an outcome.
+             */
+            bool poll()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                return done;
+            }
         };
 
         /**
@@ -344,37 +357,60 @@ namespace SushiRuntime
 #endif
 
         /**
-         * @brief Executes a compiled graph on the persistent worker pool.
+         * @brief Runs a compiled graph on the persistent worker pool and waits.
          *
-         * Responsibility split (Madde 26 / SRP fix):
-         *  - TaskGraph::compile() builds the DAG and the root list.
-         *  - ExecutionEngine::execute() handles thread orchestration, the
-         *    sentinel node setup, completion signalling, and graph cleanup.
+         * Responsibility split: TaskGraph::compile() builds the DAG and the root
+         * list; the engine owns thread orchestration, the sentinel node setup,
+         * completion signalling, and graph cleanup. Those are divided again between
+         * submit() (start) and complete() (wait), and this composes the two.
          *
-         * The persistent scheduler is "re-armed" for this execution round via
-         * arm_for_execution() instead of being destroyed and recreated (Madde 7),
-         * and completion flows through one reusable CompletionLatch on the engine
+         * The persistent scheduler is "re-armed" for each execution round via
+         * arm_for_execution() instead of being destroyed and recreated, and
+         * completion flows through one reusable CompletionLatch on the engine
          * rather than a promise/future allocated per step.
          */
         sycl::event ExecutionEngine::execute(CompiledGraph& graph)
+        {
+            // execute() IS submit() + complete(). Keeping it as their composition
+            // rather than a third copy of the sequence means the synchronous and
+            // asynchronous paths can never drift apart — the ordering rules below
+            // (reset before submit, quiesce before returning) hold for both.
+            submit(graph);
+            complete();
+            return sycl::event{};
+        }
+
+        /**
+         * @brief Starts a run on the worker pool without waiting for it.
+         *
+         * Everything execute() used to do before blocking. The non-reentrancy flag
+         * is taken here and released by complete(), not by an RAII guard scoped to
+         * this call — the run outlives the function, which is the whole point. Any
+         * failure after the flag is taken releases it before propagating, so a
+         * throwing submit does not leave the engine permanently closed.
+         */
+        void ExecutionEngine::submit(CompiledGraph& graph)
         {
             SR_THROW_IF(impl_->is_shutdown.load(std::memory_order_acquire), "Execute called after shutdown.");
             SR_THROW_IF(graph.roots.empty(), "Received a compiled graph with no root nodes.");
 
             // Reject a concurrent run before touching any shared run state. If the
             // exchange returns true another run owns the engine, so we throw WITHOUT
-            // installing the reset guard — that run still owns the flag. On success
-            // the RAII guard clears it on every exit path, including the rethrow.
+            // releasing the flag — that run still owns it.
             SR_THROW_IF(impl_->run_in_progress.exchange(true, std::memory_order_acquire),
-                        "ExecutionEngine::execute() is not reentrant: a graph run is "
+                        "ExecutionEngine::submit() is not reentrant: a graph run is "
                         "already in progress on this engine.");
-            struct RunGuard
-            {
-                std::atomic<bool>& flag;
-                ~RunGuard() { flag.store(false, std::memory_order_release); }
-            } run_guard{impl_->run_in_progress};
 
-            // DEBUG, not INFO: execute() runs once per replayed step, so under a
+            // Releases the flag only if this function exits early (an exception
+            // while wiring or submitting). On the success path it is disarmed and
+            // ownership passes to complete().
+            struct SubmitGuard
+            {
+                std::atomic<bool>* flag;
+                ~SubmitGuard() { if (flag) flag->store(false, std::memory_order_release); }
+            } submit_guard{&impl_->run_in_progress};
+
+            // DEBUG, not INFO: a run happens once per replayed step, so under a
             // million-step run(n) an INFO here would emit millions of log records
             // (ostringstream + timestamp + global mutex + condvar notify each),
             // defeating the allocation-free CompletionLatch. Compiled out in
@@ -442,17 +478,33 @@ namespace SushiRuntime
             // root — the per-step root-injection cost no longer scales with fan-out.
             impl_->scheduler.submit_batch(graph.roots);
 
-            // -----------------------------------------------------------------
-            // Step 3: Block until the sentinel signals the latch, then surface a
-            //         failure exactly as before (rethrow; the pool stays re-armable).
-            // -----------------------------------------------------------------
+            // Handed off successfully: the run now owns the flag until complete().
+            submit_guard.flag = nullptr;
+        }
+
+        /**
+         * @brief Waits for the submitted run, drains the pool, releases the engine.
+         *
+         * The blocking half of a run. The flag is released before a task exception
+         * is rethrown, so a failed run leaves the engine usable — the pool survives
+         * a task throwing, and refusing every later run would turn one bad kernel
+         * into a dead runtime.
+         */
+        void ExecutionEngine::complete()
+        {
+            struct ReleaseGuard
+            {
+                std::atomic<bool>& flag;
+                ~ReleaseGuard() { flag.store(false, std::memory_order_release); }
+            } release_guard{impl_->run_in_progress};
+
             impl_->completion.wait();
 
             // The sentinel signals the latch from its host_work, which runs on a
             // worker thread before that worker (and its peers) finish the poll
             // bookkeeping for the run's last nodes. Wait for the pool to fully drain
             // before returning: the caller may destroy this CompiledGraph the instant
-            // execute() returns, and a worker still inside trigger_successors/release
+            // this returns, and a worker still inside trigger_successors/release
             // would then touch freed nodes.
             impl_->scheduler.wait_quiescent();
 
@@ -463,7 +515,19 @@ namespace SushiRuntime
             }
 
             SR_LOG_DEBUG("Graph execution completed."); // per-step; see the DEBUG note above
-            return sycl::event{};
+        }
+
+        /**
+         * @brief Whether the submitted run's sentinel has already reported in.
+         *
+         * Note that this answers "has the DAG finished", not "is it safe to destroy
+         * the plan" — the pool still has bookkeeping to drain, which complete()
+         * waits for. Use it to decide whether to keep overlapping work, never as a
+         * substitute for complete().
+         */
+        bool ExecutionEngine::run_finished()
+        {
+            return impl_->completion.poll();
         }
 
         // Defined here, not in the header: constructing the CompiledGraph local

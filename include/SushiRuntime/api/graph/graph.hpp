@@ -29,6 +29,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -41,7 +42,9 @@
 #include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/api/detail/run_report_builder.hpp>
 #include <SushiRuntime/api/detail/callable_traits.hpp>
+#include <SushiRuntime/api/detail/fixed_order_reduce.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
+#include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
@@ -87,13 +90,24 @@ namespace SushiRuntime
                 Graph& operator=(const Graph&) = delete;
 
                 /**
-                 * @brief Adds a per-element task run as a parallel_for over [0, n).
+                 * @brief Adds a per-element task that participates in no ordering.
+                 *
+                 * The dependency-blind form of add(Reads, Writes, n, fn): a
+                 * per-element callable is void(std::size_t) capturing raw USM
+                 * pointers, so nothing in its type says what it touches and the
+                 * runtime cannot infer it. This overload therefore records no read or
+                 * write regions — the task is both a root and a leaf, ordered against
+                 * nothing. Correct for self-contained work (seeding a buffer no other
+                 * task in this graph reads, a benchmark kernel); wrong the moment
+                 * another task shares data with it. Name the data with
+                 * Reads(...)/Writes(...) and use add() whenever ordering matters.
+                 *
                  * @param n  Number of elements (the iteration range).
                  * @param fn Callable invoked as fn(i) for each index i.
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                Graph& add(std::size_t n, F&& fn)
+                Graph& add_untracked(std::size_t n, F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), n](BackingGraph& bg)
                     {
@@ -109,13 +123,18 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a range task; fn receives the bounds and the handler.
+                 * @brief Adds an unordered range task; fn receives bounds and handler.
+                 *
+                 * The dependency-blind counterpart of
+                 * add(Reads, Writes, n, range_kernel); see add_untracked(n, fn) for
+                 * why the regions cannot be inferred and when this is the right choice.
+                 *
                  * @param n  Upper bound; fn is called as fn(0, n, handler).
                  * @param fn Callable invoked as fn(begin, end, sycl::handler&).
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
-                Graph& add(std::size_t n, F&& fn)
+                Graph& add_untracked(std::size_t n, F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), n](BackingGraph& bg)
                     {
@@ -130,12 +149,17 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a raw kernel that drives the sycl::handler itself.
+                 * @brief Adds an unordered raw kernel that drives the handler itself.
+                 *
+                 * The dependency-blind counterpart of add(Reads, Writes, raw_kernel);
+                 * see add_untracked(n, fn) for why the regions cannot be inferred and
+                 * when this is the right choice.
+                 *
                  * @param fn Callable invoked as fn(sycl::handler&).
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
-                Graph& add(F&& fn)
+                Graph& add_untracked(F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn)](BackingGraph& bg)
                     {
@@ -147,15 +171,16 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a multidimensional per-element task over an Extent.
+                 * @brief Adds an unordered multidimensional task over an Extent.
                  *
-                 * The 2-D/3-D counterpart of add(std::size_t, fn): the runtime
-                 * submits a parallel_for over the Extent's box and invokes @p fn with
-                 * the global sycl::id of each work-item. When the Extent carries an
-                 * origin offset the iteration covers only that sub-box, so a kernel
-                 * can skip a halo or touch just a ghost layer. Plain 1-D counts keep
-                 * using the std::size_t overloads; pass a 1-D Extent only when you
-                 * want an origin offset.
+                 * The 2-D/3-D counterpart of add_untracked(std::size_t, fn): the
+                 * runtime submits a parallel_for over the Extent's box and invokes
+                 * @p fn with the global sycl::id of each work-item. When the Extent
+                 * carries an origin offset the iteration covers only that sub-box, so
+                 * a kernel can skip a halo or touch just a ghost layer. Plain 1-D
+                 * counts keep using the std::size_t overloads; pass a 1-D Extent only
+                 * when you want an origin offset. Records no regions — use
+                 * add(Reads, Writes, Extent, fn) when the task must be ordered.
                  *
                  * @tparam N  Iteration rank (1, 2, or 3).
                  * @param e   The iteration box (extent and origin offset).
@@ -164,7 +189,7 @@ namespace SushiRuntime
                  */
                 template <int N, class F,
                           std::enable_if_t<std::is_invocable_v<F, sycl::id<N>>, int> = 0>
-                Graph& add(Extent<N> e, F&& fn)
+                Graph& add_untracked(Extent<N> e, F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), e](BackingGraph& bg)
                     {
@@ -181,13 +206,14 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a tiled task over an NdRange (work-group execution).
+                 * @brief Adds an unordered tiled task over an NdRange.
                  *
                  * Submits a parallel_for over the NdRange and hands @p fn a
                  * sycl::nd_item<N>, exposing the work-group model — barriers, local
                  * (shared) memory, sub-groups — that a flat parallel_for cannot. Use
                  * it for blocked algorithms (tiled GEMM, shared-memory stencils)
-                 * where neighbouring work-items must cooperate.
+                 * where neighbouring work-items must cooperate. Records no regions —
+                 * use add(Reads, Writes, NdRange, fn) when the task must be ordered.
                  *
                  * @tparam N  Iteration rank (1, 2, or 3).
                  * @param r   Global and local ranges; global must tile by local.
@@ -196,7 +222,7 @@ namespace SushiRuntime
                  */
                 template <int N, class F,
                           std::enable_if_t<std::is_invocable_v<F, sycl::nd_item<N>>, int> = 0>
-                Graph& add(NdRange<N> r, F&& fn)
+                Graph& add_untracked(NdRange<N> r, F&& fn)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), r](BackingGraph& bg)
                     {
@@ -266,6 +292,109 @@ namespace SushiRuntime
                             h.parallel_for(e.extent,
                                            [fn, off](sycl::id<N> idx) { fn(idx + off); });
                         }, r, w);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a tiled NdRange task with handle-based tracking.
+                 *
+                 * The ordered counterpart of add_untracked(NdRange, fn): the same
+                 * work-group execution model — barriers, local memory, sub-groups —
+                 * but the task is ordered against the rest of the graph by the
+                 * regions it declares, so a tiled kernel is no longer forced to give
+                 * up dependency tracking to get an nd_item.
+                 *
+                 * @tparam N  Iteration rank (1, 2, or 3).
+                 * @param reads  Handles this task reads (their read keys).
+                 * @param writes Handles this task writes (their write keys).
+                 * @param r   Global and local ranges; global must tile by local.
+                 * @param fn  Callable invoked as fn(sycl::nd_item<N>) per work-item.
+                 * @return *this, for chaining.
+                 */
+                template <int N, class F,
+                          std::enable_if_t<std::is_invocable_v<F, sycl::nd_item<N>>, int> = 0>
+                Graph& add(const Reads& reads, const Writes& writes,
+                           NdRange<N> r, F&& fn)
+                {
+                    observe(reads);
+                    observe(writes);
+                    const std::vector<Core::ResourceRegion> rk = reads.keys;
+                    const std::vector<Core::ResourceRegion> wk = writes.keys;
+                    specs_.push_back([fn = std::forward<F>(fn), r, rk, wk](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, r](sycl::handler& h)
+                        {
+                            h.parallel_for(r.to_nd_range(),
+                                           [fn](sycl::nd_item<N> it) { fn(it); });
+                        }, rk, wk);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a range task with handle-based tracking.
+                 *
+                 * The ordered counterpart of add_untracked(n, range_kernel): @p fn
+                 * still drives the sycl::handler over [0, n) itself — the escape
+                 * hatch for a kernel the per-element form cannot express — but the
+                 * regions it declares order it against the rest of the graph.
+                 *
+                 * @param reads  Handles this task reads (their read keys).
+                 * @param writes Handles this task writes (their write keys).
+                 * @param n      Upper bound; fn is called as fn(0, n, handler).
+                 * @param fn     Callable invoked as fn(begin, end, sycl::handler&).
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
+                Graph& add(const Reads& reads, const Writes& writes,
+                           std::size_t n, F&& fn)
+                {
+                    observe(reads);
+                    observe(writes);
+                    const std::vector<Core::ResourceRegion> rk = reads.keys;
+                    const std::vector<Core::ResourceRegion> wk = writes.keys;
+                    specs_.push_back([fn = std::forward<F>(fn), n, rk, wk](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, n](sycl::handler& h)
+                        {
+                            fn(std::size_t{0}, n, h);
+                        }, rk, wk);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a raw kernel with handle-based tracking.
+                 *
+                 * The ordered counterpart of add_untracked(raw_kernel): @p fn owns
+                 * the whole command group — its own parallel_for, local accessors,
+                 * a memcpy — while the declared regions still order it. Reach for it
+                 * when no other overload's launch shape fits; prefer the shaped
+                 * overloads otherwise, since they cannot get the launch geometry and
+                 * the declared data out of step.
+                 *
+                 * @param reads  Handles this task reads (their read keys).
+                 * @param writes Handles this task writes (their write keys).
+                 * @param fn     Callable invoked as fn(sycl::handler&).
+                 * @return *this, for chaining.
+                 */
+                template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
+                Graph& add(const Reads& reads, const Writes& writes, F&& fn)
+                {
+                    observe(reads);
+                    observe(writes);
+                    const std::vector<Core::ResourceRegion> rk = reads.keys;
+                    const std::vector<Core::ResourceRegion> wk = writes.keys;
+                    specs_.push_back([fn = std::forward<F>(fn), rk, wk](BackingGraph& bg)
+                    {
+                        bg.add_node(fn, rk, wk);
                     });
                     ++task_count_;
                     dirty_ = true;
@@ -464,6 +593,19 @@ namespace SushiRuntime
                  * then iterates only the live count each step, and when() can skip
                  * the task entirely.
                  *
+                 * sized_from_device() takes the count from a slot a predecessor
+                 * kernel wrote instead of from the host, which is what lets a
+                 * produce-then-consume chain (broadphase to narrowphase to solver)
+                 * run in one composition with no worst-case launch width. The counter
+                 * is registered as one of this task's reads, so the producer is
+                 * necessarily ordered before it.
+                 *
+                 * based_at() / based_at_device() move where the node starts, for a
+                 * slice whose offset shifts between steps — a graph colour, say. The
+                 * callable still receives absolute indices, and the window must fit
+                 * the capacity: one that does not fails the run rather than reading
+                 * past the end.
+                 *
                  * @param dyn      Late-binding controls from when()/sized().
                  * @param reads    Handles this task reads (their read keys).
                  * @param writes   Handles this task writes (their write keys).
@@ -589,6 +731,225 @@ namespace SushiRuntime
                     ++task_count_;
                     dirty_ = true;
                     return *this;
+                }
+
+                /**
+                 * @brief Adds a reduction whose combination order never varies.
+                 *
+                 * Reduces the first @p n elements of @p input into @p output[0] with
+                 * a result that is bit-identical across runs, worker counts, devices
+                 * and steal patterns — the property a replayable simulation needs
+                 * from every accumulation that feeds its state, and the one a
+                 * schedule-driven parallel reduce cannot give.
+                 *
+                 * It works by folding fixed-size tiles: each work-item combines a
+                 * contiguous run of at most 256 values left to right, the partials
+                 * are folded the same way, and that repeats until one value remains.
+                 * Which values meet which therefore depends only on @p n and that
+                 * tile size — never on how the work was scheduled. The intermediate
+                 * levels use scratch this graph allocates and owns, on the same
+                 * device and with the same residency as @p input.
+                 *
+                 * @tparam T       Element type.
+                 * @tparam Combine Binary functor; must be trivially copyable so it can
+                 *                 be captured into a device kernel.
+                 * @param input    Values to reduce; must hold at least @p n elements.
+                 * @param output   Destination; element 0 receives the result.
+                 * @param n        Number of leading elements of @p input to reduce.
+                 * @param op       The combiner, e.g. Sum<float>{}.
+                 * @param identity Result when @p n is zero; never enters the
+                 *                 arithmetic otherwise.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException If @p n exceeds @p input's size, if
+                 *         @p output is empty, or if scratch cannot be allocated.
+                 */
+                template <typename T, class Combine>
+                Graph& add_reduce(const Buffer<T>& input, const Buffer<T>& output,
+                                  std::size_t n, Combine op, T identity)
+                {
+                    if (n > input.size())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_reduce: n (" + std::to_string(n) +
+                            ") exceeds the input buffer's size (" +
+                            std::to_string(input.size()) + ")."});
+                    if (output.size() == 0)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_reduce: the output buffer holds no elements."});
+
+                    T* out_base = output.data();
+                    if (n == 0)
+                    {
+                        // Nothing to fold: the identity is the whole answer. Still a
+                        // real node, so downstream readers order after it as usual.
+                        return add(Reads(), Writes(output), std::size_t{1},
+                                   [out_base, identity](std::size_t)
+                                   {
+                                       out_base[0] = identity;
+                                   });
+                    }
+
+                    const std::vector<detail::ReduceLevel> levels = detail::plan_reduction(n);
+                    const std::size_t scratch_count = detail::reduce_scratch_count(levels);
+
+                    T* scratch = nullptr;
+                    if (scratch_count != 0)
+                    {
+                        std::shared_ptr<T> owned = detail::make_reduce_scratch<T>(
+                            ctx_, scratch_count, input.device_index(), input.residency());
+                        scratch = owned.get();
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(owned));
+                    }
+
+                    const T* in_base = input.data();
+                    void* scratch_key = static_cast<void*>(scratch);
+                    constexpr std::size_t tile = detail::REDUCE_TILE;
+
+                    for (std::size_t i = 0; i < levels.size(); ++i)
+                    {
+                        const detail::ReduceLevel& level = levels[i];
+                        const bool first = (i == 0);
+                        const bool last  = (i + 1 == levels.size());
+
+                        const T* src = first ? in_base : (scratch + level.in_offset);
+                        T* dst = last ? out_base : (scratch + level.out_offset);
+                        const std::size_t in_count = level.in_count;
+
+                        const Reads reads = first
+                            ? Reads(input)
+                            : Reads(Core::ResourceRegion{scratch_key,
+                                                         level.in_offset * sizeof(T),
+                                                         level.in_count * sizeof(T)});
+                        const Writes writes = last
+                            ? Writes(output)
+                            : Writes(Core::ResourceRegion{scratch_key,
+                                                          level.out_offset * sizeof(T),
+                                                          level.out_count * sizeof(T)});
+
+                        add(reads, writes, level.out_count,
+                            [src, dst, in_count, op](std::size_t t)
+                            {
+                                const std::size_t begin = t * tile;
+                                std::size_t end = begin + tile;
+                                if (end > in_count) end = in_count;
+                                dst[t] = detail::fold_tile(op, src, begin, end);
+                            });
+                    }
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds a fixed-order reduction using the combiner's identity.
+                 *
+                 * The shorthand for the built-in combiners (Sum, Minimum, Maximum),
+                 * which each declare the value their reduction produces over no
+                 * elements. A combiner without a static identity() — a lambda, say —
+                 * must use the overload that takes the identity explicitly.
+                 *
+                 * @tparam T       Element type.
+                 * @tparam Combine Binary functor exposing a static identity().
+                 * @param input  Values to reduce; must hold at least @p n elements.
+                 * @param output Destination; element 0 receives the result.
+                 * @param n      Number of leading elements of @p input to reduce.
+                 * @param op     The combiner, e.g. Sum<float>{}.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException As the five-argument overload.
+                 */
+                template <typename T, class Combine>
+                Graph& add_reduce(const Buffer<T>& input, const Buffer<T>& output,
+                                  std::size_t n, Combine op)
+                {
+                    return add_reduce(input, output, n, op, Combine::identity());
+                }
+
+                /**
+                 * @brief Reduces each segment of a ragged array, in a fixed order.
+                 *
+                 * The scatter-accumulate shape a simulation actually needs: per-body
+                 * contact impulses, per-vertex contributions from the elements
+                 * sharing that vertex. @p segment_offsets is the usual CSR-style
+                 * boundary array of @p segment_count + 1 entries, so segment s covers
+                 * values [offsets[s], offsets[s+1]) and @p output[s] receives its
+                 * fold.
+                 *
+                 * One work-item per segment folds that segment left to right, so
+                 * there are no atomics and no cross-work-item combining and the
+                 * result is reproducible by construction. The trade-off is load
+                 * balance: a segment of ten thousand values and a segment of one cost
+                 * one work-item each. The caller owns the layout, and determinism is
+                 * the contract, so the imbalance is left visible rather than traded
+                 * away for a split that would break the ordering guarantee.
+                 *
+                 * @tparam T       Element type of the values and the result.
+                 * @tparam Combine Binary functor; must be trivially copyable.
+                 * @param values          The concatenated segment contents.
+                 * @param segment_offsets Boundaries; must hold @p segment_count + 1
+                 *                        entries, non-decreasing, the last no larger
+                 *                        than @p values' size.
+                 * @param output          Destination; must hold @p segment_count entries.
+                 * @param segment_count   Number of segments to reduce.
+                 * @param op              The combiner, e.g. Sum<float>{}.
+                 * @param identity        Result for an empty segment.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException If @p segment_offsets or @p output is
+                 *         too small for @p segment_count.
+                 */
+                template <typename T, class Combine>
+                Graph& add_segmented_reduce(const Buffer<T>& values,
+                                            const Buffer<std::uint32_t>& segment_offsets,
+                                            const Buffer<T>& output,
+                                            std::size_t segment_count,
+                                            Combine op, T identity)
+                {
+                    if (segment_offsets.size() < segment_count + 1)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_segmented_reduce: segment_offsets holds " +
+                            std::to_string(segment_offsets.size()) + " entries but " +
+                            std::to_string(segment_count + 1) + " are required."});
+                    if (output.size() < segment_count)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_segmented_reduce: output holds " +
+                            std::to_string(output.size()) + " entries but " +
+                            std::to_string(segment_count) + " are required."});
+
+                    const T* value_base = values.data();
+                    const std::uint32_t* offset_base = segment_offsets.data();
+                    T* out_base = output.data();
+
+                    return add(Reads(values, segment_offsets), Writes(output), segment_count,
+                               [value_base, offset_base, out_base, op, identity](std::size_t s)
+                               {
+                                   const std::size_t begin = offset_base[s];
+                                   const std::size_t end = offset_base[s + 1];
+                                   out_base[s] = (end > begin)
+                                       ? detail::fold_tile(op, value_base, begin, end)
+                                       : identity;
+                               });
+                }
+
+                /**
+                 * @brief Reduces each segment using the combiner's identity.
+                 *
+                 * The shorthand form; see the overload taking an explicit identity for
+                 * the layout contract and the load-balance trade-off.
+                 *
+                 * @tparam T       Element type of the values and the result.
+                 * @tparam Combine Binary functor exposing a static identity().
+                 * @param values          The concatenated segment contents.
+                 * @param segment_offsets Boundaries; @p segment_count + 1 entries.
+                 * @param output          Destination; @p segment_count entries.
+                 * @param segment_count   Number of segments to reduce.
+                 * @param op              The combiner, e.g. Sum<float>{}.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException As the six-argument overload.
+                 */
+                template <typename T, class Combine>
+                Graph& add_segmented_reduce(const Buffer<T>& values,
+                                            const Buffer<std::uint32_t>& segment_offsets,
+                                            const Buffer<T>& output,
+                                            std::size_t segment_count, Combine op)
+                {
+                    return add_segmented_reduce(values, segment_offsets, output,
+                                                segment_count, op, Combine::identity());
                 }
 
                 /**
@@ -806,6 +1167,89 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Starts one step and returns without waiting for it.
+                 *
+                 * The asynchronous counterpart of run(). The step is handed to the
+                 * worker pool and this returns immediately, so the caller can do
+                 * work that needs no workers — extracting the previous step's state
+                 * for a renderer or an audio system — while this one runs, then
+                 * settle up through the returned handle:
+                 *
+                 * ```cpp
+                 * auto step = simulation.run_async();
+                 * extract_previous_frame();
+                 * Core::RunReport report = step.wait();
+                 * ```
+                 *
+                 * One step only: the multi-step drivers (run(n), run_for, run_until)
+                 * stay synchronous, because their per-step host work has to happen
+                 * between steps and there is nothing for the caller to overlap with
+                 * in the middle of a batch. A step is one tick, which is the
+                 * granularity a frame actually wants.
+                 *
+                 * The handle must not outlive this graph, and its destructor waits
+                 * for the step rather than letting the plan be destroyed underneath
+                 * the workers — see RunHandle.
+                 *
+                 * @return A handle for the step now in flight.
+                 * @throws Core::SushiException If the graph has no tasks, references
+                 *         a freed Buffer/State, the engine does not support
+                 *         asynchronous runs, or a run is already in progress.
+                 */
+                RunHandle<Graph> run_async()
+                {
+                    if (task_count_ == 0)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                                                                "Graph has no tasks to run."});
+                    if (async_step_pending_)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "A step started with run_async() is still in flight; wait "
+                            "on its handle before starting another."});
+                    if (has_dangling_resource())
+                        throw Core::SushiException(Core::Error{Core::Errc::dangling_resource,
+                            "Graph references a Buffer/State freed before the run."});
+
+                    auto& engine = ctx_->get_execution_engine();
+                    if (!engine.supports_asynchronous_run())
+                        throw Core::SushiException(Core::Error{Core::Errc::unsupported,
+                            "The active execution engine does not support run_async()."});
+
+                    using clock = std::chrono::steady_clock;
+                    detail::AsyncRunState state;
+
+                    if (dirty_)
+                    {
+                        const auto compile_started = clock::now();
+                        build_plan();
+                        state.compile_ms = std::chrono::duration<double, std::milli>(
+                            clock::now() - compile_started).count();
+                    }
+
+                    // Same pre-step order as the synchronous driver: point the State
+                    // views at their buffers, clear a previous run's cancellation,
+                    // zero the profiling accumulators, then refresh the late-bound
+                    // controls. Diverging here would make an asynchronous step mean
+                    // something subtly different from a synchronous one.
+                    steps_.resync();
+                    engine.reset_cancellation();
+                    if (ctx_->profiling_enabled())
+                        engine.reset_profiling(plan_);
+
+                    state.before = engine.metrics();
+                    state.device_to_host_before = ctx_->device_to_host_bytes();
+                    state.host_to_device_before = ctx_->host_to_device_bytes();
+                    state.task_count = task_count_;
+
+                    steps_.before_step();
+                    reset_plan_state();
+                    state.started = clock::now();
+                    engine.submit(plan_);
+
+                    async_step_pending_ = true;
+                    return RunHandle<Graph>(this, state);
+                }
+
+                /**
                  * @brief Requests cancellation of an in-progress run, from any thread.
                  *
                  * Safe to call concurrently with a blocking run()/run_for()/run_until()
@@ -845,6 +1289,62 @@ namespace SushiRuntime
                 // reads those same members to build one combined plan.
                 friend class Region;
                 friend class DynamicGraph;
+                // The handle run_async() returns settles the step through the two
+                // private members below, which is the whole of its access.
+                template <class Owner> friend class RunHandle;
+
+                /** @brief The engine a pending asynchronous step is running on. */
+                Execution::IExecutionEngine& async_engine()
+                {
+                    return ctx_->get_execution_engine();
+                }
+
+                /**
+                 * @brief Releases the in-flight marker for a step that ended badly.
+                 *
+                 * A task exception leaves the step over but unsettled: no report, no
+                 * State advance. The graph must still become runnable again, or one
+                 * throwing kernel would permanently refuse every later run.
+                 */
+                void discard_async_step() noexcept { async_step_pending_ = false; }
+
+                /**
+                 * @brief Closes out an asynchronous step once the engine reports done.
+                 *
+                 * The tail of drive_impl's loop body plus its report building, split
+                 * out because those happen in a different call from the submission.
+                 * Advancing every State here — not at submit — is what makes an
+                 * asynchronous step observationally identical to a synchronous one:
+                 * the just-written field becomes current only after the step has
+                 * genuinely finished.
+                 *
+                 * @param state What run_async() recorded when it submitted the step.
+                 * @return The report for the step.
+                 */
+                Core::RunReport finish_async_step(const detail::AsyncRunState& state)
+                {
+                    const auto finished = std::chrono::steady_clock::now();
+                    auto& engine = ctx_->get_execution_engine();
+
+                    async_step_pending_ = false;
+                    steps_.after_step();
+
+                    const auto after = engine.metrics();
+                    auto report = detail::build_run_report(
+                        *ctx_, state.before, after, state.task_count, state.compile_ms,
+                        std::chrono::duration<double, std::milli>(
+                            finished - state.started).count());
+
+                    report.cancelled = engine.is_cancelled();
+                    report.device_to_host_bytes =
+                        ctx_->device_to_host_bytes() - state.device_to_host_before;
+                    report.host_to_device_bytes =
+                        ctx_->host_to_device_bytes() - state.host_to_device_before;
+
+                    if (ctx_->profiling_enabled())
+                        engine.collect_profiling(plan_, report);
+                    return report;
+                }
 
                 explicit Graph(std::shared_ptr<Execution::RuntimeContext> ctx)
                     : ctx_(std::move(ctx))
@@ -872,6 +1372,16 @@ namespace SushiRuntime
                     if (task_count_ == 0)
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "Graph has no tasks to run."});
+                    // Before anything touches the plan. A synchronous run re-arms
+                    // every node's in-degree, so letting one start while an
+                    // asynchronous step is still executing would rewrite the
+                    // scheduling state of the DAG the workers are walking — a much
+                    // worse failure than the engine's own reentrancy rejection,
+                    // which only fires later, after the damage.
+                    if (async_step_pending_)
+                        return Core::make_error(Core::Error{Core::Errc::invalid_graph,
+                            "A step started with run_async() is still in flight; wait "
+                            "on its handle before running this graph again."});
                     if (has_dangling_resource())
                         return Core::make_error(Core::Error{Core::Errc::dangling_resource,
                             "Graph references a Buffer/State freed before the run."});
@@ -1129,12 +1639,93 @@ namespace SushiRuntime
                     return *this;
                 }
 
+                // The half-open element window a late-bound node iterates this step:
+                // where it starts and how many elements it covers. The two are
+                // resolved and validated together, because only their combination
+                // says whether the node stays inside the buffers it was compiled for.
+                struct LiveRange
+                {
+                    std::size_t base = 0;
+                    std::size_t count = 0;
+                };
+
+                // Resolves a late-bound node's iteration window at dispatch. Prefers a
+                // device-written count when one was named, because that is the only
+                // source that can carry a number the device produced earlier in the
+                // same step; otherwise falls back to the step-boundary count (with
+                // USE_BAKED meaning the full compiled capacity). Runs on a worker
+                // thread while the node's command group is being built, which is
+                // after every predecessor's event completed — the reason reading
+                // device-written memory here is sound.
+                static LiveRange resolve_live_range(
+                    const ::SushiRuntime::Graph::LateBindings& lb, std::size_t capacity)
+                {
+                    LiveRange range;
+
+                    range.base = (lb.device_base != nullptr)
+                        ? static_cast<std::size_t>(lb.device_base[lb.device_base_index])
+                        : lb.base.load(std::memory_order_relaxed);
+
+                    if (lb.device_count != nullptr)
+                    {
+                        range.count =
+                            static_cast<std::size_t>(lb.device_count[lb.device_count_index]);
+                    }
+                    else
+                    {
+                        const std::size_t live = lb.count.load(std::memory_order_relaxed);
+                        // USE_BAKED means "the rest of the capacity", which with a
+                        // base means the rest from there, not the whole buffer.
+                        range.count =
+                            (live == ::SushiRuntime::Graph::LateBindings::USE_BAKED)
+                                ? capacity - (range.base < capacity ? range.base : capacity)
+                                : live;
+                    }
+
+                    // The window must fit. Clamping instead would silently drop work
+                    // - exactly the failure these seams exist to prevent - and
+                    // running past the end would corrupt whatever follows.
+                    if (range.base > capacity || range.count > capacity - range.base)
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::invalid_graph,
+                            "A late-bound task's live window starts at " +
+                            std::to_string(range.base) + " and covers " +
+                            std::to_string(range.count) +
+                            " elements, which does not fit the capacity it was "
+                            "compiled for (" + std::to_string(capacity) +
+                            "); size the task's buffers for the worst case."});
+                    return range;
+                }
+
+                // Submits a late-bound node's kernel over its live size. A step with
+                // nothing to do is ordinary (a tick with no contacts), and a
+                // zero-width parallel_for is not portable across SYCL backends, so an
+                // empty count submits an empty kernel instead: the node still
+                // completes and still releases its successors.
+                template <class F>
+                static void submit_live_range(sycl::handler& h, LiveRange range, const F& fn)
+                {
+                    if (range.count == 0)
+                    {
+                        h.single_task([]() {});
+                        return;
+                    }
+                    // The offset is applied here rather than by the caller, so a
+                    // kernel written against absolute indices stays correct whether
+                    // or not its node happens to carry a base.
+                    const std::size_t base = range.base;
+                    h.parallel_for(sycl::range<1>(range.count),
+                                   [fn, base](sycl::id<1> i) { fn(base + i[0]); });
+                }
+
                 // Emits a 1-D per-element task whose iteration size and enablement
-                // are late-bound through a LateBindings block. The kernel reads the
-                // live count at submit (USE_BAKED falls back to capacity), so the
-                // node follows per-step size changes without recompiling; the
-                // scheduler honours the enabled flag. The dependency regions cover
-                // the full capacity, so any live size within it is race-free.
+                // are late-bound through a LateBindings block. The kernel resolves the
+                // live count at submit, so the node follows per-step size changes —
+                // from the host, or from a count a predecessor kernel just wrote —
+                // without recompiling; the scheduler honours the enabled flag. The
+                // dependency regions cover the full capacity, so any live size within
+                // it is race-free, and a device count source adds itself to the reads
+                // so the producer is necessarily a predecessor.
                 template <class F>
                 Graph& emit_dynamic_per_element(Dynamic dyn,
                                                 std::vector<Core::ResourceRegion> reads,
@@ -1142,25 +1733,56 @@ namespace SushiRuntime
                                                 std::size_t capacity, F&& fn)
                 {
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
+                    adopt_device_bindings(*lb, dyn, reads);
+
                     specs_.push_back([fn = std::forward<F>(fn), capacity, lb,
                                       reads = std::move(reads),
                                       writes = std::move(writes)](BackingGraph& bg)
                     {
                         bg.add_node([fn, capacity, lb](sycl::handler& h)
                         {
-                            const std::size_t live =
-                                lb->count.load(std::memory_order_relaxed);
-                            const std::size_t n =
-                                live == ::SushiRuntime::Graph::LateBindings::USE_BAKED
-                                    ? capacity : live;
-                            h.parallel_for(sycl::range<1>(n),
-                                           [fn](sycl::id<1> i) { fn(i[0]); });
+                            submit_live_range(h, resolve_live_range(*lb, capacity), fn);
                         }, reads, writes, lb);
                     });
                     steps_.register_binding_updater(lb, std::move(dyn));
                     ++task_count_;
                     dirty_ = true;
                     return *this;
+                }
+
+                // Copies a Dynamic's device count source onto the node's bindings and
+                // registers that slot as a read. Doing the registration here rather
+                // than asking the caller for it is what makes "the producer runs
+                // first" a property of the graph instead of a documented convention:
+                // the read region orders this node behind whoever writes the count.
+                static void adopt_device_bindings(::SushiRuntime::Graph::LateBindings& lb,
+                                                  const Dynamic& dyn,
+                                                  std::vector<Core::ResourceRegion>& reads)
+                {
+                    if (dyn.device_count != nullptr)
+                    {
+                        lb.device_count = dyn.device_count;
+                        lb.device_count_index = dyn.device_count_index;
+                        register_device_slot(dyn.device_count, dyn.device_count_index, reads);
+                    }
+                    if (dyn.device_base != nullptr)
+                    {
+                        lb.device_base = dyn.device_base;
+                        lb.device_base_index = dyn.device_base_index;
+                        register_device_slot(dyn.device_base, dyn.device_base_index, reads);
+                    }
+                }
+
+                // Names one four-byte slot as a read of the node that will consume it.
+                // Just the one element, not the whole buffer, so two nodes reading
+                // different slots out of one buffer stay unordered against each other.
+                static void register_device_slot(const std::uint32_t* slot, std::size_t index,
+                                                 std::vector<Core::ResourceRegion>& reads)
+                {
+                    reads.push_back(Core::ResourceRegion{
+                        const_cast<void*>(static_cast<const void*>(slot)),
+                        index * sizeof(std::uint32_t),
+                        sizeof(std::uint32_t)});
                 }
 
                 // Emits a 1-D State update rule with late-bound size and enablement.
@@ -1175,21 +1797,27 @@ namespace SushiRuntime
                     State<T>* sp = &s;
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
 
-                    specs_.push_back([fn = std::forward<F>(fn), view, sp, lb](BackingGraph& bg)
+                    std::vector<Core::ResourceRegion> reads{ s.read_key() };
+                    adopt_device_bindings(*lb, dyn, reads);
+
+                    specs_.push_back([fn = std::forward<F>(fn), view, sp, lb,
+                                      reads = std::move(reads)](BackingGraph& bg)
                     {
                         const std::size_t capacity = sp->size();
                         bg.add_node([fn, view, lb, capacity](sycl::handler& h)
                         {
                             const T* cur = view->cur;
                             T* next = view->next;
-                            const std::size_t live =
-                                lb->count.load(std::memory_order_relaxed);
-                            const std::size_t n =
-                                live == ::SushiRuntime::Graph::LateBindings::USE_BAKED
-                                    ? capacity : live;
-                            h.parallel_for(sycl::range<1>(n),
-                                           [=](sycl::id<1> i) { fn(i[0], cur, next); });
-                        }, { sp->read_key() }, { sp->write_key() }, lb);
+                            const LiveRange range = resolve_live_range(*lb, capacity);
+                            if (range.count == 0)
+                            {
+                                h.single_task([]() {});
+                                return;
+                            }
+                            const std::size_t base = range.base;
+                            h.parallel_for(sycl::range<1>(range.count),
+                                           [=](sycl::id<1> i) { fn(base + i[0], cur, next); });
+                        }, reads, { sp->write_key() }, lb);
                     });
 
                     steps_.register_advance(s, view);
@@ -1267,6 +1895,12 @@ namespace SushiRuntime
                 // rebuild and recompile when mutated.
                 std::vector<std::function<void(BackingGraph&)>> specs_;
 
+                // USM scratch owned by the reduction tasks recorded on this graph.
+                // Allocated when the task is recorded, not when the plan compiles, so
+                // the pointer its kernels captured stays valid across a recompile and
+                // across the DynamicGraph composer rebuilding a region from its specs.
+                std::vector<std::shared_ptr<void>> reduce_scratch_;
+
                 // Liveness observers of every typed handle the recorded tasks touch.
                 // Checked once per run to catch a Buffer/State freed before the graph
                 // ran. Empty for a graph built only from raw-pointer overloads.
@@ -1279,6 +1913,11 @@ namespace SushiRuntime
                 detail::StepMachinery steps_;
 
                 std::size_t task_count_ = 0;
+
+                // True between run_async() and the settling of its handle. Guards
+                // the plan against a second run re-arming nodes the workers are
+                // still walking; see drive().
+                bool async_step_pending_ = false;
 
                 // Number of times the backing graph has been compiled. A late-bound
                 // graph proves its value by holding this at 1 across a multi-step run

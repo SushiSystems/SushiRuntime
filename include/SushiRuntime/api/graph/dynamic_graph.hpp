@@ -37,6 +37,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/graph/region.hpp>
+#include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -73,6 +74,14 @@ namespace SushiRuntime
          * stays parallel (no edge between two regions that only read the same
          * buffer); only true RAW/WAR/WAW hazards across regions are serialized.
          * Tasks within one region keep their add() order.
+         *
+         * Sharing is decided on **byte intervals, not allocations**. Two regions that
+         * touch disjoint element ranges of one buffer gain no edge, which is what
+         * makes one-region-per-simulation-island viable: islands are disjoint index
+         * ranges of a shared entity column, not separate allocations, so an
+         * allocation-granular boundary would serialize islands that never meet. Name
+         * a slice with Buffer::region({offset, count}) and pass it to
+         * Reads(...)/Writes(...) exactly as within one graph.
          *
          * Obtain one from Runtime::dynamic_graph(). Moveable, not copyable.
          */
@@ -220,8 +229,135 @@ namespace SushiRuntime
                  */
                 void cancel() { ctx_->get_execution_engine().cancel(); }
 
+                /**
+                 * @brief Starts one step and returns without waiting for it.
+                 *
+                 * Mirrors Graph::run_async(): the step goes to the worker pool and
+                 * this returns, so the caller can extract the previous step's state
+                 * while this one runs and then settle up through the handle. Any
+                 * pending structural change (a region added or dropped) is committed
+                 * before the step is submitted, exactly as a synchronous run does.
+                 *
+                 * The handle must not outlive this graph, and its destructor waits
+                 * for the step rather than letting the plan be destroyed underneath
+                 * the workers - see RunHandle.
+                 *
+                 * @return A handle for the step now in flight.
+                 * @throws Core::SushiException If there are no regions or no runnable
+                 *         tasks, a region references a freed Buffer/State, the engine
+                 *         does not support asynchronous runs, or a run is already in
+                 *         progress.
+                 */
+                RunHandle<DynamicGraph> run_async()
+                {
+                    if (regions_.empty())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "DynamicGraph has no regions to run."});
+                    if (async_step_pending_)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "A step started with run_async() is still in flight; wait "
+                            "on its handle before starting another."});
+                    for (const auto& kv : regions_)
+                        if (static_cast<const Graph&>(*kv.second).has_dangling_resource())
+                            throw Core::SushiException(Core::Error{Core::Errc::dangling_resource,
+                                "DynamicGraph region references a Buffer/State freed "
+                                "before the run."});
+
+                    auto& engine = ctx_->get_execution_engine();
+                    if (!engine.supports_asynchronous_run())
+                        throw Core::SushiException(Core::Error{Core::Errc::unsupported,
+                            "The active execution engine does not support run_async()."});
+
+                    using clock = std::chrono::steady_clock;
+                    detail::AsyncRunState state;
+
+                    if (needs_commit())
+                    {
+                        const auto compose_started = clock::now();
+                        commit();
+                        state.compile_ms = std::chrono::duration<double, std::milli>(
+                            clock::now() - compose_started).count();
+                    }
+
+                    if (plan_.roots.empty())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                                                              "DynamicGraph has no runnable tasks."});
+
+                    refresh_updaters();
+                    steps_.resync();
+                    engine.reset_cancellation();
+                    if (ctx_->profiling_enabled())
+                        engine.reset_profiling(plan_);
+
+                    state.before = engine.metrics();
+                    state.device_to_host_before = ctx_->device_to_host_bytes();
+                    state.host_to_device_before = ctx_->host_to_device_bytes();
+                    state.task_count = size();
+
+                    steps_.before_step();
+                    rearm();
+                    state.started = clock::now();
+                    engine.submit(plan_);
+
+                    async_step_pending_ = true;
+                    return RunHandle<DynamicGraph>(this, state);
+                }
+
             private:
                 friend class Runtime;
+                // The handle run_async() returns settles the step through the two
+                // private members below, which is the whole of its access.
+                template <class Owner> friend class RunHandle;
+
+                /** @brief The engine a pending asynchronous step is running on. */
+                Execution::IExecutionEngine& async_engine()
+                {
+                    return ctx_->get_execution_engine();
+                }
+
+                /**
+                 * @brief Releases the in-flight marker for a step that ended badly.
+                 *
+                 * See Graph::discard_async_step: a task exception must not leave the
+                 * graph permanently refusing to run.
+                 */
+                void discard_async_step() noexcept { async_step_pending_ = false; }
+
+                /**
+                 * @brief Closes out an asynchronous step once the engine reports done.
+                 *
+                 * The counterpart of Graph::finish_async_step for the composed plan:
+                 * every live region's States advance here, after the step genuinely
+                 * finished, so an asynchronous step is observationally identical to a
+                 * synchronous one.
+                 *
+                 * @param state What run_async() recorded when it submitted the step.
+                 * @return The report for the step.
+                 */
+                Core::RunReport finish_async_step(const detail::AsyncRunState& state)
+                {
+                    const auto finished = std::chrono::steady_clock::now();
+                    auto& engine = ctx_->get_execution_engine();
+
+                    async_step_pending_ = false;
+                    steps_.after_step();
+
+                    const auto after = engine.metrics();
+                    auto report = detail::build_run_report(
+                        *ctx_, state.before, after, state.task_count, state.compile_ms,
+                        std::chrono::duration<double, std::milli>(
+                            finished - state.started).count());
+
+                    report.cancelled = engine.is_cancelled();
+                    report.device_to_host_bytes =
+                        ctx_->device_to_host_bytes() - state.device_to_host_before;
+                    report.host_to_device_bytes =
+                        ctx_->host_to_device_bytes() - state.host_to_device_before;
+
+                    if (ctx_->profiling_enabled())
+                        engine.collect_profiling(plan_, report);
+                    return report;
+                }
 
                 using Node = ::SushiRuntime::Graph::Node;
                 using Base = ::SushiRuntime::Core::ResourceId;  // allocation identity (void*)
@@ -244,20 +380,39 @@ namespace SushiRuntime
                 // and per-step updater vectors).
                 static Graph& as_graph(Region& r) noexcept { return static_cast<Graph&>(r); }
 
+                // One node's participation in a base's boundary, with the exact byte
+                // intervals it touches. Carrying the intervals — rather than just the
+                // node — is what lets two regions writing disjoint slices of one
+                // allocation stay parallel, which is the whole point of mapping one
+                // region to one simulation island: islands are index ranges of a
+                // shared column, not separate allocations.
+                struct Pin
+                {
+                    Node* node = nullptr;
+                    std::vector<Core::ResourceRegion> reads;
+                    std::vector<Core::ResourceRegion> writes;
+                };
+
+                // A boundary pin reduced to one hazard's intervals, threaded through
+                // rewire_base as it walks the regions sharing a base.
+                struct BoundaryPin
+                {
+                    Node* node = nullptr;
+                    std::vector<Core::ResourceRegion> regions;
+                };
+
                 // The boundary access summary of one region for one shared allocation.
                 // Computed once when the region is built and consulted (read-only) by
                 // the cross-region wiring of every base the region shares. Entry pins
                 // receive incoming cross-region edges; exit pins are the sources for
-                // the next region's edges. Splitting read from write keeps two regions
-                // that only read the same buffer parallel.
+                // the next region's edges. Each pin carries both its read and its
+                // write intervals, so the wiring can apply the right hazard rule
+                // (RAW/WAW/WAR) to the right bytes — and two regions that only read
+                // the same buffer still never gain an edge.
                 struct BaseAccess
                 {
-                    std::vector<Node*> entry_read;   // first touchers that only read (RAW targets)
-                    std::vector<Node*> entry_write;  // first touchers that write (WAW/WAR targets)
-                    std::vector<Node*> exit_write;    // last writers (RAW/WAW sources)
-                    std::vector<Node*> exit_read;     // last reads not shadowed by a later write (WAR sources)
-                    bool writes = false;
-                    bool reads  = false;
+                    std::vector<Pin> entry;  // no intra predecessor overlapping this base
+                    std::vector<Pin> exit;   // accesses not shadowed by an intra successor's write
                 };
 
                 // The cached compiled sub-graph of one region: its nodes (intra edges
@@ -345,13 +500,61 @@ namespace SushiRuntime
                         link_sentinel(from);
                 }
 
+                // True when any interval in @p a intersects any interval in @p b.
+                static bool overlaps_any(const std::vector<Core::ResourceRegion>& a,
+                                         const std::vector<Core::ResourceRegion>& b)
+                {
+                    for (const auto& x : a)
+                        for (const auto& y : b)
+                            if (x.overlaps(y))
+                                return true;
+                    return false;
+                }
+
+                // True when one interval in @p covers fully contains @p r, so every
+                // byte of @p r is rewritten and any access to it is transitively
+                // ordered behind that writer.
+                static bool covered_by_any(const Core::ResourceRegion& r,
+                                           const std::vector<Core::ResourceRegion>& covers)
+                {
+                    for (const auto& c : covers)
+                        if (c.contains(r))
+                            return true;
+                    return false;
+                }
+
+                // Drops from @p pins every interval a later write fully covers, and
+                // the pin itself once nothing of it is left live. Retiring only fully
+                // covered intervals is deliberately conservative: a partially
+                // overwritten pin stays live, which can only add a cross edge, never
+                // drop one. The whole boundary layer errs that way — an extra edge
+                // costs parallelism, a missing one is a data race.
+                static void retire_covered(std::vector<BoundaryPin>& pins,
+                                           const std::vector<Core::ResourceRegion>& covers)
+                {
+                    for (auto it = pins.begin(); it != pins.end(); )
+                    {
+                        auto& regions = it->regions;
+                        regions.erase(std::remove_if(regions.begin(), regions.end(),
+                            [&covers](const Core::ResourceRegion& r)
+                            {
+                                return covered_by_any(r, covers);
+                            }), regions.end());
+
+                        if (regions.empty()) it = pins.erase(it);
+                        else                 ++it;
+                    }
+                }
+
                 // (Re)derives the cross-region edges for one shared allocation. Self
                 // contained: it first un-wires the base's current edges, then walks
-                // the regions touching it in ascending key order, threading the
-                // producer (last writer) and the pending readers through so RAW/WAR/WAW
-                // are honoured and read/read stays parallel. A base whose endpoints
-                // include a torn-down node is un-wired earlier (while those nodes are
-                // still alive); the undo here is then a no-op on an empty list.
+                // the regions touching it in ascending key order, threading the live
+                // writers and the pending readers through so RAW/WAR/WAW are honoured
+                // and read/read stays parallel. Every hazard test compares byte
+                // intervals, so two regions touching disjoint slices of one allocation
+                // gain no edge at all. A base whose endpoints include a torn-down node
+                // is un-wired earlier (while those nodes are still alive); the undo
+                // here is then a no-op on an empty list.
                 void rewire_base(Base b)
                 {
                     auto eit = base_edges_.find(b);
@@ -366,8 +569,12 @@ namespace SushiRuntime
                     if (rit == base_regions_.end() || rit->second.size() < 2)
                         return;  // not shared: nothing crosses a boundary
 
-                    std::vector<Node*> last_writer;   // exit writers of the most recent writing region
-                    std::vector<Node*> pending_read;  // exit readers accumulated since that writer
+                    // Writes no later region has fully overwritten yet, and reads no
+                    // later region has overwritten yet. Both accumulate rather than
+                    // being replaced wholesale, because a region that writes one slice
+                    // does not shadow an earlier writer of a different slice.
+                    std::vector<BoundaryPin> live_writers;
+                    std::vector<BoundaryPin> pending_reads;
 
                     for (RegionKey k : rit->second)   // std::set: ascending key = producer first
                     {
@@ -377,30 +584,36 @@ namespace SushiRuntime
                         if (ait == sit->second.access.end()) continue;
                         const BaseAccess& a = ait->second;
 
-                        if (a.reads)
-                            for (Node* w : last_writer)
-                                for (Node* r : a.entry_read)
-                                    add_cross_edge(w, r, b);   // RAW
-
-                        if (a.writes)
+                        for (const Pin& in : a.entry)
                         {
-                            for (Node* w : last_writer)
-                                for (Node* d : a.entry_write)
-                                    add_cross_edge(w, d, b);   // WAW
-                            for (Node* rr : pending_read)
-                                for (Node* d : a.entry_write)
-                                    add_cross_edge(rr, d, b);  // WAR
+                            // RAW and WAW share a source (an earlier write) and differ
+                            // only in what the consumer does with those bytes, so one
+                            // edge per (producer, consumer) pair covers both.
+                            for (const BoundaryPin& w : live_writers)
+                                if (overlaps_any(w.regions, in.reads) ||
+                                    overlaps_any(w.regions, in.writes))
+                                    add_cross_edge(w.node, in.node, b);
+
+                            if (!in.writes.empty())
+                                for (const BoundaryPin& r : pending_reads)
+                                    if (overlaps_any(r.regions, in.writes))
+                                        add_cross_edge(r.node, in.node, b);   // WAR
                         }
 
-                        if (a.writes)
+                        std::vector<Core::ResourceRegion> covering;
+                        for (const Pin& e : a.exit)
+                            covering.insert(covering.end(), e.writes.begin(), e.writes.end());
+
+                        if (!covering.empty())
                         {
-                            last_writer = a.exit_write;       // new producer
-                            pending_read = a.exit_read;       // its own unshadowed reads
+                            retire_covered(live_writers, covering);
+                            retire_covered(pending_reads, covering);
                         }
-                        else if (a.reads)
+
+                        for (const Pin& e : a.exit)
                         {
-                            pending_read.insert(pending_read.end(),
-                                                a.exit_read.begin(), a.exit_read.end());
+                            if (!e.writes.empty()) live_writers.push_back({ e.node, e.writes });
+                            if (!e.reads.empty())  pending_reads.push_back({ e.node, e.reads });
                         }
                     }
                 }
@@ -441,20 +654,31 @@ namespace SushiRuntime
 
                 // Fills a region's per-base boundary summary. For each allocation the
                 // region touches it classifies the region's accessor nodes into entry
-                // pins (no intra predecessor also touching the base) and exit pins (no
-                // intra successor that writes the base), split by read vs write.
+                // pins (no intra predecessor touching an OVERLAPPING range of the
+                // base) and exit pins (whatever an intra successor's write does not
+                // fully cover), keeping each pin's exact byte intervals.
+                //
+                // Both classifications test overlap rather than base equality, and
+                // both err toward keeping a pin: a node wrongly excluded from entry
+                // would lose an incoming edge, and one wrongly treated as shadowed
+                // would lose an outgoing edge — either is a data race, while an extra
+                // pin only costs an edge.
                 void compute_access(RegionState& st)
                 {
-                    struct Acc { bool reads = false; bool writes = false; };
+                    struct Acc
+                    {
+                        std::vector<Core::ResourceRegion> reads;
+                        std::vector<Core::ResourceRegion> writes;
+                    };
                     std::map<Base, std::unordered_map<Node*, Acc>> per_base;
 
                     for (auto& np : st.nodes)
                     {
                         Node* n = np.get();
                         for (const auto& r : n->io_reads_)
-                            if (r.base) per_base[r.base][n].reads = true;
+                            if (r.base) per_base[r.base][n].reads.push_back(r);
                         for (const auto& w : n->io_writes_)
-                            if (w.base) per_base[w.base][n].writes = true;
+                            if (w.base) per_base[w.base][n].writes.push_back(w);
                     }
 
                     for (auto& bm : per_base)
@@ -462,38 +686,59 @@ namespace SushiRuntime
                         const Base b = bm.first;
                         auto& m = bm.second;   // node -> Acc for this base
 
-                        std::unordered_set<Node*> has_base_pred;       // has an intra pred touching b
-                        std::unordered_set<Node*> has_writing_succ;    // has an intra succ that writes b
+                        // Nodes with an intra predecessor overlapping them on b, and
+                        // per node the intra successors' writes that may shadow it.
+                        std::unordered_set<Node*> has_overlapping_pred;
+                        std::unordered_map<Node*, std::vector<Core::ResourceRegion>> shadowing;
 
                         for (auto& nm : m)
                         {
                             Node* n = nm.first;
+                            const Acc& n_acc = nm.second;
                             for_each_intra_successor(n, [&](Node* s)
                             {
                                 auto f = m.find(s);
                                 if (f == m.end()) return;   // successor does not touch b
-                                has_base_pred.insert(s);
-                                if (f->second.writes) has_writing_succ.insert(n);
+                                const Acc& s_acc = f->second;
+
+                                if (overlaps_any(n_acc.reads,  s_acc.reads)  ||
+                                    overlaps_any(n_acc.reads,  s_acc.writes) ||
+                                    overlaps_any(n_acc.writes, s_acc.reads)  ||
+                                    overlaps_any(n_acc.writes, s_acc.writes))
+                                    has_overlapping_pred.insert(s);
+
+                                if (!s_acc.writes.empty())
+                                {
+                                    auto& v = shadowing[n];
+                                    v.insert(v.end(), s_acc.writes.begin(), s_acc.writes.end());
+                                }
                             });
                         }
+
+                        const std::vector<Core::ResourceRegion> nothing_shadows;
 
                         BaseAccess ba;
                         for (auto& nm : m)
                         {
                             Node* n = nm.first;
-                            const Acc acc = nm.second;
-                            ba.reads  |= acc.reads;
-                            ba.writes |= acc.writes;
+                            const Acc& acc = nm.second;
 
-                            const bool entry = has_base_pred.find(n) == has_base_pred.end();
-                            if (entry)
-                            {
-                                if (acc.writes)     ba.entry_write.push_back(n);
-                                else if (acc.reads) ba.entry_read.push_back(n);
-                            }
-                            const bool shadowed = has_writing_succ.find(n) != has_writing_succ.end();
-                            if (acc.writes && !shadowed) ba.exit_write.push_back(n);
-                            if (acc.reads  && !shadowed) ba.exit_read.push_back(n);
+                            if (has_overlapping_pred.find(n) == has_overlapping_pred.end())
+                                ba.entry.push_back(Pin{ n, acc.reads, acc.writes });
+
+                            auto sit = shadowing.find(n);
+                            const std::vector<Core::ResourceRegion>& covers =
+                                (sit == shadowing.end()) ? nothing_shadows : sit->second;
+
+                            Pin ex;
+                            ex.node = n;
+                            for (const auto& w : acc.writes)
+                                if (!covered_by_any(w, covers)) ex.writes.push_back(w);
+                            for (const auto& r : acc.reads)
+                                if (!covered_by_any(r, covers)) ex.reads.push_back(r);
+
+                            if (!ex.writes.empty() || !ex.reads.empty())
+                                ba.exit.push_back(std::move(ex));
                         }
                         st.access.emplace(b, std::move(ba));
                     }
@@ -631,6 +876,13 @@ namespace SushiRuntime
                     if (regions_.empty())
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "DynamicGraph has no regions to run."});
+                    // Before anything touches the plan: rearm() rewrites every
+                    // node's in-degree, which would corrupt a step the workers are
+                    // still executing. See Graph::drive().
+                    if (async_step_pending_)
+                        return Core::make_error(Core::Error{Core::Errc::invalid_graph,
+                            "A step started with run_async() is still in flight; wait "
+                            "on its handle before running this graph again."});
                     for (const auto& kv : regions_)
                         if (static_cast<const Graph&>(*kv.second).has_dangling_resource())
                             return Core::make_error(Core::Error{Core::Errc::dangling_resource,
@@ -770,6 +1022,10 @@ namespace SushiRuntime
                 detail::StepMachinery steps_;
 
                 Execution::CompiledGraph plan_;
+
+                // True between run_async() and the settling of its handle; see
+                // Graph::async_step_pending_.
+                bool async_step_pending_ = false;
                 std::size_t compiles_ = 0;
                 std::size_t plan_index_counter_ = 0;
                 bool committed_once_ = false;

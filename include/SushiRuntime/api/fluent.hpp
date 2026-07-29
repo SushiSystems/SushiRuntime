@@ -31,8 +31,10 @@
  * the single public include that pulls them together:
  *   - data/        the data handles (Buffer, State)
  *   - launch/      the iteration geometry (Extent, NdRange)
- *   - vocabulary/  the data-flow DSL (Reads/Writes, In/Out/InOut, Dynamic)
- *   - graph/       the chainable builders (Graph, Region, DynamicGraph)
+ *   - vocabulary/  the data-flow DSL (Reads/Writes, In/Out/InOut, Dynamic) and
+ *                  the reduction combiners (Sum, Minimum, Maximum)
+ *   - graph/       the chainable builders (Graph, Region, DynamicGraph) and
+ *                  RunHandle, the receipt for a step started asynchronously
  *   - runtime/     the Runtime entry point, RuntimeConfig, and the Cluster handle
  *   - detail/      callable traits, the per-step StepMachinery, report building
  */
@@ -43,9 +45,11 @@
 #include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>
+#include <SushiRuntime/api/vocabulary/combine.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/graph/region.hpp>
+#include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/graph/dynamic_graph.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/api/runtime/cluster.hpp>
@@ -61,6 +65,7 @@ namespace SushiRuntime
     // own promotions in their leaf headers.
     using API::Runtime;
     using API::RuntimeConfig;
+    using API::RunHandle;
     using API::Reads;
     using API::Writes;
     using API::In;
