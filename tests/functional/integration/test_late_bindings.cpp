@@ -27,6 +27,7 @@
 // numerical result and Graph::compile_count() == 1.
 
 #include <cstddef>
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <SushiRuntime/SushiRuntime.h>
 
@@ -199,4 +200,152 @@ TEST(Integration_LateBindings, ComposedWhenAndSized)
 
     EXPECT_EQ(g.compile_count(), 1u);
     EXPECT_EQ(buf[0], expected0);
+}
+
+
+// based_at() moves where a late-bound node starts, without recompiling. This is
+// the graph-colouring shape: each colour is a contiguous slice of one constraint
+// buffer and every slice shifts as constraints are added or removed. The callable
+// still receives ABSOLUTE indices, so a kernel written without knowing about
+// bases stays correct.
+TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
+{
+    constexpr std::size_t CAPACITY = 64;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(CAPACITY);
+    int* p = buf.data();
+
+    std::size_t base = 0;
+    std::size_t count = 0;
+
+    auto g = rt.graph();
+    g.add(API::based_at([&base] { return base; })
+              .and_sized([&count] { return count; }),
+          API::Reads{}, API::Writes(buf), CAPACITY,
+          [p](std::size_t i) { p[i] = static_cast<int>(i) + 1000; });
+
+    const std::size_t starts[] = { 0, 8, 40, 63 };
+    const std::size_t lengths[] = { 4, 16, 20, 1 };
+
+    for (std::size_t round = 0; round < 4; ++round)
+    {
+        for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = -1;
+        base = starts[round];
+        count = lengths[round];
+
+        g.run();
+
+        for (std::size_t i = 0; i < CAPACITY; ++i)
+        {
+            const bool inside = (i >= base && i < base + count);
+            if (inside)
+                ASSERT_EQ(buf[i], static_cast<int>(i) + 1000)
+                    << "round " << round << ", element " << i
+                    << " should have run with its absolute index";
+            else
+                ASSERT_EQ(buf[i], -1)
+                    << "round " << round << ", element " << i
+                    << " is outside the window but ran";
+        }
+    }
+
+    EXPECT_EQ(g.compile_count(), 1u) << "moving the window must not recompile";
+}
+
+// A base with no size runs from there to the end of the capacity, not over the
+// whole buffer — the sentinel means "the rest", and with an offset the rest
+// starts at the offset.
+TEST(Integration_LateBindings, BaseWithoutASizeRunsToTheEnd)
+{
+    constexpr std::size_t CAPACITY = 32;
+    constexpr std::size_t BASE = 12;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(CAPACITY);
+    int* p = buf.data();
+    for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = 0;
+
+    auto g = rt.graph();
+    g.add(API::based_at([] { return BASE; }),
+          API::Reads{}, API::Writes(buf), CAPACITY,
+          [p](std::size_t i) { p[i] = 1; });
+    g.run();
+
+    for (std::size_t i = 0; i < BASE; ++i)
+        ASSERT_EQ(buf[i], 0) << "at i=" << i;
+    for (std::size_t i = BASE; i < CAPACITY; ++i)
+        ASSERT_EQ(buf[i], 1) << "at i=" << i;
+}
+
+// based_at_device() takes the offset from a slot a predecessor wrote, so a
+// colouring pass that computes both a slice's start and its length on the device
+// can hand over both the same way. The slot is registered as a read, so the
+// producer is ordered first without the caller naming it.
+TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
+{
+    constexpr std::size_t CAPACITY = 128;
+
+    auto rt     = Runtime::create();
+    auto slice  = rt.buffer<std::uint32_t>(2);   // [0] = base, [1] = count
+    auto buf    = rt.buffer<int>(CAPACITY);
+
+    std::uint32_t* s = slice.data();
+    int* p = buf.data();
+    for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = -1;
+
+    auto g = rt.graph();
+    g.add(API::Reads{}, API::Writes(slice), std::size_t{1},
+          [s](std::size_t) { s[0] = 30u; s[1] = 25u; });
+    g.add(API::based_at_device(slice, 0).and_sized_from_device(slice.data(), 1),
+          API::Reads{}, API::Writes(buf), CAPACITY,
+          [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.run();
+
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+    {
+        const bool inside = (i >= 30 && i < 55);
+        if (inside)
+            ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
+        else
+            ASSERT_EQ(buf[i], -1) << "at i=" << i;
+    }
+}
+
+// A window that runs off the end of the capacity fails the run, naming what it
+// asked for. Clamping would silently drop the tail of a colour, which is the
+// class of failure these controls exist to make impossible.
+TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
+{
+    constexpr std::size_t CAPACITY = 16;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(CAPACITY);
+    int* p = buf.data();
+
+    std::size_t base = 10;
+
+    auto g = rt.graph();
+    g.add(API::based_at([&base] { return base; }).and_sized([] { return std::size_t{10}; }),
+          API::Reads{}, API::Writes(buf), CAPACITY,
+          [p](std::size_t i) { p[i] = 1; });
+
+    EXPECT_THROW(g.run(), SushiException) << "10 elements from index 10 does not fit 16";
+
+    // A window that does fit runs normally: the rejection wedged nothing.
+    base = 6;
+    EXPECT_NO_THROW(g.run());
+}
+
+// based_at_device rejects a slot it could not read at dispatch, at the call site
+// rather than mid-run.
+TEST(Integration_LateBindings, BasedAtDeviceRejectsAnUnreadableSlot)
+{
+    auto rt = Runtime::create();
+    auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device);
+    auto shared   = rt.buffer<std::uint32_t>(2);
+
+    EXPECT_THROW(API::based_at_device(resident), SushiException);
+    EXPECT_THROW(API::based_at_device(shared, 7), SushiException);
+    EXPECT_NO_THROW(API::based_at_device(shared, 1));
 }

@@ -22,6 +22,40 @@ from . import discovery
 # collides with ASan's reserved VA) and stays a Release build (so CMakeLists'
 # Debug|RelWithDebInfo auto-TSan block never fires -- TSan and ASan can't coexist).
 ASAN_FLAGS = "-fsanitize=address -fno-omit-frame-pointer -g -O1"
+
+# Windows needs two adjustments the Linux driver does not.
+#
+# -Xarch_host: `-fsycl` compiles every translation unit twice, once for the host
+# and once for the SPIR-V device, and AddressSanitizer exists only for the host.
+# Passed unqualified, the Windows driver reports `-Woption-ignored` for the device
+# pass and the tree's `-Werror` turns that into a failure on the first source
+# file. Scoping the flag to the host pass leaves no diagnostic to suppress —
+# suppressing it would not have worked anyway, since the target-level `-Werror`
+# lands *after* CMAKE_CXX_FLAGS on the command line and re-promotes everything.
+#
+# _DISABLE_*_ANNOTATION: MSVC's STL links `stl_asan.lib` for its container
+# annotations, and that library ships with the Visual Studio "C++ AddressSanitizer"
+# component rather than with the compiler, so a stock Build Tools install does not
+# have it. Turning the annotations off keeps the lane buildable there. The cost is
+# container-overflow detection inside std::string / std::vector; heap overflow,
+# stack overflow, use-after-free and double-free reporting are unaffected.
+ASAN_FLAGS_WINDOWS = (
+    "-Xarch_host -fsanitize=address -fno-omit-frame-pointer -g -O1 "
+    "-D_DISABLE_STRING_ANNOTATION=1 -D_DISABLE_VECTOR_ANNOTATION=1")
+
+# The C driver has no device pass, so it takes the plain form: `-Xarch_host` is
+# only meaningful to an offloading compilation and the tree has no C sources
+# anyway — these flags exist for CMake's compiler probe.
+ASAN_C_FLAGS_WINDOWS = "-fsanitize=address -fno-omit-frame-pointer -g -O1"
+
+# The benchmark binary installs a global operator new/delete replacement to count
+# allocations (tests/benchmark/performance/test_recompose_churn_perf.cpp), which
+# is the same thing AddressSanitizer replaces — on Windows the two collide as a
+# duplicate-symbol link error. Excluding the suite is the right call regardless:
+# ASan's redzones and quarantine make its timings and allocation counts
+# meaningless, so an ASan benchmark run would report numbers nobody should read.
+# The sanitizer lane exists for correctness; the benchmark lane runs uninstrumented.
+ASAN_BENCHMARKS = "OFF"
 STAMP_NAME = ".sushi_dist"
 
 
@@ -315,6 +349,7 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
             f"-DCMAKE_CXX_FLAGS={ASAN_FLAGS}",
             "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address",
             "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address",
+            f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}",
         ]
     if cfg.use_vcpkg and cfg.vcpkg_root:
         vcpkg = cfg.expand(cfg.vcpkg_root)
@@ -353,7 +388,8 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
                             dist: str, asan: bool, tests: bool) -> list[str]:
     vcpkg = cfg.expand(cfg.vcpkg_root)
     triplet = cfg.vcpkg_triplet
-    asan_flags = f" {ASAN_FLAGS}" if asan else ""
+    asan_flags = f" {ASAN_FLAGS_WINDOWS}" if asan else ""
+    asan_c_flags = ASAN_C_FLAGS_WINDOWS if asan else ""
 
     # The compiler is toolchain-specific: intel-llvm -> clang++, oneapi -> icx-cl,
     # adaptivecpp -> acpp. Pass -DSR_SYCL_TOOLCHAIN explicitly so CMakeLists does
@@ -377,6 +413,8 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
         "-DSYCL_LIB_SUFFIX=9",
     ]
+    if asan:
+        args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
     if cfg.rc_exe:
         args.append(f"-DCMAKE_RC_COMPILER={cfg.expand(cfg.rc_exe)}")
     # AdaptiveCpp (acpp) injects its own SYCL flags via add_sycl_to_target; the
@@ -388,7 +426,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
     else:
         args += [
             f"-DCMAKE_CXX_FLAGS=-fsycl{asan_flags}",
-            f"-DCMAKE_C_FLAGS={asan_flags.strip()}",
+            f"-DCMAKE_C_FLAGS={asan_c_flags}",
         ]
     return args
 

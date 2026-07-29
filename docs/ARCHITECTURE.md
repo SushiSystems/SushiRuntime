@@ -101,20 +101,53 @@ do not need to reach into the lower layers.
   (current/next) for stepped workloads. Passing a handle to `add()` registers the
   task's reads and writes automatically.
 
-- **`API::Graph`** — chainable builder. `add()` overloads cover:
-  - `add(n, per_element_fn)` — per-element kernel (receives one index).
-  - `add(n, range_fn)` — range kernel; `fn(0, n, handler)` drives the handler.
-  - `add(raw_kernel_fn)` — raw callback for full control.
+- **`API::Graph`** — chainable builder. Everything spelled `add()` is ordered by
+  the data it names; the shapes whose data cannot be inferred are spelled
+  `add_untracked()` so choosing one is deliberate rather than accidental:
   - `add(state, fn)` — a stepped update rule; `fn(i, cur, next)` reads the
     current field and writes the next, with the dependency tracked.
   - `add(out, in0[, in1], fn)` — a coupled rule reading one or two other fields
     (Jacobi: every read sees the previous step's data).
   - `add(reads, writes, n, fn)` — per-element kernel with explicit access lists.
+  - `add(reads, writes, n, range_fn)` — range kernel; `fn(0, n, handler)` drives
+    the handler itself, ordered by the declared lists.
+  - `add(reads, writes, raw_kernel_fn)` — raw callback for full control, ordered.
+  - `add(reads, writes, extent, fn)` / `add(reads, writes, nd_range, fn)` — the
+    multidimensional and tiled shapes, ordered.
+  - `add(extent, In(a), Out(b), fn)` — captures register the access *and* hand
+    the kernel the raw pointers.
+  - `add_reduce(input, output, n, op[, identity])` — a reduction whose
+    combination order is a function of the element layout alone, so the result
+    is bit-identical across runs, worker counts and steal patterns. It folds
+    fixed 256-element tiles left to right and repeats over the partials; each
+    level is one ordinary tracked node reading the previous level's scratch
+    window. `Sum`, `Minimum` and `Maximum` are provided; any trivially copyable
+    binary functor works.
+  - `add_segmented_reduce(values, segment_offsets, output, count, op[, identity])`
+    — the same guarantee over a CSR-style ragged array, one work-item per
+    segment. No atomics and no cross-work-item combining, at the cost of load
+    balance when segment lengths differ sharply.
+  - `add_untracked(n, fn)` / `add_untracked(n, range_fn)` /
+    `add_untracked(raw_kernel_fn)` / `add_untracked(extent, fn)` /
+    `add_untracked(nd_range, fn)` — the same launch shapes with no declared data.
+    A per-element or raw callable captures its USM pointers by value, so nothing
+    in its type says what it touches and the runtime cannot infer the ordering.
+    These record no regions: the task is both a root and a leaf. Correct for
+    self-contained work, wrong the moment another task shares data with it.
   - `run()` / `run(n)` — compile (once) and replay 1 or `n` steps; returns a
     `RunReport`; throws `SushiException` on error.
   - `run_for(duration)` / `run_until(predicate)` — replay until a wall-clock
     budget elapses or a condition holds.
   - `try_run()` / `try_run(n)` — non-throwing; return `Result<RunReport, Error>`.
+  - `run_async()` — start one step and return without waiting, so the caller can
+    do work that needs no workers (extracting the previous step's state for a
+    renderer or an audio system) while this one runs. Returns a move-only
+    `RunHandle` whose `wait()` finishes the step's lifecycle — the State advance
+    happens there, not at submit — and returns the `RunReport`. Its destructor
+    waits if `wait()` was not called, since the compiled plan must not be
+    destroyed while workers hold pointers into it. One step at a time: starting
+    another while a handle is pending is rejected before anything touches the
+    plan, because re-arming in-degrees under a running DAG would corrupt it.
   - `cancel()` — thread-safe; stops an in-progress run from another thread, the
     run returns with `RunReport::cancelled` set (a clean stop, not an error).
   - `size()` — task count.
@@ -189,13 +222,25 @@ A program's lifecycle is always the same three phases, and they must not overlap
    `CompiledGraph` for each step — resetting node in-degrees between steps — so a
    multi-step run pays the build cost only once.
 
+   `execute()` is literally `submit()` followed by `complete()`: the work is done
+   by the persistent worker pool either way, and the only thing `execute()` adds
+   is the blocking. Splitting the two is what `run_async()` is built on — no extra
+   thread is involved, because there was never a thread to add. `submit()` takes
+   the engine's non-reentrancy flag and `complete()` releases it, including on the
+   path where a task exception is rethrown, so one failing kernel does not close
+   the engine permanently. `IExecutionEngine` reports the capability through
+   `supports_asynchronous_run()` rather than assuming it, so a strategy with no
+   meaningful start/finish split (a dry-run or replay engine) is not forced to
+   fake one.
+
 > **Threading rule:** Phase 1 (`add_node`/`add_task`) and Phase 2 (`compile()`)
 > are **not** thread-safe relative to each other. Build the entire graph, then
 > compile, then execute.
 
-**Late-bound replay.** The compiled plan is static in topology, but two per-node
-properties may change between steps without recompiling: the **iteration size**
-and whether the node **runs at all**. A node may carry a `Graph::LateBindings
+**Late-bound replay.** The compiled plan is static in topology, but three
+per-node properties may change between steps without recompiling: the
+**iteration size**, the **first element** it iterates, and whether the node
+**runs at all**. A node may carry a `Graph::LateBindings
 { enabled, count }` block (a `std::shared_ptr` the fluent layer re-points each
 step); the scheduler skips a disabled node by routing it through the poller as
 instantly complete (its successors still fire, so the DAG drains), and the kernel
@@ -206,6 +251,41 @@ ECS-style graph that spawns/destroys entities or sleeps subsystems per frame
 compiles once — `Graph::compile_count()` stays 1. Bindings may change size/enable
 but **not** which resources a node touches, since that would invalidate the
 dependency edges fixed at compile.
+
+**Counts the device produces.** `sized()` is polled on the driver thread at the
+step boundary, so it can only carry a number the host already knows. A
+producer/consumer chain does not have one: a broadphase writes its pair count
+mid-step and the narrowphase must iterate exactly that many. `LateBindings` there-
+fore also carries a `device_count` pointer — a host-readable slot a predecessor
+kernel writes — set by `API::sized_from_device(counter)`.
+
+This is sound because of *when* a node's command group is built. `execute_task`
+constructs it on a worker at dispatch, and a node is only dispatched once
+`EventPolling::poll_events` has seen every predecessor's event complete and called
+`event.wait()` on it. By that point the predecessor's USM writes are visible, so
+the count can simply be read. The result is one composition per tick with no
+mid-step readback and no launch at worst-case width, and `compile_count()` still
+1 while the count changes every step.
+
+Two constraints are enforced rather than documented: the counter must be shared
+(host-addressable) USM, rejected at the call site otherwise; and a live count
+above the node's compiled capacity fails the run rather than truncating, since
+silently dropping work is the failure this seam exists to prevent. The counter's
+element is registered as one of the consuming task's reads, so the producer is
+necessarily a predecessor — the ordering is structural, not a convention.
+
+**Where the node starts.** `count` says how many elements, `base` says from
+where. Graph colouring is the case that needs it: each colour is a contiguous
+slice of one constraint buffer, and every slice shifts as soon as the constraint
+set changes, so a node pinned to a baked offset has to reach its own work through
+an index-indirection buffer — an extra load per element for something the launch
+can carry for free. `API::based_at(provider)` sets it from the host and
+`API::based_at_device(slot)` from a slot a predecessor wrote, mirroring
+`sized()` / `sized_from_device()` exactly. The runtime applies the offset, so the
+callable still receives absolute indices and a kernel written without knowing
+about bases stays correct. Base and count are resolved and validated **together**
+at dispatch, because only their combination says whether the node stays inside
+the buffers it was compiled for; a window that runs off the end fails the run.
 
 **Dynamic region graph.** Late binding varies size and enablement but keeps a
 fixed topology; a streaming open world also needs the *set* of work to change —
@@ -235,11 +315,23 @@ appear and vanish — so a commit costs O(changed region + affected boundary pin
 and never re-scans the untouched world.
 
 Cross-region edges are derived per shared allocation by walking the regions that
-touch it in ascending key order, threading the producer (last writer) and pending
-readers through so RAW/WAR/WAW are honoured while two regions that only read the
-same buffer stay parallel. A region's boundary interface is the entry pins (first
-touchers, which receive incoming edges) and exit pins (last writers/reads, which
-source the next region's edges), computed once per region build. The lower-keyed
+touch it in ascending key order, threading the live writers and pending readers
+through so RAW/WAR/WAW are honoured while two regions that only read the same
+buffer stay parallel. A region's boundary interface is the entry pins (first
+touchers, which receive incoming edges) and exit pins (unshadowed writes/reads,
+which source the next region's edges), computed once per region build.
+
+Each pin carries the **byte intervals** it touches, and every hazard test is an
+interval overlap, so two regions writing disjoint element ranges of one
+allocation gain no edge at all. That is what makes one-region-per-simulation-
+island viable: islands are disjoint index ranges of a shared entity column rather
+than separate allocations, so an allocation-granular boundary would serialize
+islands that never meet — and per-island allocations would cost a copy on every
+island merge and split. Where interval arithmetic would get expensive the layer
+rounds toward keeping a pin live (a writer is retired only when one later write
+interval fully contains it, and a node counts as an entry pin unless an intra
+predecessor overlaps it), because an extra cross edge costs parallelism while a
+missing one is a data race. The lower-keyed
 region is therefore the producer; key the producer below the consumer for a hard
 cross-region dataflow dependency, exactly as the static graph relies on add() order
 within one graph. `DynamicGraph::compile_count()` stays 1 across an unmutated run

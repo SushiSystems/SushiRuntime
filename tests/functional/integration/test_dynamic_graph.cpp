@@ -26,7 +26,10 @@
 // regions run together, cross-region data dependencies order correctly, dropping
 // a region removes its work, and an unmutated run never recomposes.
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
+#include <thread>
 #include <gtest/gtest.h>
 #include <SushiRuntime/SushiRuntime.h>
 
@@ -344,4 +347,142 @@ TEST(Integration_DynamicGraph, DropProducerLeavesConsumerRunnable)
     // point is the run completed and the consumer kept executing.
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(y[i], static_cast<int>(i) * 2) << "at i=" << i;
+}
+
+// Two regions writing DISJOINT element ranges of one buffer must not be ordered
+// against each other. There is no public way to inspect the boundary edges, so
+// this proves it behaviourally: both region tasks rendezvous on a shared counter
+// with a bounded deadline, and each records whether it saw the other arrive.
+// Concurrent -> both see it. Serialized -> the first one times out and only the
+// second counts, which is exactly what an allocation-granular boundary produces.
+//
+// The bound means a failure reports rather than hangs. Skipped on a machine that
+// cannot run two tasks at once, where the question is meaningless.
+TEST(Integration_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
+{
+    if (std::thread::hardware_concurrency() < 2)
+        GTEST_SKIP() << "needs at least two workers to observe concurrency";
+
+    constexpr std::size_t N = 64;
+    constexpr std::size_t HALF = N / 2;
+
+    auto rt = Runtime::create();
+    rt.rebalancer(false);
+
+    auto shared = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i) shared[i] = 0;
+
+    std::atomic<int> arrived{0};
+    std::atomic<int> saw_both{0};
+
+    auto rendezvous = [&arrived, &saw_both]()
+    {
+        arrived.fetch_add(1, std::memory_order_acq_rel);
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(500);
+        while (arrived.load(std::memory_order_acquire) < 2 &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        if (arrived.load(std::memory_order_acquire) >= 2)
+            saw_both.fetch_add(1, std::memory_order_acq_rel);
+    };
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add_host(API::Reads{},
+                             API::Writes(shared.region({0, HALF})), rendezvous);
+    world.region(1).add_host(API::Reads{},
+                             API::Writes(shared.region({HALF, HALF})), rendezvous);
+    world.run();
+
+    EXPECT_EQ(saw_both.load(), 2)
+        << "the two regions were serialized through the allocation they share, "
+           "although their element ranges are disjoint";
+}
+
+// The counterpart: two regions writing the SAME range of one buffer must still be
+// ordered. Serialized means the earlier task cannot see the later one arrive, so
+// exactly one of the two records the rendezvous — and the arithmetic, which is
+// order-sensitive, comes out to the ordered answer.
+TEST(Integration_DynamicGraph, OverlappingRangeRegionsStillSerialize)
+{
+    constexpr std::size_t N = 64;
+
+    auto rt = Runtime::create();
+    rt.rebalancer(false);
+
+    auto shared = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i) shared[i] = 0;
+    int* p = shared.data();
+
+    std::atomic<int> arrived{0};
+    std::atomic<int> saw_both{0};
+
+    auto rendezvous = [&arrived, &saw_both]()
+    {
+        arrived.fetch_add(1, std::memory_order_acq_rel);
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(200);
+        while (arrived.load(std::memory_order_acquire) < 2 &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        if (arrived.load(std::memory_order_acquire) >= 2)
+            saw_both.fetch_add(1, std::memory_order_acq_rel);
+    };
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add_host(API::Reads{}, API::Writes(shared),
+                             [p, rendezvous]()
+                             {
+                                 for (std::size_t i = 0; i < N; ++i) p[i] = 1;
+                                 rendezvous();
+                             });
+    world.region(1).add_host(API::Reads(shared), API::Writes(shared),
+                             [p, rendezvous]()
+                             {
+                                 rendezvous();
+                                 for (std::size_t i = 0; i < N; ++i) p[i] = p[i] * 2 + 1;
+                             });
+    world.run();
+
+    EXPECT_EQ(saw_both.load(), 1)
+        << "overlapping ranges ran concurrently: the cross-region edge was lost";
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(shared[i], 3) << "at i=" << i;
+}
+
+// Sub-range boundary ordering must still produce the right values: two regions
+// write disjoint halves and a third reads the whole buffer, so the reader
+// overlaps both and has to run after each of them.
+TEST(Integration_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
+{
+    constexpr std::size_t N = 128;
+    constexpr std::size_t HALF = N / 2;
+
+    auto rt = Runtime::create();
+    rt.rebalancer(false);
+
+    auto shared = rt.buffer<int>(N);
+    auto total  = rt.buffer<int>(1);
+    for (std::size_t i = 0; i < N; ++i) shared[i] = -1;
+    total[0] = 0;
+
+    int* p = shared.data();
+    int* t = total.data();
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add(API::Reads{}, API::Writes(shared.region({0, HALF})), HALF,
+                        [p](std::size_t i) { p[i] = 2; });
+    world.region(1).add(API::Reads{}, API::Writes(shared.region({HALF, HALF})), HALF,
+                        [p](std::size_t i) { p[HALF + i] = 3; });
+    world.region(2).add(API::Reads(shared), API::Writes(total), std::size_t{1},
+                        [p, t](std::size_t)
+                        {
+                            int sum = 0;
+                            for (std::size_t i = 0; i < N; ++i) sum += p[i];
+                            t[0] = sum;
+                        });
+    world.run();
+
+    EXPECT_EQ(total[0], static_cast<int>(HALF) * 2 + static_cast<int>(HALF) * 3)
+        << "the reader observed a half that had not been written yet";
 }

@@ -124,9 +124,47 @@ and `try_run(n)` are the non-throwing forms, returning `Result<RunReport, Error>
 instead of throwing `SushiException`. The graph is compiled the first time it
 runs and after any change to it, then replayed without recompiling.
 
+**Overlapping a step with other work.** `run()` blocks for the whole step, which
+is right for a simulation thread with nothing else to do — but a frame usually
+does have something else: extracting the previous step's state for a renderer or
+an audio system, which needs no worker threads at all. `run_async()` starts the
+step and returns a handle instead:
+
+```cpp
+auto step = sim.run_async();
+extract_previous_frame();          // overlaps with the step
+Core::RunReport report = step.wait();
+```
+
+`wait()` is where the step is finished: every State advances there, so an
+asynchronous step ends in exactly the same place a synchronous one would. The
+handle is move-only and waits in its destructor if you drop it, because the
+compiled plan cannot be torn down while workers are still in it — which also
+means a dropped handle drops the outcome, including a task exception. `ready()`
+answers "would waiting return immediately" without blocking, and `try_wait()` is
+the non-throwing form. One step may be in flight at a time; starting another
+while a handle is pending is refused rather than silently interleaved.
+
 For data that does not evolve step to step, use `rt.buffer<T>(n)` instead of
 `rt.state<T>(n)`. Both are owning handles to shared USM; both register their
 reads and writes automatically when passed to `add()`.
+
+**Everything spelled `add()` is ordered by the data it names.** A bare kernel is
+not: a per-element callable is `void(std::size_t)` capturing raw USM pointers, so
+nothing in its type says what it touches and the runtime cannot infer it. Those
+shapes are spelled `add_untracked()` — they record no regions, so the task is
+both a root and a leaf, ordered against nothing:
+
+```cpp
+g.add_untracked(N, [p](std::size_t i) { p[i] = 0; });   // ordered against nothing
+g.add(API::Reads(src), API::Writes(dst), N,             // ordered by src and dst
+      [ps, pd](std::size_t i) { pd[i] = ps[i]; });
+```
+
+`add_untracked` is the right choice for genuinely self-contained work and the
+wrong one the moment another task in the same graph shares data with it. Every
+launch shape has both forms, so reaching for the untracked one is a decision, not
+an oversight.
 
 **Coupled fields** read one another within a step. Every read sees the previous
 step's data (a Jacobi update): each field advances only after the whole step's
@@ -159,6 +197,46 @@ sim.add(API::when([&] { return enabled; }).and_sized([&] { return active; }),
         [p = out.data()](std::size_t i) { /* runs only while enabled, over active */ });
 ```
 
+`sized()` is polled on the host before each step, so it can only carry a count
+your code already has. When the count is produced *by a kernel earlier in the same
+step* — a broadphase writing how many collision pairs it found, and a narrowphase
+that must iterate exactly that many — use `API::sized_from_device(counter)`
+instead. The count is read when the task is dispatched, which is after its
+predecessors have completed, so the value is the one this step just wrote:
+
+```cpp
+auto counter = rt.buffer<std::uint32_t>(1);   // must be shared, not device-resident
+
+g.add(API::Reads(world), API::Writes(counter), N,
+      [c = counter.data()](std::size_t) { /* ... c[0] = pairs_found; */ });
+
+g.add(API::sized_from_device(counter), API::Reads(), API::Writes(pairs), CAPACITY,
+      [p = pairs.data()](std::size_t i) { /* runs exactly pairs_found times */ });
+```
+
+The counter is registered as a read of the consuming task, so you do not have to
+name it in `Reads(...)` to get the ordering — forgetting it is not possible. Size
+the task's buffers for the worst case: a count above that capacity fails the run
+with a message naming both numbers rather than quietly dropping the surplus.
+
+`sized()` says *how many* elements a task iterates; `API::based_at(provider)`
+says *from where*. Together they name a moving window into one buffer, which is
+what a graph-coloured solver wants — each colour is a contiguous slice whose
+offset shifts whenever the constraint set changes:
+
+```cpp
+g.add(API::based_at([&] { return colour_offset; })
+          .and_sized([&] { return colour_size; }),
+      API::Reads(), API::Writes(constraints), CAPACITY,
+      [c = constraints.data()](std::size_t i) { /* i is the ABSOLUTE index */ });
+```
+
+The runtime applies the offset, so your kernel still receives absolute indices
+and does not need to know a base exists. `API::based_at_device(slot)` takes the
+offset from a slot a kernel wrote, exactly as `sized_from_device` does for the
+count. The window has to fit the capacity — one that runs off the end fails the
+run rather than reading past it.
+
 **Dynamic region graphs** let the *set* of work change between steps, for
 streaming open worlds where cells appear and disappear. `rt.dynamic_graph()`
 returns a graph partitioned into **regions** keyed by an id of your choosing (a
@@ -180,6 +258,31 @@ world.run(steps);            // recomposes once; unchanged cells are not rebuilt
 Regions that share a buffer are ordered automatically across the boundary, exactly
 as tasks within one graph are. `world.compile_count()` stays 1 across an unmutated
 run and rises by one per mutation, not per region.
+
+**Reductions with a fixed combination order** give a sum, minimum or maximum
+whose bit pattern is reproducible. An ordinary parallel reduce combines values in
+whatever order the schedule happened to produce, so its floating-point result can
+differ between two runs of the same input — fine for a diagnostic, fatal for a
+simulation whose replay must reproduce state exactly. `add_reduce` folds fixed
+256-element tiles left to right and repeats over the partials, so which values
+meet which depends only on the element count:
+
+```cpp
+auto total = rt.buffer<float>(1);
+g.add_reduce(values, total, N, Sum<float>{});   // also Minimum<T>, Maximum<T>
+```
+
+`add_segmented_reduce` gives the same guarantee over a ragged array — per-body,
+per-cell, per-vertex accumulation — using the usual CSR boundary array of
+`count + 1` offsets, where segment `s` covers `values[offsets[s] .. offsets[s+1])`:
+
+```cpp
+g.add_segmented_reduce(contributions, offsets, per_body, body_count, Sum<float>{});
+```
+
+Both are ordinary tracked tasks, so a consumer that reads the output is ordered
+after the whole reduction. Pass an explicit identity as the last argument when
+the combiner is a lambda rather than one of the three built-ins.
 
 **Native CPU tasks** run plain host C++ — gameplay logic, AI, navigation — with
 no SYCL submission, ordered into the graph by the data they touch. Use

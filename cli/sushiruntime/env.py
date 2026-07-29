@@ -17,7 +17,7 @@ import subprocess
 from pathlib import Path
 
 from . import console
-from .config import Config
+from .config import Config, find_project_root
 
 CACHE_NAME = ".sushi_env.json"
 
@@ -135,12 +135,34 @@ def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
         if root and Path(root).is_dir():
             bins.append(str(Path(root) / "bin"))
             libs.append(str(Path(root) / "lib"))
+            if cfg.is_windows:
+                # compiler-rt ships AddressSanitizer's runtime as a DLL beside its
+                # import library, so an instrumented binary cannot even start
+                # unless that directory is on PATH. Added for every intel-llvm
+                # environment: the directory holds nothing but compiler-rt, so it
+                # is inert for a non-sanitized build, and the alternative — adding
+                # it only for `--asan` — would leave `sr run` on an ASan binary
+                # failing with a bare "DLL not found".
+                bins.extend(str(p) for p in
+                            sorted((Path(root) / "lib" / "clang").glob("*/lib/windows")))
     elif cfg.toolchain == "adaptivecpp":
         acpp = cfg.expand(cfg.acpp_exe)
         if acpp and Path(acpp).is_file():
             acpp_root = Path(acpp).parent.parent
             bins.append(str(Path(acpp).parent))
             libs.append(str(acpp_root / "lib"))
+    # vcpkg's applocal deployment copies a target's DIRECT dependents next to it,
+    # so a library pulled in transitively (hwloc, reached through sushiruntime.dll
+    # rather than by the test executable) can be missing from a fresh build tree
+    # and the binary then fails to start with a bare "DLL not found". Putting the
+    # port bin dir on PATH makes any freshly built binary runnable regardless of
+    # what got copied where; it does not replace deployment for a shipped build.
+    if cfg.is_windows and cfg.use_vcpkg and cfg.vcpkg_root:
+        vcpkg_bin = (Path(cfg.expand(cfg.vcpkg_root)) / "installed"
+                     / cfg.vcpkg_triplet / "bin")
+        if vcpkg_bin.is_dir():
+            bins.append(str(vcpkg_bin))
+
     bins = [d for d in bins if Path(d).is_dir()]
     _prepend_path(env, "PATH", bins)
     if not cfg.is_windows:
@@ -179,6 +201,27 @@ def _snapshot_linux(cfg: Config) -> dict[str, str] | None:
     return env
 
 
+def _inject_sanitizer_options(env: dict[str, str]) -> None:
+    """Point LeakSanitizer at the repo's suppression file, if it has one.
+
+    LeakSanitizer runs as part of AddressSanitizer on Linux and reports at process
+    exit, so a third-party library that leaks its one-time initialisation makes
+    every ASan test process exit non-zero — the tests themselves pass and then the
+    binary fails, which reads as a broken suite rather than a known upstream leak.
+    Pointing LSan at the checked-in suppression list keeps real leaks failing while
+    the known ones stay quiet. Set unconditionally: a non-ASan build never reads
+    the variable, and LeakSanitizer does not exist on Windows at all.
+    """
+    if "LSAN_OPTIONS" in env:
+        return  # a caller who set it explicitly outranks us
+    try:
+        suppressions = find_project_root() / "tests" / "lsan_suppressions.txt"
+    except SystemExit:
+        return  # not inside a checkout; nothing to point at
+    if suppressions.is_file():
+        env["LSAN_OPTIONS"] = f"suppressions={suppressions.as_posix()}"
+
+
 def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
     """Return the environment for build/test/run subprocesses.
 
@@ -196,6 +239,7 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
             if cached.get("key") == key:
                 env = _merge_env(dict(os.environ), cached["env"])
                 _inject_toolchain_paths(cfg, env)
+                _inject_sanitizer_options(env)
                 return env
         except (json.JSONDecodeError, OSError, KeyError):
             pass  # fall through and rebuild
@@ -206,6 +250,7 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
     if not snapshot:
         env = dict(os.environ)
         _inject_toolchain_paths(cfg, env)
+        _inject_sanitizer_options(env)
         return env
 
     try:
@@ -215,4 +260,5 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
 
     env = _merge_env(dict(os.environ), snapshot)
     _inject_toolchain_paths(cfg, env)
+    _inject_sanitizer_options(env)
     return env

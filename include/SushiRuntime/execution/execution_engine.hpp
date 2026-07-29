@@ -37,6 +37,7 @@
 // type" under clang. Including the definition keeps the build valid on Windows
 // and is a no-op on platforms where the class is not exported (e.g. Linux).
 #include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/run_report.hpp>
 
 namespace SushiRuntime
@@ -164,6 +165,69 @@ namespace SushiRuntime
             sycl::event execute(CompiledGraph&& graph);
 
             /**
+             * @brief Whether this engine can start a run without blocking.
+             *
+             * Reported rather than assumed so a strategy that has no meaningful
+             * split between starting and finishing a run (a dry-run engine, a
+             * replay engine, a test double) is not forced to fake one. False by
+             * default; callers must check before using submit()/complete().
+             *
+             * @return True when submit()/complete() are implemented.
+             */
+            virtual bool supports_asynchronous_run() const { return false; }
+
+            /**
+             * @brief Starts a run and returns immediately, without waiting.
+             *
+             * The half of execute() that hands work to the scheduler. Everything
+             * execute() does up to blocking happens here, so the work proceeds on
+             * the worker pool while the caller does something else — extracting
+             * the previous step's state for a renderer, say. Every submit() must
+             * be paired with exactly one complete(); until it is, the engine
+             * rejects another run and the compiled plan must stay alive.
+             *
+             * @param graph The compiled graph to run in place (not consumed).
+             * @throws Core::SushiException If the engine does not support this,
+             *         is shut down, the graph has no roots, or a run is already
+             *         in progress.
+             */
+            virtual void submit(CompiledGraph& /*graph*/)
+            {
+                throw Core::SushiException(Core::Error{
+                    Core::Errc::unsupported,
+                    "This execution engine does not support asynchronous runs."});
+            }
+
+            /**
+             * @brief Blocks until the run started by submit() has finished.
+             *
+             * The other half of execute(): waits for the completion sentinel,
+             * drains the pool, releases the engine for the next run, and
+             * rethrows a task exception exactly as execute() would. Calling it
+             * without a matching submit() is a programming error.
+             *
+             * @throws Core::SushiException If the engine does not support this.
+             * @throws The first exception a task threw during the run.
+             */
+            virtual void complete()
+            {
+                throw Core::SushiException(Core::Error{
+                    Core::Errc::unsupported,
+                    "This execution engine does not support asynchronous runs."});
+            }
+
+            /**
+             * @brief Whether a submitted run has already finished, without waiting.
+             *
+             * Lets a caller decide whether waiting would block — the difference
+             * between overlapping more work and stalling. Meaningless (and true)
+             * when no run is in flight.
+             *
+             * @return True once the run's completion sentinel has reported in.
+             */
+            virtual bool run_finished() { return true; }
+
+            /**
              * @brief Signals the engine to stop accepting new work and drain active tasks.
              *
              * Safe to call from any thread. Blocks until all inflight work is complete.
@@ -266,6 +330,31 @@ namespace SushiRuntime
             sycl::event execute(CompiledGraph& graph) override;
 
             using IExecutionEngine::execute; // keep the rvalue convenience overload visible
+
+            /** @brief This engine implements the submit()/complete() split. */
+            bool supports_asynchronous_run() const override { return true; }
+
+            /**
+             * @brief Starts a run on the worker pool and returns immediately.
+             *
+             * execute() is exactly submit() followed by complete(); the two exist
+             * separately so a caller can put its own work between them. See
+             * IExecutionEngine::submit for the pairing contract.
+             *
+             * @param graph Compiled graph to run in place (not consumed); it must
+             *              stay alive until the matching complete() returns.
+             */
+            void submit(CompiledGraph& graph) override;
+
+            /**
+             * @brief Blocks until the submitted run finishes, then releases the engine.
+             *
+             * @throws The first exception a task threw during the run.
+             */
+            void complete() override;
+
+            /** @brief Whether the submitted run's sentinel has already reported in. */
+            bool run_finished() override;
 
             /** @brief Reads the live work-stealing counters from the scheduler. */
             ExecutionMetrics metrics() const override;
