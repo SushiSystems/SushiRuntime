@@ -7,6 +7,7 @@ invocations are issued directly via subprocess with the snapshotted build env.
 from __future__ import annotations
 
 import enum
+import hashlib
 import os
 import shutil
 import subprocess
@@ -33,15 +34,23 @@ ASAN_FLAGS = "-fsanitize=address -fno-omit-frame-pointer -g -O1"
 # suppressing it would not have worked anyway, since the target-level `-Werror`
 # lands *after* CMAKE_CXX_FLAGS on the command line and re-promotes everything.
 #
-# _DISABLE_*_ANNOTATION: MSVC's STL links `stl_asan.lib` for its container
+# _DISABLE_STL_ANNOTATION: MSVC's STL links `stl_asan.lib` for its container
 # annotations, and that library ships with the Visual Studio "C++ AddressSanitizer"
 # component rather than with the compiler, so a stock Build Tools install does not
 # have it. Turning the annotations off keeps the lane buildable there. The cost is
-# container-overflow detection inside std::string / std::vector; heap overflow,
+# container-overflow detection inside the annotated containers; heap overflow,
 # stack overflow, use-after-free and double-free reporting are unaffected.
+#
+# The umbrella macro, not the per-container ones. Naming the containers
+# individually (_DISABLE_STRING_ANNOTATION, _DISABLE_VECTOR_ANNOTATION) went stale
+# the moment MSVC's STL learned to annotate one more: 14.51 added std::optional,
+# whose annotation kept emitting the `stl_asan.lib` autolink and broke the link
+# with `could not open 'stl_asan.lib'`. _DISABLE_STL_ANNOTATION is the documented
+# switch that covers all of them (see __msvc_sanitizer_annotate_container.hpp) and
+# will keep covering whatever is added next.
 ASAN_FLAGS_WINDOWS = (
     "-Xarch_host -fsanitize=address -fno-omit-frame-pointer -g -O1 "
-    "-D_DISABLE_STRING_ANNOTATION=1 -D_DISABLE_VECTOR_ANNOTATION=1")
+    "-D_DISABLE_STL_ANNOTATION=1")
 
 # The C driver has no device pass, so it takes the plain form: `-Xarch_host` is
 # only meaningful to an offloading compilation and the tree has no C sources
@@ -56,7 +65,7 @@ ASAN_C_FLAGS_WINDOWS = "-fsanitize=address -fno-omit-frame-pointer -g -O1"
 # meaningless, so an ASan benchmark run would report numbers nobody should read.
 # The sanitizer lane exists for correctness; the benchmark lane runs uninstrumented.
 ASAN_BENCHMARKS = "OFF"
-STAMP_NAME = ".sushi_dist"
+STAMP_NAME = ".sushiruntime_dist"
 
 
 class BuildType(str, enum.Enum):
@@ -236,6 +245,25 @@ def _stale_build_tree(build_dir: Path, root: Path) -> bool:
         os.path.normcase(os.path.normpath(str(root)))
 
 
+def _flags_fingerprint() -> str:
+    """A short digest of every compiler-flag constant this module can pass.
+
+    These end up in the cache as CMAKE_CXX_FLAGS, which is as configure-affecting
+    as any option — but they are constants in this file rather than arguments, so
+    editing one changes what a fresh tree would get while leaving an existing tree
+    untouched. That is how a fix to the ASan flags produced a build that kept
+    failing with the old flags on its command line, indistinguishable from the fix
+    not working. Folding them into the stamp makes an edit here self-healing.
+    """
+    material = " ".join([
+        ASAN_FLAGS,
+        ASAN_FLAGS_WINDOWS,
+        ASAN_C_FLAGS_WINDOWS,
+        ASAN_BENCHMARKS,
+    ])
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
+
+
 def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
                      tests: bool) -> str:
     """A stable key of every configure-affecting knob.
@@ -243,9 +271,11 @@ def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
     A single-config generator (Ninja) bakes the build type into the cache, so a
     stamp that tracked only ``dist`` let ``-t release`` then ``-t debug`` reuse
     the tree and silently hand back a Release binary. Keying on the full tuple
-    forces a reconfigure whenever any of these change.
+    forces a reconfigure whenever any of these change — including the flag
+    constants themselves, via _flags_fingerprint().
     """
-    return f"{dist}|{build_type}|{gpu_backend}|{'ON' if tests else 'OFF'}"
+    return (f"{dist}|{build_type}|{gpu_backend}|{'ON' if tests else 'OFF'}"
+            f"|{_flags_fingerprint()}")
 
 
 def _needs_configure(build_dir: Path, generator: str, stamp_key: str,

@@ -124,6 +124,19 @@ and `try_run(n)` are the non-throwing forms, returning `Result<RunReport, Error>
 instead of throwing `SushiException`. The graph is compiled the first time it
 runs and after any change to it, then replayed without recompiling.
 
+Every one of those has a form that writes into a report you already own —
+`run(report)`, `run(n, report)`, `try_run(report)` — for a loop that runs
+thousands of times and would rather not allocate a report on each one:
+
+```cpp
+Core::RunReport report;
+while (running)
+    sim.run(report);               // refilled in place, no per-tick allocation
+```
+
+The report is cleared before each run, so nothing from the previous tick
+survives into it, but the storage it already holds is kept.
+
 **Overlapping a step with other work.** `run()` blocks for the whole step, which
 is right for a simulation thread with nothing else to do — but a frame usually
 does have something else: extracting the previous step's state for a renderer or
@@ -137,7 +150,8 @@ Core::RunReport report = step.wait();
 ```
 
 `wait()` is where the step is finished: every State advances there, so an
-asynchronous step ends in exactly the same place a synchronous one would. The
+asynchronous step ends in exactly the same place a synchronous one would.
+`wait(report)` settles into a report you own, matching `run(report)`. The
 handle is move-only and waits in its destructor if you drop it, because the
 compiled plan cannot be torn down while workers are still in it — which also
 means a dropped handle drops the outcome, including a task exception. `ready()`
@@ -308,6 +322,36 @@ field.write_range({0, N}, seed.data());                  // seed from the host
 sim.run(10000);
 auto window = field.read_range({0, 256});                // pull a window back
 ```
+
+**Sharing the machine.** `Runtime::create()` takes an optional `RuntimeConfig`.
+Its defaults reproduce the sole-tenant behaviour — a worker per logical core,
+worker *i* pinned to core *i* — which is right for a batch process and wrong
+inside an application that also has a main thread, a render thread and an audio
+callback. Reserve cores for those by naming the range the runtime may use:
+
+```cpp
+API::RuntimeConfig config;
+config.worker_count = 8;                       // 8 workers, not one per core
+config.first_core   = 4;                       // on cores 4..11; 0..3 stay yours
+config.rebalancer   = false;                   // the default; see below
+config.profiling    = false;                   // the default
+
+auto rt = Runtime::create({}, config);
+```
+
+Verify it took effect with `rt.advanced().worker_pool()`, which reports the pool
+as built. A range that does not fit the machine is clamped and logged rather than
+obeyed, because the OS affinity calls accept an out-of-range mask and simply do
+not bind — an unclamped request would look like a reservation that never
+happened. `config.pinning = API::PinPolicy::Float` turns binding off entirely,
+which is the better choice inside a container whose CPU allowance is enforced by
+quota rather than by affinity.
+
+`config.rebalancer` is **off by default**. It runs a background thread on a 5 ms
+heartbeat that migrates tasks between workers; that trades run-to-run
+reproducibility and the jitter floor for throughput on long batch work, which is
+a bad trade for a simulation frame and a good one for a batch job. Turn it on
+when you are the batch job.
 
 The fluent API is enough for most programs. The rest of this guide documents the
 lower-level task-graph API it is built on, for when you need full control over
@@ -633,8 +677,19 @@ discovery to certain device classes:
 ```cpp
 Topology::HardwareFilterConfig cfg;
 cfg.include_gpu = false;                       // CPU-only
+cfg.require_fp64 = true;                       // drop devices without double precision
 RuntimeContext ctx{cfg};
 ```
+
+`require_fp64` is worth setting whenever your kernels use `double`. Without it, a
+device lacking `sycl::aspect::fp64` is selected happily and the failure surfaces
+later, inside the driver, with a message that names neither the device nor the
+reason. With it, the device is skipped at discovery and the skip is logged.
+
+If the filter excludes every device the machine has — or the machine genuinely
+exposes no SYCL device, which is the common case on a box with no GPU driver and
+no OpenCL CPU runtime installed — construction throws a `SushiException` carrying
+`Core::Errc::unsupported` and the filter that produced the empty list.
 
 The context is **non-copyable and non-movable** — create one and pass it around
 by reference. It cleans itself up in the correct order on destruction; you can

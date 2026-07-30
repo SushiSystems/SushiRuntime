@@ -9,7 +9,7 @@
 # This file has two phases because project() sits between them:
 #   * on include (BEFORE project): toolchain selection, compiler inference, and
 #     the oneAPI Windows linker fixups the compiler probe needs.
-#   * sushi_sycl_configure() (AFTER project): find_package(SYCL) dispatch, the
+#   * sushiruntime_sycl_configure() (AFTER project): find_package(SYCL) dispatch, the
 #     add_sycl_to_target() shim, and the clang --gcc-toolchain pin.
 # Keeping GPU offload target selection OUT of here is deliberate: that is the GPU
 # backend's job (see cmake/gpu/), so a new vendor never touches this file.
@@ -71,7 +71,7 @@ endif()
 #
 # A macro (not a function) so find_package's discovered commands/targets and the
 # directory-scope compile/link options land in the caller's scope.
-macro(sushi_sycl_configure)
+macro(sushiruntime_sycl_configure)
     # Both find_package(AdaptiveCpp) and find_package(IntelSYCL) provide the same
     # add_sycl_to_target() command, so src/CMakeLists.txt stays toolchain-neutral.
     # For the bare-flag intel-llvm path we stub that command and the link target.

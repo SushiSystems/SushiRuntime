@@ -183,6 +183,36 @@ namespace SushiRuntime
                 Core::RunReport run(std::size_t steps) { return unwrap(try_run(steps)); }
 
                 /**
+                 * @brief Runs one step into a report the caller owns.
+                 *
+                 * The allocation-free form of run(); see Graph::run(Core::RunReport&)
+                 * for what "reuse" buys and where it stops.
+                 *
+                 * @param reuse The report to overwrite; its previous contents are lost.
+                 * @return A reference to @p reuse.
+                 * @throws Core::SushiException on any synchronous or device error.
+                 */
+                Core::RunReport& run(Core::RunReport& reuse)
+                {
+                    return run(std::size_t{1}, reuse);
+                }
+
+                /**
+                 * @brief Runs @p steps successive steps into a report the caller owns.
+                 * @param steps Number of steps to run.
+                 * @param reuse The report to overwrite; its previous contents are lost.
+                 * @return A reference to @p reuse.
+                 * @throws Core::SushiException on any synchronous or device error.
+                 */
+                Core::RunReport& run(std::size_t steps, Core::RunReport& reuse)
+                {
+                    auto driven = try_run(steps, reuse);
+                    if (!driven)
+                        throw Core::SushiException(std::move(driven.error()));
+                    return reuse;
+                }
+
+                /**
                  * @brief Runs steps until a wall-clock @p budget elapses.
                  * @param budget Wall-clock limit; at least one step always runs.
                  * @return A RunReport aggregating the steps that ran.
@@ -219,6 +249,29 @@ namespace SushiRuntime
                 try_run(std::size_t steps) noexcept
                 {
                     return drive([steps](std::size_t k) { return k < steps; });
+                }
+
+                /**
+                 * @brief Non-throwing single run into a report the caller owns.
+                 * @param reuse The report to overwrite; its previous contents are lost.
+                 * @return A pointer to @p reuse on success, or an Error on failure.
+                 */
+                [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
+                try_run(Core::RunReport& reuse) noexcept
+                {
+                    return try_run(std::size_t{1}, reuse);
+                }
+
+                /**
+                 * @brief Non-throwing multi-step run into a report the caller owns.
+                 * @param steps Number of steps to run.
+                 * @param reuse The report to overwrite; its previous contents are lost.
+                 * @return A pointer to @p reuse on success, or an Error on failure.
+                 */
+                [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
+                try_run(std::size_t steps, Core::RunReport& reuse) noexcept
+                {
+                    return drive([steps](std::size_t k) { return k < steps; }, reuse);
                 }
 
                 /**
@@ -331,10 +384,11 @@ namespace SushiRuntime
                  * finished, so an asynchronous step is observationally identical to a
                  * synchronous one.
                  *
-                 * @param state What run_async() recorded when it submitted the step.
-                 * @return The report for the step.
+                 * @param state  What run_async() recorded when it submitted the step.
+                 * @param report The report to fill; reset before it is written.
                  */
-                Core::RunReport finish_async_step(const detail::AsyncRunState& state)
+                void finish_async_step(const detail::AsyncRunState& state,
+                                       Core::RunReport& report)
                 {
                     const auto finished = std::chrono::steady_clock::now();
                     auto& engine = ctx_->get_execution_engine();
@@ -343,8 +397,8 @@ namespace SushiRuntime
                     steps_.after_step();
 
                     const auto after = engine.metrics();
-                    auto report = detail::build_run_report(
-                        *ctx_, state.before, after, state.task_count, state.compile_ms,
+                    detail::fill_run_report(
+                        report, *ctx_, state.before, after, state.task_count, state.compile_ms,
                         std::chrono::duration<double, std::milli>(
                             finished - state.started).count());
 
@@ -356,7 +410,6 @@ namespace SushiRuntime
 
                     if (ctx_->profiling_enabled())
                         engine.collect_profiling(plan_, report);
-                    return report;
                 }
 
                 using Node = ::SushiRuntime::Graph::Node;
@@ -873,6 +926,32 @@ namespace SushiRuntime
                 template <class KeepGoing>
                 Core::Result<Core::RunReport, Core::Error> drive(KeepGoing keep_going) noexcept
                 {
+                    Core::RunReport report;
+                    auto driven = drive(keep_going, report);
+                    if (!driven)
+                        return Core::make_error(std::move(driven.error()));
+                    return std::move(report);
+                }
+
+                /**
+                 * @brief The same driver, writing into a caller-owned report.
+                 *
+                 * Every run entry funnels through here, so the reuse overloads cannot
+                 * drift from the allocating ones. See Graph::drive().
+                 *
+                 * @param keep_going Called with the count of completed steps before
+                 *                   each step; the loop continues while it is true.
+                 * @param report     The report to fill; reset before the run starts.
+                 * @return A pointer to @p report on success, or a mapped Error.
+                 */
+                template <class KeepGoing>
+                Core::Result<Core::RunReport*, Core::Error>
+                drive(KeepGoing keep_going, Core::RunReport& report) noexcept
+                {
+                    // Before any early return; see Graph::drive().
+                    report.reset();
+                    report.is_successful = false;
+
                     if (regions_.empty())
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "DynamicGraph has no regions to run."});
@@ -889,7 +968,8 @@ namespace SushiRuntime
                                 "DynamicGraph region references a Buffer/State freed before the run."});
                     try
                     {
-                        return drive_impl(keep_going);
+                        drive_impl(keep_going, report);
+                        return &report;
                     }
                     catch (const Core::SushiException& e)
                     {
@@ -911,7 +991,7 @@ namespace SushiRuntime
                 }
 
                 template <class KeepGoing>
-                Core::RunReport drive_impl(KeepGoing keep_going)
+                void drive_impl(KeepGoing keep_going, Core::RunReport& report)
                 {
                     using clock = std::chrono::steady_clock;
                     auto ms = [](clock::time_point a, clock::time_point b)
@@ -964,16 +1044,15 @@ namespace SushiRuntime
                     const auto t1 = clock::now();
                     const auto after = engine.metrics();
 
-                    auto report = detail::build_run_report(*ctx_, before, after,
-                                                           task_count * executed,
-                                                           compile_ms, ms(t0, t1));
+                    detail::fill_run_report(report, *ctx_, before, after,
+                                            task_count * executed,
+                                            compile_ms, ms(t0, t1));
                     report.cancelled = engine.is_cancelled();
                     report.device_to_host_bytes = ctx_->device_to_host_bytes() - d2h_before;
                     report.host_to_device_bytes = ctx_->host_to_device_bytes() - h2d_before;
 
                     if (profiling)
                         engine.collect_profiling(plan_, report);
-                    return report;
                 }
 
                 // Rebuilds the aggregated per-step updater lists from every live

@@ -55,16 +55,46 @@ namespace SushiRuntime
 
         /**
          * @brief Constructs a new TaskScheduler.
-         * Initializes worker threads and queues based on hardware concurrency.
+         *
+         * Sizes and places the worker pool from the context's RuntimeSettings: how
+         * many workers to run, which core range to bind them into, and whether to
+         * bind at all. The defaults reproduce the sole-tenant behaviour (one worker
+         * per logical core, worker i on core i); a host that shares the machine
+         * names a narrower range so its own threads keep their cores.
+         *
          * @param ctx The RuntimeContext to associate with this scheduler.
          */
-        TaskScheduler::TaskScheduler(RuntimeContext& ctx) : context(ctx) 
+        TaskScheduler::TaskScheduler(RuntimeContext& ctx) : context(ctx)
         {
-            size_t threads = std::thread::hardware_concurrency();
-            if (threads == 0) threads = 1;
+            const Execution::RuntimeSettings& settings = context.settings();
+
+            size_t machine_cores = std::thread::hardware_concurrency();
+            if (machine_cores == 0) machine_cores = 1;
+
+            size_t threads = settings.worker_count != 0 ? settings.worker_count : machine_cores;
             if (threads > Core::MAX_WORKER_THREADS) threads = Core::MAX_WORKER_THREADS;
+            if (threads == 0) threads = 1;
 
             num_workers = threads;
+            pinning_ = settings.pinning;
+            first_core_ = settings.first_core;
+
+            // A range that runs past the last core is worth saying out loud. The OS
+            // affinity calls accept an out-of-range mask and simply do not bind, so
+            // the failure mode without this is a config that looks like it reserves
+            // cores and silently does not — exactly the isolation the caller asked
+            // for, quietly absent.
+            if (pinning_ == Execution::PinPolicy::Pin && first_core_ + num_workers > machine_cores)
+            {
+                const size_t last = first_core_ + num_workers;
+                first_core_ = first_core_ < machine_cores ? first_core_ : 0;
+                if (first_core_ + num_workers > machine_cores)
+                    num_workers = machine_cores > first_core_ ? machine_cores - first_core_ : 1;
+
+                SR_LOG_WARN("Worker core range [{}, {}) exceeds the machine's {} cores; "
+                            "clamped to {} workers starting at core {}.",
+                            settings.first_core, last, machine_cores, num_workers, first_core_);
+            }
 
             for(size_t i=0; i<num_workers; ++i)
             {
@@ -77,7 +107,15 @@ namespace SushiRuntime
             // (it is where tasks are born as successors and reaped on completion).
             event_poller.set_inflight_tracker(&inflight_, &quiesce_mutex_, &quiesce_cv_);
 
-            SR_LOG_INFO("Task scheduler initialized with {} worker queues and threads.", num_workers);
+            if (pinning_ == Execution::PinPolicy::Pin)
+            {
+                SR_LOG_INFO("Task scheduler initialized with {} workers pinned to cores [{}, {}).",
+                            num_workers, first_core_, first_core_ + num_workers);
+            }
+            else
+            {
+                SR_LOG_INFO("Task scheduler initialized with {} unpinned workers.", num_workers);
+            }
         }
 
         /**
@@ -90,18 +128,29 @@ namespace SushiRuntime
          * then walks the list in order, exhausting the local tier before touching
          * any remote node. If the provider exposes no CPU topology, every worker
          * maps to node 0 → a single flat tier == the original NUMA-blind behaviour.
+         *
+         * Under PinPolicy::Float a worker has no fixed core and therefore no fixed
+         * node, so the same flat single tier is the only honest answer: ordering
+         * victims by a distance that does not hold would make stealing worse, not
+         * better, by sending a worker to a "local" victim it does not share a node
+         * with.
          */
         void TaskScheduler::build_steal_topology()
         {
             const std::vector<int>& core_to_numa = context.cpu_core_to_numa();
 
             worker_numa_.assign(num_workers, 0);
-            for (size_t i = 0; i < num_workers; ++i)
+            if (pinning_ == Execution::PinPolicy::Pin)
             {
-                // Worker i is pinned to core i (see dispatch_loop), so its node is
-                // the node of core i. Unknown/out-of-range cores fall back to 0.
-                if (i < core_to_numa.size())
-                    worker_numa_[i] = core_to_numa[i];
+                for (size_t i = 0; i < num_workers; ++i)
+                {
+                    // Worker i is pinned to core (first_core_ + i) — see
+                    // dispatch_loop — so its node is that core's node. Unknown or
+                    // out-of-range cores fall back to 0.
+                    const size_t core = first_core_ + i;
+                    if (core < core_to_numa.size())
+                        worker_numa_[i] = core_to_numa[core];
+                }
             }
 
             victim_order_.assign(num_workers, {});
@@ -192,8 +241,35 @@ namespace SushiRuntime
             event_poller.set_profiling(prof);
             profiling_active_.store(prof, std::memory_order_release);
 
-            running.store(true, std::memory_order_release);
+            // Under pending_mutex, not merely atomically: an idle worker evaluates
+            // this flag as part of the wait predicate while holding that mutex, and
+            // a store made outside it can land in the window between the worker
+            // reading the predicate as false and actually blocking. The notify then
+            // finds no waiter and is lost, and the run does not begin until
+            // something else wakes the pool. Publishing the flag under the same
+            // mutex the predicate is evaluated under closes that window, which is
+            // what lets the idle wait be a plain wait with no timeout to fall back
+            // on. Notify outside the lock so the woken worker does not immediately
+            // block on a mutex this thread still holds.
+            {
+                std::lock_guard<std::mutex> lock(pending_mutex);
+                running.store(true, std::memory_order_release);
+            }
             pending_cv.notify_all();
+        }
+
+        /**
+         * @brief Returns the pool to its parked state after a run quiesces.
+         *
+         * Under pending_mutex for the same reason arm_for_execution() is: the flag
+         * is one term of the idle wait predicate. No notify — nothing waits for the
+         * pool to become idle, and a worker cannot already be parked while the flag
+         * is set. See the header for why this may only be called after quiescence.
+         */
+        void TaskScheduler::disarm() noexcept
+        {
+            std::lock_guard<std::mutex> lock(pending_mutex);
+            running.store(false, std::memory_order_release);
         }
 
         /**
@@ -202,9 +278,16 @@ namespace SushiRuntime
          */
         void TaskScheduler::stop()
         {
-            // Signal workers to drain and exit.
-            shutdown_requested.store(true, std::memory_order_release);
-            running.store(false, std::memory_order_release);
+            // Signal workers to drain and exit. Under pending_mutex for the same
+            // reason arm_for_execution() is — and here a lost wakeup is worse than
+            // a late start: with no timeout in the idle wait, a worker that missed
+            // the shutdown flag would never be woken again and the join below would
+            // never return.
+            {
+                std::lock_guard<std::mutex> lock(pending_mutex);
+                shutdown_requested.store(true, std::memory_order_release);
+                running.store(false, std::memory_order_release);
+            }
             pending_cv.notify_all();
             for (size_t i = 0; i < num_workers; ++i)
                 if (workers[i].joinable()) workers[i].join();   
@@ -290,8 +373,13 @@ namespace SushiRuntime
 
             // Grab a reasonable batch to prevent local deque overflow
             // and ensure fair load distribution among all workers.
+            // The batch buffer belongs to this worker and keeps its capacity across
+            // drains, so the steady state does not allocate. A local vector here
+            // meant one heap allocation per worker per drain — invisible in a batch
+            // benchmark, a per-tick allocation on a frame loop.
             constexpr size_t BATCH_SIZE = 4096;
-            std::vector<Task*> batch;
+            std::vector<Task*>& batch = drain_scratch_[thread_id];
+            batch.clear();
 
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);
@@ -341,7 +429,12 @@ namespace SushiRuntime
             auto& my_queue = worker_queues[thread_id];
             EventPolling::ActiveEventList active_events;
 
-            SushiRuntime::Topology::pin_current_thread_to_core(thread_id);
+            // Placement is the co-tenancy guarantee: bound to (first_core_ + id), a
+            // worker cannot drift onto a core the host reserved for its main, render
+            // or audio thread. Float leaves that to the OS.
+            if (pinning_ == Execution::PinPolicy::Pin)
+                SushiRuntime::Topology::pin_current_thread_to_core(
+                    static_cast<int>(first_core_) + thread_id);
 
             int spin_count = 0;
 
@@ -364,12 +457,35 @@ namespace SushiRuntime
                 const bool prof = profiling_active_.load(std::memory_order_acquire);
 
                 // IDLE / waiting-for-arm phase: no work, not yet signalled.
-                if (!is_running && !is_shutdown && active_events.is_empty() && !has_pending_submissions())
+                // The owner's own deque is part of the condition, not an
+                // afterthought. Nothing in the wait predicate below looks at it —
+                // it cannot, the deques are lock-free and no notify accompanies a
+                // push — so a worker that parked holding queued tasks would strand
+                // them until something unrelated woke it. This branch used to be
+                // unreachable after the first run (the armed flag was never
+                // cleared), which is why the omission never showed; disarm() makes
+                // it reachable, so the check has to be here.
+                if (!is_running && !is_shutdown && active_events.is_empty()
+                    && my_queue->size() == 0 && my_queue->overflow_size() == 0
+                    && !has_pending_submissions())
                 {
-                    // Full idle, sleep until armed or stopped
+                    // Full idle: park until armed, stopped, or given work. No
+                    // timeout — every term of this predicate is mutated under
+                    // pending_mutex (arm_for_execution, stop, submit,
+                    // submit_batch, drain_pending_submissions, the rebalancer's
+                    // rescue path), so a state change cannot be missed and a
+                    // periodic re-check would find nothing.
+                    //
+                    // This is the co-tenancy guarantee for a pool that is not
+                    // running: a 10 ms poll cost every worker a wakeup and a
+                    // pending_mutex acquisition a hundred times a second while the
+                    // runtime did nothing at all — cache and lock traffic against
+                    // the host's own threads on a machine the runtime is only a
+                    // guest on, and enough to keep a laptop out of its deep idle
+                    // states. A parked worker now costs exactly nothing.
                     const auto idle0 = prof ? sclock::now() : sclock::time_point{};
                     std::unique_lock<std::mutex> lock(pending_mutex);
-                    pending_cv.wait_for(lock, std::chrono::milliseconds(10), [this]()
+                    pending_cv.wait(lock, [this]()
                     {
                         return running.load(std::memory_order_acquire) ||
                                shutdown_requested.load(std::memory_order_acquire) ||

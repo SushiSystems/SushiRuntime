@@ -81,6 +81,17 @@ namespace SushiRuntime
                     if (dev.is_gpu() && !config.include_gpu) continue;
                     if (dev.is_accelerator() && !config.include_accelerator) continue;
 
+                    // Checked here rather than at kernel launch: a double-precision
+                    // kernel on an fp64-less device fails inside the driver with a
+                    // message that names neither the device nor the aspect. Naming
+                    // the device we dropped, and why, is the whole point.
+                    if (config.require_fp64 && !dev.has(sycl::aspect::fp64))
+                    {
+                        SR_LOG_INFO("Skipping device [{}]: no fp64 support and require_fp64 is set.",
+                                    dev.get_info<sycl::info::device::name>());
+                        continue;
+                    }
+
                     HardwareNode node;
                     node.logical_id = logical_id_counter++;
                     node.sycl_dev = dev;

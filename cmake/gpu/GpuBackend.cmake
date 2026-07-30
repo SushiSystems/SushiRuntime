@@ -68,18 +68,18 @@ set(SR_INTEL_GPU_DEVICE "" CACHE STRING
 
 # Register an accelerator triple for the clang toolchains (e.g.
 # nvptx64-nvidia-cuda). Marks that real offload is present.
-macro(sushi_gpu_add_clang_triple _triple)
+macro(sushiruntime_gpu_add_clang_triple _triple)
     list(APPEND SR_GPU_CLANG_TRIPLES "${_triple}")
     set(SR_GPU_OFFLOAD_ADDED TRUE)
 endmacro()
 
 # Append raw backend flags (e.g. -Xsycl-target-backend=... --offload-arch=...).
-macro(sushi_gpu_add_clang_option)
+macro(sushiruntime_gpu_add_clang_option)
     list(APPEND SR_GPU_CLANG_OPTIONS ${ARGN})
 endmacro()
 
 # Register an AdaptiveCpp target (e.g. cuda:sm_86, hip:gfx1030).
-macro(sushi_gpu_add_acpp_target _target)
+macro(sushiruntime_gpu_add_acpp_target _target)
     list(APPEND SR_GPU_ACPP_TARGETS "${_target}")
     set(SR_GPU_OFFLOAD_ADDED TRUE)
 endmacro()
@@ -92,7 +92,7 @@ endmacro()
 # INTERFACE target — is deliberate: the clang -fsycl device pass and
 # add_sycl_to_target() operate on directory/source scope today, and reproducing
 # that exactly avoids perturbing the delicate device codegen.
-macro(sushi_gpu_finalize)
+macro(sushiruntime_gpu_finalize)
     if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
         # AdaptiveCpp selects backends through ACPP_TARGETS. Respect an explicit
         # caller/preset value; otherwise publish what the backends declared.

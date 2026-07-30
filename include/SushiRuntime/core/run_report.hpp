@@ -134,6 +134,41 @@ namespace SushiRuntime
             // G. Profiling breakdown (populated only when the runtime has profiling on)
             std::vector<NodeTiming>   node_timings;     /**< Per-node device/host timing; empty when profiling is off. */
             std::vector<WorkerTiming> worker_timings;   /**< Per-worker busy/steal/poll/idle split; empty when profiling is off. */
+
+            /**
+             * @brief Returns the report to its as-constructed state, keeping capacity.
+             *
+             * What makes a report reusable. Assigning a fresh RunReport over an old
+             * one would free every vector's storage and the next run would allocate
+             * it again; clearing keeps the buffers, so a report handed to
+             * `run(RunReport&)` every tick stops allocating after the first run.
+             *
+             * The retained capacity covers the rows, not what a row owns: clearing
+             * node_timings destroys each row's name string. That is why the
+             * zero-allocation claim is stated for a profiling-off steady state — with
+             * profiling on, the node labels are rebuilt each run by design.
+             */
+            void reset() noexcept
+            {
+                is_successful = true;
+                cancelled = false;
+                total_tasks_executed = 0;
+
+                total_duration_ms = 0.0;
+                graph_analysis_duration_ms = 0.0;
+                scheduling_overhead_ms = 0.0;
+                network_latency_wait_ms = 0.0;
+
+                numa_statistics.clear();
+                distributed_statistics = DistributedStatistics{};
+
+                host_to_device_bytes = 0;
+                device_to_host_bytes = 0;
+
+                warnings.clear();
+                node_timings.clear();
+                worker_timings.clear();
+            }
         };
 
     } // namespace Core

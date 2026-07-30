@@ -257,9 +257,17 @@ namespace SushiRuntime
          * Holds concerns absent on most nodes — and, for the distributed offload
          * state, absent entirely in a standalone build. Keeping them behind one
          * pointer fixes Node's layout independent of build flags: SR_DISTRIBUTED
-         * changes what a NodeExtensions contains, never sizeof(Node), so the library
-         * and its consumers agree on Node's ABI whether or not the distributed layer
-         * is compiled in. Empty (and never allocated) in a standalone build.
+         * changes what a NodeExtensions contains, never sizeof(Node). Empty (and
+         * never allocated) in a standalone build.
+         *
+         * @warning That stabilises Node, not this. THIS type's size still depends
+         * on the flag, and the unique_ptr's deleter is instantiated in whichever
+         * translation unit destroys the Node — which includes consumer code, since
+         * the API layer creates and destroys nodes from header-inline templates.
+         * The library and its consumers must therefore still agree on the flag,
+         * which is why SR_DISTRIBUTED is a PUBLIC define (see src/CMakeLists.txt).
+         * Making it private would require this type to become opaque: declared
+         * here, defined and deleted only inside the library.
          */
         struct NodeExtensions
         {

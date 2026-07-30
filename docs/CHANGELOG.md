@@ -9,6 +9,84 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- **SushiRuntime is consumable out of tree.** `install(EXPORT SushiRuntimeTargets
+  NAMESPACE SushiRuntime::)` plus a generated `SushiRuntimeConfig.cmake` and version
+  file, so `find_package(SushiRuntime REQUIRED)` and
+  `target_link_libraries(... SushiRuntime::SushiRuntime)` work from a project with no
+  access to this source tree — the first such build in the project's history. The
+  same namespaced target is available in-tree via an `ALIAS`, so a consumer can move
+  between `add_subdirectory` and `find_package` without editing its link lines.
+  `tests/package/` is a complete working consumer and asserts, from the only side it
+  is observable, that the exported interface carries the floating-point contract and
+  nothing else — no `-Werror`, no `-march`, no sanitizer selection, and not even the
+  in-tree policy targets' names.
+- `include/SushiRuntime/version.hpp` — `SUSHIRUNTIME_VERSION_{MAJOR,MINOR,PATCH}` and
+  a comparable `SUSHIRUNTIME_VERSION` for compile-time branching, plus
+  `runtime_version()` / `runtime_version_string()` compiled into the library and
+  `version_matches()` to compare the two. The macros describe the headers you
+  compiled against; the accessors describe the binary that loaded. A mismatch —
+  typically an older shared library found first on the loader path — otherwise
+  surfaces as a crash at an arbitrary later point with nothing pointing at the cause.
+  The literals are checked against the CMake project version at configure time, so
+  the two statements of the same fact cannot drift.
+- `docs/INTEGRATION.md` — the consumer's contract, starting from the fact that decides
+  everything else: the runtime's kernels are header templates instantiated in the
+  consumer's translation units, so the consumer's SYCL-touching sources must be
+  compiled by a SYCL compiler and the consumer's floating-point flags are part of the
+  determinism guarantee. Also documents the two-lane build pattern that keeps the
+  SYCL-compiled subtree small, what the exported target does and does not carry, and
+  the startup version check.
+- Co-tenancy contract on `RuntimeConfig` (now an alias of `Execution::RuntimeSettings`,
+  a leaf type in the Execution layer): `worker_count`, `first_core` and `pinning`
+  (`PinPolicy::Pin` / `Float`) say how much of the machine the runtime may take and
+  where. The runtime is no longer the machine's sole tenant by assumption — a host
+  with its own render, audio and job threads reserves cores for them and hands the
+  rest over. A range that does not fit the machine is clamped and warned about, never
+  silently ignored, and `Runtime::advanced().worker_pool()` reports the pool as it was
+  actually built rather than as it was requested.
+- Caller-owned run reports: `Graph`/`DynamicGraph` gained `run(report)`,
+  `run(n, report)`, `try_run(report)`, `try_run(n, report)`, and `RunHandle` gained
+  `wait(report)` / `try_wait(report)`. They reset and refill a `RunReport` the caller
+  keeps, so a frame loop stops allocating one per tick (the previous per-run
+  `numa_statistics` allocation is gone). `Core::RunReport::reset()` is the
+  clear-but-keep-capacity primitive behind it. The report is also reset on the
+  rejection paths, so a caller that skipped the returned error cannot read the
+  previous run's numbers out of a run that never happened. All the run entries share
+  one driver, so the reuse forms cannot drift from the allocating ones.
+- `HardwareFilterConfig::require_fp64` — admits only devices reporting
+  `sycl::aspect::fp64`. A double-precision workload now fails at device selection with
+  a precise error naming the active filter, instead of at first kernel launch with a
+  driver error. Selecting no device at all is likewise a clear `unsupported` error
+  rather than a downstream failure.
+- `SR_DETERMINISTIC_FP` (CMake option, default ON) and the
+  `sushiruntime_deterministic_fp` interface target: `/fp:precise` under an MSVC-style
+  frontend, `-ffp-contract=off -fno-fast-math` (plus `-fp-model=precise` on IntelLLVM)
+  otherwise. Linked `PUBLIC`, because header-template kernels are instantiated in the
+  consumer's translation units — the floating-point contract has to reach them or the
+  determinism the API promises stops at the library boundary. Model and contraction
+  are separate axes on `icx-cl`, whose contraction default is `fast` under every
+  model but `strict`, so an MSVC-frontend build additionally probes for
+  `-ffp-contract=off` (then `/Qfp-contract=off`) and adds whichever the driver
+  accepts; `/fp:precise` alone would have left a Windows oneAPI build free to fuse a
+  multiply and an add and disagree with the Linux lane.
+- `Integration_SteadyStateAllocation` — makes a tick's allocation cost measurable
+  and then holds it to a shape. A replacement global operator new, gated by a
+  thread-local flag so only the driving thread is observed, records what a steady
+  state tick allocates; the suite asserts that the value-returning `run()` costs at
+  least one allocation per tick more than `run(report)`, and that the reuse form's
+  cost does not scale with tick count. It deliberately does not assert an absolute
+  zero — whether a shared library's internal allocations reach a replacement in the
+  executable differs between ELF and Windows, so a count is not a portable claim
+  while those two relative properties are. It builds as its own executable so the
+  replacement does not displace the sanitizer's operator new for the rest of the
+  suite.
+- `Integration_Determinism` — the determinism conformance suite. The same graph runs
+  at worker counts {1, 2, whole machine} with the rebalancer off and every output
+  byte must match; the input is built so that any reassociation changes the result,
+  and the reduction totals are compared separately so a failure says which half
+  moved. It also asserts that no fast-math macro is defined in a translation unit
+  outside the library, which is the evidence that the FP contract crossed the
+  boundary rather than stopping at the library edge.
 - `Core::Delegate<Sig, Capacity>` — a move-only, allocation-free type-erased callable
   that replaces `std::function` for the runtime's stored closures. It holds the target
   in a fixed inline buffer with a hand-written three-entry vtable (invoke / move /
@@ -99,9 +177,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   surfaces any undocumented public symbol.
 - Rebalancer opt-out: `Runtime::rebalancer(bool)` (and
   `ExecutionEngine::set_rebalancer_enabled` / `rebalancer_enabled`) turns the
-  background thermal rebalancer on or off. It stays on by default for throughput;
-  turn it off for a low-jitter real-time frame or a deterministic/replay run,
-  removing the mid-run background thread and its run-to-run nondeterminism.
+  background thermal rebalancer on or off. Off by default (see Changed); turn it
+  on for a throughput batch that can absorb the mid-run background thread and its
+  run-to-run nondeterminism.
 - Device-resident state: `Buffer<T>`/`State<T>` (and the `rt.buffer<T>()` /
   `rt.state<T>()` factories) take an optional `Residency` — `Shared` (the default,
   host-addressable) or `Device` (stays resident on its device, no host migration).
@@ -151,6 +229,65 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   a specific device queue, so buffers used together share one context.
 
 ### Changed
+- **An idle worker pool now actually idles.** The armed flag was set on the first
+  run and never cleared until the context was destroyed, so workers never reached
+  the dispatch loop's wait: between runs — and for the whole life of a runtime that
+  had run once — every worker sat in the steal backoff, yielding and sleeping in
+  100 µs increments and sweeping every peer deque thousands of times a second for
+  work that was not coming. `TaskScheduler::disarm()` (called by
+  `ExecutionEngine::complete()` once the run has quiesced, the only point where it
+  is safe) returns the pool to a parked state. On a machine the runtime shares with
+  a host's render, audio and job threads, that is the difference between idling and
+  competing.
+- The idle wait lost its 10 ms timeout, which was covering a lost wakeup rather than
+  tuning anything: `arm_for_execution()` and `stop()` published their flags outside
+  `pending_mutex` while the wait predicate read them under it, so a notify could land
+  in the window between a worker evaluating the predicate and blocking. The timeout
+  bounded the damage to 10 ms of late start per occurrence — on a 16 ms frame budget,
+  a jitter source with no error message. Both now publish under the mutex, so the
+  wait needs no fallback and a parked worker costs nothing.
+- `SR_DISTRIBUTED` stays a PUBLIC define, and the comment claiming it was PUBLIC only
+  because of `Graph::Node`'s layout has been replaced with the actual reasons. The
+  layout coupling was indeed fixed by `NodeExtensions`, but two others were not: the
+  library compiles none of `include/SushiRuntime/api/`, so every `#ifdef
+  SR_DISTRIBUTED` there — `Buffer`/`State` registration, the whole cluster API,
+  `DynamicGraph::rearm()`'s offload-attempt reset — is consumer-compiled surface that
+  a private define would silently remove; and `NodeExtensions` still changes size with
+  the flag while its deleter is instantiated wherever a `Node` is destroyed, which
+  includes consumer code.
+- `Core::Result<T, E>` is declared **permanent**, closing the open question of whether
+  to wait for C++23 and swap to `std::expected`. It is in the public return type of
+  every `try_*` entry point, so deferring the decision only moved a breaking change
+  to the language bump; its shape already mirrors `std::expected`, so if the baseline
+  ever moves the migration is an alias and consumers see nothing.
+- The injector drain no longer allocates: the batch buffer moved from a function
+  local to a per-worker member with retained capacity, removing one heap allocation
+  per worker per drain from the per-tick path.
+- **The background thermal rebalancer is off by default** (behaviour-breaking).
+  It migrates tasks between workers on a 5 ms heartbeat, which changes which worker
+  folds which tile and puts a periodic wakeup under every frame — a throughput trade
+  a simulation frame is not buying anything with, and one every consumer was paying
+  for while the primary one turned it off at construction. Set
+  `RuntimeConfig::rebalancer` (or call `Runtime::rebalancer(true)`) to restore it.
+- Build flags no longer leak to consumers. `-O3`, `-march=native` and `-ftls-model`
+  were applied through a directory-scope `link_libraries()`, which lands in the
+  library's link interface — an installed target would have exported `-Werror` and a
+  host-specific `-march` to whoever linked it, and the export itself would not have
+  configured. Policy is now applied per target and `PRIVATE` via
+  `sushiruntime_apply_build_policy()`, split across `cmake/CompilerWarnings.cmake`
+  (warnings), `cmake/Optimization.cmake` and `cmake/Determinism.cmake` behind one
+  `cmake/BuildPolicy.cmake` entry point. Two consequences worth stating: `-march=native`
+  is now opt-in (`SR_NATIVE_ARCH`, default OFF) because a natively-tuned binary is not
+  a shippable one, and `-O3` is gone entirely — CMake's own per-configuration flags
+  supply the optimisation level, so a Debug build is genuinely `-O0` again instead of
+  being optimised behind the developer's back.
+- `/fp:fast` is gone from the Windows build (superseded by `SR_DETERMINISTIC_FP`).
+  It licensed reassociation and FMA contraction, so a host-side fold could produce
+  different bits from build to build — directly against the replay and rollback
+  guarantee the API documents.
+- Build identifiers carry the full program name: `sushi_warnings` / `sushi_sanitizers`
+  and the rest are now `sushiruntime_`-prefixed, a SushiStack-wide convention. The old
+  names collided across sibling repositories built in one tree.
 - GPU backend selection is now vendor-agnostic: a single `SR_GPU_BACKEND`
   (`auto`/`cuda`/`rocm`/`intel`/`cpu`/`none`) resolves in a modular `cmake/gpu/`
   layer to one vendor strategy, with auto-detect probing the host compiler

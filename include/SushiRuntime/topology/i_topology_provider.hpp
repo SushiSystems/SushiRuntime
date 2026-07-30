@@ -57,8 +57,10 @@ namespace SushiRuntime
                  * @brief Maps each logical CPU (OS cpu index) to its NUMA node.
                  *
                  * Indexed by the same logical-core id that thread pinning uses
-                 * (pin_current_thread_to_core), so worker i pinned to core i has
-                 * NUMA node result[i]. Enables NUMA-aware, hierarchical work
+                 * (pin_current_thread_to_core), so a worker bound to core c has
+                 * NUMA node result[c] — with the default settings that is worker i
+                 * on core i, and under a reserved-core configuration it is worker i
+                 * on core (first_core + i). Enables NUMA-aware, hierarchical work
                  * stealing in the scheduler.
                  *
                  * Default returns empty → callers fall back to a single flat tier
