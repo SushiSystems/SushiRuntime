@@ -6,9 +6,9 @@
 message(STATUS "GPU backend: NVIDIA CUDA (nvptx64 sm_${SR_CUDA_ARCH})")
 
 if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
-    sushi_gpu_add_acpp_target("cuda:sm_${SR_CUDA_ARCH}")
+    sushiruntime_gpu_add_acpp_target("cuda:sm_${SR_CUDA_ARCH}")
 else()
-    sushi_gpu_add_clang_triple("nvptx64-nvidia-cuda")
-    sushi_gpu_add_clang_option(
+    sushiruntime_gpu_add_clang_triple("nvptx64-nvidia-cuda")
+    sushiruntime_gpu_add_clang_option(
         -Xsycl-target-backend=nvptx64-nvidia-cuda --cuda-gpu-arch=sm_${SR_CUDA_ARCH})
 endif()

@@ -39,6 +39,10 @@
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/run_report.hpp>
+// WorkerPoolInfo is returned by worker_pool() below. runtime_settings.hpp is a
+// leaf header (no SYCL, no runtime types), so including it here does not create
+// a cycle with runtime_context.hpp, which includes this file.
+#include <SushiRuntime/execution/runtime_settings.hpp>
 
 namespace SushiRuntime
 {
@@ -269,6 +273,18 @@ namespace SushiRuntime
             virtual bool rebalancer_enabled() const { return false; }
 
             /**
+             * @brief The worker pool this engine actually built.
+             *
+             * Reports the applied count and core placement, which differ from the
+             * requested RuntimeSettings when the range did not fit the machine.
+             * Default is an empty pool so engines without worker threads (and test
+             * doubles) need not implement it.
+             *
+             * @return The pool's size, first bound core, and pin policy.
+             */
+            virtual WorkerPoolInfo worker_pool() const { return {}; }
+
+            /**
              * @brief Clears profiling accumulators before a profiled run.
              *
              * Default no-op so engines that gather no timing (and test doubles) need
@@ -390,6 +406,9 @@ namespace SushiRuntime
 
             /** @brief Whether the background rebalancer is currently running. */
             bool rebalancer_enabled() const override;
+
+            /** @brief The worker pool the scheduler actually built. */
+            WorkerPoolInfo worker_pool() const override;
 
             /**
              * @brief Clears all profiling accumulators before a profiled run.

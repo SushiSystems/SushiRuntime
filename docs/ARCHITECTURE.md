@@ -139,11 +139,21 @@ do not need to reach into the lower layers.
   - `run_for(duration)` / `run_until(predicate)` — replay until a wall-clock
     budget elapses or a condition holds.
   - `try_run()` / `try_run(n)` — non-throwing; return `Result<RunReport, Error>`.
+  - `run(report)` / `run(n, report)` / `try_run(report)` / `try_run(n, report)` —
+    the same runs into a `RunReport` the caller owns, for a frame loop that does
+    not want a report allocated per tick. The report is reset and refilled in
+    place, so its vector storage is reused from the second run on; the throwing
+    forms return a reference to it and the non-throwing ones a pointer. Reset
+    also happens on the rejection paths, so a caller that skipped the error
+    cannot read the previous run's numbers back out of a run that never
+    happened. Steady state is allocation-free with profiling off — a profiling
+    run rebuilds its per-node labels by design.
   - `run_async()` — start one step and return without waiting, so the caller can
     do work that needs no workers (extracting the previous step's state for a
     renderer or an audio system) while this one runs. Returns a move-only
     `RunHandle` whose `wait()` finishes the step's lifecycle — the State advance
-    happens there, not at submit — and returns the `RunReport`. Its destructor
+    happens there, not at submit — and returns the `RunReport`; `wait(report)`
+    and `try_wait(report)` settle into a caller-owned one instead. Its destructor
     waits if `wait()` was not called, since the compiled plan must not be
     destroyed while workers hold pointers into it. One step at a time: starting
     another while a handle is pending is rejected before anything touches the
@@ -157,11 +167,14 @@ do not need to reach into the lower layers.
   `API::Region` (which reuses `Graph`'s `add()` surface) to record work on a
   partition; `drop(key)` removes one; `has_region(key)`, `region_count()`, and
   `size()` report structure. `run()` / `run(n)` / `run_for` / `run_until` /
-  `try_run` / `cancel` mirror `Graph`. The composer recomposes only what changed
+  `try_run` / `cancel` mirror `Graph`, including the caller-owned report
+  overloads. The composer recomposes only what changed
   between steps, and `compile_count()` advances once per mutation, not per region;
   cross-region ordering follows ascending region key (lower key = producer).
 
-- **`RunReport`** — filled after each `run()` / `try_run()`:
+- **`RunReport`** — filled after each `run()` / `try_run()`. `reset()` returns it
+  to its as-constructed state while keeping its vectors' capacity, which is what
+  makes the caller-owned overloads above cheap:
   - `is_successful`, `cancelled`, `total_tasks_executed`, `total_duration_ms`,
     `graph_analysis_duration_ms`.
   - `numa_statistics` — `NumaNodeStatistics` per NUMA node: CPU/GPU task counts,
@@ -191,6 +204,13 @@ do not need to reach into the lower layers.
 
 - **`Result<T, E>`** (`result.hpp`) — a C++17 stand-in for `std::expected<T,E>`,
   used throughout the lower layers to return errors without exceptions.
+  **Permanent, not provisional.** It appears in the public return type of every
+  `try_*` entry point, so the alternative — waiting for C++23 and swapping to
+  `std::expected` — would either break every one of those signatures at the
+  language bump or have to be done before the API freeze anyway. Its shape
+  already mirrors `std::expected`, so if the baseline ever moves the migration is
+  an alias, not a signature change, and consumers see nothing. The decision is
+  closed: `Core::Result` is what the API returns.
 
 `API::Runtime`, `Core::Error`, `Core::Errc`, `Core::RunReport`, and
 `Core::SushiException` are promoted into the `SushiRuntime` namespace so callers
@@ -437,7 +457,12 @@ and memory close.
   `logical_id`, `numa_node_id`, the `sycl::device`, name, `is_gpu`,
   `PCIDomainAddress` (PCI BDF), `global_mem_size`, and `max_compute_units`. A
   `HardwareFilterConfig` (`include_cpu` / `include_gpu` / `include_accelerator`)
-  narrows discovery.
+  narrows discovery, and `require_fp64` drops devices without
+  `sycl::aspect::fp64` so a double-precision workload fails at selection with a
+  named device rather than inside a driver at kernel launch. When the filter
+  leaves no device at all, `probe_hardware()` throws a `SushiException` carrying
+  `Errc::unsupported` and the active filter — the machine-has-no-SYCL-device
+  case, stated plainly.
 - **`NUMAMapper`** uses **hwloc** to map each device to its nearest NUMA node by
   walking PCI topology, and reports inter-node distances on the ACPI SLIT
   convention: **10 = local, > 10 = remote** (typically 21).
@@ -659,9 +684,36 @@ Runs the ready tasks. A work-stealing scheduler with a persistent worker pool.
   `arm_for_execution()` re-arms the `running` flag for each new graph run without
   recreating threads; `stop()` sets `shutdown_requested` (separate from `running`,
   for clean drain) then joins. (This is the "no thread churn between runs" design.)
+- **An idle pool costs nothing.** `disarm()` clears the armed flag once a run has
+  quiesced (`ExecutionEngine::complete()` calls it after `wait_quiescent()`), and
+  a disarmed worker parks on `pending_cv` with no timeout. Both halves are
+  required: without the disarm the flag stayed set from the first run until the
+  context died, so workers never reached the park and instead sat in the steal
+  backoff — yielding, sleeping in 100 µs increments and sweeping every peer deque
+  thousands of times a second on a machine the runtime is only a guest on. The
+  park is untimed because every term of its predicate (`running`,
+  `shutdown_requested`, and the two injector queues) is mutated under
+  `pending_mutex`, so a state change cannot be missed. `disarm()` is only safe at
+  quiescence: the predicate does not look at the per-worker deques, so disarming
+  with work still queued would park a worker's peers and leave it to drain the
+  graph alone.
+- The injector drain uses a **per-worker batch buffer** (`drain_scratch_`) that
+  keeps its capacity, so pulling work out of the injector does not allocate once
+  the high-water mark is reached. Owned by one worker and touched only inside its
+  own drain, so it needs no synchronisation.
 - Completed-task counters are per-worker and `alignas(CACHE_LINE_SIZE)` to avoid
   false sharing. `get_local_steal_count()` / `get_remote_steal_count()` expose the
   steal split for telemetry and benchmarks.
+- **The pool is a co-tenancy contract, not a claim on the machine.**
+  `RuntimeConfig::worker_count` sizes it (0 = one per logical core, the default),
+  `first_core` places it (worker *i* binds to core `first_core + i`), and
+  `pinning` chooses whether to bind at all. A host that keeps its main, render and
+  audio threads on cores 0–3 gives the runtime `first_core = 4` and the rest. A
+  requested range that does not fit the machine is **clamped and logged**, never
+  silently obeyed — the OS affinity calls accept an out-of-range mask and simply
+  do not bind, so an unclamped request would report a reservation it never made.
+  `Runtime::advanced().worker_pool()` reports the pool as built, which is what a
+  caller verifying its reservation should read.
 
 ### 9.2 NUMA-aware hierarchical stealing
 
@@ -723,11 +775,13 @@ the signature of a thermally-throttled or slow core — and toward the least-loa
 worker, while **leaving a long-but-fast-draining queue alone**. The strategy is
 replaceable at runtime (`set_strategy`).
 
-It is on by default but **opt-out**: `Runtime::rebalancer(false)` (via
-`ExecutionEngine::set_rebalancer_enabled`) stops the background thread. Disable it
-for a low-jitter real-time frame or a deterministic/replay run, where mid-run task
-migration is itself a source of run-to-run variation; leave it on for batch
-throughput.
+It is **off by default and opt-in**: set `RuntimeConfig::rebalancer = true` at
+creation, or call `Runtime::rebalancer(true)` (via
+`ExecutionEngine::set_rebalancer_enabled`) later. Mid-run task migration is itself
+a source of run-to-run variation, and the heartbeat is a periodic wakeup under
+every frame — both are costs a simulation pays for nothing, and simulation is the
+primary workload. Batch throughput is what the trade is worth making for, so
+batch turns it on.
 
 ---
 
@@ -960,6 +1014,54 @@ To make the layering concrete, here is one device task —
 | `SR_ENABLE_DISTRIBUTED` | OFF | compile the master-worker layer |
 | `SR_BUILD_TESTS` | OFF | build the test suite (`sr build` turns this ON; pass `--no-test` to skip) |
 | `SR_BUILD_BENCHMARKS` | ON | build the heavy `sr_benchmark_tests` binary |
+| `SR_DETERMINISTIC_FP` | ON | forbid fast-math and FMA contraction in every TU, including the consumer's |
+| `SR_NATIVE_ARCH` | OFF | build for this machine's exact ISA (`-march=native` / `/arch:AVX2`) |
+
+### Compile policy and what crosses the library boundary
+
+Four INTERFACE targets carry the compile settings, composed by
+`cmake/BuildPolicy.cmake` and applied through `sushiruntime_apply_build_policy(<target>)`:
+
+| Target | Carries | Linkage |
+|--------|---------|---------|
+| `sushiruntime_warnings` | `-Wall -Wextra -Werror -pedantic` / `/W4 /permissive-` | PRIVATE |
+| `sushiruntime_perf` | `-ftls-model=initial-exec`, and `-march=native` only under `SR_NATIVE_ARCH` | PRIVATE |
+| `sushiruntime_sanitizers` | TSan on Debug/RelWithDebInfo (non-MSVC) | PRIVATE |
+| `sushiruntime_deterministic_fp` | `-ffp-contract=off -fno-fast-math` / `/fp:precise` (+ a probed contraction switch, below) | **PUBLIC, exported** |
+
+The split is the mechanism behind the determinism guarantee in §15, and behind
+the promise that an out-of-tree consumer inherits nothing it did not ask for.
+Three of the four are a *development* standard — a downstream build should never
+fail because this project's dependency turned on `-Werror`, and a binary should
+never carry the ISA of the machine that happened to compile it. The fourth is
+different in kind: the kernels are header templates, so a consumer's own
+translation units instantiate and compile the arithmetic. Byte-equal replay is
+only true if the consumer compiles under the same floating-point semantics, so
+that one target is PUBLIC on `sushiruntime` and travels through the installed
+package.
+
+The optimization level itself is not in any of them — CMake's own
+`CMAKE_CXX_FLAGS_<CONFIG>` already supplies `-O3` / `/O2` in Release.
+
+Model and contraction are separate axes, and the MSVC-style command line only
+covers the first. `icx-cl` documents its contraction default as `fast` for every
+floating-point model except `strict`, so `/fp:precise` alone would still let a
+Windows oneAPI build fuse a multiply and an add and round once where the source
+says twice — a different result from the same source on a Linux lane. On an
+MSVC-frontend compiler that is not `cl.exe`, the build therefore probes for a
+contraction switch (`-ffp-contract=off`, then `/Qfp-contract=off`) with
+`check_cxx_compiler_flag` and adds whichever the driver accepts, warning if
+neither does. Probed rather than assumed because the accepted spelling is a
+property of the driver, not of the frontend variant, and a wrong guess would be
+silently dropped in a consumer's build. `cl.exe` proper needs nothing: it does
+not contract unless asked with `/fp:contract`.
+
+The suite that holds all of this honest is `Integration_Determinism`
+(`tests/functional/integration/test_determinism.cpp`): the same graph run at
+worker counts {1, 2, whole machine} with the rebalancer off, compared on the raw
+bytes of its output buffer, plus a check that no fast-math macro is defined in a
+translation unit outside the library — evidence the FP contract really did cross
+the boundary rather than stopping at the library edge.
 
 ### GPU backend selection
 
@@ -1004,6 +1106,16 @@ helper is a no-op stub and `-fsycl` is applied globally.
    No distributed include or symbol may leak into a standalone build.
 5. **Lock-free invariants:** never free a node another thread may still read
    without going through EBR; keep hot shared state cache-line aligned.
+6. **Same-binary, same-device replay is byte-equal.** Reductions fold in a fixed
+   order regardless of worker count, and the floating-point contract (§14)
+   forbids the reassociation and FMA contraction that would otherwise let two
+   builds of the same source disagree. Anything that weakens this silently — a
+   build flag, a default-on rebalancer, schedule-dependent arithmetic — is a
+   defect even when it is faster. Cross-architecture equality is explicitly not
+   claimed. `Integration_Determinism` is where this stops being a promise: it
+   varies the worker count and compares the output bytes, so a change that makes
+   the arithmetic schedule-dependent fails there rather than in a consumer's
+   replay a thousand steps later.
 
 ---
 

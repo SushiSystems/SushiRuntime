@@ -19,7 +19,7 @@ from pathlib import Path
 from . import console
 from .config import Config, find_project_root
 
-CACHE_NAME = ".sushi_env.json"
+CACHE_NAME = ".sushiruntime_env.json"
 
 
 def _cache_key(cfg: Config) -> str:

@@ -40,6 +40,7 @@
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/execution/runtime_settings.hpp>
 
 namespace SushiRuntime
 {
@@ -93,9 +94,40 @@ namespace SushiRuntime
                 /** @brief Actual number of active workers. Read-only externally. */
                 size_t num_workers = 0;
 
+                /**
+                 * @brief First core of the range workers are bound into, as applied.
+                 *
+                 * The requested range is clamped into the machine's core count at
+                 * construction, so this reports what is in effect rather than what was
+                 * asked for. A caller verifying that it reserved cores should read this
+                 * together with num_workers.
+                 *
+                 * @return The first bound core index; meaningless when pinning() is Float.
+                 */
+                std::size_t first_core() const noexcept { return first_core_; }
+
+                /**
+                 * @brief Whether workers are bound to cores or left to the OS.
+                 * @return The pin policy in effect for this scheduler's workers.
+                 */
+                SushiRuntime::Execution::PinPolicy pinning() const noexcept { return pinning_; }
+
             private:
                 /** @brief List of queues for each worker thread. */
                 std::array<sushi_ptr<Deque>, Core::MAX_WORKER_THREADS> worker_queues;
+                /**
+                 * @brief Per-worker scratch for drain_pending_submissions's batch.
+                 *
+                 * Owned by exactly one worker (indexed by its thread id) and only
+                 * touched inside its own drain, so it needs no synchronisation. It
+                 * exists so the drain stops allocating: a local vector meant one
+                 * heap allocation per worker per drain, which on a frame loop is a
+                 * per-tick allocation on the hot path and the thing that keeps a
+                 * steady-state tick from being allocation-free. Capacity is retained
+                 * between drains, so it settles at the high-water mark after the
+                 * first few steps and never allocates again.
+                 */
+                std::array<std::vector<Task*>, Core::MAX_WORKER_THREADS> drain_scratch_;
                 /** @brief Global injector queue for thread-safe external submissions. */
                 std::deque<Task*> pending_submissions;
                 /** @brief Global priority queue for high-priority task bypass. */
@@ -162,6 +194,29 @@ namespace SushiRuntime
                 EventPolling event_poller;
                 /** @brief Reference to the runtime context. */
                 SushiRuntime::Execution::RuntimeContext& context;
+
+                /**
+                 * @brief Whether workers bind to cores, copied from RuntimeSettings.
+                 *
+                 * Read by dispatch_loop() on every worker and by
+                 * build_steal_topology(); both run after the constructor has written
+                 * it and it is never mutated afterwards, so no synchronisation is
+                 * needed. Cached here rather than re-read through the context so the
+                 * worker's first action does not chase a pointer into another layer.
+                 */
+                SushiRuntime::Execution::PinPolicy pinning_ =
+                    SushiRuntime::Execution::PinPolicy::Pin;
+
+                /**
+                 * @brief First core of the range workers bind into, worker i on
+                 *        (first_core_ + i).
+                 *
+                 * Copied from RuntimeSettings and then clamped into the machine's
+                 * core count, so this is the range actually in effect rather than the
+                 * one requested. Meaningless under PinPolicy::Float.
+                 */
+                std::size_t first_core_ = 0;
+
                 /** @brief Worker threads. */
                 std::array<std::thread, Core::MAX_WORKER_THREADS> workers;
                 /**
@@ -275,6 +330,28 @@ namespace SushiRuntime
                  * successive graph runs by reusing the persistent worker pool.
                  */
                 void arm_for_execution();
+
+                /**
+                 * @brief Returns the pool to its parked state after a run quiesces.
+                 *
+                 * The counterpart of arm_for_execution(), and the reason a worker
+                 * costs nothing between runs. Without it the armed flag stayed set
+                 * from the first run until the context was destroyed, so an idle
+                 * pool never reached the wait in the dispatch loop: every worker sat
+                 * in the steal backoff, yielding and sleeping in 100 microsecond
+                 * increments, sweeping every peer deque thousands of times a second
+                 * for work that was not coming. On a machine the runtime shares with
+                 * a host's render, audio and job threads that is not idling, it is
+                 * competing.
+                 *
+                 * @warning Only safe once the run has quiesced — the wait predicate
+                 * does not look at the per-worker deques, so disarming while a
+                 * worker still holds queued tasks would park its peers and leave it
+                 * to drain the graph alone. ExecutionEngine::complete() calls this
+                 * after wait_quiescent(), which is the point where that is
+                 * guaranteed.
+                 */
+                void disarm() noexcept;
 
                 /**
                  * @brief Signals workers to stop and waits for all threads to join.
