@@ -21,9 +21,15 @@
 /* permissions and limitations under the License.                         */
 /**************************************************************************/
 
-// WP-PERF coverage: the rebalancer opt-out. Execution must stay correct with the
-// background thermal rebalancer disabled (the low-jitter / deterministic mode)
-// and after re-enabling it, and the engine must report the flag faithfully.
+// Coverage for the rebalancer control: it is off unless asked for, execution is
+// correct in both states, and the engine reports the flag faithfully.
+//
+// The default is the assertion that matters. The background thermal rebalancer
+// migrates tasks between workers on a 5 ms heartbeat, which changes which worker
+// folds which tile and puts a periodic wakeup under every frame — a throughput
+// trade that a simulation frame is not buying anything with. Leaving it on by
+// default meant every consumer paid for it and the primary one turned it off at
+// every construction.
 
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -31,14 +37,24 @@
 
 using namespace SushiRuntime;
 
+TEST(Integration_PerfControls, RebalancerIsOffUnlessRequested)
+{
+    auto rt = Runtime::create();
+    EXPECT_FALSE(rt.advanced().rebalancer_enabled())
+        << "the rebalancer must not run unless RuntimeConfig asked for it";
+
+    API::RuntimeConfig config;
+    config.rebalancer = true;
+    auto throughput = Runtime::create({}, config);
+    EXPECT_TRUE(throughput.advanced().rebalancer_enabled())
+        << "RuntimeConfig::rebalancer must start the coordinator";
+}
+
 TEST(Integration_PerfControls, RebalancerToggleKeepsExecutionCorrect)
 {
     constexpr std::size_t N = 128;
 
     auto rt = Runtime::create();
-
-    // On by default.
-    EXPECT_TRUE(rt.advanced().rebalancer_enabled());
 
     auto buf = rt.buffer<int>(N);
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
@@ -48,17 +64,23 @@ TEST(Integration_PerfControls, RebalancerToggleKeepsExecutionCorrect)
     g.add(API::Reads{}, API::Writes(buf), N,
           [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
 
-    // Disabled: a run still produces correct results without the background thread.
-    rt.rebalancer(false);
+    // Off (the default): a run produces correct results with no background thread.
     EXPECT_FALSE(rt.advanced().rebalancer_enabled());
     g.run();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer off, at i=" << i;
 
-    // Re-enabled: still correct, and the flag reflects the change.
+    // Enabled after construction: still correct, and the flag reflects the change.
     rt.rebalancer(true);
     EXPECT_TRUE(rt.advanced().rebalancer_enabled());
     g.run();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer on, at i=" << i;
+
+    // And back off again, so the transition is exercised in both directions.
+    rt.rebalancer(false);
+    EXPECT_FALSE(rt.advanced().rebalancer_enabled());
+    g.run();
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer off again, at i=" << i;
 }

@@ -14,7 +14,7 @@ elseif(SR_INTEL_GPU_DEVICE STREQUAL "")
     message(STATUS "GPU backend: Intel GPU via spir64 (JIT).")
 else()
     message(STATUS "GPU backend: Intel GPU AOT (spir64_gen -device ${SR_INTEL_GPU_DEVICE})")
-    sushi_gpu_add_clang_triple("spir64_gen")
-    sushi_gpu_add_clang_option(
+    sushiruntime_gpu_add_clang_triple("spir64_gen")
+    sushiruntime_gpu_add_clang_option(
         -Xsycl-target-backend=spir64_gen "-device ${SR_INTEL_GPU_DEVICE}")
 endif()

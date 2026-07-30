@@ -40,22 +40,21 @@ namespace SushiRuntime
         /**
          * @brief Optional runtime-wide settings chosen once at Runtime::create().
          *
-         * Separate from the hardware filter so settings that shape the whole runtime
-         * (rather than which devices are selected) have a home that can grow without
-         * touching create()'s signature again. Every field defaults to the
-         * zero-overhead behaviour, so passing nothing keeps the previous semantics.
+         * The co-tenancy contract: worker count, core placement, pinning policy,
+         * profiling, and whether the background rebalancer runs. A runtime inside a
+         * game shares the machine with a render thread, an audio callback and asset
+         * I/O, so every one of these defaults is chosen for a tenant rather than an
+         * owner. See Execution::RuntimeSettings for the per-field documentation.
+         *
+         * This is an alias, not a distinct type: RuntimeContext and TaskScheduler
+         * consume the same settings and live below this layer, which may not depend
+         * on it. RuntimeConfig is the public spelling; RuntimeSettings is where it
+         * lives.
          */
-        struct RuntimeConfig
-        {
-            /**
-             * @brief Build queues with profiling so RunReport carries device timing.
-             *
-             * Construction-time because SYCL queues are created once and not rebuilt
-             * to toggle profiling. Off by default: the queues and the dispatch hot
-             * path are then exactly as without this struct, reading no timestamps.
-             */
-            bool profiling = false;
-        };
+        using RuntimeConfig = Execution::RuntimeSettings;
+
+        /** @brief Whether workers bind to cores; see Execution::PinPolicy. */
+        using PinPolicy = Execution::PinPolicy;
 
         /**
          * @brief A narrow, read-only view of runtime-internal state.
@@ -88,6 +87,20 @@ namespace SushiRuntime
                     return ctx_.get_execution_engine().rebalancer_enabled();
                 }
 
+                /**
+                 * @brief The worker pool as built, which may differ from the request.
+                 *
+                 * A caller that reserved cores for its own threads verifies here that
+                 * the reservation took effect: a range that did not fit the machine is
+                 * clamped, and this reports the clamped result rather than the request.
+                 *
+                 * @return The worker count, first bound core, and pin policy in effect.
+                 */
+                Execution::WorkerPoolInfo worker_pool() const
+                {
+                    return ctx_.get_execution_engine().worker_pool();
+                }
+
                 /** @brief Cumulative bytes copied host->device by explicit transfers. */
                 std::size_t host_to_device_bytes() const noexcept
                 {
@@ -117,15 +130,17 @@ namespace SushiRuntime
                 /**
                  * @brief Creates a runtime with default device selection.
                  * @param config         Device-class filter passed to hardware discovery.
-                 * @param runtime_config Runtime-wide settings (e.g. profiling); defaults
-                 *                        to the zero-overhead behaviour.
+                 * @param runtime_config Runtime-wide settings — workers, core placement,
+                 *                        profiling, rebalancer; defaults to the
+                 *                        simulation profile.
                  * @return A ready Runtime.
+                 * @throws SushiException If no device satisfies @p config.
                  */
                 static Runtime create(const Topology::HardwareFilterConfig& config = {},
                                       const RuntimeConfig& runtime_config = {})
                 {
                     return Runtime(std::make_shared<Execution::RuntimeContext>(
-                        config, nullptr, nullptr, runtime_config.profiling));
+                        config, nullptr, nullptr, runtime_config));
                 }
 
                 /**
@@ -189,9 +204,11 @@ namespace SushiRuntime
                 /**
                  * @brief Enables or disables the background thermal rebalancer.
                  *
-                 * On (the default) trades run-to-run determinism for throughput by
-                 * migrating tasks between workers. Turn it off for a low-jitter
-                 * real-time frame or a deterministic/replay run. Safe between runs.
+                 * Off unless RuntimeConfig::rebalancer asked for it. Running it
+                 * trades run-to-run reproducibility and the jitter floor for
+                 * throughput, by migrating tasks between workers on a 5 ms
+                 * heartbeat — worth it for long batch work, wrong for a simulation
+                 * frame. Safe to call between runs.
                  *
                  * @param enabled True to run the rebalancer, false to stop it.
                  * @return *this, for chaining.

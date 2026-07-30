@@ -37,26 +37,30 @@ namespace SushiRuntime
         {
             /**
              * @brief Assembles a RunReport from a finished run's raw measurements.
-             * 
-             * Maps scheduler counters and device placement onto the public RunReport structure.
              *
+             * Maps scheduler counters and device placement onto the public RunReport
+             * structure. Writes into a caller-owned report so a steady-state tick can
+             * hand back the same object every run: @p report is reset first, which
+             * keeps the vector storage the previous run allocated.
+             *
+             * @param report      The report to overwrite; reset before it is filled.
              * @param ctx         The execution context providing the command queue and distributed telemetry.
              * @param before      The scheduler execution metrics snapshotted before the run started.
              * @param after       The scheduler execution metrics snapshotted after the run completed.
              * @param total_tasks The total number of tasks executed across all steps.
              * @param compile_ms  The time spent compiling the task graph in milliseconds.
              * @param total_ms    The total wall-clock execution time in milliseconds.
-             * @return The populated RunReport containing execution statistics.
              */
-            inline Core::RunReport build_run_report(
-                Execution::RuntimeContext&        ctx,
+            inline void fill_run_report(
+                Core::RunReport&                   report,
+                Execution::RuntimeContext&         ctx,
                 const Execution::ExecutionMetrics& before,
                 const Execution::ExecutionMetrics& after,
                 std::size_t                        total_tasks,
                 double                             compile_ms,
                 double                             total_ms)
             {
-                Core::RunReport report;
+                report.reset();
                 report.is_successful = true;
                 report.total_tasks_executed = total_tasks;
                 report.graph_analysis_duration_ms = compile_ms;
@@ -97,7 +101,6 @@ namespace SushiRuntime
                 d.remote_nodes_involved =
                     static_cast<std::size_t>(ctx.distributed_alive_workers());
 #endif
-                return report;
             }
 
         } // namespace detail
