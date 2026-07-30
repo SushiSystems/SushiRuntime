@@ -258,8 +258,8 @@ export tomorrow, the consumer's own TUs. `/fp:fast` licenses reassociation: the 
 reduce's host-side folds, and every consumer kernel's host pass, can differ between two builds of
 the same source. Meanwhile the engine compiles itself with `-fno-fast-math -ffp-contract=off`
 under `SE_DETERMINISTIC_FP` — the two repos are actively fighting. The fix:
-- Perf/arch flags move off the global interface. `sushi_warnings` keeps warnings; a separate
-  **PRIVATE** `sushi_perf` target carries `-O3` and any `-march`; `-march=native` becomes an
+- Perf/arch flags move off the global interface. `sushiruntime_warnings` keeps warnings; a separate
+  **PRIVATE** `sushiruntime_perf` target carries `-O3` and any `-march`; `-march=native` becomes an
   opt-in dev flag (`SR_NATIVE_ARCH=ON`, default OFF), never a default a shipped binary inherits.
 - `/fp:fast` is deleted from Release. A new `SR_DETERMINISTIC_FP` (default **ON**, matching the
   primary consumer) pins `-ffp-contract=off` and forbids fast-math on every TU the runtime
@@ -316,10 +316,25 @@ inherits the whole source tree.
    kernels work — but it is the single most important fact an integrator needs and it appears
    nowhere. A `docs/INTEGRATION.md` owns it, plus the two-lane pattern the engine already proves
    (SYCL-free subtrees like `atmosphere/` and `sushi_render` link nothing).
-4. `SR_DISTRIBUTED` stops being a PUBLIC define. The changelog records `Node`'s layout is now
-   flag-independent (`NodeExtensions`); the stale comment and the PUBLIC visibility in
-   `src/CMakeLists.txt:50-51` are the leftovers. Verify with an ABI check (standalone-built
-   consumer against distributed-built runtime), then make it PRIVATE.
+4. ~~`SR_DISTRIBUTED` stops being a PUBLIC define.~~ **Resolved as "keep PUBLIC" — the premise
+   was wrong.** `NodeExtensions` did fix the layout coupling this item was written about, but two
+   others survive it, and both were found by reading rather than by the ABI check the item asked
+   for (which would have passed on a standalone consumer that never touched the cluster API):
+   - The library compiles **none** of `include/SushiRuntime/api/`, so every `#ifdef
+     SR_DISTRIBUTED` there is *consumer*-compiled surface, not library-internal: `Buffer`/`State`
+     registration, the entire cluster API (`cluster.hpp`, `runtime.hpp`), and
+     `DynamicGraph::rearm()`'s reset of each node's offload attempt counter. PRIVATE would
+     compile the cluster API out of every consumer and silently break offload retry — a
+     functional regression wearing an ABI cleanup's clothes.
+   - `NodeExtensions` itself still changes size with the flag. `Node` no longer does, but the
+     `unique_ptr`'s deleter is instantiated wherever a `Node` is destroyed, and consumers destroy
+     nodes from header-inline API code.
+   Making it private is therefore a design change, not a keyword change: `NodeExtensions` would
+   have to become opaque (declared in the header, defined and deleted only in the library) and
+   the distributed API surface would need a deliberate consumer opt-in. Not a v1.0.0 blocker —
+   the freeze list needs BB-3 and BB-4's packaging, not this. The stale comment that motivated
+   the item has been replaced with the real reasoning, and the installed package reports
+   `SushiRuntime_DISTRIBUTED` so a consumer can see what it linked.
 5. Decide `Core::Result<T,E>` **permanent** (the open TODO item). It is the freeze-safe choice:
    the shape already mirrors `std::expected`, so a C++23 migration is an alias swap later, and
    the public return types never break. Document it, close the item.
@@ -340,7 +355,7 @@ separate exact-ISA build; no-GPU machines **throw in `Runtime::create()`** unles
 runtime happens to be installed; and Windows builds are hardwired to `SR_GPU_BACKEND=cpu` by the
 CLI. The saving grace, also from the survey: the *runtime* half is already vendor-agnostic —
 discovery enumerates everything, queues route by data — and the CMake accumulator
-(`sushi_gpu_add_clang_triple` → one joined `-fsycl-targets=a,b,c`) already supports lists. The
+(`sushiruntime_gpu_add_clang_triple` → one joined `-fsycl-targets=a,b,c`) already supports lists. The
 single-vendor constraint lives in ~20 lines of exclusive dispatch in `DetectGpu.cmake`.
 
 **BB-5a — Fat binary.** `SR_GPU_BACKEND` accepts a semicolon list (`cuda;rocm;cpu`); `DetectGpu`

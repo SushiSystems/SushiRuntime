@@ -34,6 +34,7 @@
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/execution/runtime_settings.hpp>
 #ifdef SR_DISTRIBUTED
 #include <chrono>
 #include <optional>
@@ -74,14 +75,14 @@ namespace SushiRuntime
                  * @param config         Device-class filter for hardware discovery.
                  * @param provider       Topology source; null selects the hwloc default.
                  * @param distance_model NUMA distance model; null selects the hwloc default.
-                 * @param profiling      Build queues with SYCL profiling enabled so
-                 *                        RunReport can report per-kernel device timing;
-                 *                        false (default) builds them as before.
+                 * @param settings       Runtime-wide settings — worker count, core
+                 *                        placement, profiling, rebalancer. Defaults are
+                 *                        the simulation profile (see RuntimeSettings).
                  */
                 explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {},
                                         std::shared_ptr<Topology::ITopologyProvider> provider = nullptr,
                                         std::shared_ptr<Topology::INumaDistanceModel> distance_model = nullptr,
-                                        bool profiling = false);
+                                        const RuntimeSettings& settings = {});
                 
                 /** @brief Destroys the context and frees all resources. */
                 ~RuntimeContext();
@@ -110,6 +111,19 @@ namespace SushiRuntime
                  * @return True if device kernel timing is available, false otherwise.
                  */
                 bool profiling_enabled() const noexcept;
+
+                /**
+                 * @brief The runtime-wide settings this context was created with.
+                 *
+                 * The scheduler reads worker count and core placement from here at
+                 * construction, and the execution engine reads the rebalancer choice;
+                 * routing them through the context rather than through each
+                 * constructor's parameter list keeps one source of truth and stops the
+                 * signatures growing a parameter per setting. Fixed at construction.
+                 *
+                 * @return A reference to the settings, valid for this context's lifetime.
+                 */
+                const RuntimeSettings& settings() const noexcept;
 
                 /**
                  * @brief Records bytes copied device->host by an explicit transfer.

@@ -7,9 +7,9 @@
 message(STATUS "GPU backend: AMD ROCm (amdgcn-amd-amdhsa ${SR_AMD_ARCH})")
 
 if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
-    sushi_gpu_add_acpp_target("hip:${SR_AMD_ARCH}")
+    sushiruntime_gpu_add_acpp_target("hip:${SR_AMD_ARCH}")
 else()
-    sushi_gpu_add_clang_triple("amdgcn-amd-amdhsa")
-    sushi_gpu_add_clang_option(
+    sushiruntime_gpu_add_clang_triple("amdgcn-amd-amdhsa")
+    sushiruntime_gpu_add_clang_option(
         -Xsycl-target-backend=amdgcn-amd-amdhsa --offload-arch=${SR_AMD_ARCH})
 endif()

@@ -64,11 +64,23 @@ namespace SushiRuntime
         /**
          * @brief Configuration for filtering the hardware topology discovery.
          */
-        struct HardwareFilterConfig 
+        struct HardwareFilterConfig
         {
             bool include_cpu = true;
             bool include_gpu = true;
             bool include_accelerator = true;
+
+            /**
+             * @brief Drop devices that cannot execute double-precision arithmetic.
+             *
+             * A kernel using `double` on a device without `sycl::aspect::fp64`
+             * fails at launch with a driver-shaped error that names neither the
+             * device nor the reason. Setting this moves the failure to discovery,
+             * where the offending device is simply not selected and the choice is
+             * logged. Off by default: a single-precision workload has no reason to
+             * lose a device over it.
+             */
+            bool require_fp64 = false;
         };
 
         /**

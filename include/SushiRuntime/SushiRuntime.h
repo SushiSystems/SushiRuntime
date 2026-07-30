@@ -31,6 +31,7 @@
  */
 
 // Core Infrastructure
+#include "version.hpp"
 #include "core/export.hpp"
 #include "core/common.hpp"
 #include "core/error.hpp"

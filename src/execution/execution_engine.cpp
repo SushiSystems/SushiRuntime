@@ -130,7 +130,7 @@ namespace SushiRuntime
             std::unique_ptr<SushiRuntime::Scheduler::WorkloadCoordinator> rebalancer;
 
             /** @brief Whether the background rebalancer should be running. */
-            std::atomic<bool> rebalancer_on{true};
+            std::atomic<bool> rebalancer_on{false};
 
             /** @brief Guards against double-shutdown. */
             std::atomic<bool> is_shutdown{false};
@@ -154,16 +154,24 @@ namespace SushiRuntime
             Impl(RuntimeContext& ctx) : scheduler(ctx)
             {
                 scheduler.start();
-                
-                // Rebalancer'ı ayağa kaldır
+
+                // The coordinator is always constructed so set_rebalancer_enabled()
+                // can start it later without a second construction path; whether its
+                // heartbeat thread runs is the settings' call. Off by default: the
+                // 5 ms migration heartbeat is a jitter and reproducibility cost that
+                // only a throughput workload is buying something with.
                 rebalancer = std::make_unique<SushiRuntime::Scheduler::WorkloadCoordinator>(
-                    scheduler, 
-                    scheduler, 
+                    scheduler,
+                    scheduler,
                     std::make_unique<SushiRuntime::Scheduler::ThermalProxyStrategy>()
                 );
-                rebalancer->start();
-                
-                SR_LOG_INFO("Workload Rebalancer started.");
+
+                if (ctx.settings().rebalancer)
+                {
+                    rebalancer_on.store(true, std::memory_order_relaxed);
+                    rebalancer->start();
+                    SR_LOG_INFO("Workload rebalancer started.");
+                }
             }
 
             ~Impl() override
@@ -274,6 +282,18 @@ namespace SushiRuntime
         bool ExecutionEngine::rebalancer_enabled() const
         {
             return impl_->rebalancer && impl_->rebalancer_on.load(std::memory_order_relaxed);
+        }
+
+        /**
+         * @brief Reports the worker pool the scheduler built, after clamping.
+         */
+        WorkerPoolInfo ExecutionEngine::worker_pool() const
+        {
+            WorkerPoolInfo info;
+            info.count      = impl_->scheduler.num_workers;
+            info.first_core = impl_->scheduler.first_core();
+            info.pinning    = impl_->scheduler.pinning();
+            return info;
         }
 
         /**
@@ -457,7 +477,12 @@ namespace SushiRuntime
                         const bool failed = sched_ptr->run_failed();
                         std::exception_ptr err = failed ? sched_ptr->run_error() : nullptr;
 
-                        sched_ptr->arm_for_execution(); // re-arm for the NEXT round
+                        // Keeps the pool armed through the drain tail — peers are
+                        // still finishing poll bookkeeping for this run's last
+                        // nodes and must not park mid-drain. complete() disarms
+                        // once that has quiesced, and the next submit() arms
+                        // again, so this is not the next round's arming.
+                        sched_ptr->arm_for_execution();
 
                         latch->signal(failed, std::move(err));
                         return {};
@@ -507,6 +532,31 @@ namespace SushiRuntime
             // this returns, and a worker still inside trigger_successors/release
             // would then touch freed nodes.
             impl_->scheduler.wait_quiescent();
+
+            // The run is over and every task has been reaped, so the pool can go
+            // back to sleep. This is the only point where that is safe — the idle
+            // wait predicate does not look at the per-worker deques, and quiescence
+            // is what guarantees they are empty. Doing it here rather than leaving
+            // the pool armed is what makes an idle runtime free: the sentinel
+            // re-arms for a next round that may never come, and until this call
+            // existed that left every worker spinning through the steal backoff for
+            // the rest of the context's life.
+            //
+            // The submission guard above is still held, so no other thread can
+            // start a run between this call and the guard's release; the next
+            // submit() arms again before it injects anything. That exclusion is
+            // why the disarm lives here rather than once per user-visible run:
+            // parking from anywhere the engine does not hold the guard could
+            // disarm a pool that another thread had just armed, and a worker
+            // holding queued tasks with no active events would then park on them.
+            //
+            // A multi-step run disarms and re-arms per step, which costs almost
+            // nothing in practice: the next arm follows within microseconds, and a
+            // worker only parks if it reaches the top of its loop inside that
+            // window. Workers that do park are woken by the next arm's notify. The
+            // effect is self-tuning — a tight batch keeps running, an idle runtime
+            // goes to sleep — with no timer to choose a threshold for.
+            impl_->scheduler.disarm();
 
             if (impl_->completion.failed)
             {

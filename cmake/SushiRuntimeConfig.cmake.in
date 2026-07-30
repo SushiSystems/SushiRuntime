@@ -1,0 +1,38 @@
+@PACKAGE_INIT@
+
+# SushiRuntimeConfig.cmake — what find_package(SushiRuntime) gives a consumer.
+#
+# The contract is deliberately narrow. A consumer gets the include directories,
+# the library, and the floating-point semantics the library's header templates
+# must be instantiated under. It does NOT get this project's warning flags, its
+# sanitizer selection, or the ISA of the machine that happened to build it; those
+# live on PRIVATE targets and never enter the export set. See
+# docs/INTEGRATION.md for the toolchain contract this package assumes.
+
+include(CMakeFindDependencyMacro)
+
+# SYCL is the one thing this package cannot provide for you: the runtime's
+# kernels are header templates instantiated in YOUR translation units, so your
+# compiler must be a SYCL compiler and must already be configured as one. If you
+# have set that up yourself (the usual case — the same find_package/toolchain
+# dance this project does in cmake/Sycl.cmake), the target already exists and
+# nothing more is needed. Otherwise this tries the oneAPI package by name, and a
+# failure here is a real error rather than a subtle link-time one later.
+if(NOT TARGET IntelSYCL::SYCL_CXX)
+    find_dependency(IntelSYCL)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/SushiRuntimeTargets.cmake")
+
+# Whether the distributed master-worker layer is compiled into this build. It
+# changes the layout of Graph::Node, so a consumer that mixes a distributed
+# library with non-distributed headers gets memory corruption, not a link error.
+# The exported target carries the matching define; this variable is here so a
+# consumer can branch on it, and so the mismatch is inspectable.
+set(SushiRuntime_DISTRIBUTED "@SR_ENABLE_DISTRIBUTED@")
+
+# Whether this build compiled under the reproducible floating-point contract. A
+# consumer whose replay must be byte-equal should assert this is ON.
+set(SushiRuntime_DETERMINISTIC_FP "@SR_DETERMINISTIC_FP@")
+
+check_required_components(SushiRuntime)

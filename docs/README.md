@@ -59,6 +59,14 @@ See [CONTRIBUTING.md §7](CONTRIBUTING.md#7-adding-a-c-dependency) — dependenc
 are declared in this repo's `cli/sushistack.deps.toml` fragment, which `ss`
 aggregates and installs.
 
+### Using SushiRuntime from another project
+
+`find_package(SushiRuntime REQUIRED)` and link `SushiRuntime::SushiRuntime`.
+Read [INTEGRATION.md](INTEGRATION.md) first — the runtime's kernels are header
+templates instantiated in *your* translation units, which decides how your build
+has to be shaped, and it is the one thing that is not obvious from the API.
+`tests/package/` is a complete working consumer.
+
 ## Building
 
 The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. Install it through the umbrella — the single install seam for the whole stack (it sets up an isolated pipx venv and wires in the shared `sushicli` presentation layer):
@@ -130,6 +138,16 @@ auto-detected from `nvidia-smi` when a CUDA GPU is present). The older
 `-DSR_ENABLE_CUDA=ON` still works as a legacy alias for `-DSR_GPU_BACKEND=cuda`.
 
 To build the optional distributed master-worker layer, configure with `-DSR_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).
+
+Two options govern code generation. `-DSR_DETERMINISTIC_FP` (default **ON**)
+forbids fast-math and FMA contraction in every translation unit — the runtime's
+and, through the installed package, the consumer's — which is what makes replay
+byte-equal between two builds of the same source; turn it off only for a
+throughput workload that never replays. `-DSR_NATIVE_ARCH` (default **OFF**)
+compiles for the build machine's exact ISA; it is a developer convenience for
+benchmarking and must stay off for any binary that leaves the machine, since the
+result faults on older CPUs. See
+[Build-time configuration](ARCHITECTURE.md#14-build-time-configuration).
 
 ### Docker
 
@@ -259,6 +277,9 @@ g.add(Reads(src), Writes(dst), [ps, pd](sycl::handler& h) { /* ... */ });
 auto report = g.run();      // throws SushiException on error
 auto result = g.try_run();  // non-throwing: Result<RunReport, Error>
 
+Core::RunReport reused;     // and the allocation-free form for a frame loop:
+g.run(reused);              // reset and refilled in place, no per-tick allocation
+
 // report.total_tasks_executed, report.total_duration_ms,
 // report.numa_statistics[i].tasks_stolen_intra_numa, etc.
 ```
@@ -376,7 +397,10 @@ The fluent entry point that most users should start from:
   partition with the same `add()` surface and `drop(key)` removes one. Regions
   added or dropped between steps recompose only what changed — an unchanged region
   is never rebuilt — and regions sharing a buffer are ordered across the boundary.
-- `RunReport` — timing and steal statistics returned after each run.
+- `RunReport` — timing and steal statistics returned after each run. `run(report)`
+  and `wait(report)` fill one the caller owns instead, so a steady-state tick
+  allocates nothing; `RunReport::reset()` is the clear-but-keep-capacity step
+  that makes it work.
 - `Errc` / `Error` / `SushiException` — the error type hierarchy. `run()`
   throws; `try_run()` returns `Result<RunReport, Error>` without throwing.
 
@@ -420,7 +444,7 @@ Runs the ready tasks:
 - `TaskScheduler` — a work-stealing scheduler. Each worker has its own deque; idle workers steal from busy ones. A global injector queue handles external submissions and a priority queue lets high-priority tasks jump ahead. Worker threads are persistent and reused across runs.
 - `Task` — the base unit of work, with kernel and host execution modes and an optional `split()` for divisible workloads (see `RangeTask`).
 - `EventPolling` — watches in-flight SYCL events and, when one completes, decrements its successors' dependency counts and enqueues the ones that became ready. Uses adaptive backoff to avoid spinning.
-- `WorkloadCoordinator` + `rebalancer_interfaces` + `ThermalProxyStrategy` — an optional background load balancer. It watches per-worker queue length and completion rate and migrates tasks away from a worker whose queue is growing while its throughput stalls (a sign of thermal throttling or a slow core). The strategy is swappable at runtime.
+- `WorkloadCoordinator` + `rebalancer_interfaces` + `ThermalProxyStrategy` — an optional background load balancer, **off unless `RuntimeConfig::rebalancer` asks for it**. It watches per-worker queue length and completion rate and migrates tasks away from a worker whose queue is growing while its throughput stalls (a sign of thermal throttling or a slow core). The strategy is swappable at runtime.
 
 ### Execution (`execution/`)
 Ties hardware and graphs together:

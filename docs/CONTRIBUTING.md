@@ -116,6 +116,25 @@ The codebase has a deliberate, consistent style. Match the file you're editing.
   code. No abbreviated type or struct names — `Statistics` not `Stats`,
   `Execution` not `Exec`, `Coordinate` not `Coord`. The namespace for the
   public API layer is `API`, not `Api`.
+- **Build-system names are prefixed with the full program name.** Every CMake
+  target, function, macro, and internal artifact this repo defines starts with
+  `sushiruntime_` — `sushiruntime_warnings`, `sushiruntime_apply_build_policy`,
+  `sushiruntime_gpu_finalize`, `.sushiruntime_env.json`. Never the bare `sushi_`
+  prefix.
+
+  This is a **SushiStack-wide convention**, not a SushiRuntime one: each program
+  prefixes with its own full name (`sushiengine_`, `sushistack_`, `sushicli_`,
+  `sushiblas_`). The reason is that these names share a single flat namespace
+  the moment two of them meet — the engine consumes the runtime by
+  `add_subdirectory`, and a CMake target or function name defined twice in one
+  configure is a hard error with no scoping to fall back on. `sushi_warnings`
+  defined by both repos collides; `sushiruntime_warnings` and
+  `sushiengine_warnings` cannot. It also means a reader who sees a name in a
+  configure log knows which repo to open.
+
+  The rule covers build-system identifiers and build-tree artifacts, not C++
+  symbols: the public C++ API is already scoped by the `SushiRuntime`
+  namespace, so a type like `sushi_ptr` is not affected.
 - **Every source file carries the Apache 2.0 license header** used across the
   tree. Copy it verbatim into new files.
 

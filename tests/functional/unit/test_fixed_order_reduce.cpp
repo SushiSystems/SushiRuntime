@@ -161,11 +161,11 @@ TEST(Unit_FixedOrderReduce, SumMatchesTheFixedOrderReferenceExactly)
            "schedule-dependent combination order";
 }
 
-// Repeated runs of the same graph, and a fresh graph on a runtime with the
-// background rebalancer disabled, must all agree bit for bit. Work stealing and
-// the rebalancer change which worker folds which tile; neither may change the
-// result. (The worker count itself is not settable through the public API, so
-// this varies the schedule rather than the pool size.)
+// Repeated runs of the same graph, and a fresh graph on a runtime running the
+// background rebalancer, must all agree bit for bit. Work stealing and the
+// rebalancer change which worker folds which tile; neither may change the
+// result. This varies the schedule at a fixed pool size; varying the pool size
+// itself is the graph-level conformance suite's job (Integration_Determinism).
 TEST(Unit_FixedOrderReduce, ResultIsStableAcrossSchedules)
 {
     constexpr std::size_t N = 70000;
@@ -193,9 +193,10 @@ TEST(Unit_FixedOrderReduce, ResultIsStableAcrossSchedules)
     }
     EXPECT_EQ(g.compile_count(), 1u) << "a replayed reduction must not recompile";
 
-    // Same input, rebalancer off: a different scheduling regime entirely.
+    // Same input, rebalancer on: a different scheduling regime entirely, since
+    // task migration reassigns tiles to workers mid-run.
     auto quiet = Runtime::create();
-    quiet.rebalancer(false);
+    quiet.rebalancer(true);
     auto qin  = quiet.buffer<float>(N);
     auto qout = quiet.buffer<float>(1);
     for (std::size_t i = 0; i < N; ++i)

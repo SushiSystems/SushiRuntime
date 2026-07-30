@@ -37,9 +37,33 @@ endforeach()
 
 set(SR_TEST_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common")
 
+# sushiruntime.dll staged beside the test binaries, once, by a target they all
+# depend on. Not a POST_BUILD copy per binary: every test executable lands in the
+# same directory, so in a parallel build several of them finish linking together
+# and race to write (and, through vcpkg's applocal pass, to read) the same file,
+# which Windows reports as a sharing violation on whichever loses. A clean build
+# is where that bites — an incremental one seldom links two at once.
+if(WIN32)
+    # Per-configuration under a multi-config generator, matching what the
+    # per-target $<TARGET_FILE_DIR:...> copy this replaces resolved to.
+    if(CMAKE_CONFIGURATION_TYPES)
+        set(SR_TESTS_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>")
+    else()
+        set(SR_TESTS_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+    endif()
+
+    add_custom_target(sushiruntime_tests_runtime_dll
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:sushiruntime>
+            "${SR_TESTS_STAGE_DIR}"
+        COMMENT "Staging sushiruntime.dll next to the test binaries")
+    add_dependencies(sushiruntime_tests_runtime_dll sushiruntime)
+endif()
+
 # Re-applies the cross-cutting target settings to a test binary: include dir for
 # the shared helpers, GTest + library links, and the Windows runtime-DLL copy.
-function(sushi_configure_test_target target)
+function(sushiruntime_configure_test_target target)
+    sushiruntime_apply_build_policy(${target})
     target_include_directories(${target} PRIVATE ${SR_TEST_COMMON_DIR})
 
     target_link_libraries(${target} PRIVATE
@@ -48,11 +72,9 @@ function(sushi_configure_test_target target)
     )
 
     if(WIN32)
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:sushiruntime>
-                $<TARGET_FILE_DIR:${target}>
-        )
+        # A dependency, so the staging runs before this target links and its
+        # applocal pass reads the directory. See the staging target above.
+        add_dependencies(${target} sushiruntime_tests_runtime_dll)
     endif()
 endfunction()
 
@@ -97,10 +119,14 @@ add_executable(sr_functional_tests
     functional/integration/test_fluent_hardening.cpp
     functional/integration/test_late_bindings.cpp
     functional/integration/test_device_count.cpp
+    functional/integration/test_device_selection.cpp
+    functional/integration/test_co_tenancy.cpp
     functional/integration/test_async_step.cpp
     functional/integration/test_native_cpu_path.cpp
     functional/integration/test_device_resident.cpp
     functional/integration/test_perf_controls.cpp
+    functional/integration/test_run_report_reuse.cpp
+    functional/integration/test_determinism.cpp
     functional/integration/test_observability.cpp
     functional/integration/test_completion_latch.cpp
     functional/integration/test_cross_context_guard.cpp
@@ -117,7 +143,7 @@ if(SR_ENABLE_DISTRIBUTED)
     )
 endif()
 
-sushi_configure_test_target(sr_functional_tests)
+sushiruntime_configure_test_target(sr_functional_tests)
 
 # Sub-suite labels come from the GTest suite-name prefix convention
 # (Unit_* / Integration_* / Regression_*), so a category filter is robust and
@@ -148,6 +174,28 @@ gtest_discover_tests(sr_functional_tests
 )
 
 # ----------------------------------------------------------------------------
+# Steady-state allocation suite
+# ----------------------------------------------------------------------------
+# Its own executable on purpose. The test replaces the global operator new to
+# count allocations, and a replacement is program-wide: linking it into the main
+# functional binary would put every other test's allocations through it too and,
+# under a sanitizer build, would displace the sanitizer's own operator new and
+# cost the whole suite its new/delete diagnostics. One extra process is a small
+# price for keeping that blast radius at one file. It still carries the
+# "integration" label, so `sr test --suite functional` runs it.
+add_executable(sr_allocation_tests
+    common/test_main.cpp
+
+    functional/integration/test_steady_state_allocation.cpp
+)
+sushiruntime_configure_test_target(sr_allocation_tests)
+gtest_discover_tests(sr_allocation_tests
+    DISCOVERY_MODE PRE_TEST
+    TEST_FILTER "Integration_*"
+    PROPERTIES LABELS "integration"
+)
+
+# ----------------------------------------------------------------------------
 # Benchmark suite (nightly / manual)
 # ----------------------------------------------------------------------------
 if(SR_BUILD_BENCHMARKS)
@@ -175,7 +223,7 @@ if(SR_BUILD_BENCHMARKS)
             benchmark/performance/test_distributed_offload_perf.cpp
         )
     endif()
-    sushi_configure_test_target(sr_benchmark_tests)
+    sushiruntime_configure_test_target(sr_benchmark_tests)
 
     # Same prefix convention: Stress_* / Performance_*. As above, single labels;
     # the "benchmark" umbrella is the regex `ctest -L 'stress|performance'`.

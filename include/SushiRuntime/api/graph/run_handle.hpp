@@ -166,6 +166,27 @@ namespace SushiRuntime
                  */
                 Core::RunReport wait()
                 {
+                    Core::RunReport report;
+                    wait(report);
+                    return report;
+                }
+
+                /**
+                 * @brief Blocks until the step finishes, reporting into @p reuse.
+                 *
+                 * The allocation-free counterpart of wait(), for the same reason
+                 * Graph::run(RunReport&) exists: an overlapped frame loop settles a
+                 * step every tick, and a report it already owns costs nothing to
+                 * refill. The report is reset before it is written, so a stale field
+                 * from the previous step can never survive into this one.
+                 *
+                 * @param reuse The report to overwrite; its previous contents are lost.
+                 * @return A reference to @p reuse.
+                 * @throws Core::SushiException If the handle owns no step.
+                 * @throws The first exception a task threw during the step.
+                 */
+                Core::RunReport& wait(Core::RunReport& reuse)
+                {
                     if (owner_ == nullptr)
                         throw Core::SushiException(Core::Error{
                             Core::Errc::invalid_graph,
@@ -177,6 +198,13 @@ namespace SushiRuntime
                     // again would block forever on a latch nobody will signal.
                     Owner* owner = owner_;
                     owner_ = nullptr;
+
+                    // Clear before the blocking call, so a step that ends in a task
+                    // exception cannot leave the previous step's numbers readable in
+                    // a report the caller reuses. finish_async_step sets the flag
+                    // back on success.
+                    reuse.reset();
+                    reuse.is_successful = false;
 
                     try
                     {
@@ -191,7 +219,8 @@ namespace SushiRuntime
                         owner->discard_async_step();
                         throw;
                     }
-                    return owner->finish_async_step(state_);
+                    owner->finish_async_step(state_, reuse);
+                    return reuse;
                 }
 
                 /**
@@ -204,9 +233,27 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] Core::Result<Core::RunReport, Core::Error> try_wait() noexcept
                 {
+                    Core::RunReport report;
+                    auto waited = try_wait(report);
+                    if (!waited)
+                        return Core::make_error(std::move(waited.error()));
+                    return std::move(report);
+                }
+
+                /**
+                 * @brief Non-throwing wait into a report the caller owns.
+                 *
+                 * @param reuse The report to overwrite; its previous contents are lost.
+                 * @return A pointer to @p reuse on success, or the error that ended
+                 *         the step.
+                 */
+                [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
+                try_wait(Core::RunReport& reuse) noexcept
+                {
                     try
                     {
-                        return wait();
+                        wait(reuse);
+                        return &reuse;
                     }
                     catch (const Core::SushiException& e)
                     {
