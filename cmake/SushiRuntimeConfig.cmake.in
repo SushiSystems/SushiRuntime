@@ -16,10 +16,22 @@ include(CMakeFindDependencyMacro)
 # compiler must be a SYCL compiler and must already be configured as one. If you
 # have set that up yourself (the usual case — the same find_package/toolchain
 # dance this project does in cmake/Sycl.cmake), the target already exists and
-# nothing more is needed. Otherwise this tries the oneAPI package by name, and a
-# failure here is a real error rather than a subtle link-time one later.
+# nothing more is needed.
+#
+# IntelSYCL::SYCL_CXX is only a REAL find_package(IntelSYCL) target on the
+# "oneapi" toolchain path (cmake/Sycl.cmake's sushiruntime_sycl_configure()).
+# On the primary intel-llvm and adaptivecpp paths it is an empty marker stub —
+# the actual -fsycl flags are applied directly, not through this target's
+# interface — so requiring find_package(IntelSYCL) to succeed unconditionally
+# is wrong for the common case and was never exercised (BB-4.6 had not been
+# run before this was found). Try it, but fall back to the same harmless stub
+# Sycl.cmake creates rather than failing a consumer's configure over a
+# package that most toolchains here were never going to have.
 if(NOT TARGET IntelSYCL::SYCL_CXX)
-    find_dependency(IntelSYCL)
+    find_package(IntelSYCL QUIET)
+endif()
+if(NOT TARGET IntelSYCL::SYCL_CXX)
+    add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED)
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/SushiRuntimeTargets.cmake")
