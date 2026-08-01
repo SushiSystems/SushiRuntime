@@ -139,6 +139,16 @@ set_target_properties(sushiruntime PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     WINDOWS_EXPORT_ALL_SYMBOLS ON
     OUTPUT_NAME "sushiruntime"
+    # Without this, install(EXPORT ... NAMESPACE SushiRuntime::) combines the
+    # namespace with the target's real (lowercase) name and produces
+    # SushiRuntime::sushiruntime - a different spelling than the in-tree
+    # ALIAS (SushiRuntime::SushiRuntime, above), which defeats D3's whole
+    # point that add_subdirectory/find_package consumers spell the dependency
+    # identically. Found via SB-6's tests/package/ verification in sushiblas
+    # (this project's own tests/package/main.cpp already assumed the
+    # capitalized name and would have failed the same way, since BB-4.6 has
+    # never actually been run before now).
+    EXPORT_NAME SushiRuntime
 )
 
 # --- Install & export ------------------------------------------------------
