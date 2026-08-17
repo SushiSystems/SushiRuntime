@@ -47,6 +47,13 @@ sushiruntime_gpu_finalize()
 include(GNUInstallDirs)
 set(SR_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SushiRuntime"
     CACHE STRING "Where the SushiRuntime CMake package files are installed")
+# Included by absolute path, not by module name. CMAKE_MODULE_PATH is one flat
+# search list shared with whoever add_subdirectory's this tree, and the engine
+# appends its own cmake/ before it adds the runtime — so `include(Install)` here
+# resolves to *its* Install.cmake and this file's functions never get defined.
+# The prefixed filename makes the collision unlikely; the absolute path makes it
+# impossible. Applies to every module this repo owns that has a generic name.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SushiRuntimeInstall.cmake")
 
 # The version literals in include/SushiRuntime/version.hpp are hand-written, so
 # they are greppable and need no generated header on the include path. That trade
@@ -96,6 +103,28 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/SushiRuntimeConfigVersion.cmake"
     DESTINATION "${SR_INSTALL_CMAKEDIR}"
 )
+
+# The third-party libraries an installed consumer loads at run time. Called after
+# the export rules so the package is described before its dependencies are added
+# to it.
+sushiruntime_install_runtime_dependencies()
+
+# --- Packaging ----------------------------------------------------------------
+# An archive of the installed tree, for handing the SDK to a consumer who is not
+# building it from source. The layout is whatever the install rules above produce,
+# so the archive and a plain `cmake --install` cannot drift apart.
+set(CPACK_PACKAGE_NAME "SushiRuntime")
+set(CPACK_PACKAGE_VENDOR "SushiSystems")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_FILE_NAME "SushiRuntime-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}")
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/packages")
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+else()
+    set(CPACK_GENERATOR "TGZ")
+endif()
+include(CPack)
 
 # --- Testing ------------------------------------------------------------------
 if(SR_BUILD_TESTS)
