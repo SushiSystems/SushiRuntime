@@ -11,8 +11,8 @@ Last updated: 2026-08-17.
 ## 1. What landed
 
 Everything below is committed. The verification column is what it says. As of
-2026-08-17 both lanes are green — 217/217 normal, 215/215 ASan — so the only entry
-left unverified is BB-4.6, which needs an install prefix rather than a test run.
+2026-08-17 every entry is verified: both test lanes are green (217/217 normal,
+215/215 ASan) and the package flow has been exercised end to end.
 
 | Item | What | Verified |
 |---|---|---|
@@ -25,11 +25,11 @@ left unverified is BB-4.6, which needs an install prefix rather than a test run.
 | BB-3.4 | `Integration_Determinism` conformance suite; contraction switch probed for the MSVC frontend | tests green (both lanes, 2026-08-17) |
 | BB-2.4 | `TaskScheduler::disarm()`, untimed idle park, lost-wakeup fix, per-worker drain scratch | tests green (both lanes, 2026-08-17) |
 | BB-2.5 | `Integration_SteadyStateAllocation` in its own binary | tests green (both lanes, 2026-08-17) |
-| BB-4.1 | `install(EXPORT)` + `SushiRuntimeConfig.cmake` + version file; `SushiRuntime::SushiRuntime` alias | configures; install flow not exercised |
+| BB-4.1 | `install(EXPORT)` + `SushiRuntimeConfig.cmake` + version file; `SushiRuntime::SushiRuntime` alias | install flow exercised 2026-08-17 |
 | BB-4.2 | `version.hpp` + `runtime_version()` + `version_matches()`, with a configure-time drift check | compiles |
 | BB-4.3 | `docs/INTEGRATION.md` | — |
 | BB-4.5 | `Core::Result<T,E>` declared permanent | — |
-| BB-4.6 | `tests/package/` out-of-tree consumer + flag-hygiene assertion | **not run** — needs an install prefix |
+| BB-4.6 | `tests/package/` out-of-tree consumer + flag-hygiene assertion | verified 2026-08-17 via `sr package` — builds *and* runs under a scrubbed environment |
 
 Two findings worth carrying forward, both recorded in `CHANGELOG.md`:
 
@@ -228,6 +228,68 @@ was a latent trap rather than anything this wave introduced.
    and the engine's `Runtime.cmake` learning to consume the runtime as a package
    rather than by `add_subdirectory` of a sibling checkout (BB-4 makes that
    possible for the first time).
-3. Exercise `tests/package/` once against a real install prefix.
+3. ~~Exercise `tests/package/` once against a real install prefix.~~ Done — `sr package` does it, and §5 records what it found.
 
 The engine build-name rename to a `sushiengine_` prefix was dropped by the owner.
+
+---
+
+## 5. Packaging, verified (2026-08-17)
+
+BB-4.6 had never been run. Running it produced one pass and one failure, and the
+failure is the reason the item existed.
+
+**The package builds a consumer.** `tests/package/` configures against an install
+prefix, `find_package(SushiRuntime)` resolves, the flag-hygiene assertion holds
+(nothing in the exported interface leaks `-Werror`, `-march=`, a sanitizer, or a
+warning set), and the consumer compiles and links.
+
+**The package could not run one.** With nothing on `PATH` but the prefix, the
+consumer died with `0xC0000135`, DLL not found. `install(TARGETS)` puts
+`sushiruntime.dll` in the prefix and stops; the library imports `sycl8.dll` and
+`hwloc-15.dll` directly, and the SYCL runtime loads its Unified Runtime adapters
+by name after that. On a developer machine all of them are already on `PATH`, so
+nothing about an ordinary build or test run could have shown this.
+
+What was added:
+
+- `cmake/SushiRuntimeInstall.cmake` — `sushiruntime_install_runtime_dependencies()`
+  stages the seven third-party libraries under their own component
+  (`sushiruntime_redist`), locating them beside the SYCL compiler and in the vcpkg
+  tree. A library that cannot be found warns rather than fails, because a lane
+  configured without SYCL still has to configure; the oracle below is what turns a
+  genuinely incomplete tree into an error.
+- CPack over the same install rules, so the archive and a plain `cmake --install`
+  cannot drift apart.
+- `tools/packaging/verify_installed_package.py` — the oracle. It builds the
+  consumer with the toolchain environment, which the consumer genuinely needs
+  (the runtime's kernels are header templates instantiated in its translation
+  units, so it must use the same SYCL compiler — read from the build tree's cache
+  rather than re-derived), and then runs it with an environment holding nothing
+  but Windows and the prefix. The run is the half that catches a missing
+  redistributable.
+- `sr package` — `--prefix` (default `build/stage`), `--no-archive`, `--no-verify`.
+
+**The redist component is where the licensing question lives.** Staging a tree
+locally is not distribution, so `sr package` installs the component and the oracle
+gets a complete tree. Producing an actual redistributable means naming the
+component deliberately, and the SYCL toolchain bundle ships no licence or
+redistribution file — that gate is BB-5d's, unmoved and unanswered.
+
+### One trap found on the way
+
+`include(Install)` in the runtime's own `CMakeLists.txt` broke the *engine's*
+build. `CMAKE_MODULE_PATH` is a single flat search list shared with whoever
+`add_subdirectory`s this tree; the engine appends its `cmake/` before adding the
+runtime and has an `Install.cmake` of its own, so the runtime's include resolved
+to the engine's file and `sushiruntime_install_runtime_dependencies` was never
+defined. This is the same flat-namespace hazard `CONTRIBUTING.md` §4 names for
+targets and functions, reaching module *filenames* — which that rule does not
+currently mention. Fixed by prefixing the file (`SushiRuntimeInstall.cmake`) and
+including it by absolute path; the prefix makes a collision unlikely and the
+absolute path makes it impossible.
+
+Every other generically named module this repo owns — `Dependencies.cmake`,
+`Optimization.cmake`, `BuildPolicy.cmake`, `Sanitizers.cmake`, `Vcpkg.cmake` — is
+still included by bare name and carries the same latent hazard. None collides with
+the engine today. Worth a sweep before another repo grows a matching name.

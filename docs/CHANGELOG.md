@@ -9,6 +9,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- **`sr package` turns a build tree into a package and then proves it works.**
+  `tests/package/` had never been run. Running it showed the two halves of
+  packaging fail independently: a consumer *built* against an install prefix
+  fine — `find_package` resolved, the flag-hygiene assertion held — and then
+  died with `0xC0000135` when run with nothing on `PATH` but the prefix.
+  `install(TARGETS)` staged `sushiruntime.dll` and nothing else, while the
+  library imports `sycl8.dll` and `hwloc-15.dll` directly and the SYCL runtime
+  loads its Unified Runtime adapters by name afterwards. A developer machine has
+  all of them on `PATH` already, so no ordinary build or test run could have
+  surfaced it. Now: `cmake/SushiRuntimeInstall.cmake` stages those seven
+  libraries under a `sushiruntime_redist` component, CPack archives the same
+  install rules so the archive cannot drift from `cmake --install`, and
+  `tools/packaging/verify_installed_package.py` builds the consumer with the
+  toolchain environment it genuinely needs and then runs it with an environment
+  holding only Windows and the prefix. `sr package` takes `--prefix` (default
+  `build/stage`), `--no-archive` and `--no-verify`. Redistribution licensing is
+  untouched by this and stays BB-5d's gate; a local stage is not a distribution.
+
 - **A caller can name a node on the ordinary `add()`/`add_host()` overloads.** Every
   device-side profiler-facing consumer (SushiEngine's physics graph among them) already
   built a diagnostic name per node and had nowhere to put it: only the offload path

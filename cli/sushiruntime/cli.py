@@ -15,6 +15,7 @@ import typer
 from . import console
 from .services import diag as diag_svc
 from .services import docker as docker_svc
+from .services import packaging as packaging_svc
 from .services import project as project_svc
 from .services import select as select_svc
 from .services.project import BuildType, Suite
@@ -131,6 +132,25 @@ def run(
         project_svc.run(target=target, sort=sort, distributed_role=role,
                         asan=asan, app_args=list(ctx.args))
     )
+
+
+@app.command("package")
+def package(
+    prefix: Optional[str] = typer.Option(
+        None, "--prefix", help="Where to install. Defaults to build/stage."),
+    no_archive: bool = typer.Option(
+        False, "--no-archive", help="Install only; do not run CPack."),
+    no_verify: bool = typer.Option(
+        False, "--no-verify", help="Skip the packaging oracle."),
+):
+    """Install the built tree to a prefix, archive it, and verify it is usable.
+
+    The oracle builds tests/package/ against the prefix and then runs it with
+    nothing on PATH but the prefix itself, which is what catches a package that
+    only works because this machine already has the SYCL runtime installed.
+    """
+    raise typer.Exit(packaging_svc.package(prefix=prefix, archive=not no_archive,
+                                           verify=not no_verify))
 
 
 @app.command("clean")
