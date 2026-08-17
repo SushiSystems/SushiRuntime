@@ -435,6 +435,39 @@ def _check_windows_compiler(cfg: Config, env: dict[str, str]) -> int:
     return 1
 
 
+def _check_sanitizer_runtime(cfg: Config) -> int:
+    """Fail early if the selected intel/llvm bundle ships no AddressSanitizer runtime.
+
+    An intel/llvm bundle can carry the compiler and no compiler-rt at all, in
+    which case `lib/clang/<n>/` holds headers and nothing else. Configure then
+    dies inside CMake's compiler probe on a missing
+    `clang_rt.asan_dynamic_runtime_thunk.lib`, which reads as a broken build
+    rather than as "this bundle cannot sanitize" — and the fix is to point at a
+    bundle that can, not to change anything in the tree.
+
+    :param cfg: Loaded CLI configuration.
+    :return: 0 when a runtime is present or the check does not apply, 1 otherwise.
+    """
+    if not cfg.is_windows or cfg.toolchain != "intel-llvm":
+        return 0
+
+    root = cfg.resolved_llvm_root()
+    if not root:
+        return 0  # the compiler check above owns the "no bundle at all" case
+
+    if any((Path(root) / "lib" / "clang").glob("*/lib/**/clang_rt.asan*")):
+        return 0
+
+    console.error(
+        f"The intel/llvm bundle at {root} ships no AddressSanitizer runtime "
+        f"(no clang_rt.asan* under lib/clang/*/lib).\n"
+        f"  - an ASan build cannot link against it, and this is a property of the "
+        f"bundle, not of the project.\n"
+        f"  - install a bundle that carries compiler-rt with `ss install`, or point "
+        f"llvm_root in cli/config.local.toml at one that does.")
+    return 1
+
+
 def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
                             dist: str, asan: bool, tests: bool) -> list[str]:
     vcpkg = cfg.expand(cfg.vcpkg_root)
@@ -531,6 +564,8 @@ def build(build_type: BuildType, distributed: bool = False,
             shutil.rmtree(build_dir, ignore_errors=True)
         if cfg.is_windows:
             if (rc := _check_windows_compiler(cfg, env)) != 0:
+                return rc
+            if asan and (rc := _check_sanitizer_runtime(cfg)) != 0:
                 return rc
             args = _configure_args_windows(cfg, build_dir, cmake_build_type, dist, asan, tests)
         else:

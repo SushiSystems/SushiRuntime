@@ -27,8 +27,9 @@ def _toolchain_installed(name: str, cfg) -> bool:
     win = cfg.is_windows
     tdir = deps_dir() / "toolchains"
     if name == "intel-llvm":
-        root = cfg.expand(cfg.llvm_root) if cfg.llvm_root else str(tdir / "llvm-sycl")
-        return (Path(root) / "bin" / ("clang++.exe" if win else "clang++")).is_file()
+        root = cfg.resolved_llvm_root()
+        return bool(root) and \
+            (Path(root) / "bin" / ("clang++.exe" if win else "clang++")).is_file()
     if name == "adaptivecpp":
         if cfg.acpp_exe and Path(cfg.expand(cfg.acpp_exe)).is_file():
             return True

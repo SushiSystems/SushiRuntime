@@ -128,8 +128,7 @@ lane was always built against the nightly; the configuration pointed back at the
 older tree afterwards. `cli/sushiruntime/services/select.py:30` hardcodes
 `llvm-sycl` as the fallback directory name while `cli/sushistack.deps.toml`
 describes intel-llvm as a nightly bundle that `ss install` unpacks as
-`llvm-sycl-nightly`, so the two repos disagree on the name. **This is still open —
-see §2.2.**
+`llvm-sycl-nightly`, so the two repos disagreed on the name. **Resolved — see §2.2.**
 
 **Second, with the lane building, all three failures reproduced, and the fault was
 in the toolchain rather than the tree.** With `GTEST_CATCH_EXCEPTIONS=0` the real
@@ -179,7 +178,39 @@ Linux uses is unaffected and `ASAN_FLAGS` keeps full instrumentation there.
 This is the "documented and handled" outcome §2 anticipated, not the "real memory
 error" one. No C++ semantics were bent: the tree still rethrows.
 
-## 2.2 Still open: which toolchain is the toolchain
+## 2.2 Resolved: which toolchain is the toolchain
+
+**Closed 2026-08-17.** `llvm_root` now names `llvm-sycl-nightly` (clang 23,
+DPC++ 7.1.0) and every lane is verified against it: 217/217 functional, 215/215
+ASan with no `SR_LLVM_ROOT` override, 21/21 benchmark, `sr package` green, and
+SushiEngine still builds.
+
+Three code changes keep it from drifting back:
+
+- `Config.resolved_llvm_root()` is the single place the bundle is located. An
+  explicit `llvm_root` still wins; with none it probes `INTEL_LLVM_BUNDLE_DIRS`
+  (`llvm-sycl-nightly`, then `llvm-sycl`), so a fresh checkout finds what
+  `ss install` actually unpacked rather than the name this repo used to assume.
+  `select.py` and `env.py` both route through it, and the env-snapshot cache key
+  is the *resolved* root, so swapping which bundle is present invalidates it.
+- `_check_sanitizer_runtime()` refuses an ASan configure when the selected bundle
+  ships no compiler-rt, naming the bundle and saying it is the bundle's property
+  rather than the project's. That is the failure this section spent a session
+  diagnosing; it is now one line of output.
+- The packaging oracle caught the upgrade's real regression, which nothing else
+  did: DPC++ 7.1.0 ships `sycl9.dll`, and the redist list named `sycl8`. The
+  package installed cleanly and could not start. The SYCL runtime is now matched
+  by pattern, and the list is split by kind — direct imports of
+  `sushiruntime.dll` (hwloc, the SYCL runtime) warn when missing, while the
+  Unified Runtime adapters, which the SYCL runtime dlopen's and which vary by
+  bundle, are staged when present and skipped silently when not. The newer bundle
+  folded the loader in and dropped `ur_loader` and `ur_adapter_opencl` outright.
+
+The original text follows.
+
+### Original entry
+
+
 
 The ASan lane above was built and run with `SR_LLVM_ROOT` pointed at
 `llvm-sycl-nightly`, because it cannot work otherwise. Nothing durable records
@@ -221,9 +252,8 @@ was a latent trap rather than anything this wave introduced.
 
 ## 4. Next
 
-1. ~~Resolve §2.~~ Done — see §2.1. The wave is green in both lanes: 217/217
-   normal, 215/215 ASan. §2.2 (which toolchain is the configured one) is the
-   remainder and should be settled next.
+1. ~~Resolve §2.~~ Done — see §2.1 and §2.2, both closed. Every lane is green
+   on clang 23: 217/217 functional, 215/215 ASan, 21/21 benchmark, package.
 2. **BB-0 engine-side adoption** in `D:\Projects\sushiengine` — the R1–R7 seams,
    and the engine's `Runtime.cmake` learning to consume the runtime as a package
    rather than by `add_subdirectory` of a sibling checkout (BB-4 makes that
