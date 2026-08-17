@@ -4,14 +4,15 @@ Where the BB-3 + BB-2 + BB-4 wave stands, what is verified, and what the next
 session has to pick up. Companion to `ENGINE_BACKBONE_REFACTOR.md`, which is the
 plan; this is the state.
 
-Last updated: 2026-07-30.
+Last updated: 2026-08-17.
 
 ---
 
 ## 1. What landed
 
-Everything below is committed. The verification column is what it says — several
-items are code-complete and compiled but their test run has not been seen green.
+Everything below is committed. The verification column is what it says. As of
+2026-08-17 both lanes are green — 217/217 normal, 215/215 ASan — so the only entry
+left unverified is BB-4.6, which needs an install prefix rather than a test run.
 
 | Item | What | Verified |
 |---|---|---|
@@ -20,10 +21,10 @@ items are code-complete and compiled but their test run has not been seen green.
 | BB-3.3 | `HardwareFilterConfig::require_fp64`; empty-device-list failure is a precise `unsupported` error | tests green (normal build) |
 | BB-2.1 | `RuntimeConfig` is a co-tenancy contract: `worker_count`, `first_core`, `pinning`; clamped-and-warned; `advanced().worker_pool()` reports as built | tests green |
 | BB-2.2 | Rebalancer off by default (behaviour-breaking) | tests green |
-| BB-2.3 | Caller-owned run reports: `run(report)`, `try_run(report)`, `wait(report)`, `try_wait(report)`, `RunReport::reset()` | compiles; test run not confirmed |
-| BB-3.4 | `Integration_Determinism` conformance suite; contraction switch probed for the MSVC frontend | compiles; test run not confirmed |
-| BB-2.4 | `TaskScheduler::disarm()`, untimed idle park, lost-wakeup fix, per-worker drain scratch | compiles; test run not confirmed |
-| BB-2.5 | `Integration_SteadyStateAllocation` in its own binary | compiles; test run not confirmed |
+| BB-2.3 | Caller-owned run reports: `run(report)`, `try_run(report)`, `wait(report)`, `try_wait(report)`, `RunReport::reset()` | tests green (both lanes, 2026-08-17) |
+| BB-3.4 | `Integration_Determinism` conformance suite; contraction switch probed for the MSVC frontend | tests green (both lanes, 2026-08-17) |
+| BB-2.4 | `TaskScheduler::disarm()`, untimed idle park, lost-wakeup fix, per-worker drain scratch | tests green (both lanes, 2026-08-17) |
+| BB-2.5 | `Integration_SteadyStateAllocation` in its own binary | tests green (both lanes, 2026-08-17) |
 | BB-4.1 | `install(EXPORT)` + `SushiRuntimeConfig.cmake` + version file; `SushiRuntime::SushiRuntime` alias | configures; install flow not exercised |
 | BB-4.2 | `version.hpp` + `runtime_version()` + `version_matches()`, with a configure-time drift check | compiles |
 | BB-4.3 | `docs/INTEGRATION.md` | — |
@@ -44,10 +45,13 @@ Two findings worth carrying forward, both recorded in `CHANGELOG.md`:
 
 ---
 
-## 2. Open: three ASan failures
+## 2. Resolved: the three ASan failures
 
-`sr build --type asan && sr test --asan` fails three tests. **This is the first
-thing the next session should resolve.**
+**Closed 2026-08-17. The ASan lane is green: 215/215, zero failures — the first
+time it has ever been.** The section below is kept as written because the two
+commands it named are what settled it; the resolution follows at §2.1.
+
+`sr build --type asan && sr test --asan` fails three tests.
 
 ```
 148 - Integration_DeviceSelection.AnEmptyFilterFailsWithUnsupported
@@ -107,6 +111,91 @@ tests are unconfirmed in *any* lane.
 
 ---
 
+## 2.1 What it turned out to be (2026-08-17)
+
+Two separate problems wearing one symptom. Neither was a defect in the tree, and
+the guess the section above was written to prevent — that `throw;` was at fault —
+would have been wrong.
+
+**First, the lane could not be built at all.** `sr build --type asan` failed in
+CMake's compiler probe: `could not open clang_rt.asan_dynamic_runtime_thunk.lib`.
+The configured toolchain, `dependencies/toolchains/llvm-sycl` (clang 21, dated
+1 July), ships no compiler-rt — its `lib/clang/21/` holds `include/` and nothing
+else. A second toolchain sits beside it, `llvm-sycl-nightly` (clang 23, DPC++
+7.1.0), installed 28 July 14:00, and it does carry the ASan runtime. The commit
+that made the lane work, `f502d7d`, is dated 28 July 14:22 — 22 minutes later. The
+lane was always built against the nightly; the configuration pointed back at the
+older tree afterwards. `cli/sushiruntime/services/select.py:30` hardcodes
+`llvm-sycl` as the fallback directory name while `cli/sushistack.deps.toml`
+describes intel-llvm as a nightly bundle that `ss install` unpacks as
+`llvm-sycl-nightly`, so the two repos disagree on the name. **This is still open —
+see §2.2.**
+
+**Second, with the lane building, all three failures reproduced, and the fault was
+in the toolchain rather than the tree.** With `GTEST_CATCH_EXCEPTIONS=0` the real
+report is a null read inside the CRT's own unwinder:
+
+```
+AddressSanitizer: access-violation on unknown address 0x4c
+  #0 __FrameHandler3::GetUnwindTryBlock   vcruntime/src/eh/ehstate.cpp:186
+  #1 __FrameHandler3::GetHandlerSearchState  ... frame.cpp:484
+  #4 __CxxFrameHandler3
+  #9 _CxxThrowException
+```
+
+No SushiRuntime frame appears except the `throw;` that starts it, and ASan reports
+a raw access violation rather than a shadow-memory finding — it is the signal
+handler here, not the detector.
+
+Reduced to a standalone program with no runtime code, five variants isolate it:
+
+| Construct | Result |
+|---|---|
+| throw propagating through a frame, one catch | passes |
+| `catch (...)` that swallows, no rethrow | passes |
+| `catch (...)` + bare `throw;` | **crashes** |
+| named catch + bare `throw;` | **crashes** |
+| named catch + `throw` of a fresh object | **crashes** |
+
+So the trigger is not the rethrow. It is **any throw issued while an exception is
+already in flight** — i.e. from inside a catch handler, which is exactly the frame
+state `GetUnwindTryBlock` is looking up when it faults.
+
+**The fix is `-fsanitize-address-use-after-return=never`**, added to
+`ASAN_FLAGS_WINDOWS` / `ASAN_C_FLAGS_WINDOWS`. Use-after-return detection relocates
+locals into a heap-allocated fake stack, and on the MSVC ABI that codegen emits EH
+state tables the CRT unwinder misreads. `=runtime` is not enough — the crash
+survives it, which places the fault in the instrumentation rather than the runtime
+toggle. Lowering to `-O0` is not enough either: it rescues the rethrow cases and
+still dies on the throw-copy, with a `0xC0000409` fail-fast.
+
+**The setting costs nothing that this lane had.** The fake stack is what it
+removes, and its reporting requires `ASAN_OPTIONS=detect_stack_use_after_return=1`,
+which the CLI has never set — `env.py`'s `_inject_sanitizer_options` handles
+`LSAN_OPTIONS` only. Heap-overflow reporting was re-verified with the flag on
+against a deliberate out-of-bounds write. Windows only; the Itanium ABI unwinder
+Linux uses is unaffected and `ASAN_FLAGS` keeps full instrumentation there.
+
+This is the "documented and handled" outcome §2 anticipated, not the "real memory
+error" one. No C++ semantics were bent: the tree still rethrows.
+
+## 2.2 Still open: which toolchain is the toolchain
+
+The ASan lane above was built and run with `SR_LLVM_ROOT` pointed at
+`llvm-sycl-nightly`, because it cannot work otherwise. Nothing durable records
+that. Two things need deciding together:
+
+- `llvm_root` in `config.local.toml` still names `llvm-sycl` (clang 21), so every
+  ordinary build — including the 217/217 run that cleared §2's "also unconfirmed"
+  list — uses the older compiler, silently and without a warning.
+- `select.py:30`'s fallback name disagrees with what `ss install` writes. Until
+  that is reconciled, a fresh checkout drifts back to the stale tree the same way.
+
+Making the nightly the configured toolchain moves every lane from clang 21 to
+clang 23, which wants a full-suite run of its own before it is called done.
+
+---
+
 ## 3. Build-lane fixes made along the way
 
 Three things broke the Windows ASan lane and are fixed; noting them because each
@@ -132,8 +221,10 @@ was a latent trap rather than anything this wave introduced.
 
 ## 4. Next
 
-1. Resolve §2. Nothing else should start before the wave is green.
-2. **BB-0 engine-side adoption** in `C:\Projects\sushiengine` — the R1–R7 seams,
+1. ~~Resolve §2.~~ Done — see §2.1. The wave is green in both lanes: 217/217
+   normal, 215/215 ASan. §2.2 (which toolchain is the configured one) is the
+   remainder and should be settled next.
+2. **BB-0 engine-side adoption** in `D:\Projects\sushiengine` — the R1–R7 seams,
    and the engine's `Runtime.cmake` learning to consume the runtime as a package
    rather than by `add_subdirectory` of a sibling checkout (BB-4 makes that
    possible for the first time).

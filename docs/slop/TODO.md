@@ -53,14 +53,14 @@ Option A is delivered as "always offer a tracked form, and make the untracked on
 name itself" rather than as automatic detection. Rationale and the sweep are in
 [`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](PHYSICS_SUBSTRATE_IMPLEMENTATION.md) §1.
 
-**`Core::Result<T,E>` as the permanent public type**
+**`Core::Result<T,E>` as the permanent public type — DECIDED, keep**
 
-`Core::Result<T,E>` was introduced as a C++17 shim for `std::expected`. A decision
-is still open: keep `Result` as the official forever type (so the return shape never
-breaks when the C++ standard is raised), or plan a migration to `std::expected` at
-C++20/23. The public shape (`operator bool`, `.value()`, `.error()`, `*`) was kept
-identical to `std::expected` to make either direction cheap. Document the decision
-before the freeze.
+`Core::Result<T,E>` was introduced as a C++17 shim for `std::expected`, and the
+keep-vs-migrate question was settled as BB-4.5: `Result` is the official forever
+type, so the public return shape never breaks when the C++ standard is raised. Its
+shape (`operator bool`, `.value()`, `.error()`, `*`) stays identical to
+`std::expected`, which keeps a later internal migration cheap without making it a
+public event. See `BACKBONE_WAVE_STATUS.md` §1.
 
 ---
 
@@ -148,11 +148,13 @@ for dynamic-graph nodes (the dynamic composer bypasses `TaskGraph::compile`, whe
 fallback under `SR_ENABLE_DISTRIBUTED` instead of shipping to a worker. It does not
 block the single-node real-time target.
 
-**Python bindings.** A pybind11 (or nanobind) wrapper around the C++ fluent API
-would allow direct interop with NumPy, PyTorch, and Jupyter. The binding entry
-point would be `python/src/module.cpp` + `bind_runtime.cpp` + `bind_graph.cpp`,
-gated by a `SR_BUILD_PYTHON_BINDINGS` CMake option. Zero-copy data transfer via
-the Python Buffer Protocol or DLPack is the performance-critical piece. Not started.
+**Python bindings — ABANDONED, not deferred.** Decided 2026-06-25 and recorded as
+L15 in [`SIMULATION_ENGINE_SUBSTRATE_PLAN.md`](SIMULATION_ENGINE_SUBSTRATE_PLAN.md):
+the audience is industry, not researchers, so a binding layer would only cost time.
+The C++ fluent API is the one and only frontend. This entry previously described a
+pybind11 wrapper as future work, which contradicted the locked decision. Nothing
+here is planned; the architecture should not preclude a later scripting layer, but
+none is built.
 
 **C++ standard migration.** The project targets C++17 for toolchain portability.
 When the SYCL toolchain baseline supports it, features can be restored in two
