@@ -48,14 +48,35 @@ ASAN_FLAGS = "-fsanitize=address -fno-omit-frame-pointer -g -O1"
 # with `could not open 'stl_asan.lib'`. _DISABLE_STL_ANNOTATION is the documented
 # switch that covers all of them (see __msvc_sanitizer_annotate_container.hpp) and
 # will keep covering whatever is added next.
+#
+# -fsanitize-address-use-after-return=never: ASan's use-after-return detection
+# moves locals into a heap-allocated "fake stack", and on the MSVC ABI that
+# codegen produces EH state tables the CRT unwinder cannot read. Any throw issued
+# from inside a catch handler — a bare `throw;` rethrow or a fresh throw, it makes
+# no difference — then faults in `__FrameHandler3::GetUnwindTryBlock` on a null
+# read, before reaching any handler. Reduced to a 20-line program with no
+# SushiRuntime code involved, so this is the toolchain, not the tree; the same
+# program is correct at -O0 for a rethrow and still dies for a throw-copy, which
+# is why the flag is the fix and lowering the optimisation level is not.
+#
+# The setting costs nothing here: the fake stack is what the flag removes, and its
+# reporting is off unless ASAN_OPTIONS carries detect_stack_use_after_return=1,
+# which this CLI has never set (see env.py's _inject_sanitizer_options, which
+# handles LSAN_OPTIONS only). Heap overflow, use-after-free, double-free and
+# global overflow reporting are all unaffected — verified against a deliberate
+# heap-buffer-overflow with the flag on.
+#
+# Windows only. The Itanium ABI unwinder Linux uses is not affected, and ASAN_FLAGS
+# keeps full use-after-return instrumentation there.
 ASAN_FLAGS_WINDOWS = (
-    "-Xarch_host -fsanitize=address -fno-omit-frame-pointer -g -O1 "
-    "-D_DISABLE_STL_ANNOTATION=1")
+    "-Xarch_host -fsanitize=address -fsanitize-address-use-after-return=never "
+    "-fno-omit-frame-pointer -g -O1 -D_DISABLE_STL_ANNOTATION=1")
 
 # The C driver has no device pass, so it takes the plain form: `-Xarch_host` is
 # only meaningful to an offloading compilation and the tree has no C sources
 # anyway — these flags exist for CMake's compiler probe.
-ASAN_C_FLAGS_WINDOWS = "-fsanitize=address -fno-omit-frame-pointer -g -O1"
+ASAN_C_FLAGS_WINDOWS = ("-fsanitize=address -fsanitize-address-use-after-return=never "
+                        "-fno-omit-frame-pointer -g -O1")
 
 # The benchmark binary installs a global operator new/delete replacement to count
 # allocations (tests/benchmark/performance/test_recompose_churn_perf.cpp), which
