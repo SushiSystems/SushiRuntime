@@ -97,6 +97,49 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
     }
 }
 
+// §18 R8: the ordinary add() overloads (not just add_offload) can carry a caller-
+// supplied diagnostic name that reaches RunReport::NodeTiming. Before this, every
+// node reported as "unnamed_task" regardless of what add() call produced it.
+TEST(Integration_Observability, NamedNodeAppearsInNodeTiming)
+{
+    constexpr std::size_t N = 512;
+    constexpr std::size_t STEPS = 4;
+
+    auto rt = Runtime::create({}, profiling_config());
+    ASSERT_TRUE(rt.advanced().profiling_enabled());
+
+    auto buf = rt.buffer<int>(N);
+    int* p = buf.data();
+
+    auto g = rt.graph();
+    g.add(API::sized([] { return N; }), API::Reads{}, API::Writes(buf), N,
+          [p](std::size_t i) { p[i] = static_cast<int>(i); }, "named_dynamic_node");
+
+    auto rep = g.run(STEPS);
+
+    ASSERT_EQ(rep.node_timings.size(), 1u);
+    EXPECT_STREQ(rep.node_timings[0].name.c_str(), "named_dynamic_node");
+    EXPECT_NE(rep.node_timings[0].name, "unnamed_task");
+}
+
+// A node added without a name keeps the documented default, so an unlabeled call
+// site is still visible in the report rather than silently absent.
+TEST(Integration_Observability, UnnamedNodeStillReportsTheDefaultLabel)
+{
+    constexpr std::size_t N = 128;
+
+    auto rt = Runtime::create({}, profiling_config());
+    auto buf = rt.buffer<int>(N);
+    int* p = buf.data();
+
+    auto g = rt.graph();
+    g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    auto rep = g.run();
+
+    ASSERT_EQ(rep.node_timings.size(), 1u);
+    EXPECT_STREQ(rep.node_timings[0].name.c_str(), "unnamed_task");
+}
+
 TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
 {
     constexpr std::size_t N = 1024;
