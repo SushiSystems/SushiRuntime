@@ -368,6 +368,13 @@ complete, so the shared USM it reads is visible host-side. The default is the sa
 SYCL route (`submits_device_work() == true`); only `add_host()` opts in, so a host
 task that does submit a kernel is never misrouted.
 
+**Node names.** Every `add()` and `add_host()` overload takes an optional trailing
+`const char* name` that is threaded into `Node::metadata` and surfaces as
+`RunReport::NodeTiming::name`. The parameter is trailing and defaulted rather than
+positional so that adding it broke no existing call; an unlabelled node keeps
+reporting as `unnamed_task`. The pointer is stored, not copied, so it must outlive
+the graph — a string literal is the intended use.
+
 **Residency.** A `Buffer`/`State` allocates either host-addressable **shared** USM
 (the default) or device-resident **device** USM (`Residency::Device`, via
 `RuntimeContext::malloc_device_on`), chosen once at construction behind the same

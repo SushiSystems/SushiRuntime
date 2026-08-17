@@ -24,12 +24,14 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <optional>
 #include <functional>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
+#include <SushiRuntime/scheduler/ready_sink.hpp>
 
 namespace SushiRuntime 
 {
@@ -74,6 +76,32 @@ namespace SushiRuntime
              * task types without relying on unchecked casts.
              */
             virtual bool is_graph_node() const noexcept { return false; }
+
+            /**
+             * @brief Releases whatever this task's completion unblocked.
+             *
+             * Called once by the poller when the task is reaped, on the reaping
+             * worker's thread. A task that nothing depends on does nothing here; a
+             * graph node walks its successors, satisfies one dependency on each, and
+             * hands the sink the ones that have no dependencies left. The scheduler
+             * never has to know which kind it reaped.
+             *
+             * @param sink Receives each task this completion made runnable.
+             */
+            virtual void on_complete(ReadySink& /*sink*/) {}
+
+            /**
+             * @brief Records one completion of this task for the profiling report.
+             *
+             * The poller owns the SYCL event and so is the only place the device
+             * time can be read; what to do with it belongs to the task, which knows
+             * whether it counts as a system at all. A task that is not profiled
+             * discards it.
+             *
+             * @param device_ns Kernel device time for this completion, or 0 when the
+             *                  event carried no profiling information.
+             */
+            virtual void record_completion(std::uint64_t /*device_ns*/) noexcept {}
 
             /**
              * @brief Main execution logic for the task (Kernel Mode).
