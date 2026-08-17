@@ -99,6 +99,15 @@ def deps_dir() -> Path:
 # CMakeLists.txt: intel-llvm (primary), adaptivecpp (secondary), oneapi (supported).
 TOOLCHAINS = ("intel-llvm", "adaptivecpp", "oneapi")
 
+# Directory names `ss install` may have unpacked the intel/llvm bundle under, in
+# preference order. Two names exist because the installer names the bundle for
+# what it is (a nightly) while this repo's older default assumed a plain
+# `llvm-sycl`, and a machine that has been through both installers ends up with
+# both directories side by side. Probing in order rather than hardcoding one name
+# keeps the two repos from disagreeing about a path neither fully owns; a
+# `llvm_root` written into config.local.toml still wins over all of them.
+INTEL_LLVM_BUNDLE_DIRS = ("llvm-sycl-nightly", "llvm-sycl")
+
 # Default compiler pair (cc, cxx) per toolchain. Used when the config does not
 # pin an explicit compiler, so `sr toolchain <name>` is enough to switch.
 TOOLCHAIN_COMPILERS = {
@@ -171,9 +180,33 @@ class Config(ToolConfig):
             self.toolchain, TOOLCHAIN_COMPILERS["intel-llvm"])
         return (self.cc or default_cc, self.cxx or default_cxx)
 
+    def resolved_llvm_root(self) -> str:
+        """The intel/llvm bundle root to build with, or '' when none is present.
+
+        Prefers an explicit ``llvm_root`` from config.local.toml, since a user who
+        pinned a path meant it. Otherwise probes the shared dependency tree for
+        the names ``ss install`` uses, so a fresh checkout finds the bundle that
+        is actually installed instead of the one this repo used to assume.
+
+        :return: An absolute bundle root holding bin/clang++, or '' if no
+                 configured or probed candidate has one.
+        """
+        compiler = "clang++.exe" if self.is_windows else "clang++"
+
+        pinned = self.expand(self.llvm_root)
+        if pinned:
+            return pinned
+
+        toolchains = deps_dir() / "toolchains"
+        for name in INTEL_LLVM_BUNDLE_DIRS:
+            candidate = toolchains / name
+            if (candidate / "bin" / compiler).is_file():
+                return str(candidate)
+        return ""
+
     def llvm_bin(self) -> str:
         """The intel/llvm bundle's bin directory, or '' when not configured."""
-        root = self.expand(self.llvm_root)
+        root = self.resolved_llvm_root()
         return str(Path(root) / "bin") if root else ""
 
     def resolved_windows_compiler(self) -> str:

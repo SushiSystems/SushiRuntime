@@ -32,8 +32,11 @@ def _cache_key(cfg: Config) -> str:
             # key the cache: switching intel-llvm<->oneapi has to rebuild the snapshot.
             "toolchain": cfg.toolchain,
             # The intel-llvm/adaptivecpp toolchains inject their own bin dirs into
-            # the snapshot PATH, so a change to either invalidates the cache.
-            "llvm_root": cfg.llvm_root,
+            # the snapshot PATH, so a change to either invalidates the cache. The
+            # resolved root, not the raw setting: when the setting is empty the
+            # bundle is probed for, and swapping which one is present has to
+            # invalidate the snapshot just as re-pinning it would.
+            "llvm_root": cfg.resolved_llvm_root(),
             "acpp_exe": cfg.acpp_exe,
         },
         sort_keys=True,
@@ -131,7 +134,7 @@ def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
     bins: list[str] = []
     libs: list[str] = []
     if cfg.toolchain == "intel-llvm":
-        root = cfg.expand(cfg.llvm_root)
+        root = cfg.resolved_llvm_root()
         if root and Path(root).is_dir():
             bins.append(str(Path(root) / "bin"))
             libs.append(str(Path(root) / "lib"))
