@@ -15,7 +15,7 @@ gives you a tour of the core API. Every code sample here uses the real, current
 API and mirrors what the project's own integration tests do.
 
 > For the full command reference, see [CLI_GUIDE.md](CLI_GUIDE.md). For the
-> architecture and design, see the top-level [README](../../README.md).
+> architecture and design, see the top-level [README](README.md).
 
 ---
 
@@ -56,7 +56,7 @@ You'll need a SYCL 2020 compiler — intel-llvm (`clang++ -fsycl`, primary),
 AdaptiveCpp (`acpp`), or Intel oneAPI DPC++ — plus CMake 3.20+, hwloc, and
 GoogleTest. Pick the toolchain with `sr toolchain`. The CLI reads your toolchain
 paths from `cli/config.local.toml`; `ss install` generates that file for you.
-See the [README](../../README.md) for the full requirements list and the CMake
+See the [README](README.md) for the full requirements list and the CMake
 options if you want to skip the CLI.
 
 Verify everything works:
@@ -141,10 +141,10 @@ survives into it, but the storage it already holds is kept.
 is right for a simulation thread with nothing else to do — but a frame usually
 does have something else: extracting the previous step's state for a renderer or
 an audio system, which needs no worker threads at all. `run_async()` starts the
-step and returns a handle instead:
+step and returns an `API::RunHandle` instead:
 
 ```cpp
-auto step = sim.run_async();
+API::RunHandle<API::Graph> step = sim.run_async();
 extract_previous_frame();          // overlaps with the step
 Core::RunReport report = step.wait();
 ```
@@ -311,6 +311,20 @@ The task is dispatched only after its predecessors complete, so the shared USM i
 reads is already up to date; its successors then run once it returns. Do not
 submit SYCL work from an `add_host` body — use a normal `add()` for that.
 
+**Naming a node** makes its timings readable. Every `add()` and `add_host()`
+overload takes an optional name as its last argument; without one the node
+reports as `"unnamed_task"`, which is fine until a report has forty rows and you
+need to know which is which:
+
+```cpp
+sim.add_host(API::Reads(world), API::Writes(decisions),
+             [&] { /* ... */ }, "ai_decide");
+```
+
+The name is what `RunReport::node_timings[i].name` carries, so it is worth
+setting on anything you intend to profile. It is a `const char*` stored as-is —
+pass a string literal or something that outlives the graph.
+
 **Device-resident data** keeps a large field on the GPU across steps instead of
 in host-addressable shared USM. Pass `Residency::Device`; the host then seeds and
 reads it through `write_range`/`read_range` (it is no longer directly indexable):
@@ -352,6 +366,37 @@ heartbeat that migrates tasks between workers; that trades run-to-run
 reproducibility and the jitter floor for throughput on long batch work, which is
 a bad trade for a simulation frame and a good one for a batch job. Turn it on
 when you are the batch job.
+
+**Reading a run.** Every run form returns a `Core::RunReport`. Without profiling
+it carries the cheap totals — `total_tasks_executed`, `total_duration_ms` — which
+cost nothing to maintain. `config.profiling = true` is what fills in the rest,
+and it is a *construction-time* switch: the runtime builds its queues with SYCL
+profiling enabled, so it cannot be turned on later and costs nothing when off.
+
+```cpp
+API::RuntimeConfig config;
+config.profiling = true;
+auto rt = Runtime::create({}, config);
+// ... build and run a graph ...
+for (const auto& node : report.node_timings)
+    std::printf("%-24s %8.3f ms over %zu runs\n",
+                node.name.c_str(), node.device_ms, node.invocations);
+```
+
+`node_timings` is one row per graph node, keyed by the name you gave it — this is
+what the trailing `name` argument on `add()` is for. `worker_timings` splits each
+worker's time into busy, stealing, polling and idle, which is how you tell a graph
+that is too small to fill the pool from one that is genuinely saturated.
+
+**Determinism is a contract with two sides.** The runtime guarantees that a fixed
+graph topology produces schedule-independent results: the same inputs give the
+same outputs regardless of how the work happened to be distributed across workers.
+That holds only while the floating-point semantics stay put, so the runtime
+compiles with contraction and fast-math off and exports that setting to you
+through the `sushiruntime_deterministic_fp` target. If your own translation units
+build with `-ffast-math` or `/fp:fast`, kernels you write are outside the
+guarantee even though the runtime's scheduling is inside it. See
+[INTEGRATION.md](INTEGRATION.md) for the exact flags.
 
 The fluent API is enough for most programs. The rest of this guide documents the
 lower-level task-graph API it is built on, for when you need full control over
@@ -913,9 +958,15 @@ you express an in-place update, and it keeps the task correctly ordered between
 
 ## 7. Where to go next
 
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — what is underneath all of this: the
+  layers, the work-stealing scheduler, the dependency tracker, the memory model,
+  and the determinism contract. Read it before changing anything.
+- **[INTEGRATION.md](INTEGRATION.md)** — consuming the runtime from your own
+  project with `find_package(SushiRuntime)`, and which compiler flags you must
+  match for the determinism guarantee to hold.
 - **[CLI_GUIDE.md](CLI_GUIDE.md)** — every `sr` command: build types, test
   suites, running binaries, Docker, and diagnostics.
-- **[README](../../README.md)** — requirements, the full architecture (memory
+- **[README](README.md)** — requirements, the full architecture (memory
   pool, work-stealing scheduler, topology mapping), CMake options, and the
   optional distributed master-worker layer.
 - **`tests/functional/integration/`** — runnable, real-world usage of every

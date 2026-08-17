@@ -1,7 +1,7 @@
 # Doxygen configuration for the SushiRuntime public fluent API reference.
 #
 # Scope is deliberately the public surface only (include/SushiRuntime/api), the
-# product's documented face. Lower layers are described in docs/guides/ARCHITECTURE.md
+# product's documented face. Lower layers are described in docs/ARCHITECTURE.md
 # and are intentionally not part of this scripting-style reference. Build it with
 # `sr doxygen` (or `doxygen Doxyfile`); output lands in docs/api-site/html.
 
@@ -20,7 +20,9 @@ FULL_SIDEBAR           = NO
 # Public fluent surface plus the hand-written manual landing and getting-started
 # tour. The reference and the manual build together, Unity-manual style.
 INPUT                  = docs/api/mainpage.md \
-                         docs/guides/INTRODUCTION.md \
+                         docs/INTRODUCTION.md \
+                         docs/INTEGRATION.md \
+                         docs/CLI_GUIDE.md \
                          include/SushiRuntime/api
 FILE_PATTERNS          = *.hpp *.h *.md
 RECURSIVE              = YES

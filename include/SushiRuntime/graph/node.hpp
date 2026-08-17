@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -529,6 +530,73 @@ namespace SushiRuntime
 
             /** @brief Indicates that this task is a graph node. */
             bool is_graph_node() const noexcept override        { return true; }
+
+            /**
+             * @brief Satisfies one dependency on every successor and reports the freed ones.
+             *
+             * Walks the three places a successor can live — the inline array, the
+             * lock-free spillover list, and the cross-region boundary vector — and
+             * decrements each target's in-degree. A target whose count reaches zero
+             * has no dependencies left and goes to the sink. The decrement is
+             * acq_rel so the freed successor sees every write the predecessors made.
+             *
+             * @param sink Collects each successor this completion made runnable.
+             */
+            void on_complete(SushiRuntime::Scheduler::ReadySink& sink) override
+            {
+                const std::int32_t count =
+                    inline_successor_count.load(std::memory_order_acquire);
+                const std::int32_t max_idx = std::min(count, MAX_INLINE_SUCCESSORS);
+
+                for (std::int32_t i = 0; i < max_idx; ++i)
+                {
+                    Node* succ = inline_successors[i];
+                    if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                        sink.push_back(succ);
+                }
+
+                for (SuccessorNode* curr = successor_list.load(std::memory_order_acquire);
+                     curr; curr = curr->next)
+                {
+                    Node* succ = curr->target;
+                    if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                        sink.push_back(succ);
+                }
+
+                // Cross-region successors of the dynamic region graph. This vector is
+                // mutated only at a step boundary, with no worker running, and is
+                // read-only here, so it needs no atomics of its own; the per-target
+                // in_degree decrement carries the same acq_rel ordering as above.
+                // Empty (and so skipped) for every static-graph node and every dynamic
+                // node that exports nothing across a boundary.
+                for (Node* succ : region.boundary_successors)
+                {
+                    if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                        sink.push_back(succ);
+                }
+            }
+
+            /**
+             * @brief Adds one completion to this node's profiling counters.
+             *
+             * The sentinel is skipped: it is plumbing that closes the step, not a
+             * system the caller asked to run, so counting it would put a row in the
+             * report for work nobody wrote. Relaxed ordering throughout — the numbers
+             * are read after the step's completion barrier, which supplies the
+             * happens-before on its own.
+             *
+             * @param device_ns Kernel device time for this completion; 0 when the
+             *                  backend reported none, in which case only the
+             *                  invocation count moves.
+             */
+            void record_completion(std::uint64_t device_ns) noexcept override
+            {
+                if (is_sentinel)
+                    return;
+                profiling.invocations.fetch_add(1, std::memory_order_relaxed);
+                if (device_ns)
+                    profiling.device_ns.fetch_add(device_ns, std::memory_order_relaxed);
+            }
 
             /** @brief Returns prioritized value from metadata. */
             int get_priority() const noexcept override          { return metadata.priority; }

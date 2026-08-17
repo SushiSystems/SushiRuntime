@@ -30,13 +30,31 @@ allocation in the common case) and spills the overflow into a heap vector; its
 `push()` never fails and never drops. The 256 is now an inline fast-path capacity,
 not a hard cap, so the deadlock this item described cannot occur.
 
-**#33 — EventPolling `Task*` → `Node*` downcast**
+**#33 — EventPolling `Task*` → `Node*` downcast — RESOLVED**
 
-`EventPolling` uses `is_graph_node()` to guard a `static_cast<Node*>` from a
-`Task*`. This couples the scheduling hot path to a derived type. Inspect
-`src/scheduler/scheduler.cpp`: if the cast is still there, add a virtual
-`on_complete()` to `Task` so `EventPolling` stays type-blind and `Node` handles its
-own successor release. If the code was already changed differently, close this item.
+`Task` gained `on_complete(ReadySink&)` and `record_completion(device_ns)`, and
+`Node` overrides both: it walks its own inline, spillover and cross-region
+successors, decrements their in-degrees, and reports the freed ones. `EventPolling`
+no longer downcasts, no longer names `Graph::Node`, and no longer includes
+`graph/node.hpp` — the scheduler header now compiles without the graph layer,
+which was the actual defect, since a lower layer was including a higher one.
+
+`ReadySink` is a reused buffer, not a callback interface, and that choice was
+measured rather than assumed. A virtual call per freed successor read well on
+paper — one predicted indirect branch against three atomics — and cost **4.6x** on
+`Performance_WideFanout` (286 → 1303 ns/task): the loss is not the call, it is that
+the call cannot be inlined and it sits in the middle of a loop that previously
+inlined end to end through the concrete queue. Collecting into a buffer leaves one
+virtual call per completion and keeps the push inlined; across five matched samples
+per build it is within run-to-run noise (baseline mean 308.3 ns/task, after 314.1,
+with the two ranges overlapping and the medians favouring the new code).
+
+The five remaining downcasts in `src/scheduler/scheduler.cpp` are deliberately
+left. Each reaches for a different `Node` member — `offload_state`, `is_sentinel`,
+`bindings_`, `metadata.numa_affinity`, `sycl_deps` — and virtualising all of them
+would turn `Task` into an interface that encodes every graph concern, which trades
+one coupling for a worse one. They are confined to a `.cpp`, so no header
+propagates the dependency.
 
 ---
 

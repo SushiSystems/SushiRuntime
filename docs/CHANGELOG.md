@@ -8,6 +8,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ## [Unreleased]
 
+### Changed
+- **The scheduler no longer downcasts a `Task*` to a `Graph::Node*`, and its
+  header no longer includes the graph layer's.** `Task` gained
+  `on_complete(ReadySink&)` and `record_completion(device_ns)`; `Node` overrides
+  both and walks its own inline, spillover and cross-region successors. The
+  defect was a layering inversion — `scheduler/event_polling.hpp` included
+  `graph/node.hpp`, so a lower layer pulled in a higher one — and it is gone;
+  `EventPolling` now compiles without the graph layer entirely.
+
+  `ReadySink` is a reused buffer rather than a callback interface, and that was
+  measured, not assumed. A virtual call per freed successor looks free on paper
+  next to the three atomics already on that path, and cost **4.6x** on
+  `Performance_WideFanout` (286 → 1303 ns/task): what it removes is not a few
+  cycles of dispatch but the inlining of a loop that previously ran end to end
+  into the concrete queue. Collecting into a buffer leaves one virtual call per
+  completion and keeps the push inlined — five matched samples per build put the
+  result inside run-to-run noise (means 308.3 vs 314.1 ns/task, ranges
+  overlapping). The five remaining downcasts in `scheduler.cpp` stay: each reaches
+  for a different `Node` member, and virtualising all of them would make `Task` an
+  interface encoding every graph concern.
+
+### Fixed
+- **The Doxygen site's manual half was silently not building.** `Doxyfile`'s
+  `INPUT` named `docs/guides/INTRODUCTION.md`, and there is no `docs/guides/`
+  directory — the reference built from the headers while the hand-written pages
+  were skipped without an error. Same stale prefix in `docs/api/mainpage.md`'s
+  cross-references. `docs/INTRODUCTION.md`'s three `../../README.md` links
+  resolved two levels above the repository root. All corrected, and
+  `INTEGRATION.md` / `CLI_GUIDE.md` joined the site so the manual's links resolve.
+
 ### Added
 - **`sr package` turns a build tree into a package and then proves it works.**
   `tests/package/` had never been run. Running it showed the two halves of

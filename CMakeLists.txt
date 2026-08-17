@@ -17,7 +17,7 @@ include(Sycl)    # select the SYCL toolchain + compiler; oneAPI Windows linker f
 
 # CXX only: the project has no C sources, and the AdaptiveCpp driver (acpp) is a
 # C++-only compiler — enabling C would make CMake's C-compiler probe fail there.
-project(SushiRuntime VERSION 0.1.0 LANGUAGES CXX)
+project(SushiRuntime VERSION 0.2.0 LANGUAGES CXX)
 message(STATUS ">>> SYCL toolchain: ${SR_SYCL_TOOLCHAIN} (${CMAKE_CXX_COMPILER})")
 
 # --- Post-project: policy, deps, and the GPU backend --------------------------
