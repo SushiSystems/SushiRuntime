@@ -135,6 +135,16 @@ The codebase has a deliberate, consistent style. Match the file you're editing.
   The rule covers build-system identifiers and build-tree artifacts, not C++
   symbols: the public C++ API is already scoped by the `SushiRuntime`
   namespace, so a type like `sushi_ptr` is not affected.
+- **CMake modules are included by absolute path, never by bare name.**
+  `CMAKE_MODULE_PATH` is the same flat namespace as target names, and it is
+  first-match-wins: when the engine `add_subdirectory`s this tree it has already
+  appended its own `cmake/`, so `include(ProjectOptions)` here resolves to *its*
+  file. That is not hypothetical — `ProjectOptions.cmake` and `Vcpkg.cmake`
+  collided exactly this way, leaving `SR_ENABLE_DISTRIBUTED` and `SR_BUILD_TESTS`
+  undefined in every engine build, silently, because both default to OFF. Write
+  `include("${SR_CMAKE_DIR}/X.cmake")` from the top level and
+  `include("${CMAKE_CURRENT_LIST_DIR}/X.cmake")` from inside another module.
+  Prefixing the filename helps a reader; only the absolute path is a fix.
 - **Every source file carries the Apache 2.0 license header** used across the
   tree. Copy it verbatim into new files.
 

@@ -106,6 +106,7 @@ class Suite(str, enum.Enum):
     stress = "stress"
     performance = "performance"
     benchmark = "benchmark"     # umbrella: stress + performance
+    package = "package"         # installs, then builds and runs a consumer
     all = "all"
 
 
@@ -122,6 +123,7 @@ _SUITE_LABEL_REGEX = {
     Suite.stress: "^stress$",
     Suite.performance: "^performance$",
     Suite.benchmark: "^(stress|performance)$",
+    Suite.package: "^package$",
 }
 
 

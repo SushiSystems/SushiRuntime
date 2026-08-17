@@ -9,11 +9,23 @@ cmake_minimum_required(VERSION 3.20)
 #     compiler that project()'s probe validates.
 #   * everything else runs AFTER project().
 # See cmake/ for the details of each stage.
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+# Modules are included by absolute path, never by bare name. CMAKE_MODULE_PATH is
+# one flat, first-match-wins list shared with whoever add_subdirectory's this tree,
+# and the engine appends its own cmake/ before adding the runtime — so include(X)
+# here resolves to *its* X.cmake whenever both repos own that name. Two of ours
+# collided in exactly this way: ProjectOptions.cmake and Vcpkg.cmake, which left
+# SR_ENABLE_DISTRIBUTED and SR_BUILD_TESTS undefined in every engine build and the
+# runtime's policy block unrun, silently, because both options default to OFF.
+# Those two are now prefixed as well, but the absolute path is the fix: it does not
+# depend on a name staying unique.
+#
+# CMAKE_MODULE_PATH is still appended for find_package(<Pkg>) module-mode lookups.
+set(SR_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${SR_CMAKE_DIR}")
 
 # --- Pre-project: toolchain shaping -------------------------------------------
-include(Vcpkg)   # (Windows) locate vcpkg + set the toolchain file
-include(Sycl)    # select the SYCL toolchain + compiler; oneAPI Windows linker fixups
+include("${SR_CMAKE_DIR}/SushiRuntimeVcpkg.cmake")   # (Windows) locate vcpkg + set the toolchain file
+include("${SR_CMAKE_DIR}/Sycl.cmake")    # select the SYCL toolchain + compiler; oneAPI Windows linker fixups
 
 # CXX only: the project has no C sources, and the AdaptiveCpp driver (acpp) is a
 # C++-only compiler — enabling C would make CMake's C-compiler probe fail there.
@@ -21,24 +33,24 @@ project(SushiRuntime VERSION 0.2.0 LANGUAGES CXX)
 message(STATUS ">>> SYCL toolchain: ${SR_SYCL_TOOLCHAIN} (${CMAKE_CXX_COMPILER})")
 
 # --- Post-project: policy, deps, and the GPU backend --------------------------
-include(ProjectOptions)     # policies, C++17 baseline, cross-cutting options
+include("${SR_CMAKE_DIR}/SushiRuntimeProjectOptions.cmake")     # policies, C++17 baseline, cross-cutting options
 
 # Compile policy. BuildPolicy composes the warning, architecture, floating-point
 # and sanitizer targets and exposes sushiruntime_apply_build_policy(<target>), which
 # every target in the tree calls. It is a function rather than a directory-scope
 # link_libraries() so the in-tree-only flags stay out of the installed export
 # set — see cmake/BuildPolicy.cmake for the boundary this draws.
-include(BuildPolicy)
+include("${SR_CMAKE_DIR}/BuildPolicy.cmake")
 
-include(Dependencies)       # hwloc (+ Windows pkgconf resolution)
+include("${SR_CMAKE_DIR}/Dependencies.cmake")       # hwloc (+ Windows pkgconf resolution)
 sushiruntime_sycl_configure()      # find_package(SYCL) dispatch + add_sycl_to_target shim + gcc-toolchain
 
 # GPU backend selection (Strategy). GpuBackend defines the mechanism; DetectGpu
 # resolves the vendor and includes exactly one backend file; finalize renders the
 # accumulated offload declarations into compiler/linker flags. Adding a vendor is
 # a new file under cmake/gpu/ + one branch in DetectGpu — nothing here changes.
-include(gpu/GpuBackend)
-include(gpu/DetectGpu)
+include("${SR_CMAKE_DIR}/gpu/GpuBackend.cmake")
+include("${SR_CMAKE_DIR}/gpu/DetectGpu.cmake")
 sushiruntime_gpu_finalize()
 
 # Install layout and the package's own location. GNUInstallDirs is what makes an
@@ -47,13 +59,7 @@ sushiruntime_gpu_finalize()
 include(GNUInstallDirs)
 set(SR_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SushiRuntime"
     CACHE STRING "Where the SushiRuntime CMake package files are installed")
-# Included by absolute path, not by module name. CMAKE_MODULE_PATH is one flat
-# search list shared with whoever add_subdirectory's this tree, and the engine
-# appends its own cmake/ before it adds the runtime — so `include(Install)` here
-# resolves to *its* Install.cmake and this file's functions never get defined.
-# The prefixed filename makes the collision unlikely; the absolute path makes it
-# impossible. Applies to every module this repo owns that has a generic name.
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SushiRuntimeInstall.cmake")
+include("${SR_CMAKE_DIR}/SushiRuntimeInstall.cmake")
 
 # The version literals in include/SushiRuntime/version.hpp are hand-written, so
 # they are greppable and need no generated header on the include path. That trade
