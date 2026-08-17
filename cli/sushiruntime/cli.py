@@ -137,20 +137,18 @@ def run(
 @app.command("package")
 def package(
     prefix: Optional[str] = typer.Option(
-        None, "--prefix", help="Where to install. Defaults to build/stage."),
+        None, "--prefix", help="Where to install. Defaults to build/dist."),
     no_archive: bool = typer.Option(
         False, "--no-archive", help="Install only; do not run CPack."),
-    no_verify: bool = typer.Option(
-        False, "--no-verify", help="Skip the packaging oracle."),
 ):
-    """Install the built tree to a prefix, archive it, and verify it is usable.
+    """Install the built tree to a prefix and archive it for redistribution.
 
-    The oracle builds tests/package/ against the prefix and then runs it with
-    nothing on PATH but the prefix itself, which is what catches a package that
+    This produces the artifact; it does not check it. `sr test --suite package`
+    is the check — it builds tests/package/ against an installed prefix and runs
+    it with nothing on PATH but the prefix, which is what catches a package that
     only works because this machine already has the SYCL runtime installed.
     """
-    raise typer.Exit(packaging_svc.package(prefix=prefix, archive=not no_archive,
-                                           verify=not no_verify))
+    raise typer.Exit(packaging_svc.package(prefix=prefix, archive=not no_archive))
 
 
 @app.command("clean")

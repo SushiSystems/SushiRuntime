@@ -31,12 +31,37 @@ if(SR_DETERMINISTIC_FP)
     #
     # icx/icx-cl default to -fp-model=fast, so naming the model is not redundant
     # there the way it would be on plain clang.
-    target_compile_options(sushiruntime_deterministic_fp INTERFACE
-        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>>:/fp:precise>"
-        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>>:-ffp-contract=off>"
-        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>>:-fno-fast-math>"
-        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>,$<CXX_COMPILER_ID:IntelLLVM>>:-fp-model=precise>"
-    )
+    # $<CXX_COMPILER_FRONTEND_VARIANT:...> is a CMake 3.30 generator expression and
+    # this project's floor is 3.20, so it cannot be used unconditionally: on an
+    # older CMake it is not an unknown-but-ignored genex, it is a hard
+    # "Expression did not evaluate to a known generator expression" at generate
+    # time, which is how a lane with an older CMake than the developer's fails.
+    #
+    # Where it is available it is worth keeping, because it evaluates in the
+    # *consumer's* generate step: a consumer compiling with an MSVC-frontend
+    # driver gets /fp:precise even when this tree was configured with a
+    # GNU-frontend one. The fallback cannot do that — it bakes in the frontend of
+    # whoever built the runtime — so it is a genuine loss of fidelity for
+    # cross-frontend consumption, taken only when CMake leaves no choice.
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.30)
+        target_compile_options(sushiruntime_deterministic_fp INTERFACE
+            "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>>:/fp:precise>"
+            "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>>:-ffp-contract=off>"
+            "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>>:-fno-fast-math>"
+            "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>,$<CXX_COMPILER_ID:IntelLLVM>>:-fp-model=precise>"
+        )
+    elseif(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+        target_compile_options(sushiruntime_deterministic_fp INTERFACE
+            "$<$<COMPILE_LANGUAGE:CXX>:/fp:precise>")
+    else()
+        target_compile_options(sushiruntime_deterministic_fp INTERFACE
+            "$<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>"
+            "$<$<COMPILE_LANGUAGE:CXX>:-fno-fast-math>")
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+            target_compile_options(sushiruntime_deterministic_fp INTERFACE
+                "$<$<COMPILE_LANGUAGE:CXX>:-fp-model=precise>")
+        endif()
+    endif()
 
     # The MSVC-style command line above pins the model but says nothing about
     # contraction, and the two are separate axes on the compiler that matters

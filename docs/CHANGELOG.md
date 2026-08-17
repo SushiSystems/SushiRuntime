@@ -9,6 +9,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Changed
+- **Packaging is verified as a test suite, `sr test --suite package`.** Whether an
+  installed runtime works outside its own tree has a pass/fail answer, so it is a
+  test rather than a separate verb. Two CTest tests joined by a fixture — one
+  installs to a prefix, one builds `tests/package/` against it and runs the result
+  with nothing on `PATH` but the prefix — so a failure says which half broke. `sr
+  package` keeps only what is genuinely a release action: install and archive.
+  Its `--no-verify` flag is gone and its default prefix moved to `build/dist`,
+  leaving `build/stage` to the test suite.
+
+- **CMake modules are included by absolute path.** `ProjectOptions.cmake` and
+  `Vcpkg.cmake` shared their names with SushiEngine's, and `CMAKE_MODULE_PATH` is
+  one flat first-match-wins list that the engine populates before it
+  `add_subdirectory`s this tree — so under an engine build `include(ProjectOptions)`
+  resolved to the engine's file and `SR_ENABLE_DISTRIBUTED` and `SR_BUILD_TESTS`
+  were never defined. Proven by their absence from the engine build tree's cache
+  while `SR_DETERMINISTIC_FP`, whose module name is unique, was present. Harmless
+  only because both options default to OFF. Every include is now absolute, the two
+  colliding modules are prefixed, and `CONTRIBUTING.md` §4 gained the rule, which
+  covered target and function names but not module filenames.
 - **The scheduler no longer downcasts a `Task*` to a `Graph::Node*`, and its
   header no longer includes the graph layer's.** `Task` gained
   `on_complete(ReadySink&)` and `record_completion(device_ns)`; `Node` overrides
@@ -30,6 +49,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   interface encoding every graph concern.
 
 ### Fixed
+- **The determinism target no longer needs CMake 3.30.**
+  `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is a 3.30 generator expression while the
+  project's floor is 3.20, and on an older CMake it is not ignored — it is a hard
+  "Expression did not evaluate to a known generator expression" at generate time.
+  The Linux oneAPI CI lane failed on it while every local build passed, because the
+  local CMake was newer. The genex is kept where it is available, since it resolves
+  in the *consumer's* generate step and so adapts to the consumer's frontend; below
+  3.30 the frontend is detected at configure time instead, which bakes in the
+  building compiler's choice. Both branches verified to emit the same flags here.
 - **The Doxygen site's manual half was silently not building.** `Doxyfile`'s
   `INPUT` named `docs/guides/INTRODUCTION.md`, and there is no `docs/guides/`
   directory — the reference built from the headers while the hand-written pages
@@ -39,23 +67,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   `INTEGRATION.md` / `CLI_GUIDE.md` joined the site so the manual's links resolve.
 
 ### Added
-- **`sr package` turns a build tree into a package and then proves it works.**
-  `tests/package/` had never been run. Running it showed the two halves of
+- **An installed SushiRuntime now carries what it needs to run.**
+  `tests/package/` had never been exercised. Doing so showed the two halves of
   packaging fail independently: a consumer *built* against an install prefix
   fine — `find_package` resolved, the flag-hygiene assertion held — and then
   died with `0xC0000135` when run with nothing on `PATH` but the prefix.
   `install(TARGETS)` staged `sushiruntime.dll` and nothing else, while the
-  library imports `sycl8.dll` and `hwloc-15.dll` directly and the SYCL runtime
-  loads its Unified Runtime adapters by name afterwards. A developer machine has
-  all of them on `PATH` already, so no ordinary build or test run could have
-  surfaced it. Now: `cmake/SushiRuntimeInstall.cmake` stages those seven
-  libraries under a `sushiruntime_redist` component, CPack archives the same
-  install rules so the archive cannot drift from `cmake --install`, and
-  `tools/packaging/verify_installed_package.py` builds the consumer with the
-  toolchain environment it genuinely needs and then runs it with an environment
-  holding only Windows and the prefix. `sr package` takes `--prefix` (default
-  `build/stage`), `--no-archive` and `--no-verify`. Redistribution licensing is
-  untouched by this and stays BB-5d's gate; a local stage is not a distribution.
+  library imports the SYCL runtime and `hwloc-15.dll` directly and the SYCL
+  runtime loads its Unified Runtime adapters by name afterwards. A developer
+  machine has all of them on `PATH` already, so no ordinary build or test run
+  could have surfaced it.
+
+  `cmake/SushiRuntimeInstall.cmake` now stages them under a
+  `sushiruntime_redist` component, split by kind: direct imports of
+  `sushiruntime.dll` warn when missing, while the UR adapters — which vary per
+  bundle — are staged when present and skipped silently when not. The SYCL
+  runtime is matched by pattern rather than named, after a toolchain upgrade to
+  DPC++ 7.1.0 changed `sycl8.dll` to `sycl9.dll` and produced a package that
+  installed cleanly and would not start. CPack archives the same install rules,
+  so the archive cannot drift from a plain `cmake --install`. Redistribution
+  licensing is untouched and stays BB-5d's gate; a local stage is not a
+  distribution.
 
 - **A caller can name a node on the ordinary `add()`/`add_host()` overloads.** Every
   device-side profiler-facing consumer (SushiEngine's physics graph among them) already
@@ -416,6 +448,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   task-graph API is documented as the lower-level foundation.
 
 ### Fixed
+- **The determinism target no longer needs CMake 3.30.**
+  `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is a 3.30 generator expression while the
+  project's floor is 3.20, and on an older CMake it is not ignored — it is a hard
+  "Expression did not evaluate to a known generator expression" at generate time.
+  The Linux oneAPI CI lane failed on it while every local build passed, because the
+  local CMake was newer. The genex is kept where it is available, since it resolves
+  in the *consumer's* generate step and so adapts to the consumer's frontend; below
+  3.30 the frontend is detected at configure time instead, which bakes in the
+  building compiler's choice. Both branches verified to emit the same flags here.
 - Memory-safety hardening of the concurrency and distributed layers:
   - EBR `enter()` now issues a `seq_cst` fence after publishing its epoch slot, so
     a reader's slot is globally visible before it dereferences shared structure —
@@ -535,6 +576,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 - Changes to existing behavior
 
 ### Fixed
+- **The determinism target no longer needs CMake 3.30.**
+  `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is a 3.30 generator expression while the
+  project's floor is 3.20, and on an older CMake it is not ignored — it is a hard
+  "Expression did not evaluate to a known generator expression" at generate time.
+  The Linux oneAPI CI lane failed on it while every local build passed, because the
+  local CMake was newer. The genex is kept where it is available, since it resolves
+  in the *consumer's* generate step and so adapts to the consumer's frontend; below
+  3.30 the frontend is detected at configure time instead, which bakes in the
+  building compiler's choice. Both branches verified to emit the same flags here.
 - Bug fixes
 
 ### Removed

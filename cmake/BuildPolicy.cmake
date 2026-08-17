@@ -26,10 +26,10 @@
 # interface, so the policy targets would appear in the installed export set and
 # the flags they carry would reach consumers — the opposite of the intent.
 
-include(CompilerWarnings)   # -> sushiruntime_warnings
-include(Optimization)       # -> sushiruntime_perf
-include(Determinism)        # -> sushiruntime_deterministic_fp
-include(Sanitizers)         # -> sushiruntime_sanitizers
+include("${CMAKE_CURRENT_LIST_DIR}/CompilerWarnings.cmake")   # -> sushiruntime_warnings
+include("${CMAKE_CURRENT_LIST_DIR}/Optimization.cmake")       # -> sushiruntime_perf
+include("${CMAKE_CURRENT_LIST_DIR}/Determinism.cmake")        # -> sushiruntime_deterministic_fp
+include("${CMAKE_CURRENT_LIST_DIR}/Sanitizers.cmake")         # -> sushiruntime_sanitizers
 
 # Applies the project's in-tree compile policy to one target.
 #

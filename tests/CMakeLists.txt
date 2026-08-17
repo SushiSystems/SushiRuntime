@@ -238,3 +238,49 @@ if(SR_BUILD_BENCHMARKS)
         PROPERTIES LABELS "performance"
     )
 endif()
+
+# ----------------------------------------------------------------------------
+# Packaging suite
+# ----------------------------------------------------------------------------
+# Whether an installed SushiRuntime is usable from outside its own tree is a
+# question with a pass/fail answer, so it is a test rather than a separate verb.
+# It is its own label because it is not like the others: it installs, configures
+# a second CMake project, compiles it, and runs it, which costs far more than any
+# unit test and has no business inside `--suite functional`.
+#
+# Two tests joined by a fixture. The install has to happen before the consumer
+# can find the package, and expressing that as FIXTURES_SETUP rather than as one
+# big test means a failure tells you *which* half broke — a package that will not
+# install is a different bug from one that installs and will not run.
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_FOUND)
+    set(SR_PACKAGE_STAGE "${CMAKE_BINARY_DIR}/stage")
+
+    add_test(NAME Package.InstallsToAPrefix
+        COMMAND "${CMAKE_COMMAND}" --install "${CMAKE_BINARY_DIR}"
+                                   --prefix "${SR_PACKAGE_STAGE}"
+    )
+    set_tests_properties(Package.InstallsToAPrefix PROPERTIES
+        FIXTURES_SETUP SR_PACKAGE
+        LABELS "package"
+    )
+
+    # The compiler is passed through rather than rediscovered: the runtime's
+    # kernels are header templates instantiated in the consumer's own translation
+    # units, so a consumer built with a different SYCL compiler is not testing
+    # this package.
+    add_test(NAME Package.RunsAConsumerWithNothingButThePrefix
+        COMMAND "${Python3_EXECUTABLE}"
+                "${PROJECT_SOURCE_DIR}/tools/packaging/verify_installed_package.py"
+                "${SR_PACKAGE_STAGE}"
+                --compiler "${CMAKE_CXX_COMPILER}"
+                --cmake "${CMAKE_COMMAND}"
+                --ninja "${CMAKE_MAKE_PROGRAM}"
+    )
+    set_tests_properties(Package.RunsAConsumerWithNothingButThePrefix PROPERTIES
+        FIXTURES_REQUIRED SR_PACKAGE
+        LABELS "package"
+    )
+else()
+    message(STATUS "Python3 not found: the packaging suite will not be registered.")
+endif()

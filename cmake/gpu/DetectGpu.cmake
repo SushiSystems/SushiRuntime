@@ -52,13 +52,13 @@ set(SR_GPU_BACKEND_RESOLVED "${_sr_backend}" CACHE INTERNAL "Resolved GPU backen
 # Dispatch to the vendor strategy. Each file is self-contained and only appends to
 # the GpuBackend accumulators; adding a vendor means adding a branch here + a file.
 if(_sr_backend STREQUAL "cuda")
-    include(gpu/Cuda)
+    include("${CMAKE_CURRENT_LIST_DIR}/Cuda.cmake")
 elseif(_sr_backend STREQUAL "rocm")
-    include(gpu/Rocm)
+    include("${CMAKE_CURRENT_LIST_DIR}/Rocm.cmake")
 elseif(_sr_backend STREQUAL "intel")
-    include(gpu/IntelGpu)
+    include("${CMAKE_CURRENT_LIST_DIR}/IntelGpu.cmake")
 elseif(_sr_backend STREQUAL "cpu" OR _sr_backend STREQUAL "none")
-    include(gpu/CpuFallback)
+    include("${CMAKE_CURRENT_LIST_DIR}/CpuFallback.cmake")
 else()
     message(FATAL_ERROR "Unknown SR_GPU_BACKEND='${SR_GPU_BACKEND}'. Use auto, cuda, rocm, intel, cpu, or none.")
 endif()
