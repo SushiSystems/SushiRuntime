@@ -296,14 +296,17 @@ namespace SushiRuntime
          * @param write_access A list of USM regions the task writes to.
          * @param bindings Shared per-step controls; null behaves like the plain overload.
          * @param dependencies An optional list of manual SYCL dependencies.
+         * @param meta Diagnostic name for the profiler's per-node report (§18 R8).
          */
         void TaskGraph::add_node(TaskWork work,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                  std::shared_ptr<LateBindings> bindings,
-                                 const std::vector<sycl::event>& dependencies)
+                                 const std::vector<sycl::event>& dependencies,
+                                 const TaskMetadata& meta)
         {
             auto node = make_sushi<Node>();
+            node->metadata = meta;
             node->work = std::move(work);
             node->sycl_deps = dependencies;
             node->bindings_ = std::move(bindings);
@@ -498,13 +501,16 @@ namespace SushiRuntime
          * @param write_access Regions this task writes to.
          * @param work Callable run once on a worker thread; submits no SYCL work.
          * @param dependencies An optional list of manual SYCL dependencies.
+         * @param meta Diagnostic name for the profiler's per-node report (§18 R8).
          */
         void TaskGraph::add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                    const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                    std::function<void()> work,
-                                   const std::vector<sycl::event>& dependencies)
+                                   const std::vector<sycl::event>& dependencies,
+                                   const TaskMetadata& meta)
         {
             auto node = make_sushi<Node>();
+            node->metadata              = meta;
             node->native_work          = std::move(work);
             node->submits_device_work_ = false;
             node->mode                 = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;

@@ -9,6 +9,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- **A caller can name a node on the ordinary `add()`/`add_host()` overloads.** Every
+  device-side profiler-facing consumer (SushiEngine's physics graph among them) already
+  built a diagnostic name per node and had nowhere to put it: only the offload path
+  looked like it accepted one, and even that hardcoded a literal (`"fluent_offload"`).
+  Every other shape bottomed out in `TaskGraph::add_node`/`add_native`, neither of which
+  touched `Node::metadata`, so every node's `RunReport::NodeTiming::name` read
+  `"unnamed_task"` regardless of what produced it. The `Dynamic` per-element `add()`
+  overloads and both `add_host()` shapes now take a trailing, defaulted `const char*
+  name` (mirroring the offload path's trailing-optional-argument precedent rather than
+  reordering any existing parameter), threaded through `TaskGraph::add_node`'s
+  bindings-taking overload and `add_native` via a `TaskMetadata`, the same struct
+  `add_task` already populates this way. Unlabeled call sites are unaffected — every
+  existing caller keeps compiling and keeps reporting `"unnamed_task"`.
+  `Integration_Observability.NamedNodeAppearsInNodeTiming` and
+  `.UnnamedNodeStillReportsTheDefaultLabel` cover both.
 - **SushiRuntime is consumable out of tree.** `install(EXPORT SushiRuntimeTargets
   NAMESPACE SushiRuntime::)` plus a generated `SushiRuntimeConfig.cmake` and version
   file, so `find_package(SushiRuntime REQUIRED)` and

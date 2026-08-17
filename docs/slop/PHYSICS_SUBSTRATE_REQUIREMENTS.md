@@ -1,8 +1,10 @@
 # What a AAA Physics Engine Needs From SushiRuntime — Engineering Request
 
-**Status: all seven are addressed** on `feature/physics-substrate-seams`; see
-[`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](PHYSICS_SUBSTRATE_IMPLEMENTATION.md) for the design and
-[the section below](#delivery) for what each one became.
+**Status: the original seven are addressed**, plus R8 (raised and closed after this document's
+first pass) — see [`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](PHYSICS_SUBSTRATE_IMPLEMENTATION.md) for
+the design and [the section below](#delivery) for what each one became. **R9 is open** — raised
+2026-08-02, a dispatch-primitive gap the physics side's P8 phase measured directly; see its row
+below and `sushiengine/docs/slop/physics_system.md` §16.37/§16.42/§18 for the evidence.
 
 The rest of this document is the original request, kept as written so the reasoning behind each ask
 stays auditable. Every claim is anchored to a location in the tree (`file:line`) so it can be
@@ -19,6 +21,8 @@ verified independently, in the style of `SIMULATION_ENGINE_SUBSTRATE_PLAN.md`.
 | **R4** | **Asynchronous step** | **Built** — `Graph::run_async()` / `DynamicGraph::run_async()` returning a move-only `RunHandle`. No driver thread was needed: the work was always on the worker pool and `execute()` only added the blocking, so it split into `submit()` + `complete()` and the asynchronous path is those two halves with the caller's own work in between. |
 | **R6** | **Late-bound base offset** | **Built** — `API::based_at(provider)` and `API::based_at_device(slot)`, mirroring `sized()` / `sized_from_device()`. Base and count are resolved and validated together at dispatch, since only their combination says whether the node stays inside its buffers. |
 | **R7** | **`ThreadLocalMagazine` teardown** | **Built** — and the interesting half was already there. The registry-plus-lock protocol already made a flush into a destroyed allocator a no-op; what was missing was that the lock itself was a namespace-scope mutex, and a `thread_local` destructor runs after static destruction for a thread outliving `main()`. It is now allocated once and never freed. |
+| **R8** | **A node label on the ordinary `add()` overloads**, so per-node device timing can be attributed by name instead of arriving as `unnamed_task`. | **Built** (raised 2026-07-30 from the physics side's P8-A, closed 2026-08-02). The `Dynamic` per-element `add()` overloads and `add_host()` now take a trailing, defaulted `const char* name`, threaded through to `Node::metadata`. |
+| **R9** | **A multi-colour (or persistent-kernel) dispatch node** — one `add()` call covering several ordered sub-ranges of the same node shape, so a graph-colouring consumer pays one scheduler round trip (dependency check, event submission, event poll) per *kind* per substep rather than one per *(kind, colour)* pair per substep. | **Open** (raised 2026-08-02 from the physics side's P8, `sushiengine/docs/slop/physics_system.md` §16.37/§16.42/§18). The physics engine's `RuntimeGraphBuilder` measured this round trip, not the kernel it guards, as 96–98% of a representative tick on the CPU backend (§16.37) — colouring exists specifically to let same-colour work run without ordering between members, but `Graph`/`Region`'s `add_parallel` is one node in, one node out, so a colour sweep with a dozen colours pays a dozen full round trips even though nine of those colours have no data dependency on each other's *order*, only on not overlapping the *previous* colour's writes. An engine-side workaround (a kernel that loops over colours internally) was deliberately not built to approximate this — see the physics doc's own reasoning: it would either serialize what colouring exists to parallelize, or duplicate the scheduler's own ordering guarantee inside one node, i.e. a second scheduler hiding inside the adapter. |
 
 **Origin.** SushiEngine is planning a full rigid + soft body physics system
 (`sushiengine/docs/slop/physics_system.md`): unified substepping XPBD, joints and articulated
