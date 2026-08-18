@@ -88,7 +88,11 @@ namespace SushiRuntime
             std::vector<Core::ResourceRegion> keys;  /**< Read regions, in argument order. */
             std::vector<Core::LivenessObserver> lives; /**< Observers of the typed handles read. */
 
-            /** @brief Collects the read region and liveness of each handle passed. */
+            /**
+             * @brief Collects the read region and liveness of each handle passed.
+             * @param hs Buffers, buffer regions, or States the task reads; each
+             *           contributes one region, in the order given.
+             */
             template <class... Handles>
             explicit Reads(const Handles&... hs) : keys{ detail::read_key_of(hs)... }
             {
@@ -106,7 +110,11 @@ namespace SushiRuntime
             std::vector<Core::ResourceRegion> keys;  /**< Write regions, in argument order. */
             std::vector<Core::LivenessObserver> lives; /**< Observers of the typed handles written. */
 
-            /** @brief Collects the write region and liveness of each handle passed. */
+            /**
+             * @brief Collects the write region and liveness of each handle passed.
+             * @param hs Buffers, buffer regions, or States the task writes; a State
+             *           contributes its next field.
+             */
             template <class... Handles>
             explicit Writes(const Handles&... hs) : keys{ detail::write_key_of(hs)... }
             {

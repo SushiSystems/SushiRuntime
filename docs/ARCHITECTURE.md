@@ -61,9 +61,9 @@ layers never depend up.
         │               EventPolling · WorkloadCoordinator        │  (work stealing)
         ├──────────────────────┬──────────────────────────────────┤
         │  memory/             │  topology/                       │  resources +
-        │  USMAllocator        │  HardwareDiscovery · NUMAMapper  │  hardware model
-        │  BitmaskMemoryPool   │  ITopologyProvider               │
-        │  EpochManager (EBR)  │  INumaDistanceModel · affinity   │
+        │  UsmRegistry         │  HardwareDiscovery · NUMAMapper  │  hardware model
+        │  EpochManager (EBR)  │  ITopologyProvider               │
+        │                      │  INumaDistanceModel · affinity   │
         ├──────────────────────┴──────────────────────────────────┤
         │  core/   RefCounted · sushi_ptr · logger · common       │  foundations
         │          Error · Result · RunReport · compat shims      │
@@ -402,7 +402,7 @@ Intrusive, atomic reference counting. The count lives inside the object
 separate control block, one cache line). `make_sushi<T>(...)` constructs an owned
 object; copy bumps the count atomically, move transfers it, `leak()` detaches the
 raw pointer without touching the count, and `release()` drops one reference.
-`Node`, `Task`, and `USMAllocator` are all `RefCounted`.
+`Node` and `Task` are both `RefCounted`.
 
 ### `common.hpp` — the constants that size the runtime
 
@@ -493,61 +493,36 @@ and memory close.
 
 ## 7. Memory (`memory/`)
 
-Allocation tuned for parallel, heterogeneous workloads. Three cooperating pieces.
+Two pieces: who owns each USM pointer, and when a lock-free structure may free a
+node.
 
-### 7.1 `USMAllocator` + strategies
+### 7.1 `UsmRegistry` — which device owns a pointer
 
-`USMAllocator` is the public allocation facade (`allocate`, `deallocate`,
-`get_device_of`). Allocation behavior is pluggable via `IAllocatorStrategy`
-(Strategy pattern, for OCP):
+`RuntimeContext::malloc_shared` / `malloc_device` / `malloc_shared_on` /
+`malloc_device_on` call SYCL directly and record the owning device index in a
+`UsmRegistry`; `free_usm` resolves and erases it in one step and frees against
+that device's queue. USM is bound to the context it was allocated from, so both
+halves matter: a free against the wrong queue is undefined, and a kernel must run
+where its data lives. `context_index_for_ptr` is the lookup the scheduler's
+cross-context guard uses on a node's first dispatch (§10).
 
-- `Strategies::Shared` → `sycl::aligned_alloc_shared` — CPU+device visible,
-  **poolable**.
-- `Strategies::Device` → `sycl::aligned_alloc_device` — device-only, not pooled.
-- `Strategies::Host` → `sycl::aligned_alloc_host` — host-pinned, not pooled.
+SYCL offers no portable, reliable way to ask a pointer where it came from — on
+some platforms one context's USM is visible, as a different kind, from a sibling
+context — so the recorded answer is authoritative and introspection remains only
+a best-effort fallback for pointers the runtime did not allocate.
 
-`RuntimeContext::malloc_shared/malloc_device/free_usm` wrap this and additionally
-**record the owning queue** for each allocation (see §10), which is what lets the
-scheduler dispatch a kernel to the exact device/context that owns its data.
+The registry is a map behind one mutex, and that is deliberate. Allocation
+happens when the caller constructs a `Buffer` or `State`, which is a setup-time
+act: a measured run allocates nothing per step, and streaming regions in and out
+allocates nothing at all, because a region describes work over buffers the caller
+already owns.
 
-A global `FlushCallback` (`g_flush_callback` atomic) routes a thread magazine's
-cached slots back to the owning `USMAllocator` (e.g. on thread exit or bank
-eviction). The callback runs under a shared lock (`g_flush_mutex`); an allocator's
-destructor takes that lock exclusively while it nulls its registry slot and frees
-its pages, so a flush can never touch a freed page and a flush that starts after
-teardown safely no-ops (`owns_id` also rejects a registry-index collision). This
-is what lets a thread that outlives its `RuntimeContext` still exit cleanly.
-
-### 7.2 `BitmaskMemoryPool` + `ThreadLocalMagazine` — the fast path
-
-For poolable (Shared) allocations there is a two-tier, mostly lock-free pool:
-
-- **`ThreadLocalMagazine`** (`thread_local`) is the hot path. `NUM_BUCKETS = 4`
-  size classes, each a stack of up to `BATCH_SIZE = 256` pointers. `pop` and
-  `push` are a few instructions with **no atomics and no locks**. It holds a small
-  set of **per-allocator banks** (`MAX_ALLOCATORS`) so interleaving allocations
-  across allocators (multi-GPU / multi-context) no longer flushes the whole
-  magazine on every switch — the former "flush cliff". A `cur_bank_` cache keeps
-  the single-allocator case to one comparison; touching more allocators than the
-  bank count evicts (flushes) the least-recently-used bank.
-  `free_capacity(bucket_idx, alloc_id)` returns how many slots that allocator's
-  bank can still absorb, used by `bulk_claim_capped` to size the refill exactly.
-- **`BitmaskMemoryPool`** is the backing store. Memory is carved into
-  `MemoryPage`s of 64 fixed-size slots tracked by a single `uint64_t` atomic
-  `bitmask`. Refilling a magazine uses **bulk claim**: `bulk_claim` takes the
-  whole page in one CAS to `~0ULL` (TCMalloc-style, 64× fewer atomics);
-  `bulk_claim_capped` takes only as many free bits as the magazine can absorb
-  (using `countr_zero_u64` / `popcount_u64`), which reduces CAS contention when
-  many threads refill at once.
-- **Remote frees.** Every `MemoryPage` records its `owning_slot`. When a thread
-  frees a pointer that belongs to *another* thread's slot, the free is routed
-  back to the owning slot's MPSC remote-free queue rather than polluting the
-  freeing thread's magazine. The owner lazily drains that queue on its next
-  refill. This kills the "consumer magazine fills with foreign pointers → flush
-  spike" pathology and is the path the `CrossThreadFreeIsReclaimed` test guards.
-
-Requests larger than the top bucket (4096 B) bypass the pool entirely and go
-straight to SYCL.
+**There is no allocation pool.** An earlier design layered a bitmask page pool,
+per-thread magazines and a remote-free stack under a `USMAllocator` facade. It
+was removed: nothing on the public path reached it, its 4 KB size ceiling was
+below the buffers the runtime actually allocates, and the measurement above says
+there is no allocation frequency for a pool to amortise. See
+`docs/superpowers/specs/2026-08-18-usm-allocation-seam-design.md`.
 
 ### 7.3 `EpochManager` — epoch-based reclamation (EBR)
 
@@ -1139,7 +1114,7 @@ include/SushiRuntime/      Public API (the headers this document describes)
                Error/Result/RunReport, compat shims (bit, span, sycl_compat)
   topology/    HardwareDiscovery, NUMAMapper, ITopologyProvider/INumaDistanceModel,
                Hwloc + Remapping/Matrix substitutes, affinity
-  memory/      USMAllocator + strategies, BitmaskMemoryPool + magazine, EpochManager
+  memory/      UsmRegistry (pointer ownership), EpochManager (EBR)
   graph/       TaskGraph, Node, DependencyTracker, task_types (OpID/TaskMetadata)
   scheduler/   TaskScheduler, Task/RangeTask, EventPolling, WorkloadCoordinator,
                rebalancer_interfaces, ThermalProxyStrategy

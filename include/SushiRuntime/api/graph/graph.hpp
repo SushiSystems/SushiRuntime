@@ -84,8 +84,19 @@ namespace SushiRuntime
         class Graph
         {
             public:
-                Graph(Graph&&) = default;
-                Graph& operator=(Graph&&) = default;
+                /**
+                 * @brief Takes over another graph's recorded tasks.
+                 * @param other Graph to move from; left with no tasks.
+                 */
+                Graph(Graph&& other) = default;
+
+                /**
+                 * @brief Replaces this graph's contents with another's.
+                 * @param other Graph to move from; left with no tasks.
+                 * @return *this, now owning @p other's tasks.
+                 */
+                Graph& operator=(Graph&& other) = default;
+
                 Graph(const Graph&) = delete;
                 Graph& operator=(const Graph&) = delete;
 
@@ -1132,7 +1143,10 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                /** @brief Number of update rules (tasks) added so far. */
+                /**
+                 * @brief Reports how much work has been recorded.
+                 * @return Number of update rules (tasks) added so far.
+                 */
                 std::size_t size() const noexcept { return task_count_; }
 
                 /**

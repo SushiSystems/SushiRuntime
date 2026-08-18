@@ -93,8 +93,13 @@ namespace SushiRuntime
             /** @brief Inline storage for each provider; a predicate captures little. */
             static constexpr std::size_t PROVIDER_CAPACITY = 48;
 
+            /** @brief Enable predicate polled once per step; false skips the node. */
             using WhenProvider  = Core::Delegate<bool(), PROVIDER_CAPACITY>;
+
+            /** @brief Size provider polled once per step; element count to iterate. */
             using CountProvider = Core::Delegate<std::size_t(), PROVIDER_CAPACITY>;
+
+            /** @brief Base provider polled once per step; first element to iterate. */
             using BaseProvider  = Core::Delegate<std::size_t(), PROVIDER_CAPACITY>;
 
             WhenProvider  when_pred;  /**< Empty: the node is always enabled. */
@@ -131,28 +136,44 @@ namespace SushiRuntime
             // where the rvalue overload returns by value so the result moves straight
             // into add()'s by-value parameter.
 
-            /** @brief Sets the enable predicate on a named Dynamic; returns *this. */
+            /**
+             * @brief Sets the enable predicate on a named Dynamic.
+             * @param pred Polled before each step; false skips the node that step.
+             * @return *this, for chaining.
+             */
             Dynamic& and_when(WhenProvider pred) &
             {
                 when_pred = std::move(pred);
                 return *this;
             }
 
-            /** @brief Sets the enable predicate while chaining inline; returns by value. */
+            /**
+             * @brief Sets the enable predicate while chaining inline.
+             * @param pred Polled before each step; false skips the node that step.
+             * @return This Dynamic, moved out by value into the next call.
+             */
             Dynamic and_when(WhenProvider pred) &&
             {
                 when_pred = std::move(pred);
                 return std::move(*this);
             }
 
-            /** @brief Sets the live-size provider on a named Dynamic; returns *this. */
+            /**
+             * @brief Sets the live-size provider on a named Dynamic.
+             * @param count Polled before each step; must not exceed the baked capacity.
+             * @return *this, for chaining.
+             */
             Dynamic& and_sized(CountProvider count) &
             {
                 count_fn = std::move(count);
                 return *this;
             }
 
-            /** @brief Sets the live-size provider while chaining inline; returns by value. */
+            /**
+             * @brief Sets the live-size provider while chaining inline.
+             * @param count Polled before each step; must not exceed the baked capacity.
+             * @return This Dynamic, moved out by value into the next call.
+             */
             Dynamic and_sized(CountProvider count) &&
             {
                 count_fn = std::move(count);
@@ -176,7 +197,14 @@ namespace SushiRuntime
                 return *this;
             }
 
-            /** @brief Points a Dynamic at a device-written count while chaining inline. */
+            /**
+             * @brief Points a Dynamic at a device-written count while chaining inline.
+             *
+             * Drops any host-side sized() provider, as the lvalue overload does.
+             * @param counter Host-readable slot a predecessor writes.
+             * @param index   Element index of the count within @p counter.
+             * @return This Dynamic, moved out by value into the next call.
+             */
             Dynamic and_sized_from_device(const std::uint32_t* counter, std::size_t index) &&
             {
                 device_count = counter;
@@ -185,7 +213,13 @@ namespace SushiRuntime
                 return std::move(*this);
             }
 
-            /** @brief Sets the first-element provider on a named Dynamic; returns *this. */
+            /**
+             * @brief Sets the first-element provider on a named Dynamic.
+             *
+             * Clears any device-written base, since only one source can decide it.
+             * @param base Polled before each step; the first element to iterate.
+             * @return *this, for chaining.
+             */
             Dynamic& and_based_at(BaseProvider base) &
             {
                 base_fn = std::move(base);
@@ -193,7 +227,13 @@ namespace SushiRuntime
                 return *this;
             }
 
-            /** @brief Sets the first-element provider while chaining inline. */
+            /**
+             * @brief Sets the first-element provider while chaining inline.
+             *
+             * Clears any device-written base, as the lvalue overload does.
+             * @param base Polled before each step; the first element to iterate.
+             * @return This Dynamic, moved out by value into the next call.
+             */
             Dynamic and_based_at(BaseProvider base) &&
             {
                 base_fn = std::move(base);
@@ -218,7 +258,14 @@ namespace SushiRuntime
                 return *this;
             }
 
-            /** @brief Points a Dynamic at a device-written base while chaining inline. */
+            /**
+             * @brief Points a Dynamic at a device-written base while chaining inline.
+             *
+             * Drops any host-side based_at() provider, as the lvalue overload does.
+             * @param slot  Host-readable slot a predecessor writes.
+             * @param index Element index of the base within @p slot.
+             * @return This Dynamic, moved out by value into the next call.
+             */
             Dynamic and_based_at_device(const std::uint32_t* slot, std::size_t index) &&
             {
                 device_base = slot;

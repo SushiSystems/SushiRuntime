@@ -53,16 +53,27 @@ namespace SushiRuntime
             sycl::range<N> global;  /**< Total work-items per dimension. */
             sycl::range<N> local;   /**< Work-group size per dimension. */
 
-            /** @brief Builds the launch from global and local ranges. */
+            /**
+             * @brief Builds the launch from global and local ranges.
+             * @param g Total work-items per dimension.
+             * @param l Work-group size per dimension; each @p g dimension must be a
+             *          whole multiple of the matching @p l dimension.
+             */
             NdRange(sycl::range<N> g, sycl::range<N> l) : global(g), local(l) {}
 
-            /** @brief The SYCL nd_range this launch describes. */
+            /**
+             * @brief Converts to the SYCL type a parallel_for takes.
+             * @return An nd_range carrying this launch's global and local ranges.
+             */
             sycl::nd_range<N> to_nd_range() const noexcept
             {
                 return sycl::nd_range<N>(global, local);
             }
 
-            /** @brief Total number of work-items (product of the global sizes). */
+            /**
+             * @brief Reports how much work this launch represents.
+             * @return Total work-items, the product of the global sizes.
+             */
             std::size_t count() const noexcept { return global.size(); }
         };
 

@@ -91,7 +91,7 @@ add_executable(sr_functional_tests
     functional/unit/test_topology.cpp
     functional/unit/test_topology_abstraction.cpp
     functional/unit/test_nvidia_topology.cpp
-    functional/unit/test_memory_pool.cpp
+    functional/unit/test_usm_registry.cpp
     functional/unit/test_affinity.cpp
     functional/unit/test_numa_steal.cpp
     functional/unit/test_epoch_reclamation.cpp
@@ -203,10 +203,8 @@ if(SR_BUILD_BENCHMARKS)
         common/test_main.cpp
 
         benchmark/stress/test_scheduler_stress.cpp
-        benchmark/stress/test_memory_stress.cpp
         benchmark/stress/test_epoch_stress.cpp
 
-        benchmark/performance/test_allocator_perf.cpp
         benchmark/performance/test_async_overlap_perf.cpp
         benchmark/performance/test_steal_locality_perf.cpp
         benchmark/performance/test_scheduler_dispatch_perf.cpp

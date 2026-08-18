@@ -69,19 +69,32 @@ namespace SushiRuntime
         class AdvancedControls
         {
             public:
-                /** @brief Wraps the runtime's context for read-only inspection. */
+                /**
+                 * @brief Wraps the runtime's context for read-only inspection.
+                 * @param ctx Context borrowed, not owned; must outlive this view.
+                 */
                 explicit AdvancedControls(Execution::RuntimeContext& ctx) noexcept
                     : ctx_(ctx)
                 {
                 }
 
-                /** @brief Number of device queues the runtime selected. */
+                /**
+                 * @brief Reports how many devices the runtime is driving.
+                 * @return Number of device queues selected at construction; valid
+                 *         device indices are [0, this).
+                 */
                 std::size_t device_count() const { return ctx_.device_count(); }
 
-                /** @brief True when queues were built with profiling enabled. */
+                /**
+                 * @brief Tells whether per-kernel timings are being collected.
+                 * @return True when the queues were built with profiling enabled.
+                 */
                 bool profiling_enabled() const noexcept { return ctx_.profiling_enabled(); }
 
-                /** @brief True while the background thermal rebalancer is running. */
+                /**
+                 * @brief Tells whether work is being redistributed by device load.
+                 * @return True while the background thermal rebalancer is running.
+                 */
                 bool rebalancer_enabled() const
                 {
                     return ctx_.get_execution_engine().rebalancer_enabled();
@@ -101,13 +114,21 @@ namespace SushiRuntime
                     return ctx_.get_execution_engine().worker_pool();
                 }
 
-                /** @brief Cumulative bytes copied host->device by explicit transfers. */
+                /**
+                 * @brief Reports upload traffic caused by explicit transfers.
+                 * @return Cumulative bytes copied host to device since startup;
+                 *         implicit shared-USM migration is not counted.
+                 */
                 std::size_t host_to_device_bytes() const noexcept
                 {
                     return ctx_.host_to_device_bytes();
                 }
 
-                /** @brief Cumulative bytes copied device->host by explicit transfers. */
+                /**
+                 * @brief Reports readback traffic caused by explicit transfers.
+                 * @return Cumulative bytes copied device to host since startup;
+                 *         implicit shared-USM migration is not counted.
+                 */
                 std::size_t device_to_host_bytes() const noexcept
                 {
                     return ctx_.device_to_host_bytes();

@@ -91,8 +91,19 @@ namespace SushiRuntime
                 /** @brief Caller-chosen identity of a region (e.g. a packed cell coordinate). */
                 using RegionKey = std::uint64_t;
 
-                DynamicGraph(DynamicGraph&&) = default;
-                DynamicGraph& operator=(DynamicGraph&&) = default;
+                /**
+                 * @brief Takes over another graph's regions and pending structure.
+                 * @param other Graph to move from; left with no regions.
+                 */
+                DynamicGraph(DynamicGraph&& other) = default;
+
+                /**
+                 * @brief Replaces this graph's contents with another's.
+                 * @param other Graph to move from; left with no regions.
+                 * @return *this, now owning @p other's regions.
+                 */
+                DynamicGraph& operator=(DynamicGraph&& other) = default;
+
                 DynamicGraph(const DynamicGraph&) = delete;
                 DynamicGraph& operator=(const DynamicGraph&) = delete;
 
@@ -145,10 +156,16 @@ namespace SushiRuntime
                     }
                 }
 
-                /** @brief Number of live regions. */
+                /**
+                 * @brief Reports how many regions the graph currently holds.
+                 * @return Number of live regions, dropped ones excluded.
+                 */
                 std::size_t region_count() const noexcept { return regions_.size(); }
 
-                /** @brief Total tasks currently recorded across all live regions. */
+                /**
+                 * @brief Reports how much work the graph currently holds.
+                 * @return Total tasks recorded across all live regions.
+                 */
                 std::size_t size() const noexcept
                 {
                     std::size_t total = 0;

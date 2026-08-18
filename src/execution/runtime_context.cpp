@@ -107,11 +107,7 @@ namespace SushiRuntime
              * in sibling contexts, so this authoritative map is the source of
              * truth; introspection remains only as a best-effort fallback.
              */
-            std::mutex usm_owner_mtx;
-            std::unordered_map<void*, size_t> usm_owner;
-
-            /** @brief NUMA-local allocators using atomic storage. */
-            std::atomic<SushiRuntime::Memory::USMAllocator*> numa_allocators[Core::MAX_NUMA_NODES];
+            SushiRuntime::Memory::UsmRegistry usm_registry;
 
             /**
              * @brief Execution engine (owns persistent TaskScheduler).
@@ -131,12 +127,6 @@ namespace SushiRuntime
             /** @brief Master-side offload coordinator (created in Master mode). */
             std::unique_ptr<Distributed::DistributedCoordinator> coordinator;
 #endif
-
-            Impl()
-            {
-                for (size_t i = 0; i < Core::MAX_NUMA_NODES; ++i)
-                    numa_allocators[i].store(nullptr, std::memory_order_relaxed);
-            }
 
             ~Impl() 
             {
@@ -188,16 +178,6 @@ namespace SushiRuntime
                     catch (...)
                     {
                         SR_LOG_WARN("Unknown async device error during shutdown drain.");
-                    }
-                }
-
-                /** @brief Cleanup atomic pointers manually. */
-                for (size_t i = 0; i < Core::MAX_NUMA_NODES; ++i)
-                {
-                    auto* ptr = numa_allocators[i].load(std::memory_order_relaxed);
-                    if (ptr) 
-                    {
-                        ptr->release();
                     }
                 }
             }
@@ -363,7 +343,7 @@ namespace SushiRuntime
                 }
 
                 // Reported here, where the filter that caused it is still in hand.
-                // One step later get_allocator(0) asks for queue 0 and fails with
+                // Anything later asks for queue 0 and fails with
                 // "Queue index out of bounds" — true, but it names neither the
                 // machine's state nor the filter that produced it, and it is the
                 // first thing a player on a GPU-less machine would see. BB-5b's
@@ -386,7 +366,6 @@ namespace SushiRuntime
                             impl_->all_queues.size(),
                             impl_->numa_aware_queues.size());
 
-                get_allocator(0);
             }
             catch (const std::exception& e) 
             {
@@ -416,16 +395,6 @@ namespace SushiRuntime
         size_t RuntimeContext::device_count() const
         {
             return impl_->all_queues.size();
-        }
-
-        /**
-         * @brief Retrieves the default USM allocator for NUMA node 0.
-         *
-         * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> A pointer to the USM allocator.
-         */
-        sushi_ptr<SushiRuntime::Memory::USMAllocator> RuntimeContext::get_allocator() 
-        {
-            return get_allocator(0);
         }
 
         /**
@@ -476,8 +445,7 @@ namespace SushiRuntime
             void* p = sycl::malloc_shared(bytes, q);
             if (p)
             {
-                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
-                impl_->usm_owner[p] = device_index;
+                impl_->usm_registry.record(p, device_index);
             }
             return p;
         }
@@ -496,8 +464,7 @@ namespace SushiRuntime
             void* p = sycl::malloc_device(bytes, q);
             if (p)
             {
-                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
-                impl_->usm_owner[p] = device_index;
+                impl_->usm_registry.record(p, device_index);
             }
             return p;
         }
@@ -517,10 +484,9 @@ namespace SushiRuntime
             {
                 // Record the owning queue by its index in all_queues so the
                 // scheduler can later dispatch onto the exact same context.
-                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
                 for (size_t i = 0; i < impl_->all_queues.size(); ++i)
                 {
-                    if (impl_->all_queues[i] == q) { impl_->usm_owner[p] = i; break; }
+                    if (impl_->all_queues[i] == q) { impl_->usm_registry.record(p, i); break; }
                 }
             }
             return p;
@@ -539,10 +505,9 @@ namespace SushiRuntime
             void* p = sycl::malloc_device(bytes, q);
             if (p)
             {
-                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
                 for (size_t i = 0; i < impl_->all_queues.size(); ++i)
                 {
-                    if (impl_->all_queues[i] == q) { impl_->usm_owner[p] = i; break; }
+                    if (impl_->all_queues[i] == q) { impl_->usm_registry.record(p, i); break; }
                 }
             }
             return p;
@@ -554,10 +519,9 @@ namespace SushiRuntime
         int RuntimeContext::context_index_for_ptr(void* ptr) noexcept
         {
             if (!ptr) return -1;
-            std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
-            auto it = impl_->usm_owner.find(ptr);
-            if (it != impl_->usm_owner.end() && it->second < impl_->all_queues.size())
-                return static_cast<int>(it->second);
+            const auto owner = impl_->usm_registry.owner_of(ptr);
+            if (owner && *owner < impl_->all_queues.size())
+                return static_cast<int>(*owner);
             return -1;
         }
 
@@ -576,16 +540,9 @@ namespace SushiRuntime
             unregister_distributed_buffer(ptr);
 #endif
 
-            size_t idx = SIZE_MAX;
-            {
-                std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
-                auto it = impl_->usm_owner.find(ptr);
-                if (it != impl_->usm_owner.end())
-                {
-                    idx = it->second;
-                    impl_->usm_owner.erase(it);
-                }
-            }
+            // Resolve and forget in one step: two separate locks would let a second
+            // free of the same pointer read an owner this one is already acting on.
+            const size_t idx = impl_->usm_registry.take(ptr).value_or(SIZE_MAX);
             // Free against the owning queue's context (required for correctness).
             if (idx < impl_->all_queues.size())
                 sycl::free(ptr, impl_->all_queues[idx]);
@@ -610,12 +567,9 @@ namespace SushiRuntime
                 // 1) Authoritative: a pointer allocated through this context's
                 //    malloc_* carries an exact owning-queue record. This is the
                 //    reliable path and avoids fragile pointer introspection.
-                {
-                    std::lock_guard<std::mutex> lk(impl_->usm_owner_mtx);
-                    auto it = impl_->usm_owner.find(ptr);
-                    if (it != impl_->usm_owner.end() && it->second < impl_->all_queues.size())
-                        return impl_->all_queues[it->second];
-                }
+                const auto owner = impl_->usm_registry.owner_of(ptr);
+                if (owner && *owner < impl_->all_queues.size())
+                    return impl_->all_queues[*owner];
             }
             if (ptr)
             {
@@ -665,53 +619,6 @@ namespace SushiRuntime
             // Pointer-less (e.g. host task) or host-allocated data: keep the
             // existing NUMA-local round-robin behaviour.
             return get_numa_local_queue(fallback_numa);
-        }
-
-        /**
-         * @brief Returns a NUMA-aware USM allocator (lazy initialization).
-         * 
-         * Creates a new allocator atomically if it doesn't exist.
-         * 
-         * @param numa_id Target NUMA node ID.
-         * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> The allocator.
-         */
-        sushi_ptr<SushiRuntime::Memory::USMAllocator> RuntimeContext::get_allocator(int numa_id)
-        {
-            if (numa_id < 0 || static_cast<size_t>(numa_id) >= Core::MAX_NUMA_NODES) 
-            {
-                SR_LOG_WARN("Invalid NUMA ID {}, falling back to default.", numa_id);
-                return get_allocator();
-            }
-
-            /** @brief Step 1: fast path - check if exists. */
-            auto* existing = impl_->numa_allocators[numa_id].load(std::memory_order_acquire);
-            if (existing) 
-            {
-                return sushi_ptr<SushiRuntime::Memory::USMAllocator>(existing);
-            }
-
-            /** @brief Step 2: slow path - create and try atomic swap. */
-            SR_LOG_DEBUG("Initializing allocator for NUMA {} (potential race)", numa_id);
-            sycl::queue& q = get_numa_local_queue(numa_id);
-            auto new_alloc_sushi = SushiRuntime::Memory::create_allocator(q, numa_id);
-            auto* new_alloc_raw = new_alloc_sushi.get();
-
-            new_alloc_raw->add_ref();
-
-            SushiRuntime::Memory::USMAllocator* expected = nullptr;
-            
-            /** @brief Step 3: compare-and-swap (CAS). */
-            if (impl_->numa_allocators[numa_id].compare_exchange_strong(expected, new_alloc_raw, 
-                                                                        std::memory_order_release, 
-                                                                        std::memory_order_acquire)) 
-            {
-                return new_alloc_sushi;
-            }
-            else 
-            {
-                new_alloc_raw->release();
-                return sushi_ptr<SushiRuntime::Memory::USMAllocator>(expected);
-            }
         }
 
         /**

@@ -37,7 +37,8 @@ namespace SushiRuntime
          *
          * Wraps a Buffer so add() can both register the read and hand the kernel the
          * raw element pointer — the caller writes the data flow once and gets pointer
-         * capture and dependency ordering together. @ref ACCESS marks the intent.
+         * capture and dependency ordering together. Out and InOut are the same
+         * wrapper for the other two access intents.
          *
          * @tparam T Element type of the wrapped buffer.
          */
@@ -50,7 +51,10 @@ namespace SushiRuntime
             static constexpr bool reads = true;   /**< Contributes a read key. */
             static constexpr bool writes = false; /**< Contributes no write key. */
 
-            /** @brief Captures @p b as a read-only kernel argument. */
+            /**
+             * @brief Captures @p b as a read-only kernel argument.
+             * @param b Buffer to read; must outlive every run that uses the task.
+             */
             In(const Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
         };
 
@@ -67,7 +71,10 @@ namespace SushiRuntime
             static constexpr bool reads = false;  /**< Contributes no read key. */
             static constexpr bool writes = true;  /**< Contributes a write key. */
 
-            /** @brief Captures @p b as a write-only kernel argument. */
+            /**
+             * @brief Captures @p b as a write-only kernel argument.
+             * @param b Buffer to write; must outlive every run that uses the task.
+             */
             Out(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
         };
 
@@ -84,7 +91,11 @@ namespace SushiRuntime
             static constexpr bool reads = true;   /**< Contributes a read key. */
             static constexpr bool writes = true;  /**< Contributes a write key. */
 
-            /** @brief Captures @p b as a read-and-write kernel argument. */
+            /**
+             * @brief Captures @p b as a read-and-write kernel argument.
+             * @param b Buffer read and written in place; must outlive every run that
+             *          uses the task.
+             */
             InOut(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
         };
 

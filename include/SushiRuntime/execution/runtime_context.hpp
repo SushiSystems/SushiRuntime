@@ -30,7 +30,7 @@
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/memory/usm_registry.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
@@ -52,7 +52,7 @@ namespace SushiRuntime
     namespace Execution
     {
         /**
-         * @brief Central owner of hardware, SYCL queues, USM allocators, and the execution engine.
+         * @brief Central owner of hardware, SYCL queues, USM ownership, and the execution engine.
          *
          * Constructed once per process and shared (via shared_ptr) between the fluent
          * API layer and all graphs it produces. Uses Pimpl to keep the ABI stable.
@@ -292,18 +292,6 @@ namespace SushiRuntime
                  */
                 const std::vector<int>& cpu_core_to_numa() const;
 
-                /**
-                 * @brief Returns the main USM allocator for this context.
-                 * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> The global allocator.
-                 */
-                sushi_ptr<SushiRuntime::Memory::USMAllocator> get_allocator();
-
-                /**
-                 * @brief Returns a USM allocator optimized for a specific NUMA node.
-                 * @param numa_id The ID of the target NUMA node.
-                 * @return sushi_ptr<SushiRuntime::Memory::USMAllocator> The NUMA-optimized allocator.
-                 */
-                sushi_ptr<SushiRuntime::Memory::USMAllocator> get_allocator(int numa_id);
 
                 /**
                  * @brief Returns the execution engine owned by this context.
