@@ -59,6 +59,7 @@ namespace SushiRuntime
                 using Graph::add_reduce;
                 using Graph::add_segmented_reduce;
                 using Graph::size;
+                using Graph::name_last;
 
             private:
                 friend class DynamicGraph;

@@ -60,7 +60,7 @@ auto report = sim.run(10'000);                   // compile once, replay 10k ste
 | Stream work in and out without recompiling the world | `SushiRuntime::API::DynamicGraph`, `Region`, `region()` / `drop()` |
 | Keep a field on the device | `SushiRuntime::API::Residency`, `Buffer::read_range` / `write_range` |
 | Overlap a step with the caller's own work | `SushiRuntime::API::Graph::run_async()`, `SushiRuntime::API::RunHandle` |
-| Give a node a name so its timings are attributable | the trailing `name` argument on `add()` / `add_host()` |
+| Give a node a name so its timings are attributable | `SushiRuntime::API::Graph::name_last()` |
 | Share a machine with another subsystem | `SushiRuntime::API::RuntimeConfig::worker_count`, `first_core`, `pinning` |
 | Tune for real-time / determinism | `SushiRuntime::API::Runtime::rebalancer()` |
 | Profile per-node / per-worker timing | `SushiRuntime::API::RuntimeConfig`, `SushiRuntime::Core::NodeTiming`, `WorkerTiming` |

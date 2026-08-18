@@ -27,6 +27,8 @@
 
 #include <cstddef>
 #include <vector>
+#include <algorithm>
+#include <string>
 #include <gtest/gtest.h>
 #include <SushiRuntime/SushiRuntime.h>
 
@@ -97,10 +99,16 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
     }
 }
 
-// §18 R8: the ordinary add() overloads (not just add_offload) can carry a caller-
-// supplied diagnostic name that reaches RunReport::NodeTiming. Before this, every
-// node reported as "unnamed_task" regardless of what add() call produced it.
-TEST(Integration_Observability, NamedNodeAppearsInNodeTiming)
+// §18 R8: any node can be given a diagnostic name that reaches
+// RunReport::NodeTiming. Before this, every node reported as "unnamed_task"
+// regardless of which add() produced it, so a profile of a real graph was a list
+// of identical labels.
+//
+// name_last() rather than a trailing argument: two of the add() shapes take a
+// trailing parameter pack whose last element is the callable, so a defaulted
+// trailing name is not expressible there. One spelling that works for every
+// shape beats a trailing argument on most of them and an exception for the rest.
+TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
 {
     constexpr std::size_t N = 512;
     constexpr std::size_t STEPS = 4;
@@ -112,14 +120,61 @@ TEST(Integration_Observability, NamedNodeAppearsInNodeTiming)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(API::sized([] { return N; }), API::Reads{}, API::Writes(buf), N,
-          [p](std::size_t i) { p[i] = static_cast<int>(i); }, "named_dynamic_node");
+    g.add(API::Reads{}, API::Writes(buf), N,
+          [p](std::size_t i) { p[i] = static_cast<int>(i); }).name_last("seed");
 
     auto rep = g.run(STEPS);
 
     ASSERT_EQ(rep.node_timings.size(), 1u);
-    EXPECT_STREQ(rep.node_timings[0].name.c_str(), "named_dynamic_node");
-    EXPECT_NE(rep.node_timings[0].name, "unnamed_task");
+    EXPECT_STREQ(rep.node_timings[0].name.c_str(), "seed");
+}
+
+// Every launch shape, including the two variadic ones that cannot take a
+// trailing argument. This is the test that would have caught R8 shipping for the
+// Dynamic overloads only.
+TEST(Integration_Observability, EveryAddShapeCanBeNamed)
+{
+    constexpr std::size_t N = 256;
+
+    auto rt = Runtime::create({}, profiling_config());
+    auto a = rt.buffer<float>(N);
+    auto b = rt.buffer<float>(N);
+    auto c = rt.buffer<float>(N);
+    auto s = rt.state<float>(N);
+    float* pa = a.data();
+    float* pb = b.data();
+
+    auto g = rt.graph();
+
+    // Plain tracked per-element.
+    g.add(API::Reads(a), API::Writes(b), N,
+          [pa, pb](std::size_t i) { pb[i] = pa[i] + 1.0f; }).name_last("plain");
+
+    // Variadic capture shape: the pack's last element is the callable.
+    g.add(API::Extent<1>{N}, API::In(b), API::Out(c),
+          [](sycl::id<1> i, const float* in, float* out) { out[i] = in[i] * 2.0f; })
+     .name_last("captured");
+
+    // State shape.
+    g.add(s, [](std::size_t i, const float* cur, float* next) { next[i] = cur[i] + 1.0f; })
+     .name_last("stateful");
+
+    // Host shape.
+    g.add_host(API::Reads(c), API::Writes{}, [] {}).name_last("host");
+
+    // Dynamic per-element shape.
+    g.add(API::sized([] { return N; }), API::Reads(a), API::Writes(b), N,
+          [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name_last("dynamic");
+
+    auto rep = g.run();
+
+    std::vector<std::string> names;
+    for (const auto& nt : rep.node_timings)
+        names.push_back(nt.name);
+
+    for (const char* expected : {"plain", "captured", "stateful", "host", "dynamic"})
+        EXPECT_NE(std::find(names.begin(), names.end(), expected), names.end())
+            << "no node reported as '" << expected << "'";
 }
 
 // A node added without a name keeps the documented default, so an unlabeled call

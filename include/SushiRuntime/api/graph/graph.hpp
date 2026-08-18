@@ -611,18 +611,16 @@ namespace SushiRuntime
                  * @param writes   Handles this task writes (their write keys).
                  * @param capacity Pre-sized upper bound; the live size must not exceed it.
                  * @param fn       Callable invoked as fn(i) for each live index i.
-                 * @param name     Diagnostic label for the profiler's per-node report
-                 *                 (§18 R8); unlabeled nodes report as "unnamed_task".
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(Dynamic dyn, const Reads& reads, const Writes& writes,
-                           std::size_t capacity, F&& fn, const char* name = "unnamed_task")
+                           std::size_t capacity, F&& fn)
                 {
                     observe(reads);
                     observe(writes);
                     return emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
-                                                    capacity, std::forward<F>(fn), name);
+                                                    capacity, std::forward<F>(fn));
                 }
 
                 /**
@@ -636,19 +634,16 @@ namespace SushiRuntime
                  * @param writes   Base pointers this task writes.
                  * @param capacity Pre-sized upper bound; the live size must not exceed it.
                  * @param fn       Callable invoked as fn(i) for each live index i.
-                 * @param name     Diagnostic label for the profiler's per-node report
-                 *                 (§18 R8); unlabeled nodes report as "unnamed_task".
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(Dynamic dyn, const std::vector<void*>& reads,
-                           const std::vector<void*>& writes, std::size_t capacity, F&& fn,
-                           const char* name = "unnamed_task")
+                           const std::vector<void*>& writes, std::size_t capacity, F&& fn)
                 {
                     return emit_dynamic_per_element(std::move(dyn),
                         std::vector<Core::ResourceRegion>(reads.begin(), reads.end()),
                         std::vector<Core::ResourceRegion>(writes.begin(), writes.end()),
-                        capacity, std::forward<F>(fn), name);
+                        capacity, std::forward<F>(fn));
                 }
 
                 /**
@@ -697,22 +692,18 @@ namespace SushiRuntime
                  * @param reads  Handles this task reads (their read keys).
                  * @param writes Handles this task writes (their write keys).
                  * @param fn     Nullary callable run once; must not submit SYCL work.
-                 * @param name   Diagnostic label for the profiler's per-node report
-                 *               (§18 R8); unlabeled nodes report as "unnamed_task".
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<std::is_invocable_v<F>, int> = 0>
-                Graph& add_host(const Reads& reads, const Writes& writes, F&& fn,
-                                const char* name = "unnamed_task")
+                Graph& add_host(const Reads& reads, const Writes& writes, F&& fn)
                 {
                     observe(reads);
                     observe(writes);
                     std::vector<Core::ResourceRegion> r = reads.keys;
                     std::vector<Core::ResourceRegion> w = writes.keys;
-                    specs_.push_back([fn = std::forward<F>(fn), r, w, name](BackingGraph& bg)
+                    specs_.push_back([fn = std::forward<F>(fn), r, w](BackingGraph& bg)
                     {
-                        const ::SushiRuntime::Graph::TaskMetadata meta{name};
-                        bg.add_native(r, w, fn, {}, meta);
+                        bg.add_native(r, w, fn);
                     });
                     ++task_count_;
                     dirty_ = true;
@@ -728,20 +719,49 @@ namespace SushiRuntime
                  * other tasks. Runs natively, with no SYCL submission.
                  *
                  * @param fn   Nullary callable run once per step; must not submit SYCL work.
-                 * @param name Diagnostic label for the profiler's per-node report
-                 *             (§18 R8); unlabeled nodes report as "unnamed_task".
                  * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<std::is_invocable_v<F>, int> = 0>
-                Graph& add_host(F&& fn, const char* name = "unnamed_task")
+                Graph& add_host(F&& fn)
                 {
-                    specs_.push_back([fn = std::forward<F>(fn), name](BackingGraph& bg)
+                    specs_.push_back([fn = std::forward<F>(fn)](BackingGraph& bg)
                     {
-                        const ::SushiRuntime::Graph::TaskMetadata meta{name};
-                        bg.add_native({}, {}, fn, {}, meta);
+                        bg.add_native({}, {}, fn);
                     });
                     ++task_count_;
                     dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Names the task most recently added to this graph.
+                 *
+                 * Without a name a node reports as "unnamed_task" in
+                 * RunReport::NodeTiming, which makes a profile of a real graph a list
+                 * of identical labels. Chain this onto any add() to fix that:
+                 *
+                 * @code
+                 * sim.add(API::Reads(a), API::Writes(b), n, integrate).name_last("integrate");
+                 * @endcode
+                 *
+                 * A trailing name argument would have been shorter, but two launch
+                 * shapes end in a parameter pack whose last element is the callable —
+                 * add(Extent, captures..., fn) and add(State, States..., fn) — so a
+                 * defaulted trailing name cannot be expressed there. One spelling that
+                 * works for every shape, including any added later, beats a trailing
+                 * argument on most of them and an exception for the rest.
+                 *
+                 * For a task that expands to several nodes, such as a reduction, this
+                 * names the last one — the final fold.
+                 *
+                 * @param name Persistent label, stored not copied; a string literal is
+                 *             the intended use. Ignored when no task has been added.
+                 * @return *this, for chaining.
+                 */
+                Graph& name_last(const char* name) noexcept
+                {
+                    if (!specs_.empty())
+                        specs_.back().name = name;
                     return *this;
                 }
 
@@ -1838,21 +1858,19 @@ namespace SushiRuntime
                 Graph& emit_dynamic_per_element(Dynamic dyn,
                                                 std::vector<Core::ResourceRegion> reads,
                                                 std::vector<Core::ResourceRegion> writes,
-                                                std::size_t capacity, F&& fn,
-                                                const char* name = "unnamed_task")
+                                                std::size_t capacity, F&& fn)
                 {
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
                     adopt_device_bindings(*lb, dyn, reads);
 
-                    specs_.push_back([fn = std::forward<F>(fn), capacity, lb, name,
+                    specs_.push_back([fn = std::forward<F>(fn), capacity, lb,
                                       reads = std::move(reads),
                                       writes = std::move(writes)](BackingGraph& bg)
                     {
-                        const ::SushiRuntime::Graph::TaskMetadata meta{name};
                         bg.add_node([fn, capacity, lb](sycl::handler& h)
                         {
                             submit_live_range(h, resolve_live_range(*lb, capacity), fn);
-                        }, reads, writes, lb, {}, meta);
+                        }, reads, writes, lb);
                     });
                     steps_.register_binding_updater(lb, std::move(dyn));
                     ++task_count_;
@@ -1983,7 +2001,10 @@ namespace SushiRuntime
                 {
                     BackingGraph bg(*ctx_);
                     for (auto& spec : specs_)
-                        spec(bg);
+                    {
+                        spec.emit(bg);
+                        bg.name_last_node(spec.name);
+                    }
                     plan_ = bg.compile();
                     plan_.capture_base_state();
                     dirty_ = false;
@@ -2003,7 +2024,24 @@ namespace SushiRuntime
                 // Recorded task specifications: each replays one add() onto a fresh
                 // backing graph. The fluent Graph is the source of truth so it can
                 // rebuild and recompile when mutated.
-                std::vector<std::function<void(BackingGraph&)>> specs_;
+                // Recorded as {emitter, name} rather than a bare callable: the name is
+                // handed to the emitter when the plan is built, not captured when the
+                // task is recorded, which is what lets name_last() attach one after the
+                // add() call has already returned.
+                struct NodeSpec
+                {
+                    // A template rather than a std::function parameter: taking the
+                    // function type directly would make lambda -> std::function ->
+                    // NodeSpec two user-defined conversions, and only one is allowed
+                    // implicitly, so every push_back below would need spelling out.
+                    template <class F,
+                              std::enable_if_t<!std::is_same<std::decay_t<F>, NodeSpec>::value, int> = 0>
+                    NodeSpec(F&& f) : emit(std::forward<F>(f)) {}
+
+                    std::function<void(BackingGraph&)> emit;
+                    const char* name = nullptr;
+                };
+                std::vector<NodeSpec> specs_;
 
                 // USM scratch owned by the reduction tasks recorded on this graph.
                 // Allocated when the task is recorded, not when the plan compiles, so
