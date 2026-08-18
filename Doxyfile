@@ -19,6 +19,12 @@ FULL_SIDEBAR           = NO
 
 # Public fluent surface plus the hand-written manual landing and getting-started
 # tour. The reference and the manual build together, Unity-manual style.
+#
+# docs/ARCHITECTURE.md is deliberately absent: it describes the layers beneath the
+# public API, which this reference is scoped to exclude. The consequence is one
+# expected warning — INTRODUCTION.md links to it, and that link cannot resolve
+# inside the site. The link is right for GitHub, which is where the guide is read,
+# so the warning is accepted rather than fixed. Any other warning is real.
 INPUT                  = docs/api/mainpage.md \
                          docs/INTRODUCTION.md \
                          docs/INTEGRATION.md \

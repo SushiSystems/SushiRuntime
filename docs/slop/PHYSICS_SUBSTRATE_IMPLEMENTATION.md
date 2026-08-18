@@ -379,6 +379,15 @@ a kernel written without knowing bases exist stays correct.
 
 ### R7 — `ThreadLocalMagazine` teardown
 
+**Superseded 2026-08-18: the magazine no longer exists.** The whole pooled allocation path was
+deleted (commit `6e4b87b`) after measurement showed it had no workload, so R7's hazard is gone by
+construction rather than by fix. The account below is kept because the reasoning — that a
+`thread_local` destructor can run after static destruction, and that a lock protecting teardown
+must itself outlive teardown — applies to any future thread-local the runtime grows. The
+regression that guarded it survives as
+`Regression_Sentinel.AThreadOutlivingTheRuntimeTearsDownCleanly`, now aimed at the thread-local
+state EBR still keeps.
+
 Most of this was already fixed, which is worth saying plainly rather than claiming the whole item.
 `flush_mutex()` (shared for a flush, exclusive for an allocator's teardown) plus a registry slot
 cleared by compare-exchange already meant a magazine flushing after its allocator died found a null

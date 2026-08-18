@@ -4,6 +4,23 @@
 **Kapsam:** Tüm C++ çekirdeği (`include/`, `src/`), Python CLI (`cli/`), testler (`tests/`), dokümantasyon (`README`, `docs/`, `CONTRIBUTING`), build sistemi (`cmake/`, `Dockerfile`, CI).
 **Yöntem:** Altı bağımsız inceleme ekseni (çekirdek eşzamanlılık, graph/execution, distributed+güvenlik, dokümantasyon senkronu, test+CLI, performans). Her bulgu gerçek kod satırlarına karşı doğrulandı; en kritik üç bulgu ayrıca elle teyit edildi.
 
+**Doğrulama geçişi: 2026-08-17.** Bulguların çoğu kapandı. Aşağıdaki her başlık artık bir durum
+etiketi taşıyor; kapanan bulgular silinmedi, düzeltmenin bulunduğu güncel `dosya:satır` ile
+işaretlendi. Orijinal bulgu metnindeki satır numaraları 2026-07-22 ağacına aitti ve kaymış
+durumda — güncel konum durum satırında verilir.
+
+| Etiket | Anlamı |
+|---|---|
+| ✅ ÇÖZÜLDÜ | Düzeltme ağaçta; kanıt olarak güncel `dosya:satır` verilir. |
+| 🟡 KISMİ | Bir kısmı yapıldı, kalanı açık; ne kaldığı yazılıdır. |
+| 🔴 AÇIK | Kod bugün hâlâ bulgunun tarif ettiği durumda. |
+| ⚪ GEÇERSİZ | Bulgunun hedefi artık yok (dosya/özellik silindi); aksiyon gerekmiyor. |
+
+**Bugünkü tablo:** 3 kritiğin 3'ü ✅. 12 yüksekten 11'i ✅, 1'i 🟡 (H4). M-serisinin tamamına
+yakını ✅ veya ⚪. Açık kalanlar: **H4** (kısmi), **PERF-6** (LTO/IPO yok), ve aşağıda 🔴/🟡
+işaretli birkaç doküman/test kalemi. Bu geçişte doğrulanmayanlar açıkça "doğrulanmadı" diye
+yazıldı — tahmin edilmedi.
+
 ---
 
 ## 0. Yönetici Özeti
@@ -20,6 +37,11 @@ Ancak müfettiş gözüyle bakıldığında **üç kategoride ciddi risk** var:
 
 **Toplam:** 3 kritik, 12 yüksek, ~25 orta, ~20 düşük öncelikli bulgu. Kritiklerin hepsi küçük, lokalize düzeltmeler.
 
+> Bu bölüm 2026-07-22 fotoğrafıdır ve **artık geçerli değildir**: yukarıdaki tabloda listelenen üç
+> kritik de kapandı, CI'da hem distributed lane hem TSan var. Aşağıdaki "kısa cevaplar" da o günün
+> durumunu anlatır; `ABOUT_PROJECT.md`'ye dayanan maddeler (deterministic mode, AdaptiveCpp)
+> dosyanın kendisi silindiği için konusuzdur.
+
 **Sorulara kısa cevaplar:**
 - **Dokümantasyon & kod sync mi?** Büyük ölçüde evet, ama üç noktada bozuk: silinmiş `cli/install.py` hâlâ 3 kılavuzda öneriliyor; GPU-backend refactoru hiçbir dokümana yansımamış; `ABOUT_PROJECT.md`'de uydurma bir "deterministic mode" özelliği var.
 - **Unlinked feature var mı?** Evet, iki yönde. Kod'da olup dokümante edilmeyenler (`SR_GPU_BACKEND`, ROCm/Intel backend'leri) ve dokümante edilip kodda olmayanlar (determinism modu, `State::distributed()` yanlış "yok" deniyor).
@@ -31,8 +53,11 @@ Ancak müfettiş gözüyle bakıldığında **üç kategoride ciddi risk** var:
 
 ## 1. KRİTİK Bulgular
 
-### C1 — EBR `enter()` seq_cst fence eksik → use-after-free
-**Dosya:** `include/SushiRuntime/memory/epoch_reclamation.hpp:284-285`
+### C1 — EBR `enter()` seq_cst fence eksik → use-after-free — ✅ ÇÖZÜLDÜ
+**Düzeltme:** `include/SushiRuntime/memory/epoch_reclamation.hpp:314` — slot epoch yayınından
+(satır 305) sonra `std::atomic_thread_fence(std::memory_order_seq_cst)` var.
+
+**Dosya (bulgu anındaki):** `include/SushiRuntime/memory/epoch_reclamation.hpp:284-285`
 
 `enter()` şunu yapıyor: `global_epoch_.load(acquire)` ardından `thread_slots_[id].epoch.store(current, release)`. Release store, thread'in **sonraki** veri-yapısı okumalarının bu store globalde görünür olmadan önce tamamlanmasını engellemez (x86 TSO'da store-buffer forwarding, ARM'da serbest reordering). Bu klasik Dekker-tipi hata.
 
@@ -42,8 +67,11 @@ Ancak müfettiş gözüyle bakıldığında **üç kategoride ciddi risk** var:
 
 ---
 
-### C2 — Worker `BUFFER_PUSH` heap/USM overflow (ağdan attacker-controlled memcpy)
-**Dosya:** `src/distributed/worker_agent.cpp:320-326`
+### C2 — Worker `BUFFER_PUSH` heap/USM overflow (ağdan attacker-controlled memcpy) — ✅ ÇÖZÜLDÜ
+**Düzeltme:** `src/distributed/worker_agent.cpp:359-361` — `n = min(push.data.size(), e.size)`
+clamp'i memcpy'dan önce uygulanıyor.
+
+**Dosya (bulgu anındaki):** `src/distributed/worker_agent.cpp:320-326`
 
 Cache girdisi `push.handle.size_bytes`'a göre tahsis ediliyor (satır 323-324) ama sonra `std::memcpy(e.ptr, push.data.data(), push.data.size())` — `push.data.size()` kadar kopyalıyor (satır 326). Bunlar **bağımsız iki wire alanı**. `handle.size_bytes = 16` ve 1 MiB'lık `data` blob'u içeren bir `BufferPushMsg` → 16 baytlık USM buffer tahsis edilir, 1 MiB kopyalanır → remote heap/USM overflow write. `size_bytes = 0` da `malloc_shared(0)` + büyük kopya verir.
 
@@ -54,8 +82,11 @@ Master tarafındaki eşdeğerleri clamp'li (`distributed_coordinator.cpp:229,272
 
 ---
 
-### C3 — `ByteReader::get_blob` integer overflow → OOB read / remote crash
-**Dosya:** `include/SushiRuntime/distributed/protocol.hpp:200`
+### C3 — `ByteReader::get_blob` integer overflow → OOB read / remote crash — ✅ ÇÖZÜLDÜ
+**Düzeltme:** `include/SushiRuntime/distributed/protocol.hpp:206` — kontrol
+`bytes > data_.size() - pos_` çıkarma biçiminde; toplama taşması kalmadı.
+
+**Dosya (bulgu anındaki):** `include/SushiRuntime/distributed/protocol.hpp:200`
 
 `if (!ok_ || pos_ + bytes > data_.size())` — `pos_` `size_t`, `bytes` payload'dan okunan attacker-controlled `uint64_t`. `pos_ + bytes` taşar: `bytes ≈ 2^64 - pos_` ile toplam küçük bir değere sarar, kontrol geçer, sonra `data_.subspan(pos_, bytes)` ~2^64 uzunlukta span döner (C++17 shim `subspan` bounds check yapmaz; C++20 `std::span` precondition ihlalini UB sayar).
 
@@ -66,6 +97,33 @@ Master tarafındaki eşdeğerleri clamp'li (`distributed_coordinator.cpp:229,272
 ---
 
 ## 2. YÜKSEK Öncelikli Bulgular
+
+**Özet:** H1-H3, H5-H12 ✅ ÇÖZÜLDÜ; **H4 🟡 KISMİ** — tek açık yüksek öncelikli kalem.
+
+| # | Durum | Düzeltmenin bugünkü yeri |
+|---|---|---|
+| H1 | ✅ | `scheduler/event_polling.hpp:100-110` — `backoff_counter`/`stall_polls_` artık paylaşılan `EventPolling`'de değil, worker başına `ActiveEventList` içinde |
+| H2 | ✅ | `memory/epoch_reclamation.hpp:292-334` — `tls_state.nest_depth`; slot'u yalnız en dış enter/exit yazar |
+| H3 | ✅ | `scheduler/workload_coordinator.hpp:55,66-68,114-123` — `strategy_mtx_` hem swap'i hem `monitor_loop`'un kullanımını koruyor |
+| H4 | 🟡 | aşağıya bakın |
+| H5 | ✅ | `src/execution/execution_engine.cpp:146,417-428,517` — `std::atomic<bool> run_in_progress`, `exchange(true, acquire)`, reentrant çağrı throw ediyor |
+| H6 | ✅ | `src/graph/task_graph.cpp:616-626` — `tracker.reset()` (625) artık throw'dan (626) önce |
+| H7 | ✅ | `src/distributed/worker_agent.cpp:248-258` — `size_bytes > MAX_FRAME_BYTES` ve null `malloc_shared` throw ediyor; `start()` içindeki dispatch (618-633) try/catch'li |
+| H8 | ✅ | `src/scheduler/scheduler.cpp:511-526` — `poll_events` try/catch içinde, `record_run_error`'a route ediliyor |
+| H9 | ✅ | `.github/workflows/ci.yml:40,73` — `-DSR_ENABLE_DISTRIBUTED=ON` |
+| H10 | ✅ | `.github/workflows/ci.yml:45-80` — TSan `sanitizers:` job'ı |
+| H11 | ✅ | `tests/functional/unit/test_distributed.cpp:334-421` — `Unit_DistributedProtocolFuzz` (taşan blob uzunluğu, truncated stream, boş payload) |
+| H12 | ✅ | `cli/sushiruntime/console.py:17-38` — modül `__getattr__` ile lazy console; `cli/tests/test_config.py`, `cli/tests/test_console_lazy.py` mevcut |
+
+**H4 — 🟡 KISMİ: dokümante edildi, tespit edilmiyor.** `include/SushiRuntime/api/data/buffer.hpp`
+artık satır 164-171'de bir `@warning` taşıyor: bir `Buffer` graph'a kaydedildikten sonra
+taşınırsa bu güvenli değildir ve **tespit edilemez**. Tespit edilememesinin nedeni tasarım
+gereği: move ctor `liveness_` token'ını değerle birlikte taşır (buffer.hpp:153-208, 350-361), o
+yüzden `has_dangling_resource()` false kalır. Move ctor silinmedi (yalnız kopya silindi);
+`LivenessObserver` yalnız yıkımı görür, taşımayı değil. Yani bulgunun tarif ettiği sessiz dangle
+hâlâ mümkün — artık bilinen ve yazılı bir sınırlama.
+
+### Orijinal bulgu metinleri (kayıt için)
 
 ### Eşzamanlılık / bellek güvenliği
 
@@ -101,6 +159,15 @@ Master tarafındaki eşdeğerleri clamp'li (`distributed_coordinator.cpp:229,272
 
 ## 3. Dokümantasyon ↔ Kod Senkronu & Unlinked Feature'lar
 
+**Durum (2026-08-17):** F1 ✅ (`cli/install.py` artık ne var ne de `CONTRIBUTING.md`,
+`CLI_GUIDE.md`, `INTRODUCTION.md`'de referanslanıyor). **F2 ve F3 ⚪ GEÇERSİZ** — hedefleri olan
+`docs/ABOUT_PROJECT.md` dosyası artık yok, bulgular konusuz kaldı. F4 ✅
+(`docs/DISTRIBUTED_GUIDE.md:126-130` `State<T>::distributed()`'ı doğru dokümante ediyor;
+gerçeklik `api/data/state.hpp:228-248`). F8 ✅/⚪ — hedef dosya hâlâ yok, ama `TODO.md`'deki kırık
+link kaldırıldı. U1 ✅ (`SR_GPU_BACKEND` artık `docs/ARCHITECTURE.md:996-1066` ve
+`docs/README.md:132-138`'de). U2 ✅ (`docs/README.md:120-121` `SR_BUILD_TESTS` OFF varsayılanını
+açıkça söylüyor). F5-F7, F9-F12, U3-U7 bu geçişte doğrulanmadı.
+
 Genel durum: **hata modu "gecikme", "uydurma" değil** — ARCHITECTURE.md'nin "burada adı geçen her sınıf/sabit/algoritma mevcut" vaadi ~40 nokta kontrolünde tutuyor. Bozukluk üç bölgede yoğunlaşmış.
 
 ### 3.1 Uydurma dokümanlar (dokümante ama kodda yok)
@@ -117,7 +184,10 @@ Genel durum: **hata modu "gecikme", "uydurma" değil** — ARCHITECTURE.md'nin "
 | F8 | `TODO.md`, `ABOUT_PROJECT.md` | `docs/slop/cpp_standard_migration.md` | Ne o ne hedef dosya var | Orta |
 | F9-F12 | çeşitli | §11 vs §12 off-by-one, kırık relative link'ler, `SUSHI_*` vs `SR_*` env, install snippet | — | Düşük |
 
-**Stale intent (TODO.md hâlâ açık gösteriyor ama düzeltilmiş):** event-cap drop (#30), RTTI downcast (#33), "No DAG cancellation" (#37 — `Graph::cancel()` var), Fluent dependency tracking (Option A shipped), RunReport reserved fields (artık dolduruluyor).
+**Stale intent — ✅ ÇÖZÜLDÜ.** `TODO.md` 2026-08-17'de baştan sona gerçeklendi: #30, #33, #37 ve
+Fluent dependency tracking artık RESOLVED olarak yazılı. `RunReport` alanlarında iki kalem hâlâ
+açık (`host_to_device_bytes` / `device_to_host_bytes` ne dolduruluyor ne de "reserved" işaretli) —
+ayrıntı `TODO.md`'nin release hygiene bölümünde.
 
 ### 3.2 Unlinked feature'lar (kodda var, dokümanda yok)
 
@@ -138,6 +208,21 @@ Genel durum: **hata modu "gecikme", "uydurma" değil** — ARCHITECTURE.md'nin "
 ---
 
 ## 4. Performans — Sıralı Fırsatlar
+
+**Durum (2026-08-17):** PERF-1 ✅ (`src/scheduler/scheduler.cpp:347-348,371,532` — `pending_count_`
+/ `priority_count_` relaxed atomik fast-path; kilit yalnız sıfırdan farklıysa alınıyor). PERF-2 ✅
+(`graph/node.hpp:375,390` `locality_checked_`/`cached_queue_index_`, kullanım
+`scheduler.cpp:766,799-805`). PERF-3 ✅ (`execution_engine.cpp:435,560` artık `SR_LOG_DEBUG`).
+PERF-4 ✅ (`scheduler/task_scheduler.hpp:232-236` — eleman başına `alignas(CACHE_LINE_SIZE)`
+sarmalayıcı struct). PERF-5 ✅ (`event_polling.hpp:78` açık `has_event` bool'u). **PERF-6 🔴 AÇIK**
+— `cmake/` altında hâlâ `INTERPROCEDURAL_OPTIMIZATION`/`LTO`/`IPO` yok. PERF-7 ve PERF-8 bu
+geçişte doğrulanmadı.
+
+**Bellek alt sistemi bulguları ⚪ GEÇERSİZ.** `src/memory/usm_allocator.cpp` silindi
+(`6e4b87b "refactor(memory): delete the pooled USM path, extract Memory::UsmRegistry"`). Havuzlu
+USM yolu, `LockFreePageMap`, `get_bucket_index`, registry slot'u — hiçbiri artık yok; yerine
+`include/SushiRuntime/memory/usm_registry.hpp`'deki mutex korumalı pointer→device haritası geçti.
+Aşağıdaki "Bellek alt sistemi notları" ve ilgili düşük öncelikli maddeler bu yüzden konusuz.
 
 > Not: P0-1 (global `pending_mutex`) üç ayrı ajan tarafından bağımsız tespit edildi — yüksek güven.
 
@@ -172,6 +257,18 @@ Genel durum: **hata modu "gecikme", "uydurma" değil** — ARCHITECTURE.md'nin "
 ## 5. Orta / Düşük Öncelikli Diğer Bulgular
 
 ### Doğruluk (orta)
+
+**Durum (2026-08-17):** M-corr1 ✅ (`scheduler.cpp:684` sayaçlar worker id ile index'leniyor,
+okuma `:1104`). M-corr2 ⚪ (havuzlu allocator silindi). M-corr3 ✅ (`node.hpp:450-459` — slot,
+count'un release-store'undan önce yazılıyor). M-corr6 🟡 (`runtime_context.cpp:165`
+`wait_and_throw()` hâlâ var ama `:136-160`'taki guard teardown'da `std::terminate`'i önlüyor;
+guard'ın tam koşulu bu geçişte satır satır okunmadı). M-corr8 ✅ (`api/data/buffer.hpp:139-140`
+artık throw ediyor). M-corr9 ✅ (`task_graph.cpp:629-684` — Kahn tabanlı erişilebilirlik kontrolü
+kopuk cycle'ı da yakalıyor). M-corr10 ✅ (`protocol.hpp:247-253,270-272` — `meta.name` wire'a hiç
+yazılmıyor). M-sec1 ✅ (`tcp_transport.cpp:118-138` `set_recv_timeout`, `:282`'de 30 sn ile
+çağrılıyor). M-corr4, M-corr5, M-sec2 ve T1-T5 / CLI1-CLI5 bu geçişte doğrulanmadı — CLI3 ✅
+(`git ls-files` altında egg-info yok) ve CLI4 ✅ (`cli/install.py` referansı kalmadı) hariç.
+
 - **M-corr1 — Completed-task sayaçları EBR slot id ile index'leniyor, worker id ile değil.** `scheduler.cpp:501-503` vs `832-836`. EBR'ye önce dokunan non-worker thread (graph compile eden main thread) tüm worker'ların EBR id'sini kaydırır → `ThermalProxyStrategy` yanlış worker'ın sayacından rate hesaplar, sağlıklı worker'lardan task migrate eder.
 - **M-corr2 — Pool sayfaları `malloc_shared` ile, alignment sözü ihlal edilebilir.** `usm_allocator.cpp:764,345`. `alignment ≤ 128` istekleri havuza gidiyor ama slab yalnız temel alignment garanti ediyor; 64/128-align isteyen caller 16-align pointer alabilir. **Düzeltme:** `aligned_alloc_shared`.
 - **M-corr3 — `node.hpp:417-425` `add_successor` count'u slot yazmadan önce publish ediyor.** Concurrent reader artmış count'u görüp henüz-yazılmamış (null) slot'u okur, atlar → successor'ın `in_degree`'si düşmez, deadlock. Bugün yalnız "mutasyonlar step boundary'de" konvansiyonu kurtarıyor.
@@ -202,6 +299,13 @@ Genel durum: **hata modu "gecikme", "uydurma" değil** — ARCHITECTURE.md'nin "
 - **CLI5 — Diğer:** env cache reconfigure'da hemen siliniyor (`project.py:421-427`), child env'de PATH ikiye katlanıyor (`env.py:44-65`), `test()` `CUDA_LAUNCH_BLOCKING`'i strip etmiyor ama `run()` ediyor, `SYCL_LIB_SUFFIX=9` hardcoded pin.
 
 ### Düşük öncelikli çekirdek
+
+**Durum:** ilk dört madde (allocator destructor registry slot'u, `USMManagerImpl` queue referansı,
+`LockFreePageMap` 50-bit maske, `get_bucket_index`) ⚪ GEÇERSİZ — havuzlu USM yolu tamamen
+silindi. `start()` çift-çağrı guard'ı ✅ (`scheduler.cpp:196-205` uyarıp dönüyor). `is_fused` ✅ —
+alan `node.hpp`'den kaldırıldı. Armed-idle busy-loop ve `build_run_report` device atfı bu geçişte
+doğrulanmadı.
+
 - Allocator destructor'ı çakışan canlı allocator'ın registry slot'unu null'lar (`usm_allocator.cpp:263`, `id % 256`) → uzun-ömürlü process'te havuz sızıntısı; **düzeltme:** `compare_exchange_strong`.
 - `USMManagerImpl` `sycl::queue&` referans üyesi tutup destructor'da kullanıyor (`usm_allocator.cpp:526,295`) → queue önce yıkılırsa UAF; **düzeltme:** value ile sakla.
 - `LockFreePageMap` 50-bit VA maskeliyor (`usm_allocator.cpp:98-107`), LA57 host'ta aliasing.
@@ -224,6 +328,11 @@ Genel durum: **hata modu "gecikme", "uydurma" değil** — ARCHITECTURE.md'nin "
 ---
 
 ## 7. Önerilen Eylem Sırası
+
+> **2026-08-17 itibarıyla bu listenin neredeyse tamamı yapıldı.** Geriye kalan gerçek işler:
+> H4 (moved-from Buffer/State tespiti — bugün yalnız dokümante), PERF-6 (LTO/IPO denemesi),
+> `RunReport`'un iki transfer alanı, ve bu geçişte doğrulanmamış kalemler (M-corr4/5, M-sec2,
+> T1-T5, CLI1/CLI2/CLI5, PERF-7/8). Aşağıdaki sıra tarihsel kayıt olarak duruyor.
 
 **Hemen (bellek güvenliği — hepsi küçük, lokalize):**
 1. C1: EBR `enter()`'a seq_cst fence.

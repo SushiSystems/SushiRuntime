@@ -4,24 +4,22 @@
 
 ## Correctness (blockers before v1.0.0)
 
-**#29 — ThreadLocalMagazine teardown ordering — RESOLVED**
+**#29 — ThreadLocalMagazine teardown ordering — RESOLVED, then superseded**
 
-The liveness check this item asked for was already in place, and is now complete.
-A flush takes `flush_mutex()` shared, reads the allocator out of the registry and
-verifies `owns_id`, so it no-ops once that allocator is gone; an allocator's
-destructor takes the same lock exclusively for its whole teardown and clears its
-registry slot (by compare-exchange, so a slot a collided id has since claimed is
-left alone) before freeing pages. A thread outliving its `RuntimeContext`
-therefore flushes into a null slot rather than into freed memory.
+The fix landed as described: a flush took the registry lock shared and verified
+ownership, so it no-oped once its allocator was gone, and the remaining hole was
+one level out — the lock was a namespace-scope `std::shared_timed_mutex`, and a
+`thread_local` destructor runs at *thread* exit, which for a thread outliving
+`main()` is after static destruction. Locking a destroyed mutex in the very path
+that exists to make teardown safe is the same use-after-free, moved up a level.
+It was changed to allocate once and never free.
 
-What was missing was one level further out. The lock was a namespace-scope
-`std::shared_timed_mutex`, and a `thread_local` magazine's destructor runs at
-*thread* exit — which, for a thread outliving `main()`, is after static
-destruction. Locking a destroyed mutex in the very path that exists to make
-teardown safe is the same use-after-free one level up. `flush_mutex()` now
-allocates it once and never frees it; everything else this file keeps at
-namespace scope is trivially destructible and already immune. Covered by
-`Regression_Sentinel.MagazineFlushSurvivesRuntimeTeardown`.
+As of 2026-08-18 the magazine, the pool and the allocator they belonged to are
+deleted (commit `6e4b87b`), so the hazard is gone by construction rather than by
+fix. The reasoning is worth keeping because it applies to any thread-local the
+runtime grows later. The regression that guarded it survives, retargeted at the
+thread-local state EBR still keeps, as
+`Regression_Sentinel.AThreadOutlivingTheRuntimeTearsDownCleanly`.
 
 **#30 — EventPolling 256-event cap — RESOLVED**
 
@@ -84,19 +82,21 @@ public event. See `BACKBONE_WAVE_STATUS.md` §1.
 
 ## Release hygiene (before the v1.0.0 tag)
 
-- **CMake version.** `project(SushiRuntime VERSION 0.1.0)` → `VERSION 1.0.0`.
-  Create a matching git tag.
-- **Orphaned comment.** `include/SushiRuntime/graph/task_graph.hpp` line 161
-  contains a commented-out field that is a refactoring artifact. Remove it.
-- **Reserved `RunReport` fields.** `scheduling_overhead_ms`,
-  `network_latency_wait_ms`, `host_to_device_bytes`, `device_to_host_bytes`,
-  `tasks_received_from_network`, `network_bytes_tx`, `network_bytes_rx` are always
-  zero. Each should carry `@note Reserved: always 0 in v1.` in its Doxygen so users
-  reading the header directly understand why the measurement is absent.
-- **`SR_BUILD_TESTS` default.** The CMake option defaults to `OFF`, so a direct
-  `cmake` invocation (without the CLI) produces a library-only build with no test
-  binary. Either flip the default to `ON` or add an explicit note in the
-  "Building with CMake directly" section of the README.
+- **CMake version.** Done for now: `CMakeLists.txt` says
+  `project(SushiRuntime VERSION 0.2.0)`, `include/SushiRuntime/version.hpp` agrees
+  (`SUSHIRUNTIME_VERSION_STRING "0.2.0"`), and the tag `v0.2.0` exists. The bump to
+  `1.0.0` plus a matching tag is the last step of the freeze, not open work now.
+- **Reserved `RunReport` fields — done.** In
+  `include/SushiRuntime/core/run_report.hpp`, the five genuinely unpopulated fields
+  (`local_memory_allocations_bytes`, `tasks_received_from_network`,
+  `network_bytes_tx`, `network_bytes_rx`, `network_latency_wait_ms`) now say
+  "Reserved: always 0 in v1". The other three are populated and their Doxygen says
+  what they measure rather than calling them reserved: `scheduling_overhead_ms`
+  from `src/execution/execution_engine.cpp`, and `host_to_device_bytes` /
+  `device_to_host_bytes` from the fluent layer in
+  `include/SushiRuntime/api/graph/graph.hpp` — the assignment is in a header, not
+  under `src/`, which is why a grep limited to `src/` reads as if nothing sets
+  them. `Integration_Observability.ExplicitTransfersAreAccounted` covers both.
 
 **Doxygen conformance sweep.** Every public function in `include/SushiRuntime/`
 must conform to the rule in `CONTRIBUTING.md §4`: state why and how in plain
@@ -111,20 +111,33 @@ The distributed core is complete and all tests pass. The following gaps are
 documented in `DISTRIBUTED_GUIDE.md §12` as v1 limitations; they do not block the
 tag but should remain accurately documented.
 
-1. **Reconnect.** A worker that drops mid-run cannot rejoin. The worker-death
-   fallback covers the failure, but the TCP connection is not re-established.
-2. **Shutdown race.** The master's `accept()` loop blocks indefinitely if fewer
-   workers than expected connect before `stop()` is called (self-pipe or
-   non-blocking accept would fix this).
-3. **Pipelining.** Communication and compute do not overlap: task N+1 is not
-   transmitted while the worker runs N.
-4. **Worker scheduler bypass.** Offloaded tasks are dispatched directly to
-   `get_queue(0)` on the worker, bypassing the worker's NUMA-aware scheduler.
-5. **`TcpTransport` minor issues.** Native-endian length prefix (homogeneous-cluster
-   assumption); light data race on the `peers` vector between accept and send
-   (benign in practice).
-6. **Endpoint configuration.** Cluster addresses are direct CLI flags
-   (`--master`/`--port`/`--workers`); there is no `nodes.txt` file support.
+1. **Reconnect — still open.** A worker that drops mid-run cannot rejoin. The
+   worker-death fallback covers the failure, but nothing re-establishes the TCP
+   connection; there is no reconnect path anywhere in `src/distributed/`.
+2. **Shutdown race — FIXED.** `TcpTransport::stop()`
+   (`src/distributed/tcp_transport.cpp:440`) flips `running` to false, then calls
+   `shutdown_sock()` on the listen socket and every peer socket *before* joining
+   the accept and reader threads, and only closes the descriptors afterwards. A
+   master waiting on `accept()` for workers that never arrive now wakes and exits.
+3. **Pipelining — still open.** Communication and compute do not overlap. The
+   worker has one job queue guarded by `job_cv`
+   (`src/distributed/worker_agent.cpp:63`, waited on at line 525), so task N+1 is
+   not received while N runs.
+4. **Worker scheduler bypass — still open.** The worker hardcodes `ctx.get_queue(0)`
+   for allocation, free and device introspection (`worker_agent.cpp` lines 253, 267,
+   350, 479, 541), bypassing its own NUMA-aware scheduler.
+5. **`TcpTransport` frame header — partly fixed.** The 5-byte header still carries a
+   native-endian `uint32_t` length (`memcpy` at lines 216 and 251, no `htonl`/`ntohl`),
+   so the protocol assumes a homogeneous-endianness cluster. It does now reject a
+   frame larger than `MAX_FRAME_BYTES` and drop the peer (line 222), which closes
+   the blind-allocation OOM.
+6. **Unsynchronised `peers` vector — still open.** `accept_loop()` writes
+   `peers[i]` (line 283) with no lock while `send()` (line 484) and `stop()`
+   (line 450) read the same slots from other threads. Benign in practice on the
+   platforms in use, but it is a data race.
+7. **Endpoint configuration — still open.** Cluster addresses are direct CLI flags
+   (`--master`/`--port`/`--workers`); `nodes.txt` appears nowhere in `src/`,
+   `include/` or `cli/`.
 
 ---
 
@@ -137,13 +150,33 @@ tag but should remain accurately documented.
 `ExecutionEngine::execute()` so `compile()` returns a pure DAG. The current design
 is correct; this is structural debt only.
 
-**#36 — Host tasks go through SYCL `host_task`**
+**#36 — Host task execution — the original claim was wrong**
 
-Tasks with `ExecutionMode::HOST` are submitted via `q.submit()` +
-`sycl::host_task` (or `AdaptiveCpp_enqueue_custom_operation` on AdaptiveCpp).
-This adds SYCL submission overhead to plain CPU work. Whether bypassing SYCL for
-host work matters at v1 workload sizes is a judgment call. Document the current
-behavior and the trade-off.
+This item used to say `ExecutionMode::HOST` tasks are submitted through
+`q.submit()` + `sycl::host_task` and pay SYCL submission overhead. They are not.
+`src/scheduler/scheduler.cpp:810` branches on the mode and calls
+`task->execute_host(q, deps)` directly — no handler, no submit. `Node`'s override
+(`include/SushiRuntime/graph/node.hpp:614`) just invokes the stored
+`host_work(q, deps)` callable and returns whatever event that produces, or a
+default-constructed `sycl::event{}` when there is no callable. There is no SYCL
+submission on the host path.
+
+The real trade-off is the opposite one. Host work runs *inline on the worker
+thread* that dispatched it, so it occupies a worker for its whole duration and
+cannot overlap with anything else that worker could have run. The dispatcher
+compares the returned event against `sycl::event{}`
+(`scheduler.cpp:834`); an empty event means "already finished", and the entry is
+pushed to the poller flagged ready so successors fire without fabricating a
+barrier. A `host_work` lambda that does its own `queue.submit()` returns a real
+event instead and is polled normally.
+
+`SushiRuntime::detail::enqueue_host_task` in
+`include/SushiRuntime/core/sycl_compat.hpp` is a separate, still-used facility —
+roughly twenty call sites across `tests/` and `examples/` build host work *with*
+`sycl::host_task` / `AdaptiveCpp_enqueue_custom_operation` when they want a real
+event. It is not dead code and is not what the scheduler uses.
+
+Nothing to fix here; the entry is kept so the false claim does not come back.
 
 **#37 — No DAG cancellation — RESOLVED**
 
@@ -176,7 +209,12 @@ none is built.
 
 **C++ standard migration.** The project targets C++17 for toolchain portability.
 When the SYCL toolchain baseline supports it, features can be restored in two
-stages. See `docs/guides/CPP_STANDARD_MIGRATION.md` for the per-feature checklist
-(concepts, `std::span`, `std::barrier`, `std::format`, `std::source_location` at
-C++20; `std::expected`, `std::println` at C++23).
+stages: concepts, `std::span`, `std::barrier`, `std::format` and
+`std::source_location` at C++20; `std::expected` and `std::println` at C++23. The
+per-feature checklist this entry used to link (`docs/guides/CPP_STANDARD_MIGRATION.md`)
+does not exist — there is no `docs/guides/` directory and no file of that name
+anywhere in the tree — so the link is removed rather than repointed. The shims
+that stand in today are listed in `CONTRIBUTING.md §4` (`core/bit.hpp`,
+`core/span.hpp`, `core/result.hpp`); note that `Result<T, E>` is a permanent type
+by the BB-4.5 decision above, not a migration target.
 

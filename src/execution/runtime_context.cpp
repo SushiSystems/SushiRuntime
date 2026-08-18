@@ -115,7 +115,7 @@ namespace SushiRuntime
              * Stored as a raw pointer and initialised lazily after probe_hardware()
              * so that the engine can receive a fully-initialised queue list.
              * Lifetime is always shorter than the Impl itself — shutdown() is called
-             * in ~Impl before any other resource is released. [Madde 18 fix]
+             * in ~Impl before any other resource is released.
              */
             std::unique_ptr<ExecutionEngine> engine;
 
@@ -130,19 +130,12 @@ namespace SushiRuntime
 
             ~Impl() 
             {
-                // --------------------------------------------------------
-                // Destruction order is critical for correctness. [Madde 18]
-                //
-                //  1. Shut down the ExecutionEngine first. This joins all
-                //     worker threads, eliminating any dangling references
-                //     to queues, allocators, or other Impl members.
-                //
-                //  2. Drain remaining GPU work via wait_and_throw() so that
-                //     all hardware operations complete before SYCL objects
-                //     go out of scope.
-                //
-                //  3. Release NUMA allocators.
-                // --------------------------------------------------------
+                // Destruction order is load-bearing. The ExecutionEngine goes first,
+                // which joins every worker thread and so removes any dangling
+                // reference to a queue or another Impl member. Only then is it safe
+                // to drain outstanding GPU work with wait_and_throw(), so that every
+                // hardware operation has completed before the SYCL objects it used
+                // go out of scope.
 
 #ifdef SR_DISTRIBUTED
                 // Stop the network first so no late remote completion can touch the
@@ -220,8 +213,8 @@ namespace SushiRuntime
 
             // Construct the ExecutionEngine after hardware is probed so the engine
             // receives a fully-initialised context with all queues available.
-            // [Madde 7] Persistent scheduler is started here and lives for the
-            // entire lifetime of the RuntimeContext.
+            // The scheduler it starts is persistent: it lives for the whole
+            // lifetime of the RuntimeContext rather than being rebuilt per run.
             impl_->engine = std::make_unique<ExecutionEngine>(*this);
         }
 

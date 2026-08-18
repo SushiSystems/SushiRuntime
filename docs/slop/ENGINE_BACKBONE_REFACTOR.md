@@ -45,15 +45,39 @@ boundaries, `5536b02` run_async + based_at, `d46cd7f` magazine teardown). Functi
 154 → 190, ASan-clean. Both documents were right on their own day; together they describe a
 delivery that never arrived. **The cheapest unit of value in this whole plan is a merge.**
 
-**2. The engine uses none of the new surface.** Verified by call-site count: `add_reduce` 0,
-`add_segmented_reduce` 0, `sized_from_device` 0, `based_at*` 0, `add_untracked` 0, `run_async` 0,
-`DynamicGraph` 0, `State<T>` 0, `RunReport::node_timings` 0. Meanwhile the engine still carries
-the hand-built stand-ins the new APIs were created to delete: a two-node fixed-order reduction
-with its own `MOTION_SEGMENT = 256` constant (`runtime_graph_builder.hpp:834-881` — *"moving it
-is deleting these two nodes"*), fold operators duplicated in `core/blas_placeholder.hpp:500-560`,
-a built-but-unused island partition waiting for R3 (`islands.hpp:48-53`), and a CPU-only
-broadphase/narrowphase whose per-tick body transfers exist only because R1 was believed absent
-(`physics_simulation.hpp:72-79`).
+**2. The engine has adopted part of the new surface — this fact is now half stale.** The original
+"call-site count: all zero" claim no longer holds. Re-counted 2026-08-17 against
+`D:/Projects/sushiengine` (grep over `engine/`, `applications/`, `tests/`, excluding `build/`):
+
+- `add_reduce` — **has callers.** The physics solver calls
+  `graph_->add_reduce(*motion_, *motion_maximum_, capacity, Maximum<T>{}, T(0))` at
+  `engine/domain/physics/include/SushiEngine/physics/solver/runtime_graph_builder.hpp:1240`,
+  wrapped by the execution seam at
+  `engine/foundation/execution/include/SushiEngine/execution/backend/runtime_backend.hpp:377`
+  (Graph) and `:479` (Region).
+- `DynamicGraph` — **has callers.** `SushiRuntime::API::DynamicGraph` is wrapped by the engine's
+  own `DynamicGraph` in `runtime_backend.hpp:513-569`.
+- `RunReport::node_timings` — **has callers.** `physics_node_timings_from_report()` iterates
+  `report.node_timings` at
+  `engine/domain/physics/include/SushiEngine/physics/core/statistics_from_report.hpp:101`.
+- `based_at*` — **has one caller**, not zero: `dynamic.and_based_at(...)` at
+  `runtime_backend.hpp:138`. The plain `based_at()` spelling has none.
+- Still zero: `add_segmented_reduce`, `sized_from_device`, `add_untracked`, `run_async`, and
+  `SushiRuntime::API::State<T>` (the `State<...>` hits in the engine are its own domain types,
+  e.g. `JointAngularState<T>`).
+
+The hand-built stand-ins this fact listed are also mostly gone. `MOTION_SEGMENT` **does not exist
+anywhere in the engine** — the two-node fixed-order reduction it belonged to has been replaced by
+the `add_reduce` call above. What remains of the list is unverified here and should be re-checked
+before it is acted on: the island partition and the CPU-only broadphase/narrowphase transfers
+were not re-confirmed in this pass, and the file:line citations for them
+(`islands.hpp:48-53`, `physics_simulation.hpp:72-79`) are stale — no `islands.hpp` was found at
+that path.
+
+`core/blas_placeholder.hpp` is **not** a duplicate to delete. Its fold operators are live: `Sum`
+(line 504), `Product` (511), `Minimum` (525) and `Maximum` (532), and `Maximum<T>{}` is the
+combiner passed to `add_reduce`. Deleting them breaks the build. The one member with no callers
+is `fold_range` (line 555), re-exported as `placeholder::fold_range` in `core/types.hpp:111`.
 
 **3. Where the runtime was absent, the engine routed around it — and recorded why.** Audio's
 real-time mix sidesteps the runtime entirely (`audio/accelerator.hpp:31-37`). The atmosphere tier
@@ -124,21 +148,22 @@ later.
 
 ## 4. BB-0 — Merge & adopt (the free win)
 
-**Runtime side.**
-1. Merge `feature/physics-substrate-seams` → `main`. Tag `v0.2.0` — the engine pins by tag from
-   here on (its own risk register: *"the engine pins a known-good runtime rather than tracking
-   its tip"*), which only works if tags exist.
-2. Close TODO #33 (EventPolling `Task*`→`Node*` downcast) — the last open correctness item on
-   the v1 list.
-3. Doc truth pass: `ARCHITECTURE.md` already describes the seams; `INTRODUCTION.md` and the
-   Doxygen site must catch up, and `CODE_AND_ARCHITECTURE_REVIEW.md` F1's stale-path findings get
-   fixed in the same sweep.
+**Runtime side — DONE.**
+1. Merged, and tagged: `git tag` lists `v0.2.0`, and `CMakeLists.txt` /
+   `include/SushiRuntime/version.hpp` both read 0.2.0.
+2. TODO #33 (EventPolling `Task*`→`Node*` downcast) is closed — `Task::on_complete(ReadySink&)` +
+   `record_completion()`, called from `include/SushiRuntime/scheduler/event_polling.hpp:426,457`.
+3. The doc truth pass ran. `TODO.md` and this file were reconciled against the tree on 2026-08-17;
+   `CODE_AND_ARCHITECTURE_REVIEW.md` now carries per-finding status.
 
 **Engine side (filed here because the backbone-head relationship is one program).**
-4. Delete the two-node reduction and the `blas_placeholder` fold duplicates; call
-   `add_reduce`/`add_segmented_reduce`. The engine's own doc: *"adopting it is deleting those two
-   nodes."* `MOTION_SEGMENT = 256` matches the runtime's `REDUCE_TILE = 256`, so the derived
-   substep counts must be bit-identical before/after — that equality is the adoption test.
+4. **Essentially done; the instruction as written was wrong.** The two-node reduction and
+   `MOTION_SEGMENT` are gone — the solver calls `Graph::add_reduce` directly
+   (`runtime_graph_builder.hpp:1240`). Do **not** delete `blas_placeholder`'s fold operators:
+   `Maximum<T>{}` from that header is the combiner handed to `add_reduce`, so deleting it breaks
+   the build. Only `fold_range` (`blas_placeholder.hpp:555`) has no callers and is a candidate for
+   removal. `add_segmented_reduce` is still unadopted; whether the engine has a segmented case at
+   all was not established in this pass.
 5. Correct `physics_system.md` §18 (the "must be read as open" note) with the merge commit as
    evidence.
 6. Adopt per seam, each with its instantiating TU (P5): `sized_from_device` → the P8
@@ -419,13 +444,16 @@ by leverage.
    "explicit recompile".
 3. **Report-free and reusable runs** — folded into BB-2 (the `run(RunReport&)` overloads); listed
    here because it is data-plane hygiene as much as RT hygiene.
-4. **The pool decision.** `Buffer`/`State` bypass `BitmaskMemoryPool` entirely — every
-   allocation is raw `sycl::malloc_shared` under the process-global `usm_owner_mtx`. Either route
-   the fluent handles through `USMAllocator` (making per-frame spawn churn cheap and the magazine
-   layer meaningful), or demote the pool to the internal-only role it factually has. Decide
-   before the freeze; the survey's data says the pool is currently dead weight on the public
-   path, and a game's steady state (allocate at capacity, never resize) may make routing through
-   it a non-goal. Measure with the ECS chunk-churn benchmark, then choose.
+4. **The pool decision — DONE 2026-08-18, by deletion (commit `6e4b87b`).** The choice was
+   between routing the fluent handles through the allocator and demoting the pool. Measurement
+   settled it: instrumenting every USM entry point showed allocation happens once per
+   `Buffer`/`State` the caller constructs, at setup, and never during a run — 1000 steps, a
+   reduction, and 32 regions streaming in and out all allocate nothing. Pooling amortises
+   high-frequency small allocation and there is none, and the pool's 4 KB ceiling sat below the
+   buffers the runtime actually allocates, so routing through it was never viable. Deleted rather
+   than demoted, since demoting hides dead code instead of removing it. `Memory::UsmRegistry` now
+   owns pointer ownership, which is the part that had a real invariant. Design in
+   `docs/superpowers/specs/2026-08-18-usm-allocation-seam-design.md`.
 5. **Deterministic device sort.** The engine's contact ordering rule ("sorted by
    `(body_a, body_b, feature_id)` before solving; broadphase order must never reach the solver")
    currently runs as a host sort and will otherwise be hand-built in the graph like the

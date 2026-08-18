@@ -47,7 +47,7 @@ namespace SushiRuntime
             std::size_t tasks_stolen_intra_numa = 0;/**< Steals from a victim on the same NUMA node. */
             std::size_t tasks_stolen_inter_numa = 0;/**< Steals that crossed to another NUMA node. */
 
-            std::size_t local_memory_allocations_bytes = 0; /**< Reserved: USM bytes pinned to this node. */
+            std::size_t local_memory_allocations_bytes = 0; /**< USM bytes pinned to this node. Reserved: always 0 in v1. */
         };
 
         /**
@@ -58,10 +58,10 @@ namespace SushiRuntime
         struct DistributedStatistics
         {
             std::size_t tasks_offloaded_to_network = 0;  /**< Tasks shipped to remote workers. */
-            std::size_t tasks_received_from_network = 0; /**< Reserved: remote tasks executed locally. */
+            std::size_t tasks_received_from_network = 0; /**< Remote tasks executed locally. Reserved: always 0 in v1. */
 
-            std::size_t network_bytes_tx = 0;            /**< Reserved: total bytes sent. */
-            std::size_t network_bytes_rx = 0;            /**< Reserved: total bytes received. */
+            std::size_t network_bytes_tx = 0;            /**< Total bytes sent. Reserved: always 0 in v1. */
+            std::size_t network_bytes_rx = 0;            /**< Total bytes received. Reserved: always 0 in v1. */
 
             std::size_t remote_nodes_involved = 0;       /**< Live remote workers that took part. */
         };
@@ -115,8 +115,8 @@ namespace SushiRuntime
             // B. Timing / bottleneck analysis
             double total_duration_ms = 0.0;             /**< Wall-clock time of the whole run. */
             double graph_analysis_duration_ms = 0.0;    /**< Dependency analysis + compile time. */
-            double scheduling_overhead_ms = 0.0;        /**< Reserved: dispatch/enqueue time. */
-            double network_latency_wait_ms = 0.0;       /**< Reserved: idle time awaiting remote results. */
+            double scheduling_overhead_ms = 0.0;        /**< Time workers spent polling for completions. */
+            double network_latency_wait_ms = 0.0;       /**< Idle time awaiting remote results. Reserved: always 0 in v1. */
 
             // C. NUMA topology breakdown
             std::vector<NumaNodeStatistics> numa_statistics;      /**< Per-node breakdown (one entry per active node). */
@@ -125,8 +125,8 @@ namespace SushiRuntime
             DistributedStatistics distributed_statistics;         /**< Offload/network stats (Master mode). */
 
             // E. PCIe / SYCL host-device transfers (reserved)
-            std::size_t host_to_device_bytes = 0;       /**< Reserved: bytes copied host -> device. */
-            std::size_t device_to_host_bytes = 0;       /**< Reserved: bytes copied device -> host. */
+            std::size_t host_to_device_bytes = 0;       /**< Bytes moved by explicit write_range calls during the run. */
+            std::size_t device_to_host_bytes = 0;       /**< Bytes moved by explicit read_range calls during the run. */
 
             // F. Diagnostics
             std::vector<std::string> warnings;          /**< Non-fatal notes raised during the run. */
