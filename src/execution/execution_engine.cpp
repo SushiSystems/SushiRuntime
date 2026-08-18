@@ -116,9 +116,10 @@ namespace SushiRuntime
          * Owns a single persistent TaskScheduler. The scheduler is started
          * once in the constructor and stopped exactly once in shutdown().
          *
-         * Madde 7: The scheduler is no longer re-created per graph execution.
-         * Madde 18: Shutdown is explicitly ordered via RuntimeContext::Impl::~Impl,
-         *           so the scheduler is always stopped before queues are torn down.
+         * The scheduler is persistent rather than re-created per graph execution,
+         * and RuntimeContext::Impl's destructor orders shutdown explicitly, so the
+         * scheduler is always stopped before the queues it dispatches onto are torn
+         * down.
          */
         struct ExecutionEngine::Impl : public Core::RefCounted
         {
@@ -198,10 +199,6 @@ namespace SushiRuntime
                 SR_LOG_INFO("All workers joined.");
             }
         };
-
-        // ------------------------------------------------------------------ //
-        //  ExecutionEngine public interface                                   //
-        // ------------------------------------------------------------------ //
 
         /**
          * @brief Constructs an ExecutionEngine.
@@ -437,13 +434,11 @@ namespace SushiRuntime
             // release (ACTIVE_LOG_LEVEL = INFO there).
             SR_LOG_DEBUG("Executing graph ({} root nodes).", graph.roots.size());
 
-            // -----------------------------------------------------------------
-            // Step 1: Wire the sentinel's host_work once. It captures only stable
-            //         pointers — the engine's latch and scheduler — so the closure
-            //         is built the first time this plan runs and reused for every
-            //         later step, instead of being reassigned each call. A recompile
-            //         produces a fresh sentinel (empty host_work), which re-wires.
-            // -----------------------------------------------------------------
+            // Wire the sentinel's host_work once. It captures only stable pointers
+            // — the engine's latch and scheduler — so the closure is built the first
+            // time this plan runs and reused for every later step, instead of being
+            // reassigned each call. A recompile produces a fresh sentinel (empty
+            // host_work), which re-wires.
             if (!graph.sentinel->host_work)
             {
                 graph.sentinel->metadata.name = "graph_completion_sentinel";
@@ -489,13 +484,11 @@ namespace SushiRuntime
                     };
             }
 
-            // -----------------------------------------------------------------
-            // Step 2: Reset the latch, arm the scheduler, then submit roots.
-            //         The reset must precede submission so a waiter cannot observe
-            //         the previous step's completion. The caller's wait() returned
-            //         only after the previous sentinel signalled, i.e. after that
-            //         step fully drained, so resetting here races nothing.
-            // -----------------------------------------------------------------
+            // Reset the latch, arm the scheduler, then submit roots. The reset must
+            // precede submission so a waiter cannot observe the previous step's
+            // completion. The caller's wait() returned only after the previous
+            // sentinel signalled, i.e. after that step fully drained, so resetting
+            // here races nothing.
             impl_->completion.reset();
             impl_->scheduler.arm_for_execution();
 
