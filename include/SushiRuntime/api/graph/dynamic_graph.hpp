@@ -681,7 +681,10 @@ namespace SushiRuntime
 
                     BackingGraph bg(*ctx_);
                     for (auto& spec : g.specs_)
-                        spec(bg);
+                    {
+                        spec.emit(bg);
+                        bg.name_last_node(spec.name);
+                    }
 
                     RegionState st;
                     st.nodes = bg.take_nodes();   // intra edges baked; insertion order

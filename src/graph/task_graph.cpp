@@ -260,7 +260,7 @@ namespace SushiRuntime
          * @param work The task payload to execute.
          * @param dependencies An optional list of manual SYCL dependencies.
          */
-        void TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies) 
+        void TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies)
         {
             auto node = make_sushi<Node>();
             node->work = std::move(work);
@@ -296,17 +296,14 @@ namespace SushiRuntime
          * @param write_access A list of USM regions the task writes to.
          * @param bindings Shared per-step controls; null behaves like the plain overload.
          * @param dependencies An optional list of manual SYCL dependencies.
-         * @param meta Diagnostic name for the profiler's per-node report (§18 R8).
          */
         void TaskGraph::add_node(TaskWork work,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                  std::shared_ptr<LateBindings> bindings,
-                                 const std::vector<sycl::event>& dependencies,
-                                 const TaskMetadata& meta)
+                                 const std::vector<sycl::event>& dependencies)
         {
             auto node = make_sushi<Node>();
-            node->metadata = meta;
             node->work = std::move(work);
             node->sycl_deps = dependencies;
             node->bindings_ = std::move(bindings);
@@ -501,16 +498,32 @@ namespace SushiRuntime
          * @param write_access Regions this task writes to.
          * @param work Callable run once on a worker thread; submits no SYCL work.
          * @param dependencies An optional list of manual SYCL dependencies.
-         * @param meta Diagnostic name for the profiler's per-node report (§18 R8).
          */
+        /**
+         * @brief Names the node most recently added to this graph.
+         *
+         * all_nodes is a LIFO stack, so its head is the last node pushed. Called
+         * during graph description on the thread that just added it, which is why a
+         * relaxed load is enough: there is no other writer to order against.
+         *
+         * @param name Persistent label, stored not copied. A null name, or a call
+         *             with no node yet added, is a no-op.
+         */
+        void TaskGraph::name_last_node(const char* name) noexcept
+        {
+            if (!name)
+                return;
+            NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
+            if (head && head->node)
+                head->node->metadata.name = name;
+        }
+
         void TaskGraph::add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                    const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                    std::function<void()> work,
-                                   const std::vector<sycl::event>& dependencies,
-                                   const TaskMetadata& meta)
+                                   const std::vector<sycl::event>& dependencies)
         {
             auto node = make_sushi<Node>();
-            node->metadata              = meta;
             node->native_work          = std::move(work);
             node->submits_device_work_ = false;
             node->mode                 = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;

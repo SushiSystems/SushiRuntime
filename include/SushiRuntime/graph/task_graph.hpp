@@ -119,16 +119,28 @@ namespace SushiRuntime
                  * @param write_access Regions this task writes to.
                  * @param bindings Shared per-step controls; null behaves like the plain overload.
                  * @param dependencies Additional manual events to wait for.
-                 * @param meta Diagnostic name for the profiler's per-node report (§18
-                 *             R8); defaults to an unnamed node, matching every other
-                 *             ordinary add_node()/add_native() overload.
                  */
                 void add_node(TaskWork work,
                              const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                              const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                              std::shared_ptr<LateBindings> bindings,
-                             const std::vector<sycl::event>& dependencies = {},
-                             const TaskMetadata& meta = {});
+                             const std::vector<sycl::event>& dependencies = {});
+
+                /**
+                 * @brief Names the node most recently added to this graph.
+                 *
+                 * The name reaches the profiler as RunReport::NodeTiming::name. It is
+                 * set after the fact rather than passed to each add_* overload because
+                 * two of the fluent launch shapes end in a parameter pack whose last
+                 * element is the callable, so a trailing name is not expressible there.
+                 *
+                 * Called during graph description, on the thread that just added the
+                 * node, so it needs no synchronisation of its own.
+                 *
+                 * @param name Persistent label, stored not copied; a string literal is
+                 *             the intended use. Null, or no node yet added, is a no-op.
+                 */
+                void name_last_node(const char* name) noexcept;
 
                 /**
                  * @brief Adds a semantic task into the graph with explicit device and host fallback work.
@@ -208,14 +220,11 @@ namespace SushiRuntime
                  * @param write_access Regions this task writes to.
                  * @param work Callable run once on a worker thread; submits no SYCL work.
                  * @param dependencies Additional manual events to wait for.
-                 * @param meta Diagnostic name for the profiler's per-node report (§18
-                 *             R8); defaults to an unnamed node.
                  */
                 void add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                 std::function<void()> work,
-                                const std::vector<sycl::event>& dependencies = {},
-                                const TaskMetadata& meta = {});
+                                const std::vector<sycl::event>& dependencies = {});
 
                 /**
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.

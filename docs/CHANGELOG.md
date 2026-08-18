@@ -89,21 +89,35 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   licensing is untouched and stays BB-5d's gate; a local stage is not a
   distribution.
 
-- **A caller can name a node on the ordinary `add()`/`add_host()` overloads.** Every
-  device-side profiler-facing consumer (SushiEngine's physics graph among them) already
-  built a diagnostic name per node and had nowhere to put it: only the offload path
-  looked like it accepted one, and even that hardcoded a literal (`"fluent_offload"`).
-  Every other shape bottomed out in `TaskGraph::add_node`/`add_native`, neither of which
-  touched `Node::metadata`, so every node's `RunReport::NodeTiming::name` read
-  `"unnamed_task"` regardless of what produced it. The `Dynamic` per-element `add()`
-  overloads and both `add_host()` shapes now take a trailing, defaulted `const char*
-  name` (mirroring the offload path's trailing-optional-argument precedent rather than
-  reordering any existing parameter), threaded through `TaskGraph::add_node`'s
-  bindings-taking overload and `add_native` via a `TaskMetadata`, the same struct
-  `add_task` already populates this way. Unlabeled call sites are unaffected — every
-  existing caller keeps compiling and keeps reporting `"unnamed_task"`.
-  `Integration_Observability.NamedNodeAppearsInNodeTiming` and
-  `.UnnamedNodeStillReportsTheDefaultLabel` cover both.
+- **Any node can be named, with `name_last()`.** Every profiler-facing consumer
+  already built a diagnostic name per node and had nowhere to put it: only the
+  offload path looked like it accepted one, and even that hardcoded a literal
+  (`"fluent_offload"`). Everything else bottomed out in `TaskGraph::add_node` /
+  `add_native`, neither of which touched `Node::metadata`, so every node's
+  `RunReport::NodeTiming::name` read `"unnamed_task"` and a profile of a real
+  graph was a list of identical labels.
+
+  The name is attached after the call rather than passed to each overload:
+
+  ```cpp
+  sim.add(API::Reads(a), API::Writes(b), n, integrate).name_last("integrate");
+  ```
+
+  A trailing argument was the first attempt and it does not reach two of the
+  launch shapes — `add(Extent, captures..., fn)` and `add(State, States..., fn)`
+  end in a parameter pack whose last element is the callable, so a defaulted
+  trailing name is swallowed by the pack. Shipping it on the shapes that could
+  take one would have left the most common shape of all,
+  `add(Reads, Writes, n, fn)`, unnamed, and split the API into two spellings a
+  caller has to keep straight. One spelling that works everywhere, including any
+  shape added later, is the smaller surface.
+
+  `Graph::name_last` sets the pending name on the recorded task; the name reaches
+  the node through `TaskGraph::name_last_node` when the plan is built, so it can
+  be attached after `add()` has already returned. `Region` exposes it verbatim.
+  A task that expands to several nodes, such as a reduction, names its last one.
+  `Integration_Observability.EveryAddShapeCanBeNamed` covers all five shapes.
+
 - **SushiRuntime is consumable out of tree.** `install(EXPORT SushiRuntimeTargets
   NAMESPACE SushiRuntime::)` plus a generated `SushiRuntimeConfig.cmake` and version
   file, so `find_package(SushiRuntime REQUIRED)` and

@@ -311,15 +311,18 @@ The task is dispatched only after its predecessors complete, so the shared USM i
 reads is already up to date; its successors then run once it returns. Do not
 submit SYCL work from an `add_host` body — use a normal `add()` for that.
 
-**Naming a node** makes its timings readable. Every `add()` and `add_host()`
-overload takes an optional name as its last argument; without one the node
-reports as `"unnamed_task"`, which is fine until a report has forty rows and you
-need to know which is which:
+**Naming a node** makes its timings readable. Chain `name_last()` onto any
+`add()`; without a name the node reports as `"unnamed_task"`, which is fine until
+a report has forty rows and you need to know which is which:
 
 ```cpp
 sim.add_host(API::Reads(world), API::Writes(decisions),
-             [&] { /* ... */ }, "ai_decide");
+             [&] { /* ... */ }).name_last("ai_decide");
 ```
+
+It is a separate call rather than a last argument because two of the launch
+shapes end in a parameter pack whose last element is the callable, so a trailing
+name would not reach them — one spelling works for every shape instead.
 
 The name is what `RunReport::node_timings[i].name` carries, so it is worth
 setting on anything you intend to profile. It is a `const char*` stored as-is —
@@ -384,7 +387,7 @@ for (const auto& node : report.node_timings)
 ```
 
 `node_timings` is one row per graph node, keyed by the name you gave it — this is
-what the trailing `name` argument on `add()` is for. `worker_timings` splits each
+what `name_last()` is for. `worker_timings` splits each
 worker's time into busy, stealing, polling and idle, which is how you tell a graph
 that is too small to fill the pool from one that is genuinely saturated.
 
