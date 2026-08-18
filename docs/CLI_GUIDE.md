@@ -66,6 +66,7 @@ Commands are grouped under these subcommands:
 |--------------|-------------------------------------------------------------|
 | `sr toolchain` | Choose the SYCL toolchain (intel-llvm / adaptivecpp / oneapi) |
 | `sr build` / `test` / `run` / `clean` / `doxygen` | Build, test, run, and document the C++ project |
+| `sr package` | Install the built tree to a prefix and archive it with CPack |
 | `sr docker`  | Build and run the development container                     |
 | `sr config`  | Show the resolved configuration                             |
 | `sr env`     | Show the environment your builds run under                  |
@@ -106,6 +107,8 @@ sr build --distributed    # also compile the optional master-worker layer
 sr build --no-cuda        # Linux only: turn the SYCL CUDA backend off
 sr build --no-test        # skip compiling the test suite (SR_BUILD_TESTS=OFF)
 sr build --clean          # delete the build tree first, then build from scratch
+sr build --force          # fall back to clang++/clang if the selected toolchain's
+                          # compiler is missing, instead of stopping
 ```
 
 The `--type` (`-t`) option accepts `release`, `debug`, `relwithdebinfo`, or
@@ -153,11 +156,21 @@ sr test                          # functional suite (the default)
 sr test --suite functional       # unit + regression + integration (fast, run these often)
 sr test --suite benchmark        # stress + performance (heavy)
 sr test --suite all              # every test
+sr test --suite package          # install to a prefix, then build and run a consumer
 ```
 
 The full list of suite values is: `unit`, `regression`, `integration`,
 `functional` (umbrella for those three), `stress`, `performance`, `benchmark`
-(umbrella for the last two), and `all`.
+(umbrella for the last two), `package`, and `all`.
+
+The `package` suite checks the installed package from the outside. It is two
+CTest tests joined by a fixture: `Package.InstallsToAPrefix` installs the built
+tree into `build/stage`, and `Package.RunsAConsumerWithNothingButThePrefix`
+configures, compiles, and runs `tests/package/` against that prefix with nothing
+else on the path — so a missing export, a leaked private flag, or a header the
+install rule forgot fails here rather than in someone else's project. It is
+slower than the functional suite because it configures and compiles a second
+CMake project.
 
 Useful options:
 
@@ -222,6 +235,25 @@ vendored: install it (`winget install DimitriVanHeesch.Doxygen` on Windows,
 `apt-get install doxygen graphviz` on Linux, `brew install doxygen graphviz` on
 macOS) or point `doxygen_exe` in `cli/config.local.toml` at an existing binary.
 The command prints the right install line if it cannot find one.
+
+## `sr package` — produce a redistributable package
+
+Installs the already-built `build/` tree to a prefix and runs CPack over it to
+produce the archive.
+
+```bash
+sr package                       # install to build/dist, then archive
+sr package --prefix /opt/staging # install somewhere else
+sr package --no-archive          # install only, skip CPack
+```
+
+The prefix is wiped before the install, so a file the current build no longer
+produces cannot survive from a previous run into the archive. The build tree must
+already be configured — run `sr build` first. If the tree has no
+`CPackConfig.cmake`, the archive step is skipped with a warning.
+
+`sr package` produces the artifact; it does not check it. `sr test --suite
+package` is the check.
 
 ## `sr docker` — the development container
 

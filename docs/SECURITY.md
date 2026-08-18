@@ -46,7 +46,7 @@ please keep them in mind:
 - **The distributed layer targets a trusted LAN.** The `TcpTransport` is a
   raw-socket layer **without encryption or authentication**, designed for a
   trusted cluster network (see
-  [`docs/guides/DISTRIBUTED_GUIDE.md`](docs/guides/DISTRIBUTED_GUIDE.md) §12).
+  [`DISTRIBUTED_GUIDE.md`](DISTRIBUTED_GUIDE.md) §12).
   Do **not** expose master/worker ports to the public internet. Reports about the
   *absence* of transport encryption are known and out of scope; reports about
   *memory-safety* bugs reachable through the protocol (malformed frames, buffer

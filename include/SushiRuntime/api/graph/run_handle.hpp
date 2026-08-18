@@ -98,7 +98,10 @@ namespace SushiRuntime
                 /** @brief Constructs an empty handle that owns no step. */
                 RunHandle() = default;
 
-                /** @brief Takes over @p other's pending step, leaving it empty. */
+                /**
+                 * @brief Takes over @p other's pending step, leaving it empty.
+                 * @param other Handle to take the step from; owns nothing afterwards.
+                 */
                 RunHandle(RunHandle&& other) noexcept
                     : owner_(other.owner_), state_(other.state_)
                 {
@@ -110,6 +113,9 @@ namespace SushiRuntime
                  *
                  * Assigning over a pending handle would otherwise abandon a running
                  * step with nobody left to wait for it.
+                 *
+                 * @param other Handle to take the step from; owns nothing afterwards.
+                 * @return *this, now owning @p other's step.
                  */
                 RunHandle& operator=(RunHandle&& other) noexcept
                 {

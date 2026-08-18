@@ -46,8 +46,7 @@
 
 // Memory Management
 #include "memory/epoch_reclamation.hpp"
-#include "memory/usm_allocator.hpp"
-#include "memory/memory_pool.hpp"
+#include "memory/usm_registry.hpp"
 
 // Execution & Context
 #include "execution/execution_engine.hpp"

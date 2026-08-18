@@ -169,6 +169,8 @@ namespace SushiRuntime
                  * pointing at the old address while the object lives at the new one,
                  * and — because the token travels with the value — the liveness guard
                  * cannot detect it. Keep recorded handles fixed for the graph's life.
+                 *
+                 * @param other Buffer to take the allocation from; left empty.
                  */
                 Buffer(Buffer&& other) noexcept
                     : ctx_(std::move(other.ctx_)),
@@ -182,7 +184,11 @@ namespace SushiRuntime
                     other.size_ = 0;
                 }
 
-                /** @brief Frees this handle's memory, then takes @p other's. */
+                /**
+                 * @brief Frees this handle's memory, then takes @p other's.
+                 * @param other Buffer to take the allocation from; left empty.
+                 * @return *this, now owning @p other's allocation.
+                 */
                 Buffer& operator=(Buffer&& other) noexcept
                 {
                     if (this != &other)
@@ -201,22 +207,42 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                /** @brief Pointer to the first element; capture this in a kernel. */
+                /**
+                 * @brief Exposes the raw pointer a kernel captures.
+                 * @return Pointer to the first element, or null if the handle is empty.
+                 */
                 T* data() const noexcept { return ptr_; }
 
-                /** @brief Number of elements. */
+                /**
+                 * @brief Reports the allocation's capacity.
+                 * @return Number of elements, not bytes.
+                 */
                 std::size_t size() const noexcept { return size_; }
 
-                /** @brief True if the handle owns no allocation. */
+                /**
+                 * @brief Tells whether this handle still owns memory.
+                 * @return True if it owns no allocation, e.g. after being moved from.
+                 */
                 bool empty() const noexcept { return ptr_ == nullptr; }
 
-                /** @brief Device queue index the allocation is pinned to. */
+                /**
+                 * @brief Reports which device queue the allocation is pinned to.
+                 * @return The device index the buffer was allocated on.
+                 */
                 DeviceIndex device_index() const noexcept { return device_index_; }
 
-                /** @brief Where the allocation lives (shared or device-resident). */
+                /**
+                 * @brief Reports where the allocation lives.
+                 * @return Residency::Shared for host-addressable USM,
+                 *         Residency::Device for device-resident memory.
+                 */
                 Residency residency() const noexcept { return residency_; }
 
-                /** @brief True if the host may index this buffer directly. */
+                /**
+                 * @brief Tells whether the host may index this buffer directly.
+                 * @return True for shared USM; false for device-resident memory, which
+                 *         must go through read_range()/write_range().
+                 */
                 bool host_accessible() const noexcept { return residency_ == Residency::Shared; }
 
                 /**

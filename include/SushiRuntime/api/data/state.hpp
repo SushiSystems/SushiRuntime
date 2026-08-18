@@ -98,22 +98,40 @@ namespace SushiRuntime
                 {
                 }
 
-                /** @brief Pointer to the current state; the step reads from here. */
+                /**
+                 * @brief Exposes the field a step kernel reads from.
+                 * @return Pointer to the first element of the current field.
+                 */
                 T* current() const noexcept { return cur_.data(); }
 
-                /** @brief Pointer to the next state; the step writes here. */
+                /**
+                 * @brief Exposes the field a step kernel writes into.
+                 * @return Pointer to the first element of the next field.
+                 */
                 T* next() const noexcept { return next_.data(); }
 
-                /** @brief Number of elements in each buffer. */
+                /**
+                 * @brief Reports the capacity of the pair.
+                 * @return Number of elements in each field; both are the same size.
+                 */
                 std::size_t size() const noexcept { return cur_.size(); }
 
-                /** @brief True if the state owns no allocation. */
+                /**
+                 * @brief Tells whether this State still owns memory.
+                 * @return True if it owns no allocation, e.g. after being moved from.
+                 */
                 bool empty() const noexcept { return cur_.empty(); }
 
-                /** @brief Read dependency key (the current buffer's base address). */
+                /**
+                 * @brief Identifies the region a task reading this State depends on.
+                 * @return The current field's base address, as used by the tracker.
+                 */
                 void* read_key() const noexcept { return cur_.dependency_key(); }
 
-                /** @brief Write dependency key (the next buffer's base address). */
+                /**
+                 * @brief Identifies the region a task writing this State depends on.
+                 * @return The next field's base address, as used by the tracker.
+                 */
                 void* write_key() const noexcept { return next_.dependency_key(); }
 
                 /**
@@ -150,10 +168,18 @@ namespace SushiRuntime
                  */
                 span<T> host() const { return cur_.host(); }
 
-                /** @brief Where both fields live (shared or device-resident). */
+                /**
+                 * @brief Reports where both fields live.
+                 * @return Residency::Shared for host-addressable USM,
+                 *         Residency::Device for device-resident memory.
+                 */
                 Residency residency() const noexcept { return cur_.residency(); }
 
-                /** @brief True if the host may index the current field directly. */
+                /**
+                 * @brief Tells whether the host may index the current field directly.
+                 * @return True for shared USM; false for device-resident memory, which
+                 *         must go through read_range()/write_range().
+                 */
                 bool host_accessible() const noexcept { return cur_.host_accessible(); }
 
                 /**

@@ -81,7 +81,7 @@ target_link_libraries(my_simulation PRIVATE SushiRuntime::SushiRuntime)
 ```
 
 `tests/package/` in this repository is a complete, working example of exactly
-this — three files, no access to the runtime's source tree. It is also where the
+this — two files, no access to the runtime's source tree. It is also where the
 flag-hygiene assertion of §4 lives.
 
 ### From a sibling checkout
@@ -94,8 +94,9 @@ checkout is a convention, an installed versioned artifact is not.
 ### Version compatibility
 
 The package is written with `SameMinorVersion` compatibility while the project is
-pre-1.0: `find_package(SushiRuntime 0.1 REQUIRED)` accepts 0.1.x and rejects
-0.2.0, because the API is not frozen and a minor bump may break you. At the
+pre-1.0: against the current 0.2.0 release,
+`find_package(SushiRuntime 0.2 REQUIRED)` accepts 0.2.x and rejects 0.3.0,
+because the API is not frozen and a minor bump may break you. At the
 v1.0.0 freeze this becomes `SameMajorVersion`.
 
 ---

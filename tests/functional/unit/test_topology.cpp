@@ -100,26 +100,33 @@ TEST(Unit_TopologyTest, InvalidNUMAFallbackQueue)
 }
 
 /**
- * @brief Verifies that requesting an allocator for an invalid NUMA ID safely falls back to node 0.
+ * @brief Verifies that an out-of-range NUMA ID falls back to a usable node.
  *
- * Passes a negative NUMA ID to the context and ensures memory can still be allocated and deallocated correctly.
+ * A negative id is what a caller gets from a topology that reported no NUMA
+ * information, so it has to resolve to something rather than index out of
+ * bounds. Allocating and freeing through it proves the fallback queue is a real
+ * one and that the pointer's owner was recorded against it.
  */
-TEST(Unit_TopologyTest, InvalidNUMAFallbackAllocator)
+TEST(Unit_TopologyTest, InvalidNUMAFallsBackToAUsableNode)
 {
     RuntimeContext ctx;
 
     constexpr int INVALID_NUMA_ID = -5; // negative edge case
 
-    sushi_ptr<SushiRuntime::Memory::USMAllocator> allocator;
-
     EXPECT_NO_THROW({
-        allocator = ctx.get_allocator(INVALID_NUMA_ID);
-    }) << "Context crashed when creating an allocator for a negative NUMA ID.";
+        (void)ctx.get_numa_local_queue(INVALID_NUMA_ID);
+    }) << "Context crashed when asked for a queue on a negative NUMA ID.";
 
-    ASSERT_NE(allocator.get(), nullptr) << "Fallback allocator is null.";
+    void* ptr = nullptr;
+    EXPECT_NO_THROW({
+        ptr = ctx.malloc_shared(128, INVALID_NUMA_ID);
+    }) << "Allocation on a negative NUMA ID threw instead of falling back.";
 
-    void* ptr = allocator->allocate(128);
-    EXPECT_NE(ptr, nullptr) << "Fallback allocator failed to assign memory.";
+    ASSERT_NE(ptr, nullptr) << "Fallback allocation returned null.";
+    EXPECT_GE(ctx.context_index_for_ptr(ptr), 0)
+        << "The fallback allocation was not recorded against any device.";
 
-    allocator->deallocate(ptr);
+    ctx.free_usm(ptr);
+    EXPECT_EQ(ctx.context_index_for_ptr(ptr), -1)
+        << "Freeing left the pointer's owner recorded.";
 }

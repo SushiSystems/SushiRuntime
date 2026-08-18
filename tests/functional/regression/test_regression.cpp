@@ -111,16 +111,15 @@ TEST(Regression_Sentinel, Epoch_OrphanedNodesReclaimed)
 
 
 // A thread that allocated through a Runtime, and is still alive when that
-// Runtime is destroyed, flushes its ThreadLocalMagazine at thread exit — into an
-// allocator that no longer exists. That is the shape a long-running simulation
-// process hits (TODO #29): a worker outliving the context it allocated from.
+// Runtime is destroyed, unwinds after it. That is the shape a long-running
+// simulation process hits: a worker outliving the context it allocated from.
 //
-// The guarantee under test is that the flush becomes a no-op instead of touching
-// freed pages: the allocator's destructor holds the flush lock exclusively while
-// it clears its registry slot, so a later flush finds a null slot and returns.
-// Without it this test is a use-after-free — visible under ASan, and a crash
-// often enough without it.
-TEST(Regression_Sentinel, MagazineFlushSurvivesRuntimeTeardown)
+// What is at stake is thread-local state that outlives what it points into —
+// epoch reclamation keeps a per-thread slot, and a thread reaching its exit-time
+// destructors after the Runtime is gone must not touch freed memory. Reaching
+// the join without a fault IS the assertion; under ASan it is a use-after-free
+// check, and a crash often enough without it.
+TEST(Regression_Sentinel, AThreadOutlivingTheRuntimeTearsDownCleanly)
 {
     std::mutex gate_mutex;
     std::condition_variable gate;
@@ -134,8 +133,8 @@ TEST(Regression_Sentinel, MagazineFlushSurvivesRuntimeTeardown)
 
         outliver = std::thread([&]()
         {
-            // Allocate and free enough to populate this thread's magazine, so its
-            // exit-time flush has something to hand back.
+            // Allocate and free on this thread, so its exit-time destructors have
+            // touched the runtime's per-thread bookkeeping.
             {
                 auto scratch = rt.buffer<int>(4096);
                 for (std::size_t i = 0; i < 64; ++i)
@@ -155,7 +154,7 @@ TEST(Regression_Sentinel, MagazineFlushSurvivesRuntimeTeardown)
 
         std::unique_lock<std::mutex> lock(gate_mutex);
         gate.wait(lock, [&] { return allocated; });
-    }   // Runtime destroyed here, while the other thread still holds a magazine.
+    }   // Runtime destroyed here, while the other thread is still alive.
 
     {
         std::lock_guard<std::mutex> lock(gate_mutex);
@@ -163,8 +162,8 @@ TEST(Regression_Sentinel, MagazineFlushSurvivesRuntimeTeardown)
     }
     gate.notify_one();
 
-    // The thread's magazine flushes as it exits. Reaching this line without a
-    // fault IS the assertion; the EXPECT documents that we got here on purpose.
+    // The thread runs its exit-time destructors here. Reaching this line without
+    // a fault IS the assertion; SUCCEED documents that we got here on purpose.
     outliver.join();
-    SUCCEED() << "a magazine flushed after its allocator was destroyed";
+    SUCCEED() << "a thread unwound after the Runtime it allocated from was gone";
 }

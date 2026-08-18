@@ -55,11 +55,18 @@ namespace SushiRuntime
             sycl::range<N> extent;                  /**< Work-items per dimension. */
             sycl::id<N>    offset = sycl::id<N>{};   /**< Origin of the iterated box. */
 
-            /** @brief A 1-D extent from a plain element count (offset 0). */
+            /**
+             * @brief A 1-D extent from a plain element count (offset 0).
+             * @param n Number of work-items to iterate.
+             */
             template <int M = N, std::enable_if_t<M == 1, int> = 0>
             Extent(std::size_t n) : extent(n) {}
 
-            /** @brief An extent from explicit per-dimension sizes (offset 0). */
+            /**
+             * @brief An extent from explicit per-dimension sizes (offset 0).
+             * @param sizes Exactly N work-item counts, one per dimension, in SYCL
+             *              order (slowest-varying first).
+             */
             template <class... Sizes,
                       std::enable_if_t<N >= 2 && sizeof...(Sizes) == N &&
                                        (std::is_convertible_v<Sizes, std::size_t> && ...),
@@ -67,16 +74,30 @@ namespace SushiRuntime
             Extent(Sizes... sizes)
                 : extent(static_cast<std::size_t>(sizes)...) {}
 
-            /** @brief An extent from a SYCL range, offset 0. */
+            /**
+             * @brief An extent from a SYCL range, offset 0.
+             * @param r Work-items per dimension.
+             */
             explicit Extent(sycl::range<N> r) : extent(r) {}
 
-            /** @brief An extent from a SYCL range and an explicit origin. */
+            /**
+             * @brief An extent from a SYCL range and an explicit origin.
+             * @param r Work-items per dimension.
+             * @param o Index of the first work-item, so the kernel iterates a sub-box.
+             */
             Extent(sycl::range<N> r, sycl::id<N> o) : extent(r), offset(o) {}
 
-            /** @brief Total number of work-items (product of the per-dim sizes). */
+            /**
+             * @brief Reports how much work this shape represents.
+             * @return Total work-items, the product of the per-dimension sizes.
+             */
             std::size_t count() const noexcept { return extent.size(); }
 
-            /** @brief Returns a copy iterating the sub-box at @p origin. */
+            /**
+             * @brief Rebases the same box at a different origin.
+             * @param origin Index of the first work-item in the returned extent.
+             * @return A copy with this extent's sizes and the given origin.
+             */
             Extent at(sycl::id<N> origin) const noexcept
             {
                 return Extent(extent, origin);

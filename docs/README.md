@@ -170,7 +170,12 @@ sr config         # print resolved config with per-field source annotation
 sr env            # print the environment cmake/ctest/run subprocesses see
 sr env --asan     # same for the build-asan/ tree
 sr doxygen     # build the fluent API reference site into docs/api-site/html
+sr package        # install the built tree to a prefix (default build/dist) and
+                  # archive it with CPack; --no-archive installs only
 ```
+
+`sr test --suite package` checks the result: it installs to a prefix, then builds
+and runs `tests/package/` against it with nothing else on the path.
 
 ## Running the tests
 
@@ -284,6 +289,38 @@ g.run(reused);              // reset and refilled in place, no per-tick allocati
 // report.numa_statistics[i].tasks_stolen_intra_numa, etc.
 ```
 
+A step can also be started without blocking. `run_async()` hands the step to the
+worker pool and returns a `RunHandle`; `wait()` on the handle returns the
+`RunReport` (or fills one you own), `try_wait()` is the non-throwing form, and the
+destructor waits for an unwaited step rather than abandoning it. Only one step per
+graph may be in flight.
+
+```cpp
+auto step = sim.run_async();
+// ... host-side work that touches nothing the step writes ...
+Core::RunReport r = step.wait();
+```
+
+Name a node with `name_last()` chained onto any `add()`. The name is what a task
+shows up as in `RunReport` and in profiling output, so a graph worth measuring is
+worth naming:
+
+```cpp
+sim.add(Reads(a), Writes(b), n, integrate).name_last("integrate");
+```
+
+Deterministic reductions are first-class. `add_reduce(input, output, n, op)`
+folds the first `n` elements of a `Buffer<T>` into `output[0]` in fixed-size tiles,
+so the result is bit-identical regardless of worker count, device, or steal
+pattern. `add_segmented_reduce(values, segment_offsets, output, segment_count, op)`
+does the same per segment over a CSR-style offsets array, one work-item per
+segment. Both take an optional explicit identity for the empty case.
+
+```cpp
+g.add_reduce(values, total, n, Sum<float>{});
+g.add_segmented_reduce(contributions, offsets, per_vertex, vertex_count, Sum<float>{});
+```
+
 Coupled fields read one another within a step. Every read sees the previous
 step's data (a Jacobi update): each field advances only after the whole step's
 kernels have run, so writing one field never changes what another reads in the
@@ -387,8 +424,15 @@ The fluent entry point that most users should start from:
   `NdRange<N>` work-groups, and explicit `Reads`/`Writes`/`In`/`Out`/`InOut`
   dependency wrappers. `add_host()` runs native CPU work ordered by the data it
   touches; a leading `API::when()`/`sized()` (`Dynamic`) late-binds a task's
-  enablement and iteration size without recompiling; an `OpID` overload marks a
-  task offloadable with a local fallback. `buffer()`/`state()` take an optional
+  enablement and iteration size without recompiling, with `sized_from_device()`
+  and `based_at()` / `based_at_device()` taking the live count or the window's
+  first element from the host or from a slot a predecessor kernel wrote; an
+  `OpID` overload marks a task offloadable with a local fallback.
+  `add_reduce()` / `add_segmented_reduce()` fold a `Buffer<T>` with a
+  schedule-independent, bit-reproducible result. `name_last()` names the node just
+  added, which is the name it carries in `RunReport` and profiling output.
+  `run_async()` starts a step on the worker pool and returns a `RunHandle` whose
+  `wait()` / `try_wait()` settles it. `buffer()`/`state()` take an optional
   `Residency` for device-resident data. `run()` / `run(n)` / `run_for()` /
   `run_until()` compile once and replay; `cancel()` stops a run from another
   thread; `try_run()` / `try_run(n)` are the non-throwing forms.
@@ -426,8 +470,7 @@ Discovers and describes the machine:
 
 ### Memory (`memory/`)
 Allocation tuned for parallel, heterogeneous workloads:
-- `USMAllocator` — allocates Unified Shared Memory via SYCL. Allocation behavior is pluggable through `IAllocatorStrategy` (Shared, Device, Host).
-- `memory_pool` — a bitmask-based pool with per-thread "magazines" so the common allocate/free path takes a couple of instructions with no locks or atomics. Bulk page claims reduce atomic contention; per-page ownership routes remote frees back to the owning slot.
+- `UsmRegistry` — records which device each USM allocation belongs to, so a pointer is freed against the queue that owns it and a kernel runs where its data lives. SYCL has no portable way to ask a pointer that, so the answer is recorded at allocation.
 - `epoch_reclamation` — epoch-based reclamation (EBR) for safely freeing memory that other threads might still be reading, without locks. Retired nodes are pooled per thread to avoid hitting the global allocator on the hot path.
 
 ### Graph (`graph/`)

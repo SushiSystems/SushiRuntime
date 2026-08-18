@@ -8,7 +8,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ## [Unreleased]
 
+### Removed
+- **The pooled USM allocation path.** `BitmaskMemoryPool`, `ThreadLocalMagazine`,
+  `USMAllocator`, `IAllocatorStrategy` and `create_allocator` are gone, along with
+  `RuntimeContext::get_allocator()`. The runtime had two allocation paths and only
+  one was used: `Buffer` and `State` reach `malloc_shared_on` directly, so nothing
+  on the public surface ever touched the pool — its only callers were two
+  benchmarks.
+
+  The decision rests on a measurement rather than on the pool's 4 KB ceiling.
+  Instrumenting every USM entry point shows allocation happens once per
+  `Buffer`/`State` the caller constructs, at setup, and never during a run: 1000
+  steps allocate nothing, `add_reduce` allocates its partials column once at
+  description time, and 32 regions streaming in plus 20 drop/re-add/run cycles
+  allocate nothing at all, because a region describes work over buffers the caller
+  already owns. Pooling amortises high-frequency small allocation, and there is
+  none. The same measurement retires the other suspicion: the process-global mutex
+  on the public path is taken a handful of times at startup.
+
+  Deleted rather than moved to an internal header, because moving hides dead code
+  instead of removing it. Three smaller debt items go with the files: the bucket
+  ceiling, `__builtin_clzll` bypassing the project's own MSVC shim, and
+  `LockFreePageMap` masking 50 virtual-address bits, which aliases on LA57 hosts.
+  No replacement interface — one implementation with no second one asked for is a
+  speculative seam. Design recorded in
+  `docs/superpowers/specs/2026-08-18-usm-allocation-seam-design.md`.
+
+  A public API break, taken pre-freeze at 0.2.0 with no out-of-tree consumers;
+  SushiEngine referenced none of these symbols.
+
 ### Changed
+- **`Memory::UsmRegistry` owns USM pointer ownership.** `RuntimeContext` managed
+  queues, held the device registry, allocated USM and tracked which device owned
+  each pointer; only the last has an invariant of its own — a pointer is known
+  from allocation until it is freed, exactly once. Extracted, it is testable
+  without standing up a `Runtime`, which nothing about the previous arrangement
+  was. `free_usm` now resolves and forgets in one locked step rather than two, so
+  a second free of the same pointer is distinguishable from the first instead of
+  reading an owner the first is already acting on. `Unit_UsmRegistry` covers the
+  round trip, double-take, and concurrent record/take under ASan.
 - **Packaging is verified as a test suite, `sr test --suite package`.** Whether an
   installed runtime works outside its own tree has a pass/fail answer, so it is a
   test rather than a separate verb. Two CTest tests joined by a fixture — one
