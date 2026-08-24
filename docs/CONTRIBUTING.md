@@ -123,7 +123,7 @@ The codebase has a deliberate, consistent style. Match the file you're editing.
   prefix.
 
   This is a **SushiStack-wide convention**, not a SushiRuntime one: each program
-  prefixes with its own full name (`sushiengine_`, `sushistack_`, `sushicli_`,
+  prefixes with its own full name (`sushiengine_`, `sushistack_`, `sushicore_`,
   `sushiblas_`). The reason is that these names share a single flat namespace
   the moment two of them meet — the engine consumes the runtime by
   `add_subdirectory`, and a CMake target or function name defined twice in one

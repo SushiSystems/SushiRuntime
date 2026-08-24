@@ -44,9 +44,9 @@ target_bin = "sr_functional_tests.exe"
 # acpp_exe     = "<SUSHISTACK_HOME>/dependencies/toolchains/adaptivecpp/bin/acpp.bat"
 
 [cli]
-# CLI appearance, resolved by the shared `sushicli` package (same schema for
+# CLI appearance, resolved by the shared `sushicore` package (same schema for
 # sr/se/ss). Override in config.local.toml or with SUSHI_CLI_THEME /
-# SUSHI_CLI_ICONS / SUSHI_CLI_COLOR — no rebuild needed. See sushicli's README
+# SUSHI_CLI_ICONS / SUSHI_CLI_COLOR — no rebuild needed. See sushicore's README
 # for the full list of presets and the [cli.colors] / [cli.icon_overrides]
 # tables for one-off overrides.
 theme = "default"

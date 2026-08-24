@@ -69,7 +69,7 @@ has to be shaped, and it is the one thing that is not obvious from the API.
 
 ## Building
 
-The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. Install it through the umbrella — the single install seam for the whole stack (it sets up an isolated pipx venv and wires in the shared `sushicli` presentation layer):
+The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. Install it through the umbrella — the single install seam for the whole stack (it sets up an isolated pipx venv and wires in the shared `sushicore` presentation layer):
 
 ```bash
 ss install-cli sushiruntime           # add --no-editable for a non-dev install

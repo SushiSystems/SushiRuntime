@@ -1,8 +1,8 @@
 """CLI output for the SushiRuntime CLI.
 
-Thin wrapper around :mod:`sushicli` — the actual theme/icon/renderer logic
+Thin wrapper around :mod:`sushicore` — the actual theme/icon/renderer logic
 (and its `[cli]` config schema) lives there and is shared with the
-sushiengine and sushistack CLIs. See sushicli's README to change colors.
+sushiengine and sushistack CLIs. See sushicore's README to change colors.
 
 The console is built lazily. Constructing it needs the repo's ``cli/`` config
 directory, and locating that walks up for a ``CMakeLists.txt`` — which fails
@@ -16,7 +16,7 @@ theme rather than crashing when no config is reachable.
 
 from __future__ import annotations
 
-from sushicli import build_console
+from sushicore import build_console
 
 from .config import config_dir
 
@@ -24,7 +24,7 @@ _console = None
 
 
 def _get_console():
-    """Build (once) and return the underlying sushicli console.
+    """Build (once) and return the underlying sushicore console.
 
     Falls back to a config-less console when the ``cli/`` directory cannot be
     located (e.g. running outside a checkout), so output still works instead of
