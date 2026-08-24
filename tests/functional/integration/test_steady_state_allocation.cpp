@@ -60,17 +60,42 @@
 
 using namespace SushiRuntime;
 
-#if defined(__SANITIZE_ADDRESS__)
+// Detect a build whose sanitizer runtime owns the allocator. Both spellings are
+// checked for each sanitizer because Clang and IntelLLVM do not agree on which
+// they define: the __has_feature form is the Clang-native one, the __SANITIZE_*
+// macros are the GCC-style predefined ones, and a given toolchain may offer only
+// one of them. Testing a single spelling is how the ThreadSanitizer lane slipped
+// through -- the guard below existed, but only for AddressSanitizer.
+// tests/common/test_main.cpp uses the same idiom for SR_TSAN_BUILD.
+#if defined(__has_feature)
+#  if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+#    define SR_SANITIZER_OWNS_ALLOCATOR 1
+#  endif
+#endif
+#if !defined(SR_SANITIZER_OWNS_ALLOCATOR)
+#  if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#    define SR_SANITIZER_OWNS_ALLOCATOR 1
+#  endif
+#endif
 
-// AddressSanitizer replaces operator new/delete itself, to place its redzones and
-// track ownership. A second replacement in this translation unit is not a
-// measurement — it is a duplicate definition of the same symbols, and on Windows
-// it is a duplicate-symbol link error rather than anything subtler. There is also
-// nothing here worth having under ASan: this suite counts allocations, and the
-// sanitizer's own bookkeeping changes what the counts mean.
-TEST(Integration_SteadyStateAllocation, SkippedUnderAddressSanitizer)
+#if defined(SR_SANITIZER_OWNS_ALLOCATOR)
+
+// AddressSanitizer and ThreadSanitizer each replace operator new/delete
+// themselves -- ASan to place its redzones and track ownership, TSan to attach
+// its own bookkeeping. A second replacement in this translation unit is not a
+// measurement — it is a duplicate definition of the same symbols, which fails at
+// link: on Windows against ASan, and on Linux against libclang_rt.tsan_cxx.a.
+//
+// The suite is skipped rather than adapted. Counting could be kept alive under a
+// sanitizer by installing allocator hooks instead of replacing operator new, but
+// the numbers would then include the sanitizer's own allocations, and this suite
+// asserts on exact steady-state counts. A test that runs while measuring
+// something other than what it claims is worse than one that says it was skipped.
+// The target itself stays in the sanitizer lanes: it still compiles, links and
+// runs there, which is what keeps this guard honest about what it costs.
+TEST(Integration_SteadyStateAllocation, SkippedUnderSanitizer)
 {
-    GTEST_SKIP() << "AddressSanitizer owns operator new; the allocation counter "
+    GTEST_SKIP() << "This sanitizer owns operator new; the allocation counter "
                     "cannot coexist with it. Run this suite in an ordinary build.";
 }
 
@@ -267,4 +292,4 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
         << TICKS << " ticks, " << longer << " over " << (TICKS * 4);
 }
 
-#endif // !defined(__SANITIZE_ADDRESS__)
+#endif // !defined(SR_SANITIZER_OWNS_ALLOCATOR)
