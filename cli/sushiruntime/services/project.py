@@ -73,8 +73,15 @@ ASAN_FLAGS_WINDOWS = (
     "-fno-omit-frame-pointer -g -O1 -D_DISABLE_STL_ANNOTATION=1")
 
 # The C driver has no device pass, so it takes the plain form: `-Xarch_host` is
-# only meaningful to an offloading compilation and the tree has no C sources
-# anyway — these flags exist for CMake's compiler probe.
+# only meaningful to an offloading compilation.
+#
+# Not passed to CMake as CMAKE_C_FLAGS, and deliberately so. Both projects declare
+# `project(... LANGUAGES CXX)` and nothing calls enable_language(C), so C is never
+# enabled, the C compiler probe never runs, and CMake reported CMAKE_C_COMPILER /
+# CMAKE_C_FLAGS as "manually-specified variables not used" on every configure. The
+# string is kept because it feeds the ASan configure stamp below, and because it is
+# the right value to pass on the day something does enable C -- rediscovering the
+# use-after-return tuning would be the expensive part.
 ASAN_C_FLAGS_WINDOWS = ("-fsanitize=address -fsanitize-address-use-after-return=never "
                         "-fno-omit-frame-pointer -g -O1")
 
@@ -475,7 +482,6 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
     vcpkg = cfg.expand(cfg.vcpkg_root)
     triplet = cfg.vcpkg_triplet
     asan_flags = f" {ASAN_FLAGS_WINDOWS}" if asan else ""
-    asan_c_flags = ASAN_C_FLAGS_WINDOWS if asan else ""
 
     # The compiler is toolchain-specific: intel-llvm -> clang++, oneapi -> icx-cl,
     # adaptivecpp -> acpp. Pass -DSR_SYCL_TOOLCHAIN explicitly so CMakeLists does
@@ -491,13 +497,11 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         f"-DVCPKG_TARGET_TRIPLET={triplet}",
         f"-DCMAKE_MAKE_PROGRAM={cfg.expand(cfg.ninja_exe)}",
         f"-DCMAKE_CXX_COMPILER={cxx}",
-        f"-DCMAKE_C_COMPILER={cxx}",
         f"-DPKG_CONFIG_EXECUTABLE={cfg.expand(cfg.pkgconf_exe)}",
         f"-DCMAKE_PREFIX_PATH={vcpkg}/installed/{triplet}",
         "-DSR_GPU_BACKEND=cpu",  # no nvptx toolchain on the Windows host
         f"-DSR_ENABLE_DISTRIBUTED={dist}",
         f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
-        "-DSYCL_LIB_SUFFIX=9",
     ]
     if asan:
         args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
@@ -507,13 +511,9 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
     # -fsycl flag is only meaningful to the clang-based intel-llvm/oneapi drivers.
     if cfg.toolchain == "adaptivecpp":
         if asan:
-            args += [f"-DCMAKE_CXX_FLAGS={ASAN_FLAGS}",
-                     f"-DCMAKE_C_FLAGS={ASAN_FLAGS}"]
+            args += [f"-DCMAKE_CXX_FLAGS={ASAN_FLAGS}"]
     else:
-        args += [
-            f"-DCMAKE_CXX_FLAGS=-fsycl{asan_flags}",
-            f"-DCMAKE_C_FLAGS={asan_c_flags}",
-        ]
+        args += [f"-DCMAKE_CXX_FLAGS=-fsycl{asan_flags}"]
     return args
 
 
