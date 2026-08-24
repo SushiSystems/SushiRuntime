@@ -69,6 +69,30 @@ macro(sushiruntime_gpu_add_acpp_target _target)
     set(SR_GPU_OFFLOAD_ADDED TRUE)
 endmacro()
 
+# --- Toolkit search paths ------------------------------------------------------
+
+# sushiruntime_gpu_versioned_prefixes(<out_var> <glob>...)
+#   Expand install-prefix globs into real directories, newest first.
+#
+# find_program's PATHS does NOT glob -- a pattern like /usr/local/cuda-*/bin is
+# taken as a literal directory name and simply never matches. That was a live
+# defect: the vendor toolkits do not put themselves on PATH, so those versioned
+# prefixes were the whole reason the search was written, and passing them raw
+# meant a machine whose only CUDA lived at /usr/local/cuda-12.6 (an install with
+# no /usr/local/cuda symlink, or several versions side by side) reported "no
+# accelerator toolkit found" and quietly built CPU-only -- exactly the outcome
+# those PATHS entries were added to prevent.
+#
+# Newest first, because find_program takes the first match and a machine with
+# several toolkits installed wants the newest one. NATURAL ordering is what makes
+# that true: a plain sort compares text, which puts cuda-9.0 above cuda-12.6.
+function(sushiruntime_gpu_versioned_prefixes out_var)
+    file(GLOB expanded ${ARGN})
+    list(SORT expanded COMPARE NATURAL)
+    list(REVERSE expanded)
+    set(${out_var} "${expanded}" PARENT_SCOPE)
+endfunction()
+
 # --- Arch resolution: the shape the accelerator backends share -----------------
 #
 # CUDA and ROCm answer the same question — "which architectures am I building
@@ -167,8 +191,17 @@ endmacro()
 # CMake. Split across several, the call silently stops matching that signature and
 # degrades into a plain set() whose value becomes the arch *plus* the words CACHE,
 # STRING and the doc text — which the loop below then reports as a malformed arch.
+#
+# FORCE, because the value being published is the answer this configure arrived at
+# and the cache may already disagree. Without it, an existing entry wins and the
+# normal variable holding the resolved arch is dropped -- which is what an empty
+# -DSR_CUDA_ARCH= did: the probe ran, announced "SR_CUDA_ARCH=89", and then lost
+# it to the empty cache entry, leaving an sm_ triple with no architecture in it and
+# no offload target added at all. The STATUS line said 89 while the build carried
+# nothing. Forcing cannot overwrite a stated arch with something else, because a
+# stated arch is what skipped the probe: the value written back is the same one.
 macro(sushiruntime_gpu_publish_arch _var _noun _pattern _hint _doc)
-    set(${_var} "${${_var}}" CACHE STRING "${_doc}")
+    set(${_var} "${${_var}}" CACHE STRING "${_doc}" FORCE)
 
     foreach(_sr_pa_arch IN LISTS ${_var})
         if(NOT _sr_pa_arch MATCHES "${_pattern}")
