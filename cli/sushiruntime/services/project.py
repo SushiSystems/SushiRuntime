@@ -488,7 +488,8 @@ def _check_sanitizer_runtime(cfg: Config) -> int:
 
 
 def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
-                            dist: str, asan: bool, tests: bool) -> list[str]:
+                            gpu_backend: str, dist: str, asan: bool,
+                            tests: bool) -> list[str]:
     vcpkg = cfg.expand(cfg.vcpkg_root)
     triplet = cfg.vcpkg_triplet
     asan_flags = f" {ASAN_FLAGS_WINDOWS}" if asan else ""
@@ -509,7 +510,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         f"-DCMAKE_CXX_COMPILER={cxx}",
         f"-DPKG_CONFIG_EXECUTABLE={cfg.expand(cfg.pkgconf_exe)}",
         f"-DCMAKE_PREFIX_PATH={vcpkg}/installed/{triplet}",
-        "-DSR_GPU_BACKEND=cpu",  # no nvptx toolchain on the Windows host
+        f"-DSR_GPU_BACKEND={gpu_backend}",
         f"-DSR_ENABLE_DISTRIBUTED={dist}",
         f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
     ]
@@ -547,17 +548,23 @@ def build(build_type: BuildType, distributed: bool = False,
         console.info("AddressSanitizer: ON (isolated build-asan tree, CUDA OFF)")
     console.info(f"Tests: {'ON' if tests else 'OFF'}")
 
-    # GPU backend selection is delegated to CMake (cmake/gpu/DetectGpu): on Linux
-    # "auto" detects the vendor (nvidia->cuda / amd->rocm / intel / cpu) and, when
-    # no accelerator toolkit is present, builds the portable CPU/OpenCL path — so a
-    # missing CUDA toolkit no longer hard-fails with "cannot find libdevice".
-    # Windows has no nvptx toolchain, so it is always the CPU path; ASan and
-    # --no-cuda force CPU too.
-    if cfg.is_windows:
-        gpu_backend = "cpu"
-        if no_cuda:
-            console.warn("--no-cuda is a no-op on Windows (GPU backend is always CPU/OpenCL).")
-    elif no_cuda or asan:
+    # GPU backend selection is delegated to CMake (cmake/gpu/DetectGpu), on every
+    # platform. "auto" detects which vendors have both a toolkit and hardware and
+    # targets them; where nothing answers it builds the portable CPU/OpenCL path,
+    # so a missing CUDA toolkit does not hard-fail with "cannot find libdevice".
+    #
+    # Windows used to be frozen to "cpu" here on the grounds that it has no nvptx
+    # toolchain. That stopped being true: this host compiles
+    # -fsycl-targets=spir64,nvidia_gpu_sm_89 with the bundled intel/llvm and the
+    # installed CUDA toolkit, and `ss install` offers that toolkit as a component --
+    # so the freeze meant provisioning a toolkit the build could never use, with no
+    # way to override it. It also made the two CLIs in this workspace disagree about
+    # the same machine, since SushiEngine passed no backend at all and got "auto".
+    # Detection is one question with one answer; it is asked in one place now.
+    #
+    # ASan and --no-cuda still force CPU, and --no-cuda now means something on
+    # Windows rather than printing that it does not.
+    if no_cuda or asan:
         gpu_backend = "cpu"
     else:
         gpu_backend = "auto"
@@ -580,7 +587,8 @@ def build(build_type: BuildType, distributed: bool = False,
                 return rc
             if asan and (rc := _check_sanitizer_runtime(cfg)) != 0:
                 return rc
-            args = _configure_args_windows(cfg, build_dir, cmake_build_type, dist, asan, tests)
+            args = _configure_args_windows(cfg, build_dir, cmake_build_type,
+                                           gpu_backend, dist, asan, tests)
         else:
             resolved = _resolve_compiler(cfg, force, env, asan=asan)
             if resolved is None:
