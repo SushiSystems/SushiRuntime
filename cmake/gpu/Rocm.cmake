@@ -18,8 +18,9 @@ if(NOT DEFINED SR_AMD_ARCH OR SR_AMD_ARCH STREQUAL "")
     # rocm_agent_enumerator is the purpose-built probe: one agent per line, no
     # parsing of rocminfo's prose layout. It ships with ROCm but does not put
     # itself on PATH, hence the well-known prefixes DetectGpu.cmake also uses.
+    sushiruntime_gpu_versioned_prefixes(_sr_rocm_prefixes "/opt/rocm-*/bin")
     find_program(_sr_rocm_enum rocm_agent_enumerator
-        PATHS /opt/rocm/bin /opt/rocm-*/bin)
+        PATHS /opt/rocm/bin ${_sr_rocm_prefixes})
     if(_sr_rocm_enum)
         execute_process(
             COMMAND ${_sr_rocm_enum}

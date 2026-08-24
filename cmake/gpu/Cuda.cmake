@@ -40,7 +40,13 @@ if(NOT DEFINED SR_CUDA_ARCH OR SR_CUDA_ARCH STREQUAL "")
         string(REPLACE "\n" ";" _sr_cap_lines "${_sr_compute_cap}")
         foreach(_sr_line IN LISTS _sr_cap_lines)
             string(STRIP "${_sr_line}" _sr_line)
-            if(_sr_line MATCHES "^([0-9]+)\.([0-9]+)$")
+            # "\\." and not "\.": inside a quoted argument CMake reads "\." as an
+            # escape for the character '.', so the regex engine is handed a bare
+            # dot that matches anything. It cost nothing here only by luck --
+            # "8x6" matched and yielded 86, and the ^[0-9]+$ check downstream saw
+            # a clean pair of digits because the separator had been dropped on
+            # the way. The escaped form reaches the engine as a literal dot.
+            if(_sr_line MATCHES "^([0-9]+)\\.([0-9]+)$")
                 list(APPEND _sr_caps "${CMAKE_MATCH_1}${CMAKE_MATCH_2}")
             endif()
         endforeach()

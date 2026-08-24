@@ -83,10 +83,13 @@ if(_sr_request STREQUAL "auto")
     # choice a probe cannot make -- which is why it is reached by asking.
     set(_sr_request "")
 
+    sushiruntime_gpu_versioned_prefixes(_sr_cuda_prefixes "/usr/local/cuda-*/bin")
+    sushiruntime_gpu_versioned_prefixes(_sr_rocm_prefixes "/opt/rocm-*/bin")
+
     find_program(SR_NVCC nvcc
-        PATHS /usr/local/cuda/bin /usr/local/cuda-*/bin)
+        PATHS /usr/local/cuda/bin ${_sr_cuda_prefixes})
     find_program(SR_HIPCC NAMES hipcc rocminfo
-        PATHS /opt/rocm/bin /opt/rocm-*/bin)
+        PATHS /opt/rocm/bin ${_sr_rocm_prefixes})
 
     if(SR_NVCC)
         list(APPEND _sr_request cuda)
