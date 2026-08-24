@@ -386,7 +386,7 @@ namespace SushiRuntime
          * completion flows through one reusable CompletionLatch on the engine
          * rather than a promise/future allocated per step.
          */
-        sycl::event ExecutionEngine::execute(CompiledGraph& graph)
+        void ExecutionEngine::execute(CompiledGraph& graph)
         {
             // execute() IS submit() + complete(). Keeping it as their composition
             // rather than a third copy of the sequence means the synchronous and
@@ -394,7 +394,6 @@ namespace SushiRuntime
             // (reset before submit, quiesce before returning) hold for both.
             submit(graph);
             complete();
-            return sycl::event{};
         }
 
         /**
@@ -585,12 +584,11 @@ namespace SushiRuntime
          * for its destructor.
          *
          * @param graph The compiled graph to execute via move semantics.
-         * @return sycl::event An event that completes when the graph finishes execution.
          */
-        sycl::event IExecutionEngine::execute(CompiledGraph&& graph)
+        void IExecutionEngine::execute(CompiledGraph&& graph)
         {
             CompiledGraph local = std::move(graph);
-            return execute(local);
+            execute(local);
         }
 
         // Defined here for the same reason: touching Node::in_degree needs the
