@@ -69,6 +69,115 @@ macro(sushiruntime_gpu_add_acpp_target _target)
     set(SR_GPU_OFFLOAD_ADDED TRUE)
 endmacro()
 
+# --- Arch resolution: the shape the accelerator backends share -----------------
+#
+# CUDA and ROCm answer the same question — "which architectures am I building
+# for?" — by the same steps: probe the hardware, collapse duplicates, dispatch on
+# how many distinct answers came back, publish the result, reject anything
+# malformed. Only the probe differs (nvidia-smi vs rocm_agent_enumerator, two
+# unrelated output formats), so the probe stays in the vendor file and every step
+# downstream of it lives here, parameterised by vocabulary rather than by vendor.
+# This file still knows no vendor: it is handed the words it prints.
+#
+# Macros, not functions, and positional parameters, not cmake_parse_arguments:
+#
+#   * The no-GPU path must `return()` out of the *vendor file* so DetectGpu.cmake
+#     regains control and reads SR_GPU_BACKEND_DECLINED. Only a macro's paste
+#     semantics let a return() reach that far; from a function it would return
+#     from the function alone. The resolved arch must land in the caller's scope
+#     for the same reason.
+#   * A macro's ${ARGN} is re-expanded, which splits any argument containing a
+#     semicolon — and these take docstrings that show CMake list syntax ("61;86").
+#     Named positional parameters bind per-argument and keep such a string whole.
+#
+# Both take the *names* of the variables they read and write, so a list crosses
+# the boundary as one variable rather than as flattened arguments.
+
+# Turn the probe's findings into a resolved architecture, or decline/fail when
+# there were none.
+#
+#   _var             name of the arch variable to write (SR_CUDA_ARCH)
+#   _candidates_var  name of the list the vendor's probe filled, deduplicated
+#   _backend         SR_GPU_BACKEND value that selects this vendor (cuda)
+#   _probe           the probe's program name, for the prose (nvidia-smi)
+#   _noun            what one entry is called (compute capability)
+#   _examples        a concrete flag with a few real values, quoted into both
+#                    the decline warning and the hard failure
+macro(sushiruntime_gpu_resolve_arch _var _candidates_var _backend _probe _noun _examples)
+    list(LENGTH ${_candidates_var} _sr_ra_count)
+
+    if(_sr_ra_count EQUAL 1)
+        set(${_var} "${${_candidates_var}}")
+        message(STATUS "GPU auto-detect: ${_probe} reports one ${_noun} "
+                       "-> ${_var}=${${_var}}")
+
+    elseif(_sr_ra_count EQUAL 0)
+        # How loudly this fails depends on who asked for the backend. Auto-detect
+        # selected it by finding a toolkit, which says a compiler is installed,
+        # not that a card is present -- the usual shape of a CI or artifact build
+        # box. Killing the build there would make "auto" a mode that fails on a
+        # machine it was supposed to figure out, so it declines and
+        # DetectGpu.cmake demotes to the CPU strategy. An explicit
+        # -DSR_GPU_BACKEND=<vendor> is a stated intent, and stating it without an
+        # architecture is the omission this whole mechanism exists to refuse.
+        if(NOT SR_GPU_BACKEND_EXPLICIT)
+            message(WARNING
+                "${_backend} was auto-selected because its toolkit is installed, "
+                "but ${_probe} reports no ${_noun}, so ${_var} cannot be resolved. "
+                "Falling back to the CPU/OpenCL path."
+                " To build ${_backend} offload on a machine with no such GPU, "
+                "state both explicitly: -DSR_GPU_BACKEND=${_backend} together "
+                "with e.g. ${_examples}")
+            set(SR_GPU_BACKEND_DECLINED TRUE)
+            return()
+        endif()
+        message(FATAL_ERROR
+            "${_var} could not be resolved: ${_probe} is unavailable or reported "
+            "no ${_noun}, and there is no default to fall back on.\n"
+            "Pass the target explicitly, e.g. ${_examples}. A build machine with "
+            "no such GPU must always state its target this way.")
+
+    else()
+        # Several different cards. Target all of them rather than electing one:
+        # the set is the honest reading of what is installed, and electing
+        # whichever the probe listed first would be exactly the guess this
+        # mechanism refuses. Announced loudly, because the build just got longer
+        # by a factor nobody typed.
+        string(REPLACE ";" ", " _sr_ra_list "${${_candidates_var}}")
+        set(${_var} "${${_candidates_var}}")
+        message(STATUS "GPU auto-detect: ${_probe} reports more than one ${_noun} "
+                       "(${_sr_ra_list}); building for all of them. Narrow with "
+                       "-D${_var}=<value> to cut build time and binary size.")
+    endif()
+endmacro()
+
+# Publish the arch as a cache entry and reject anything that is not one.
+#
+# Runs unconditionally, unlike the resolution above: an arch the user stated on
+# the command line skips the probe entirely but must still be cached and checked.
+#
+#   _var      name of the arch variable (SR_CUDA_ARCH)
+#   _noun     what a valid entry is, phrased to follow "which is not "
+#   _pattern  regex every entry must match
+#   _hint     one sentence showing the accepted spelling
+#   _doc      the cache docstring
+#
+# _doc arrives as a single parameter, which is the point: set()'s cache signature
+# takes exactly one docstring, and adjacent quoted strings do not concatenate in
+# CMake. Split across several, the call silently stops matching that signature and
+# degrades into a plain set() whose value becomes the arch *plus* the words CACHE,
+# STRING and the doc text — which the loop below then reports as a malformed arch.
+macro(sushiruntime_gpu_publish_arch _var _noun _pattern _hint _doc)
+    set(${_var} "${${_var}}" CACHE STRING "${_doc}")
+
+    foreach(_sr_pa_arch IN LISTS ${_var})
+        if(NOT _sr_pa_arch MATCHES "${_pattern}")
+            message(FATAL_ERROR
+                "${_var} contains '${_sr_pa_arch}', which is not ${_noun}. ${_hint}")
+        endif()
+    endforeach()
+endmacro()
+
 # --- Finalize: render accumulators into flags ----------------------------------
 #
 # A macro so the directory-scope add_compile_options/add_link_options land in the
