@@ -295,7 +295,7 @@ def _flags_fingerprint() -> str:
 
 
 def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
-                     tests: bool) -> str:
+                     tests: bool, toolchain: str, cxx: str) -> str:
     """A stable key of every configure-affecting knob.
 
     A single-config generator (Ninja) bakes the build type into the cache, so a
@@ -303,9 +303,19 @@ def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
     the tree and silently hand back a Release binary. Keying on the full tuple
     forces a reconfigure whenever any of these change — including the flag
     constants themselves, via _flags_fingerprint().
+
+    ``toolchain`` and ``cxx`` are here because leaving them out broke the one
+    command whose whole job is to change them. ``sr toolchain adaptivecpp``
+    followed by ``sr build`` matched the old stamp, so configure was skipped, the
+    intel-llvm tree was reused, and acpp was never invoked — while
+    SR_SYCL_TOOLCHAIN in that tree's cache still read intel-llvm, so nothing
+    disagreed with anything. They decide both -DSR_SYCL_TOOLCHAIN and
+    -DCMAKE_CXX_COMPILER, which makes them as configure-affecting as the build
+    type, and the only warning was a printed hint on a branch a developer
+    selecting a not-yet-installed toolchain never reaches.
     """
     return (f"{dist}|{build_type}|{gpu_backend}|{'ON' if tests else 'OFF'}"
-            f"|{_flags_fingerprint()}")
+            f"|{toolchain}|{cxx}|{_flags_fingerprint()}")
 
 
 def _needs_configure(build_dir: Path, generator: str, stamp_key: str,
@@ -558,7 +568,8 @@ def build(build_type: BuildType, distributed: bool = False,
 
     env = load_build_env(cfg, build_dir)
 
-    stamp_key = _configure_stamp(dist, cmake_build_type, gpu_backend, tests)
+    stamp_key = _configure_stamp(dist, cmake_build_type, gpu_backend, tests,
+                                 cfg.toolchain, cfg.cxx)
     if _needs_configure(build_dir, cfg.generator, stamp_key, root):
         console.info(f"Configuring CMake... (type={build_type.value}, "
                      f"distributed={dist}, gpu={gpu_backend}, tests={'ON' if tests else 'OFF'})")

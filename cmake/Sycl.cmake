@@ -16,21 +16,62 @@
 
 # --- Phase 1 (pre-project): toolchain selection --------------------------------
 
-set(SR_SYCL_TOOLCHAIN "intel-llvm" CACHE STRING
-    "SYCL toolchain: intel-llvm (primary), adaptivecpp, or oneapi")
+# Did the caller state a toolchain? Asked before the default below plants one,
+# because afterwards the cache entry exists either way and the question can no
+# longer be answered. On a reconfigure the entry survives from the previous run,
+# which is the same answer for the same reason: the toolchain was settled then.
+if(DEFINED CACHE{SR_SYCL_TOOLCHAIN})
+    set(_sr_toolchain_stated TRUE)
+else()
+    set(_sr_toolchain_stated FALSE)
+endif()
+
+# One docstring, named once. The inference below used to FORCE the entry with ""
+# and wipe the help text off it on the first configure.
+set(_sr_toolchain_doc "SYCL toolchain: intel-llvm (primary), adaptivecpp, or oneapi")
+
+set(SR_SYCL_TOOLCHAIN "intel-llvm" CACHE STRING "${_sr_toolchain_doc}")
 set_property(CACHE SR_SYCL_TOOLCHAIN PROPERTY STRINGS intel-llvm adaptivecpp oneapi)
 
-# When the caller left the default and pinned a compiler, infer the toolchain
-# from the compiler executable name so existing oneAPI/acpp invocations keep
-# working.
-if(DEFINED CMAKE_CXX_COMPILER AND NOT CMAKE_CXX_COMPILER STREQUAL "")
+# When the caller left the default and pinned a compiler, infer the toolchain from
+# the compiler executable name so existing oneAPI/acpp invocations keep working.
+#
+# "Left the default" is now actually tested. It never was: the guard asked only
+# whether a compiler had been pinned, so -DSR_SYCL_TOOLCHAIN=adaptivecpp next to a
+# pinned icpx was overwritten with "oneapi" without a word, and every STREQUAL
+# dispatch downstream -- sushiruntime_sycl_configure, sushiruntime_gpu_finalize,
+# and each vendor file -- then took the branch for a toolchain nobody asked for.
+if(NOT _sr_toolchain_stated AND CMAKE_CXX_COMPILER)
     if(CMAKE_CXX_COMPILER MATCHES "acpp|syclcc")
-        set(SR_SYCL_TOOLCHAIN "adaptivecpp" CACHE STRING "" FORCE)
+        set(SR_SYCL_TOOLCHAIN "adaptivecpp" CACHE STRING "${_sr_toolchain_doc}" FORCE)
     elseif(CMAKE_CXX_COMPILER MATCHES "icpx|icx-cl|icx")
-        set(SR_SYCL_TOOLCHAIN "oneapi" CACHE STRING "" FORCE)
+        set(SR_SYCL_TOOLCHAIN "oneapi" CACHE STRING "${_sr_toolchain_doc}" FORCE)
     elseif(CMAKE_CXX_COMPILER MATCHES "clang\\+\\+")
-        set(SR_SYCL_TOOLCHAIN "intel-llvm" CACHE STRING "" FORCE)
+        set(SR_SYCL_TOOLCHAIN "intel-llvm" CACHE STRING "${_sr_toolchain_doc}" FORCE)
     endif()
+endif()
+
+# A stated toolchain is obeyed, so a compiler that belongs to a different one is
+# now a mismatch rather than something silently corrected. Say so here: obeying it
+# fails later, inside find_package or a device pass, with a message that describes
+# the symptom and names neither of the two values that disagreed.
+if(_sr_toolchain_stated AND CMAKE_CXX_COMPILER)
+    set(_sr_compiler_toolchain "")
+    if(CMAKE_CXX_COMPILER MATCHES "acpp|syclcc")
+        set(_sr_compiler_toolchain "adaptivecpp")
+    elseif(CMAKE_CXX_COMPILER MATCHES "icpx|icx-cl|icx")
+        set(_sr_compiler_toolchain "oneapi")
+    elseif(CMAKE_CXX_COMPILER MATCHES "clang\\+\\+")
+        set(_sr_compiler_toolchain "intel-llvm")
+    endif()
+    if(_sr_compiler_toolchain AND NOT _sr_compiler_toolchain STREQUAL "${SR_SYCL_TOOLCHAIN}")
+        message(WARNING
+            "SR_SYCL_TOOLCHAIN=${SR_SYCL_TOOLCHAIN} was requested, but "
+            "CMAKE_CXX_COMPILER is '${CMAKE_CXX_COMPILER}', which is the compiler "
+            "for ${_sr_compiler_toolchain}. The request is being honoured -- pass a "
+            "matching compiler, or drop SR_SYCL_TOOLCHAIN to have it inferred.")
+    endif()
+    unset(_sr_compiler_toolchain)
 endif()
 
 # Default compiler per toolchain — only when the caller gave none.
