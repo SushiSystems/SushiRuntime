@@ -24,6 +24,17 @@ if(_sr_backend STREQUAL "auto" AND SR_ENABLE_CUDA)
     set(_sr_backend "cuda")
 endif()
 
+# Did a human name this backend, or did we guess it? A vendor file that finds its
+# toolkit installed but no device consults this to choose between failing and
+# declining (see the dispatch below). SR_ENABLE_CUDA counts as naming it -- it is
+# the legacy spelling of the same request, so it must not be downgraded to a
+# guess just because SR_GPU_BACKEND itself still reads 'auto'.
+if(_sr_backend STREQUAL "auto")
+    set(SR_GPU_BACKEND_EXPLICIT FALSE)
+else()
+    set(SR_GPU_BACKEND_EXPLICIT TRUE)
+endif()
+
 if(_sr_backend STREQUAL "auto")
     # The SYCL CUDA/nvptx and amdgcn passes need the vendor toolkit's device
     # libraries (libdevice / ROCm device libs), so a mere driver is not enough:
@@ -51,6 +62,15 @@ set(SR_GPU_BACKEND_RESOLVED "${_sr_backend}" CACHE INTERNAL "Resolved GPU backen
 
 # Dispatch to the vendor strategy. Each file is self-contained and only appends to
 # the GpuBackend accumulators; adding a vendor means adding a branch here + a file.
+#
+# A vendor file may also decline. Auto-detect selects a backend by finding its
+# *toolkit*, which proves a compiler is installed and not that a device exists, so
+# a backend can discover at include time that it has no hardware to target. Rather
+# than resolve that itself, it sets SR_GPU_BACKEND_DECLINED and returns, and the
+# demotion happens here -- this file stays the single writer of
+# SR_GPU_BACKEND_RESOLVED, which the CLI reads back.
+set(SR_GPU_BACKEND_DECLINED FALSE)
+
 if(_sr_backend STREQUAL "cuda")
     include("${CMAKE_CURRENT_LIST_DIR}/Cuda.cmake")
 elseif(_sr_backend STREQUAL "rocm")
@@ -61,4 +81,15 @@ elseif(_sr_backend STREQUAL "cpu" OR _sr_backend STREQUAL "none")
     include("${CMAKE_CURRENT_LIST_DIR}/CpuFallback.cmake")
 else()
     message(FATAL_ERROR "Unknown SR_GPU_BACKEND='${SR_GPU_BACKEND}'. Use auto, cuda, rocm, intel, cpu, or none.")
+endif()
+
+# Honour a declined backend: fall through to the CPU strategy and correct the
+# resolved value, so the CLI is never told 'cuda' about a build that has no
+# offload triple in it. Only reachable when the backend was guessed
+# (SR_GPU_BACKEND_EXPLICIT is FALSE); a named one fails in its own file instead
+# of being quietly downgraded.
+if(SR_GPU_BACKEND_DECLINED)
+    set(_sr_backend "cpu")
+    set(SR_GPU_BACKEND_RESOLVED "cpu" CACHE INTERNAL "Resolved GPU backend" FORCE)
+    include("${CMAKE_CURRENT_LIST_DIR}/CpuFallback.cmake")
 endif()

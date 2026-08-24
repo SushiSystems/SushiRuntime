@@ -994,7 +994,8 @@ To make the layering concrete, here is one device task —
 |--------------|---------|--------|
 | `SR_SYCL_TOOLCHAIN` | intel-llvm | SYCL toolchain: `intel-llvm`, `adaptivecpp`, or `oneapi` |
 | `SR_GPU_BACKEND` | auto | GPU compute backend: `auto`, `cuda`, `rocm`, `intel`, `cpu`, or `none` |
-| `SR_CUDA_ARCH` | 61 | CUDA compute capability for the nvptx64 backend (e.g. 80, 86) |
+| `SR_CUDA_ARCH` | *none* | CUDA compute capability for the nvptx64 backend; resolved from `nvidia-smi`, or stated (`86`, or `61;86` for a multi-arch binary) |
+| `SR_AMD_ARCH` | *none* | AMD GPU ISA for the amdgcn backend; resolved from `rocm_agent_enumerator`, or stated (`gfx1030`, or `gfx1030;gfx1100`) |
 | `SR_ENABLE_CUDA` | OFF | **Legacy alias** for `SR_GPU_BACKEND=cuda`; kept for back-compat |
 | `SR_ENABLE_DISTRIBUTED` | OFF | compile the master-worker layer |
 | `SR_BUILD_TESTS` | OFF | build the test suite (`sr build` turns this ON; pass `--no-test` to skip) |
@@ -1058,15 +1059,49 @@ resolves in `cmake/gpu/` to exactly one vendor strategy:
   **`cpu`** (OpenCL / `spir64` JIT) path. The apt CUDA and ROCm toolkits do not
   add themselves to `PATH`, so auto-detect also searches their well-known
   prefixes (`/usr/local/cuda*`, `/opt/rocm*`).
-- **`cuda`** — SYCL CUDA (nvptx64 `sm_${SR_CUDA_ARCH}`).
-- **`rocm`** — AMD ROCm/HIP (amdgcn).
+- **`cuda`** — SYCL CUDA, one `nvidia_gpu_sm_*` target per `SR_CUDA_ARCH` entry.
+- **`rocm`** — AMD ROCm/HIP, one `amd_gpu_gfx*` target per `SR_AMD_ARCH` entry.
 - **`intel`** — Intel GPU (Level Zero).
 - **`cpu`** / **`none`** — CPU/OpenCL fallback (`none` also skips any offload triple).
 
 The CLI wraps this: `sr build` passes `SR_GPU_BACKEND=auto` and reads the
 resolved backend back, so the vendor logic lives in one place (`cmake/gpu/`)
-rather than being duplicated in Python. `SR_CUDA_ARCH` is itself auto-detected
-from `nvidia-smi` when a CUDA GPU is present.
+rather than being duplicated in Python.
+
+Neither `SR_CUDA_ARCH` nor `SR_AMD_ARCH` has a default. Each is resolved by its
+own backend file (`cmake/gpu/Cuda.cmake`, `cmake/gpu/Rocm.cmake`) from the
+vendor's own probe — `nvidia-smi` and `rocm_agent_enumerator` — and what the
+probe reports is taken whole:
+
+- **One architecture** — build for it.
+- **Several different ones** — build for all of them, and say so in a `STATUS`
+  line naming what was found and the flag that narrows it. Electing one would be
+  the guess; targeting the set invents nothing and discards nothing. Compile time
+  and binary size scale with the count, which is why it is announced rather than
+  done quietly.
+- **None** — there is nothing to resolve, and what happens next depends on who
+  asked. See below.
+
+A default is refused because it would stand in for hardware nobody looked at,
+and on NVIDIA the substitution is invisible: forward-compatible PTX means a wrong
+`sm_` still runs, just without the codegen you asked for. On AMD it is worse —
+amdgcn compiles straight to final ISA, so a wrong arch yields a binary the GPU
+cannot run at all.
+
+The "none" case splits on intent. `auto` picks a backend by finding its
+*toolkit* — `nvcc`, `hipcc` — which proves a compiler is installed, not that a
+device exists; a CI or artifact box typically has the first without the second.
+Failing there would make `auto` a mode that dies on a machine it was meant to
+figure out, so the vendor file *declines*: it warns, sets
+`SR_GPU_BACKEND_DECLINED`, and `DetectGpu.cmake` demotes the build to the CPU
+strategy and corrects `SR_GPU_BACKEND_RESOLVED`. A backend the caller named
+(`-DSR_GPU_BACKEND=cuda`, or the legacy `-DSR_ENABLE_CUDA=ON`) never declines —
+it errors, because naming a backend without naming its architecture is the
+omission this design exists to refuse.
+
+The resolution lives in the backend files rather than in `GpuBackend.cmake`
+because that file is included unconditionally, so a failure there would break
+every unrelated build.
 
 Three SYCL toolchains are supported, selected by `SR_SYCL_TOOLCHAIN`:
 **intel-llvm** (`clang++ -fsycl` from the intel/llvm nightly bundle, primary,
