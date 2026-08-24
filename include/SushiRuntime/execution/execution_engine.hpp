@@ -151,10 +151,15 @@ namespace SushiRuntime
              * @param graph The compiled graph to run; left intact (nodes' per-run
              *              state such as in_degree is consumed and must be reset by
              *              the caller before the next run).
-             * @return sycl::event Currently always sycl::event{}. Do not chain SYCL
-             *         dependencies on this value.
+             *
+             * Returns nothing. It used to return a default-constructed sycl::event
+             * that carried no information -- the run is already finished when this
+             * returns, so there was never a hardware event to chain on, and the
+             * docs said so. Constructing one is not free: on oneAPI's libsycl
+             * sycl::event{} heap-allocates, which put one allocation per tick on
+             * the steady-state loop that run(RunReport&) promises will not allocate.
              */
-            virtual sycl::event execute(CompiledGraph& graph) = 0;
+            virtual void execute(CompiledGraph& graph) = 0;
 
             /**
              * @brief One-shot convenience: runs a temporary compiled graph.
@@ -164,9 +169,8 @@ namespace SushiRuntime
              * returns, so this is the right entry point for a single run.
              *
              * @param graph A compiled graph to run once and discard.
-             * @return sycl::event As for the in-place overload.
              */
-            sycl::event execute(CompiledGraph&& graph);
+            void execute(CompiledGraph&& graph);
 
             /**
              * @brief Whether this engine can start a run without blocking.
@@ -339,11 +343,8 @@ namespace SushiRuntime
              * completion promise. Does NOT recreate any threads.
              *
              * @param graph Compiled graph to run in place (not consumed).
-             * @return sycl::event Always sycl::event{} — the sentinel runs inline
-             *         (not via a SYCL submission) so there is no hardware event to
-             *         return. Do not chain SYCL dependencies on this value.
              */
-            sycl::event execute(CompiledGraph& graph) override;
+            void execute(CompiledGraph& graph) override;
 
             using IExecutionEngine::execute; // keep the rvalue convenience overload visible
 
