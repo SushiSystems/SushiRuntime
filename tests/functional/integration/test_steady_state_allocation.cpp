@@ -54,12 +54,6 @@
 #include <new>
 #include <string>
 
-// TEMPORARY DIAGNOSTIC -- paired with dump_allocation_site() below.
-#if defined(__linux__)
-#  include <execinfo.h>
-#  include <unistd.h>
-#endif
-
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/SushiRuntime.h>
@@ -115,61 +109,11 @@ namespace
     thread_local bool g_counting_this_thread = false;
     std::atomic<std::size_t> g_allocation_count{0};
 
-    // TEMPORARY DIAGNOSTIC -- revert once CI has named the call site.
-    //
-    // The steady-state tick allocates once per tick on Linux and zero times on
-    // Windows, and reading the code has eliminated three candidates (the report
-    // builder's SYCL query, std::function in the drive template, the per-step
-    // promise that execution_engine already replaced). Rather than guess a
-    // fourth, print where the allocation actually comes from.
-    //
-    // backtrace_symbols_fd writes straight to the fd and does not allocate,
-    // unlike backtrace_symbols. backtrace() itself can allocate once while the
-    // unwinder initialises, so prime_backtrace() below burns that before the
-    // measured window opens. The reentrancy flag keeps a hypothetical allocation
-    // inside the dump from recursing back into this function.
-#if defined(__linux__)
-    thread_local bool g_in_backtrace = false;
-    std::atomic<int>  g_dumps_left{4};
-
-    inline void dump_allocation_site() noexcept
-    {
-        if (g_in_backtrace)
-            return;
-        if (g_dumps_left.fetch_sub(1, std::memory_order_relaxed) <= 0)
-            return;
-
-        g_in_backtrace = true;
-        void* frames[32];
-        const int n = ::backtrace(frames, 32);
-        // The newline is written as a byte rather than an escape, so nothing
-        // in this literal can be mangled by tooling between here and the file.
-        const char banner[] = "=== SR_ALLOC_TRACE: counted allocation ===";
-        const char newline  = 10;
-        ::write(2, banner, sizeof(banner) - 1);
-        ::write(2, &newline, 1);
-        ::backtrace_symbols_fd(frames, n, 2);
-        g_in_backtrace = false;
-    }
-
-    inline void prime_backtrace() noexcept
-    {
-        void* frames[4];
-        (void)::backtrace(frames, 4);
-    }
-#else
-    inline void dump_allocation_site() noexcept {}
-    inline void prime_backtrace() noexcept {}
-#endif
-
     // Counts an allocation when the calling thread asked to be observed.
     inline void note_allocation() noexcept
     {
         if (g_counting_this_thread)
-        {
             g_allocation_count.fetch_add(1, std::memory_order_relaxed);
-            dump_allocation_site();
-        }
     }
 
     constexpr std::size_t N            = 4096;
@@ -217,7 +161,6 @@ namespace
         for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
             g.run(report);
 
-        prime_backtrace();
         g_allocation_count.store(0, std::memory_order_relaxed);
         g_counting_this_thread = true;
         for (std::size_t i = 0; i < ticks; ++i)
@@ -233,7 +176,6 @@ namespace
         for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
             g.run();
 
-        prime_backtrace();
         g_allocation_count.store(0, std::memory_order_relaxed);
         g_counting_this_thread = true;
         for (std::size_t i = 0; i < ticks; ++i)
@@ -328,7 +270,6 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
 
     const auto measure = [&](std::size_t ticks)
     {
-        prime_backtrace();
         g_allocation_count.store(0, std::memory_order_relaxed);
         g_counting_this_thread = true;
         for (std::size_t i = 0; i < ticks; ++i)
