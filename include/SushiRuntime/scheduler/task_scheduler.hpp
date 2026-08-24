@@ -25,6 +25,7 @@
 
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <mutex>
@@ -128,8 +129,69 @@ namespace SushiRuntime
                  * first few steps and never allocates again.
                  */
                 std::array<std::vector<Task*>, Core::MAX_WORKER_THREADS> drain_scratch_;
+                /**
+                 * @brief A task FIFO that does not allocate in the steady state.
+                 *
+                 * A std::deque here allocated a fresh block every 64 pushes: with
+                 * 8-byte elements libstdc++ fits exactly 64 pointers in its 512-byte
+                 * block, and an injector that is pushed at the back and popped at
+                 * the front walks forward through the block map forever, buying a
+                 * new block at every boundary and releasing the one behind it. On a
+                 * frame loop that is a heap allocation every 64 ticks on the thread
+                 * driving the run -- small, perfectly periodic, and enough to break
+                 * the zero-allocation contract run(RunReport&) makes. CI measured it
+                 * as exactly 1 allocation over 64 ticks and 4 over 256.
+                 *
+                 * A vector with a read cursor has no block boundaries to cross. The
+                 * steady state drains fully every tick, so pop_front() reaches the
+                 * end, clear()s, and reuses the same storage: capacity settles at
+                 * the high-water mark and nothing is allocated again. This is the
+                 * same trick drain_scratch_ above already uses, applied to the
+                 * container instead of to the batch copied out of it.
+                 *
+                 * The interface is the subset of std::deque the injector used, so
+                 * every call site reads unchanged.
+                 */
+                class SubmissionQueue
+                {
+                    public:
+                        bool empty() const noexcept { return head_ >= items_.size(); }
+                        std::size_t size() const noexcept { return items_.size() - head_; }
+                        Task* front() const noexcept { return items_[head_]; }
+                        void push_back(Task* task) { items_.push_back(task); }
+
+                        void pop_front() noexcept
+                        {
+                            ++head_;
+                            if (head_ >= items_.size())
+                            {
+                                // Fully drained: rewind to the front of the same
+                                // buffer. clear() keeps capacity, so this is the
+                                // path that makes a steady-state tick free.
+                                items_.clear();
+                                head_ = 0;
+                            }
+                            else if (head_ >= COMPACT_AFTER && head_ * 2 >= items_.size())
+                            {
+                                // A queue that never empties would otherwise keep
+                                // the consumed prefix forever. Dropping it is a
+                                // memmove within the existing buffer, not a
+                                // reallocation, and the threshold keeps it off the
+                                // path a small queue takes.
+                                items_.erase(items_.begin(),
+                                             items_.begin() + static_cast<std::ptrdiff_t>(head_));
+                                head_ = 0;
+                            }
+                        }
+
+                    private:
+                        static constexpr std::size_t COMPACT_AFTER = 1024;
+                        std::vector<Task*> items_;
+                        std::size_t        head_ = 0;
+                };
+
                 /** @brief Global injector queue for thread-safe external submissions. */
-                std::deque<Task*> pending_submissions;
+                SubmissionQueue pending_submissions;
                 /** @brief Global priority queue for high-priority task bypass. */
                 std::priority_queue<Task*, std::vector<Task*>, TaskPriorityCompare> priority_submissions;
                 /** @brief Guards the injector queues. */

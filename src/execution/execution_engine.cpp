@@ -460,8 +460,15 @@ namespace SushiRuntime
                         // genuinely flushed (this also drives AdaptiveCpp's queue to
                         // completion) before we report done. Copy each event:
                         // AdaptiveCpp's event::wait() is non-const and deps is const.
+                        // The comparison target is built once, not once per
+                        // dependency. sycl::event{} allocates on oneAPI's libsycl,
+                        // so constructing it inside the loop cost one allocation
+                        // per predecessor per run -- the same defect this file's
+                        // execute() had, on a worker thread where the steady-state
+                        // counter could not see it.
+                        const sycl::event no_event{};
                         for (auto e : deps)
-                            if (e != sycl::event{})
+                            if (e != no_event)
                                 e.wait();
 
                         // Read the run outcome before re-arming: arm_for_execution()
