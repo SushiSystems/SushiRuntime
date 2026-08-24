@@ -65,7 +65,8 @@ def build(
     distributed: bool = typer.Option(
         False, "--distributed", help="Enable the master-worker distributed layer."),
     no_cuda: bool = typer.Option(
-        False, "--no-cuda", help="Disable the SYCL CUDA backend (Linux only)."),
+        False, "--no-cuda",
+        help="Build the portable CPU/OpenCL path instead of detecting accelerators."),
     clean: bool = typer.Option(
         False, "--clean", help="Delete the build tree before configuring."),
     force: bool = typer.Option(
