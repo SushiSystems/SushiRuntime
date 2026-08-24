@@ -132,9 +132,14 @@ from `CMPLR_ROOT` — no paths are hardcoded.
 The GPU backend is selected by `-DSR_GPU_BACKEND=<auto|cuda|rocm|intel|cpu|none>`
 (default `auto`, which detects the installed toolkit — NVIDIA CUDA, AMD ROCm,
 Intel — and otherwise builds the portable CPU/OpenCL path). To force NVIDIA GPUs,
-configure with `-DSR_GPU_BACKEND=cuda`; the architecture is set via
-`-DSR_CUDA_ARCH=<cc>` (default `61` for Pascal; e.g. `86` for Ampere, and itself
-auto-detected from `nvidia-smi` when a CUDA GPU is present). The older
+configure with `-DSR_GPU_BACKEND=cuda`. The architecture comes from
+`-DSR_CUDA_ARCH=<cc>` (e.g. `61` for Pascal, `86` for Ampere), which has **no
+default**. It is resolved from `nvidia-smi`: one capability builds for that one,
+several different ones build for all of them (announced in a `STATUS` line —
+pass a single value to cut build time), and none either falls back to the CPU
+path with a warning, if the backend was auto-selected, or fails the configure
+step, if you named the backend yourself. `SR_AMD_ARCH` works the same way
+against `rocm_agent_enumerator`. The older
 `-DSR_ENABLE_CUDA=ON` still works as a legacy alias for `-DSR_GPU_BACKEND=cuda`.
 
 To build the optional distributed master-worker layer, configure with `-DSR_ENABLE_DISTRIBUTED=ON`, or pass `--distributed` to the CLI (`sr build --distributed`). It is **OFF by default**; when off, none of the distributed code or its sources are compiled, so the standalone build is unaffected. See [Distributed execution](#distributed-execution-optional).

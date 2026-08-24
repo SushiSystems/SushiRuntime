@@ -28,46 +28,31 @@ set(SR_GPU_CLANG_OPTIONS "")
 set(SR_GPU_ACPP_TARGETS "generic")
 set(SR_GPU_OFFLOAD_ADDED FALSE)
 
-# Per-vendor arch knobs, replacing the old hardcoded sm_61. Each backend reads its
-# own; unrelated backends ignore theirs.
+# Per-vendor arch knobs. Each backend reads its own; unrelated backends ignore
+# theirs.
 #
-# SR_CUDA_ARCH's default is probed from nvidia-smi (the installed card's actual
-# compute capability) rather than hardcoded, so a build on non-Pascal hardware
-# targets the right architecture without a manual -DSR_CUDA_ARCH=. This only
-# fixes arch *mismatch*; it cannot make an installed CUDA toolkit support an
-# architecture it has dropped (e.g. CUDA 13 removed sm_6x/Pascal outright) —
-# that failure still surfaces at the ptxas link step and requires a compatible
-# toolkit install (see cli/sushistack/setup/package_managers.py::ensure_cuda_toolkit).
-if(NOT DEFINED SR_CUDA_ARCH)
-    set(_sr_cuda_arch_default "61")
-    find_program(_sr_nvidia_smi nvidia-smi)
-    if(_sr_nvidia_smi)
-        execute_process(
-            COMMAND ${_sr_nvidia_smi} --query-gpu=compute_cap --format=csv,noheader
-            OUTPUT_VARIABLE _sr_compute_cap
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-        )
-        # First line only (multi-GPU machines list one per line); "7.5" -> "75".
-        if(_sr_compute_cap MATCHES "^([0-9]+)\\.([0-9]+)")
-            set(_sr_cuda_arch_default "${CMAKE_MATCH_1}${CMAKE_MATCH_2}")
-            message(STATUS "GPU auto-detect: nvidia-smi reports compute capability "
-                           "${CMAKE_MATCH_1}.${CMAKE_MATCH_2} -> SR_CUDA_ARCH=${_sr_cuda_arch_default}")
-        endif()
-    endif()
-    set(SR_CUDA_ARCH "${_sr_cuda_arch_default}")
-endif()
-set(SR_CUDA_ARCH "${SR_CUDA_ARCH}" CACHE STRING
-    "CUDA compute capability for the SYCL nvptx64 backend (e.g. 61, 80, 86)")
-set(SR_AMD_ARCH "gfx1030" CACHE STRING
-    "AMD GPU arch for the SYCL amdgcn backend (e.g. gfx906, gfx1030, gfx1100)")
+# SR_CUDA_ARCH and SR_AMD_ARCH are deliberately NOT declared here. Resolving
+# either means probing one vendor's hardware and failing when the answer is
+# ambiguous, and this file must stay vendor-agnostic (see the header). More
+# importantly, a hard failure here would fire on every unrelated build, since
+# this file is included unconditionally. Each lives in its own backend file --
+# gpu/Cuda.cmake and gpu/Rocm.cmake -- which DetectGpu.cmake includes only when
+# that backend is actually selected.
+#
+# SR_INTEL_GPU_DEVICE stays here and keeps its empty default because empty is not
+# a guess: it is the documented request for JIT spir64, which is a real choice
+# rather than a stand-in for hardware nobody looked at.
 set(SR_INTEL_GPU_DEVICE "" CACHE STRING
     "Intel GPU AOT device for spir64_gen (e.g. pvc, dg2, acm-g10); empty => JIT spir64")
 
 # --- Backend-facing primitives -------------------------------------------------
 
-# Register an accelerator triple for the clang toolchains (e.g.
-# nvptx64-nvidia-cuda). Marks that real offload is present.
+# Register an accelerator target for the clang toolchains. This is whatever
+# -fsycl-targets accepts: a bare triple (amdgcn-amd-amdhsa) or an architecture
+# alias (nvidia_gpu_sm_86, amd_gpu_gfx1030). The CUDA and ROCm backends use the
+# alias form, because that is what lets one binary carry several architectures --
+# the per-triple --cuda-gpu-arch / --offload-arch options cannot be repeated.
+# Marks that real offload is present.
 macro(sushiruntime_gpu_add_clang_triple _triple)
     list(APPEND SR_GPU_CLANG_TRIPLES "${_triple}")
     set(SR_GPU_OFFLOAD_ADDED TRUE)

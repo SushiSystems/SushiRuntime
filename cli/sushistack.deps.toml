@@ -56,7 +56,7 @@ windows_vcpkg = []
 # Ubuntu apt ships nvidia-cuda-toolkit 11.x, which is incompatible with the
 # intel/llvm nightly bundle (requires CUDA 12.x). Install from NVIDIA's official
 # runfile or use the nvidia/cuda Docker base image — do not rely on apt here.
-description   = "NVIDIA CUDA toolkit (SYCL nvptx64 backend; arch via SR_CUDA_ARCH, default 61). From NVIDIA's official runfile, not Ubuntu apt."
+description   = "NVIDIA CUDA toolkit (SYCL nvptx64 backend; arch via SR_CUDA_ARCH, which has no default and is resolved from nvidia-smi). Pinned to 12.6 to keep Pascal/sm_6x buildable. From NVIDIA's official runfile, not Ubuntu apt."
 required      = false
 gpu_only      = true
 linux_apt     = []
