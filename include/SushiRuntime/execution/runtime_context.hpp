@@ -167,6 +167,24 @@ namespace SushiRuntime
                 size_t device_count() const;
 
                 /**
+                 * @brief Whether the device behind queue @p xpu_index is a GPU.
+                 *
+                 * Answered from the inventory probe_hardware() already built, not by
+                 * asking SYCL again. The device class of a queue cannot change while
+                 * the context is alive, so re-deriving it per call is redundant work
+                 * -- and not free work: `queue::get_device()` returns a device by
+                 * value and what that costs is defined by the SYCL runtime, not by
+                 * us. A caller on a steady-state tick path cannot hold a
+                 * zero-allocation contract across that difference, which is exactly
+                 * what run_report_builder was doing.
+                 *
+                 * @param xpu_index The index of the device; valid range [0, device_count()).
+                 * @return True when that device is a GPU.
+                 * @throws Core::SushiException If the index is out of bounds.
+                 */
+                bool device_is_gpu(size_t xpu_index) const;
+
+                /**
                  * @brief Selects a queue based on NUMA location.
                  * @param numa_id The ID of the target NUMA node.
                  * @return sycl::queue& Reference to the closest device queue.
