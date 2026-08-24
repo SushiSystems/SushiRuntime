@@ -39,57 +39,16 @@ if(NOT DEFINED SR_AMD_ARCH OR SR_AMD_ARCH STREQUAL "")
         list(REMOVE_DUPLICATES _sr_gfx)
     endif()
 
-    list(LENGTH _sr_gfx _sr_gfx_count)
-    if(_sr_gfx_count EQUAL 1)
-        set(SR_AMD_ARCH "${_sr_gfx}")
-        message(STATUS "GPU auto-detect: rocm_agent_enumerator reports one GPU "
-                       "agent -> SR_AMD_ARCH=${SR_AMD_ARCH}")
-    elseif(_sr_gfx_count EQUAL 0)
-        # Same split as gpu/Cuda.cmake: auto-detect found hipcc/rocminfo, which
-        # proves a toolkit and not a card, so it declines rather than killing a
-        # build nobody asked to be GPU. An explicit request errors.
-        if(NOT SR_GPU_BACKEND_EXPLICIT)
-            message(WARNING
-                "ROCm was auto-selected because a ROCm toolkit is installed, but "
-                "rocm_agent_enumerator reports no GPU agent, so SR_AMD_ARCH "
-                "cannot be resolved. Falling back to the CPU/OpenCL path."
-                " To build amdgcn offload on a machine with no AMD GPU, state "
-                "both explicitly: -DSR_GPU_BACKEND=rocm -DSR_AMD_ARCH=gfx1030")
-            set(SR_GPU_BACKEND_DECLINED TRUE)
-            return()
-        endif()
-        message(FATAL_ERROR
-            "SR_AMD_ARCH could not be resolved: rocm_agent_enumerator is "
-            "unavailable or reported no GPU agent, and there is no default to "
-            "fall back on.\n"
-            "Pass the target ISA explicitly, e.g. -DSR_AMD_ARCH=gfx1030 (RDNA2), "
-            "gfx1100 (RDNA3), gfx906 (Vega20). A build machine with no AMD GPU "
-            "must always state its target this way.")
-    else()
-        # Several different cards. Target all of them rather than electing one;
-        # see gpu/Cuda.cmake for the reasoning. Announced loudly, because the
-        # build just got longer by a factor nobody typed.
-        string(REPLACE ";" ", " _sr_gfx_list "${_sr_gfx}")
-        set(SR_AMD_ARCH "${_sr_gfx}")
-        message(STATUS "GPU auto-detect: rocm_agent_enumerator reports "
-                       "${_sr_gfx_count} GPU ISAs (${_sr_gfx_list}); building for "
-                       "all of them. Narrow with -DSR_AMD_ARCH=<gfx> to cut build "
-                       "time and binary size.")
-    endif()
+    sushiruntime_gpu_resolve_arch(SR_AMD_ARCH _sr_gfx
+        "rocm" "rocm_agent_enumerator" "GPU ISA"
+        "-DSR_AMD_ARCH=gfx1030 (RDNA2), gfx1100 (RDNA3), gfx906 (Vega20)")
 endif()
 
-set(SR_AMD_ARCH "${SR_AMD_ARCH}" CACHE STRING
-    "AMD GPU ISAs for the SYCL amdgcn backend. One value (gfx1030) or a list for "
-    "a multi-arch binary (gfx1030;gfx1100). No default: it is resolved from "
-    "rocm_agent_enumerator or stated explicitly.")
-
-foreach(_sr_arch IN LISTS SR_AMD_ARCH)
-    if(NOT _sr_arch MATCHES "^gfx[0-9a-f]+$")
-        message(FATAL_ERROR
-            "SR_AMD_ARCH contains '${_sr_arch}', which is not an AMD GPU ISA. "
-            "Use the gfx name as ROCm reports it: gfx1030, not 1030 or RDNA2.")
-    endif()
-endforeach()
+sushiruntime_gpu_publish_arch(SR_AMD_ARCH
+    "an AMD GPU ISA"
+    "^gfx[0-9a-f]+$"
+    "Use the gfx name as ROCm reports it: gfx1030, not 1030 or RDNA2."
+    "AMD GPU ISAs for the SYCL amdgcn backend. One value (gfx1030) or a list for a multi-arch binary (gfx1030;gfx1100). No default: it is resolved from rocm_agent_enumerator or stated explicitly.")
 
 string(REPLACE ";" ", " _sr_arch_report "${SR_AMD_ARCH}")
 message(STATUS "GPU backend: AMD ROCm (amdgcn-amd-amdhsa ${_sr_arch_report})")
