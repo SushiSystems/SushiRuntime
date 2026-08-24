@@ -381,6 +381,24 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Reports whether the device behind a queue is a GPU.
+         *
+         * Reads the flag probe_hardware() recorded, which is what makes it cheap and
+         * allocation-free on every platform. all_queues is filled by walking
+         * impl_->nodes in order, one queue per node with no skips, so the two share
+         * an index.
+         *
+         * @param index The global index of the queue.
+         * @return True when that device is a GPU.
+         * @throws Core::SushiException If the queue index is out of bounds.
+         */
+        bool RuntimeContext::device_is_gpu(size_t index) const
+        {
+            SR_THROW_IF(index >= impl_->nodes.size(), "Queue index out of bounds.");
+            return impl_->nodes[index].is_gpu;
+        }
+
+        /**
          * @brief Gets the total number of available devices (queues).
          *
          * @return size_t The count of devices.

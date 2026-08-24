@@ -44,7 +44,7 @@ namespace SushiRuntime
              * keeps the vector storage the previous run allocated.
              *
              * @param report      The report to overwrite; reset before it is filled.
-             * @param ctx         The execution context providing the command queue and distributed telemetry.
+             * @param ctx         The execution context providing the device inventory and distributed telemetry.
              * @param before      The scheduler execution metrics snapshotted before the run started.
              * @param after       The scheduler execution metrics snapshotted after the run completed.
              * @param total_tasks The total number of tasks executed across all steps.
@@ -69,20 +69,23 @@ namespace SushiRuntime
                 // Attribute the tasks to the device class the default queue targets.
                 // Per-task placement and the reserved steal/byte counters are filled
                 // in as the engine exposes them.
+                //
+                // Asked of the runtime's own inventory rather than of SYCL. This runs
+                // on every tick, including the steady-state loop that run(RunReport&)
+                // promises will not allocate, and the previous form could not keep
+                // that promise portably: it called queue::get_device(), which returns
+                // a device by value, and the cost of that construction belongs to the
+                // SYCL runtime. On oneAPI's libsycl (the Linux CI toolchain) it
+                // allocated once per call, which is why the steady-state test measured
+                // 65 allocations over 64 ticks there and 0 on Windows, where the
+                // intel/llvm nightly does not allocate. The device class of a queue is
+                // fixed for the life of the context, so the answer was never worth
+                // re-deriving per tick on any platform.
                 Core::NumaNodeStatistics node;
-                try
-                {
-                    auto& q = ctx.get_queue(0);
-                    if (q.get_device().is_gpu())
-                        node.gpu_tasks_executed = total_tasks;
-                    else
-                        node.cpu_tasks_executed = total_tasks;
-                }
-                catch (...)
-                {
+                if (ctx.device_count() > 0 && ctx.device_is_gpu(0))
+                    node.gpu_tasks_executed = total_tasks;
+                else
                     node.cpu_tasks_executed = total_tasks;
-                    report.warnings.emplace_back("No SYCL queue available; task placement unknown.");
-                }
 
                 // Work-stealing breakdown over the whole run, from the scheduler's
                 // before/after counters.
