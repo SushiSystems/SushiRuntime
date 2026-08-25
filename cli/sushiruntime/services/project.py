@@ -1,7 +1,9 @@
 """Project build / test / run / clean / doxygen logic.
 
-This replaces the project/*.sh and project/*.bat scripts; the cmake / ctest
-invocations are issued directly via subprocess with the snapshotted build env.
+This replaces the project/*.sh and project/*.bat scripts. It holds SushiRuntime's own
+build policy — which cache variables it passes, which targets and test suites it has,
+its sanitizer lanes and configure stamp — and drives cmake and ctest through
+``sushicore.cmake_driver.CMakeDriver`` with the snapshotted build env.
 """
 
 from __future__ import annotations
