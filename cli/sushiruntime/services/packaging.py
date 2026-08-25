@@ -15,7 +15,7 @@ from pathlib import Path
 from .. import console
 from ..config import Config, find_project_root, load_config
 from ..env import load_build_env
-from .project import _build_dir, _cmake, _run
+from .project import _build_dir, _DRIVER, _RUNNER
 
 
 def _cpack(cfg: Config) -> str:
@@ -62,8 +62,8 @@ def package(prefix: str | None = None, archive: bool = True) -> int:
         shutil.rmtree(stage, ignore_errors=True)
 
     console.info(f"Installing to {stage}")
-    rc = _run([_cmake(cfg), "--install", str(build_dir), "--prefix", str(stage)],
-              env, cwd=root)
+    rc = _RUNNER.run([_DRIVER.cmake(cfg), "--install", str(build_dir), "--prefix", str(stage)],
+                     root, env)
     if rc != 0:
         console.error("cmake --install failed.")
         return rc
@@ -72,7 +72,7 @@ def package(prefix: str | None = None, archive: bool = True) -> int:
         cpack_config = build_dir / "CPackConfig.cmake"
         if cpack_config.is_file():
             console.info("Building the archive...")
-            rc = _run([_cpack(cfg), "--config", str(cpack_config)], env, cwd=build_dir)
+            rc = _RUNNER.run([_cpack(cfg), "--config", str(cpack_config)], build_dir, env)
             if rc != 0:
                 console.error("CPack failed.")
                 return rc
