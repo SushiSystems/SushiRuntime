@@ -13,6 +13,7 @@ import shutil
 from pathlib import Path
 
 from sushicore import cmake_cache
+from sushicore.cmake_driver import CMakeDriver
 from sushicore.proc import Runner
 
 from .. import console
@@ -148,29 +149,15 @@ def _build_dir(root: Path, asan: bool) -> Path:
     return root / ("build-asan" if asan else "build")
 
 
-def _cmake(cfg: Config) -> str:
-    """The cmake executable: the configured path if set, else bare 'cmake'."""
-    return cfg.expand(cfg.cmake_exe) if cfg.cmake_exe else "cmake"
-
-
-def _ctest(cfg: Config) -> str:
-    """The ctest executable: the configured path if set, else bare 'ctest'."""
-    return cfg.expand(cfg.ctest_exe) if cfg.ctest_exe else "ctest"
-
-
 _RUNNER = Runner(console, PROFILE.program)
+_DRIVER = CMakeDriver(console, _RUNNER)
 
-
-def _run(cmd: list[str], env: dict[str, str], cwd: Path) -> int:
-    return _RUNNER.run(cmd, cwd, env)
-
-
-def _run_drained(cmd: list[str], env: dict[str, str], cwd: Path) -> int:
-    return _RUNNER.run_drained(cmd, cwd, env)
-
-
-def _resolve_exe(name: str, env: dict[str, str]) -> str:
-    return _RUNNER.resolve_exe(name, env)
+_DOXYGEN_HINT = (
+    "  - Windows: winget install DimitriVanHeesch.Doxygen"
+    "  (or: choco install doxygen.install)\n"
+    "  - Linux:   apt-get install -y doxygen graphviz\n"
+    "  - macOS:   brew install doxygen graphviz\n"
+    "  - or set doxygen_exe in config.local.toml to an existing doxygen binary.")
 
 
 def _neutralize_runtime_ld(cfg: Config, env: dict[str, str]) -> None:
@@ -236,17 +223,13 @@ def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
             f"|{toolchain}|{cxx}|{_flags_fingerprint()}")
 
 
-def _needs_configure(build_dir: Path, generator: str, stamp_key: str,
-                     root: Path) -> bool:
-    if not build_dir.is_dir():
-        return True
-    sentinel = "build.ninja" if generator == "Ninja" else "Makefile"
-    if not (build_dir / sentinel).is_file():
-        return True
-    if cmake_cache.is_stale(build_dir, root):
-        console.warn("Build tree was configured for a different source path "
-                     "(e.g. a Docker volume build); reconfiguring from scratch.")
-        return True
+def _stamp_differs(build_dir: Path, stamp_key: str) -> bool:
+    """Whether the tree's configure stamp disagrees with *stamp_key*, or is absent.
+
+    Not part of CMakeDriver.needs_configure: STAMP_NAME and its contents are this CLI's
+    own vocabulary (see _configure_stamp), not a cmake cache entry, so the generic driver
+    has no way to express it. Called alongside the driver's own check, never folded into it.
+    """
     stamp = build_dir / STAMP_NAME
     if stamp.is_file():
         return stamp.read_text().strip() != stamp_key
@@ -318,7 +301,7 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
                           gpu_backend: str, dist: str, asan: bool, tests: bool,
                           cc: str, cxx: str) -> list[str]:
     args = [
-        _cmake(cfg), "-B", str(build_dir), "-G", cfg.generator,
+        _DRIVER.cmake(cfg), "-B", str(build_dir), "-G", cfg.generator,
         f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_C_COMPILER={cc}",
@@ -356,7 +339,7 @@ def _check_windows_compiler(cfg: Config, env: dict[str, str]) -> int:
     error several lines into configure.
     """
     cxx = cfg.resolved_windows_compiler()
-    found = Path(cxx).is_file() or _resolve_exe(cxx, env) != cxx
+    found = Path(cxx).is_file() or _RUNNER.resolve_exe(cxx, env) != cxx
     if found:
         return 0
     hint = {
@@ -418,7 +401,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
     # diverge from the environment the CLI actually snapshots.
     cxx = cfg.resolved_windows_compiler()
     args = [
-        _cmake(cfg), "-B", str(build_dir), "-G", "Ninja",
+        _DRIVER.cmake(cfg), "-B", str(build_dir), "-G", "Ninja",
         f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_TOOLCHAIN_FILE={vcpkg}/scripts/buildsystems/vcpkg.cmake",
@@ -495,7 +478,8 @@ def build(build_type: BuildType, distributed: bool = False,
 
     stamp_key = _configure_stamp(dist, cmake_build_type, gpu_backend, tests,
                                  cfg.toolchain, cfg.cxx)
-    if _needs_configure(build_dir, cfg.generator, stamp_key, root):
+    if _DRIVER.needs_configure(build_dir, cfg.generator, root=root) or \
+            _stamp_differs(build_dir, stamp_key):
         console.info(f"Configuring CMake... (type={build_type.value}, "
                      f"distributed={dist}, gpu={gpu_backend}, tests={'ON' if tests else 'OFF'})")
         if build_dir.is_dir():
@@ -514,7 +498,7 @@ def build(build_type: BuildType, distributed: bool = False,
             cc, cxx = resolved
             args = _configure_args_linux(cfg, build_dir, cmake_build_type,
                                          gpu_backend, dist, asan, tests, cc, cxx)
-        rc = _run(args, env, cwd=root)
+        rc = _DRIVER.configure(args, cwd=root, env=env)
         if rc != 0:
             console.error("CMake configure failed.")
             return rc
@@ -522,8 +506,7 @@ def build(build_type: BuildType, distributed: bool = False,
         (build_dir / STAMP_NAME).write_text(stamp_key)
 
     console.info("Building...")
-    rc = _run([_cmake(cfg), "--build", str(build_dir), "--config", cmake_build_type],
-              env, cwd=root)
+    rc = _DRIVER.compile(cfg, build_dir, cwd=root, env=env, config=cmake_build_type)
     if rc == 0:
         console.success("Build completed successfully!")
     else:
@@ -556,19 +539,10 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
     # Same reason as `run`: a stray CUDA_LAUNCH_BLOCKING=1 serializes every kernel
     # and silently breaks the async/overlap tests, so clear any inherited value.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
-    cmd = [_ctest(cfg), "--test-dir", str(build_dir), "--output-on-failure"]
-    if suite != Suite.all:
-        cmd += ["-L", _SUITE_LABEL_REGEX[suite]]
-    if filter:
-        # gtest_discover_tests registers tests as "Suite.Case"; ctest -R filters
-        # those names directly (a richer alternative to --gtest_filter).
-        cmd += ["-R", filter]
-    if repeat > 0:
-        # Re-run each selected test until it fails or N runs pass — the native
-        # ctest way to flush out flakiness.
-        cmd += ["--repeat", f"until-fail:{repeat}"]
-        console.info(f"Repeating each test up to {repeat}x (stop on first failure).")
-    return _run_drained(cmd, env, cwd=build_dir)
+    return _DRIVER.ctest_run(
+        cfg, build_dir, env,
+        label_regex=None if suite is Suite.all else _SUITE_LABEL_REGEX[suite],
+        filter=filter, repeat=repeat)
 
 
 def run(target: str | None = None, sort: bool = False,
@@ -616,17 +590,11 @@ def run(target: str | None = None, sort: bool = False,
 
     console.info(f"Executing: {exe.name}")
     console.console.print(f"[dim]{exe}[/dim]")
-    return _run([str(exe), *forwarded], env, cwd=root)
+    return _RUNNER.run([str(exe), *forwarded], root, env)
 
 
 def clean_tree(root: Path, asan: bool = False) -> None:
-    build_dir = _build_dir(root, asan)
-    if build_dir.is_dir():
-        console.info(f"Removing {build_dir}...")
-        shutil.rmtree(build_dir, ignore_errors=True)
-        console.success("Build directory cleaned.")
-    else:
-        console.info(f"{build_dir.name}/ does not exist, nothing to clean.")
+    _DRIVER.clean_tree(_build_dir(root, asan))
 
 
 def clean() -> int:
@@ -651,15 +619,9 @@ def doxygen() -> int:
     # do not vendor, so when it is genuinely missing give the install command for
     # the platform rather than the generic "set cmake_exe" resolver message.
     doxy = cfg.expand(cfg.doxygen_exe) if cfg.doxygen_exe else "doxygen"
-    if _resolve_exe(doxy, env) == doxy and not Path(doxy).is_file():
-        console.error(
-            "Doxygen is not installed or not on PATH.\n"
-            "  - Windows: winget install DimitriVanHeesch.Doxygen"
-            "  (or: choco install doxygen.install)\n"
-            "  - Linux:   apt-get install -y doxygen graphviz\n"
-            "  - macOS:   brew install doxygen graphviz\n"
-            "  - or set doxygen_exe in config.local.toml to an existing doxygen binary.")
+    if _RUNNER.resolve_exe(doxy, env) == doxy and not Path(doxy).is_file():
+        console.error("Doxygen is not installed or not on PATH.\n" + _DOXYGEN_HINT)
         return 1
 
     (root / "docs").mkdir(exist_ok=True)
-    return _run([doxy, "Doxyfile"], env, cwd=root)
+    return _RUNNER.run([doxy, "Doxyfile"], root, env)
