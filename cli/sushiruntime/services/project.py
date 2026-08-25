@@ -12,6 +12,7 @@ import os
 import shutil
 from pathlib import Path
 
+from sushicore import cmake_cache
 from sushicore.proc import Runner
 
 from .. import console
@@ -192,40 +193,6 @@ def _neutralize_runtime_ld(cfg: Config, env: dict[str, str]) -> None:
         env.pop("LD_LIBRARY_PATH", None)
 
 
-def _cache_home_dir(build_dir: Path) -> str | None:
-    """Return the source dir a build tree was configured against, or None.
-
-    Read from CMakeCache.txt's CMAKE_HOME_DIRECTORY. Used to detect a build tree
-    carried over from another machine/path (e.g. a Docker volume build mounted at
-    /workspace, reused on the Windows host): those absolute paths no longer exist,
-    so CTest's `if(EXISTS ...)` guards fail and ctest reports "No tests were
-    found" even though the sources are fine. Reconfiguring from scratch fixes it.
-    """
-    cache = build_dir / "CMakeCache.txt"
-    if not cache.is_file():
-        return None
-    try:
-        for line in cache.read_text(errors="ignore").splitlines():
-            if line.startswith("CMAKE_HOME_DIRECTORY:"):
-                return line.partition("=")[2].strip()
-    except OSError:
-        return None
-    return None
-
-
-def _stale_build_tree(build_dir: Path, root: Path) -> bool:
-    """True if the build tree was configured for a different source directory.
-
-    A path mismatch (case- and separator-insensitive) means the cache's baked-in
-    absolute paths are wrong for this checkout, so a clean reconfigure is required.
-    """
-    home = _cache_home_dir(build_dir)
-    if not home:
-        return False
-    return os.path.normcase(os.path.normpath(home)) != \
-        os.path.normcase(os.path.normpath(str(root)))
-
-
 def _flags_fingerprint() -> str:
     """A short digest of every compiler-flag constant this module can pass.
 
@@ -276,7 +243,7 @@ def _needs_configure(build_dir: Path, generator: str, stamp_key: str,
     sentinel = "build.ninja" if generator == "Ninja" else "Makefile"
     if not (build_dir / sentinel).is_file():
         return True
-    if _stale_build_tree(build_dir, root):
+    if cmake_cache.is_stale(build_dir, root):
         console.warn("Build tree was configured for a different source path "
                      "(e.g. a Docker volume build); reconfiguring from scratch.")
         return True
@@ -573,7 +540,7 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
     if not build_dir.is_dir():
         console.error(f"{build_dir.name}/ not found. Run `sr build` first.")
         return 1
-    if _stale_build_tree(build_dir, root):
+    if cmake_cache.is_stale(build_dir, root):
         console.error(
             f"{build_dir.name}/ was configured for a different source path "
             "(e.g. a Docker volume build reused on this host).\n"
