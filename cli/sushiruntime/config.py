@@ -42,6 +42,9 @@ PROFILE = ModuleProfile(
         "llvm_root": "SR_LLVM_ROOT",
         "acpp_exe": "SR_ACPP",
     },
+    # SushiRuntime is the module that actually selects a SYCL toolchain, so it
+    # is the one that cares about the oneAPI, Intel and CUDA variables.
+    env_of_interest=("CMPLR", "ONEAPI", "SYCL", "CUDA", "INTEL"),
 )
 
 
