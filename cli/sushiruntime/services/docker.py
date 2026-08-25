@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import subprocess
+from sushicore.proc import Runner
 
 from .. import console
-from ..config import find_project_root
+from ..config import PROFILE, find_project_root
 
 IMAGE = "sushiruntime"
 
-
-def _run(cmd: list[str], cwd) -> int:
-    console.command(" ".join(cmd))
-    return subprocess.run(cmd, cwd=str(cwd)).returncode
+_RUNNER = Runner(console, PROFILE.program)
 
 
 def build(no_cache: bool = False, oneapi: bool = False) -> int:
@@ -26,7 +23,7 @@ def build(no_cache: bool = False, oneapi: bool = False) -> int:
         console.info("Including the Intel oneAPI DPC++ compiler (--build-arg WITH_ONEAPI=1).")
         cmd += ["--build-arg", "WITH_ONEAPI=1"]
     cmd.append(".")
-    return _run(cmd, cwd=root)
+    return _RUNNER.run(cmd, root)
 
 
 def run(admin: bool = False, no_gpu: bool = False) -> int:
@@ -41,4 +38,4 @@ def run(admin: bool = False, no_gpu: bool = False) -> int:
         console.info("Running in ADMIN mode (privileged)")
         cmd += ["--privileged", "--cap-add=SYS_ADMIN"]
     cmd += ["-v", f"{root}:/workspace/sushiruntime", IMAGE, "/bin/bash"]
-    return _run(cmd, cwd=root)
+    return _RUNNER.run(cmd, root)
