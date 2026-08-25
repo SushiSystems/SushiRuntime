@@ -570,19 +570,7 @@ def run(target: str | None = None, sort: bool = False,
         env.setdefault("ASAN_OPTIONS", "detect_leaks=0:abort_on_error=1")
         console.info(f"ASan run: device={env['ONEAPI_DEVICE_SELECTOR']}")
 
-    if sort:
-        exe = discovery.select_interactive(build_dir)
-    elif target:
-        exe = discovery.match_by_name(build_dir, target)
-        if exe is None:
-            console.error(f"Executable matching '{target}' not found.")
-            return 1
-    else:
-        exe = discovery.match_by_name(build_dir, cfg.target_bin)
-        if exe is None:
-            console.error(f"Default target '{cfg.target_bin}' not found.")
-            return 1
-
+    exe = discovery.resolve(build_dir, console, target=target, sort=sort, default=cfg.target_bin)
     if exe is None:
         return 1
 
