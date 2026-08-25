@@ -18,33 +18,55 @@ from pathlib import Path
 # Domain-agnostic config plumbing shared by every Sushi* CLI. The generic build-
 # tool schema (cmake/ninja/vcpkg paths) and the layered-load / [tool]-write
 # skeleton live in sushicore; this repo adds only the SYCL-specific fields below.
-from sushicore.config_base import ToolConfig, load_tool_config, write_tool_section
+from sushicore.config_base import ToolConfig, write_tool_section
+from sushicore.module_config import ModuleConfig
+from sushicore.profile import ModuleProfile
 from sushicore.workspace import has_marker, resolve_env_path, walk_up
 
 
-def find_project_root(start: Path | None = None) -> Path:
-    """Locate the repo root by walking up from CWD until CMakeLists.txt is found.
+#: How SushiRuntime describes itself to the shared machinery. Unlike the heads
+#: of the stack it names no siblings -- it is the bottom, and the owner of the
+#: toolchain bundle they borrow -- and it carries six overrides of its own, for
+#: the toolchain selection no other module makes.
+PROFILE = ModuleProfile(
+    name="SushiRuntime",
+    program="sr",
+    env_prefix="SR",
+    root_marker="CMakeLists.txt",
+    default_target="sr_functional_tests",
+    extra_env_overrides={
+        "toolchain": "SR_SYCL_TOOLCHAIN",
+        "cc": "SR_CC",
+        "oneapi_root": "SR_ONEAPI_ROOT",
+        "icx_compiler": "SR_ICX",
+        "llvm_root": "SR_LLVM_ROOT",
+        "acpp_exe": "SR_ACPP",
+    },
+)
 
-    The CLI is installed (pip/pipx) outside the repo, so the package location
-    tells us nothing about where the project lives — the invocation directory
-    does. Run any `sr` command from anywhere inside the checkout.
+
+class _RuntimeModuleConfig(ModuleConfig):
+    """The shared loader, plus this repo's legacy config-directory fallback.
+
+    Every other module keeps its config in ``cli/``. SushiRuntime used to call
+    that directory ``.tools`` and still honours the old name when a checkout
+    predates the rename, which is the one thing it cannot take from the shared
+    implementation.
     """
-    root = walk_up(start or Path.cwd(), has_marker("CMakeLists.txt"))
-    if root is None:
-        raise SystemExit(
-            "Not inside a SushiRuntime project: no CMakeLists.txt found in the "
-            "current directory or any parent. cd into the repo and try again."
-        )
-    return root
+
+    def config_dir(self, root: Path | None = None) -> Path:
+        root = root or self.find_project_root()
+        for name in ("cli", ".tools"):  # current name first, legacy fallback
+            if (root / name / "config.toml").is_file():
+                return root / name
+        return root / "cli"
 
 
-def config_dir(root: Path | None = None) -> Path:
-    """Directory holding config.toml / config.local.toml (the repo's cli/)."""
-    root = root or find_project_root()
-    for name in ("cli", ".tools"):  # current name first, legacy fallback
-        if (root / name / "config.toml").is_file():
-            return root / name
-    return root / "cli"
+_MODULE = _RuntimeModuleConfig(PROFILE)
+
+find_project_root = _MODULE.find_project_root
+config_dir = _MODULE.config_dir
+
 
 def sushistack_home(root: Path | None = None) -> Path | None:
     """Locate the enclosing SushiStack workspace root, or None when standalone.
@@ -119,26 +141,7 @@ TOOLCHAIN_COMPILERS = {
 }
 
 # Maps a Config field to the SR_* env var that overrides it.
-_ENV_OVERRIDES = {
-    "toolchain": "SR_SYCL_TOOLCHAIN",
-    "cc": "SR_CC",
-    "cxx": "SR_CXX",
-    "generator": "SR_CMAKE_GENERATOR",
-    "vcpkg_root": "SR_VCPKG_ROOT",
-    "oneapi_root": "SR_ONEAPI_ROOT",
-    "vs_vcvars": "SR_VCVARS",
-    "ninja_exe": "SR_NINJA",
-    "cmake_exe": "SR_CMAKE",
-    "ctest_exe": "SR_CTEST",
-    "rc_exe": "SR_RC",
-    "icx_compiler": "SR_ICX",
-    "llvm_root": "SR_LLVM_ROOT",
-    "acpp_exe": "SR_ACPP",
-    "pkgconf_exe": "SR_PKGCONF",
-    "doxygen_exe": "SR_DOXYGEN",
-    "vcpkg_triplet": "SR_VCPKG_TRIPLET",
-    "target_bin": "SR_TARGET_BIN",
-}
+_ENV_OVERRIDES = PROFILE.env_overrides()
 
 
 @dataclass
@@ -226,33 +229,13 @@ class Config(ToolConfig):
         return str(Path(bin_dir) / "clang++.exe") if bin_dir else "clang++"
 
 
-def _shared_config_local() -> Path | None:
-    """The workspace-shared config.local.toml ``ss install`` writes, if any.
-
-    Inside a SushiStack workspace the machine-specific tool paths (compiler,
-    vcpkg, cmake) are resolved once by ``ss`` and written to ``<home>/cli/
-    config.local.toml``; every module reads them from there so nothing is
-    configured twice.
-    """
-    home = sushistack_home()
-    return (home / "cli" / "config.local.toml") if home else None
-
-
 def load_config() -> Config:
     """Load and resolve the layered configuration for the current platform.
 
     Precedence (low to high): repo config.toml -> workspace-shared
     config.local.toml (written by ``ss``) -> repo config.local.toml -> env.
     """
-    plat = platform.system().lower()  # 'windows' | 'linux' | 'darwin'
-
-    cfg_dir = config_dir()
-    shared = _shared_config_local()
-    sources = [cfg_dir / "config.toml"]
-    if shared is not None:
-        sources.append(shared)
-    sources.append(cfg_dir / "config.local.toml")
-    cfg = load_tool_config(Config, sources, plat, _ENV_OVERRIDES)
+    cfg = _MODULE.load(Config)
     # Guard against a stale/typo'd toolchain leaking through from config or env.
     if cfg.toolchain not in TOOLCHAINS:
         cfg.toolchain = "intel-llvm"
