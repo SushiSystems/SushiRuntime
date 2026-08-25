@@ -16,6 +16,14 @@ import os
 import subprocess
 from pathlib import Path
 
+from sushicore.build_env import (
+    merge_env,
+    prepend_path,
+    read_cache,
+    snapshot_windows,
+    write_cache,
+)
+
 from . import console
 from .config import Config, find_project_root
 
@@ -42,82 +50,6 @@ def _cache_key(cfg: Config) -> str:
         sort_keys=True,
     )
     return hashlib.sha256(material.encode()).hexdigest()
-
-
-def _merge_env(base: dict[str, str], overlay: dict[str, str]) -> dict[str, str]:
-    """Merge overlay into base. PATH is prepended rather than replaced so that
-    toolchain directories (VS, oneAPI) take priority while scoop/user tools added
-    by the shell profile remain reachable.
-
-    PATH is collapsed into the *single* case variant the base already uses (e.g.
-    Windows' "Path"). Writing the overlay's "PATH" as a new key while base keeps
-    "Path" leaves two conflicting entries; Windows then honours only one for child
-    processes, so toolchain dirs added to the other silently vanish from DLL/exe
-    resolution.
-    """
-    merged = dict(base)
-    path_key = next((k for k in merged if k.upper() == "PATH"), None)
-    for k, v in overlay.items():
-        if k.upper() == "PATH":
-            target = path_key or k
-            existing = merged.get(target, "")
-            merged[target] = v + os.pathsep + existing if existing else v
-            path_key = target
-        else:
-            merged[k] = v
-    return merged
-
-
-def _parse_windows_set(output: str) -> dict[str, str]:
-    env: dict[str, str] = {}
-    for line in output.splitlines():
-        if "=" in line:
-            key, _, value = line.partition("=")
-            if key:
-                env[key] = value
-    return env
-
-
-def _snapshot_windows(cfg: Config) -> dict[str, str] | None:
-    parts = []
-    vcvars = cfg.expand(cfg.vs_vcvars)
-    if vcvars and Path(vcvars).is_file():
-        console.info("Loading Visual Studio environment (vcvars64)...")
-        parts.append(f'call "{vcvars}"')
-    # oneAPI setvars only for the oneapi toolchain (see _snapshot_linux): mixing
-    # it into an llvm/adaptivecpp build pollutes the loader search path. vcvars
-    # above stays unconditional — MSVC's env is needed for every Windows build.
-    if cfg.toolchain == "oneapi":
-        oneapi = cfg.expand(cfg.oneapi_root)
-        setvars = Path(oneapi) / "setvars.bat" if oneapi else None
-        if setvars and setvars.is_file():
-            console.info("Loading oneAPI environment (setvars)...")
-            parts.append(f'call "{setvars}" intel64 >nul 2>&1')
-    if not parts:
-        return None
-    parts.append("set")
-    script = " && ".join(parts)
-    # Pass the whole command as a single string, NOT as ["cmd", "/c", script].
-    # With a list, subprocess re-quotes each element and mangles the inner
-    # double-quotes around the (space-containing) vcvars path, so cmd.exe sees
-    # the quoted path as one unknown token ("...vcvars64.bat" is not recognized)
-    # and returns non-zero — silently dropping the entire VS environment.
-    result = subprocess.run(
-        "cmd /c " + script, capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        console.warn("Environment script returned non-zero; using current env.")
-        return None
-    return _parse_windows_set(result.stdout)
-
-
-def _prepend_path(env: dict[str, str], var: str, dirs: list[str]) -> None:
-    """Prepend *dirs* to the (case-insensitive) *var* path entry of *env*."""
-    if not dirs:
-        return
-    key = next((k for k in env if k.upper() == var.upper()), var)
-    existing = env.get(key, "")
-    env[key] = os.pathsep.join(dirs + ([existing] if existing else []))
 
 
 def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
@@ -167,10 +99,10 @@ def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
             bins.append(str(vcpkg_bin))
 
     bins = [d for d in bins if Path(d).is_dir()]
-    _prepend_path(env, "PATH", bins)
+    prepend_path(env, "PATH", bins)
     if not cfg.is_windows:
         libs = [d for d in libs if Path(d).is_dir()]
-        _prepend_path(env, "LD_LIBRARY_PATH", libs)
+        prepend_path(env, "LD_LIBRARY_PATH", libs)
 
 
 def _snapshot_linux(cfg: Config) -> dict[str, str] | None:
@@ -236,32 +168,21 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
     cache_file = build_dir / CACHE_NAME
     key = _cache_key(cfg)
 
-    if cache_file.is_file():
-        try:
-            cached = json.loads(cache_file.read_text())
-            if cached.get("key") == key:
-                env = _merge_env(dict(os.environ), cached["env"])
-                _inject_toolchain_paths(cfg, env)
-                _inject_sanitizer_options(env)
-                return env
-        except (json.JSONDecodeError, OSError, KeyError):
-            pass  # fall through and rebuild
-
-    snapshot = (
-        _snapshot_windows(cfg) if cfg.is_windows else _snapshot_linux(cfg)
-    )
-    if not snapshot:
-        env = dict(os.environ)
+    def finish(env: dict[str, str]) -> dict[str, str]:
+        """The two steps that are this module's own, applied to every path out."""
         _inject_toolchain_paths(cfg, env)
         _inject_sanitizer_options(env)
         return env
 
-    try:
-        cache_file.write_text(json.dumps({"key": key, "env": snapshot}))
-    except OSError:
-        pass
+    cached = read_cache(cache_file, key)
+    if cached is not None:
+        return finish(merge_env(os.environ, cached))
 
-    env = _merge_env(dict(os.environ), snapshot)
-    _inject_toolchain_paths(cfg, env)
-    _inject_sanitizer_options(env)
-    return env
+    snapshot = (
+        snapshot_windows(cfg, console) if cfg.is_windows else _snapshot_linux(cfg)
+    )
+    if not snapshot:
+        return finish(dict(os.environ))
+
+    write_cache(cache_file, key, snapshot)
+    return finish(merge_env(os.environ, snapshot))
