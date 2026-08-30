@@ -105,6 +105,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   `INTEGRATION.md` / `CLI_GUIDE.md` joined the site so the manual's links resolve.
 
 ### Added
+- **`API::DynamicGraph::find_region(key)`**, a const lookup returning the live
+  region or `nullptr`. `region(key)` marks the region for a rebuild because its
+  caller is about to add work; a reader that only wants the region's size had no
+  way to ask without paying a recompose on the next step.
 - **An installed SushiRuntime now carries what it needs to run.**
   `tests/package/` had never been exercised. Doing so showed the two halves of
   packaging fail independently: a consumer *built* against an install prefix

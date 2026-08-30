@@ -210,6 +210,38 @@ TEST(Integration_DynamicGraph, SingleRecomposePerMutation)
         }
 }
 
+// Reading a region through find_region() is not a mutation: the plan must not
+// recompose on the next run, and an absent key answers nullptr rather than
+// creating the region the way region() does.
+TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
+{
+    constexpr std::size_t N = 4;
+
+    auto rt = Runtime::create();
+    rt.rebalancer(false);
+
+    auto a = rt.buffer<int>(N);
+    int* pa = a.data();
+    for (std::size_t i = 0; i < N; ++i)
+        a[i] = 0;
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i) { pa[i] += 1; });
+    world.run();
+    const std::size_t composed = world.compile_count();
+
+    const API::Region* found = world.find_region(0);
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->size(), 1u);
+    EXPECT_EQ(world.find_region(9), nullptr) << "an absent key is not created by a lookup";
+    EXPECT_FALSE(world.has_region(9));
+
+    world.run();
+    EXPECT_EQ(world.compile_count(), composed) << "a lookup is not a mutation";
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(a[i], 2) << "at i=" << i;
+}
+
 // A three-hop cross-region chain over three buffers: region 0 writes x, region 1
 // reads x and writes y, region 2 reads y and writes z. Each hop is a separate
 // boundary; the composer must order 0 -> 1 -> 2 so z carries the value threaded
