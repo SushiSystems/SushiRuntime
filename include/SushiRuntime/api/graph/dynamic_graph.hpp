@@ -138,6 +138,17 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Returns the region for @p key without marking it for a rebuild.
+                 * @param key Region identity to look up.
+                 * @return The live region, or nullptr when no region has that key.
+                 */
+                const Region* find_region(RegionKey key) const noexcept
+                {
+                    const auto it = regions_.find(key);
+                    return it == regions_.end() ? nullptr : it->second.get();
+                }
+
+                /**
                  * @brief Removes the region for @p key from the live set.
                  *
                  * Takes effect on the structure immediately (region()/has_region no

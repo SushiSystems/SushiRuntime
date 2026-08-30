@@ -165,8 +165,9 @@ do not need to reach into the lower layers.
 - **`API::DynamicGraph`** — the mutable, region-partitioned graph from
   `runtime.dynamic_graph()`, for streaming workloads. `region(key)` returns an
   `API::Region` (which reuses `Graph`'s `add()` surface) to record work on a
-  partition; `drop(key)` removes one; `has_region(key)`, `region_count()`, and
-  `size()` report structure. `run()` / `run(n)` / `run_for` / `run_until` /
+  partition; `drop(key)` removes one; `has_region(key)`, `find_region(key)`,
+  `region_count()`, and `size()` report structure without marking anything for
+  a rebuild. `run()` / `run(n)` / `run_for` / `run_until` /
   `try_run` / `cancel` mirror `Graph`, including the caller-owned report
   overloads. The composer recomposes only what changed
   between steps, and `compile_count()` advances once per mutation, not per region;
