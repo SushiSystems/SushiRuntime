@@ -45,7 +45,7 @@ def _toolchain_installed(name: str, cfg) -> bool:
 
 def _install_hint(name: str) -> str:
     """The command that installs toolchain *name*."""
-    return f"ss install --customize   (pick '{name}')"
+    return f"hub install --customize   (pick '{name}')"
 
 
 def show() -> int:
@@ -104,7 +104,7 @@ def select(toolchain: str) -> int:
             f"    [bold cyan]{hint}[/bold cyan]"
         )
         if toolchain == "oneapi":
-            console.info("oneAPI is several GB; use [cyan]ss install --customize[/cyan] "
+            console.info("oneAPI is several GB; use [cyan]hub install --customize[/cyan] "
                          "to install it on its own instead of everything.")
     else:
         console.info("Run [cyan]sr build --clean[/cyan] to reconfigure with the new toolchain.")
