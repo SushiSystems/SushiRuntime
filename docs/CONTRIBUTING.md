@@ -16,8 +16,8 @@ project's **Apache License, Version 2.0** (see [`LICENSE`](LICENSE)).
 ## 1. Getting set up
 
 The fastest path from a fresh machine to a built tree is SushiStack's one-shot
-installer, which installs `ss` (SushiStack owns dependency provisioning for the
-whole stack) and runs `ss install`:
+installer, which installs `hub` (SushiStack owns dependency provisioning for the
+whole stack) and runs `hub install`:
 
 ```bash
 curl -fsSL https://sushisystems.io/install.sh | bash
@@ -32,7 +32,7 @@ If you already have a SYCL toolchain (Intel oneAPI DPC++ or an intel/llvm
 directly:
 
 ```bash
-ss install-cli sushiruntime  # puts `sr` / `sushiruntime` on PATH
+hub install-cli sushiruntime  # puts `sr` / `sushiruntime` on PATH
 sr build             # Release (default)
 sr test              # fast functional suite
 ```
@@ -328,10 +328,10 @@ marketing, no adjectives selling the change, no "this finally makes X great".
 ## 7. Adding a C++ dependency
 
 Dependency provisioning is owned by [SushiStack](https://sushisystems.io) (the
-`ss` CLI), not this repo — it installs shared toolchains and libraries for the
+`hub` CLI), not this repo — it installs shared toolchains and libraries for the
 whole stack into one workspace-level `dependencies/` tree. SushiRuntime only
 *declares* the dependencies it needs, in its own manifest fragment,
-[`cli/sushistack.deps.toml`](../cli/sushistack.deps.toml), which `ss` aggregates
+[`cli/sushistack.deps.toml`](../cli/sushistack.deps.toml), which `hub` aggregates
 alongside every other module's fragment.
 
 ### Manifest entry
@@ -341,7 +341,7 @@ defaults to the value shown:
 
 ```toml
 [mylib]
-description   = "What it is and why it is needed"   # shown by `ss doctor`
+description   = "What it is and why it is needed"   # shown by `hub doctor`
 required      = true          # false → warn on missing, don't abort the build
 gpu_only      = false         # true → only relevant when GPU support is requested
 linux_apt     = ["libmylib-dev"]          # apt package names; [] = not needed on Linux
@@ -353,7 +353,7 @@ check_cmd     = ["pkg-config", "--exists", "mylib"]  # optional — exit 0 means
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `description` | string | — | Human-readable purpose; shown in `ss doctor` output. |
+| `description` | string | — | Human-readable purpose; shown in `hub doctor` output. |
 | `required` | bool | `true` | `false` → a missing package logs a warning and continues. |
 | `gpu_only` | bool | `false` | `true` → entry is only relevant when GPU support is requested. |
 | `linux_apt` | string list | `[]` | apt package names. Empty list means the dep is not needed on Linux. |
@@ -372,7 +372,7 @@ windows_vcpkg = []            # not installed on Windows
 
 ### What else to touch
 
-Adding an entry to the manifest is enough for `ss install` to pull in the
+Adding an entry to the manifest is enough for `hub install` to pull in the
 package. The build system and Docker image are intentionally outside the
 manifest's scope — update them separately if needed:
 
@@ -387,12 +387,12 @@ both consume.
 
 ### Verifying the addition
 
-After editing the manifest, run `ss doctor` to confirm the entry is parsed and
-displayed correctly, then `ss install` to install it on the current platform:
+After editing the manifest, run `hub doctor` to confirm the entry is parsed and
+displayed correctly, then `hub install` to install it on the current platform:
 
 ```bash
-ss doctor       # confirm the entry appears in the dependency table
-ss install      # install it (skipped automatically if check_cmd passes)
+hub doctor       # confirm the entry appears in the dependency table
+hub install      # install it (skipped automatically if check_cmd passes)
 ```
 
 ---

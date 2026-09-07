@@ -25,8 +25,8 @@ API and mirrors what the project's own integration tests do.
 
 On a fresh machine you can go from nothing to a built project with a single
 script. [SushiStack](https://sushisystems.io) owns dependency provisioning for
-the whole stack: its bootstrap script installs Python/Git, installs the `ss`
-CLI, then runs `ss install` to fetch every toolchain and library the workspace
+the whole stack: its bootstrap script installs Python/Git, installs the `hub`
+CLI, then runs `hub install` to fetch every toolchain and library the workspace
 needs (SushiRuntime declares its own in `cli/sushistack.deps.toml`).
 
 **Linux (Debian/Ubuntu):**
@@ -46,7 +46,7 @@ irm https://sushisystems.io/install.ps1 | iex
 Install the CLI and build directly:
 
 ```bash
-ss install-cli sushiruntime  # puts `sr` and `sushiruntime` on your PATH
+hub install-cli sushiruntime  # puts `sr` and `sushiruntime` on your PATH
 sr toolchain intel-llvm      # pick a SYCL toolchain (the default; or adaptivecpp / oneapi)
 sr build             # Release build (the default)
 sr test              # run the fast functional test suite
@@ -55,7 +55,7 @@ sr test              # run the fast functional test suite
 You'll need a SYCL 2020 compiler — intel-llvm (`clang++ -fsycl`, primary),
 AdaptiveCpp (`acpp`), or Intel oneAPI DPC++ — plus CMake 3.20+, hwloc, and
 GoogleTest. Pick the toolchain with `sr toolchain`. The CLI reads your toolchain
-paths from `cli/config.local.toml`; `ss install` generates that file for you.
+paths from `cli/config.local.toml`; `hub install` generates that file for you.
 See the [README](README.md) for the full requirements list and the CMake
 options if you want to skip the CLI.
 

@@ -18,7 +18,7 @@ dependencies = [
 # NOT listed above: it isn't published to any index, so a bare "sushicore>=0.1.0"
 # dependency can't be resolved by pip/pipx from a clean environment.
 # `pip install -e cli` expects it already installed once in the same environment
-# (`pip install -e ../sushicore`); `ss install-cli sushiruntime` (pipx, isolated
+# (`pip install -e ../sushicore`); `hub install-cli sushiruntime` (pipx, isolated
 # venv) injects it automatically from the sibling checkout.
 
 [project.scripts]

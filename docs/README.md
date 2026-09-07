@@ -27,15 +27,15 @@ It is built around four ideas:
   aliases.
 
 C++ library dependencies and SYCL toolchains are provisioned by
-[SushiStack](https://sushisystems.io) (the `ss` CLI), which owns dependency
+[SushiStack](https://sushisystems.io) (the `hub` CLI), which owns dependency
 installation for the whole stack (not just this repo) into one shared,
 workspace-level `dependencies/` tree.
 
 ## Quick start (one script)
 
 On a fresh machine you can go from nothing to a working build with a single
-command. SushiStack's bootstrap script installs Python/Git, installs `ss`, then
-runs `ss install` to fetch every toolchain and library the workspace's modules
+command. SushiStack's bootstrap script installs Python/Git, installs `hub`, then
+runs `hub install` to fetch every toolchain and library the workspace's modules
 declare (SushiRuntime declares its own in `cli/sushistack.deps.toml`):
 
 ```bash
@@ -50,13 +50,13 @@ On Windows use `irm`, not `curl` — in PowerShell `curl` is an alias for
 `Invoke-WebRequest` and does not pipe a script the same way.
 
 See the [SushiStack](https://sushisystems.io) docs for linking an existing
-checkout of this repo into a workspace (`ss link`) instead of a fresh clone,
-and for `ss doctor` / `ss status` to inspect what's installed.
+checkout of this repo into a workspace (`hub link`) instead of a fresh clone,
+and for `hub doctor` / `hub status` to inspect what's installed.
 
 ### Adding a dependency
 
 See [CONTRIBUTING.md §7](CONTRIBUTING.md#7-adding-a-c-dependency) — dependencies
-are declared in this repo's `cli/sushistack.deps.toml` fragment, which `ss`
+are declared in this repo's `cli/sushistack.deps.toml` fragment, which `hub`
 aggregates and installs.
 
 ### Using SushiRuntime from another project
@@ -72,7 +72,7 @@ has to be shaped, and it is the one thing that is not obvious from the API.
 The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. Install it through the umbrella — the single install seam for the whole stack (it sets up an isolated pipx venv and wires in the shared `sushicore` presentation layer):
 
 ```bash
-ss install-cli sushiruntime           # add --no-editable for a non-dev install
+hub install-cli sushiruntime           # add --no-editable for a non-dev install
 ```
 
 This gives you two equivalent commands on your PATH: **`sr`** (short) and **`sushiruntime`** (long). Toolchain paths are read from `cli/config.toml` (committed, shared defaults). Machine-specific absolute paths (oneAPI/VS roots, vcpkg, compiler locations) go in a gitignored `cli/config.local.toml` using the same `[tool.<platform>]` section layout — copy the commented Windows block from `config.toml` as a starting point.

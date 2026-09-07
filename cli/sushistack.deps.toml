@@ -1,15 +1,15 @@
 # SushiRuntime dependency fragment — the dependencies the runtime itself owns,
 # declared in the runtime repo (under cli/) so they travel with it and can be
-# reasoned about standalone. `ss` aggregates this with the SushiStack base
+# reasoned about standalone. `hub` aggregates this with the SushiStack base
 # fragment when the runtime is part of the workspace (cloned in, or registered
-# via `ss link`), then downloads everything into the shared dependencies/ tree.
+# via `hub link`), then downloads everything into the shared dependencies/ tree.
 #
 # The SYCL toolchains live here, not in SushiStack's base, because they exist
 # *because of the runtime*: SushiRuntime is the SYCL program. SushiStack itself
 # has no SYCL/compute dependencies — it only provisions what the modules declare.
 #
 # Field reference:
-#   description    Human-readable purpose (shown by `ss doctor`).
+#   description    Human-readable purpose (shown by `hub doctor`).
 #   required       false => a missing one warns but does not stop the build.
 #   provides       Capability tag; deps sharing one are interchangeable any-of
 #                  alternatives for readiness (any one present => satisfied).
@@ -19,8 +19,8 @@
 #   check_cmd      Optional command; exit 0 means "already installed".
 #
 # Toolchains with empty package lists (intel-llvm, adaptivecpp, oneapi, cuda) are
-# not apt/vcpkg ports — `ss install` fetches them with its toolchain installer.
-# They appear here so the dependency picture is complete and `ss`
+# not apt/vcpkg ports — `hub install` fetches them with its toolchain installer.
+# They appear here so the dependency picture is complete and `hub`
 # report them as the runtime's dependencies.
 
 [hwloc]
@@ -31,7 +31,7 @@ windows_vcpkg = ["hwloc"]
 check_cmd     = ["pkg-config", "--exists", "hwloc"]
 
 [intel-llvm]
-description   = "intel/llvm SYCL toolchain (clang++ -fsycl), the primary SYCL compiler. Fetched as a nightly bundle by ss install."
+description   = "intel/llvm SYCL toolchain (clang++ -fsycl), the primary SYCL compiler. Fetched as a nightly bundle by hub install."
 required      = true
 provides      = "sycl-toolchain"
 linux_apt     = []
