@@ -2,7 +2,7 @@
 
 Windows was frozen to `-DSR_GPU_BACKEND=cpu` here, on the grounds that the host has no nvptx
 toolchain. That stopped being true -- this workspace's intel/llvm bundle compiles
-`-fsycl-targets=spir64,nvidia_gpu_sm_89` against the installed CUDA toolkit, and `ss install`
+`-fsycl-targets=spir64,nvidia_gpu_sm_89` against the installed CUDA toolkit, and `hub install`
 offers that toolkit as a component -- so the freeze meant provisioning a toolkit the build could
 never use, with no flag to override it.
 

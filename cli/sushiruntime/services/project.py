@@ -346,11 +346,11 @@ def _check_windows_compiler(cfg: Config, env: dict[str, str]) -> int:
         return 0
     hint = {
         "adaptivecpp": "AdaptiveCpp (acpp) is not installed. Install it with "
-                       "`ss install`, or switch back with `sr toolchain intel-llvm`.",
+                       "`hub install`, or switch back with `sr toolchain intel-llvm`.",
         "intel-llvm": "The intel/llvm bundle (clang++) is not installed. Install it "
-                      "with `ss install`.",
+                      "with `hub install`.",
         "oneapi": "Intel oneAPI (icx-cl) is not installed. Install it with "
-                  "`ss install`, or set icx_compiler in config.local.toml.",
+                  "`hub install`, or set icx_compiler in config.local.toml.",
     }.get(cfg.toolchain, "")
     console.error(
         f"Toolchain '{cfg.toolchain}' compiler '{cxx}' was not found.\n  - {hint}")
@@ -385,7 +385,7 @@ def _check_sanitizer_runtime(cfg: Config) -> int:
         f"(no clang_rt.asan* under lib/clang/*/lib).\n"
         f"  - an ASan build cannot link against it, and this is a property of the "
         f"bundle, not of the project.\n"
-        f"  - install a bundle that carries compiler-rt with `ss install`, or point "
+        f"  - install a bundle that carries compiler-rt with `hub install`, or point "
         f"llvm_root in cli/config.local.toml at one that does.")
     return 1
 
@@ -459,7 +459,7 @@ def build(build_type: BuildType, distributed: bool = False,
     # Windows used to be frozen to "cpu" here on the grounds that it has no nvptx
     # toolchain. That stopped being true: this host compiles
     # -fsycl-targets=spir64,nvidia_gpu_sm_89 with the bundled intel/llvm and the
-    # installed CUDA toolkit, and `ss install` offers that toolkit as a component --
+    # installed CUDA toolkit, and `hub install` offers that toolkit as a component --
     # so the freeze meant provisioning a toolkit the build could never use, with no
     # way to override it. It also made the two CLIs in this workspace disagree about
     # the same machine, since SushiEngine passed no backend at all and got "auto".

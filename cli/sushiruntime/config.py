@@ -97,7 +97,7 @@ def deps_dir() -> Path:
     and Ninja, and the vcpkg tree with its C++ library ports — lands under here,
     so a user can see exactly what was fetched and reclaim it all by deleting one
     folder. Inside a SushiStack workspace this is the shared
-    ``<workspace>/dependencies`` (provisioned by ``ss install`` and used by every
+    ``<workspace>/dependencies`` (provisioned by ``hub install`` and used by every
     module); standalone it is ``<repo>/dependencies`` (git-ignored). Override with
     ``SUSHISTACK_DEPS_DIR``. Falls back to a user-local path when not inside a
     checkout.
@@ -124,7 +124,7 @@ def deps_dir() -> Path:
 # CMakeLists.txt: intel-llvm (primary), adaptivecpp (secondary), oneapi (supported).
 TOOLCHAINS = ("intel-llvm", "adaptivecpp", "oneapi")
 
-# Directory names `ss install` may have unpacked the intel/llvm bundle under, in
+# Directory names `hub install` may have unpacked the intel/llvm bundle under, in
 # preference order. Two names exist because the installer names the bundle for
 # what it is (a nightly) while this repo's older default assumed a plain
 # `llvm-sycl`, and a machine that has been through both installers ends up with
@@ -169,7 +169,7 @@ class Config(ToolConfig):
     # intel/llvm nightly bundle root (holds bin/clang++) for the intel-llvm
     # toolchain, and the AdaptiveCpp compiler for the adaptivecpp toolchain.
     # On Windows these are how the non-oneAPI toolchains provide a SYCL compiler;
-    # they are discovered by `ss install` and written to config.local.toml.
+    # they are discovered by `hub install` and written to config.local.toml.
     llvm_root: str = ""
     acpp_exe: str = ""
 
@@ -191,7 +191,7 @@ class Config(ToolConfig):
 
         Prefers an explicit ``llvm_root`` from config.local.toml, since a user who
         pinned a path meant it. Otherwise probes the shared dependency tree for
-        the names ``ss install`` uses, so a fresh checkout finds the bundle that
+        the names ``hub install`` uses, so a fresh checkout finds the bundle that
         is actually installed instead of the one this repo used to assume.
 
         :return: An absolute bundle root holding bin/clang++, or '' if no
@@ -236,7 +236,7 @@ def load_config() -> Config:
     """Load and resolve the layered configuration for the current platform.
 
     Precedence (low to high): repo config.toml -> workspace-shared
-    config.local.toml (written by ``ss``) -> repo config.local.toml -> env.
+    config.local.toml (written by ``hub``) -> repo config.local.toml -> env.
     """
     cfg = _MODULE.load(Config)
     # Guard against a stale/typo'd toolchain leaking through from config or env.
@@ -249,7 +249,7 @@ def set_toolchain(toolchain: str) -> Path:
     """Persist the selected SYCL toolchain into config.local.toml.
 
     Writes a top-level ``[tool] toolchain = "..."`` key, preserving any existing
-    ``[tool.<platform>]`` tables written by `ss install`. Returns the
+    ``[tool.<platform>]`` tables written by `hub install`. Returns the
     path that was written.
     """
     if toolchain not in TOOLCHAINS:
@@ -260,6 +260,6 @@ def set_toolchain(toolchain: str) -> Path:
         {"toolchain": toolchain},
         [
             "# Managed by the SushiRuntime CLI. `sr toolchain` writes the toolchain key;",
-            "# `ss install` writes the [tool.<platform>] tool paths.",
+            "# `hub install` writes the [tool.<platform>] tool paths.",
         ],
     )
