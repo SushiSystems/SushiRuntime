@@ -24,7 +24,7 @@ They are identical; use whichever you prefer. Every example below uses `sr`.
 To install:
 
 ```bash
-ss install-cli sushiruntime      # add --no-editable for a non-dev install
+hub install-cli sushiruntime      # add --no-editable for a non-dev install
 ```
 
 On Windows this installs through **pipx**; on Linux and macOS it installs with
@@ -50,7 +50,7 @@ The CLI reads toolchain paths from two files:
   Studio roots, vcpkg location, compiler executables). This file is gitignored,
   so your personal paths never get committed.
 
-If you ran `ss install` (SushiStack owns dependency provisioning for the whole
+If you ran `hub install` (SushiStack owns dependency provisioning for the whole
 stack), `config.local.toml` was written for you. If you're setting paths by
 hand, copy the commented Windows block from `config.toml` as a starting
 point — it uses the same `[tool.<platform>]` section layout.

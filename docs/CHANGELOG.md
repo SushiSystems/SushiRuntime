@@ -8,6 +8,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ## [Unreleased]
 
+### Documentation
+- 2026-09-07 — Renamed the hub's command from `ss` to `hub` in the manual (`docs/`).
+
 ### Removed
 - **The pooled USM allocation path.** `BitmaskMemoryPool`, `ThreadLocalMagazine`,
   `USMAllocator`, `IAllocatorStrategy` and `create_allocator` are gone, along with
