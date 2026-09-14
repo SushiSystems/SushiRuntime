@@ -124,14 +124,12 @@ def deps_dir() -> Path:
 # CMakeLists.txt: intel-llvm (primary), adaptivecpp (secondary), oneapi (supported).
 TOOLCHAINS = ("intel-llvm", "adaptivecpp", "oneapi")
 
-# Directory names `hub install` may have unpacked the intel/llvm bundle under, in
-# preference order. Two names exist because the installer names the bundle for
-# what it is (a nightly) while this repo's older default assumed a plain
-# `llvm-sycl`, and a machine that has been through both installers ends up with
-# both directories side by side. Probing in order rather than hardcoding one name
-# keeps the two repos from disagreeing about a path neither fully owns; a
-# `llvm_root` written into config.local.toml still wins over all of them.
-INTEL_LLVM_BUNDLE_DIRS = ("llvm-sycl-nightly", "llvm-sycl")
+# Directory names an intel/llvm bundle may sit under, in preference order. `hub install`
+# writes `llvm-sycl`, the bundle SushiEngine configures with and the one SushiStack builds
+# the GPU adapters for (SushiStack's docs/design/GPU_BACKEND_PROVISIONING.md §4), so it
+# comes first; `llvm-sycl-nightly` is an older manual install. A `llvm_root` written into
+# config.local.toml still wins over both.
+INTEL_LLVM_BUNDLE_DIRS = ("llvm-sycl", "llvm-sycl-nightly")
 
 # Default compiler pair (cc, cxx) per toolchain. Used when the config does not
 # pin an explicit compiler, so `sr toolchain <name>` is enough to switch.

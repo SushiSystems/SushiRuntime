@@ -16,7 +16,7 @@
 # same scope, so their appends are visible here at finalize time):
 #   SR_GPU_CLANG_TRIPLES  seeded with spir64 (JIT CPU + Intel GPU, always valid on
 #                         the clang toolchains); accelerators append their triple.
-#   SR_GPU_CLANG_OPTIONS  extra -Xsycl-target-backend ... flags.
+#   SR_GPU_CLANG_OPTIONS  extra driver flags: -Xsycl-target-backend ... and toolkit paths.
 #   SR_GPU_ACPP_TARGETS   seeded with generic; accelerators append their target.
 #   SR_GPU_OFFLOAD_ADDED  TRUE once a real accelerator triple was added — gates
 #                         whether the clang path emits -fsycl-targets at all (with
