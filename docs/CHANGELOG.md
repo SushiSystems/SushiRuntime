@@ -90,6 +90,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   interface encoding every graph concern.
 
 ### Fixed
+- 2026-09-14 — Fixed `sr build`'s TSan message to match `cmake/Sanitizers.cmake`'s Windows exclusion instead of naming icx-cl as the untested case (`cli/sushiruntime/services/project.py`, `docs/ARCHITECTURE.md`).
 - **The determinism target no longer needs CMake 3.30.**
   `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is a 3.30 generator expression while the
   project's floor is 3.20, and on an older CMake it is not ignored — it is a hard

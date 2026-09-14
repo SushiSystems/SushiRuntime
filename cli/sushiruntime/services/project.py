@@ -147,6 +147,19 @@ _CMAKE_BUILD_TYPE = {
 }
 
 
+def thread_sanitizer_applies(is_windows: bool, build_type: BuildType) -> bool:
+    """Report whether cmake/Sanitizers.cmake wires ThreadSanitizer into this build.
+
+    Mirrors that file's `if(NOT (MSVC OR (WIN32 AND Clang)))` guard: every Windows
+    toolchain this CLI configures is either MSVC or the Clang-based intel/llvm
+    driver, so the guard excludes Windows outright regardless of toolchain, and
+    TSan only ever attaches to a Debug or RelWithDebInfo build on another platform.
+    """
+    if is_windows:
+        return False
+    return build_type in (BuildType.debug, BuildType.relwithdebinfo)
+
+
 def _build_dir(root: Path, asan: bool) -> Path:
     return root / ("build-asan" if asan else "build")
 
@@ -472,9 +485,8 @@ def build(build_type: BuildType, distributed: bool = False,
     else:
         gpu_backend = "auto"
 
-    if cfg.is_windows and build_type in (BuildType.debug, BuildType.relwithdebinfo):
-        console.warn(f"--type {build_type.value} enables TSan, which is untested "
-                     "with icx-cl on Windows.")
+    if thread_sanitizer_applies(cfg.is_windows, build_type):
+        console.info(f"ThreadSanitizer: ON (--type {build_type.value})")
 
     env = load_build_env(cfg, build_dir)
 
