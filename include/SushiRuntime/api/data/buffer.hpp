@@ -24,6 +24,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -36,6 +37,8 @@
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/strong_id.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/memory/allocation.hpp>
+#include <SushiRuntime/memory/usm_allocation_owner.hpp>
 
 namespace SushiRuntime
 {
@@ -124,24 +127,53 @@ namespace SushiRuntime
                        std::size_t count, DeviceIndex device_index = DeviceIndex{0},
                        Residency residency = Residency::Shared)
                     : ctx_(std::move(ctx)),
-                      ptr_(static_cast<T*>(
-                          residency == Residency::Device
-                              ? ctx_->malloc_device_on(count * sizeof(T), device_index.value())
-                              : ctx_->malloc_shared_on(count * sizeof(T), device_index.value()))),
                       size_(count),
                       device_index_(device_index),
                       residency_(residency),
                       liveness_(Core::make_liveness())
                 {
-                    // Fail loudly on allocation failure. A silent null ptr_ would
-                    // make dependency_key() null (so the tracker skips this region,
-                    // losing ordering) and then fault when a kernel dereferences it.
-                    if (count > 0 && ptr_ == nullptr)
+                    const std::size_t bytes = count * sizeof(T);
+                    auto owner = std::make_unique<Memory::UsmAllocationOwner>(ctx_);
+                    void* address = residency == Residency::Device
+                                        ? ctx_->malloc_device_on(bytes, device_index.value())
+                                        : ctx_->malloc_shared_on(bytes, device_index.value());
+                    // A null address here would make dependency_key() null and skip tracking.
+                    if (count > 0 && address == nullptr)
                         throw Core::SushiException(Core::Error{
                             Core::Errc::allocation_failed,
-                            "Buffer allocation of " +
-                            std::to_string(count * sizeof(T)) +
+                            "Buffer allocation of " + std::to_string(bytes) +
                             " bytes failed (out of USM memory)."});
+                    allocation_ = Memory::Allocation(address, bytes, std::move(owner));
+                }
+
+                /**
+                 * @brief Wraps memory another component allocated and will release.
+                 * @param ctx          The runtime context this buffer is pinned to.
+                 * @param allocation   Owns at least count * sizeof(T) bytes; released
+                 *                     when this buffer is.
+                 * @param count        Number of elements @p allocation covers.
+                 * @param device_index Target device queue.
+                 * @param residency    Shared (host-addressable) or Device (resident).
+                 * @throws SushiException With allocation_failed when @p count overflows
+                 *         its byte count, or @p allocation is smaller than it; @p allocation
+                 *         is released before the exception propagates.
+                 */
+                Buffer(std::shared_ptr<Execution::RuntimeContext> ctx, Memory::Allocation allocation,
+                       std::size_t count, DeviceIndex device_index, Residency residency)
+                    : ctx_(std::move(ctx)),
+                      allocation_(std::move(allocation)),
+                      size_(count),
+                      device_index_(device_index),
+                      residency_(residency),
+                      liveness_(Core::make_liveness())
+                {
+                    if (count > std::numeric_limits<std::size_t>::max() / sizeof(T) ||
+                        allocation_.bytes() < count * sizeof(T))
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::allocation_failed,
+                            "Buffer adoption of " + std::to_string(count) +
+                            " elements over an allocation of " +
+                            std::to_string(allocation_.bytes()) + " bytes."});
                 }
 
                 /** @brief Frees the owned allocation, if any. */
@@ -174,13 +206,12 @@ namespace SushiRuntime
                  */
                 Buffer(Buffer&& other) noexcept
                     : ctx_(std::move(other.ctx_)),
-                      ptr_(other.ptr_),
+                      allocation_(std::move(other.allocation_)),
                       size_(other.size_),
                       device_index_(other.device_index_),
                       residency_(other.residency_),
                       liveness_(std::move(other.liveness_))
                 {
-                    other.ptr_ = nullptr;
                     other.size_ = 0;
                 }
 
@@ -195,12 +226,11 @@ namespace SushiRuntime
                     {
                         reset();
                         ctx_ = std::move(other.ctx_);
-                        ptr_ = other.ptr_;
+                        allocation_ = std::move(other.allocation_);
                         size_ = other.size_;
                         device_index_ = other.device_index_;
                         residency_ = other.residency_;
                         liveness_ = std::move(other.liveness_);
-                        other.ptr_ = nullptr;
                         other.size_ = 0;
                         other.liveness_.reset();
                     }
@@ -211,7 +241,7 @@ namespace SushiRuntime
                  * @brief Exposes the raw pointer a kernel captures.
                  * @return Pointer to the first element, or null if the handle is empty.
                  */
-                T* data() const noexcept { return ptr_; }
+                T* data() const noexcept { return static_cast<T*>(allocation_.address()); }
 
                 /**
                  * @brief Reports the allocation's capacity.
@@ -223,7 +253,7 @@ namespace SushiRuntime
                  * @brief Tells whether this handle still owns memory.
                  * @return True if it owns no allocation, e.g. after being moved from.
                  */
-                bool empty() const noexcept { return ptr_ == nullptr; }
+                bool empty() const noexcept { return allocation_.empty(); }
 
                 /**
                  * @brief Reports which device queue the allocation is pinned to.
@@ -263,7 +293,7 @@ namespace SushiRuntime
                 T& operator[](std::size_t i) const
                 {
                     require_host_accessible("Buffer::operator[]");
-                    return ptr_[i];
+                    return data()[i];
                 }
 
                 /**
@@ -281,7 +311,7 @@ namespace SushiRuntime
                 span<T> host() const
                 {
                     require_host_accessible("Buffer::host");
-                    return span<T>(ptr_, size_);
+                    return span<T>(data(), size_);
                 }
 
                 /**
@@ -303,10 +333,11 @@ namespace SushiRuntime
                     const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
                     if (count > avail) count = avail;
                     std::vector<T> out(count);
-                    if (count && ptr_ && ctx_)
+                    T* ptr = data();
+                    if (count && ptr && ctx_)
                     {
-                        auto& q = ctx_->get_queue_for_ptr(static_cast<void*>(ptr_));
-                        q.memcpy(out.data(), ptr_ + offset, count * sizeof(T)).wait();
+                        auto& q = ctx_->get_queue_for_ptr(static_cast<void*>(ptr));
+                        q.memcpy(out.data(), ptr + offset, count * sizeof(T)).wait();
                         ctx_->add_device_to_host_bytes(count * sizeof(T));
                     }
                     return out;
@@ -328,10 +359,11 @@ namespace SushiRuntime
                     std::size_t count = range.count;
                     const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
                     if (count > avail) count = avail;
-                    if (count && ptr_ && ctx_ && src)
+                    T* ptr = data();
+                    if (count && ptr && ctx_ && src)
                     {
-                        auto& q = ctx_->get_queue_for_ptr(static_cast<void*>(ptr_));
-                        q.memcpy(ptr_ + offset, src, count * sizeof(T)).wait();
+                        auto& q = ctx_->get_queue_for_ptr(static_cast<void*>(ptr));
+                        q.memcpy(ptr + offset, src, count * sizeof(T)).wait();
                         ctx_->add_host_to_device_bytes(count * sizeof(T));
                     }
                 }
@@ -345,7 +377,7 @@ namespace SushiRuntime
                  *
                  * @return The base pointer as a void*, or nullptr when empty.
                  */
-                void* dependency_key() const noexcept { return static_cast<void*>(ptr_); }
+                void* dependency_key() const noexcept { return static_cast<void*>(data()); }
 
                 /**
                  * @brief A weak observer of this buffer's allocation lifetime.
@@ -378,7 +410,7 @@ namespace SushiRuntime
                     std::size_t count = range.count;
                     const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
                     if (count > avail) count = avail;
-                    return Core::ResourceRegion{static_cast<void*>(ptr_),
+                    return Core::ResourceRegion{static_cast<void*>(data()),
                                                 offset * sizeof(T),
                                                 count * sizeof(T)};
                 }
@@ -405,15 +437,15 @@ namespace SushiRuntime
                  */
                 Buffer& distributed() &
                 {
-                    if (ctx_ && ptr_)
-                        ctx_->register_distributed_buffer(ptr_, size_ * sizeof(T));
+                    if (ctx_ && data())
+                        ctx_->register_distributed_buffer(data(), size_ * sizeof(T));
                     return *this;
                 }
 
                 Buffer distributed() &&
                 {
-                    if (ctx_ && ptr_)
-                        ctx_->register_distributed_buffer(ptr_, size_ * sizeof(T));
+                    if (ctx_ && data())
+                        ctx_->register_distributed_buffer(data(), size_ * sizeof(T));
                     return std::move(*this);
                 }
 #endif // SR_DISTRIBUTED
@@ -433,9 +465,7 @@ namespace SushiRuntime
                 /** @brief Frees the owned allocation and clears the handle. */
                 void reset() noexcept
                 {
-                    if (ptr_ != nullptr && ctx_)
-                        ctx_->free_usm(ptr_);
-                    ptr_ = nullptr;
+                    allocation_.reset();
                     size_ = 0;
                     // Drop the token so any graph observing this allocation sees it
                     // expire — the signal that the buffer no longer backs its pointer.
@@ -443,7 +473,7 @@ namespace SushiRuntime
                 }
 
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
-                T* ptr_ = nullptr;
+                Memory::Allocation allocation_;
                 std::size_t size_ = 0;
                 DeviceIndex device_index_ = DeviceIndex{0};
                 Residency residency_ = Residency::Shared;
