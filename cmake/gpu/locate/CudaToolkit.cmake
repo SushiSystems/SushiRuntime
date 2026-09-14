@@ -9,7 +9,11 @@
 #   <out_searched> to what was looked at.
 function(sushiruntime_gpu_locate_cuda_toolkit out_root out_searched)
     set(_root "")
-    if(WIN32)
+    if(SR_NVCC)
+        set(_searched "SR_NVCC")
+        get_filename_component(_bin "${SR_NVCC}" DIRECTORY)
+        get_filename_component(_root "${_bin}" DIRECTORY)
+    elseif(WIN32)
         set(_searched "CUDA_PATH (bin/nvcc.exe)")
         if(DEFINED ENV{CUDA_PATH})
             file(TO_CMAKE_PATH "$ENV{CUDA_PATH}" _candidate)

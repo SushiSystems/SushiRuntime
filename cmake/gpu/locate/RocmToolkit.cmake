@@ -9,7 +9,11 @@
 #   <out_searched> to what was looked at.
 function(sushiruntime_gpu_locate_rocm_toolkit out_root out_searched)
     set(_root "")
-    if(WIN32)
+    if(SR_HIPCC)
+        set(_searched "SR_HIPCC")
+        get_filename_component(_bin "${SR_HIPCC}" DIRECTORY)
+        get_filename_component(_root "${_bin}" DIRECTORY)
+    elseif(WIN32)
         set(_searched "nothing: no ROCm locator is provided on Windows")
     else()
         set(_searched "hipcc or rocminfo on PATH, /opt/rocm/bin, /opt/rocm-*/bin")
