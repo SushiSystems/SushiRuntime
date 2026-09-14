@@ -114,6 +114,7 @@ set(SR_SYCL_SOURCES
     memory/usm_allocator.cpp
     graph/task_graph.cpp
     execution/runtime_context.cpp
+    interop/interop.cpp
 )
 if(SR_ENABLE_DISTRIBUTED)
     # These distributed TUs pull in <sycl/sycl.hpp> (kernels, worker execution,

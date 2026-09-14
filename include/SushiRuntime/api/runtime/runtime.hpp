@@ -31,6 +31,7 @@
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/runtime/cluster.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/interop/interop.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 
 namespace SushiRuntime
@@ -245,6 +246,12 @@ namespace SushiRuntime
                  * @return An AdvancedControls borrowing this runtime's context.
                  */
                 AdvancedControls advanced() noexcept { return AdvancedControls(*ctx_); }
+
+                /**
+                 * @brief Provides the SYCL/Vulkan interop facade for this runtime's context.
+                 * @return An Interop bound to this runtime's context.
+                 */
+                Interop interop() const noexcept { return Interop(ctx_); }
 
                 /**
                  * @brief The full runtime context — the deliberate escape hatch.

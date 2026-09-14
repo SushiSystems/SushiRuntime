@@ -525,6 +525,44 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Allocates host USM aligned to @p alignment on a specific device queue.
+         *
+         * @param alignment    Byte alignment of the returned address.
+         * @param bytes        The size in bytes to allocate.
+         * @param device_index The index of the device to allocate on.
+         * @return void* Host-addressable pointer, or nullptr on failure.
+         */
+        void* RuntimeContext::aligned_malloc_host_on(size_t alignment, size_t bytes, size_t device_index)
+        {
+            sycl::queue& q = get_queue(device_index); // throws if out of bounds
+            void* p = sycl::aligned_alloc_host(alignment, bytes, q);
+            if (p)
+                impl_->usm_registry.record(p, device_index);
+            return p;
+        }
+
+        /**
+         * @brief Records an externally-allocated address as owned by a device queue.
+         *
+         * @param address      The address to record; not allocated by this call.
+         * @param device_index The device queue that owns @p address.
+         */
+        void RuntimeContext::adopt_usm(void* address, size_t device_index)
+        {
+            get_queue(device_index); // throws if out of bounds
+            impl_->usm_registry.record(address, device_index);
+        }
+
+        /**
+         * @brief Drops an address's owner record without freeing it.
+         * @param address The address to forget; safe to call with nullptr.
+         */
+        void RuntimeContext::forget_usm(void* address) noexcept
+        {
+            impl_->usm_registry.take(address);
+        }
+
+        /**
          * @brief Returns the owning device-queue index for a USM pointer, or -1.
          */
         int RuntimeContext::context_index_for_ptr(void* ptr) noexcept

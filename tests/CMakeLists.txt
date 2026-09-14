@@ -117,6 +117,7 @@ add_executable(sr_functional_tests
     functional/integration/test_workload_coordinator.cpp
     functional/integration/test_device_pipeline.cpp
     functional/integration/test_fluent_lifecycle.cpp
+    functional/integration/test_interop_host_export.cpp
     functional/integration/test_fluent_api.cpp
     functional/integration/test_fluent_hardening.cpp
     functional/integration/test_late_bindings.cpp

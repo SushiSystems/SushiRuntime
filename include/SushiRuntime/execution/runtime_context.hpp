@@ -283,6 +283,29 @@ namespace SushiRuntime
                 void free_usm(void* ptr);
 
                 /**
+                 * @brief Allocates host USM aligned to @p alignment on one device queue.
+                 * @param alignment    Byte alignment of the returned address.
+                 * @param bytes        Allocation size in bytes.
+                 * @param device_index Target device queue; selects the owning context.
+                 * @return Host-addressable USM pointer, or nullptr on failure.
+                 */
+                void* aligned_malloc_host_on(std::size_t alignment, std::size_t bytes,
+                                             std::size_t device_index);
+
+                /**
+                 * @brief Records an externally-allocated address as owned by one device queue.
+                 * @param address      The address to record; not allocated by this call.
+                 * @param device_index Target device queue that owns @p address.
+                 */
+                void adopt_usm(void* address, std::size_t device_index);
+
+                /**
+                 * @brief Drops @p address's owner record without freeing it.
+                 * @param address The address to forget; safe to call with nullptr.
+                 */
+                void forget_usm(void* address) noexcept;
+
+                /**
                  * @brief Typed convenience wrapper over malloc_shared.
                  * @tparam T Element type.
                  * @param count Number of elements.
