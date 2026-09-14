@@ -181,6 +181,8 @@ across the reduction swap; `compile_count()==1` invariants hold; a grep proves
 
 ## 5. BB-1 — Vulkan interop: the missing half
 
+**Status.** Superseded where it differs by SushiEngine `docs/design/SYCL_VULKAN_INTEROP.md`.
+
 **The problem, precisely.** Every GPU result reaches the renderer today through a host round-trip
 (solver → `read_range` → mirror → ECS → extract → Vulkan upload). The engine shipped its half:
 exportable, UUID-stamped, dedicated allocations behind `render/interop.hpp`, with the explicit

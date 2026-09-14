@@ -108,6 +108,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   `INTEGRATION.md` / `CLI_GUIDE.md` joined the site so the manual's links resolve.
 
 ### Added
+- 2026-09-14 — Added `API::Interop` for host memory export and device memory import (`interop/`, `Runtime::interop()`).
 - **`API::DynamicGraph::find_region(key)`**, a const lookup returning the live
   region or `nullptr`. `region(key)` marks the region for a rebuild because its
   caller is about to add work; a reader that only wants the region's size had no

@@ -1156,6 +1156,8 @@ include/SushiRuntime/      Public API (the headers this document describes)
                rebalancer_interfaces, ThermalProxyStrategy
   execution/   RuntimeContext, IExecutionEngine/ExecutionEngine, CompiledGraph,
                ExecutionMetrics
+  interop/     DeviceUuid, ExternalMemoryDescriptor, InteropCapabilities,
+               API::Interop (host export, device import, capability query)
   distributed/ (optional) protocol, ByteWriter/ByteReader, transports
                (InProcessFabric/InProcessTransport, TcpTransport), KernelRegistry,
                BufferRegistry, coordinator, worker agent, IOffloadPolicy, WorkerStats
