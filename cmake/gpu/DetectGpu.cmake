@@ -3,7 +3,7 @@
 # Single responsibility: turn the SR_GPU_BACKEND request into the concrete set of
 # vendor backends this build offloads to, and include each one's strategy file.
 # This is the single source of truth for GPU selection — the CLI does not
-# duplicate the nvcc/libdevice check in Python, it just passes SR_GPU_BACKEND.
+# duplicate the toolkit check in Python, it just passes SR_GPU_BACKEND.
 #
 # A set, not an election. gpu/Cuda.cmake argues that a box with a Pascal and an
 # Ampere card has no single right target but does have a right answer — both —
@@ -39,6 +39,29 @@ set_property(CACHE SR_GPU_BACKEND PROPERTY STRINGS auto cuda rocm intel cpu none
 # whole build rather than a member of a set (see the rejection below).
 set(SR_GPU_VENDORS cuda rocm intel)
 
+# Every vendor answers where its toolkit lives through one function in gpu/locate/,
+# with the operating-system branches inside it. The roots are published for the
+# vendor strategy files, which need them for flags such as intel/llvm's --cuda-path.
+foreach(_sr_vendor IN LISTS SR_GPU_VENDORS)
+    string(TOUPPER "${_sr_vendor}" _sr_vendor_upper)
+    string(SUBSTRING "${_sr_vendor_upper}" 0 1 _sr_vendor_initial)
+    string(SUBSTRING "${_sr_vendor}" 1 -1 _sr_vendor_rest)
+    include("${CMAKE_CURRENT_LIST_DIR}/locate/${_sr_vendor_initial}${_sr_vendor_rest}Toolkit.cmake" OPTIONAL
+        RESULT_VARIABLE _sr_locator_file)
+    if(NOT _sr_locator_file)
+        message(FATAL_ERROR "gpu/locate/ has no toolkit locator for vendor '${_sr_vendor}'.")
+    endif()
+    cmake_language(CALL sushiruntime_gpu_locate_${_sr_vendor}_toolkit
+        _sr_toolkit_root _sr_toolkit_searched)
+    set(SR_${_sr_vendor_upper}_TOOLKIT_ROOT "${_sr_toolkit_root}")
+    list(APPEND _sr_toolkit_search_report "${_sr_vendor}: ${_sr_toolkit_searched}")
+endforeach()
+unset(_sr_vendor_initial)
+unset(_sr_vendor_rest)
+unset(_sr_locator_file)
+unset(_sr_toolkit_root)
+unset(_sr_toolkit_searched)
+
 set(_sr_request "${SR_GPU_BACKEND}")
 
 # Back-compat: honor the old -DSR_ENABLE_CUDA=ON switch when no explicit backend
@@ -63,12 +86,8 @@ endif()
 
 if(_sr_request STREQUAL "auto")
     # The SYCL CUDA/nvptx and amdgcn passes need the vendor toolkit's device
-    # libraries (libdevice / ROCm device libs), so a mere driver is not enough:
-    # probe for the *compiler* toolchain, not the runtime.
-    # The apt CUDA/ROCm toolkits do not add themselves to PATH, so also look in
-    # their well-known install prefixes (/usr/local/cuda* for nvcc, /opt/rocm*
-    # for hipcc) — otherwise auto-detect wrongly falls back to CPU on a machine
-    # that actually has the toolkit installed.
+    # libraries, so a mere driver is not enough: a vendor is requested when its
+    # locator in gpu/locate/ found the toolkit, on whichever operating system.
     #
     # Every toolkit found is requested, not the first one. Finding a toolkit still
     # proves only that a compiler is installed, so each vendor file runs its own
@@ -83,20 +102,12 @@ if(_sr_request STREQUAL "auto")
     # choice a probe cannot make -- which is why it is reached by asking.
     set(_sr_request "")
 
-    sushiruntime_gpu_versioned_prefixes(_sr_cuda_prefixes "/usr/local/cuda-*/bin")
-    sushiruntime_gpu_versioned_prefixes(_sr_rocm_prefixes "/opt/rocm-*/bin")
-
-    find_program(SR_NVCC nvcc
-        PATHS /usr/local/cuda/bin ${_sr_cuda_prefixes})
-    find_program(SR_HIPCC NAMES hipcc rocminfo
-        PATHS /opt/rocm/bin ${_sr_rocm_prefixes})
-
-    if(SR_NVCC)
-        list(APPEND _sr_request cuda)
-    endif()
-    if(SR_HIPCC)
-        list(APPEND _sr_request rocm)
-    endif()
+    foreach(_sr_vendor IN LISTS SR_GPU_VENDORS)
+        string(TOUPPER "${_sr_vendor}" _sr_vendor_upper)
+        if(SR_${_sr_vendor_upper}_TOOLKIT_ROOT)
+            list(APPEND _sr_request "${_sr_vendor}")
+        endif()
+    endforeach()
 
     if(_sr_request)
         string(REPLACE ";" ", " _sr_request_report "${_sr_request}")
@@ -104,7 +115,8 @@ if(_sr_request STREQUAL "auto")
     else()
         # No accelerator toolkit — build the portable CPU/OpenCL (spir64) path.
         set(_sr_request "cpu")
-        message(STATUS "GPU auto-detect: no accelerator toolkit found; selected 'cpu'.")
+        string(REPLACE ";" "; " _sr_search_report "${_sr_toolkit_search_report}")
+        message(STATUS "GPU auto-detect: no accelerator toolkit found (searched ${_sr_search_report}); selected 'cpu'.")
     endif()
 endif()
 
@@ -136,7 +148,7 @@ endforeach()
 
 # Dispatch to each vendor strategy. Every file is self-contained and only appends
 # to the GpuBackend accumulators; adding a vendor means adding a branch here, a
-# file, and an entry in SR_GPU_VENDORS above.
+# strategy file, a toolkit locator in gpu/locate/, and an entry in SR_GPU_VENDORS above.
 #
 # A vendor may also decline. Selecting it proves a toolkit is installed and not
 # that a device exists, so a backend can discover at include time that it has no
