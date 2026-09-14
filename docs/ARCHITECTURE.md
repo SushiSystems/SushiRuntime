@@ -1013,7 +1013,7 @@ Four INTERFACE targets carry the compile settings, composed by
 |--------|---------|---------|
 | `sushiruntime_warnings` | `-Wall -Wextra -Werror -pedantic` / `/W4 /permissive-` | PRIVATE |
 | `sushiruntime_perf` | `-ftls-model=initial-exec`, and `-march=native` only under `SR_NATIVE_ARCH` | PRIVATE |
-| `sushiruntime_sanitizers` | TSan on Debug/RelWithDebInfo (non-MSVC) | PRIVATE |
+| `sushiruntime_sanitizers` | TSan on Debug/RelWithDebInfo (non-Windows) | PRIVATE |
 | `sushiruntime_deterministic_fp` | `-ffp-contract=off -fno-fast-math` / `/fp:precise` (+ a probed contraction switch, below) | **PUBLIC, exported** |
 
 The split is the mechanism behind the determinism guarantee in §15, and behind
