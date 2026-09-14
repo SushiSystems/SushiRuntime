@@ -8,11 +8,53 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ## [Unreleased]
 
-### Changed
-- 2026-09-14 — Added `Residency::Host` and required it for late-bound device counters (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
+## [0.3.0] — 2026-09-15
 
-### Documentation
-- 2026-09-07 — Renamed the hub's command from `ss` to `hub` in the manual (`docs/`).
+### Breaking
+- 2026-09-14 — Made `Graph::add` throw `Errc::invalid_access` for `API::sized_from_device`/`API::based_at_device` and raw device-pointer counters unless the counter is host USM (`Residency::Host`); `Shared` and `Device` counters that worked before are now rejected (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
+- 2026-08-25 — Renamed the shared CLI layer's import from `sushicli` to `sushicore` across every import site (`cli/config.toml`, `cli/sushiruntime/config.py`, `cli/sushiruntime/console.py`, `cli/sushiruntime/services/diag.py`).
+
+### Added
+- 2026-09-14 — Added `API::Interop` for host memory export and device memory import (`interop/`, `Runtime::interop()`).
+- 2026-09-14 — Added `Memory::Allocation`, `IAllocationOwner` and `UsmAllocationOwner`; `Buffer<T>` now owns its memory through an `Allocation` (`memory/allocation.hpp`, `memory/usm_allocation_owner.hpp`, `api/data/buffer.hpp`).
+- 2026-09-14 — Added a per-vendor GPU toolkit locator layer (`cmake/gpu/locate/CudaToolkit.cmake`, `IntelToolkit.cmake`, `RocmToolkit.cmake`); `DetectGpu` and `Cuda` now request vendors through it.
+- 2026-09-14 — Changed the Windows CUDA locator to fall back to the machine registry when the shell's `CUDA_PATH` predates the install (`cmake/gpu/locate/CudaToolkit.cmake`).
+- 2026-09-15 — Added the `sushiruntime_gpu_offload` interface target and its `SushiRuntime::gpu_offload` alias, publishing `-fsycl-targets` and backend options to consumers outside the runtime's own directory (`cmake/gpu/GpuBackend.cmake`).
+- 2026-09-14 — Added `Residency::Host` over pinned host USM and `RuntimeContext::malloc_host_on` (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
+- 2026-08-30 — Added `API::DynamicGraph::find_region(key)`, a const lookup returning the live region or `nullptr` without marking it for rebuild.
+
+### Changed
+- **`Memory::UsmRegistry` owns USM pointer ownership.** `RuntimeContext` managed
+  queues, held the device registry, allocated USM and tracked which device owned
+  each pointer; only the last has an invariant of its own — a pointer is known
+  from allocation until it is freed, exactly once. Extracted, it is testable
+  without standing up a `Runtime`, which nothing about the previous arrangement
+  was. `free_usm` now resolves and forgets in one locked step rather than two, so
+  a second free of the same pointer is distinguishable from the first instead of
+  reading an owner the first is already acting on. `Unit_UsmRegistry` covers the
+  round trip, double-take, and concurrent record/take under ASan.
+- **Packaging is verified as a test suite, `sr test --suite package`.** Whether an
+  installed runtime works outside its own tree has a pass/fail answer, so it is a
+  test rather than a separate verb. Two CTest tests joined by a fixture — one
+  installs to a prefix, one builds `tests/package/` against it and runs the result
+  with nothing on `PATH` but the prefix — so a failure says which half broke. `sr
+  package` keeps only what is genuinely a release action: install and archive.
+  Its `--no-verify` flag is gone and its default prefix moved to `build/dist`,
+  leaving `build/stage` to the test suite.
+- **CMake modules are included by absolute path.** `ProjectOptions.cmake` and
+  `Vcpkg.cmake` shared their names with SushiEngine's, and `CMAKE_MODULE_PATH` is
+  one flat first-match-wins list that the engine populates before it
+  `add_subdirectory`s this tree — so under an engine build `include(ProjectOptions)`
+  resolved to the engine's file and `SR_ENABLE_DISTRIBUTED` and `SR_BUILD_TESTS`
+  were never defined. Proven by their absence from the engine build tree's cache
+  while `SR_DETERMINISTIC_FP`, whose module name is unique, was present. Harmless
+  only because both options default to OFF. Every include is now absolute, the two
+  colliding modules are prefixed, and `CONTRIBUTING.md` §4 gained the rule, which
+  covered target and function names but not module filenames.
+
+### Fixed
+- 2026-09-14 — Fixed `sr build`'s TSan message to match `cmake/Sanitizers.cmake`'s Windows exclusion instead of naming icx-cl as the untested case (`cli/sushiruntime/services/project.py`, `docs/ARCHITECTURE.md`).
+- 2026-08-18 — Fixed the determinism target needing CMake 3.30: kept `$<CXX_COMPILER_FRONTEND_VARIANT:...>` where it is available and fell back to configure-time frontend detection below 3.30 (`cmake/Determinism.cmake`).
 
 ### Removed
 - **The pooled USM allocation path.** `BitmaskMemoryPool`, `ThreadLocalMagazine`,
@@ -43,80 +85,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   A public API break, taken pre-freeze at 0.2.0 with no out-of-tree consumers;
   SushiEngine referenced none of these symbols.
 
-### Changed
-- **`Memory::UsmRegistry` owns USM pointer ownership.** `RuntimeContext` managed
-  queues, held the device registry, allocated USM and tracked which device owned
-  each pointer; only the last has an invariant of its own — a pointer is known
-  from allocation until it is freed, exactly once. Extracted, it is testable
-  without standing up a `Runtime`, which nothing about the previous arrangement
-  was. `free_usm` now resolves and forgets in one locked step rather than two, so
-  a second free of the same pointer is distinguishable from the first instead of
-  reading an owner the first is already acting on. `Unit_UsmRegistry` covers the
-  round trip, double-take, and concurrent record/take under ASan.
-- **Packaging is verified as a test suite, `sr test --suite package`.** Whether an
-  installed runtime works outside its own tree has a pass/fail answer, so it is a
-  test rather than a separate verb. Two CTest tests joined by a fixture — one
-  installs to a prefix, one builds `tests/package/` against it and runs the result
-  with nothing on `PATH` but the prefix — so a failure says which half broke. `sr
-  package` keeps only what is genuinely a release action: install and archive.
-  Its `--no-verify` flag is gone and its default prefix moved to `build/dist`,
-  leaving `build/stage` to the test suite.
+### Documentation
+- 2026-09-07 — Renamed the hub's command from `ss` to `hub` in the manual (`docs/`).
 
-- **CMake modules are included by absolute path.** `ProjectOptions.cmake` and
-  `Vcpkg.cmake` shared their names with SushiEngine's, and `CMAKE_MODULE_PATH` is
-  one flat first-match-wins list that the engine populates before it
-  `add_subdirectory`s this tree — so under an engine build `include(ProjectOptions)`
-  resolved to the engine's file and `SR_ENABLE_DISTRIBUTED` and `SR_BUILD_TESTS`
-  were never defined. Proven by their absence from the engine build tree's cache
-  while `SR_DETERMINISTIC_FP`, whose module name is unique, was present. Harmless
-  only because both options default to OFF. Every include is now absolute, the two
-  colliding modules are prefixed, and `CONTRIBUTING.md` §4 gained the rule, which
-  covered target and function names but not module filenames.
-- **The scheduler no longer downcasts a `Task*` to a `Graph::Node*`, and its
-  header no longer includes the graph layer's.** `Task` gained
-  `on_complete(ReadySink&)` and `record_completion(device_ns)`; `Node` overrides
-  both and walks its own inline, spillover and cross-region successors. The
-  defect was a layering inversion — `scheduler/event_polling.hpp` included
-  `graph/node.hpp`, so a lower layer pulled in a higher one — and it is gone;
-  `EventPolling` now compiles without the graph layer entirely.
-
-  `ReadySink` is a reused buffer rather than a callback interface, and that was
-  measured, not assumed. A virtual call per freed successor looks free on paper
-  next to the three atomics already on that path, and cost **4.6x** on
-  `Performance_WideFanout` (286 → 1303 ns/task): what it removes is not a few
-  cycles of dispatch but the inlining of a loop that previously ran end to end
-  into the concrete queue. Collecting into a buffer leaves one virtual call per
-  completion and keeps the push inlined — five matched samples per build put the
-  result inside run-to-run noise (means 308.3 vs 314.1 ns/task, ranges
-  overlapping). The five remaining downcasts in `scheduler.cpp` stay: each reaches
-  for a different `Node` member, and virtualising all of them would make `Task` an
-  interface encoding every graph concern.
-
-### Fixed
-- 2026-09-14 — Fixed `sr build`'s TSan message to match `cmake/Sanitizers.cmake`'s Windows exclusion instead of naming icx-cl as the untested case (`cli/sushiruntime/services/project.py`, `docs/ARCHITECTURE.md`).
-- **The determinism target no longer needs CMake 3.30.**
-  `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is a 3.30 generator expression while the
-  project's floor is 3.20, and on an older CMake it is not ignored — it is a hard
-  "Expression did not evaluate to a known generator expression" at generate time.
-  The Linux oneAPI CI lane failed on it while every local build passed, because the
-  local CMake was newer. The genex is kept where it is available, since it resolves
-  in the *consumer's* generate step and so adapts to the consumer's frontend; below
-  3.30 the frontend is detected at configure time instead, which bakes in the
-  building compiler's choice. Both branches verified to emit the same flags here.
-- **The Doxygen site's manual half was silently not building.** `Doxyfile`'s
-  `INPUT` named `docs/guides/INTRODUCTION.md`, and there is no `docs/guides/`
-  directory — the reference built from the headers while the hand-written pages
-  were skipped without an error. Same stale prefix in `docs/api/mainpage.md`'s
-  cross-references. `docs/INTRODUCTION.md`'s three `../../README.md` links
-  resolved two levels above the repository root. All corrected, and
-  `INTEGRATION.md` / `CLI_GUIDE.md` joined the site so the manual's links resolve.
+## [0.2.0] — 2026-08-17
 
 ### Added
-- 2026-09-14 — Added `API::Interop` for host memory export and device memory import (`interop/`, `Runtime::interop()`).
-- **`API::DynamicGraph::find_region(key)`**, a const lookup returning the live
-  region or `nullptr`. `region(key)` marks the region for a rebuild because its
-  caller is about to add work; a reader that only wants the region's size had no
-  way to ask without paying a recompose on the next step.
 - **An installed SushiRuntime now carries what it needs to run.**
   `tests/package/` had never been exercised. Doing so showed the two halves of
   packaging fail independently: a consumer *built* against an install prefix
@@ -388,6 +362,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   a specific device queue, so buffers used together share one context.
 
 ### Changed
+- **The scheduler no longer downcasts a `Task*` to a `Graph::Node*`, and its
+  header no longer includes the graph layer's.** `Task` gained
+  `on_complete(ReadySink&)` and `record_completion(device_ns)`; `Node` overrides
+  both and walks its own inline, spillover and cross-region successors. The
+  defect was a layering inversion — `scheduler/event_polling.hpp` included
+  `graph/node.hpp`, so a lower layer pulled in a higher one — and it is gone;
+  `EventPolling` now compiles without the graph layer entirely.
+
+  `ReadySink` is a reused buffer rather than a callback interface, and that was
+  measured, not assumed. A virtual call per freed successor looks free on paper
+  next to the three atomics already on that path, and cost **4.6x** on
+  `Performance_WideFanout` (286 → 1303 ns/task): what it removes is not a few
+  cycles of dispatch but the inlining of a loop that previously ran end to end
+  into the concrete queue. Collecting into a buffer leaves one virtual call per
+  completion and keeps the push inlined — five matched samples per build put the
+  result inside run-to-run noise (means 308.3 vs 314.1 ns/task, ranges
+  overlapping). The five remaining downcasts in `scheduler.cpp` stay: each reaches
+  for a different `Node` member, and virtualising all of them would make `Task` an
+  interface encoding every graph concern.
 - **An idle worker pool now actually idles.** The armed flag was set on the first
   run and never cleared until the context was destroyed, so workers never reached
   the dispatch loop's wait: between runs — and for the whole life of a runtime that
@@ -512,15 +505,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   task-graph API is documented as the lower-level foundation.
 
 ### Fixed
-- **The determinism target no longer needs CMake 3.30.**
-  `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is a 3.30 generator expression while the
-  project's floor is 3.20, and on an older CMake it is not ignored — it is a hard
-  "Expression did not evaluate to a known generator expression" at generate time.
-  The Linux oneAPI CI lane failed on it while every local build passed, because the
-  local CMake was newer. The genex is kept where it is available, since it resolves
-  in the *consumer's* generate step and so adapts to the consumer's frontend; below
-  3.30 the frontend is detected at configure time instead, which bakes in the
-  building compiler's choice. Both branches verified to emit the same flags here.
+- **The Doxygen site's manual half was silently not building.** `Doxyfile`'s
+  `INPUT` named `docs/guides/INTRODUCTION.md`, and there is no `docs/guides/`
+  directory — the reference built from the headers while the hand-written pages
+  were skipped without an error. Same stale prefix in `docs/api/mainpage.md`'s
+  cross-references. `docs/INTRODUCTION.md`'s three `../../README.md` links
+  resolved two levels above the repository root. All corrected, and
+  `INTEGRATION.md` / `CLI_GUIDE.md` joined the site so the manual's links resolve.
 - Memory-safety hardening of the concurrency and distributed layers:
   - EBR `enter()` now issues a `seq_cst` fence after publishing its epoch slot, so
     a reader's slot is globally visible before it dereferences shared structure —
@@ -625,9 +616,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
   `CUDA_ERROR_ILLEGAL_ADDRESS`) when a kernel touched two co-allocated buffers
   on a heterogeneous (GPU + CPU) machine.
 
-### Removed
--
-
 ---
 
 <!--
@@ -640,15 +628,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 - Changes to existing behavior
 
 ### Fixed
-- **The determinism target no longer needs CMake 3.30.**
-  `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is a 3.30 generator expression while the
-  project's floor is 3.20, and on an older CMake it is not ignored — it is a hard
-  "Expression did not evaluate to a known generator expression" at generate time.
-  The Linux oneAPI CI lane failed on it while every local build passed, because the
-  local CMake was newer. The genex is kept where it is available, since it resolves
-  in the *consumer's* generate step and so adapts to the consumer's frontend; below
-  3.30 the frontend is detected at configure time instead, which bakes in the
-  building compiler's choice. Both branches verified to emit the same flags here.
 - Bug fixes
 
 ### Removed
