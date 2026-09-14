@@ -215,11 +215,16 @@ endmacro()
 #
 # A macro so the directory-scope add_compile_options/add_link_options land in the
 # caller's (root) scope and cascade to add_subdirectory() exactly like the former
-# global flags. Applying GPU device flags at directory scope — rather than via an
-# INTERFACE target — is deliberate: the clang -fsycl device pass and
-# add_sycl_to_target() operate on directory/source scope today, and reproducing
-# that exactly avoids perturbing the delicate device codegen.
+# global flags. The runtime's own sources take the device flags at directory scope; the
+# same flags are published on the sushiruntime_gpu_offload INTERFACE target
+# (SushiRuntime::gpu_offload) for consumers outside this directory.
 macro(sushiruntime_gpu_finalize)
+    # sushiruntime_gpu_offload carries the device targets to consumers outside this directory.
+    if(NOT TARGET sushiruntime_gpu_offload)
+        add_library(sushiruntime_gpu_offload INTERFACE)
+        add_library(SushiRuntime::gpu_offload ALIAS sushiruntime_gpu_offload)
+    endif()
+
     if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
         # AdaptiveCpp selects backends through ACPP_TARGETS. Respect an explicit
         # caller/preset value; otherwise publish what the backends declared.
@@ -234,6 +239,10 @@ macro(sushiruntime_gpu_finalize)
             string(REPLACE ";" "," _sr_targets "${SR_GPU_CLANG_TRIPLES}")
             add_compile_options(-fsycl-targets=${_sr_targets} ${SR_GPU_CLANG_OPTIONS})
             add_link_options(-fsycl-targets=${_sr_targets} ${SR_GPU_CLANG_OPTIONS})
+            target_compile_options(sushiruntime_gpu_offload INTERFACE
+                -fsycl-targets=${_sr_targets} ${SR_GPU_CLANG_OPTIONS})
+            target_link_options(sushiruntime_gpu_offload INTERFACE
+                -fsycl-targets=${_sr_targets} ${SR_GPU_CLANG_OPTIONS})
             message(STATUS "GPU backend: SYCL targets = ${_sr_targets}")
         else()
             # Only spir64 => JIT default; emit nothing (CPU/Intel-GPU/Windows path).
