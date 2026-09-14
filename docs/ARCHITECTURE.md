@@ -278,7 +278,8 @@ step boundary, so it can only carry a number the host already knows. A
 producer/consumer chain does not have one: a broadphase writes its pair count
 mid-step and the narrowphase must iterate exactly that many. `LateBindings` there-
 fore also carries a `device_count` pointer — a host-readable slot a predecessor
-kernel writes — set by `API::sized_from_device(counter)`.
+kernel writes — set by `API::sized_from_device(counter)` on a `Residency::Host`
+buffer.
 
 This is sound because of *when* a node's command group is built. `execute_task`
 constructs it on a worker at dispatch, and a node is only dispatched once
@@ -288,12 +289,26 @@ the count can simply be read. The result is one composition per tick with no
 mid-step readback and no launch at worst-case width, and `compile_count()` still
 1 while the count changes every step.
 
-Two constraints are enforced rather than documented: the counter must be shared
-(host-addressable) USM, rejected at the call site otherwise; and a live count
-above the node's compiled capacity fails the run rather than truncating, since
-silently dropping work is the failure this seam exists to prevent. The counter's
-element is registered as one of the consuming task's reads, so the producer is
-necessarily a predecessor — the ordering is structural, not a convention.
+**Late-bound device values.** A device-written value the host reads during a run
+must live in `Residency::Host` memory. `sized_from_device` and `based_at_device`
+reject a `Residency::Device` or `Residency::Shared` buffer at the call site with
+`invalid_access`, and a live count above the node's compiled capacity fails the
+run rather than truncating. The counter's element is registered as one of the
+consuming task's reads, so the producer is necessarily a predecessor.
+
+The predecessor has finished, but other kernels may still be running on the same
+device when the consumer's command group is built. On the CUDA backend, shared
+USM is CUDA managed memory, and on Windows (and on GPUs older than compute
+capability 6.0) the CPU may not touch any managed allocation while any kernel runs
+on that GPU; the read faults with 0xC0000006.
+`Integration_DeviceCount.ChainedProducerCountsInOneComposition` hit exactly that:
+stage 2 read its counter while stage 1's kernel still ran. Pinned host USM is not
+managed memory, so the host can read it at an arbitrary moment; on Windows WDDM
+this rests on the owner's RTX 3080 Ti run, not on an NVIDIA statement. The
+raw-pointer chain setters `and_sized_from_device` / `and_based_at_device` take no
+buffer, so `add()` checks their pointer instead: it resolves the owning context
+through the registry and requires `sycl::usm::alloc::host`, throwing
+`invalid_access` before the graph changes.
 
 **Where the node starts.** `count` says how many elements, `base` says from
 where. Graph colouring is the case that needs it: each colour is a contiguous
@@ -389,6 +404,14 @@ device-resident handle, and the host instead uses `read_range()`/`write_range()`
 which copy a sub-range through the allocation's owning queue. Dependency tracking and
 queue routing are identical for both — the owner map already records the device,
 so kernels dispatch to it and the range copies use the same queue.
+
+A third residency, **host** (`Residency::Host`, via `RuntimeContext::malloc_host_on`),
+is pinned host USM in the owning queue's context. Kernels on that device read and
+write it, `host_accessible()` is true, and the host may read it while kernels run,
+which shared USM does not allow on every backend (see "Late-bound device values"
+above). It is the required residency for any value the host reads mid-run.
+Kernels reach it across the bus and it is page-locked RAM, so it is for small
+host-read values, not bulk kernel data.
 
 ---
 

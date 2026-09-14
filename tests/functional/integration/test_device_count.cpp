@@ -32,6 +32,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -47,7 +48,7 @@ TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
     constexpr std::size_t CAPACITY = 4096;
 
     auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1);
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
     auto marks   = rt.buffer<int>(CAPACITY);
 
     std::uint32_t* c = counter.data();
@@ -107,7 +108,7 @@ TEST(Integration_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
     constexpr std::uint32_t LIVE = 300;
 
     auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1);
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
     auto out     = rt.buffer<int>(CAPACITY);
 
     std::uint32_t* c = counter.data();
@@ -139,8 +140,8 @@ TEST(Integration_DeviceCount, ChainedProducerCountsInOneComposition)
     constexpr std::size_t CAPACITY = 1024;
 
     auto rt     = Runtime::create();
-    auto first  = rt.buffer<std::uint32_t>(1);
-    auto second = rt.buffer<std::uint32_t>(1);
+    auto first  = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
+    auto second = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
     auto stage1 = rt.buffer<int>(CAPACITY);
     auto stage2 = rt.buffer<int>(CAPACITY);
 
@@ -185,7 +186,7 @@ TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
     constexpr std::size_t CAPACITY = 256;
 
     auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1);
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
     auto out     = rt.buffer<int>(CAPACITY);
 
     std::uint32_t* c = counter.data();
@@ -223,7 +224,7 @@ TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
     constexpr std::size_t CAPACITY = 64;
 
     auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1);
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
     auto out     = rt.buffer<int>(CAPACITY);
 
     std::uint32_t* c = counter.data();
@@ -244,15 +245,30 @@ TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
     EXPECT_EQ(out[0], 7);
 }
 
-// A device-resident counter is not host-addressable, so the size could not be
-// read at dispatch. That is rejected where it is written, not mid-run.
-TEST(Integration_DeviceCount, RejectsADeviceResidentCounter)
+// A counter the host cannot read at any moment of a run is rejected where it is
+// written, not mid-run: Device is never host-addressable, and Shared is managed
+// memory the host may not touch while a kernel runs on some backends.
+TEST(Integration_DeviceCount, RejectsACounterThatIsNotHostResident)
 {
     auto rt = Runtime::create();
     auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device);
-    auto shared   = rt.buffer<std::uint32_t>(2);
+    auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
+    auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);
 
-    EXPECT_THROW(API::sized_from_device(resident), SushiException);
-    EXPECT_THROW(API::sized_from_device(shared, 5), SushiException);
-    EXPECT_NO_THROW(API::sized_from_device(shared, 1));
+    for (const Buffer<std::uint32_t>* rejected : { &resident, &shared })
+    {
+        try
+        {
+            (void)API::sized_from_device(*rejected);
+            ADD_FAILURE() << "a non-Host counter was accepted";
+        }
+        catch (const SushiException& e)
+        {
+            EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+            EXPECT_NE(std::string(e.what()).find("Residency::Host"), std::string::npos)
+                << e.what();
+        }
+    }
+    EXPECT_THROW(API::sized_from_device(host, 5), SushiException);
+    EXPECT_NO_THROW(API::sized_from_device(host, 1));
 }

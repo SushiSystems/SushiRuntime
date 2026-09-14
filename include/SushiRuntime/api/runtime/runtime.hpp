@@ -193,7 +193,7 @@ namespace SushiRuntime
                  * @tparam T            Element type (trivially copyable for device use).
                  * @param count        Number of elements.
                  * @param device_index Target device queue; selects the owning context.
-                 * @param residency    Shared (host-addressable) or Device (resident).
+                 * @param residency    Shared, Device or Host; see Residency.
                  * @return An owning Buffer<T> handle.
                  */
                 template <typename T>
@@ -213,7 +213,7 @@ namespace SushiRuntime
                  * @tparam T            Element type (trivially copyable for device use).
                  * @param count        Number of elements in each of the two buffers.
                  * @param device_index Target device queue for both buffers.
-                 * @param residency    Shared (host-addressable) or Device (resident).
+                 * @param residency    Shared, Device or Host; see Residency.
                  * @return An owning State<T> handle.
                  */
                 template <typename T>

@@ -219,7 +219,7 @@ instead. The count is read when the task is dispatched, which is after its
 predecessors have completed, so the value is the one this step just wrote:
 
 ```cpp
-auto counter = rt.buffer<std::uint32_t>(1);   // must be shared, not device-resident
+auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);   // must be Host
 
 g.add(API::Reads(world), API::Writes(counter), N,
       [c = counter.data()](std::size_t) { /* ... c[0] = pairs_found; */ });

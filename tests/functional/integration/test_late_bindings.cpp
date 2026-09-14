@@ -287,7 +287,7 @@ TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
     constexpr std::size_t CAPACITY = 128;
 
     auto rt     = Runtime::create();
-    auto slice  = rt.buffer<std::uint32_t>(2);   // [0] = base, [1] = count
+    auto slice  = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);   // [0] = base, [1] = count
     auto buf    = rt.buffer<int>(CAPACITY);
 
     std::uint32_t* s = slice.data();
@@ -343,9 +343,38 @@ TEST(Integration_LateBindings, BasedAtDeviceRejectsAnUnreadableSlot)
 {
     auto rt = Runtime::create();
     auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device);
-    auto shared   = rt.buffer<std::uint32_t>(2);
+    auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
+    auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);
 
     EXPECT_THROW(API::based_at_device(resident), SushiException);
-    EXPECT_THROW(API::based_at_device(shared, 7), SushiException);
-    EXPECT_NO_THROW(API::based_at_device(shared, 1));
+    EXPECT_THROW(API::based_at_device(shared), SushiException);
+    EXPECT_THROW(API::based_at_device(host, 7), SushiException);
+    EXPECT_NO_THROW(API::based_at_device(host, 1));
+}
+
+// The raw-pointer setter takes no buffer, so add() checks the pointer itself: a
+// slot inside Shared memory is rejected before the graph records the task.
+TEST(Integration_LateBindings, RawSharedSlotIsRejectedAtAdd)
+{
+    constexpr std::size_t CAPACITY = 8;
+
+    auto rt     = Runtime::create();
+    auto shared = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Shared);
+    auto buf    = rt.buffer<int>(CAPACITY);
+    int* p = buf.data();
+
+    auto g = rt.graph();
+    API::Dynamic dyn;
+    dyn.and_sized_from_device(shared.data(), 1);
+    try
+    {
+        g.add(std::move(dyn), API::Reads{}, API::Writes(buf), CAPACITY,
+              [p](std::size_t i) { p[i] = 1; });
+        ADD_FAILURE() << "a raw Shared slot was accepted";
+    }
+    catch (const SushiException& e)
+    {
+        EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+    }
+    EXPECT_EQ(g.size(), 0u) << "the rejected add() must not record a task";
 }

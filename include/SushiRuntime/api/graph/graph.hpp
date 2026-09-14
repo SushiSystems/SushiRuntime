@@ -1791,14 +1791,14 @@ namespace SushiRuntime
                     std::size_t count = 0;
                 };
 
-                // Resolves a late-bound node's iteration window at dispatch. Prefers a
-                // device-written count when one was named, because that is the only
-                // source that can carry a number the device produced earlier in the
-                // same step; otherwise falls back to the step-boundary count (with
-                // USE_BAKED meaning the full compiled capacity). Runs on a worker
-                // thread while the node's command group is being built, which is
-                // after every predecessor's event completed — the reason reading
-                // device-written memory here is sound.
+                /**
+                 * @brief Resolves a late-bound node's base and count at dispatch.
+                 *
+                 * Reads device_base and device_count from Residency::Host buffers that
+                 * completed predecessors wrote, while other kernels may run
+                 * (docs/ARCHITECTURE.md, "Late-bound device values"); otherwise reads
+                 * the step-boundary values, with USE_BAKED meaning the rest of capacity.
+                 */
                 static LiveRange resolve_live_range(
                     const ::SushiRuntime::Graph::LateBindings& lb, std::size_t capacity)
                 {
@@ -1874,6 +1874,7 @@ namespace SushiRuntime
                                                 std::vector<Core::ResourceRegion> writes,
                                                 std::size_t capacity, F&& fn)
                 {
+                    require_host_device_slots(dyn);
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
                     adopt_device_bindings(*lb, dyn, reads);
 
@@ -1890,6 +1891,52 @@ namespace SushiRuntime
                     ++task_count_;
                     dirty_ = true;
                     return *this;
+                }
+
+                /**
+                 * @brief Rejects a Dynamic whose device count or base slot is not host USM.
+                 *
+                 * Resolves each slot's owning queue through the context's registry and
+                 * requires sycl::usm::alloc::host there (docs/ARCHITECTURE.md,
+                 * "Late-bound device values"). Runs before add() mutates the graph.
+                 * @throws Core::SushiException With invalid_access for a non-host slot.
+                 */
+                void require_host_device_slots(const Dynamic& dyn) const
+                {
+                    require_host_slot(dyn.device_count, "sized_from_device");
+                    require_host_slot(dyn.device_base, "based_at_device");
+                }
+
+                /**
+                 * @brief Throws unless @p slot is null or host USM in its owning context.
+                 * @param slot The slot pointer to check; null passes.
+                 * @param what Name of the control that set it, for the message.
+                 * @throws Core::SushiException With invalid_access for a non-host slot.
+                 */
+                void require_host_slot(const std::uint32_t* slot, const char* what) const
+                {
+                    if (slot == nullptr)
+                        return;
+                    void* address = const_cast<void*>(static_cast<const void*>(slot));
+                    sycl::usm::alloc kind = sycl::usm::alloc::unknown;
+                    try
+                    {
+                        kind = sycl::get_pointer_type(
+                            address, ctx_->get_queue_for_ptr(address).get_context());
+                    }
+                    catch (const sycl::exception&)
+                    {
+                        kind = sycl::usm::alloc::unknown;
+                    }
+                    if (kind == sycl::usm::alloc::host)
+                        return;
+                    const char* kind_name = kind == sycl::usm::alloc::shared ? "shared"
+                                          : kind == sycl::usm::alloc::device ? "device"
+                                                                              : "unknown";
+                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                        std::string(what) + ": the slot is " + kind_name + " USM, but the "
+                        "value is read on the host while kernels may run; point it into a "
+                        "Residency::Host buffer."});
                 }
 
                 // Copies a Dynamic's device count source onto the node's bindings and
@@ -1935,6 +1982,7 @@ namespace SushiRuntime
                 template <typename T, class F>
                 Graph& emit_dynamic_state(Dynamic dyn, State<T>& s, F&& fn)
                 {
+                    require_host_device_slots(dyn);
                     auto view = steps_.view_for(s);
                     State<T>* sp = &s;
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();

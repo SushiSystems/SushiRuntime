@@ -4,6 +4,27 @@
 
 ## Correctness (blockers before v1.0.0)
 
+**Safe host reads of Shared memory during a run on Windows CUDA — OPEN (2026-09-14)**
+
+`Residency::Host` covers the runtime's own mid-run reads. User code is not covered: a
+host read of a `Residency::Shared` buffer while any kernel runs on that GPU faults on
+Windows with CUDA (0xC0000006), for example an editor showing a simulation value
+mid-run, or a HOST task touching Shared memory. Candidate designs, choice open:
+
+- A synchronising read that waits on the owning queue's pending work before touching Shared memory.
+- A debug-build guard that reports an unsafe host access to Shared memory with its call site.
+- A documented rule that any value read mid-run lives in `Residency::Host`.
+
+**Late-bound device counts on CUDA under Windows — RESOLVED (2026-09-14)**
+
+Resolved by `Residency::Host`: `sized_from_device` and `based_at_device` now reject
+Device and Shared counters, and the tests allocate counters as pinned host USM. The
+`TempDiag_DeviceCount` tests are removed; `ChainedProducerCountsInOneComposition`
+is the regression. The rule is in `docs/ARCHITECTURE.md`, "Late-bound device values".
+Confirmed by the owner on 2026-09-14 on the RTX 3080 Ti: `Integration_DeviceCount.*`
+6/6, `ChainedProducerCountsInOneComposition` included. The diagnosis record is
+`sushiengine/.superpowers/sdd/2026_09_14_SYCL_VULKAN_INTEROP_PLAN/cuda-late-binding-debug.md`.
+
 **#29 — ThreadLocalMagazine teardown ordering — RESOLVED, then superseded**
 
 The fix landed as described: a flush took the registry lock shared and verified

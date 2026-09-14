@@ -41,27 +41,24 @@ namespace SushiRuntime
             /**
              * @brief Validates a buffer slot a late-bound control will read at dispatch.
              *
-             * Both device-sourced controls have the same two preconditions, and both
-             * are worth failing on at the call site rather than mid-run: a
-             * device-resident buffer is not host-addressable, so reading it where the
-             * kernel is submitted would be undefined behaviour, and an out-of-range
-             * index would read whatever follows the allocation.
+             * The rule is written in docs/ARCHITECTURE.md, "Late-bound device values".
              *
-             * @param slot  Buffer holding the value; must be host-addressable.
+             * @param slot  Buffer holding the value; must be Residency::Host.
              * @param index Element index within @p slot.
              * @param what  Name of the calling factory, for the error message.
              * @return A pointer to the buffer's first element.
-             * @throws Core::SushiException If @p slot is device-resident or @p index
-             *         is out of range.
+             * @throws Core::SushiException With invalid_access if @p slot is not
+             *         Residency::Host or @p index is out of range.
              */
             inline const std::uint32_t* checked_device_slot(
                 const Buffer<std::uint32_t>& slot, std::size_t index, const char* what)
             {
-                if (!slot.host_accessible())
+                if (slot.residency() != Residency::Host)
                     throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                        std::string(what) + ": the buffer is device-resident, but the "
-                        "value is read on the host at dispatch; allocate it with "
-                        "Residency::Shared."});
+                        std::string(what) + ": the buffer is Residency::" +
+                        residency_name(slot.residency()) +
+                        ", but the value is read on the host while kernels may run; "
+                        "allocate it with Residency::Host."});
                 if (index >= slot.size())
                     throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
                         std::string(what) + ": index " + std::to_string(index) +
@@ -106,7 +103,7 @@ namespace SushiRuntime
             CountProvider count_fn;   /**< Empty: iterate the full baked range. */
 
             /**
-             * @brief Host-readable slot a predecessor writes the live count into.
+             * @brief Residency::Host slot a predecessor writes the live count into.
              *
              * Set by sized_from_device(); null otherwise. When set it takes the place
              * of count_fn entirely, because the two answer different questions and
@@ -120,7 +117,7 @@ namespace SushiRuntime
             BaseProvider base_fn;     /**< Empty: iterate from element zero. */
 
             /**
-             * @brief Host-readable slot a predecessor writes the live base into.
+             * @brief Residency::Host slot a predecessor writes the live base into.
              *
              * Set by based_at_device(); null otherwise. When set it replaces
              * base_fn, for the same reason sized_from_device() replaces count_fn.
@@ -185,7 +182,7 @@ namespace SushiRuntime
              *
              * Drops any host-side sized() provider, since the two cannot both decide
              * the iteration size. See sized_from_device() for the contract.
-             * @param counter Host-readable slot a predecessor writes.
+             * @param counter Slot in a Residency::Host allocation a predecessor writes; checked at add().
              * @param index   Element index of the count within @p counter.
              * @return *this, for chaining.
              */
@@ -201,7 +198,7 @@ namespace SushiRuntime
              * @brief Points a Dynamic at a device-written count while chaining inline.
              *
              * Drops any host-side sized() provider, as the lvalue overload does.
-             * @param counter Host-readable slot a predecessor writes.
+             * @param counter Slot in a Residency::Host allocation a predecessor writes; checked at add().
              * @param index   Element index of the count within @p counter.
              * @return This Dynamic, moved out by value into the next call.
              */
@@ -246,7 +243,7 @@ namespace SushiRuntime
              *
              * Drops any host-side based_at() provider, since the two cannot both
              * decide where the node starts.
-             * @param slot  Host-readable slot a predecessor writes.
+             * @param slot  Slot in a Residency::Host allocation a predecessor writes; checked at add().
              * @param index Element index of the base within @p slot.
              * @return *this, for chaining.
              */
@@ -262,7 +259,7 @@ namespace SushiRuntime
              * @brief Points a Dynamic at a device-written base while chaining inline.
              *
              * Drops any host-side based_at() provider, as the lvalue overload does.
-             * @param slot  Host-readable slot a predecessor writes.
+             * @param slot  Slot in a Residency::Host allocation a predecessor writes; checked at add().
              * @param index Element index of the base within @p slot.
              * @return This Dynamic, moved out by value into the next call.
              */
@@ -317,16 +314,17 @@ namespace SushiRuntime
          * reads — the ordering is structural, not a note the caller must remember.
          *
          * Two constraints, both enforced rather than documented: @p counter must be
-         * host-addressable (shared USM), checked here; and the live count must not
+         * Residency::Host, checked here; and the live count must not
          * exceed the capacity the node was compiled for, checked at dispatch, where
          * exceeding it fails the run rather than silently truncating the work.
          *
          * Replaces any sized() provider on the same Dynamic; when() still composes.
          *
-         * @param counter Host-readable buffer a predecessor writes the count into.
+         * @param counter Residency::Host buffer a predecessor writes the count into.
          * @param index   Element index of the count within @p counter.
          * @return A Dynamic carrying the device count source, ready to pass to add().
-         * @throws Core::SushiException If @p counter is device-resident or empty.
+         * @throws Core::SushiException If @p counter is not Residency::Host or @p index
+         *         is out of range.
          */
         inline Dynamic sized_from_device(const Buffer<std::uint32_t>& counter,
                                          std::size_t index = 0)
@@ -376,10 +374,10 @@ namespace SushiRuntime
          * Replaces any based_at() provider on the same Dynamic; when() and the size
          * controls still compose.
          *
-         * @param slot  Host-readable buffer a predecessor writes the base into.
+         * @param slot  Residency::Host buffer a predecessor writes the base into.
          * @param index Element index of the base within @p slot.
          * @return A Dynamic carrying the device base source, ready to pass to add().
-         * @throws Core::SushiException If @p slot is device-resident or @p index is
+         * @throws Core::SushiException If @p slot is not Residency::Host or @p index is
          *         out of range.
          */
         inline Dynamic based_at_device(const Buffer<std::uint32_t>& slot,
