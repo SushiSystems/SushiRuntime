@@ -94,8 +94,8 @@ checkout is a convention, an installed versioned artifact is not.
 ### Version compatibility
 
 The package is written with `SameMinorVersion` compatibility while the project is
-pre-1.0: against the current 0.2.0 release,
-`find_package(SushiRuntime 0.2 REQUIRED)` accepts 0.2.x and rejects 0.3.0,
+pre-1.0: against the current 0.3.0 release,
+`find_package(SushiRuntime 0.3 REQUIRED)` accepts 0.3.x and rejects 0.4.0,
 because the API is not frozen and a minor bump may break you. At the
 v1.0.0 freeze this becomes `SameMajorVersion`.
 
