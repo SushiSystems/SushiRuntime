@@ -137,7 +137,7 @@ namespace SushiRuntime
              * @param ctx          Runtime context that performs the allocation.
              * @param count        Elements to allocate; must be non-zero.
              * @param device_index Device queue to pin the allocation to.
-             * @param residency    Shared or device-resident, matching the input.
+             * @param residency    Residency of the input being reduced.
              * @return An owning pointer to @p count elements.
              * @throws Core::SushiException If the allocation fails.
              */
@@ -147,9 +147,7 @@ namespace SushiRuntime
                 std::size_t count, DeviceIndex device_index, Residency residency)
             {
                 const std::size_t bytes = count * sizeof(T);
-                void* raw = (residency == Residency::Device)
-                    ? ctx->malloc_device_on(bytes, device_index.value())
-                    : ctx->malloc_shared_on(bytes, device_index.value());
+                void* raw = malloc_residency_on(*ctx, bytes, device_index, residency);
 
                 if (raw == nullptr)
                     throw Core::SushiException(Core::Error{

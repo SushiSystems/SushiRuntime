@@ -88,7 +88,7 @@ namespace SushiRuntime
                  * @param ctx          The runtime context that owns the allocations.
                  * @param count        Number of elements in each buffer.
                  * @param device_index Target device queue for both buffers.
-                 * @param residency    Shared (host-addressable) or Device (resident).
+                 * @param residency    Shared, Device or Host; see Residency.
                  */
                 State(std::shared_ptr<Execution::RuntimeContext> ctx,
                       std::size_t count, DeviceIndex device_index = DeviceIndex{0},
@@ -170,14 +170,14 @@ namespace SushiRuntime
 
                 /**
                  * @brief Reports where both fields live.
-                 * @return Residency::Shared for host-addressable USM,
-                 *         Residency::Device for device-resident memory.
+                 * @return Residency::Shared for managed USM, Residency::Device for
+                 *         device-resident memory, Residency::Host for pinned host USM.
                  */
                 Residency residency() const noexcept { return cur_.residency(); }
 
                 /**
                  * @brief Tells whether the host may index the current field directly.
-                 * @return True for shared USM; false for device-resident memory, which
+                 * @return True for shared or host USM; false for device-resident memory, which
                  *         must go through read_range()/write_range().
                  */
                 bool host_accessible() const noexcept { return cur_.host_accessible(); }

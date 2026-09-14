@@ -8,6 +8,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ## [Unreleased]
 
+### Changed
+- 2026-09-14 — Added `Residency::Host` and required it for late-bound device counters (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
+
 ### Documentation
 - 2026-09-07 — Renamed the hub's command from `ss` to `hub` in the manual (`docs/`).
 

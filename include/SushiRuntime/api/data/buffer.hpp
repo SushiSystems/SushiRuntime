@@ -75,14 +75,58 @@ namespace SushiRuntime
          * but at large element counts the driver may migrate it between host and
          * device. Device USM stays resident on its device — the right choice for a
          * world kept on the GPU across frames — but is not host-addressable, so the
-         * host touches it only through read_range()/write_range(). The handle API is
+         * host touches it only through read_range()/write_range(). Host USM is
+         * pinned host memory that device kernels on the owning context write and the
+         * host reads at any moment, including while kernels run. Kernels reach host USM
+         * across the bus and it is page-locked RAM, so it suits small values the host
+         * reads mid-run, not bulk kernel data. The handle API is
          * otherwise identical; residency is chosen once at allocation.
          */
         enum class Residency
         {
             Shared,  /**< Host-addressable USM; the default. */
-            Device   /**< Device-resident USM; host access only via read/write_range. */
+            Device,  /**< Device-resident USM; host access only via read/write_range. */
+            Host     /**< Pinned host USM; host-readable while kernels run. */
         };
+
+        /**
+         * @brief Names a residency as its enumerator spelling, for messages.
+         * @param residency The residency to name.
+         * @return "Shared", "Device", "Host", or "unknown" for an out-of-range value.
+         */
+        inline const char* residency_name(Residency residency) noexcept
+        {
+            switch (residency)
+            {
+                case Residency::Shared: return "Shared";
+                case Residency::Device: return "Device";
+                case Residency::Host:   return "Host";
+            }
+            return "unknown";
+        }
+
+        namespace detail
+        {
+            /**
+             * @brief Allocates USM of the given residency on one device queue.
+             * @param ctx          Runtime context that performs and records the allocation.
+             * @param bytes        Allocation size in bytes.
+             * @param device_index Device queue that owns the allocation.
+             * @param residency    Kind of USM to allocate.
+             * @return The USM pointer, or nullptr on failure.
+             */
+            inline void* malloc_residency_on(Execution::RuntimeContext& ctx, std::size_t bytes,
+                                             DeviceIndex device_index, Residency residency)
+            {
+                switch (residency)
+                {
+                    case Residency::Device: return ctx.malloc_device_on(bytes, device_index.value());
+                    case Residency::Host:   return ctx.malloc_host_on(bytes, device_index.value());
+                    case Residency::Shared: return ctx.malloc_shared_on(bytes, device_index.value());
+                }
+                return nullptr;
+            }
+        } // namespace detail
 
         /**
          * @brief Owning handle to a typed block of unified shared memory.
@@ -111,7 +155,7 @@ namespace SushiRuntime
                 Buffer() = default;
 
                 /**
-                 * @brief Allocates @p count elements of shared USM on one device.
+                 * @brief Allocates @p count elements of USM on one device.
                  *
                  * Allocation is pinned to @p device_index and its owner recorded, so
                  * buffers used together (e.g. a State's two fields) share a context
@@ -121,7 +165,7 @@ namespace SushiRuntime
                  * @param ctx          The runtime context that owns the allocation.
                  * @param count        Number of elements to allocate.
                  * @param device_index Target device queue; selects the owning context.
-                 * @param residency    Shared (host-addressable) or Device (resident).
+                 * @param residency    Shared, Device or Host; see Residency.
                  */
                 Buffer(std::shared_ptr<Execution::RuntimeContext> ctx,
                        std::size_t count, DeviceIndex device_index = DeviceIndex{0},
@@ -134,9 +178,7 @@ namespace SushiRuntime
                 {
                     const std::size_t bytes = count * sizeof(T);
                     auto owner = std::make_unique<Memory::UsmAllocationOwner>(ctx_);
-                    void* address = residency == Residency::Device
-                                        ? ctx_->malloc_device_on(bytes, device_index.value())
-                                        : ctx_->malloc_shared_on(bytes, device_index.value());
+                    void* address = detail::malloc_residency_on(*ctx_, bytes, device_index, residency);
                     // A null address here would make dependency_key() null and skip tracking.
                     if (count > 0 && address == nullptr)
                         throw Core::SushiException(Core::Error{
@@ -153,7 +195,7 @@ namespace SushiRuntime
                  *                     when this buffer is.
                  * @param count        Number of elements @p allocation covers.
                  * @param device_index Target device queue.
-                 * @param residency    Shared (host-addressable) or Device (resident).
+                 * @param residency    Shared, Device or Host; see Residency.
                  * @throws SushiException With allocation_failed when @p count overflows
                  *         its byte count, or @p allocation is smaller than it; @p allocation
                  *         is released before the exception propagates.
@@ -263,20 +305,20 @@ namespace SushiRuntime
 
                 /**
                  * @brief Reports where the allocation lives.
-                 * @return Residency::Shared for host-addressable USM,
-                 *         Residency::Device for device-resident memory.
+                 * @return Residency::Shared for managed USM, Residency::Device for
+                 *         device-resident memory, Residency::Host for pinned host USM.
                  */
                 Residency residency() const noexcept { return residency_; }
 
                 /**
                  * @brief Tells whether the host may index this buffer directly.
-                 * @return True for shared USM; false for device-resident memory, which
-                 *         must go through read_range()/write_range().
+                 * @return True for shared and host USM; false for device-resident
+                 *         memory, which must go through read_range()/write_range().
                  */
-                bool host_accessible() const noexcept { return residency_ == Residency::Shared; }
+                bool host_accessible() const noexcept { return residency_ != Residency::Device; }
 
                 /**
-                 * @brief Host-side element access; valid only for shared USM.
+                 * @brief Host-side element access; valid only for shared or host USM.
                  *
                  * Device-resident memory is not host-addressable, so indexing it on the
                  * host is invalid. Rather than dereference into undefined behaviour, this
@@ -302,7 +344,7 @@ namespace SushiRuntime
                  * The branch-free bulk seam for host code: the residency is checked once,
                  * here, and the returned span indexes with no further checks — seed or
                  * read back in a tight loop without paying per-element validation. Valid
-                 * only for shared USM; a device-resident buffer throws, since its memory
+                 * only for shared or host USM; a device-resident buffer throws, since its memory
                  * is not host-addressable (use read_range()/write_range() there).
                  *
                  * @return A span over all elements, valid while this buffer lives.

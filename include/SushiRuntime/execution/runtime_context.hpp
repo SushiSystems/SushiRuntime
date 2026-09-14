@@ -277,8 +277,20 @@ namespace SushiRuntime
                 void* malloc_device_on(size_t bytes, size_t device_index);
 
                 /**
-                 * @brief Frees USM obtained from malloc_shared/malloc_device and
-                 *        drops its owner record. Safe to call with nullptr.
+                 * @brief Allocates pinned host USM in one specific device queue's context.
+                 *
+                 * Kernels on @p device_index read and write the allocation, and the host
+                 * reads it at any time. The owner is recorded as for malloc_shared_on.
+                 *
+                 * @param bytes        Allocation size in bytes.
+                 * @param device_index Target device queue index ([0, device_count())).
+                 * @return Host USM pointer, or nullptr on failure.
+                 */
+                void* malloc_host_on(size_t bytes, size_t device_index);
+
+                /**
+                 * @brief Frees shared, device or host USM from this context's malloc_* calls
+                 *        and drops its owner record. Safe to call with nullptr.
                  */
                 void free_usm(void* ptr);
 

@@ -78,7 +78,7 @@ namespace SushiRuntime
              *
              * Written once when the task is recorded — before any run — and only read
              * afterwards, so unlike the two fields above it needs no atomicity. The
-             * allocation must be host-addressable (shared USM); the API that sets it
+             * allocation must be Residency::Host (pinned host USM); the API that sets it
              * rejects a device-resident buffer at the call site.
              */
             const std::uint32_t* device_count = nullptr;

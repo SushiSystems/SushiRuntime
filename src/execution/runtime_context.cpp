@@ -481,6 +481,25 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Allocates pinned host USM in a specific device queue's context.
+         *
+         * @param bytes The size in bytes to allocate.
+         * @param device_index The index of the device whose context owns the memory.
+         * @return void* Pointer to the allocated host memory.
+         * @throws std::runtime_error If the device index is out of bounds.
+         */
+        void* RuntimeContext::malloc_host_on(size_t bytes, size_t device_index)
+        {
+            sycl::queue& q = get_queue(device_index); // throws if out of bounds
+            void* p = sycl::malloc_host(bytes, q);
+            if (p)
+            {
+                impl_->usm_registry.record(p, device_index);
+            }
+            return p;
+        }
+
+        /**
          * @brief Allocates shared USM memory on a specific NUMA node.
          *
          * @param bytes The size in bytes to allocate.

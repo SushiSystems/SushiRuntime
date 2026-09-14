@@ -159,3 +159,27 @@ TEST(Integration_DeviceResident, HostAccessOnDeviceThrows)
     EXPECT_THROW((void)buf[0], Core::SushiException);
     EXPECT_THROW((void)buf.host(), Core::SushiException);
 }
+
+// A host-resident buffer is host-addressable, a kernel on its device writes it,
+// and the host reads the result by direct indexing.
+TEST(Integration_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
+{
+    constexpr std::size_t N = 64;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Host);
+
+    EXPECT_EQ(buf.residency(), Residency::Host);
+    EXPECT_TRUE(buf.host_accessible());
+
+    for (std::size_t i = 0; i < N; ++i)
+        buf[i] = static_cast<int>(i);
+
+    int* p = buf.data();
+    auto g = rt.graph();
+    g.add(API::Reads(buf), API::Writes(buf), N, [p](std::size_t i) { p[i] += 1000; });
+    g.run();
+
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(buf[i], static_cast<int>(i) + 1000) << "at i=" << i;
+}
