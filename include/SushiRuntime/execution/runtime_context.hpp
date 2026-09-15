@@ -156,6 +156,40 @@ namespace SushiRuntime
                 sycl::queue& get_queue(size_t xpu_index = 0);
 
                 /**
+                 * @brief Gets the profiling-enabled queue for a specific device.
+                 *
+                 * Shares the plain queue's sycl::context (and its in-order
+                 * property, when the device needs one) but carries
+                 * enable_profiling, so events it submits expose
+                 * command_submit/start/end. Built on the first call for that
+                 * device, under a per-device once_flag, unless
+                 * RuntimeSettings::profiling asked probe_hardware() to build it
+                 * already. The plain queue returned by get_queue() is unchanged
+                 * by this call. When RuntimeSettings::profiling is true the
+                 * plain queue already carries enable_profiling, so this call
+                 * returns that same queue instead of a second one.
+                 *
+                 * @param xpu_index The index of the device (default is 0).
+                 * @return sycl::queue& Reference to the device's profiling queue.
+                 * @throws Core::SushiException If the index is out of bounds.
+                 */
+                sycl::queue& profiling_queue(size_t xpu_index = 0);
+
+                /**
+                 * @brief Whether a profiling queue already exists for a device.
+                 *
+                 * True only after profiling_queue() has been called for
+                 * @p xpu_index, or RuntimeSettings::profiling built it eagerly.
+                 * Exists so a caller can observe the lazy-build contract (no
+                 * profiling queue before the first request) without triggering
+                 * the build itself by calling profiling_queue().
+                 *
+                 * @param xpu_index The index of the device to check.
+                 * @return True if that device's profiling queue is already built.
+                 */
+                bool has_profiling_queue(size_t xpu_index) const noexcept;
+
+                /**
                  * @brief Number of device queues exposed by get_queue().
                  *
                  * Reflects SushiRuntime's own post-dedup device set (one CPU per
@@ -446,7 +480,14 @@ namespace SushiRuntime
             private:
                 struct Impl;
                 /** @brief Pimpl handle for internal implementation details. */
-                sushi_ptr<Impl> impl_; 
+                sushi_ptr<Impl> impl_;
+
+                /**
+                 * @brief Builds device @p xpu_index's profiling queue, once.
+                 * @param xpu_index The device whose profiling queue to build.
+                 * @pre xpu_index < device_count().
+                 */
+                void build_profiling_queue(size_t xpu_index);
         };
     
     } // namespace Execution

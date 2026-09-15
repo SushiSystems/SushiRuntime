@@ -25,7 +25,7 @@ rules and file:line citations live there; every task reads the spec's sections i
 
 ### Task 1: record types
 
-- **Files:** `include/SushiRuntime/core/run_report.hpp`, `tests/unit/test_node_event_record.cpp`.
+- **Files:** `include/SushiRuntime/core/run_report.hpp`, `tests/functional/unit/test_node_event_record.cpp`.
 - **Waits on:** nothing.
 - **Content:** spec §B's `NodeEventRecord`, `ClockPairing`, and the two `RunReport` fields.
   `RunReport::reset()` clears `node_events` without releasing its capacity and zeroes `clock`.
@@ -37,7 +37,7 @@ rules and file:line citations live there; every task reads the spec's sections i
 
 - **Files:** `include/SushiRuntime/graph/node.hpp`, `src/graph/task_graph.cpp`,
   `include/SushiRuntime/api/graph/graph.hpp` (the `add` shapes only),
-  `tests/unit/test_registration_index.cpp`.
+  `tests/functional/unit/test_registration_index.cpp`.
 - **Waits on:** nothing.
 - **Content:** spec §D static half. A per-graph counter is stamped on each node at registration;
   every internal node one public `add()` creates shares that call's index (F5).
@@ -48,7 +48,7 @@ rules and file:line citations live there; every task reads the spec's sections i
 ### Task 3: lazy profiling queue
 
 - **Files:** `include/SushiRuntime/execution/runtime_context.hpp`,
-  `src/execution/runtime_context.cpp`, `tests/integration/test_profiling_queue.cpp`.
+  `src/execution/runtime_context.cpp`, `tests/functional/integration/test_profiling_queue.cpp`.
 - **Waits on:** nothing.
 - **Content:** spec §A option 2 and F2/F3. `profiling_queue(device_index)` returns a queue
   built on the plain queue's context with `enable_profiling`, created on first request under a
@@ -68,7 +68,7 @@ rules each task cites, then commit. **Owner build:** `sr build`.
 
 - **Files:** `include/SushiRuntime/api/graph/graph.hpp`, `src/execution/execution_engine.cpp`
   (`build_plan` stamp only), `src/scheduler/scheduler.cpp` (queue selection only),
-  `tests/integration/test_graph_profiling_switch.cpp`.
+  `tests/functional/integration/test_graph_profiling_switch.cpp`.
 - **Waits on:** wave 1.
 - **Content:** spec §B setter pair, stamped into `CompiledGraph::profiling` at `build_plan()`.
   Every run-path read of `ctx_->profiling_enabled()` in `graph.hpp` becomes the plan flag. The
@@ -88,7 +88,7 @@ rules each task cites, then commit. **Owner build:** `sr build`.
 - **Files:** `include/SushiRuntime/scheduler/event_polling.hpp`, `src/scheduler/scheduler.cpp`
   (host timing and pairing), `src/execution/execution_engine.cpp` (`collect_profiling`,
   `reset_profiling`), the plan's ledger header beside `CompiledGraph`,
-  `tests/integration/test_node_event_records.cpp`.
+  `tests/functional/integration/test_node_event_records.cpp`.
 - **Waits on:** wave 2.
 - **Content:** spec §C and F1, F4, F7. The ledger is sized to the high-water mark; the poller
   writes three timestamps per device dispatch; host nodes store steady times converted at
@@ -107,7 +107,7 @@ rules each task cites, then commit. **Owner build:** `sr build`.
 ### Task 6: `DynamicGraph`
 
 - **Files:** `include/SushiRuntime/api/graph/dynamic_graph.hpp`,
-  `tests/integration/test_dynamic_graph_node_events.cpp`.
+  `tests/functional/integration/test_dynamic_graph_node_events.cpp`.
 - **Waits on:** wave 3.
 - **Content:** the same setter, run overload and plan flag; indices numbered densely by region
   key then `add()` order at each recompose (F6).

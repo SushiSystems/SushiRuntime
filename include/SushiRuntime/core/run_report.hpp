@@ -24,6 +24,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -101,6 +102,38 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Times one dispatch of one node, in nanoseconds on the backend's event clock.
+         *
+         * One record per node dispatch, never per SYCL command group a host-work
+         * node submits internally. `invocation` is the step index within
+         * `run(steps)`, zero for a single run. `node_index` is the node's public
+         * registration index, so several internal nodes one `add()` call created
+         * share it and the pair may repeat within a run.
+         */
+        struct NodeEventRecord
+        {
+            std::uint32_t node_index = 0;  /**< Registration index of the node in its graph. */
+            std::uint32_t invocation = 0;  /**< Zero-based dispatch count of the node within the run. */
+            std::uint64_t submit_ns  = 0;  /**< SYCL command_submit, or the paired host clock for a host node. */
+            std::uint64_t start_ns   = 0;  /**< SYCL command_start, or the paired host clock. */
+            std::uint64_t end_ns     = 0;  /**< SYCL command_end, or the paired host clock. */
+        };
+
+        /**
+         * @brief Pairs one event clock reading with one steady clock reading taken beside it.
+         *
+         * Lets a host node's steady timestamps be converted onto the run's event
+         * clock. A run with no device submission carries the identity pairing:
+         * `event_ns == steady_ns` and `uncertainty_ns == 0`.
+         */
+        struct ClockPairing
+        {
+            std::uint64_t event_ns       = 0;  /**< Event-clock reading of the run's first device submission. */
+            std::uint64_t steady_ns      = 0;  /**< Steady-clock reading taken beside event_ns. */
+            std::uint64_t uncertainty_ns = 0;   /**< Steady-clock spread across the submit call that produced the pairing. */
+        };
+
+        /**
          * @brief Summarizes the execution statistics of a single graph run.
          *
          * Aggregates execution times, NUMA topology breakdowns, and distributed network metrics.
@@ -134,6 +167,8 @@ namespace SushiRuntime
             // G. Profiling breakdown (populated only when the runtime has profiling on)
             std::vector<NodeTiming>   node_timings;     /**< Per-node device/host timing; empty when profiling is off. */
             std::vector<WorkerTiming> worker_timings;   /**< Per-worker busy/steal/poll/idle split; empty when profiling is off. */
+            std::vector<NodeEventRecord> node_events;   /**< Per-dispatch event records; empty unless the graph requested profiling. */
+            ClockPairing                 clock{};       /**< Event/steady clock pairing for node_events; all zero when node_events is empty. */
 
             /**
              * @brief Returns the report to its as-constructed state, keeping capacity.
@@ -168,6 +203,8 @@ namespace SushiRuntime
                 warnings.clear();
                 node_timings.clear();
                 worker_timings.clear();
+                node_events.clear();
+                clock = ClockPairing{};
             }
         };
 

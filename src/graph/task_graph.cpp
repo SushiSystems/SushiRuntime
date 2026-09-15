@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <future>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <atomic>
 #include <vector>
@@ -77,9 +78,19 @@ namespace SushiRuntime
 
             /** @brief Tracker to handle automatic dependencies seamlessly. */
             DependencyTracker tracker;
-            
+
             /** @brief Reference to the runtime context. */
             RuntimeContext& context;
+
+            /**
+             * @brief Source of fresh registration indices, shared across add_* calls.
+             *
+             * add_node()/add_task()/add_native()/add_offload_dynamic() run on the
+             * same lock-free contract as the rest of graph construction, so a plain
+             * counter would race under concurrent callers; fetch_add makes each draw
+             * atomic and distinct regardless of who is calling.
+             */
+            std::atomic<std::uint32_t> registration_counter_{0};
 
             /**
              * @brief Constructs the internal implementation.
@@ -127,11 +138,19 @@ namespace SushiRuntime
              * Eliminates the need for any std::mutex during graph construction.
              *
              * @param node The node to insert.
+             * @param registration Registration index to stamp on the node; a fresh
+             *                     one is drawn from registration_counter_ when absent.
              */
-            void push_node_lock_free(sushi_ptr<Node> node)
+            void push_node_lock_free(sushi_ptr<Node> node,
+                                     std::optional<std::uint32_t> registration = std::nullopt)
             {
+                // Stamped before publishing, so every reader sees a formed index.
+                node->registration_index = registration
+                    ? *registration
+                    : registration_counter_.fetch_add(1, std::memory_order_relaxed);
+
                 Node* raw_ptr = node.get();
-                
+
                 // 1. Push to main lifetime-management stack
                 NodeEntry* entry = new NodeEntry{std::move(node), nullptr};
                 NodeEntry* old_head = all_nodes.load(std::memory_order_relaxed);
@@ -259,17 +278,20 @@ namespace SushiRuntime
          *
          * @param work The task payload to execute.
          * @param dependencies An optional list of manual SYCL dependencies.
+         * @param registration Registration index to stamp on this node instead of
+         *                     drawing a fresh one.
          */
-        void TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies)
+        void TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies,
+                                 std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->work = std::move(work);
             node->sycl_deps = dependencies;
-            
+
             SR_LOG_DEBUG("Node added with {} manual dependencies.", dependencies.size());
 
             // O(1) Lock-Free insertion
-            impl_->push_node_lock_free(std::move(node));
+            impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**
@@ -279,13 +301,16 @@ namespace SushiRuntime
          * @param read_access A list of USM pointers the task reads from.
          * @param write_access A list of USM pointers the task writes to.
          * @param dependencies An optional list of manual SYCL dependencies.
+         * @param registration Registration index to stamp on this node instead of
+         *                     drawing a fresh one.
          */
         void TaskGraph::add_node(TaskWork work,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                                 const std::vector<sycl::event>& dependencies)
+                                 const std::vector<sycl::event>& dependencies,
+                                 std::optional<std::uint32_t> registration)
         {
-            add_node(std::move(work), read_access, write_access, nullptr, dependencies);
+            add_node(std::move(work), read_access, write_access, nullptr, dependencies, registration);
         }
 
         /**
@@ -296,12 +321,15 @@ namespace SushiRuntime
          * @param write_access A list of USM regions the task writes to.
          * @param bindings Shared per-step controls; null behaves like the plain overload.
          * @param dependencies An optional list of manual SYCL dependencies.
+         * @param registration Registration index to stamp on this node instead of
+         *                     drawing a fresh one.
          */
         void TaskGraph::add_node(TaskWork work,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                  std::shared_ptr<LateBindings> bindings,
-                                 const std::vector<sycl::event>& dependencies)
+                                 const std::vector<sycl::event>& dependencies,
+                                 std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->work = std::move(work);
@@ -334,7 +362,7 @@ namespace SushiRuntime
             SR_LOG_DEBUG("Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
 
             // O(1) Lock-Free insertion
-            impl_->push_node_lock_free(std::move(node));
+            impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**
@@ -346,13 +374,16 @@ namespace SushiRuntime
          * @param device_work The preferred device-side execution workload.
          * @param fallback_work A host-side alternative or fallback workload.
          * @param dependencies An optional list of manual SYCL dependencies.
+         * @param registration Registration index to stamp on this node instead of
+         *                     drawing a fresh one.
          */
         void TaskGraph::add_task(const TaskMetadata& meta,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                  TaskWork device_work,
                                  HostWork fallback_work,
-                                 const std::vector<sycl::event>& dependencies)
+                                 const std::vector<sycl::event>& dependencies,
+                                 std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->metadata = meta;
@@ -416,7 +447,7 @@ namespace SushiRuntime
                          read_access.size(), write_access.size());
             
             // O(1) Lock-Free insertion
-            impl_->push_node_lock_free(std::move(node));
+            impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**
@@ -427,19 +458,23 @@ namespace SushiRuntime
          * @param write_access A list of USM pointers the task writes to.
          * @param fallback_work A host-side workload to execute.
          * @param dependencies An optional list of manual SYCL dependencies.
+         * @param registration Registration index to stamp on this node instead of
+         *                     drawing a fresh one.
          */
         void TaskGraph::add_task(const TaskMetadata& meta,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                  HostWork fallback_work,
-                                 const std::vector<sycl::event>& dependencies)
+                                 const std::vector<sycl::event>& dependencies,
+                                 std::optional<std::uint32_t> registration)
         {
             add_task(meta,
                      read_access,
                      write_access,
                      TaskWork{},
                      std::move(fallback_work),
-                     dependencies);
+                     dependencies,
+                     registration);
         }
 
         /**
@@ -450,12 +485,15 @@ namespace SushiRuntime
          * @param live_writes Shared list of the buffers written this step.
          * @param fallback_work Host fallback run when the task is not offloaded.
          * @param dependencies An optional list of manual SYCL dependencies.
+         * @param registration Registration index to stamp on this node instead of
+         *                     drawing a fresh one.
          */
         void TaskGraph::add_offload_dynamic(const TaskMetadata& meta,
                                             std::shared_ptr<std::vector<void*>> live_reads,
                                             std::shared_ptr<std::vector<void*>> live_writes,
                                             HostWork fallback_work,
-                                            const std::vector<sycl::event>& dependencies)
+                                            const std::vector<sycl::event>& dependencies,
+                                            std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->metadata  = meta;
@@ -488,7 +526,7 @@ namespace SushiRuntime
             off.live_writes  = std::move(live_writes);
 #endif
 
-            impl_->push_node_lock_free(std::move(node));
+            impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**
@@ -518,10 +556,21 @@ namespace SushiRuntime
                 head->node->metadata.name = name;
         }
 
+        /**
+         * @brief Draws a fresh registration index from this graph's counter.
+         *
+         * See Impl::registration_counter_; every call returns a distinct value.
+         */
+        std::uint32_t TaskGraph::reserve_registration() noexcept
+        {
+            return impl_->registration_counter_.fetch_add(1, std::memory_order_relaxed);
+        }
+
         void TaskGraph::add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                    const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                    std::function<void()> work,
-                                   const std::vector<sycl::event>& dependencies)
+                                   const std::vector<sycl::event>& dependencies,
+                                   std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->native_work          = std::move(work);
@@ -549,7 +598,7 @@ namespace SushiRuntime
             SR_LOG_DEBUG("Native CPU node added (R: {}, W: {}).",
                          read_access.size(), write_access.size());
 
-            impl_->push_node_lock_free(std::move(node));
+            impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**

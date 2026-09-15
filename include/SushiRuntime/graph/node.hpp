@@ -412,6 +412,17 @@ namespace SushiRuntime
              */
             std::size_t plan_index = 0;
 
+            /**
+             * @brief Identity of the public add() call that registered this node.
+             *
+             * Stamped once by TaskGraph at insertion time from a per-graph counter,
+             * in call order. Unlike plan_index, which reflects the compiled plan's
+             * position, this reflects registration order. Every internal node one
+             * public add() call creates (e.g. a reduction's tile levels) shares this
+             * value. Zero until the node is registered.
+             */
+            std::uint32_t registration_index = 0;
+
             /** @brief Per-run profiling accumulators (see NodeProfiling). */
             NodeProfiling profiling;
 

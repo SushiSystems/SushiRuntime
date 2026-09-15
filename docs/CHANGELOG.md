@@ -8,6 +8,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ## [Unreleased]
 
+### Added
+- 2026-09-15 — Added `Core::NodeEventRecord`, `Core::ClockPairing` and `RunReport::node_events`/`clock` for per-dispatch node timing (`core/run_report.hpp`).
+- 2026-09-15 — Added a registration index on every node, shared by the tile levels of one `add_reduce`, and `TaskGraph::reserve_registration()` (`graph/node.hpp`, `graph/task_graph.hpp`).
+- 2026-09-15 — Added a lazily built profiling queue per device on the plain queue's context (`RuntimeContext::profiling_queue`, `runtime_context.cpp`).
+
 ## [0.3.0] — 2026-09-15
 
 ### Breaking

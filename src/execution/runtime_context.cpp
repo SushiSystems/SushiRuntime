@@ -26,6 +26,7 @@
 #include <mutex>
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/logger.hpp>
@@ -70,6 +71,27 @@ namespace SushiRuntime
             
             /** @brief Flat list for fast access to all queues. */
             std::vector<sycl::queue> all_queues;
+
+            /**
+             * @brief Per-device profiling-enabled queue, built lazily on request.
+             *
+             * Sized to nodes.size() once in probe_hardware() and never resized
+             * again, so a reference handed out by profiling_queue() stays valid
+             * for the context's lifetime. Empty until the device's entry in
+             * profiling_once fires, either eagerly (settings.profiling) or on
+             * the first profiling_queue() call for that device.
+             */
+            std::vector<std::optional<sycl::queue>> profiling_queues;
+
+            /** @brief One-shot guard per device for building its profiling_queues entry. */
+            std::vector<std::once_flag> profiling_once;
+
+            /**
+             * @brief Publishes that profiling_queues[i] is fully constructed.
+             * has_profiling_queue() reads this instead of profiling_queues[i]'s
+             * optional, whose emplace() a concurrent call_once may still be running.
+             */
+            std::vector<std::atomic<bool>> profiling_built;
 
             /**
              * @brief The runtime-wide settings this context was created with.
@@ -153,7 +175,7 @@ namespace SushiRuntime
                     engine.reset();
                 }
 
-                for (auto& q : all_queues)
+                auto drain = [](sycl::queue& q)
                 {
                     // Swallow a late async device error here: this runs in the
                     // Runtime destructor (implicitly noexcept), so a throwing
@@ -172,7 +194,10 @@ namespace SushiRuntime
                     {
                         SR_LOG_WARN("Unknown async device error during shutdown drain.");
                     }
-                }
+                };
+
+                for (auto& q : all_queues) drain(q);
+                for (auto& q : profiling_queues) if (q) drain(*q);
             }
         };
 
@@ -292,6 +317,11 @@ namespace SushiRuntime
                 impl_->all_queues.clear();
                 impl_->numa_aware_queues.clear();
 
+                // Move-assigned, not resized: once_flag and atomic elements are not movable.
+                impl_->profiling_queues = std::vector<std::optional<sycl::queue>>(impl_->nodes.size());
+                impl_->profiling_once = std::vector<std::once_flag>(impl_->nodes.size());
+                impl_->profiling_built = std::vector<std::atomic<bool>>(impl_->nodes.size());
+
                 for (const auto& node : impl_->nodes) 
                 {
                     // FPGAs or custom accelerators often execute better in-order or
@@ -359,6 +389,12 @@ namespace SushiRuntime
                             impl_->all_queues.size(),
                             impl_->numa_aware_queues.size());
 
+                // Eager build: a profiled run must not pay first-touch latency.
+                if (impl_->settings.profiling)
+                {
+                    for (std::size_t i = 0; i < impl_->all_queues.size(); ++i)
+                        build_profiling_queue(i);
+                }
             }
             catch (const std::exception& e) 
             {
@@ -378,6 +414,65 @@ namespace SushiRuntime
         {
             SR_THROW_IF(index >= impl_->all_queues.size(), "Queue index out of bounds.");
             return impl_->all_queues[index];
+        }
+
+        /**
+         * @brief Builds device @p index's profiling queue exactly once.
+         *
+         * Shares the plain queue's context and device, adds enable_profiling,
+         * and keeps in_order when the plain queue carries it (the FPGA case in
+         * probe_hardware()) so the two properties still compose. When
+         * settings.profiling is true the plain queue already carries
+         * enable_profiling (probe_hardware()'s existing behaviour, kept as-is
+         * for existing consumers), so this stores the plain queue itself
+         * instead of building a duplicate second queue.
+         */
+        void RuntimeContext::build_profiling_queue(size_t index)
+        {
+            std::call_once(impl_->profiling_once[index], [this, index]()
+            {
+                sycl::queue& plain = impl_->all_queues[index];
+                if (plain.has_property<sycl::property::queue::enable_profiling>())
+                {
+                    impl_->profiling_queues[index].emplace(plain);
+                }
+                else
+                {
+                    const sycl::property_list props = plain.has_property<sycl::property::queue::in_order>()
+                        ? sycl::property_list{ sycl::property::queue::in_order(),
+                                                sycl::property::queue::enable_profiling() }
+                        : sycl::property_list{ sycl::property::queue::enable_profiling() };
+
+                    impl_->profiling_queues[index].emplace(plain.get_context(), plain.get_device(),
+                        [](sycl::exception_list elist)
+                        {
+                            for (auto e : elist) std::rethrow_exception(e);
+                        },
+                        props);
+                }
+
+                // Stored last: has_profiling_queue() reads only this flag, never the optional.
+                impl_->profiling_built[index].store(true, std::memory_order_release);
+            });
+        }
+
+        /**
+         * @brief Returns device @p index's profiling-enabled queue, building it on first use.
+         */
+        sycl::queue& RuntimeContext::profiling_queue(size_t index)
+        {
+            SR_THROW_IF(index >= impl_->all_queues.size(), "Queue index out of bounds.");
+            build_profiling_queue(index);
+            return *impl_->profiling_queues[index];
+        }
+
+        /**
+         * @brief Reports whether device @p index's profiling queue has been built.
+         */
+        bool RuntimeContext::has_profiling_queue(size_t index) const noexcept
+        {
+            return index < impl_->profiling_built.size()
+                && impl_->profiling_built[index].load(std::memory_order_acquire);
         }
 
         /**
