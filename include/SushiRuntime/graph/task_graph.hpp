@@ -23,8 +23,10 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
@@ -83,8 +85,11 @@ namespace SushiRuntime
                  * 
                  * @param work Function that uses a sycl::handler to run work.
                  * @param dependencies Manual events to wait for before starting.
+                 * @param registration Registration index to stamp on this node instead
+                 *                     of drawing a fresh one from reserve_registration().
                  */
-                void add_node(TaskWork work, const std::vector<sycl::event>& dependencies = {});
+                void add_node(TaskWork work, const std::vector<sycl::event>& dependencies = {},
+                             std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds a device task with automatic dependency tracking.
@@ -98,11 +103,14 @@ namespace SushiRuntime
                  * @param read_access Regions this task reads from.
                  * @param write_access Regions this task writes to.
                  * @param dependencies Additional manual events to wait for.
+                 * @param registration Registration index to stamp on this node instead
+                 *                     of drawing a fresh one from reserve_registration().
                  */
                 void add_node(TaskWork work,
                              const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                              const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                             const std::vector<sycl::event>& dependencies = {});
+                             const std::vector<sycl::event>& dependencies = {},
+                             std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds a device task carrying a late-binding block.
@@ -119,12 +127,15 @@ namespace SushiRuntime
                  * @param write_access Regions this task writes to.
                  * @param bindings Shared per-step controls; null behaves like the plain overload.
                  * @param dependencies Additional manual events to wait for.
+                 * @param registration Registration index to stamp on this node instead
+                 *                     of drawing a fresh one from reserve_registration().
                  */
                 void add_node(TaskWork work,
                              const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                              const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                              std::shared_ptr<LateBindings> bindings,
-                             const std::vector<sycl::event>& dependencies = {});
+                             const std::vector<sycl::event>& dependencies = {},
+                             std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Names the node most recently added to this graph.
@@ -143,6 +154,19 @@ namespace SushiRuntime
                 void name_last_node(const char* name) noexcept;
 
                 /**
+                 * @brief Draws a fresh registration index from this graph's counter.
+                 *
+                 * Lets an add() shape that registers several internal nodes for one
+                 * public call (a reduction's tile levels) reserve one index up front
+                 * and pass it to each node's add_* call as @c registration, so they
+                 * report the same Node::registration_index. Safe to call any number
+                 * of times; each call returns a distinct value.
+                 *
+                 * @return The reserved registration index.
+                 */
+                std::uint32_t reserve_registration() noexcept;
+
+                /**
                  * @brief Adds a semantic task into the graph with explicit device and host fallback work.
                  * 
                  * Use this overload for kernel-capable tasks that need a real device lambda.
@@ -154,13 +178,16 @@ namespace SushiRuntime
                  * @param device_work The actual SYCL handler body used in kernel mode.
                  * @param fallback_work A lambda executed on the host queue when host execution is selected.
                  * @param dependencies Additional explicit user dependencies.
+                 * @param registration Registration index to stamp on this node instead
+                 *                     of drawing a fresh one from reserve_registration().
                  */
                 void add_task(const TaskMetadata& meta,
                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                               TaskWork device_work,
                               HostWork fallback_work,
-                              const std::vector<sycl::event>& dependencies = {});
+                              const std::vector<sycl::event>& dependencies = {},
+                              std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds a semantic task into the graph with host-side fallback only.
@@ -173,12 +200,15 @@ namespace SushiRuntime
                  * @param write_access Memory pointers that this operation overwrites or updates.
                  * @param fallback_work A lambda function executed safely on host execution.
                  * @param dependencies Additional explicit user dependencies.
+                 * @param registration Registration index to stamp on this node instead
+                 *                     of drawing a fresh one from reserve_registration().
                  */
                 void add_task(const TaskMetadata& meta,
                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                               HostWork fallback_work,
-                              const std::vector<sycl::event>& dependencies = {});
+                              const std::vector<sycl::event>& dependencies = {},
+                              std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds an offloadable task whose buffers rotate every step.
@@ -198,12 +228,15 @@ namespace SushiRuntime
                  * @param live_writes Shared list of the buffers written this step.
                  * @param fallback_work Host fallback run when the task is not offloaded.
                  * @param dependencies Additional explicit user dependencies.
+                 * @param registration Registration index to stamp on this node instead
+                 *                     of drawing a fresh one from reserve_registration().
                  */
                 void add_offload_dynamic(const TaskMetadata& meta,
                                          std::shared_ptr<std::vector<void*>> live_reads,
                                          std::shared_ptr<std::vector<void*>> live_writes,
                                          HostWork fallback_work,
-                                         const std::vector<sycl::event>& dependencies = {});
+                                         const std::vector<sycl::event>& dependencies = {},
+                                         std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds a pure-CPU task run natively, with no SYCL submission.
@@ -220,11 +253,14 @@ namespace SushiRuntime
                  * @param write_access Regions this task writes to.
                  * @param work Callable run once on a worker thread; submits no SYCL work.
                  * @param dependencies Additional manual events to wait for.
+                 * @param registration Registration index to stamp on this node instead
+                 *                     of drawing a fresh one from reserve_registration().
                  */
                 void add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                 std::function<void()> work,
-                                const std::vector<sycl::event>& dependencies = {});
+                                const std::vector<sycl::event>& dependencies = {},
+                                std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.

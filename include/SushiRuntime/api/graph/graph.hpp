@@ -29,6 +29,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -72,6 +73,12 @@ namespace SushiRuntime
         // recorded specs and per-step updaters to stitch one plan.
         class Region;
         class DynamicGraph;
+
+        namespace detail
+        {
+            // Test-only friend seam onto Graph::plan_ (Graph has no public accessor).
+            struct RegistrationIndexTestAccess;
+        }
 
         /**
          * @brief A chainable graph of tasks built fluently, then run.
@@ -847,6 +854,10 @@ namespace SushiRuntime
                     void* scratch_key = static_cast<void*>(scratch);
                     constexpr std::size_t tile = detail::REDUCE_TILE;
 
+                    // One token shared by every level; the first reserve fills it in.
+                    auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
+                    reduce_registration_tokens_.push_back(registration_token);
+
                     for (std::size_t i = 0; i < levels.size(); ++i)
                     {
                         const detail::ReduceLevel& level = levels[i];
@@ -868,14 +879,18 @@ namespace SushiRuntime
                                                           level.out_offset * sizeof(T),
                                                           level.out_count * sizeof(T)});
 
-                        add(reads, writes, level.out_count,
+                        // Replicates add()'s liveness-observe step; see emit_per_element_tracked().
+                        observe(reads);
+                        observe(writes);
+                        emit_per_element_tracked(reads.keys, writes.keys, level.out_count,
                             [src, dst, in_count, op](std::size_t t)
                             {
                                 const std::size_t begin = t * tile;
                                 std::size_t end = begin + tile;
                                 if (end > in_count) end = in_count;
                                 dst[t] = detail::fold_tile(op, src, begin, end);
-                            });
+                            },
+                            registration_token);
                     }
                     return *this;
                 }
@@ -1405,6 +1420,7 @@ namespace SushiRuntime
                 // The handle run_async() returns settles the step through the two
                 // private members below, which is the whole of its access.
                 template <class Owner> friend class RunHandle;
+                friend struct detail::RegistrationIndexTestAccess;
 
                 /** @brief The engine a pending asynchronous step is running on. */
                 Execution::IExecutionEngine& async_engine()
@@ -1757,24 +1773,38 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                // Emits a 1-D per-element tracked task. The single funnel for both
-                // the raw-pointer and the Reads/Writes explicit-tracking overloads,
-                // so the task records exactly one set of read/write regions however
-                // the caller named them.
+                /**
+                 * @brief Emits a 1-D per-element tracked task, the single funnel
+                 *        for the raw-pointer and Reads/Writes tracking overloads.
+                 *
+                 * @param registration_token Shared slot grouping this node's index
+                 *        with others from one public add() call; null draws a plain
+                 *        fresh index.
+                 */
                 template <class F>
                 Graph& emit_per_element_tracked(std::vector<Core::ResourceRegion> reads,
                                                 std::vector<Core::ResourceRegion> writes,
-                                                std::size_t n, F&& fn)
+                                                std::size_t n, F&& fn,
+                                                std::shared_ptr<std::optional<std::uint32_t>>
+                                                    registration_token = nullptr)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), n,
                                       reads = std::move(reads),
-                                      writes = std::move(writes)](BackingGraph& bg)
+                                      writes = std::move(writes),
+                                      registration_token](BackingGraph& bg)
                     {
+                        std::optional<std::uint32_t> registration;
+                        if (registration_token)
+                        {
+                            if (!registration_token->has_value())
+                                *registration_token = bg.reserve_registration();
+                            registration = *registration_token;
+                        }
                         bg.add_node([fn, n](sycl::handler& h)
                         {
                             h.parallel_for(sycl::range<1>(n),
                                            [fn](sycl::id<1> i) { fn(i[0]); });
-                        }, reads, writes);
+                        }, reads, writes, {}, registration);
                     });
                     ++task_count_;
                     dirty_ = true;
@@ -2061,6 +2091,10 @@ namespace SushiRuntime
                 // BackingGraph is built whenever the topology changes.
                 void build_plan()
                 {
+                    // Each rebuild starts a fresh BackingGraph counter at 0.
+                    for (auto& token : reduce_registration_tokens_)
+                        token->reset();
+
                     BackingGraph bg(*ctx_);
                     for (auto& spec : specs_)
                     {
@@ -2110,6 +2144,9 @@ namespace SushiRuntime
                 // the pointer its kernels captured stays valid across a recompile and
                 // across the DynamicGraph composer rebuilding a region from its specs.
                 std::vector<std::shared_ptr<void>> reduce_scratch_;
+
+                // Registration tokens add_reduce() shares across levels; build_plan() resets them.
+                std::vector<std::shared_ptr<std::optional<std::uint32_t>>> reduce_registration_tokens_;
 
                 // Liveness observers of every typed handle the recorded tasks touch.
                 // Checked once per run to catch a Buffer/State freed before the graph
