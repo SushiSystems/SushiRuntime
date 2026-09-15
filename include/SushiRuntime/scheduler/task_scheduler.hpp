@@ -366,6 +366,26 @@ namespace SushiRuntime
                 /** @brief Checks whether there are pending submissions left in the injector queue. */
                 bool has_pending_submissions();
 
+                /**
+                 * @brief Picks which of a device's two queues a dispatch uses.
+                 * @param index Device queue index, as returned by get_queue()/
+                 *              profiling_queue().
+                 * @return The profiling queue when the round's plan requested
+                 *         profiling, the plain queue otherwise.
+                 */
+                sycl::queue& dispatch_queue(std::size_t index);
+
+                /**
+                 * @brief Finds the device index behind an already-selected queue.
+                 *
+                 * Lets a locality fallback (get_queue_for_ptr, get_numa_local_queue)
+                 * that returns a queue rather than an index still route through
+                 * dispatch_queue().
+                 * @param q A queue this scheduler's context vended.
+                 * @return Its device index, or SIZE_MAX if none matches.
+                 */
+                std::size_t queue_device_index(sycl::queue& q) const;
+
             public:
                 /** @brief Creates a new task scheduler. */
                 TaskScheduler(SushiRuntime::Execution::RuntimeContext& ctx);
@@ -390,8 +410,11 @@ namespace SushiRuntime
                  * for the upcoming graph. Must be called before submitting the first
                  * root node of each round. Avoids thread creation/destruction between
                  * successive graph runs by reusing the persistent worker pool.
+                 *
+                 * @param profiling The round's plan flag; dispatch routes device
+                 *                  nodes to the profiling queue while it is set.
                  */
-                void arm_for_execution();
+                void arm_for_execution(bool profiling = false);
 
                 /**
                  * @brief Returns the pool to its parked state after a run quiesces.

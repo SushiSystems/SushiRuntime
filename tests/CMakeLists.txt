@@ -112,6 +112,7 @@ add_executable(sr_functional_tests
     functional/integration/test_graph.cpp
     functional/integration/test_sycl_execution.cpp
     functional/integration/test_profiling_queue.cpp
+    functional/integration/test_graph_profiling_switch.cpp
     functional/integration/test_async_execution.cpp
     functional/integration/test_heterogeneous_pipeline.cpp
     functional/integration/test_scheduler_integration.cpp

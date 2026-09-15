@@ -215,42 +215,47 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Picks which of a device's two queues a dispatch uses.
+         */
+        sycl::queue& TaskScheduler::dispatch_queue(std::size_t index)
+        {
+            return profiling_active_.load(std::memory_order_acquire)
+                       ? context.profiling_queue(index)
+                       : context.get_queue(index);
+        }
+
+        /**
+         * @brief Finds the device index behind an already-selected queue.
+         */
+        std::size_t TaskScheduler::queue_device_index(sycl::queue& q) const
+        {
+            const std::size_t n = context.device_count();
+            for (std::size_t i = 0; i < n; ++i)
+                if (context.get_queue(i) == q)
+                    return i;
+            return static_cast<std::size_t>(-1);
+        }
+
+        /**
          * @brief Arms the scheduler for a new execution round.
          * Signals worker threads to wake up and begin processing tasks.
          */
-        void TaskScheduler::arm_for_execution()
+        void TaskScheduler::arm_for_execution(bool profiling)
         {
-            // Signal workers that a new execution round has started.
-            // This is called by ExecutionEngine before submitting root nodes,
-            // and again by the sentinel's host_task to re-arm for the next round.
-            //
-            // Clear any failure carried over from a previous run: a task exception
-            // aborts only its own run (drain-to-sentinel), so the pool must start
-            // each new round clean. The sentinel reads run_failed()/run_error()
-            // before calling this, so clearing here does not race that read.
+            // Wakes workers for a new round; clears the previous round's failure.
             {
                 std::lock_guard<std::mutex> lock(run_error_mutex_);
                 run_error_ = nullptr;
             }
             run_failed_.store(false, std::memory_order_release);
 
-            // Publish the context's (fixed) profiling choice to the poller before
-            // workers run, so completion accumulates per-node timing under profiling
-            // and stays free of timestamp reads otherwise.
-            const bool prof = context.profiling_enabled();
-            event_poller.set_profiling(prof);
-            profiling_active_.store(prof, std::memory_order_release);
+            // Publish this round's plan flag to the poller before workers run, so
+            // completion accumulates per-node timing under profiling and stays
+            // free of timestamp reads otherwise.
+            event_poller.set_profiling(profiling);
+            profiling_active_.store(profiling, std::memory_order_release);
 
-            // Under pending_mutex, not merely atomically: an idle worker evaluates
-            // this flag as part of the wait predicate while holding that mutex, and
-            // a store made outside it can land in the window between the worker
-            // reading the predicate as false and actually blocking. The notify then
-            // finds no waiter and is lost, and the run does not begin until
-            // something else wakes the pool. Publishing the flag under the same
-            // mutex the predicate is evaluated under closes that window, which is
-            // what lets the idle wait be a plain wait with no timeout to fall back
-            // on. Notify outside the lock so the woken worker does not immediately
-            // block on a mutex this thread still holds.
+            // The flag is one term of the idle wait predicate, so it is set under pending_mutex.
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);
                 running.store(true, std::memory_order_release);
@@ -705,24 +710,12 @@ namespace SushiRuntime
                     deps = node->sycl_deps.to_vector();
                 }
 
-                // A pure-CPU host task submits no device work, so it needs no
-                // queue: run it directly on this worker thread and report an empty
-                // event, which the poller treats as ready-inline. Completion flows
-                // through the same trigger_successors + release path as any other
-                // task — one completion contract, not a second scheduler. The node
-                // is only dispatched once its predecessor events have completed, so
-                // the shared USM it reads is already visible host-side and the SYCL
-                // deps are moot. Acquiring a queue is skipped entirely.
+                // A pure-CPU host task needs no queue and runs inline (see design spec §0).
                 if (node && node->get_execution_mode() == Task::ExecutionMode::HOST &&
                     !node->submits_device_work())
                 {
-                    // Native work runs synchronously here, so wall-clock around it is
-                    // its true duration. Only host_ns is taken here; the invocation
-                    // count is bumped once at completion (poll_events), the single
-                    // chokepoint every node passes through, so nothing double-counts.
-                    // The timing read happens only under profiling, leaving the
-                    // default path untouched.
-                    if (context.profiling_enabled())
+                    // Timing follows this run's plan flag, not the context-wide setting.
+                    if (profiling_active_.load(std::memory_order_acquire))
                     {
                         const auto h0 = std::chrono::steady_clock::now();
                         node->execute_native();
@@ -800,11 +793,23 @@ namespace SushiRuntime
                     node->locality_checked_ = true; // co-located; never re-check
                 }
 
-                auto& q =
-                    (node && node->cached_queue_index_ >= 0)
-                        ? context.get_queue(static_cast<size_t>(node->cached_queue_index_))
-                        : (anchor ? context.get_queue_for_ptr(anchor, target_numa_id)
-                                  : context.get_numa_local_queue(target_numa_id));
+                // Every branch resolves an index and funnels through dispatch_queue().
+                sycl::queue& q = [&]() -> sycl::queue&
+                {
+                    if (node && node->cached_queue_index_ >= 0)
+                        return dispatch_queue(static_cast<std::size_t>(node->cached_queue_index_));
+
+                    sycl::queue& picked = anchor
+                        ? context.get_queue_for_ptr(anchor, target_numa_id)
+                        : context.get_numa_local_queue(target_numa_id);
+
+                    // Skips the index lookup entirely on the default (non-profiled) path.
+                    if (!profiling_active_.load(std::memory_order_acquire))
+                        return picked;
+
+                    const std::size_t idx = queue_device_index(picked);
+                    return idx != static_cast<std::size_t>(-1) ? dispatch_queue(idx) : picked;
+                }();
 
                 sycl::event e;
                 if (task->get_execution_mode() == Task::ExecutionMode::HOST)

@@ -1,6 +1,6 @@
 # G1 implementation plan: node event records and a per-graph profiling switch
 
-**Status:** written 2026-09-15; nothing dispatched.
+**Status:** waves 1 and 2 landed 2026-09-16; waves 3 and 4 open.
 
 **Spec:** `docs/superpowers/specs/2026-09-15-g1-node-event-records-design.md`. Exact types,
 rules and file:line citations live there; every task reads the spec's sections it names.
@@ -68,7 +68,10 @@ rules each task cites, then commit. **Owner build:** `sr build`.
 
 - **Files:** `include/SushiRuntime/api/graph/graph.hpp`, `src/execution/execution_engine.cpp`
   (`build_plan` stamp only), `src/scheduler/scheduler.cpp` (queue selection only),
-  `tests/functional/integration/test_graph_profiling_switch.cpp`.
+  `tests/functional/integration/test_graph_profiling_switch.cpp`; as landed also
+  `execution/execution_engine.hpp` (`CompiledGraph::profiling`), `scheduler/task_scheduler.hpp`
+  (`dispatch_queue`, the arming flag) and `api/graph/dynamic_graph.hpp` (stamps the runtime setting
+  until Task 6).
 - **Waits on:** wave 1.
 - **Content:** spec §B setter pair, stamped into `CompiledGraph::profiling` at `build_plan()`.
   Every run-path read of `ctx_->profiling_enabled()` in `graph.hpp` becomes the plan flag. The
