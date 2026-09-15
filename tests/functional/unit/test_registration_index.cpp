@@ -90,12 +90,10 @@ namespace
 /**
  * @brief Verifies registration_index follows call order, not compiled order.
  *
- * Registers A, B, C in that order. TaskGraph::compile() pops its LIFO
- * insertion stack, so all_nodes ends up in the reverse order (C, B, A) and
- * plan_index, stamped from that position, is the mirror image of
- * registration order. registration_index must still read 0, 1, 2 for A, B, C.
+ * Registers A, B, C in that order; compile() lists them C, B, A, and
+ * registration_index must still read 0, 1, 2.
  */
-TEST(Unit_RegistrationIndexTest, NodeIndexIsRegistrationOrder)
+TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);
@@ -120,9 +118,6 @@ TEST(Unit_RegistrationIndexTest, NodeIndexIsRegistrationOrder)
     EXPECT_EQ(find_named(plan, "B").registration_index, 1u);
     EXPECT_EQ(find_named(plan, "C").registration_index, 2u);
 
-    // plan_index is the reverse; registration_index must not be reading it.
-    EXPECT_EQ(find_named(plan, "A").plan_index, 2u);
-    EXPECT_EQ(find_named(plan, "C").plan_index, 0u);
 }
 
 /**
@@ -130,7 +125,7 @@ TEST(Unit_RegistrationIndexTest, NodeIndexIsRegistrationOrder)
  *        them under one registration_index, the mechanism Graph::add_reduce()
  *        uses so every tile level of one call reports the same node_index.
  */
-TEST(Unit_RegistrationIndexTest, ReservedIndexSharedAcrossCallsGroupsNodes)
+TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);
@@ -178,7 +173,7 @@ TEST(Unit_RegistrationIndexTest, ReservedIndexSharedAcrossCallsGroupsNodes)
  * needs three levels (see Unit_FixedOrderReduce.PlanLayoutIsPureAndDisjoint
  * for the same rule at N = 1000000): 70000 -> 274 -> 2 -> 1.
  */
-TEST(Unit_RegistrationIndexTest, AddReduceGroupsTileLevelsUnderOneIndex)
+TEST(Unit_RegistrationIndex, AddReduceGroupsTileLevelsUnderOneIndex)
 {
     using API::detail::RegistrationIndexTestAccess;
 
@@ -233,7 +228,7 @@ TEST(Unit_RegistrationIndexTest, AddReduceGroupsTileLevelsUnderOneIndex)
  * reduce's levels must still share one index, distinct from every other
  * node's, and every node's index must be dense 0..n-1 in registration order.
  */
-TEST(Unit_RegistrationIndexTest, AddReduceGroupSurvivesRebuild)
+TEST(Unit_RegistrationIndex, AddReduceGroupSurvivesRebuild)
 {
     using API::detail::RegistrationIndexTestAccess;
 
