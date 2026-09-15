@@ -927,6 +927,8 @@ namespace SushiRuntime
                     // it is gathered solely when profiling is on.
                     plan_.roots.assign(roots_.begin(), roots_.end());
                     plan_.sentinel = sentinel_;
+                    // No per-graph request yet (wave 4); follows the runtime-wide setting.
+                    plan_.profiling = ctx_->profiling_enabled();
                     plan_.all_nodes.clear();
                     if (ctx_->profiling_enabled())
                         for (auto& kv : states_)

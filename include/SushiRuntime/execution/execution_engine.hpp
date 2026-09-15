@@ -100,6 +100,9 @@ namespace SushiRuntime
             std::vector<std::int32_t> base_in_degree;
             /** @brief Sentinel's compiled in-degree baseline. */
             std::int32_t sentinel_in_degree = 0;
+
+            /** @brief Whether this plan dispatches its device nodes on the profiling queue. */
+            bool profiling = false;
         };
 
         /**

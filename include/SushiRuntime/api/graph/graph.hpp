@@ -1175,6 +1175,28 @@ namespace SushiRuntime
                 std::size_t compile_count() const noexcept { return compiles_; }
 
                 /**
+                 * @brief Requests or withdraws per-node device timing for this graph.
+                 *
+                 * Marks the plan dirty so the next run recompiles with the new
+                 * `CompiledGraph::profiling` flag stamped in. Independent of every
+                 * other graph on the same runtime.
+                 * @param requested True to dispatch this graph's device nodes on the
+                 *                  runtime's profiling queue and collect NodeTiming.
+                 */
+                void set_profiling_requested(bool requested) noexcept
+                {
+                    profiling_requested_ = requested;
+                    dirty_ = true;
+                }
+
+                /**
+                 * @brief Reports whether this graph currently requests profiling.
+                 * @return The last value set by set_profiling_requested(), or the
+                 *         runtime's RuntimeSettings::profiling default.
+                 */
+                bool profiling_requested() const noexcept { return profiling_requested_; }
+
+                /**
                  * @brief Runs the graph once, blocking until it completes.
                  * @return A RunReport summarising the run.
                  * @throws Core::SushiException on any synchronous or device error.
@@ -1337,7 +1359,7 @@ namespace SushiRuntime
                     // something subtly different from a synchronous one.
                     steps_.resync();
                     engine.reset_cancellation();
-                    if (ctx_->profiling_enabled())
+                    if (plan_.profiling)
                         engine.reset_profiling(plan_);
 
                     state.before = engine.metrics();
@@ -1471,12 +1493,12 @@ namespace SushiRuntime
                     report.host_to_device_bytes =
                         ctx_->host_to_device_bytes() - state.host_to_device_before;
 
-                    if (ctx_->profiling_enabled())
+                    if (plan_.profiling)
                         engine.collect_profiling(plan_, report);
                 }
 
                 explicit Graph(std::shared_ptr<Execution::RuntimeContext> ctx)
-                    : ctx_(std::move(ctx))
+                    : ctx_(std::move(ctx)), profiling_requested_(ctx_->settings().profiling)
                 {
                 }
 
@@ -1596,8 +1618,8 @@ namespace SushiRuntime
                     engine.reset_cancellation();
 
                     // Clear the profiling accumulators so the report covers only this
-                    // run; only when the context was built for profiling.
-                    const bool profiling = ctx_->profiling_enabled();
+                    // run; only when the plan requests profiling.
+                    const bool profiling = plan_.profiling;
                     if (profiling)
                         engine.reset_profiling(plan_);
 
@@ -2102,6 +2124,7 @@ namespace SushiRuntime
                         bg.name_last_node(spec.name);
                     }
                     plan_ = bg.compile();
+                    plan_.profiling = profiling_requested_;
                     plan_.capture_base_state();
                     dirty_ = false;
                     ++compiles_;
@@ -2175,6 +2198,9 @@ namespace SushiRuntime
                 // It owns its own replay baseline (see capture_base_state/rearm).
                 Execution::CompiledGraph plan_;
                 bool dirty_ = true;
+
+                // Defaults from RuntimeSettings::profiling; stamped into plan_.profiling at build_plan().
+                bool profiling_requested_ = false;
         };
 
     } // namespace API

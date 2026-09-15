@@ -446,8 +446,10 @@ namespace SushiRuntime
 
                 auto* latch     = &impl_->completion;
                 auto* sched_ptr = &impl_->scheduler;
+                // Fixed for the sentinel's lifetime; a changed request rewires a fresh one.
+                const bool profiling = graph.profiling;
                 graph.sentinel->host_work =
-                    [latch, sched_ptr]
+                    [latch, sched_ptr, profiling]
                     (sycl::queue&, const std::vector<sycl::event>& deps) -> sycl::event
                     {
                         // The sentinel is the final node: the DAG only dispatches it
@@ -483,7 +485,7 @@ namespace SushiRuntime
                         // nodes and must not park mid-drain. complete() disarms
                         // once that has quiesced, and the next submit() arms
                         // again, so this is not the next round's arming.
-                        sched_ptr->arm_for_execution();
+                        sched_ptr->arm_for_execution(profiling);
 
                         latch->signal(failed, std::move(err));
                         return {};
@@ -496,7 +498,7 @@ namespace SushiRuntime
             // sentinel signalled, i.e. after that step fully drained, so resetting
             // here races nothing.
             impl_->completion.reset();
-            impl_->scheduler.arm_for_execution();
+            impl_->scheduler.arm_for_execution(graph.profiling);
 
             // One batched injector pass instead of one submit() (lock + notify) per
             // root — the per-step root-injection cost no longer scales with fan-out.
