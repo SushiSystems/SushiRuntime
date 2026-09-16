@@ -1,6 +1,6 @@
 # G1 implementation plan: node event records and a per-graph profiling switch
 
-**Status:** waves 1 and 2 landed 2026-09-16; waves 3 and 4 open.
+**Status:** waves 1 to 3 landed 2026-09-16; wave 4 open.
 
 **Spec:** `docs/superpowers/specs/2026-09-15-g1-node-event-records-design.md`. Exact types,
 rules and file:line citations live there; every task reads the spec's sections it names.
@@ -91,7 +91,9 @@ rules each task cites, then commit. **Owner build:** `sr build`.
 - **Files:** `include/SushiRuntime/scheduler/event_polling.hpp`, `src/scheduler/scheduler.cpp`
   (host timing and pairing), `src/execution/execution_engine.cpp` (`collect_profiling`,
   `reset_profiling`), the plan's ledger header beside `CompiledGraph`,
-  `tests/functional/integration/test_node_event_records.cpp`.
+  `tests/functional/integration/test_node_event_records.cpp`; as landed also `core/profiling_ledger.hpp`,
+  `scheduler/task_scheduler.hpp`, `scheduler/task.hpp`, `api/graph/graph.hpp`, `api/graph/dynamic_graph.hpp`,
+  `graph/node.hpp` and `tests/functional/integration/test_node_event_records_allocation.cpp`.
 - **Waits on:** wave 2.
 - **Content:** spec §C and F1, F4, F7. The ledger is sized to the high-water mark; the poller
   writes three timestamps per device dispatch; host nodes store steady times converted at

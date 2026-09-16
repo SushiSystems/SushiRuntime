@@ -237,6 +237,15 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Wires the plan's event ledger for the round about to be armed.
+         */
+        void TaskScheduler::set_profiling_ledger(Core::ProfilingLedger* ledger) noexcept
+        {
+            active_ledger_.store(ledger, std::memory_order_release);
+            event_poller.set_ledger(ledger);
+        }
+
+        /**
          * @brief Arms the scheduler for a new execution round.
          * Signals worker threads to wake up and begin processing tasks.
          */
@@ -254,6 +263,11 @@ namespace SushiRuntime
             // free of timestamp reads otherwise.
             event_poller.set_profiling(profiling);
             profiling_active_.store(profiling, std::memory_order_release);
+
+            // The step every event this round's workers dispatch will capture.
+            current_dispatch_step_.store(
+                next_dispatch_step_.fetch_add(1, std::memory_order_acq_rel),
+                std::memory_order_release);
 
             // The flag is one term of the idle wait predicate, so it is set under pending_mutex.
             {
@@ -273,6 +287,8 @@ namespace SushiRuntime
          */
         void TaskScheduler::disarm() noexcept
         {
+            // The ledger pointer must not dangle past its owning CompiledGraph's lifetime.
+            set_profiling_ledger(nullptr);
             std::lock_guard<std::mutex> lock(pending_mutex);
             running.store(false, std::memory_order_release);
         }
@@ -717,13 +733,33 @@ namespace SushiRuntime
                     // Timing follows this run's plan flag, not the context-wide setting.
                     if (profiling_active_.load(std::memory_order_acquire))
                     {
+                        // Captured now, not read at reap, so a later round's step cannot land on this record.
+                        const std::uint32_t step = current_dispatch_step_.load(std::memory_order_acquire);
                         const auto h0 = std::chrono::steady_clock::now();
                         node->execute_native();
                         const auto h1 = std::chrono::steady_clock::now();
-                        node->profiling.host_ns.fetch_add(
-                            static_cast<std::uint64_t>(
-                                std::chrono::duration_cast<std::chrono::nanoseconds>(h1 - h0).count()),
-                            std::memory_order_relaxed);
+                        const std::uint64_t h0_ns = static_cast<std::uint64_t>(
+                            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                h0.time_since_epoch()).count());
+                        const std::uint64_t h1_ns = static_cast<std::uint64_t>(
+                            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                h1.time_since_epoch()).count());
+
+                        // Raw steady times; converted onto the run's event clock at collect().
+                        if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
+                        {
+                            const std::uint32_t slot = ledger->claim_slot(node->registration_index);
+                            if (slot != Core::ProfilingLedger::npos)
+                            {
+                                Core::NodeEventRecord rec{};
+                                rec.node_index = node->registration_index;
+                                rec.invocation = step;
+                                rec.submit_ns  = h0_ns;
+                                rec.start_ns   = h0_ns;
+                                rec.end_ns     = h1_ns;
+                                ledger->write(node->registration_index, slot, rec);
+                            }
+                        }
                     }
                     else
                     {
@@ -818,11 +854,36 @@ namespace SushiRuntime
                 }
                 else
                 {
-                    e = q.submit([&](sycl::handler& h) 
+                    // The first device submission to reach here claims the run's clock pairing.
+                    Core::ProfilingLedger* pairing_ledger = nullptr;
+                    std::chrono::steady_clock::time_point pairing_t0;
+                    if (profiling_active_.load(std::memory_order_acquire))
+                    {
+                        if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
+                            if (ledger->claim_pairing_owner(task))
+                            {
+                                pairing_ledger = ledger;
+                                pairing_t0 = std::chrono::steady_clock::now();
+                            }
+                    }
+
+                    e = q.submit([&](sycl::handler& h)
                     {
                         if (!deps.empty()) h.depends_on(deps);
                         task->execute(h);
                     });
+
+                    if (pairing_ledger)
+                    {
+                        const auto pairing_t1 = std::chrono::steady_clock::now();
+                        const std::uint64_t steady_ns = static_cast<std::uint64_t>(
+                            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                pairing_t0.time_since_epoch()).count());
+                        const std::uint64_t uncertainty_ns = static_cast<std::uint64_t>(
+                            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                pairing_t1 - pairing_t0).count());
+                        pairing_ledger->set_pairing_submit_window(steady_ns, uncertainty_ns);
+                    }
                 }
                 
                 // An empty event means the host work already ran inline (synchronous
@@ -837,7 +898,8 @@ namespace SushiRuntime
                 // ready == "no real event" (inline host work); has_event is its
                 // inverse, cached so the poll loop never reconstructs sycl::event{}.
                 const bool ready = (e == sycl::event{});
-                events.push({e, task, ready, /*has_event=*/!ready});
+                events.push({e, task, ready, /*has_event=*/!ready,
+                            current_dispatch_step_.load(std::memory_order_acquire)});
             } 
             catch (...)
             {

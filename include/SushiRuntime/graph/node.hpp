@@ -587,28 +587,6 @@ namespace SushiRuntime
                 }
             }
 
-            /**
-             * @brief Adds one completion to this node's profiling counters.
-             *
-             * The sentinel is skipped: it is plumbing that closes the step, not a
-             * system the caller asked to run, so counting it would put a row in the
-             * report for work nobody wrote. Relaxed ordering throughout — the numbers
-             * are read after the step's completion barrier, which supplies the
-             * happens-before on its own.
-             *
-             * @param device_ns Kernel device time for this completion; 0 when the
-             *                  backend reported none, in which case only the
-             *                  invocation count moves.
-             */
-            void record_completion(std::uint64_t device_ns) noexcept override
-            {
-                if (is_sentinel)
-                    return;
-                profiling.invocations.fetch_add(1, std::memory_order_relaxed);
-                if (device_ns)
-                    profiling.device_ns.fetch_add(device_ns, std::memory_order_relaxed);
-            }
-
             /** @brief Returns prioritized value from metadata. */
             int get_priority() const noexcept override          { return metadata.priority; }
 

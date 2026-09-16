@@ -78,6 +78,8 @@ namespace SushiRuntime
         {
             // Test-only friend seam onto Graph::plan_ (Graph has no public accessor).
             struct RegistrationIndexTestAccess;
+            // Test-only friend seam onto Graph::plan_, for G1 node-event-record tests.
+            struct NodeEventRecordsTestAccess;
         }
 
         /**
@@ -1405,7 +1407,7 @@ namespace SushiRuntime
                 [[nodiscard]] Core::Result<Core::RunReport, Core::Error>
                 try_run(std::size_t steps) noexcept
                 {
-                    return drive([steps](std::size_t k) { return k < steps; });
+                    return drive([steps](std::size_t k) { return k < steps; }, steps);
                 }
 
                 /**
@@ -1428,7 +1430,7 @@ namespace SushiRuntime
                 [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
                 try_run(std::size_t steps, Core::RunReport& reuse) noexcept
                 {
-                    return drive([steps](std::size_t k) { return k < steps; }, reuse);
+                    return drive([steps](std::size_t k) { return k < steps; }, reuse, steps);
                 }
 
             private:
@@ -1443,6 +1445,7 @@ namespace SushiRuntime
                 // private members below, which is the whole of its access.
                 template <class Owner> friend class RunHandle;
                 friend struct detail::RegistrationIndexTestAccess;
+                friend struct detail::NodeEventRecordsTestAccess;
 
                 /** @brief The engine a pending asynchronous step is running on. */
                 Execution::IExecutionEngine& async_engine()
@@ -1518,10 +1521,11 @@ namespace SushiRuntime
                  * @return The aggregated RunReport, or a mapped Error on failure.
                  */
                 template <class KeepGoing>
-                Core::Result<Core::RunReport, Core::Error> drive(KeepGoing keep_going) noexcept
+                Core::Result<Core::RunReport, Core::Error>
+                drive(KeepGoing keep_going, std::size_t expected_invocations = 1) noexcept
                 {
                     Core::RunReport report;
-                    auto driven = drive(keep_going, report);
+                    auto driven = drive(keep_going, report, expected_invocations);
                     if (!driven)
                         return Core::make_error(std::move(driven.error()));
                     return std::move(report);
@@ -1541,7 +1545,8 @@ namespace SushiRuntime
                  */
                 template <class KeepGoing>
                 Core::Result<Core::RunReport*, Core::Error>
-                drive(KeepGoing keep_going, Core::RunReport& report) noexcept
+                drive(KeepGoing keep_going, Core::RunReport& report,
+                     std::size_t expected_invocations = 1) noexcept
                 {
                     // Before any early return. A caller reusing one report across
                     // ticks must never read the previous run's numbers back out of a
@@ -1567,7 +1572,7 @@ namespace SushiRuntime
                             "Graph references a Buffer/State freed before the run."});
                     try
                     {
-                        drive_impl(keep_going, report);
+                        drive_impl(keep_going, report, expected_invocations);
                         return &report;
                     }
                     catch (const Core::SushiException& e)
@@ -1590,7 +1595,8 @@ namespace SushiRuntime
                 }
 
                 template <class KeepGoing>
-                void drive_impl(KeepGoing keep_going, Core::RunReport& report)
+                void drive_impl(KeepGoing keep_going, Core::RunReport& report,
+                                std::size_t expected_invocations = 1)
                 {
                     using clock = std::chrono::steady_clock;
                     auto ms = [](clock::time_point a, clock::time_point b)
@@ -1621,7 +1627,7 @@ namespace SushiRuntime
                     // run; only when the plan requests profiling.
                     const bool profiling = plan_.profiling;
                     if (profiling)
-                        engine.reset_profiling(plan_);
+                        engine.reset_profiling(plan_, expected_invocations);
 
                     const auto before = engine.metrics();
                     const std::size_t d2h_before = ctx_->device_to_host_bytes();

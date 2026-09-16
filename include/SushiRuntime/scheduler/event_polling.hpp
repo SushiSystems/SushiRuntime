@@ -36,6 +36,8 @@
 #include <SushiRuntime/scheduler/ready_sink.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/core/profiling_ledger.hpp>
+#include <SushiRuntime/graph/node.hpp>
 
 namespace SushiRuntime
 {
@@ -76,6 +78,9 @@ namespace SushiRuntime
                      * allocate in DPC++, and the comparison runs per event per poll.
                      */
                     bool has_event = false;
+
+                    /** @brief Run step this dispatch belongs to, captured by the submitting worker. */
+                    std::uint32_t step = 0;
                 };
 
                 /**
@@ -195,6 +200,15 @@ namespace SushiRuntime
                 void set_profiling(bool on) noexcept { profiling_.store(on, std::memory_order_release); }
 
                 /**
+                 * @brief Wires the plan's event ledger for the round about to run.
+                 * @param ledger The plan's ledger, or null when it does not profile.
+                 */
+                void set_ledger(Core::ProfilingLedger* ledger) noexcept
+                {
+                    ledger_.store(ledger, std::memory_order_release);
+                }
+
+                /**
                  * @brief Wires the scheduler's run-quiescence tracker into the poller.
                  *
                  * The poller is the single chokepoint where a task's scheduling life
@@ -263,6 +277,8 @@ namespace SushiRuntime
 #endif
                 /** @brief Whether to accumulate per-node kernel timing on completion. */
                 std::atomic<bool> profiling_{false};
+                /** @brief The armed round's event ledger, or null when it does not profile. */
+                std::atomic<Core::ProfilingLedger*> ledger_{nullptr};
                 /** @brief Maximum value for the backoff counter. */
                 static constexpr size_t MAX_BACKOFF = 64;
                 /** @brief No-progress polls before forcing a blocking wait. */
@@ -389,13 +405,12 @@ namespace SushiRuntime
 
             private:
                 /**
-                 * @brief Accumulates a finished task's timing onto its node.
+                 * @brief Writes this dispatch's event record before the completion is published.
                  *
-                 * Counts one invocation for every completed graph node (the sentinel
-                 * excepted, as it is plumbing, not a system) and adds the kernel's
-                 * device time when the event carries profiling info. A non-profiled or
-                 * inline-ready event has no device timing, so only the count is bumped;
-                 * a backend that cannot report profiling is tolerated, not fatal.
+                 * Called from poll_events() before trigger_successors() and drop_inflight():
+                 * the latter's zero transition is what wakes a waiting complete() into
+                 * collect_profiling() (or a next reserve()), so every ledger read and
+                 * write must finish here first, not after either of those calls.
                  *
                  * @param pe The completed event/task pair being reaped.
                  */
@@ -404,26 +419,65 @@ namespace SushiRuntime
                     if (!pe.task)
                         return;
 
-                    std::uint64_t device_ns = 0;
+                    std::uint64_t submit_ns = 0, start_ns = 0, end_ns = 0;
+                    bool have_start_end = false;
+                    bool have_submit = false;
                     if (pe.has_event)
                     {
                         try
                         {
-                            const auto start = pe.event.get_profiling_info<
+                            start_ns = pe.event.get_profiling_info<
                                 sycl::info::event_profiling::command_start>();
-                            const auto end = pe.event.get_profiling_info<
+                            end_ns = pe.event.get_profiling_info<
                                 sycl::info::event_profiling::command_end>();
-                            if (end > start)
-                                device_ns = static_cast<std::uint64_t>(end - start);
+                            have_start_end = true;
                         }
                         catch (...)
                         {
-                            // Backend without profiling support: report no device time
-                            // and let the task keep its invocation count. Not an error.
+                            // A backend with no profiling support leaves this dispatch unrecorded.
+                        }
+
+                        if (have_start_end)
+                        {
+                            try
+                            {
+                                submit_ns = pe.event.get_profiling_info<
+                                    sycl::info::event_profiling::command_submit>();
+                                have_submit = true;
+                            }
+                            catch (...)
+                            {
+                                // No submit timestamp: degrade to submit_ns == start_ns instead of dropping the record.
+                                submit_ns = start_ns;
+                            }
                         }
                     }
 
-                    pe.task->record_completion(device_ns);
+                    if (have_start_end)
+                    {
+                        if (Core::ProfilingLedger* ledger = ledger_.load(std::memory_order_acquire))
+                        {
+                            if (have_submit && ledger->is_pairing_owner(pe.task))
+                                ledger->set_pairing_event_ns(submit_ns);
+
+                            if (pe.task->is_graph_node())
+                            {
+                                auto* node = static_cast<SushiRuntime::Graph::Node*>(pe.task);
+                                const std::uint32_t slot = ledger->claim_slot(node->registration_index);
+                                if (slot != Core::ProfilingLedger::npos)
+                                {
+                                    Core::NodeEventRecord rec{};
+                                    rec.node_index = node->registration_index;
+                                    rec.invocation = pe.step;
+                                    rec.submit_ns  = submit_ns;
+                                    rec.start_ns   = start_ns;
+                                    rec.end_ns     = end_ns;
+                                    ledger->write(node->registration_index, slot, rec);
+                                }
+                            }
+                        }
+                    }
+
                 }
 
                 /**

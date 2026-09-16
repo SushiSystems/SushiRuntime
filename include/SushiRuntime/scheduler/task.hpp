@@ -90,19 +90,7 @@ namespace SushiRuntime
              */
             virtual void on_complete(ReadySink& /*sink*/) {}
 
-            /**
-             * @brief Records one completion of this task for the profiling report.
-             *
-             * The poller owns the SYCL event and so is the only place the device
-             * time can be read; what to do with it belongs to the task, which knows
-             * whether it counts as a system at all. A task that is not profiled
-             * discards it.
-             *
-             * @param device_ns Kernel device time for this completion, or 0 when the
-             *                  event carried no profiling information.
-             */
-            virtual void record_completion(std::uint64_t /*device_ns*/) noexcept {}
-
+            
             /**
              * @brief Main execution logic for the task (Kernel Mode).
              * @param h SYCL handler to submit work.

@@ -113,6 +113,7 @@ add_executable(sr_functional_tests
     functional/integration/test_sycl_execution.cpp
     functional/integration/test_profiling_queue.cpp
     functional/integration/test_graph_profiling_switch.cpp
+    functional/integration/test_node_event_records.cpp
     functional/integration/test_async_execution.cpp
     functional/integration/test_heterogeneous_pipeline.cpp
     functional/integration/test_scheduler_integration.cpp
@@ -194,6 +195,7 @@ add_executable(sr_allocation_tests
     common/test_main.cpp
 
     functional/integration/test_steady_state_allocation.cpp
+    functional/integration/test_node_event_records_allocation.cpp
 )
 sushiruntime_configure_test_target(sr_allocation_tests)
 gtest_discover_tests(sr_allocation_tests

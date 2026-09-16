@@ -27,6 +27,8 @@
 #include <exception>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
+#include <vector>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/graph/node.hpp>
@@ -296,15 +298,18 @@ namespace SushiRuntime
         /**
          * @brief Zeroes node and per-worker profiling accumulators before a run.
          */
-        void ExecutionEngine::reset_profiling(CompiledGraph& graph)
+        void ExecutionEngine::reset_profiling(CompiledGraph& graph, std::size_t expected_invocations)
         {
-            for (auto& n : graph.all_nodes)
-            {
-                n->profiling.invocations.store(0, std::memory_order_relaxed);
-                n->profiling.device_ns.store(0, std::memory_order_relaxed);
-                n->profiling.host_ns.store(0, std::memory_order_relaxed);
-            }
             impl_->scheduler.reset_worker_times();
+            // Once per run, before any step's arm_for_execution() draws from it.
+            impl_->scheduler.reset_dispatch_step();
+
+            // reserve() folds in the last run's true per-row demand, so growth is outside the poller.
+            graph.profiling_ledger.reserve(graph.profiling_multiplicities,
+                                           static_cast<std::uint32_t>(expected_invocations));
+            graph.profiling_ledger.set_run_start(
+                static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count()));
         }
 
         /**
@@ -313,18 +318,54 @@ namespace SushiRuntime
         void ExecutionEngine::collect_profiling(CompiledGraph& graph,
                                                 Core::RunReport& report) const
         {
-            for (auto& n : graph.all_nodes)
+            // One capture path (F4): node_timings below is aggregated from these same records.
+            graph.profiling_ledger.collect(report);
+            report.clock = graph.profiling_ledger.pairing();
+
+            const auto& host_native = graph.profiling_host_native;
+            const std::int64_t offset = static_cast<std::int64_t>(report.clock.steady_ns) -
+                                        static_cast<std::int64_t>(report.clock.event_ns);
+            for (auto& rec : report.node_events)
             {
-                if (n->is_sentinel) continue;
-                const std::uint64_t inv = n->profiling.invocations.load(std::memory_order_relaxed);
-                if (inv == 0) continue;
+                if (rec.node_index >= host_native.size() || !host_native[rec.node_index])
+                    continue;
+                auto convert = [offset](std::uint64_t steady_ns) noexcept -> std::uint64_t
+                {
+                    return static_cast<std::uint64_t>(static_cast<std::int64_t>(steady_ns) - offset);
+                };
+                rec.submit_ns = convert(rec.submit_ns);
+                rec.start_ns  = convert(rec.start_ns);
+                rec.end_ns    = convert(rec.end_ns);
+            }
+
+            // Aggregate node_timings from the records above (F4): one row per
+            // registration_index actually dispatched, indexed by that index
+            // directly rather than a hashed lookup.
+            struct NodeAgg { std::uint64_t invocations = 0; std::uint64_t device_ns = 0; std::uint64_t host_ns = 0; };
+            std::vector<NodeAgg> agg(graph.profiling_multiplicities.size());
+            for (const auto& rec : report.node_events)
+            {
+                if (rec.node_index >= agg.size()) continue;
+                auto& a = agg[rec.node_index];
+                ++a.invocations;
+                const std::uint64_t dur = rec.end_ns > rec.start_ns ? rec.end_ns - rec.start_ns : 0;
+                if (rec.node_index < host_native.size() && host_native[rec.node_index])
+                    a.host_ns += dur;
+                else
+                    a.device_ns += dur;
+            }
+
+            // t.plan_index stays Node::plan_index; the first node sharing the index (F5) supplies it.
+            for (std::size_t idx = 0; idx < agg.size(); ++idx)
+            {
+                if (agg[idx].invocations == 0) continue;
 
                 Core::NodeTiming t;
-                t.plan_index  = n->plan_index;
-                t.name        = n->metadata.name;
-                t.invocations = static_cast<std::size_t>(inv);
-                t.device_ms   = n->profiling.device_ns.load(std::memory_order_relaxed) / 1.0e6;
-                t.host_ms     = n->profiling.host_ns.load(std::memory_order_relaxed) / 1.0e6;
+                for (auto& n : graph.all_nodes)
+                    if (!n->is_sentinel && n->registration_index == idx) { t.plan_index = n->plan_index; t.name = n->metadata.name; break; }
+                t.invocations = static_cast<std::size_t>(agg[idx].invocations);
+                t.device_ms   = agg[idx].device_ns / 1.0e6;
+                t.host_ms     = agg[idx].host_ns / 1.0e6;
                 report.node_timings.push_back(std::move(t));
             }
 
@@ -498,6 +539,8 @@ namespace SushiRuntime
             // sentinel signalled, i.e. after that step fully drained, so resetting
             // here races nothing.
             impl_->completion.reset();
+            // Wired before arming; null when this plan does not request profiling.
+            impl_->scheduler.set_profiling_ledger(graph.profiling ? &graph.profiling_ledger : nullptr);
             impl_->scheduler.arm_for_execution(graph.profiling);
 
             // One batched injector pass instead of one submit() (lock + notify) per
@@ -624,6 +667,23 @@ namespace SushiRuntime
             }
             sentinel_in_degree = sentinel
                 ? sentinel->in_degree.load(std::memory_order_relaxed) : 0;
+
+            // Computed once here (F5), not rebuilt by reset_profiling()/collect_profiling() each run.
+            std::uint32_t max_index = 0;
+            for (auto& n : all_nodes)
+                if (!n->is_sentinel) max_index = std::max(max_index, n->registration_index);
+            const std::size_t index_count = all_nodes.empty() ? 0 : static_cast<std::size_t>(max_index) + 1;
+
+            profiling_multiplicities.assign(index_count, 0);
+            profiling_host_native.assign(index_count, false);
+            for (auto& n : all_nodes)
+            {
+                if (n->is_sentinel) continue;
+                ++profiling_multiplicities[n->registration_index];
+                if (n->get_execution_mode() == SushiRuntime::Scheduler::Task::ExecutionMode::HOST &&
+                    !n->submits_device_work())
+                    profiling_host_native[n->registration_index] = true;
+            }
         }
 
         /**
