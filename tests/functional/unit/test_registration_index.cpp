@@ -279,3 +279,64 @@ TEST(Unit_RegistrationIndex, AddReduceGroupSurvivesRebuild)
     for (std::size_t i = 0; i < all_indices.size(); ++i)
         EXPECT_EQ(all_indices[i], i) << "registration indices must be dense 0..n-1 after rebuild.";
 }
+
+/**
+ * @brief Verifies the LateCount overload of add_reduce() groups its tile
+ *        levels, and the trailing zero-count identity write, under one index.
+ *
+ * Mirrors AddReduceGroupsTileLevelsUnderOneIndex, but the count is bound
+ * through a LateCount host provider planned for a capacity of at least three
+ * tile levels, exercising the dynamic emitter's registration token instead
+ * of the fixed-count path's.
+ */
+TEST(Unit_RegistrationIndex, LateBoundAddReduceGroupsTileLevelsUnderOneIndex)
+{
+    using API::detail::RegistrationIndexTestAccess;
+
+    constexpr std::size_t CAPACITY = 70000;
+
+    auto rt  = Runtime::create();
+    auto in  = rt.buffer<float>(CAPACITY);
+    auto out = rt.buffer<float>(1);
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        in[i] = 1.0f;
+
+    LateCount lc;
+    lc.capacity = CAPACITY;
+    lc.host = []() { return CAPACITY; };
+
+    auto g = rt.graph();
+    g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("before");
+    g.add_reduce(in, out, lc, Sum<float>{});
+    g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("after");
+    g.run();
+
+    const Execution::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
+
+    std::optional<std::uint32_t> reduce_index;
+    std::size_t reduce_node_count = 0;
+    std::uint32_t before_index = 0;
+    std::uint32_t after_index  = 0;
+
+    for (const auto& n : plan.all_nodes)
+    {
+        const std::string name(n->metadata.name);
+        if (name == "before") { before_index = n->registration_index; continue; }
+        if (name == "after")  { after_index  = n->registration_index; continue; }
+
+        ++reduce_node_count;
+        if (!reduce_index.has_value())
+            reduce_index = n->registration_index;
+        EXPECT_EQ(*reduce_index, n->registration_index)
+            << "every late-bound add_reduce() node (tile levels plus the "
+               "zero-count write) must share one registration_index.";
+    }
+
+    ASSERT_GE(reduce_node_count, 3u)
+        << "capacity = " << CAPACITY << " should plan at least three tile levels.";
+    ASSERT_TRUE(reduce_index.has_value());
+    EXPECT_NE(before_index, *reduce_index);
+    EXPECT_NE(after_index, *reduce_index);
+    EXPECT_EQ(after_index, before_index + 2)
+        << "'after' must be before+2: the group draws exactly one index.";
+}
