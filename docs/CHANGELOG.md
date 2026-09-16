@@ -9,6 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- 2026-09-16 — Added `Graph::add_counting_sort`, a stable late-bound radix argsort writing indices, exclusive offsets and the total (`graph.hpp`).
 - 2026-09-16 — Added `API::LateCount` and late-bound overloads of `add_reduce` and `add_segmented_reduce`, planned from a capacity and resolved per run (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
 - 2026-09-16 — Added `Graph::add_prefix_scan`, a late-bound exclusive uint32 scan over `add_reduce`'s tile tree (`graph.hpp`).
 - 2026-09-16 — Added per-dispatch node event records with a run clock pairing, and derived `NodeTiming` from them (`core/profiling_ledger.hpp`, `event_polling.hpp`, `execution_engine.cpp`).

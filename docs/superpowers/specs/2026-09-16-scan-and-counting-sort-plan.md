@@ -77,12 +77,15 @@ the spec sections it names; exact signatures and rules live there, not here.
   create `tests/functional/integration/test_counting_sort.cpp`.
 - **Waits on:** wave 2.
 - **Content:** spec §A3 and §B. A stable LSD radix argsort over 8-bit digits, the digit count taken
-  from the live key range, then the bucket offsets. Outputs stable `indices` and exclusive
-  `offsets` with `offsets[key_range] = total`, and the optional per-key `counts`.
+  from `key_range.capacity` at registration, then the bucket offsets. Outputs stable `indices` and
+  exclusive `offsets` with `offsets[key_range] = total`, and the optional per-key `counts`.
 - **Tests:** stability against `std::stable_sort` on seeded duplicate keys; all keys equal; one
-  element and none; the maximum key of a 2^20 range; a live key range of 2^16 taking two digit
+  element and none; the maximum key of a 2^20 range; a key range capacity of 2^16 taking two digit
   passes and 2^20 taking three; changing the count and the key range between runs without a
   recompile; per-substep inside `run(4)`; the record count and one shared `node_index`.
+- **Follow-up (not this task):** derive the digit count from the live key range instead of
+  `key_range.capacity`, once the ping-pong index buffers are redesigned so whichever pass turns
+  out to be last still lands in `indices` (spec §E6).
 
 **Controller and owner build** as before.
 
