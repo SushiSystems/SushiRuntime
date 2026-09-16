@@ -10,6 +10,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ### Added
 - 2026-09-16 — Added `API::LateCount` and late-bound overloads of `add_reduce` and `add_segmented_reduce`, planned from a capacity and resolved per run (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
+- 2026-09-16 — Added `Graph::add_prefix_scan`, a late-bound exclusive uint32 scan over `add_reduce`'s tile tree (`graph.hpp`).
 - 2026-09-16 — Added per-dispatch node event records with a run clock pairing, and derived `NodeTiming` from them (`core/profiling_ledger.hpp`, `event_polling.hpp`, `execution_engine.cpp`).
 - 2026-09-16 — Added `Graph::set_profiling_requested`, which routes a graph's device nodes to the profiling queue and gates its timing per graph instead of runtime-wide (`graph.hpp`, `scheduler.cpp`).
 - 2026-09-15 — Added `Core::NodeEventRecord`, `Core::ClockPairing` and `RunReport::node_events`/`clock` for per-dispatch node timing (`core/run_report.hpp`).

@@ -127,6 +127,9 @@ do not need to reach into the lower layers.
     — the same guarantee over a CSR-style ragged array, one work-item per
     segment. No atomics and no cross-work-item combining, at the cost of load
     balance when segment lengths differ sharply.
+  - `add_prefix_scan(counts, offsets, total, n)` — an exclusive uint32 scan
+    over the same 256-tile tree as `add_reduce`, late-bound; sits beside it in
+    `graph.hpp` on `api/detail/fixed_order_scan.hpp`'s tile plan.
   - `add_untracked(n, fn)` / `add_untracked(n, range_fn)` /
     `add_untracked(raw_kernel_fn)` / `add_untracked(extent, fn)` /
     `add_untracked(nd_range, fn)` — the same launch shapes with no declared data.

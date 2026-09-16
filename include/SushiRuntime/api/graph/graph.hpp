@@ -93,6 +93,16 @@ namespace SushiRuntime
          * makes the live count @c capacity itself, matching a fixed-count call.
          * Setting @c host takes precedence over @c device when both are set,
          * which callers should not do; set exactly one.
+         *
+         * A fixed-count call spells its plain capacity as
+         * `LateCount lc; lc.capacity = n;`. Plain brace init (`LateCount{n}`)
+         * trips `-Wmissing-field-initializers`, and this type stays an
+         * aggregate, so it takes no constructor; the designator form
+         * (`LateCount{.capacity = n}`) reads better but is a C++20 feature;
+         * on the non-MSVC compiler path this tree builds with (clang++,
+         * `-pedantic -Werror`, `cmake/CompilerWarnings.cmake`), it fails as
+         * `-Wc++20-designator`, confirmed against that compiler, so it is
+         * not offered as the idiom here.
          */
         struct LateCount
         {
@@ -1398,6 +1408,319 @@ namespace SushiRuntime
                 {
                     return add_segmented_reduce(values, segment_offsets, output,
                                                 segment_count, op, Combine::identity());
+                }
+
+                /**
+                 * @brief Scans uint32 counts into exclusive running offsets, late-bound.
+                 *
+                 * Plans add_reduce()'s 256-tile tree over @p n.capacity, up-sweeps it
+                 * exactly as add_reduce() does but keeps every level's tile sums
+                 * instead of discarding them, then down-sweeps from the top: each
+                 * level's tile hands its running base to the level below, which walks
+                 * its own tile left to right emitting the exclusive running sum. Level
+                 * 0's down-sweep writes @p offsets directly, and the top pass's sum is
+                 * copied into both @p total and `offsets[n]`, so a CSR consumer never
+                 * needs a second read. No host step runs between the two sweeps.
+                 *
+                 * @param counts  Values to scan; must hold at least @p n.capacity elements.
+                 * @param offsets Destination; must hold at least @p n.capacity + 1 elements.
+                 * @param total   Destination for the grand sum; must hold at least 1 element.
+                 * @param n       Capacity plus the live count's source.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException If a buffer is too small, if @p counts
+                 *         and @p offsets sit on different devices, or at run if the
+                 *         live count exceeds @p n.capacity.
+                 */
+                Graph& add_prefix_scan(const Buffer<std::uint32_t>& counts,
+                                       const Buffer<std::uint32_t>& offsets,
+                                       const Buffer<std::uint32_t>& total,
+                                       LateCount n)
+                {
+                    detail::validate_late_count(n, "add_prefix_scan");
+                    if (n.capacity > counts.size())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_prefix_scan: n.capacity (" + std::to_string(n.capacity) +
+                            ") exceeds the counts buffer's size (" +
+                            std::to_string(counts.size()) + ")."});
+                    if (offsets.size() < n.capacity + 1)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_prefix_scan: offsets holds " +
+                            std::to_string(offsets.size()) + " elements but " +
+                            std::to_string(n.capacity + 1) + " are required."});
+                    if (total.size() == 0)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_prefix_scan: the total buffer holds no elements."});
+                    if (offsets.device_index() != counts.device_index())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_prefix_scan: counts and offsets must live on the same device."});
+
+                    const std::vector<detail::ReduceLevel> levels =
+                        detail::plan_tiled_levels(n.capacity);
+                    std::uint32_t* counts_base = counts.data();
+                    std::uint32_t* offsets_base = offsets.data();
+                    std::uint32_t* total_base = total.data();
+
+                    if (levels.empty())
+                    {
+                        // Capacity zero: still resolve n on the host through the
+                        // shared resolver, exactly as every other capacity does, so
+                        // a live count above zero fails the run instead of being
+                        // silently ignored; resolve_late_count() builds its error
+                        // message with std::string, which a device kernel cannot
+                        // call, so the resolver node (a host task) is what runs it,
+                        // never the node below that writes the one exclusive entry
+                        // a scan of nothing has.
+                        auto zero_token = std::make_shared<std::optional<std::uint32_t>>();
+                        reduce_registration_tokens_.push_back(zero_token);
+
+                        std::shared_ptr<std::uint32_t> zero_state =
+                            detail::make_reduce_scratch<std::uint32_t>(
+                                ctx_, 1, counts.device_index(), Residency::Host);
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(zero_state));
+                        std::uint32_t* zero_state_ptr = zero_state.get();
+                        const Core::ResourceRegion zero_state_region{
+                            zero_state_ptr, 0, sizeof(std::uint32_t)};
+
+                        emit_late_count_resolver(n, zero_state_ptr, 1,
+                            [](std::size_t live_n, std::uint32_t* out)
+                            {
+                                out[0] = static_cast<std::uint32_t>(live_n);
+                            },
+                            zero_token);
+
+                        Reads reads = Reads(zero_state_region);
+                        Writes writes = Writes(offsets, total);
+                        observe(reads);
+                        observe(writes);
+                        return emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                            std::size_t{1},
+                            [offsets_base, total_base](std::size_t)
+                            {
+                                offsets_base[0] = 0;
+                                total_base[0] = 0;
+                            },
+                            zero_token);
+                    }
+
+                    const std::size_t level_count = levels.size();
+                    const std::size_t up_scratch_count = detail::reduce_scratch_count(levels);
+                    const std::size_t down_scratch_count = detail::reduce_scratch_count(levels);
+
+                    // A single level (capacity 1..256) needs neither scratch: the
+                    // one down-sweep pass reads counts and writes offsets directly.
+                    // Guarded exactly as add_reduce() guards its own scratch, since
+                    // sycl::malloc_host(0, q) returns null and the allocator treats
+                    // a null result as a failure.
+                    std::uint32_t* up_scratch = nullptr;
+                    if (up_scratch_count != 0)
+                    {
+                        std::shared_ptr<std::uint32_t> up =
+                            detail::make_reduce_scratch<std::uint32_t>(
+                                ctx_, up_scratch_count, counts.device_index(),
+                                counts.residency());
+                        up_scratch = up.get();
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(up));
+                    }
+
+                    std::uint32_t* down_scratch = nullptr;
+                    if (down_scratch_count != 0)
+                    {
+                        std::shared_ptr<std::uint32_t> down =
+                            detail::make_reduce_scratch<std::uint32_t>(
+                                ctx_, down_scratch_count, counts.device_index(),
+                                counts.residency());
+                        down_scratch = down.get();
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(down));
+                    }
+
+                    // state[i] is level i's live in_count, state[level_count+i] its
+                    // live out_count, as add_reduce()'s resolver fills them.
+                    const std::size_t state_words = 2 * level_count;
+                    std::shared_ptr<std::uint32_t> state =
+                        detail::make_reduce_scratch<std::uint32_t>(
+                            ctx_, state_words, counts.device_index(), Residency::Host);
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(state));
+                    std::uint32_t* state_ptr = state.get();
+                    const Core::ResourceRegion state_region{
+                        state_ptr, 0, state_words * sizeof(std::uint32_t)};
+
+                    // One token shared by every node this call emits: the resolver,
+                    // every up level, every down level and the closing write.
+                    auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
+                    reduce_registration_tokens_.push_back(registration_token);
+
+                    emit_late_count_resolver(n, state_ptr, state_words,
+                        [level_count](std::size_t live_n, std::uint32_t* out)
+                        {
+                            std::size_t count = live_n;
+                            for (std::size_t i = 0; i < level_count; ++i)
+                            {
+                                out[i] = static_cast<std::uint32_t>(count);
+                                count = detail::next_live_tile_count(count);
+                                out[level_count + i] = static_cast<std::uint32_t>(count);
+                            }
+                        },
+                        registration_token);
+
+                    void* up_key = static_cast<void*>(up_scratch);
+                    void* down_key = static_cast<void*>(down_scratch);
+                    constexpr std::size_t tile = detail::REDUCE_TILE;
+
+                    // Up-sweep: the same tile fold add_reduce() runs over every level
+                    // but the top, writing each level's tile sums into scratch for
+                    // the down-sweep to read as its bases; the top level's own sum is
+                    // never folded here, because the down-sweep's top pass walks it
+                    // directly and computes that sum as a side effect of doing so.
+                    for (std::size_t i = 0; i + 1 < level_count; ++i)
+                    {
+                        const detail::ReduceLevel& level = levels[i];
+                        const bool first = (i == 0);
+
+                        const std::uint32_t* src =
+                            first ? counts_base : (up_scratch + level.in_offset);
+                        std::uint32_t* dst = up_scratch + level.out_offset;
+
+                        Reads reads = first
+                            ? Reads(counts, state_region)
+                            : Reads(Core::ResourceRegion{up_key,
+                                                         level.in_offset * sizeof(std::uint32_t),
+                                                         level.in_count * sizeof(std::uint32_t)},
+                                    state_region);
+                        Writes writes = Writes(Core::ResourceRegion{
+                            up_key, level.out_offset * sizeof(std::uint32_t),
+                            level.out_count * sizeof(std::uint32_t)});
+
+                        Dynamic dyn;
+                        dyn.device_count = state_ptr;
+                        dyn.device_count_index = level_count + i;
+
+                        observe(reads);
+                        observe(writes);
+                        emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
+                            level.out_count,
+                            [src, dst](std::size_t t, std::size_t in_count)
+                            {
+                                const std::size_t begin = t * tile;
+                                std::size_t end = begin + tile;
+                                if (end > in_count) end = in_count;
+                                dst[t] = detail::fold_tile(
+                                    [](std::uint32_t a, std::uint32_t b) { return a + b; },
+                                    src, begin, end);
+                            },
+                            registration_token, state_ptr + i);
+                    }
+
+                    // Down-sweep, top to bottom: the top level has no level above it,
+                    // so it scans its own (<= 256-value) tile sequentially from a base
+                    // of zero, which is also the grand sum, so it always runs (an
+                    // empty live count still has to publish total = 0).
+                    for (std::size_t i = level_count; i-- > 0;)
+                    {
+                        const detail::ReduceLevel& level = levels[i];
+                        const bool first = (i == 0);
+                        const bool top = (i + 1 == level_count);
+
+                        const std::uint32_t* src =
+                            first ? counts_base : (up_scratch + level.in_offset);
+                        std::uint32_t* dst =
+                            first ? offsets_base : (down_scratch + level.in_offset);
+
+                        if (top)
+                        {
+                            Reads reads = first
+                                ? Reads(counts, state_region)
+                                : Reads(Core::ResourceRegion{
+                                      up_key, level.in_offset * sizeof(std::uint32_t),
+                                      level.in_count * sizeof(std::uint32_t)},
+                                        state_region);
+                            Writes writes = first
+                                ? Writes(offsets, total)
+                                : Writes(Core::ResourceRegion{
+                                      down_key, level.in_offset * sizeof(std::uint32_t),
+                                      level.in_count * sizeof(std::uint32_t)},
+                                        total);
+                            observe(reads);
+                            observe(writes);
+                            emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                                std::size_t{1},
+                                [src, dst, offsets_base, total_base, first](
+                                    std::size_t, std::size_t in_count)
+                                {
+                                    std::uint32_t acc = 0;
+                                    for (std::size_t j = 0; j < in_count; ++j)
+                                    {
+                                        dst[j] = acc;
+                                        acc += src[j];
+                                    }
+                                    total_base[0] = acc;
+                                    if (first)
+                                        offsets_base[in_count] = acc;
+                                },
+                                registration_token, state_ptr + i);
+                            continue;
+                        }
+
+                        // General level: each tile's base is the down-swept exclusive
+                        // prefix the level above already produced for it.
+                        const std::uint32_t* base_arr = down_scratch + level.out_offset;
+
+                        Reads reads = first
+                            ? Reads(counts, Core::ResourceRegion{
+                                  down_key, level.out_offset * sizeof(std::uint32_t),
+                                  level.out_count * sizeof(std::uint32_t)}, state_region)
+                            : Reads(Core::ResourceRegion{
+                                  up_key, level.in_offset * sizeof(std::uint32_t),
+                                  level.in_count * sizeof(std::uint32_t)},
+                                    Core::ResourceRegion{
+                                        down_key, level.out_offset * sizeof(std::uint32_t),
+                                        level.out_count * sizeof(std::uint32_t)},
+                                    state_region);
+                        Writes writes = first
+                            ? Writes(offsets)
+                            : Writes(Core::ResourceRegion{
+                                  down_key, level.in_offset * sizeof(std::uint32_t),
+                                  level.in_count * sizeof(std::uint32_t)});
+
+                        Dynamic dyn;
+                        dyn.device_count = state_ptr;
+                        dyn.device_count_index = level_count + i;
+
+                        observe(reads);
+                        observe(writes);
+                        emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
+                            level.out_count,
+                            [src, dst, base_arr](std::size_t t, std::size_t in_count)
+                            {
+                                const std::size_t begin = t * tile;
+                                std::size_t end = begin + tile;
+                                if (end > in_count) end = in_count;
+                                std::uint32_t acc = base_arr[t];
+                                for (std::size_t j = begin; j < end; ++j)
+                                {
+                                    dst[j] = acc;
+                                    acc += src[j];
+                                }
+                            },
+                            registration_token, state_ptr + i);
+                    }
+
+                    if (level_count == 1)
+                        return *this;
+
+                    // Closing write: level 0's down-sweep only reaches offsets[live n
+                    // - 1]; the top pass already settled total, so this copies it into
+                    // offsets[live n] without re-deriving it.
+                    Reads closing_reads = Reads(total, state_region);
+                    Writes closing_writes = Writes(offsets);
+                    observe(closing_reads);
+                    observe(closing_writes);
+                    return emit_dynamic_per_element(Dynamic{}, closing_reads.keys,
+                        closing_writes.keys, std::size_t{1},
+                        [offsets_base, total_base](std::size_t, std::size_t live_n)
+                        {
+                            offsets_base[live_n] = total_base[0];
+                        },
+                        registration_token, state_ptr);
                 }
 
                 /**
