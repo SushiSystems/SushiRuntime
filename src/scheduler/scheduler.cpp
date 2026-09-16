@@ -264,11 +264,6 @@ namespace SushiRuntime
             event_poller.set_profiling(profiling);
             profiling_active_.store(profiling, std::memory_order_release);
 
-            // The step every event this round's workers dispatch will capture.
-            current_dispatch_step_.store(
-                next_dispatch_step_.fetch_add(1, std::memory_order_acq_rel),
-                std::memory_order_release);
-
             // The flag is one term of the idle wait predicate, so it is set under pending_mutex.
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);

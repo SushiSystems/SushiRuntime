@@ -437,8 +437,16 @@ namespace SushiRuntime
                  */
                 void set_profiling_ledger(Core::ProfilingLedger* ledger) noexcept;
 
-                /** @brief Resets the per-run step counter arm_for_execution() draws from, to 0. */
+                /** @brief Resets the per-run step counter, to 0. */
                 void reset_dispatch_step() noexcept { next_dispatch_step_.store(0, std::memory_order_release); }
+
+                /** @brief Draws this round's step; call exactly once per root-injecting submit(), not per arm. */
+                void advance_dispatch_step() noexcept
+                {
+                    current_dispatch_step_.store(
+                        next_dispatch_step_.fetch_add(1, std::memory_order_acq_rel),
+                        std::memory_order_release);
+                }
 
                 /** @brief The step this round's dispatches must stamp into their event records. */
                 std::uint32_t current_dispatch_step() const noexcept

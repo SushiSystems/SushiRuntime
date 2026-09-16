@@ -542,6 +542,9 @@ namespace SushiRuntime
             // Wired before arming; null when this plan does not request profiling.
             impl_->scheduler.set_profiling_ledger(graph.profiling ? &graph.profiling_ledger : nullptr);
             impl_->scheduler.arm_for_execution(graph.profiling);
+            // Drawn here, not in arm_for_execution(): the sentinel also re-arms to keep the pool
+            // spinning through the drain tail, and that call must not advance the step counter.
+            impl_->scheduler.advance_dispatch_step();
 
             // One batched injector pass instead of one submit() (lock + notify) per
             // root — the per-step root-injection cost no longer scales with fan-out.
