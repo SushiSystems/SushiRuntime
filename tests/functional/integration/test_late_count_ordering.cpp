@@ -1,0 +1,80 @@
+/**************************************************************************/
+/* test_late_count_ordering.cpp                                          */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                        https://sushisystems.io                         */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
+/*                                                                        */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/**************************************************************************/
+
+// Coverage for the ordering claim behind LateCount's device slot (fix round 2
+// of the 2026-09-16 scan-and-counting-sort wave): a device-sourced count must
+// be resolved at the consuming node's own dispatch, after its producer, not
+// polled at the step boundary before the producer has run. A graph whose
+// resolver dropped the device slot from its Reads would still compile and run,
+// but would fold last step's count instead of the one just written; this test
+// is built to catch exactly that regression, not merely to exercise the API.
+
+#include <cstddef>
+#include <cstdint>
+
+#include <gtest/gtest.h>
+
+#include <SushiRuntime/SushiRuntime.h>
+
+using namespace SushiRuntime;
+
+// A producer node writes a fresh live count into a Residency::Host slot every
+// run; a late-bound add_reduce reads that same slot through LateCount::device
+// in the same run. The reduce must see the count this run's producer wrote.
+TEST(Integration_LateCountOrdering, ReduceSeesTheCountItsPredecessorJustWrote)
+{
+    constexpr std::size_t CAPACITY = 1000;
+
+    auto rt      = Runtime::create();
+    auto values  = rt.buffer<double>(CAPACITY);
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
+    auto out     = rt.buffer<double>(1);
+
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        values[i] = 1.0;
+
+    std::uint32_t next_count = 0;
+    std::uint32_t* next_count_ptr = &next_count;
+    std::uint32_t* counter_ptr = counter.data();
+
+    LateCount lc;
+    lc.capacity = CAPACITY;
+    lc.device = &counter;
+
+    auto g = rt.graph();
+    g.add(Reads(), Writes(counter), std::size_t{1},
+          [counter_ptr, next_count_ptr](std::size_t) { counter_ptr[0] = *next_count_ptr; });
+    g.add_reduce(values, out, lc, Sum<double>{});
+
+    next_count = 300;
+    g.run();
+    EXPECT_DOUBLE_EQ(out[0], 300.0)
+        << "the reduce must fold the count its own step's producer wrote";
+
+    next_count = 700;
+    g.run();
+    EXPECT_DOUBLE_EQ(out[0], 700.0)
+        << "a changed count must take effect the same run, not one run late";
+
+    EXPECT_EQ(g.compile_count(), 1u);
+}

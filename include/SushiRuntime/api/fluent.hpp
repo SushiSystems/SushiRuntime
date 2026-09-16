@@ -71,6 +71,7 @@ namespace SushiRuntime
     using API::In;
     using API::Out;
     using API::InOut;
+    using API::LateCount;
     using Core::Error;
     using Core::Errc;
     using Core::RunReport;

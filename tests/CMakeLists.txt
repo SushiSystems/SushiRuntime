@@ -100,6 +100,8 @@ add_executable(sr_functional_tests
     functional/unit/test_ref_counted.cpp
     functional/unit/test_node_event_record.cpp
     functional/unit/test_registration_index.cpp
+    functional/unit/test_late_count.cpp
+    functional/integration/test_late_count_ordering.cpp
     functional/unit/test_range_task.cpp
     functional/unit/test_dependency_tracker.cpp
     functional/unit/test_thermal_rebalance.cpp

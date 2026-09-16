@@ -23,11 +23,13 @@
 
 #pragma once
 
+#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -44,6 +46,7 @@
 #include <SushiRuntime/api/detail/run_report_builder.hpp>
 #include <SushiRuntime/api/detail/callable_traits.hpp>
 #include <SushiRuntime/api/detail/fixed_order_reduce.hpp>
+#include <SushiRuntime/api/detail/fixed_order_scan.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
@@ -80,6 +83,112 @@ namespace SushiRuntime
             struct RegistrationIndexTestAccess;
             // Test-only friend seam onto Graph::plan_, for G1 node-event-record tests.
             struct NodeEventRecordsTestAccess;
+        }
+
+        /**
+         * @brief A run count resolved once per run from exactly one live source.
+         *
+         * Plans a tiled pass for @c capacity at registration; the live count read
+         * each run must not exceed it. Leaving @c host empty and @c device null
+         * makes the live count @c capacity itself, matching a fixed-count call.
+         * Setting @c host takes precedence over @c device when both are set,
+         * which callers should not do; set exactly one.
+         */
+        struct LateCount
+        {
+            std::size_t capacity = 0; /**< Plan size; the live count must not exceed it. */
+
+            /** @brief Polled once per run when set; overrides capacity as the count. */
+            std::function<std::size_t()> host;
+
+            /**
+             * @brief Residency::Host slot a predecessor wrote the live count into.
+             *
+             * Borrowed, not owned: this LateCount only observes it, so the buffer it
+             * points to must outlive every graph this LateCount is passed to.
+             */
+            const Buffer<std::uint32_t>* device = nullptr;
+
+            /** @brief Element index of the live count within @c device. */
+            std::size_t device_index = 0;
+        };
+
+        namespace detail
+        {
+            /**
+             * @brief Reads a LateCount's live value and checks it against its capacity.
+             *
+             * The one resolution point every verb built on LateCount shares: a host
+             * provider wins when set, then a device slot, and with neither the live
+             * count is the capacity, so a LateCount left at its default behaves like
+             * a fixed count.
+             *
+             * @param lc The count to resolve.
+             * @return The live count, no larger than @c lc.capacity.
+             * @throws Core::SushiException With invalid_access if @c lc.device is set
+             *         but is not Residency::Host, or invalid_graph if the live count
+             *         exceeds @c lc.capacity, the same way an out-of-window based_at()
+             *         fails the run.
+             */
+            inline std::size_t resolve_late_count(const LateCount& lc)
+            {
+                std::size_t live = lc.capacity;
+                if (lc.host)
+                {
+                    live = lc.host();
+                }
+                else if (lc.device != nullptr)
+                {
+                    if (lc.device->residency() != Residency::Host)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                            "LateCount: the device slot is Residency::" +
+                            std::string(residency_name(lc.device->residency())) +
+                            ", but the live count is read on the host while kernels "
+                            "may run; allocate it with Residency::Host."});
+                    if (lc.device_index >= lc.device->size())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                            "LateCount: device_index " + std::to_string(lc.device_index) +
+                            " is out of range for a buffer of " +
+                            std::to_string(lc.device->size()) + " elements."});
+                    live = static_cast<std::size_t>(lc.device->data()[lc.device_index]);
+                }
+
+                if (live > lc.capacity)
+                    throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                        "LateCount: the live count (" + std::to_string(live) +
+                        ") exceeds the capacity it was planned for (" +
+                        std::to_string(lc.capacity) + ")."});
+                return live;
+            }
+
+            /**
+             * @brief Rejects an ill-formed LateCount at registration, not first run.
+             *
+             * Mirrors require_host_device_slots(): a device slot must be
+             * Residency::Host, checked before add() mutates the graph rather than
+             * inside the run loop. Also rejects a capacity too wide for the
+             * uint32 live-count slots the late-bound verbs resolve into.
+             *
+             * @param lc   The count to validate.
+             * @param what Name of the calling verb, for the error message.
+             * @throws Core::SushiException With invalid_access for a non-host
+             *         device slot, or invalid_graph for an oversized capacity.
+             */
+            inline void validate_late_count(const LateCount& lc, const char* what)
+            {
+                if (lc.capacity > static_cast<std::size_t>(
+                        std::numeric_limits<std::uint32_t>::max()))
+                    throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                        std::string(what) + ": capacity (" + std::to_string(lc.capacity) +
+                        ") exceeds what a uint32 live-count slot can hold (" +
+                        std::to_string(std::numeric_limits<std::uint32_t>::max()) + ")."});
+                if (lc.device != nullptr && lc.device->residency() != Residency::Host)
+                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                        std::string(what) + ": the device slot is Residency::" +
+                        std::string(residency_name(lc.device->residency())) +
+                        ", but the live count is read while kernels may run; "
+                        "allocate it with Residency::Host."});
+            }
         }
 
         /**
@@ -922,6 +1031,177 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Adds a reduction whose live element count is late-bound.
+                 *
+                 * Plans the same fixed-tile tree as the @p std::size_t overload, but
+                 * for @p n.capacity, and resolves the live count once per run instead
+                 * of once at registration. The fold order for a live count that ever
+                 * arrives is exactly the order the fixed-count overload would produce
+                 * for that same count (spec 2026-09-16-scan-and-counting-sort-design.md
+                 * A1): every level beyond the one where the live chain reaches one
+                 * value degenerates to a single-element pass-through, so results stay
+                 * byte-identical whichever way the count was bound.
+                 *
+                 * @tparam T       Element type.
+                 * @tparam Combine Binary functor; must be trivially copyable.
+                 * @param input    Values to reduce; must hold at least @p n.capacity elements.
+                 * @param output   Destination; element 0 receives the result.
+                 * @param n        Capacity plus the live count's source.
+                 * @param op       The combiner, e.g. Sum<float>{}.
+                 * @param identity Result when the live count is zero.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException If @p n.capacity exceeds @p input's
+                 *         size, if @p output is empty, or at run if the live count
+                 *         exceeds @p n.capacity.
+                 */
+                template <typename T, class Combine>
+                Graph& add_reduce(const Buffer<T>& input, const Buffer<T>& output,
+                                  LateCount n, Combine op, T identity)
+                {
+                    detail::validate_late_count(n, "add_reduce");
+                    if (n.capacity > input.size())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_reduce: n.capacity (" + std::to_string(n.capacity) +
+                            ") exceeds the input buffer's size (" +
+                            std::to_string(input.size()) + ")."});
+                    if (output.size() == 0)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_reduce: the output buffer holds no elements."});
+
+                    const std::vector<detail::ReduceLevel> levels =
+                        detail::plan_tiled_levels(n.capacity);
+                    T* out_base = output.data();
+
+                    if (levels.empty())
+                    {
+                        // Capacity zero: every run's live count is zero too, so the
+                        // identity is the whole answer, always.
+                        return add(Reads(), Writes(output), std::size_t{1},
+                                   [out_base, identity](std::size_t)
+                                   {
+                                       out_base[0] = identity;
+                                   });
+                    }
+
+                    const std::size_t scratch_count = detail::reduce_scratch_count(levels);
+                    T* scratch = nullptr;
+                    if (scratch_count != 0)
+                    {
+                        std::shared_ptr<T> owned = detail::make_reduce_scratch<T>(
+                            ctx_, scratch_count, input.device_index(), input.residency());
+                        scratch = owned.get();
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(owned));
+                    }
+
+                    // state[i] is level i's live in_count, state[level_count+i] its
+                    // live out_count (launch width); the resolver below is its sole
+                    // writer, so every level reads a value its own Reads ordered it after.
+                    const std::size_t level_count = levels.size();
+                    std::shared_ptr<std::uint32_t> state = detail::make_reduce_scratch<std::uint32_t>(
+                        ctx_, 2 * level_count, input.device_index(), Residency::Host);
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(state));
+                    std::uint32_t* state_ptr = state.get();
+
+                    // One token shared by every node this call emits (resolver, every
+                    // level, the trailing zero-count write), as the fixed-count
+                    // overload shares one across its levels (G1 spec §F5).
+                    auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
+                    reduce_registration_tokens_.push_back(registration_token);
+
+                    const Core::ResourceRegion state_region{state_ptr, 0,
+                                                             2 * level_count * sizeof(std::uint32_t)};
+
+                    emit_late_count_resolver(n, state_ptr, 2 * level_count,
+                        [level_count](std::size_t live_n, std::uint32_t* out)
+                        {
+                            std::size_t count = live_n;
+                            for (std::size_t i = 0; i < level_count; ++i)
+                            {
+                                out[i] = static_cast<std::uint32_t>(count);
+                                count = detail::next_live_tile_count(count);
+                                out[level_count + i] = static_cast<std::uint32_t>(count);
+                            }
+                        },
+                        registration_token);
+
+                    const T* in_base = input.data();
+                    void* scratch_key = static_cast<void*>(scratch);
+                    constexpr std::size_t tile = detail::REDUCE_TILE;
+
+                    for (std::size_t i = 0; i < levels.size(); ++i)
+                    {
+                        const detail::ReduceLevel& level = levels[i];
+                        const bool first = (i == 0);
+                        const bool last  = (i + 1 == levels.size());
+
+                        const T* src = first ? in_base : (scratch + level.in_offset);
+                        T* dst = last ? out_base : (scratch + level.out_offset);
+
+                        Reads reads = first
+                            ? Reads(input, state_region)
+                            : Reads(Core::ResourceRegion{scratch_key,
+                                                         level.in_offset * sizeof(T),
+                                                         level.in_count * sizeof(T)},
+                                    state_region);
+                        Writes writes = last
+                            ? Writes(output)
+                            : Writes(Core::ResourceRegion{scratch_key,
+                                                          level.out_offset * sizeof(T),
+                                                          level.out_count * sizeof(T)});
+
+                        // sized_from_device's own mechanism, pointed at the resolver's slot.
+                        Dynamic dyn;
+                        dyn.device_count = state_ptr;
+                        dyn.device_count_index = level_count + i;
+
+                        observe(reads);
+                        observe(writes);
+                        emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
+                            level.out_count,
+                            [src, dst, op](std::size_t t, std::size_t in_count)
+                            {
+                                const std::size_t begin = t * tile;
+                                std::size_t end = begin + tile;
+                                if (end > in_count) end = in_count;
+                                dst[t] = detail::fold_tile(op, src, begin, end);
+                            },
+                            registration_token, state_ptr + i);
+                    }
+
+                    // A live count of zero folds no level, so this is the identity's only writer.
+                    Reads zero_reads = Reads(state_region);
+                    Writes zero_writes = Writes(output);
+                    observe(zero_reads);
+                    observe(zero_writes);
+                    return emit_dynamic_per_element(Dynamic{}, zero_reads.keys,
+                        zero_writes.keys, std::size_t{1},
+                        [out_base, identity](std::size_t, std::size_t live_n)
+                        {
+                            if (live_n == 0)
+                                out_base[0] = identity;
+                        },
+                        registration_token, state_ptr);
+                }
+
+                /**
+                 * @brief Adds a late-bound reduction using the combiner's identity.
+                 * @tparam T       Element type.
+                 * @tparam Combine Binary functor exposing a static identity().
+                 * @param input  Values to reduce; must hold at least @p n.capacity elements.
+                 * @param output Destination; element 0 receives the result.
+                 * @param n      Capacity plus the live count's source.
+                 * @param op     The combiner, e.g. Sum<float>{}.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException As the five-argument overload.
+                 */
+                template <typename T, class Combine>
+                Graph& add_reduce(const Buffer<T>& input, const Buffer<T>& output,
+                                  LateCount n, Combine op)
+                {
+                    return add_reduce(input, output, n, op, Combine::identity());
+                }
+
+                /**
                  * @brief Reduces each segment of a ragged array, in a fixed order.
                  *
                  * The scatter-accumulate shape a simulation actually needs: per-body
@@ -1007,6 +1287,114 @@ namespace SushiRuntime
                                             const Buffer<std::uint32_t>& segment_offsets,
                                             const Buffer<T>& output,
                                             std::size_t segment_count, Combine op)
+                {
+                    return add_segmented_reduce(values, segment_offsets, output,
+                                                segment_count, op, Combine::identity());
+                }
+
+                /**
+                 * @brief Reduces each segment with a late-bound segment count.
+                 *
+                 * One work-item per segment, planned for @p segment_count.capacity and
+                 * resolved once per run; a live segment count below capacity simply
+                 * launches fewer work-items, so the fold order per segment is
+                 * unaffected and byte-identical to the fixed-count overload for that
+                 * same live count.
+                 *
+                 * @tparam T       Element type of the values and the result.
+                 * @tparam Combine Binary functor; must be trivially copyable.
+                 * @param values          The concatenated segment contents.
+                 * @param segment_offsets Boundaries; @p segment_count.capacity + 1 entries.
+                 * @param output          Destination; @p segment_count.capacity entries.
+                 * @param segment_count   Capacity plus the live segment count's source.
+                 * @param op              The combiner, e.g. Sum<float>{}.
+                 * @param identity        Result for an empty segment.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException If @p segment_offsets or @p output is
+                 *         too small for @p segment_count.capacity, or at run if the
+                 *         live count exceeds it.
+                 */
+                template <typename T, class Combine>
+                Graph& add_segmented_reduce(const Buffer<T>& values,
+                                            const Buffer<std::uint32_t>& segment_offsets,
+                                            const Buffer<T>& output,
+                                            LateCount segment_count,
+                                            Combine op, T identity)
+                {
+                    if (segment_offsets.size() < segment_count.capacity + 1)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_segmented_reduce: segment_offsets holds " +
+                            std::to_string(segment_offsets.size()) + " entries but " +
+                            std::to_string(segment_count.capacity + 1) + " are required."});
+                    if (output.size() < segment_count.capacity)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_segmented_reduce: output holds " +
+                            std::to_string(output.size()) + " entries but " +
+                            std::to_string(segment_count.capacity) + " are required."});
+
+                    detail::validate_late_count(segment_count, "add_segmented_reduce");
+
+                    const T* value_base = values.data();
+                    const std::uint32_t* offset_base = segment_offsets.data();
+                    T* out_base = output.data();
+                    const LateCount lc = segment_count;
+
+                    // Same shape as the late-bound add_reduce, one live word instead of a level chain.
+                    std::shared_ptr<std::uint32_t> state =
+                        detail::make_reduce_scratch<std::uint32_t>(ctx_, 1, values.device_index(),
+                                                                    Residency::Host);
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(state));
+                    std::uint32_t* state_ptr = state.get();
+                    const Core::ResourceRegion state_region{state_ptr, 0, sizeof(std::uint32_t)};
+
+                    auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
+                    reduce_registration_tokens_.push_back(registration_token);
+
+                    emit_late_count_resolver(lc, state_ptr, 1,
+                        [](std::size_t live_n, std::uint32_t* out)
+                        {
+                            out[0] = static_cast<std::uint32_t>(live_n);
+                        },
+                        registration_token);
+
+                    Dynamic dyn;
+                    dyn.device_count = state_ptr;
+                    dyn.device_count_index = 0;
+
+                    Reads reads = Reads(values, segment_offsets, state_region);
+                    Writes writes = Writes(output);
+                    observe(reads);
+                    observe(writes);
+                    return emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
+                        segment_count.capacity,
+                        [value_base, offset_base, out_base, op, identity](std::size_t s)
+                        {
+                            const std::size_t begin = offset_base[s];
+                            const std::size_t end = offset_base[s + 1];
+                            out_base[s] = (end > begin)
+                                ? detail::fold_tile(op, value_base, begin, end)
+                                : identity;
+                        },
+                        registration_token);
+                }
+
+                /**
+                 * @brief Reduces each segment, late-bound, using the combiner's identity.
+                 * @tparam T       Element type of the values and the result.
+                 * @tparam Combine Binary functor exposing a static identity().
+                 * @param values          The concatenated segment contents.
+                 * @param segment_offsets Boundaries; @p segment_count.capacity + 1 entries.
+                 * @param output          Destination; @p segment_count.capacity entries.
+                 * @param segment_count   Capacity plus the live segment count's source.
+                 * @param op              The combiner, e.g. Sum<float>{}.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException As the six-argument overload.
+                 */
+                template <typename T, class Combine>
+                Graph& add_segmented_reduce(const Buffer<T>& values,
+                                            const Buffer<std::uint32_t>& segment_offsets,
+                                            const Buffer<T>& output,
+                                            LateCount segment_count, Combine op)
                 {
                     return add_segmented_reduce(values, segment_offsets, output,
                                                 segment_count, op, Combine::identity());
@@ -1918,6 +2306,55 @@ namespace SushiRuntime
                                    [fn, base](sycl::id<1> i) { fn(base + i[0]); });
                 }
 
+                /**
+                 * @brief Emits the one node that resolves a LateCount for a run.
+                 *
+                 * Shared shape behind every LateCount overload: reads @p n.device
+                 * when it is set, so a predecessor kernel that just wrote the live
+                 * count is a genuine dependency rather than one polled at the step
+                 * boundary before that kernel has run; writes @p state_words words of
+                 * @p state_ptr through @p fill, called with the resolved live count.
+                 *
+                 * @param n              The count to resolve.
+                 * @param state_ptr      Residency::Host scratch this call owns.
+                 * @param state_words    Element count of @p state_ptr to declare as written.
+                 * @param fill           Invoked once per run as fill(live_n, state_ptr).
+                 * @param registration_token Shared slot grouping this node's index
+                 *        with the rest of the public call's nodes.
+                 */
+                void emit_late_count_resolver(const LateCount& n, std::uint32_t* state_ptr,
+                                              std::size_t state_words,
+                                              std::function<void(std::size_t, std::uint32_t*)> fill,
+                                              std::shared_ptr<std::optional<std::uint32_t>>
+                                                  registration_token)
+                {
+                    const Core::ResourceRegion state_region{
+                        state_ptr, 0, state_words * sizeof(std::uint32_t)};
+                    Reads resolver_reads = (n.device != nullptr) ? Reads(*n.device) : Reads();
+                    Writes resolver_writes = Writes(state_region);
+                    observe(resolver_reads);
+                    observe(resolver_writes);
+                    std::vector<Core::ResourceRegion> rr = resolver_reads.keys;
+                    std::vector<Core::ResourceRegion> rw = resolver_writes.keys;
+                    specs_.push_back([rr, rw, n, state_ptr, fill,
+                                      registration_token](BackingGraph& bg)
+                    {
+                        std::optional<std::uint32_t> registration;
+                        if (registration_token)
+                        {
+                            if (!registration_token->has_value())
+                                *registration_token = bg.reserve_registration();
+                            registration = *registration_token;
+                        }
+                        bg.add_native(rr, rw, [n, state_ptr, fill]()
+                        {
+                            fill(detail::resolve_late_count(n), state_ptr);
+                        }, {}, registration);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                }
+
                 // Emits a 1-D per-element task whose iteration size and enablement
                 // are late-bound through a LateBindings block. The kernel resolves the
                 // live count at submit, so the node follows per-step size changes —
@@ -1926,24 +2363,61 @@ namespace SushiRuntime
                 // dependency regions cover the full capacity, so any live size within
                 // it is race-free, and a device count source adds itself to the reads
                 // so the producer is necessarily a predecessor.
+                /**
+                 * @param registration_token Shared slot grouping this node's index
+                 *        with others from one public add() call; null draws a plain
+                 *        fresh index, as emit_per_element_tracked() does.
+                 * @param live_scalar Optional Residency::Host word read once per
+                 *        dispatch, after this node's Reads are satisfied, and passed
+                 *        to @p fn as a second argument (fn(t, scalar)) baked into the
+                 *        kernel by value; null keeps the plain fn(t) call. Lets a
+                 *        value a predecessor node resolved this run (a tile's live
+                 *        in_count) reach every work-item without each one loading it
+                 *        from host USM itself.
+                 */
                 template <class F>
                 Graph& emit_dynamic_per_element(Dynamic dyn,
                                                 std::vector<Core::ResourceRegion> reads,
                                                 std::vector<Core::ResourceRegion> writes,
-                                                std::size_t capacity, F&& fn)
+                                                std::size_t capacity, F&& fn,
+                                                std::shared_ptr<std::optional<std::uint32_t>>
+                                                    registration_token = nullptr,
+                                                const std::uint32_t* live_scalar = nullptr)
                 {
                     require_host_device_slots(dyn);
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
                     adopt_device_bindings(*lb, dyn, reads);
 
-                    specs_.push_back([fn = std::forward<F>(fn), capacity, lb,
+                    specs_.push_back([fn = std::forward<F>(fn), capacity, lb, live_scalar,
                                       reads = std::move(reads),
-                                      writes = std::move(writes)](BackingGraph& bg)
+                                      writes = std::move(writes),
+                                      registration_token](BackingGraph& bg)
                     {
-                        bg.add_node([fn, capacity, lb](sycl::handler& h)
+                        std::optional<std::uint32_t> registration;
+                        if (registration_token)
                         {
-                            submit_live_range(h, resolve_live_range(*lb, capacity), fn);
-                        }, reads, writes, lb);
+                            if (!registration_token->has_value())
+                                *registration_token = bg.reserve_registration();
+                            registration = *registration_token;
+                        }
+                        bg.add_node([fn, capacity, lb, live_scalar](sycl::handler& h)
+                        {
+                            const LiveRange range = resolve_live_range(*lb, capacity);
+                            if constexpr (std::is_invocable_v<F, std::size_t, std::size_t>)
+                            {
+                                assert(live_scalar != nullptr &&
+                                       "a two-argument fn requires a live_scalar");
+                                // One host read at dispatch, baked into the kernel by value.
+                                const std::size_t snapshot =
+                                    static_cast<std::size_t>(*live_scalar);
+                                submit_live_range(h, range,
+                                    [fn, snapshot](std::size_t t) { fn(t, snapshot); });
+                            }
+                            else
+                            {
+                                submit_live_range(h, range, fn);
+                            }
+                        }, reads, writes, lb, {}, registration);
                     });
                     steps_.register_binding_updater(lb, std::move(dyn));
                     ++task_count_;

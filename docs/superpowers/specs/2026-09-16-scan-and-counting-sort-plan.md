@@ -26,7 +26,8 @@ the spec sections it names; exact signatures and rules live there, not here.
 
 - **Files:** create `include/SushiRuntime/api/detail/fixed_order_scan.hpp` (the tile plan shared by
   scan, radix and the existing reduce), `include/SushiRuntime/api/graph/graph.hpp` (the `LateCount`
-  type and its resolution), create `tests/functional/unit/test_late_count.cpp`.
+  type and its resolution), `include/SushiRuntime/api/fluent.hpp` (promotes `LateCount` into
+  `SushiRuntime`, as `Sum`/`Minimum`/`Maximum` already are), create `tests/functional/unit/test_late_count.cpp`.
 - **Waits on:** nothing.
 - **Content:** spec §0 and §B. `LateCount` carries a capacity plus one of: nothing (the capacity is
   the count), a host provider, or a `Residency::Host` device slot. One resolution point per run,
@@ -38,7 +39,9 @@ the spec sections it names; exact signatures and rules live there, not here.
 
 ### Task 2: `add_reduce` and `add_segmented_reduce` move onto it
 
-- **Files:** `include/SushiRuntime/api/graph/graph.hpp`, `tests/functional/unit/test_fixed_order_reduce.cpp`.
+- **Files:** `include/SushiRuntime/api/graph/graph.hpp`, `tests/functional/unit/test_fixed_order_reduce.cpp`,
+  `tests/functional/unit/test_registration_index.cpp` (a late-bound add_reduce grouping test,
+  mirroring the fixed-count one already there).
 - **Waits on:** Task 1.
 - **Content:** spec §E5. Both verbs gain `LateCount` overloads and plan from the capacity; the
   fixed-count overloads stay and forward. The fold order for a live count `n` is the order the

@@ -93,6 +93,17 @@ namespace
         return pa == pb;
     }
 
+    // As bit_equal(float, float): the double overload the byte-identity checks
+    // below need, since EXPECT_DOUBLE_EQ tolerates a 4-ULP difference and the
+    // late-bound contract is byte-identical, not merely close.
+    bool bit_equal(double a, double b)
+    {
+        std::uint64_t pa = 0, pb = 0;
+        std::memcpy(&pa, &a, sizeof(pa));
+        std::memcpy(&pb, &b, sizeof(pb));
+        return pa == pb;
+    }
+
     constexpr std::size_t TILE = 256;
 }
 
@@ -368,4 +379,96 @@ TEST(Unit_FixedOrderReduce, RejectsMisSizedArguments)
     EXPECT_THROW(g.add_reduce(in, empty, std::size_t{4}, Sum<float>{}), SushiException);
     EXPECT_THROW(g.add_segmented_reduce(in, bounds, out, std::size_t{4}, Sum<float>{}),
                  SushiException);
+}
+
+// A LateCount reduce planned for a capacity must match the fixed-count overload
+// bit for bit at every live count tested, since the design promises the same
+// fold order for a live n as the fixed-count path would produce for that n.
+TEST(Unit_FixedOrderReduce, LateBoundMatchesFixedCountExactly)
+{
+    constexpr std::size_t CAPACITY = 65537;
+    const std::size_t counts[] = { 1, 255, 256, 257, 65537 };
+
+    auto rt = Runtime::create();
+
+    for (std::size_t n : counts)
+    {
+        auto in  = rt.buffer<double>(CAPACITY);
+        auto out_fixed = rt.buffer<double>(1);
+        auto out_late  = rt.buffer<double>(1);
+
+        std::vector<double> host(CAPACITY, 0.0);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            host[i] = static_cast<double>(i % 7) + 0.5;
+            in[i] = host[i];
+        }
+        out_fixed[0] = -1.0;
+        out_late[0]  = -1.0;
+
+        auto g = rt.graph();
+        g.add_reduce(in, out_fixed, n, Sum<double>{});
+
+        LateCount lc;
+        lc.capacity = CAPACITY;
+        lc.host = [n]() { return n; };
+        g.add_reduce(in, out_late, lc, Sum<double>{});
+        g.run();
+
+        EXPECT_TRUE(bit_equal(out_late[0], out_fixed[0]))
+            << "n = " << n << ": late " << out_late[0] << ", fixed " << out_fixed[0];
+    }
+}
+
+// A late-bound reduce whose live count changes between runs must not recompile:
+// the topology (levels, scratch, node count) is fixed at the capacity, and only
+// the live count varies per step.
+TEST(Unit_FixedOrderReduce, LateBoundChangingCountKeepsOneCompile)
+{
+    constexpr std::size_t CAPACITY = 700000;
+
+    auto rt  = Runtime::create();
+    auto in  = rt.buffer<double>(CAPACITY);
+    auto out = rt.buffer<double>(1);
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        in[i] = 1.0;
+
+    std::size_t live_n = 1000;
+    LateCount lc;
+    lc.capacity = CAPACITY;
+    lc.host = [&live_n]() { return live_n; };
+
+    auto g = rt.graph();
+    g.add_reduce(in, out, lc, Sum<double>{});
+
+    g.run();
+    EXPECT_DOUBLE_EQ(out[0], 1000.0);
+
+    live_n = 700000;
+    g.run();
+    EXPECT_DOUBLE_EQ(out[0], 700000.0);
+
+    live_n = 3;
+    g.run();
+    EXPECT_DOUBLE_EQ(out[0], 3.0);
+
+    EXPECT_EQ(g.compile_count(), 1u)
+        << "a live count change between runs must not trigger a recompile";
+}
+
+// A LateCount above its capacity fails the run rather than reading past the
+// buffers it was planned for.
+TEST(Unit_FixedOrderReduce, LateBoundAboveCapacityFailsTheRun)
+{
+    auto rt  = Runtime::create();
+    auto in  = rt.buffer<double>(100);
+    auto out = rt.buffer<double>(1);
+
+    LateCount lc;
+    lc.capacity = 100;
+    lc.host = []() { return std::size_t{101}; };
+
+    auto g = rt.graph();
+    g.add_reduce(in, out, lc, Sum<double>{});
+    EXPECT_THROW(g.run(), SushiException);
 }
