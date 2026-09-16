@@ -137,10 +137,10 @@ TEST(Integration_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
     }
 }
 
-// E.3 - moved to tests/functional/integration/test_node_event_records_allocation.cpp,
-// sr_allocation_tests' own process: a replacement operator new here would only
-// ever see this executable's allocations, never the shared library's (see that
-// file, and test_steady_state_allocation.cpp:31-49, for why it needs its own binary).
+// E.3 - lives in test_steady_state_allocation.cpp (sr_allocation_tests' own
+// process): a replacement operator new here would only ever see this
+// executable's allocations, never the shared library's (see that file's
+// header comment, lines 24-49, for why it needs its own binary).
 
 // E.4 - node_index follows registration order, not the compiled (reversed)
 // order; cross-checked against the plan's own registration_index.
