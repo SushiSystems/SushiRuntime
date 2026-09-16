@@ -317,6 +317,14 @@ namespace SushiRuntime
                 /** @brief Whether the active run accumulates per-worker time buckets. */
                 std::atomic<bool> profiling_active_{false};
 
+                /** @brief The armed round's event ledger, or null when it does not profile. */
+                std::atomic<Core::ProfilingLedger*> active_ledger_{nullptr};
+
+                /** @brief Counter arm_for_execution() draws the next round's step from. */
+                std::atomic<std::uint32_t> next_dispatch_step_{0};
+                /** @brief This round's step, captured into each event a worker dispatches this round. */
+                std::atomic<std::uint32_t> current_dispatch_step_{0};
+
                 /**
                  * @brief Tasks submitted for the run but not yet reaped.
                  *
@@ -415,6 +423,28 @@ namespace SushiRuntime
                  *                  nodes to the profiling queue while it is set.
                  */
                 void arm_for_execution(bool profiling = false);
+
+                /**
+                 * @brief Wires the plan's event ledger for the round about to be armed.
+                 *
+                 * The pointer is only ever dereferenced between this call and the
+                 * matching disarm(), which clears it back to null; the caller must
+                 * not let the CompiledGraph that owns the ledger outlive that
+                 * window, and must call this again (or with null) before arming
+                 * a different plan.
+                 *
+                 * @param ledger The plan's ledger, or null when it does not profile.
+                 */
+                void set_profiling_ledger(Core::ProfilingLedger* ledger) noexcept;
+
+                /** @brief Resets the per-run step counter arm_for_execution() draws from, to 0. */
+                void reset_dispatch_step() noexcept { next_dispatch_step_.store(0, std::memory_order_release); }
+
+                /** @brief The step this round's dispatches must stamp into their event records. */
+                std::uint32_t current_dispatch_step() const noexcept
+                {
+                    return current_dispatch_step_.load(std::memory_order_acquire);
+                }
 
                 /**
                  * @brief Returns the pool to its parked state after a run quiesces.

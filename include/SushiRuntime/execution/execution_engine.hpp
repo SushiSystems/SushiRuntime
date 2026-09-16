@@ -39,6 +39,7 @@
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/run_report.hpp>
+#include <SushiRuntime/core/profiling_ledger.hpp>
 // WorkerPoolInfo is returned by worker_pool() below. runtime_settings.hpp is a
 // leaf header (no SYCL, no runtime types), so including it here does not create
 // a cycle with runtime_context.hpp, which includes this file.
@@ -103,6 +104,27 @@ namespace SushiRuntime
 
             /** @brief Whether this plan dispatches its device nodes on the profiling queue. */
             bool profiling = false;
+
+            /** @brief Per-run node event records and clock pairing, live only while profiling is on. */
+            Core::ProfilingLedger profiling_ledger;
+
+            /**
+             * @brief Per-registration-index count of internal nodes sharing it (F5).
+             *
+             * Computed once in capture_base_state(); sized to max(registration_index)+1
+             * and indexed by registration_index. Sizes profiling_ledger's rows.
+             */
+            std::vector<std::uint32_t> profiling_multiplicities;
+
+            /**
+             * @brief Per-registration-index native-host flag, computed once alongside
+             *        profiling_multiplicities.
+             *
+             * True where the index names a pure-CPU node whose event records are
+             * raw steady times needing conversion at collect, rather than an
+             * already-event-clock device record.
+             */
+            std::vector<bool> profiling_host_native;
         };
 
         /**
@@ -295,9 +317,13 @@ namespace SushiRuntime
              * @brief Clears profiling accumulators before a profiled run.
              *
              * Default no-op so engines that gather no timing (and test doubles) need
-             * not implement it. @param graph The compiled plan whose counters reset.
+             * not implement it.
+             * @param graph The compiled plan whose counters reset.
+             * @param expected_invocations Per-node dispatch count the caller expects
+             *        this run to reach; sizes the event ledger before dispatch starts.
              */
-            virtual void reset_profiling(CompiledGraph& /*graph*/) {}
+            virtual void reset_profiling(CompiledGraph& /*graph*/,
+                                         std::size_t /*expected_invocations*/ = 1) {}
 
             /**
              * @brief Fills a report's profiling breakdown after a profiled run.
@@ -421,9 +447,14 @@ namespace SushiRuntime
              * per-worker time buckets, so the resulting report covers only the run
              * about to start. The driver calls this only when profiling is on.
              *
+             * Also resets the plan's event ledger, sizing it to @p expected_invocations
+             * per node (or the previous run's high-water mark, whichever is larger),
+             * so capture never allocates once a shape has been seen.
+             *
              * @param graph The compiled plan whose node counters are reset.
+             * @param expected_invocations Per-node dispatch count this run expects.
              */
-            void reset_profiling(CompiledGraph& graph) override;
+            void reset_profiling(CompiledGraph& graph, std::size_t expected_invocations) override;
 
             /**
              * @brief Fills a report's profiling breakdown after a profiled run.
