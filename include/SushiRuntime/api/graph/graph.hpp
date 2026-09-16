@@ -1724,6 +1724,401 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Stably argsorts @p keys by 8-bit digits into bucket offsets.
+                 *
+                 * See docs/superpowers/specs/2026-09-16-scan-and-counting-sort-design.md
+                 * §A3 for the algorithm, the digit count and the offsets/counts derivation.
+                 *
+                 * @param keys     Values to sort by; must hold at least @p n.capacity elements.
+                 * @param indices  Destination for the stable sort order; must hold at
+                 *                 least @p n.capacity elements.
+                 * @param offsets  Destination exclusive bucket starts; must hold at
+                 *                 least @p key_range.capacity + 1 elements.
+                 * @param total    Destination for the live element count; must hold at
+                 *                 least 1 element.
+                 * @param n        Capacity plus the live element count's source.
+                 * @param key_range Capacity plus the live bucket count's source.
+                 * @param counts   Optional per-bucket counts; must hold at least
+                 *                 @p key_range.capacity elements when not null.
+                 * @return *this, for chaining.
+                 * @throws Core::SushiException If a buffer is too small, if @p keys,
+                 *         @p indices, @p offsets or @p counts sit on different
+                 *         devices, if @p key_range.capacity is zero, or at run if
+                 *         either live count exceeds its capacity.
+                 */
+                Graph& add_counting_sort(const Buffer<std::uint32_t>& keys,
+                                         const Buffer<std::uint32_t>& indices,
+                                         const Buffer<std::uint32_t>& offsets,
+                                         const Buffer<std::uint32_t>& total,
+                                         LateCount n, LateCount key_range,
+                                         const Buffer<std::uint32_t>* counts = nullptr)
+                {
+                    detail::validate_late_count(n, "add_counting_sort");
+                    detail::validate_late_count(key_range, "add_counting_sort");
+                    if (key_range.capacity == 0)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_counting_sort: key_range.capacity is zero."});
+                    if (n.capacity > keys.size())
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_counting_sort: n.capacity (" + std::to_string(n.capacity) +
+                            ") exceeds the keys buffer's size (" +
+                            std::to_string(keys.size()) + ")."});
+                    if (indices.size() < n.capacity)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_counting_sort: indices holds " +
+                            std::to_string(indices.size()) + " elements but " +
+                            std::to_string(n.capacity) + " are required."});
+                    if (offsets.size() < key_range.capacity + 1)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_counting_sort: offsets holds " +
+                            std::to_string(offsets.size()) + " elements but " +
+                            std::to_string(key_range.capacity + 1) + " are required."});
+                    if (total.size() == 0)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_counting_sort: the total buffer holds no elements."});
+                    if (counts != nullptr && counts->size() < key_range.capacity)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_counting_sort: counts holds " +
+                            std::to_string(counts->size()) + " elements but " +
+                            std::to_string(key_range.capacity) + " are required."});
+                    if (indices.device_index() != keys.device_index() ||
+                        offsets.device_index() != keys.device_index() ||
+                        (counts != nullptr && counts->device_index() != keys.device_index()))
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            "add_counting_sort: keys, indices, offsets and counts must "
+                            "live on the same device."});
+
+                    constexpr std::size_t DIGIT_BINS = 256;
+                    std::size_t bits = 0;
+                    {
+                        std::uint64_t v = static_cast<std::uint64_t>(key_range.capacity - 1);
+                        while (v != 0) { ++bits; v >>= 1; }
+                    }
+                    if (bits == 0) bits = 1;
+                    const std::size_t digit_count = (bits + 7) / 8;
+
+                    // One token shared by every node this call emits: both resolvers,
+                    // the total write, every digit's four passes and the closing
+                    // offsets/counts passes (G1 spec §F5).
+                    auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
+                    reduce_registration_tokens_.push_back(registration_token);
+
+                    std::shared_ptr<std::uint32_t> n_state = detail::make_reduce_scratch<std::uint32_t>(
+                        ctx_, 2, keys.device_index(), Residency::Host);
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(n_state));
+                    std::uint32_t* n_state_ptr = n_state.get();
+                    const Core::ResourceRegion n_state_region{n_state_ptr, 0, 2 * sizeof(std::uint32_t)};
+
+                    emit_late_count_resolver(n, n_state_ptr, 2,
+                        [](std::size_t live_n, std::uint32_t* out)
+                        {
+                            out[0] = static_cast<std::uint32_t>(live_n);
+                            out[1] = static_cast<std::uint32_t>(detail::next_live_tile_count(live_n));
+                        },
+                        registration_token);
+
+                    // key_range is resolved solely so a live bucket count above its
+                    // capacity fails the run; the offsets pass below needs no live
+                    // bucket count of its own (design doc §A3).
+                    std::shared_ptr<std::uint32_t> kr_state = detail::make_reduce_scratch<std::uint32_t>(
+                        ctx_, 1, keys.device_index(), Residency::Host);
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(kr_state));
+                    std::uint32_t* kr_state_ptr = kr_state.get();
+                    emit_late_count_resolver(key_range, kr_state_ptr, 1,
+                        [](std::size_t live_key_range, std::uint32_t* out)
+                        {
+                            out[0] = static_cast<std::uint32_t>(live_key_range);
+                        },
+                        registration_token);
+
+                    std::uint32_t* total_base = total.data();
+                    {
+                        Reads reads = Reads(n_state_region);
+                        Writes writes = Writes(total);
+                        observe(reads);
+                        observe(writes);
+                        emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                            std::size_t{1},
+                            [total_base](std::size_t, std::size_t live_n)
+                            {
+                                total_base[0] = static_cast<std::uint32_t>(live_n);
+                            },
+                            registration_token, n_state_ptr);
+                    }
+
+                    if (n.capacity == 0)
+                    {
+                        // No element ever arrives: every bucket starts and stays at
+                        // the live count, which resolve_late_count() has already
+                        // pinned to zero above, so this is the only writer offsets
+                        // and counts need.
+                        std::uint32_t* offsets_base = offsets.data();
+                        std::uint32_t* counts_base = (counts != nullptr) ? counts->data() : nullptr;
+                        Reads reads = Reads();
+                        Writes writes = (counts != nullptr) ? Writes(offsets, *counts) : Writes(offsets);
+                        observe(reads);
+                        observe(writes);
+                        return emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                            key_range.capacity + 1,
+                            [offsets_base, counts_base, capacity = key_range.capacity](std::size_t k)
+                            {
+                                offsets_base[k] = 0;
+                                if (counts_base != nullptr && k < capacity)
+                                    counts_base[k] = 0;
+                            },
+                            registration_token);
+                    }
+
+                    const std::size_t T_cap = detail::next_live_tile_count(n.capacity);
+                    constexpr std::size_t tile = detail::REDUCE_TILE;
+
+                    // hist holds raw counts until the column scan overwrites it in place with prefixes.
+                    std::shared_ptr<std::uint32_t> hist = detail::make_reduce_scratch<std::uint32_t>(
+                        ctx_, DIGIT_BINS * T_cap, keys.device_index(), keys.residency());
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(hist));
+                    std::shared_ptr<std::uint32_t> col_total = detail::make_reduce_scratch<std::uint32_t>(
+                        ctx_, DIGIT_BINS, keys.device_index(), keys.residency());
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(col_total));
+                    std::shared_ptr<std::uint32_t> bin_base = detail::make_reduce_scratch<std::uint32_t>(
+                        ctx_, DIGIT_BINS, keys.device_index(), keys.residency());
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(bin_base));
+
+                    std::uint32_t* buf0 = nullptr;
+                    std::uint32_t* buf1 = nullptr;
+                    if (digit_count >= 2)
+                    {
+                        std::shared_ptr<std::uint32_t> owned0 = detail::make_reduce_scratch<std::uint32_t>(
+                            ctx_, n.capacity, keys.device_index(), keys.residency());
+                        buf0 = owned0.get();
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(owned0));
+                    }
+                    if (digit_count >= 3)
+                    {
+                        std::shared_ptr<std::uint32_t> owned1 = detail::make_reduce_scratch<std::uint32_t>(
+                            ctx_, n.capacity, keys.device_index(), keys.residency());
+                        buf1 = owned1.get();
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(owned1));
+                    }
+
+                    const std::uint32_t* keys_base = keys.data();
+                    std::uint32_t* indices_base = indices.data();
+                    std::uint32_t* hist_base = hist.get();
+                    std::uint32_t* col_total_base = col_total.get();
+                    std::uint32_t* bin_base_base = bin_base.get();
+
+                    for (std::size_t d = 0; d < digit_count; ++d)
+                    {
+                        const bool first = (d == 0);
+                        const bool last = (d + 1 == digit_count);
+                        const std::uint32_t* src_indices =
+                            first ? nullptr
+                                  : (d % 2 == 1 ? buf0 : buf1); // dst_of(d - 1)
+                        std::uint32_t* dst_indices = last ? indices_base
+                                                          : (d % 2 == 0 ? buf0 : buf1);
+                        const std::uint32_t shift = static_cast<std::uint32_t>(8 * d);
+
+                        // Histogram: one work-item per tile, writing (not
+                        // accumulating) its own row, so no run needs to clear it.
+                        {
+                            void* hist_key = static_cast<void*>(hist_base);
+                            Reads reads = first
+                                ? Reads(keys, n_state_region)
+                                : Reads(keys,
+                                        Core::ResourceRegion{static_cast<void*>(
+                                            const_cast<std::uint32_t*>(src_indices)),
+                                            0, n.capacity * sizeof(std::uint32_t)},
+                                        n_state_region);
+                            Writes writes = Writes(Core::ResourceRegion{
+                                hist_key, 0, DIGIT_BINS * T_cap * sizeof(std::uint32_t)});
+                            Dynamic dyn;
+                            dyn.device_count = n_state_ptr;
+                            dyn.device_count_index = 1;
+                            observe(reads);
+                            observe(writes);
+                            emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
+                                T_cap,
+                                [keys_base, src_indices, hist_base, first, shift, T_cap](
+                                    std::size_t t, std::size_t live_n)
+                                {
+                                    std::uint32_t local[DIGIT_BINS] = {};
+                                    const std::size_t begin = t * tile;
+                                    std::size_t end = begin + tile;
+                                    if (end > live_n) end = live_n;
+                                    for (std::size_t i = begin; i < end; ++i)
+                                    {
+                                        const std::size_t src = first ? i : src_indices[i];
+                                        const std::uint32_t digit =
+                                            (keys_base[src] >> shift) & 0xFFu;
+                                        ++local[digit];
+                                    }
+                                    for (std::size_t b = 0; b < DIGIT_BINS; ++b)
+                                        hist_base[b * T_cap + t] = local[b];
+                                },
+                                registration_token, n_state_ptr);
+                        }
+
+                        // Column scan: one work-item per bin, sequential over its
+                        // tiles, so bins stay independent and every column is a plain
+                        // left-to-right exclusive scan.
+                        {
+                            void* hist_key = static_cast<void*>(hist_base);
+                            // In place over hist: each bin's column is touched by exactly one work-item, sequentially.
+                            Reads reads = Reads(Core::ResourceRegion{
+                                hist_key, 0, DIGIT_BINS * T_cap * sizeof(std::uint32_t)},
+                                n_state_region);
+                            Writes writes = Writes(
+                                Core::ResourceRegion{hist_key, 0,
+                                                     DIGIT_BINS * T_cap * sizeof(std::uint32_t)},
+                                Core::ResourceRegion{static_cast<void*>(col_total_base), 0,
+                                                     DIGIT_BINS * sizeof(std::uint32_t)});
+                            observe(reads);
+                            observe(writes);
+                            emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                                DIGIT_BINS,
+                                [hist_base, col_total_base, T_cap](
+                                    std::size_t b, std::size_t live_T)
+                                {
+                                    std::uint32_t running = 0;
+                                    for (std::size_t t = 0; t < live_T; ++t)
+                                    {
+                                        const std::uint32_t count = hist_base[b * T_cap + t];
+                                        hist_base[b * T_cap + t] = running;
+                                        running += count;
+                                    }
+                                    col_total_base[b] = running;
+                                },
+                                registration_token, n_state_ptr + 1);
+                        }
+
+                        // Bin base: one work-item, sequential over the (always full)
+                        // 256 bin totals, since the digit range never shrinks with n.
+                        {
+                            Reads reads = Reads(Core::ResourceRegion{
+                                static_cast<void*>(col_total_base), 0,
+                                DIGIT_BINS * sizeof(std::uint32_t)});
+                            Writes writes = Writes(Core::ResourceRegion{
+                                static_cast<void*>(bin_base_base), 0,
+                                DIGIT_BINS * sizeof(std::uint32_t)});
+                            observe(reads);
+                            observe(writes);
+                            emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                                std::size_t{1},
+                                [col_total_base, bin_base_base](std::size_t)
+                                {
+                                    std::uint32_t running = 0;
+                                    for (std::size_t b = 0; b < DIGIT_BINS; ++b)
+                                    {
+                                        bin_base_base[b] = running;
+                                        running += col_total_base[b];
+                                    }
+                                },
+                                registration_token);
+                        }
+
+                        // Placement: one work-item per tile, walking its elements in
+                        // ascending index order and writing them into the base each
+                        // bin already owns for this tile, which is what keeps the
+                        // scatter stable.
+                        {
+                            void* dst_key = static_cast<void*>(dst_indices);
+                            Reads src_region = first
+                                ? Reads()
+                                : Reads(Core::ResourceRegion{static_cast<void*>(
+                                      const_cast<std::uint32_t*>(src_indices)),
+                                      0, n.capacity * sizeof(std::uint32_t)});
+                            Reads reads = Reads(keys,
+                                Core::ResourceRegion{static_cast<void*>(hist_base), 0,
+                                                     DIGIT_BINS * T_cap * sizeof(std::uint32_t)},
+                                Core::ResourceRegion{static_cast<void*>(bin_base_base), 0,
+                                                     DIGIT_BINS * sizeof(std::uint32_t)},
+                                n_state_region);
+                            for (const Core::ResourceRegion& r : src_region.keys)
+                                reads.keys.push_back(r);
+                            Writes writes = Writes(Core::ResourceRegion{
+                                dst_key, 0, n.capacity * sizeof(std::uint32_t)});
+                            Dynamic dyn;
+                            dyn.device_count = n_state_ptr;
+                            dyn.device_count_index = 1;
+                            observe(reads);
+                            observe(writes);
+                            emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
+                                T_cap,
+                                [keys_base, src_indices, hist_base, bin_base_base,
+                                 dst_indices, first, shift, T_cap](
+                                    std::size_t t, std::size_t live_n)
+                                {
+                                    std::uint32_t cursor[DIGIT_BINS];
+                                    for (std::size_t b = 0; b < DIGIT_BINS; ++b)
+                                        cursor[b] = bin_base_base[b] + hist_base[b * T_cap + t];
+                                    const std::size_t begin = t * tile;
+                                    std::size_t end = begin + tile;
+                                    if (end > live_n) end = live_n;
+                                    for (std::size_t i = begin; i < end; ++i)
+                                    {
+                                        const std::size_t src = first ? i : src_indices[i];
+                                        const std::uint32_t digit =
+                                            (keys_base[src] >> shift) & 0xFFu;
+                                        dst_indices[cursor[digit]++] =
+                                            static_cast<std::uint32_t>(src);
+                                    }
+                                },
+                                registration_token, n_state_ptr);
+                        }
+                    }
+
+                    // Offsets: one work-item per bucket (plus the sentinel), a plain
+                    // lower_bound over the sorted keys; no live bucket count is read
+                    // here, since a search past it still lands on the live element
+                    // count and the sentinel falls out for free (design doc §A3).
+                    {
+                        std::uint32_t* offsets_base = offsets.data();
+                        Reads reads = Reads(keys, indices, n_state_region);
+                        Writes writes = Writes(offsets);
+                        observe(reads);
+                        observe(writes);
+                        emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                            key_range.capacity + 1,
+                            [keys_base, indices_base, offsets_base](
+                                std::size_t k, std::size_t live_n)
+                            {
+                                std::size_t lo = 0;
+                                std::size_t hi = live_n;
+                                while (lo < hi)
+                                {
+                                    const std::size_t mid = lo + (hi - lo) / 2;
+                                    if (keys_base[indices_base[mid]] < k)
+                                        lo = mid + 1;
+                                    else
+                                        hi = mid;
+                                }
+                                offsets_base[k] = static_cast<std::uint32_t>(lo);
+                            },
+                            registration_token, n_state_ptr);
+                    }
+
+                    if (counts == nullptr)
+                        return *this;
+
+                    // Counts: the difference of two already-settled offsets, so it
+                    // needs no live scalar of its own, key range included: past the
+                    // live range both neighbours are the live element count and the
+                    // difference is zero, which is the correct bucket count there too.
+                    std::uint32_t* offsets_base = offsets.data();
+                    std::uint32_t* counts_base = counts->data();
+                    Reads reads = Reads(offsets);
+                    Writes writes = Writes(*counts);
+                    observe(reads);
+                    observe(writes);
+                    return emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                        key_range.capacity,
+                        [offsets_base, counts_base](std::size_t k)
+                        {
+                            counts_base[k] = offsets_base[k + 1] - offsets_base[k];
+                        },
+                        registration_token);
+                }
+
+                /**
                  * @brief Adds an offloadable task: a named remote kernel with a
                  *        local fallback.
                  *

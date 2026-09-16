@@ -115,6 +115,7 @@ Graph& add_prefix_scan(const Buffer<std::uint32_t>& counts,
 Graph& add_counting_sort(const Buffer<std::uint32_t>& keys,
                          const Buffer<std::uint32_t>& indices,  // >= capacity
                          const Buffer<std::uint32_t>& offsets,  // >= key_capacity + 1
+                         const Buffer<std::uint32_t>& total,    // >= 1
                          LateCount n,
                          LateCount key_range,                  // capacity = max bucket count
                          const Buffer<std::uint32_t>* counts = nullptr);
@@ -123,6 +124,7 @@ Graph& add_segmented_reduce(values, offsets, output, LateCount segment_count, op
 ```
 
 Exclusive form writes `offsets[n] = total` too, so CSR consumers need no second read.
+`add_counting_sort`'s `total[0]` is the live element count, the same value as `offsets[key_range]`.
 
 Residency: `counts`, `keys`, `indices`, `offsets` on one device, the same one; scratch inherits
 `device_index()` and `residency()` from the first input, as add_reduce does (`graph.hpp:845`).
@@ -149,13 +151,16 @@ Graph& add_prefix_scan(const Buffer<std::uint32_t>& counts,
     const Buffer<std::uint32_t>& offsets, const Buffer<std::uint32_t>& total,
     std::size_t capacity, CountProvider count);
 Graph& add_counting_sort(const Buffer<std::uint32_t>& keys, const Buffer<std::uint32_t>& indices,
-    const Buffer<std::uint32_t>& offsets, std::size_t capacity, CountProvider count,
+    const Buffer<std::uint32_t>& offsets, const Buffer<std::uint32_t>& total,
+    std::size_t capacity, CountProvider count,
     std::size_t key_capacity, CountProvider key_range);
 template <typename T, typename Combine>
 Graph& add_segmented_reduce(const Buffer<T>& values, const Buffer<std::uint32_t>& offsets,
     const Buffer<T>& output, std::size_t capacity, CountProvider segment_count,
     Combine combine, T identity);
 ```
+
+`add_counting_sort`'s `total[0]` is the live element count, the same value as `offsets[key_range]`.
 
 Same three on `Region` for both backends. An unbound provider means capacity, the
 `NodeDescriptor::count` rule (`node_descriptor.hpp:189`). A device-slot count stays a runtime-only
@@ -213,8 +218,11 @@ sr test (sushiruntime) and se test (execution seam, both backends through one ty
 5. **A shared tiled late-bound pass comes first**, and `add_reduce` and `add_segmented_reduce`
    move onto it and gain `LateCount` overloads. Their fixed-count overloads stay and forward, so
    no caller changes.
-6. **Digit width:** eight bits, with the digit count taken from the live key range at run time,
-   so a key range at or below 2^16 costs two passes rather than three.
+6. **Digit width:** eight bits. For now the digit count is derived from `key_range.capacity` at
+   registration, not the live key range, so a narrower live range still runs every planned digit
+   (still correct, since no live key reaches the unused high bits). Deriving it from the live key
+   range instead is follow-up work: it needs the ping-pong index buffers redesigned so whichever
+   pass turns out to be last still lands in `indices` (plan task 4 follow-up).
 7. **Scratch belongs to the graph**, sized at registration from the capacities, so no run
    allocates.
 8. **Out-of-range keys and a total that overflows `std::uint32_t`** are documented preconditions,
