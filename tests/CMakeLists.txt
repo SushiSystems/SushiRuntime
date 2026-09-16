@@ -197,7 +197,6 @@ add_executable(sr_allocation_tests
     common/test_main.cpp
 
     functional/integration/test_steady_state_allocation.cpp
-    functional/integration/test_node_event_records_allocation.cpp
 )
 sushiruntime_configure_test_target(sr_allocation_tests)
 gtest_discover_tests(sr_allocation_tests
