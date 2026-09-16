@@ -292,4 +292,29 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
         << TICKS << " ticks, " << longer << " over " << (TICKS * 4);
 }
 
+// G1 task 5, spec §E item 3: a profiled run's event ledger allocates only for
+// a new shape, never on a later run replaying the same one.
+TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
+{
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    int* p = buf.data();
+
+    auto g = rt.graph();
+    g.set_profiling_requested(true);
+    g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+
+    const std::size_t reuse_short = allocations_for_reuse_ticks(g, TICKS);
+    const std::size_t reuse_long  = allocations_for_reuse_ticks(g, TICKS * 4);
+
+    RecordProperty("profiled_reuse_allocations_per_" + std::to_string(TICKS) + "_ticks",
+                   static_cast<int>(reuse_short));
+    RecordProperty("profiled_reuse_allocations_per_" + std::to_string(TICKS * 4) + "_ticks",
+                   static_cast<int>(reuse_long));
+
+    EXPECT_TRUE(reuse_long == 0 || reuse_long < 4 * reuse_short)
+        << "profiled steady-state allocation scales with tick count: " << reuse_short
+        << " over " << TICKS << " ticks, " << reuse_long << " over " << (TICKS * 4);
+}
+
 #endif // !defined(SR_SANITIZER_OWNS_ALLOCATOR)
