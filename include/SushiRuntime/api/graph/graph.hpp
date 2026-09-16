@@ -2403,6 +2403,8 @@ namespace SushiRuntime
                         bg.add_node([fn, capacity, lb, live_scalar](sycl::handler& h)
                         {
                             const LiveRange range = resolve_live_range(*lb, capacity);
+                            // A one-argument kernel needs no live scalar; name it so -Wunused stays quiet.
+                            (void)live_scalar;
                             if constexpr (std::is_invocable_v<F, std::size_t, std::size_t>)
                             {
                                 assert(live_scalar != nullptr &&
