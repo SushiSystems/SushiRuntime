@@ -27,6 +27,7 @@
 // so this suite needs no device and no Runtime.
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -38,6 +39,9 @@ using SushiRuntime::API::detail::live_tile_levels;
 using SushiRuntime::API::detail::plan_reduction;
 using SushiRuntime::API::detail::plan_tiled_levels;
 using SushiRuntime::API::detail::resolve_late_count;
+using SushiRuntime::API::detail::fill_radix_plan;
+using SushiRuntime::API::detail::radix_digit_count;
+namespace detail = SushiRuntime::API::detail;
 
 // The level count for a capacity is the same tree add_reduce already plans,
 // exercised at the boundaries the tile size creates.
@@ -152,4 +156,51 @@ TEST(Unit_LateCount, NonHostDeviceSlotIsRejectedAtRegistration)
 
     auto g = rt.graph();
     EXPECT_THROW(g.add_reduce(in, out, lc, Sum<float>{}), SushiException);
+}
+
+// Digit counts at the 8-bit boundaries: a key range of 256 still fits one digit,
+// 257 needs two; zero and one take one digit.
+TEST(Unit_LateCount, RadixDigitCountAtByteBoundaries)
+{
+    EXPECT_EQ(radix_digit_count(0), 1u);
+    EXPECT_EQ(radix_digit_count(1), 1u);
+    EXPECT_EQ(radix_digit_count(256), 1u);
+    EXPECT_EQ(radix_digit_count(257), 2u);
+    EXPECT_EQ(radix_digit_count(1u << 16), 2u);
+    EXPECT_EQ(radix_digit_count((1u << 16) + 1), 3u);
+    EXPECT_EQ(radix_digit_count(1u << 24), 3u);
+    EXPECT_EQ(radix_digit_count((1u << 24) + 1), 4u);
+}
+
+// A plan for three digits whose live key range needs fewer runs only the low
+// digits, and the last active digit always places into the indices.
+TEST(Unit_LateCount, RadixPlanSkipsDigitsAboveTheLiveKeyRange)
+{
+    constexpr std::size_t DIGITS = 3;
+    std::vector<std::uint32_t> plan(DIGITS * detail::RADIX_PLAN_WORDS, 0xFFFFFFFFu);
+
+    auto word = [&plan](std::size_t d, std::size_t offset)
+    {
+        return plan[d * detail::RADIX_PLAN_WORDS + offset];
+    };
+
+    for (std::size_t live_digits = 1; live_digits <= DIGITS; ++live_digits)
+    {
+        const std::size_t live_key_range = std::size_t{1} << (8 * live_digits);
+        fill_radix_plan(DIGITS, 1000, 4, live_key_range, plan.data());
+        for (std::size_t d = 0; d < DIGITS; ++d)
+        {
+            const bool active = d < live_digits;
+            EXPECT_EQ(word(d, detail::RADIX_PLAN_TILES), active ? 4u : 0u)
+                << "live digits " << live_digits << ", d " << d;
+            EXPECT_EQ(word(d, detail::RADIX_PLAN_BINS), active ? 256u : 0u);
+            EXPECT_EQ(word(d, detail::RADIX_PLAN_ONE), active ? 1u : 0u);
+            EXPECT_EQ(word(d, detail::RADIX_PLAN_LIVE_N), 1000u);
+            const std::uint32_t expected_into =
+                (active && (live_digits - 1 - d) % 2 == 0) ? 1u : 0u;
+            EXPECT_EQ(word(d, detail::RADIX_PLAN_INTO_INDICES), expected_into);
+        }
+        EXPECT_EQ(word(live_digits - 1, detail::RADIX_PLAN_INTO_INDICES), 1u)
+            << "the last active digit must write the indices";
+    }
 }
