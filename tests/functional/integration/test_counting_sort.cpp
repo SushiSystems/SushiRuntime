@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <numeric>
 #include <random>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -491,6 +492,66 @@ TEST(Integration_CountingSort, DigitsAboveTheLiveKeyRangeDoNotRun)
     const std::vector<std::uint32_t> one_digit_order = {2, 0, 1, 3};
     for (std::size_t i = 0; i < N; ++i)
         EXPECT_EQ(indices[i], one_digit_order[i]) << "i = " << i;
+}
+
+// A DynamicGraph region records the prefix scan and the counting sort exactly
+// as a Graph does, each in its own region, with live counts changing between runs.
+TEST(Integration_CountingSort, RegionsRecordScanAndCountingSort)
+{
+    constexpr std::size_t N_CAPACITY = 700;
+    constexpr std::size_t KEY_CAPACITY = 1000;
+
+    auto rt           = Runtime::create();
+    auto keys         = rt.buffer<std::uint32_t>(N_CAPACITY);
+    auto indices      = rt.buffer<std::uint32_t>(N_CAPACITY);
+    auto offsets      = rt.buffer<std::uint32_t>(KEY_CAPACITY + 1);
+    auto total        = rt.buffer<std::uint32_t>(1);
+    auto scan_offsets = rt.buffer<std::uint32_t>(N_CAPACITY + 1);
+    auto scan_total   = rt.buffer<std::uint32_t>(1);
+
+    std::size_t live_n = 0;
+    std::size_t live_key_range = 0;
+    LateCount n_lc;
+    n_lc.capacity = N_CAPACITY;
+    n_lc.host = [&live_n]() { return live_n; };
+    LateCount kr_lc;
+    kr_lc.capacity = KEY_CAPACITY;
+    kr_lc.host = [&live_key_range]() { return live_key_range; };
+
+    auto world = rt.dynamic_graph();
+    world.region(1).add_counting_sort(keys, indices, offsets, total, n_lc, kr_lc);
+    world.region(2).add_prefix_scan(keys, scan_offsets, scan_total, n_lc);
+
+    for (const auto& live : {std::pair<std::size_t, std::size_t>{300, 200},
+                             std::pair<std::size_t, std::size_t>{700, 1000}})
+    {
+        live_n = live.first;
+        live_key_range = live.second;
+        std::mt19937 rng(static_cast<unsigned>(live_n));
+        std::uniform_int_distribution<std::uint32_t> dist(
+            0, static_cast<std::uint32_t>(live_key_range - 1));
+        std::vector<std::uint32_t> host_keys(live_n);
+        for (auto& k : host_keys)
+            k = dist(rng);
+        for (std::size_t i = 0; i < live_n; ++i)
+            keys[i] = host_keys[i];
+
+        world.run();
+
+        const HostReference ref = host_counting_sort(host_keys, live_key_range);
+        for (std::size_t i = 0; i < live_n; ++i)
+            ASSERT_EQ(indices[i], ref.indices[i]) << "n = " << live_n << ", i = " << i;
+        for (std::size_t k = 0; k <= live_key_range; ++k)
+            ASSERT_EQ(offsets[k], ref.offsets[k]) << "n = " << live_n << ", k = " << k;
+        std::uint32_t running = 0;
+        for (std::size_t i = 0; i < live_n; ++i)
+        {
+            ASSERT_EQ(scan_offsets[i], running) << "n = " << live_n << ", i = " << i;
+            running += host_keys[i];
+        }
+        EXPECT_EQ(scan_offsets[live_n], running);
+        EXPECT_EQ(scan_total[0], running);
+    }
 }
 
 // Per-substep coverage: run(4) with keys that change every step, so each
