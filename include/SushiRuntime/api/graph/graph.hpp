@@ -1788,18 +1788,12 @@ namespace SushiRuntime
                             "add_counting_sort: keys, indices, offsets and counts must "
                             "live on the same device."});
 
-                    constexpr std::size_t DIGIT_BINS = 256;
-                    std::size_t bits = 0;
-                    {
-                        std::uint64_t v = static_cast<std::uint64_t>(key_range.capacity - 1);
-                        while (v != 0) { ++bits; v >>= 1; }
-                    }
-                    if (bits == 0) bits = 1;
-                    const std::size_t digit_count = (bits + 7) / 8;
+                    constexpr std::size_t DIGIT_BINS = detail::RADIX_DIGIT_BINS;
+                    const std::size_t digit_count = detail::radix_digit_count(key_range.capacity);
 
                     // One token shared by every node this call emits: both resolvers,
-                    // the total write, every digit's four passes and the closing
-                    // offsets/counts passes (G1 spec §F5).
+                    // the total write, the digit plan, every digit's four passes and
+                    // the closing offsets/counts passes (G1 spec §F5).
                     auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
                     reduce_registration_tokens_.push_back(registration_token);
 
@@ -1817,13 +1811,14 @@ namespace SushiRuntime
                         },
                         registration_token);
 
-                    // key_range is resolved solely so a live bucket count above its
-                    // capacity fails the run; the offsets pass below needs no live
-                    // bucket count of its own (design doc §A3).
+                    // The live key range fails a run that exceeds its capacity and
+                    // decides how many digits that run sorts; the offsets pass below
+                    // needs no live bucket count of its own (design doc §A3).
                     std::shared_ptr<std::uint32_t> kr_state = detail::make_reduce_scratch<std::uint32_t>(
                         ctx_, 1, keys.device_index(), Residency::Host);
                     reduce_scratch_.push_back(std::static_pointer_cast<void>(kr_state));
                     std::uint32_t* kr_state_ptr = kr_state.get();
+                    const Core::ResourceRegion kr_state_region{kr_state_ptr, 0, sizeof(std::uint32_t)};
                     emit_late_count_resolver(key_range, kr_state_ptr, 1,
                         [](std::size_t live_key_range, std::uint32_t* out)
                         {
@@ -1872,6 +1867,23 @@ namespace SushiRuntime
                     const std::size_t T_cap = detail::next_live_tile_count(n.capacity);
                     constexpr std::size_t tile = detail::REDUCE_TILE;
 
+                    // The digit plan: per digit, its live work counts (zero past the
+                    // live key range's digits) and whether it places into the indices.
+                    std::shared_ptr<std::uint32_t> plan = detail::make_reduce_scratch<std::uint32_t>(
+                        ctx_, digit_count * detail::RADIX_PLAN_WORDS, keys.device_index(),
+                        Residency::Host);
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(plan));
+                    std::uint32_t* plan_ptr = plan.get();
+                    const Core::ResourceRegion plan_region{plan_ptr, 0,
+                        digit_count * detail::RADIX_PLAN_WORDS * sizeof(std::uint32_t)};
+                    emit_host_pass(Reads(n_state_region, kr_state_region), Writes(plan_region),
+                        [n_state_ptr, kr_state_ptr, plan_ptr, digit_count]()
+                        {
+                            detail::fill_radix_plan(digit_count, n_state_ptr[0], n_state_ptr[1],
+                                                    kr_state_ptr[0], plan_ptr);
+                        },
+                        registration_token);
+
                     // hist holds raw counts until the column scan overwrites it in place with prefixes.
                     std::shared_ptr<std::uint32_t> hist = detail::make_reduce_scratch<std::uint32_t>(
                         ctx_, DIGIT_BINS * T_cap, keys.device_index(), keys.residency());
@@ -1883,21 +1895,14 @@ namespace SushiRuntime
                         ctx_, DIGIT_BINS, keys.device_index(), keys.residency());
                     reduce_scratch_.push_back(std::static_pointer_cast<void>(bin_base));
 
-                    std::uint32_t* buf0 = nullptr;
-                    std::uint32_t* buf1 = nullptr;
+                    // One scratch pings against the indices; a single digit never needs it.
+                    std::uint32_t* scratch_base = nullptr;
                     if (digit_count >= 2)
                     {
-                        std::shared_ptr<std::uint32_t> owned0 = detail::make_reduce_scratch<std::uint32_t>(
+                        std::shared_ptr<std::uint32_t> owned = detail::make_reduce_scratch<std::uint32_t>(
                             ctx_, n.capacity, keys.device_index(), keys.residency());
-                        buf0 = owned0.get();
-                        reduce_scratch_.push_back(std::static_pointer_cast<void>(owned0));
-                    }
-                    if (digit_count >= 3)
-                    {
-                        std::shared_ptr<std::uint32_t> owned1 = detail::make_reduce_scratch<std::uint32_t>(
-                            ctx_, n.capacity, keys.device_index(), keys.residency());
-                        buf1 = owned1.get();
-                        reduce_scratch_.push_back(std::static_pointer_cast<void>(owned1));
+                        scratch_base = owned.get();
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(owned));
                     }
 
                     const std::uint32_t* keys_base = keys.data();
@@ -1906,40 +1911,50 @@ namespace SushiRuntime
                     std::uint32_t* col_total_base = col_total.get();
                     std::uint32_t* bin_base_base = bin_base.get();
 
+                    const Core::ResourceRegion indices_region{static_cast<void*>(indices_base), 0,
+                        n.capacity * sizeof(std::uint32_t)};
+                    const Core::ResourceRegion scratch_region{static_cast<void*>(scratch_base), 0,
+                        n.capacity * sizeof(std::uint32_t)};
+                    const Core::ResourceRegion hist_region{static_cast<void*>(hist_base), 0,
+                        DIGIT_BINS * T_cap * sizeof(std::uint32_t)};
+                    const Core::ResourceRegion col_total_region{static_cast<void*>(col_total_base), 0,
+                        DIGIT_BINS * sizeof(std::uint32_t)};
+                    const Core::ResourceRegion bin_base_region{static_cast<void*>(bin_base_base), 0,
+                        DIGIT_BINS * sizeof(std::uint32_t)};
+
                     for (std::size_t d = 0; d < digit_count; ++d)
                     {
                         const bool first = (d == 0);
-                        const bool last = (d + 1 == digit_count);
-                        const std::uint32_t* src_indices =
-                            first ? nullptr
-                                  : (d % 2 == 1 ? buf0 : buf1); // dst_of(d - 1)
-                        std::uint32_t* dst_indices = last ? indices_base
-                                                          : (d % 2 == 0 ? buf0 : buf1);
                         const std::uint32_t shift = static_cast<std::uint32_t>(8 * d);
+                        std::uint32_t* digit_plan = plan_ptr + d * detail::RADIX_PLAN_WORDS;
+                        const std::uint32_t* snapshot = digit_plan + detail::RADIX_PLAN_LIVE_N;
+
+                        // Every digit after the first reads whichever of indices and
+                        // scratch the previous one filled, chosen at run from the plan.
+                        Reads sources = first ? Reads()
+                                              : (scratch_base != nullptr
+                                                    ? Reads(indices_region, scratch_region)
+                                                    : Reads(indices_region));
 
                         // Histogram: one work-item per tile, writing (not
                         // accumulating) its own row, so no run needs to clear it.
                         {
-                            void* hist_key = static_cast<void*>(hist_base);
-                            Reads reads = first
-                                ? Reads(keys, n_state_region)
-                                : Reads(keys,
-                                        Core::ResourceRegion{static_cast<void*>(
-                                            const_cast<std::uint32_t*>(src_indices)),
-                                            0, n.capacity * sizeof(std::uint32_t)},
-                                        n_state_region);
-                            Writes writes = Writes(Core::ResourceRegion{
-                                hist_key, 0, DIGIT_BINS * T_cap * sizeof(std::uint32_t)});
+                            Reads reads = Reads(keys, plan_region);
+                            for (const Core::ResourceRegion& r : sources.keys)
+                                reads.keys.push_back(r);
+                            Writes writes = Writes(hist_region);
                             Dynamic dyn;
-                            dyn.device_count = n_state_ptr;
-                            dyn.device_count_index = 1;
+                            dyn.device_count = digit_plan;
+                            dyn.device_count_index = detail::RADIX_PLAN_TILES;
                             observe(reads);
                             observe(writes);
                             emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
                                 T_cap,
-                                [keys_base, src_indices, hist_base, first, shift, T_cap](
-                                    std::size_t t, std::size_t live_n)
+                                [keys_base, indices_base, scratch_base, hist_base, first, shift,
+                                 T_cap](std::size_t t, std::size_t live_n, std::size_t into_indices)
                                 {
+                                    const std::uint32_t* src_indices =
+                                        into_indices != 0 ? scratch_base : indices_base;
                                     std::uint32_t local[DIGIT_BINS] = {};
                                     const std::size_t begin = t * tile;
                                     std::size_t end = begin + tile;
@@ -1954,26 +1969,22 @@ namespace SushiRuntime
                                     for (std::size_t b = 0; b < DIGIT_BINS; ++b)
                                         hist_base[b * T_cap + t] = local[b];
                                 },
-                                registration_token, n_state_ptr);
+                                registration_token, snapshot);
                         }
 
                         // Column scan: one work-item per bin, sequential over its
                         // tiles, so bins stay independent and every column is a plain
                         // left-to-right exclusive scan.
                         {
-                            void* hist_key = static_cast<void*>(hist_base);
                             // In place over hist: each bin's column is touched by exactly one work-item, sequentially.
-                            Reads reads = Reads(Core::ResourceRegion{
-                                hist_key, 0, DIGIT_BINS * T_cap * sizeof(std::uint32_t)},
-                                n_state_region);
-                            Writes writes = Writes(
-                                Core::ResourceRegion{hist_key, 0,
-                                                     DIGIT_BINS * T_cap * sizeof(std::uint32_t)},
-                                Core::ResourceRegion{static_cast<void*>(col_total_base), 0,
-                                                     DIGIT_BINS * sizeof(std::uint32_t)});
+                            Reads reads = Reads(hist_region, n_state_region);
+                            Writes writes = Writes(hist_region, col_total_region);
+                            Dynamic dyn;
+                            dyn.device_count = digit_plan;
+                            dyn.device_count_index = detail::RADIX_PLAN_BINS;
                             observe(reads);
                             observe(writes);
-                            emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                            emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
                                 DIGIT_BINS,
                                 [hist_base, col_total_base, T_cap](
                                     std::size_t b, std::size_t live_T)
@@ -1993,15 +2004,14 @@ namespace SushiRuntime
                         // Bin base: one work-item, sequential over the (always full)
                         // 256 bin totals, since the digit range never shrinks with n.
                         {
-                            Reads reads = Reads(Core::ResourceRegion{
-                                static_cast<void*>(col_total_base), 0,
-                                DIGIT_BINS * sizeof(std::uint32_t)});
-                            Writes writes = Writes(Core::ResourceRegion{
-                                static_cast<void*>(bin_base_base), 0,
-                                DIGIT_BINS * sizeof(std::uint32_t)});
+                            Reads reads = Reads(col_total_region);
+                            Writes writes = Writes(bin_base_region);
+                            Dynamic dyn;
+                            dyn.device_count = digit_plan;
+                            dyn.device_count_index = detail::RADIX_PLAN_ONE;
                             observe(reads);
                             observe(writes);
-                            emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
+                            emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
                                 std::size_t{1},
                                 [col_total_base, bin_base_base](std::size_t)
                                 {
@@ -2020,33 +2030,27 @@ namespace SushiRuntime
                         // bin already owns for this tile, which is what keeps the
                         // scatter stable.
                         {
-                            void* dst_key = static_cast<void*>(dst_indices);
-                            Reads src_region = first
-                                ? Reads()
-                                : Reads(Core::ResourceRegion{static_cast<void*>(
-                                      const_cast<std::uint32_t*>(src_indices)),
-                                      0, n.capacity * sizeof(std::uint32_t)});
-                            Reads reads = Reads(keys,
-                                Core::ResourceRegion{static_cast<void*>(hist_base), 0,
-                                                     DIGIT_BINS * T_cap * sizeof(std::uint32_t)},
-                                Core::ResourceRegion{static_cast<void*>(bin_base_base), 0,
-                                                     DIGIT_BINS * sizeof(std::uint32_t)},
-                                n_state_region);
-                            for (const Core::ResourceRegion& r : src_region.keys)
+                            Reads reads = Reads(keys, hist_region, bin_base_region, plan_region);
+                            for (const Core::ResourceRegion& r : sources.keys)
                                 reads.keys.push_back(r);
-                            Writes writes = Writes(Core::ResourceRegion{
-                                dst_key, 0, n.capacity * sizeof(std::uint32_t)});
+                            Writes writes = (scratch_base != nullptr)
+                                ? Writes(indices_region, scratch_region)
+                                : Writes(indices_region);
                             Dynamic dyn;
-                            dyn.device_count = n_state_ptr;
-                            dyn.device_count_index = 1;
+                            dyn.device_count = digit_plan;
+                            dyn.device_count_index = detail::RADIX_PLAN_TILES;
                             observe(reads);
                             observe(writes);
                             emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
                                 T_cap,
-                                [keys_base, src_indices, hist_base, bin_base_base,
-                                 dst_indices, first, shift, T_cap](
-                                    std::size_t t, std::size_t live_n)
+                                [keys_base, indices_base, scratch_base, hist_base, bin_base_base,
+                                 first, shift, T_cap](
+                                    std::size_t t, std::size_t live_n, std::size_t into_indices)
                                 {
+                                    const std::uint32_t* src_indices =
+                                        into_indices != 0 ? scratch_base : indices_base;
+                                    std::uint32_t* dst_indices =
+                                        into_indices != 0 ? indices_base : scratch_base;
                                     std::uint32_t cursor[DIGIT_BINS];
                                     for (std::size_t b = 0; b < DIGIT_BINS; ++b)
                                         cursor[b] = bin_base_base[b] + hist_base[b * T_cap + t];
@@ -2062,7 +2066,7 @@ namespace SushiRuntime
                                             static_cast<std::uint32_t>(src);
                                     }
                                 },
-                                registration_token, n_state_ptr);
+                                registration_token, snapshot);
                         }
                     }
 
@@ -3048,13 +3052,32 @@ namespace SushiRuntime
                 {
                     const Core::ResourceRegion state_region{
                         state_ptr, 0, state_words * sizeof(std::uint32_t)};
-                    Reads resolver_reads = (n.device != nullptr) ? Reads(*n.device) : Reads();
-                    Writes resolver_writes = Writes(state_region);
-                    observe(resolver_reads);
-                    observe(resolver_writes);
-                    std::vector<Core::ResourceRegion> rr = resolver_reads.keys;
-                    std::vector<Core::ResourceRegion> rw = resolver_writes.keys;
-                    specs_.push_back([rr, rw, n, state_ptr, fill,
+                    emit_host_pass((n.device != nullptr) ? Reads(*n.device) : Reads(),
+                        Writes(state_region),
+                        [n, state_ptr, fill]()
+                        {
+                            fill(detail::resolve_late_count(n), state_ptr);
+                        },
+                        std::move(registration_token));
+                }
+
+                /**
+                 * @brief Emits one host node that runs @p body once per run.
+                 * @param reads              Regions @p body reads.
+                 * @param writes             Regions @p body writes.
+                 * @param body               Host work, invoked once per dispatch.
+                 * @param registration_token Shared slot grouping this node's index
+                 *        with the rest of the public call's nodes.
+                 */
+                void emit_host_pass(Reads reads, Writes writes, std::function<void()> body,
+                                    std::shared_ptr<std::optional<std::uint32_t>>
+                                        registration_token)
+                {
+                    observe(reads);
+                    observe(writes);
+                    std::vector<Core::ResourceRegion> rr = reads.keys;
+                    std::vector<Core::ResourceRegion> rw = writes.keys;
+                    specs_.push_back([rr, rw, body = std::move(body),
                                       registration_token](BackingGraph& bg)
                     {
                         std::optional<std::uint32_t> registration;
@@ -3064,10 +3087,7 @@ namespace SushiRuntime
                                 *registration_token = bg.reserve_registration();
                             registration = *registration_token;
                         }
-                        bg.add_native(rr, rw, [n, state_ptr, fill]()
-                        {
-                            fill(detail::resolve_late_count(n), state_ptr);
-                        }, {}, registration);
+                        bg.add_native(rr, rw, body, {}, registration);
                     });
                     ++task_count_;
                     dirty_ = true;
@@ -3091,7 +3111,8 @@ namespace SushiRuntime
                  *        kernel by value; null keeps the plain fn(t) call. Lets a
                  *        value a predecessor node resolved this run (a tile's live
                  *        in_count) reach every work-item without each one loading it
-                 *        from host USM itself.
+                 *        from host USM itself. A three-argument fn(t, a, b) reads
+                 *        two adjacent words instead.
                  */
                 template <class F>
                 Graph& emit_dynamic_per_element(Dynamic dyn,
@@ -3123,7 +3144,17 @@ namespace SushiRuntime
                             const LiveRange range = resolve_live_range(*lb, capacity);
                             // A one-argument kernel needs no live scalar; name it so -Wunused stays quiet.
                             (void)live_scalar;
-                            if constexpr (std::is_invocable_v<F, std::size_t, std::size_t>)
+                            if constexpr (std::is_invocable_v<F, std::size_t, std::size_t, std::size_t>)
+                            {
+                                assert(live_scalar != nullptr &&
+                                       "a three-argument fn requires a live_scalar");
+                                // Two adjacent host words, read once at dispatch.
+                                const std::size_t first = static_cast<std::size_t>(live_scalar[0]);
+                                const std::size_t second = static_cast<std::size_t>(live_scalar[1]);
+                                submit_live_range(h, range,
+                                    [fn, first, second](std::size_t t) { fn(t, first, second); });
+                            }
+                            else if constexpr (std::is_invocable_v<F, std::size_t, std::size_t>)
                             {
                                 assert(live_scalar != nullptr &&
                                        "a two-argument fn requires a live_scalar");

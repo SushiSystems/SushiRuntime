@@ -117,6 +117,71 @@ namespace SushiRuntime
                 return live;
             }
 
+            /** @brief Bins one 8-bit radix digit sorts into. */
+            constexpr std::size_t RADIX_DIGIT_BINS = 256;
+
+            /** @brief Words each digit occupies in a radix plan. */
+            constexpr std::size_t RADIX_PLAN_WORDS = 5;
+
+            /** @brief Offset of a digit's live tile count, zero when it is skipped. */
+            constexpr std::size_t RADIX_PLAN_TILES = 0;
+
+            /** @brief Offset of a digit's live bin count, zero when it is skipped. */
+            constexpr std::size_t RADIX_PLAN_BINS = 1;
+
+            /** @brief Offset of a digit's single-item count, zero when it is skipped. */
+            constexpr std::size_t RADIX_PLAN_ONE = 2;
+
+            /** @brief Offset of the live element count, first word of a digit's snapshot. */
+            constexpr std::size_t RADIX_PLAN_LIVE_N = 3;
+
+            /** @brief Offset of the flag that sends a digit's placement into the indices. */
+            constexpr std::size_t RADIX_PLAN_INTO_INDICES = 4;
+
+            /**
+             * @brief Counts the 8-bit digits that cover every key below a key range.
+             * @param key_range Exclusive key bound; zero and one both take one digit.
+             * @return At least one, at most four.
+             */
+            inline std::size_t radix_digit_count(std::size_t key_range) noexcept
+            {
+                std::size_t bits = 0;
+                for (std::uint64_t v = (key_range > 1) ? key_range - 1 : 0; v != 0; v >>= 1)
+                    ++bits;
+                return (bits == 0) ? 1 : (bits + 7) / 8;
+            }
+
+            /**
+             * @brief Writes one run's radix plan: which digits run and where each lands.
+             *
+             * Digits at or above radix_digit_count(@p live_key_range) get zero work
+             * counts. Active digits alternate between the indices and the scratch so
+             * the last active one always writes the indices.
+             *
+             * @param digit_count Digits planned at registration, from the key range capacity.
+             * @param live_n      Live element count.
+             * @param live_tiles  Live tile count, next_live_tile_count(@p live_n).
+             * @param live_key_range Live key range; must not exceed the planned capacity.
+             * @param out         Array of at least @p digit_count * RADIX_PLAN_WORDS words.
+             */
+            inline void fill_radix_plan(std::size_t digit_count, std::size_t live_n,
+                                        std::size_t live_tiles, std::size_t live_key_range,
+                                        std::uint32_t* out) noexcept
+            {
+                const std::size_t live_digits = radix_digit_count(live_key_range);
+                for (std::size_t d = 0; d < digit_count; ++d)
+                {
+                    const bool active = d < live_digits;
+                    std::uint32_t* word = out + d * RADIX_PLAN_WORDS;
+                    word[RADIX_PLAN_TILES] = active ? static_cast<std::uint32_t>(live_tiles) : 0u;
+                    word[RADIX_PLAN_BINS] = active ? static_cast<std::uint32_t>(RADIX_DIGIT_BINS) : 0u;
+                    word[RADIX_PLAN_ONE] = active ? 1u : 0u;
+                    word[RADIX_PLAN_LIVE_N] = static_cast<std::uint32_t>(live_n);
+                    word[RADIX_PLAN_INTO_INDICES] =
+                        (active && (live_digits - 1 - d) % 2 == 0) ? 1u : 0u;
+                }
+            }
+
         } // namespace detail
     } // namespace API
 } // namespace SushiRuntime

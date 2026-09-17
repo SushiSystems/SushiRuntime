@@ -72,9 +72,11 @@ is a stable sort in disguise:
   tiles per bin plus a scan over bins gives each tile's per-bin write base, using A1; (c) each
   tile writes its elements in ascending order into `base[t][bin]++`. LSD is stable per digit, so
   the output is stable in `i`. Digits = ceil(key_bits/8): 3 for 2^20. Work O(d(n + T*256)),
-  memory 2n index + 4 MB table + scan scratch. No host step: tile count derives from `n`, digit
-  count from capacity key bits; a smaller live key range runs the upper digits as no-op passes
-  (still bit-equal) or skips them via `when()`.
+  memory 2n index + 4 MB table + scan scratch. No host step: tile count derives from `n`. The
+  capacity key bits fix how many digit blocks are registered; each run a host plan node derives
+  the live digit count from the live key range, gives the digits above it zero work, and picks
+  each active digit's direction between `indices` and one scratch so the last active digit writes
+  `indices`.
 
 Once the argsort exists, the scatter is `out[p] = sorted[p]` and the offsets are redundant: the
 sorted order already is the CSR payload. `offset` then serves only as a checked input (assert
@@ -218,11 +220,10 @@ sr test (sushiruntime) and se test (execution seam, both backends through one ty
 5. **A shared tiled late-bound pass comes first**, and `add_reduce` and `add_segmented_reduce`
    move onto it and gain `LateCount` overloads. Their fixed-count overloads stay and forward, so
    no caller changes.
-6. **Digit width:** eight bits. For now the digit count is derived from `key_range.capacity` at
-   registration, not the live key range, so a narrower live range still runs every planned digit
-   (still correct, since no live key reaches the unused high bits). Deriving it from the live key
-   range instead is follow-up work: it needs the ping-pong index buffers redesigned so whichever
-   pass turns out to be last still lands in `indices` (plan task 4 follow-up).
+6. **Digit width:** eight bits. `key_range.capacity` fixes the registered digit blocks; the live
+   key range decides how many run (2026-09-17, owner option A). Every digit node declares both
+   `indices` and the one scratch, and reads its direction from the run's plan, so no copy pass is
+   needed whichever digit ends up last.
 7. **Scratch belongs to the graph**, sized at registration from the capacities, so no run
    allocates.
 8. **Out-of-range keys and a total that overflows `std::uint32_t`** are documented preconditions,

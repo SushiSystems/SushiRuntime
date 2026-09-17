@@ -412,6 +412,87 @@ TEST(Integration_CountingSort, LateBoundChangingCountAndKeyRangeKeepsOneCompile)
         << "a live count or key range change between runs must not trigger a recompile";
 }
 
+// A key range capacity of 2^24 plans three digits; live key ranges needing
+// one, two and three digits must each leave the stable order in the indices,
+// whichever digit turns out to be the last one that runs.
+TEST(Integration_CountingSort, LiveKeyRangeBelowCapacityLandsInIndices)
+{
+    constexpr std::size_t N = 3000;
+    constexpr std::size_t KEY_CAPACITY = 1u << 24;
+
+    auto rt      = Runtime::create();
+    auto keys    = rt.buffer<std::uint32_t>(N);
+    auto indices = rt.buffer<std::uint32_t>(N);
+    auto offsets = rt.buffer<std::uint32_t>(KEY_CAPACITY + 1);
+    auto total   = rt.buffer<std::uint32_t>(1);
+
+    std::size_t live_key_range = 0;
+    LateCount kr_lc;
+    kr_lc.capacity = KEY_CAPACITY;
+    kr_lc.host = [&live_key_range]() { return live_key_range; };
+
+    auto g = rt.graph();
+    g.add_counting_sort(keys, indices, offsets, total, fixed(N), kr_lc);
+
+    for (std::size_t key_range : {std::size_t{200}, std::size_t{40000}, std::size_t{5000000},
+                                  std::size_t{3}})
+    {
+        live_key_range = key_range;
+        std::mt19937 rng(static_cast<unsigned>(key_range));
+        std::uniform_int_distribution<std::uint32_t> dist(
+            0, static_cast<std::uint32_t>(key_range - 1));
+        std::vector<std::uint32_t> host_keys(N);
+        for (auto& k : host_keys)
+            k = dist(rng);
+        for (std::size_t i = 0; i < N; ++i)
+            keys[i] = host_keys[i];
+
+        g.run();
+
+        const HostReference ref = host_counting_sort(host_keys, key_range);
+        for (std::size_t i = 0; i < N; ++i)
+            ASSERT_EQ(indices[i], ref.indices[i]) << "key_range = " << key_range << ", i = " << i;
+        for (std::size_t k = 0; k <= key_range; ++k)
+            ASSERT_EQ(offsets[k], ref.offsets[k]) << "key_range = " << key_range << ", k = " << k;
+    }
+    EXPECT_EQ(g.compile_count(), 1u);
+}
+
+// The upper digits really are skipped: a key that breaks the live key range's
+// precondition but fits the capacity is sorted by its low byte alone, which it
+// could not be if the digit above still ran. White-box by design; a caller must
+// never pass such a key.
+TEST(Integration_CountingSort, DigitsAboveTheLiveKeyRangeDoNotRun)
+{
+    constexpr std::size_t N = 4;
+    constexpr std::size_t KEY_CAPACITY = 1u << 16;
+
+    auto rt      = Runtime::create();
+    auto keys    = rt.buffer<std::uint32_t>(N);
+    auto indices = rt.buffer<std::uint32_t>(N);
+    auto offsets = rt.buffer<std::uint32_t>(KEY_CAPACITY + 1);
+    auto total   = rt.buffer<std::uint32_t>(1);
+
+    // 0x0101 has low byte 1, so one digit puts it between 0 and 2; two digits
+    // would put it last.
+    keys[0] = 0x0101;
+    keys[1] = 2;
+    keys[2] = 0;
+    keys[3] = 3;
+
+    LateCount kr_lc;
+    kr_lc.capacity = KEY_CAPACITY;
+    kr_lc.host = []() { return std::size_t{4}; };
+
+    auto g = rt.graph();
+    g.add_counting_sort(keys, indices, offsets, total, fixed(N), kr_lc);
+    g.run();
+
+    const std::vector<std::uint32_t> one_digit_order = {2, 0, 1, 3};
+    for (std::size_t i = 0; i < N; ++i)
+        EXPECT_EQ(indices[i], one_digit_order[i]) << "i = " << i;
+}
+
 // Per-substep coverage: run(4) with keys that change every step, so each
 // step's sort must reflect the buffer as it stood when that step ran.
 TEST(Integration_CountingSort, EachRunSortsItsOwnKeys)
@@ -452,11 +533,11 @@ TEST(Integration_CountingSort, EachRunSortsItsOwnKeys)
 TEST(Integration_CountingSort, SharesOneNodeIndexAcrossStepsAndPasses)
 {
     // key_range.capacity = 50 needs one digit (50 - 1 fits in 6 bits), so
-    // this call emits 2 (resolvers) + 1 (total) + 1 * 4 (one digit block) +
-    // 1 (offsets) + 1 (counts) = 9 nodes.
+    // this call emits 2 (resolvers) + 1 (total) + 1 (digit plan) + 1 * 4 (one
+    // digit block) + 1 (offsets) + 1 (counts) = 10 nodes.
     constexpr std::size_t N_CAPACITY = 300;
     constexpr std::size_t KEY_CAPACITY = 50;
-    constexpr std::size_t EXPECTED_PASSES = 9;
+    constexpr std::size_t EXPECTED_PASSES = 10;
     constexpr std::size_t STEPS = 4;
 
     auto rt      = Runtime::create();
