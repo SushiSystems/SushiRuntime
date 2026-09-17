@@ -671,7 +671,14 @@ namespace SushiRuntime
             sentinel_in_degree = sentinel
                 ? sentinel->in_degree.load(std::memory_order_relaxed) : 0;
 
-            // Computed once here (F5), not rebuilt by reset_profiling()/collect_profiling() each run.
+            capture_profiling_state();
+        }
+
+        /**
+         * @brief Sizes profiling_multiplicities and profiling_host_native from all_nodes.
+         */
+        void CompiledGraph::capture_profiling_state()
+        {
             std::uint32_t max_index = 0;
             for (auto& n : all_nodes)
                 if (!n->is_sentinel) max_index = std::max(max_index, n->registration_index);

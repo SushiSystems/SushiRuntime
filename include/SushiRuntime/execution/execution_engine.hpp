@@ -89,6 +89,17 @@ namespace SushiRuntime
             void capture_base_state();
 
             /**
+             * @brief Sizes profiling_multiplicities and profiling_host_native from all_nodes.
+             *
+             * Shared by capture_base_state() (the static Graph) and DynamicGraph's
+             * commit(), which has no compiled in-degree baseline of its own to
+             * capture but needs this sizing whenever it (re)populates all_nodes.
+             * Safe to call only once all_nodes carries its final registration
+             * indices for this compose.
+             */
+            void capture_profiling_state();
+
+            /**
              * @brief Restores every node's per-run state to its compiled baseline.
              *
              * Resets in_degree (nodes + sentinel) from the snapshot capture_base_state()

@@ -203,6 +203,14 @@ simulation.add_prefix_scan(counts, offsets, total, n);
 
 See `ARCHITECTURE.md` §9.1 for what the pool guarantees and §3 for the run API.
 
+Per-node device timing (`RunReport::node_events`) is opt-in per graph, not
+runtime-wide: call `graph.set_profiling_requested(true)` (or its
+`DynamicGraph` counterpart) only on the graph you actually want to inspect. A
+graph that never asks for it never touches the profiling-enabled queue that
+carries the cost — measured at about 24 microseconds more per submission than
+the plain queue on the RTX 3080 Ti CUDA adapter tested — so leaving other graphs on the
+same runtime unrequested keeps them at their normal dispatch cost.
+
 ---
 
 ## 7. Troubleshooting
