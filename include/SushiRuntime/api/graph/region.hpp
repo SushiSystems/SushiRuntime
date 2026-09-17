@@ -50,7 +50,7 @@ namespace SushiRuntime
                 // The whole fluent task-building surface, inherited unchanged from
                 // Graph. Every add() overload (per-element, N-D, State, capture,
                 // tracked, dynamic, offload), the untracked and host forms, the
-                // reductions, and size() come through verbatim, so a region records
+                // reductions, the prefix scan, the counting sort and size() come through verbatim, so a region records
                 // work exactly as a static graph does. Only the run() family is
                 // hidden — a region is stepped by the DynamicGraph that owns it.
                 using Graph::add;
@@ -58,6 +58,8 @@ namespace SushiRuntime
                 using Graph::add_host;
                 using Graph::add_reduce;
                 using Graph::add_segmented_reduce;
+                using Graph::add_prefix_scan;
+                using Graph::add_counting_sort;
                 using Graph::size;
                 using Graph::name_last;
 

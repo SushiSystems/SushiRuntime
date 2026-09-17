@@ -9,6 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 ## [Unreleased]
 
 ### Added
+- 2026-09-17 — Added `add_prefix_scan` and `add_counting_sort` to `API::Region` (`api/graph/region.hpp`).
 - 2026-09-17 — Added `DynamicGraph::set_profiling_requested`, stamped into its plan and mirrored by a `node_index` renumbered densely by region key then add() order at every recompose (`api/graph/dynamic_graph.hpp`).
 - 2026-09-16 — Added `Graph::add_counting_sort`, a stable late-bound radix argsort writing indices, exclusive offsets and the total (`graph.hpp`).
 - 2026-09-16 — Added `API::LateCount` and late-bound overloads of `add_reduce` and `add_segmented_reduce`, planned from a capacity and resolved per run (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
