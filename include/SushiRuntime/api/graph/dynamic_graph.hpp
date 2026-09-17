@@ -47,6 +47,12 @@ namespace SushiRuntime
 {
     namespace API
     {
+        namespace detail
+        {
+            /** @brief Grants a test a friend seam onto DynamicGraph::plan_/states_. */
+            struct DynamicGraphNodeEventsTestAccess;
+        }
+
         /**
          * @brief A graph partitioned into regions that stream in and out cheaply.
          *
@@ -172,6 +178,34 @@ namespace SushiRuntime
                  * @return Number of live regions, dropped ones excluded.
                  */
                 std::size_t region_count() const noexcept { return regions_.size(); }
+
+                /**
+                 * @brief Requests or withdraws per-node device timing for this graph.
+                 *
+                 * Stamps `plan_.profiling` immediately, so it reads correctly even
+                 * with no regions to recompose, and marks every live region for a
+                 * full recompose so the next commit renumbers every node's public
+                 * registration index. Independent of every other graph on the same
+                 * runtime.
+                 * @param requested True to dispatch this graph's device nodes on the
+                 *                  runtime's profiling queue and collect NodeTiming.
+                 */
+                void set_profiling_requested(bool requested)
+                {
+                    if (requested == profiling_requested_)
+                        return;
+                    profiling_requested_ = requested;
+                    plan_.profiling = requested;
+                    for (const auto& kv : regions_)
+                        dirty_regions_.insert(kv.first);
+                }
+
+                /**
+                 * @brief Reports whether this graph currently requests profiling.
+                 * @return The last value set by set_profiling_requested(), or the
+                 *         runtime's RuntimeSettings::profiling default.
+                 */
+                bool profiling_requested() const noexcept { return profiling_requested_; }
 
                 /**
                  * @brief Reports how much work the graph currently holds.
@@ -367,7 +401,7 @@ namespace SushiRuntime
                     refresh_updaters();
                     steps_.resync();
                     engine.reset_cancellation();
-                    if (ctx_->profiling_enabled())
+                    if (profiling_requested_)
                         engine.reset_profiling(plan_);
 
                     state.before = engine.metrics();
@@ -389,6 +423,7 @@ namespace SushiRuntime
                 // The handle run_async() returns settles the step through the two
                 // private members below, which is the whole of its access.
                 template <class Owner> friend class RunHandle;
+                friend struct detail::DynamicGraphNodeEventsTestAccess;
 
                 /** @brief The engine a pending asynchronous step is running on. */
                 Execution::IExecutionEngine& async_engine()
@@ -436,7 +471,7 @@ namespace SushiRuntime
                     report.host_to_device_bytes =
                         ctx_->host_to_device_bytes() - state.host_to_device_before;
 
-                    if (ctx_->profiling_enabled())
+                    if (plan_.profiling)
                         engine.collect_profiling(plan_, report);
                 }
 
@@ -444,8 +479,10 @@ namespace SushiRuntime
                 using Base = ::SushiRuntime::Core::ResourceId;  // allocation identity (void*)
 
                 explicit DynamicGraph(std::shared_ptr<Execution::RuntimeContext> ctx)
-                    : ctx_(std::move(ctx)), sentinel_(make_sushi<Node>())
+                    : ctx_(std::move(ctx)), sentinel_(make_sushi<Node>()),
+                      profiling_requested_(ctx_->settings().profiling)
                 {
+                    plan_.profiling = profiling_requested_;
                 }
 
                 /** @brief Throws the carried error, or returns the report. */
@@ -927,16 +964,40 @@ namespace SushiRuntime
                     // it is gathered solely when profiling is on.
                     plan_.roots.assign(roots_.begin(), roots_.end());
                     plan_.sentinel = sentinel_;
-                    // No per-graph request yet (wave 4); follows the runtime-wide setting.
-                    plan_.profiling = ctx_->profiling_enabled();
+                    plan_.profiling = profiling_requested_;
                     plan_.all_nodes.clear();
-                    if (ctx_->profiling_enabled())
+                    if (profiling_requested_)
                         for (auto& kv : states_)
                             for (auto& np : kv.second.nodes)
                                 plan_.all_nodes.push_back(np);
 
+                    renumber_registration_indices();
+                    if (profiling_requested_)
+                        plan_.capture_profiling_state();
+
                     committed_once_ = true;
                     ++compiles_;
+                }
+
+                /** @brief Reassigns Node::registration_index densely by region key then add() order. */
+                void renumber_registration_indices()
+                {
+                    std::uint32_t next_index = 0;
+                    for (auto& kv : states_)   // std::map<RegionKey, ...>: ascending key
+                    {
+                        // Grouped by value, not by consecutive run, so one add()
+                        // call's local index maps to exactly one global index even
+                        // if its nodes are not contiguous in st.nodes.
+                        std::unordered_map<std::uint32_t, std::uint32_t> local_to_global;
+                        for (auto& np : kv.second.nodes)
+                        {
+                            Node* n = np.get();
+                            auto it = local_to_global.find(n->registration_index);
+                            if (it == local_to_global.end())
+                                it = local_to_global.emplace(n->registration_index, next_index++).first;
+                            n->registration_index = it->second;
+                        }
+                    }
                 }
 
                 // Re-arms every node's live in-degree from the two-layer baseline and
@@ -1055,7 +1116,7 @@ namespace SushiRuntime
                     auto& engine = ctx_->get_execution_engine();
                     engine.reset_cancellation();
 
-                    const bool profiling = ctx_->profiling_enabled();
+                    const bool profiling = plan_.profiling;
                     if (profiling)
                         engine.reset_profiling(plan_, expected_invocations);
 
@@ -1144,6 +1205,9 @@ namespace SushiRuntime
                 std::size_t compiles_ = 0;
                 std::size_t plan_index_counter_ = 0;
                 bool committed_once_ = false;
+
+                /** @brief Defaults from RuntimeSettings::profiling; mirrors plan_.profiling. */
+                bool profiling_requested_ = false;
         };
 
         // Defined here, where DynamicGraph is complete; declared on Runtime in

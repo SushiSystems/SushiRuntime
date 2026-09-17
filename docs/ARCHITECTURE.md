@@ -164,6 +164,14 @@ do not need to reach into the lower layers.
   - `cancel()` — thread-safe; stops an in-progress run from another thread, the
     run returns with `RunReport::cancelled` set (a clean stop, not an error).
   - `size()` — task count.
+  - `set_profiling_requested(bool)` / `profiling_requested()` — opts this graph,
+    and only this graph, into per-dispatch node event records
+    (`RunReport::node_events`/`clock`, §5's `RunReport`). Defaults from
+    `RuntimeSettings::profiling`; the setter marks the plan dirty, so the next
+    `run()` recompiles with the flag stamped into `CompiledGraph::profiling` and
+    dispatches this graph's device nodes on the runtime's lazily built profiling
+    queue instead of the plain one. A runtime with no graph ever requesting it
+    never builds that queue.
 
 - **`API::DynamicGraph`** — the mutable, region-partitioned graph from
   `runtime.dynamic_graph()`, for streaming workloads. `region(key)` returns an
@@ -175,6 +183,14 @@ do not need to reach into the lower layers.
   overloads. The composer recomposes only what changed
   between steps, and `compile_count()` advances once per mutation, not per region;
   cross-region ordering follows ascending region key (lower key = producer).
+  `set_profiling_requested(bool)` / `profiling_requested()` mirror `Graph`'s
+  pair, but the setter marks every live region for a full recompose instead of
+  one dirty flag: a `DynamicGraph`'s node index (`Graph::Node::registration_index`,
+  read as `NodeEventRecord::node_index`) is not fixed at `add()` time the way a
+  static `Graph`'s is — it is renumbered at every recompose, densely, ordered by
+  ascending region key and then by `add()` order within a region. Dropping and
+  re-adding a region therefore never leaves a gap: the whole live region set is
+  renumbered from zero on the next commit.
 
 - **`RunReport`** — filled after each `run()` / `try_run()`. `reset()` returns it
   to its as-constructed state while keeping its vectors' capacity, which is what
@@ -190,14 +206,33 @@ do not need to reach into the lower layers.
     `write_range`. Implicit shared-USM page migration by the driver is invisible to
     SYCL and is deliberately **not** counted; only explicit, runtime-issued
     transfers are.
-  - `node_timings` / `worker_timings` — present only when the runtime was created
-    with profiling on (`Runtime::create({}, cfg)`, `RuntimeConfig::profiling`).
-    `NodeTiming` gives per-node device vs host time and an invocation count keyed by
-    a stable plan index; `WorkerTiming` splits each worker's run into
-    busy/stealing/polling/idle for stall attribution. Off (the default), the queues
-    and the dispatch hot path read no timestamps and these stay empty.
+  - `node_timings` / `worker_timings` — present only when the graph that produced
+    this report requested profiling (`Graph`/`DynamicGraph::set_profiling_requested`,
+    defaulting from `RuntimeConfig::profiling`). `NodeTiming` gives per-node
+    device vs host time and an invocation count keyed by a stable plan index;
+    `WorkerTiming` splits each worker's run into busy/stealing/polling/idle for
+    stall attribution. Off (the default), the queues and the dispatch hot path
+    read no timestamps and these stay empty. Both derive from `node_events`
+    below, so there is one capture path.
+  - `node_events` / `clock` — one `Core::NodeEventRecord` per node dispatch
+    (`node_index` the public registration, `invocation` the zero-based dispatch
+    count within the run, `submit_ns`/`start_ns`/`end_ns` on the backend's event
+    clock) and the `Core::ClockPairing` that lets a host node's steady-clock
+    timestamps convert onto that same clock. Empty unless the graph requested
+    profiling; `reset()` clears both while keeping `node_events`' capacity, so a
+    caller-owned report reused every tick allocates only when a run's node count
+    exceeds its previous high-water mark.
   - `scheduling_overhead_ms` is filled from the workers' completion-polling time
     when profiling is on, else zero. `network_latency_wait_ms` stays reserved.
+
+  A profiled graph does not tax an unprofiled one: profiling dispatches on a
+  second, lazily built queue per device (`RuntimeContext::profiling_queue`),
+  sharing the plain queue's context, so a graph that never asks for it pays
+  nothing beyond one branch at queue selection. Building that queue is not
+  free — measured on an RTX 3080 Ti's CUDA adapter, submitting to a
+  profiling-enabled queue costs about 24 microseconds more per submission than
+  the plain one, which is the reason the two queues are kept separate instead of
+  always profiling and filtering afterwards.
 
 - **`Errc`** — error codes: `ok`, `invalid_graph`, `compile_failed`,
   `allocation_failed`, `kernel_failed`, `device_lost`.
