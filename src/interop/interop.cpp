@@ -280,7 +280,7 @@ namespace SushiRuntime
                 void* address = Experimental::map_external_linear_memory(memory, descriptor.offset, bytes, queue);
                 guard.mark_mapped(address);
 
-                context->adopt_usm(address, device_index);
+                context->adopt_usm(address, device_index, bytes);
                 guard.mark_adopted();
 
                 auto owner = std::make_unique<DeviceImportOwner>(context, device_index, memory);

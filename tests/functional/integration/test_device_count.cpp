@@ -272,3 +272,108 @@ TEST(Integration_DeviceCount, RejectsACounterThatIsNotHostResident)
     EXPECT_THROW(API::sized_from_device(host, 5), SushiException);
     EXPECT_NO_THROW(API::sized_from_device(host, 1));
 }
+
+// A caller with one plan array per device offsets into it and hands over the
+// interior address. Nothing resolves an interior pointer to its allocation kind,
+// so add() must resolve it to the allocation it lies in before judging it.
+TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostSlot)
+{
+    constexpr std::size_t CAPACITY = 16;
+    constexpr std::size_t SLOT     = 5;
+
+    auto rt   = Runtime::create();
+    auto plan = rt.buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host);
+    auto out  = rt.buffer<int>(CAPACITY);
+
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        out[i] = -1;
+    plan[SLOT] = 3;
+
+    int* o = out.data();
+    std::uint32_t* interior = plan.data() + SLOT;
+
+    auto g = rt.graph();
+    ASSERT_NO_THROW(g.add(API::Dynamic().and_sized_from_device(interior, 0),
+                          Reads(), Writes(out), CAPACITY,
+                          [o](std::size_t i) { o[i] = static_cast<int>(i); }));
+    g.run();
+
+    for (std::size_t i = 0; i < 3; ++i)
+        ASSERT_EQ(out[i], static_cast<int>(i)) << "element " << i;
+    for (std::size_t i = 3; i < CAPACITY; ++i)
+        ASSERT_EQ(out[i], -1) << "element " << i << " ran past the live count";
+}
+
+// based_at_device reads its slot on the host exactly as sized_from_device does,
+// through the same check, so an offset base slot resolves the same way.
+TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostBaseSlot)
+{
+    constexpr std::size_t CAPACITY = 16;
+    constexpr std::size_t SLOT     = 3;
+
+    auto rt   = Runtime::create();
+    auto plan = rt.buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host);
+    auto out  = rt.buffer<int>(CAPACITY);
+
+    plan[SLOT] = 4;
+    std::uint32_t* interior = plan.data() + SLOT;
+
+    auto g = rt.graph();
+    EXPECT_NO_THROW(g.add(API::Dynamic().and_based_at_device(interior, 0),
+                          Reads(), Writes(out), CAPACITY,
+                          [](std::size_t) {}));
+}
+
+// The raw-pointer setters take a bare address, so the residency check at add()
+// is the only thing between a device slot and a host read of it mid-run. The
+// refusal has to say which of the two things is wrong.
+TEST(Integration_DeviceCount, RefusesARawSlotThatIsNotHostResident)
+{
+    auto rt       = Runtime::create();
+    auto resident = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Device);
+    auto out      = rt.buffer<int>(4);
+
+    std::uint32_t* interior = resident.data() + 1;
+
+    auto g = rt.graph();
+    try
+    {
+        g.add(API::Dynamic().and_sized_from_device(interior, 0),
+              Reads(), Writes(out), std::size_t{4}, [](std::size_t) {});
+        ADD_FAILURE() << "a device-resident slot was accepted";
+    }
+    catch (const SushiException& e)
+    {
+        EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+        const std::string message(e.what());
+        EXPECT_NE(message.find("sized_from_device"), std::string::npos) << message;
+        EXPECT_NE(message.find("inside an allocation that is not Residency::Host"),
+                  std::string::npos) << message;
+    }
+}
+
+// A pointer from somewhere else entirely — another runtime, or the stack — has no
+// residency this context can read, which is a different fault from a device slot
+// and gets a different sentence.
+TEST(Integration_DeviceCount, RefusesASlotThisRuntimeNeverAllocated)
+{
+    auto rt  = Runtime::create();
+    auto out = rt.buffer<int>(4);
+
+    std::uint32_t stack_slot = 1;
+
+    auto g = rt.graph();
+    try
+    {
+        g.add(API::Dynamic().and_based_at_device(&stack_slot, 0),
+              Reads(), Writes(out), std::size_t{4}, [](std::size_t) {});
+        ADD_FAILURE() << "an unregistered slot was accepted";
+    }
+    catch (const SushiException& e)
+    {
+        EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+        const std::string message(e.what());
+        EXPECT_NE(message.find("based_at_device"), std::string::npos) << message;
+        EXPECT_NE(message.find("never allocated"), std::string::npos) << message;
+    }
+}

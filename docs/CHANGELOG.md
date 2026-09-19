@@ -8,7 +8,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ## [Unreleased]
 
+### Breaking
+- 2026-09-17 — Changed `Memory::UsmRegistry::record` and `RuntimeContext::adopt_usm` to take the allocation's length beside its device index (`memory/usm_registry.hpp`, `execution/runtime_context.hpp`).
+
 ### Added
+- 2026-09-17 — Added `UsmRegistry::containing_allocation` and `RuntimeContext::containing_usm_base`, which resolve an interior pointer to the allocation holding it (`memory/usm_registry.hpp`, `runtime_context.cpp`).
 - 2026-09-17 — Added `add_prefix_scan` and `add_counting_sort` to `API::Region` (`api/graph/region.hpp`).
 - 2026-09-17 — Added `DynamicGraph::set_profiling_requested`, stamped into its plan and mirrored by a `node_index` renumbered densely by region key then add() order at every recompose (`api/graph/dynamic_graph.hpp`).
 - 2026-09-16 — Added `Graph::add_counting_sort`, a stable late-bound radix argsort writing indices, exclusive offsets and the total (`graph.hpp`).
@@ -22,6 +26,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 
 ### Changed
 - 2026-09-17 — Changed `Graph::add_counting_sort` to run only the digits its live key range needs, skipping the rest (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
+
+### Fixed
+- 2026-09-17 — Fixed `Graph::add` rejecting an interior pointer into a `Residency::Host` slot, and named the fault when a late-bound slot does not resolve (`api/graph/graph.hpp`).
+- 2026-09-17 — Fixed `add_counting_sort` passing `sized_from_device` an interior pointer into its radix plan, which threw on a CUDA device (`api/graph/graph.hpp`).
 
 ## [0.3.0] — 2026-09-15
 
