@@ -55,6 +55,8 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/resource_liveness.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/execution/chain_plan.hpp>
+#include <SushiRuntime/execution/chain_run.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/graph/node.hpp>
@@ -2523,7 +2525,8 @@ namespace SushiRuntime
                 [[nodiscard]] Core::Result<Core::RunReport, Core::Error>
                 try_run(std::size_t steps) noexcept
                 {
-                    return drive([steps](std::size_t k) { return k < steps; }, steps);
+                    return drive([steps](std::size_t k) { return k < steps; }, steps,
+                                 StepSync::AtEnd);
                 }
 
                 /**
@@ -2546,10 +2549,18 @@ namespace SushiRuntime
                 [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
                 try_run(std::size_t steps, Core::RunReport& reuse) noexcept
                 {
-                    return drive([steps](std::size_t k) { return k < steps; }, reuse, steps);
+                    return drive([steps](std::size_t k) { return k < steps; }, reuse, steps,
+                                 StepSync::AtEnd);
                 }
 
             private:
+                /** @brief Says whether a chained run may skip the host wait between steps. */
+                enum class StepSync
+                {
+                    AtEnd,     /**< Fixed step count: submit back to back, one wait at the end. */
+                    EveryStep  /**< The stop test may read results: wait after every step. */
+                };
+
                 friend class Runtime;
                 // A Region IS a recorder: it derives from Graph to inherit every
                 // add() overload, so it needs the protected-by-friendship ctor and
@@ -2638,10 +2649,11 @@ namespace SushiRuntime
                  */
                 template <class KeepGoing>
                 Core::Result<Core::RunReport, Core::Error>
-                drive(KeepGoing keep_going, std::size_t expected_invocations = 1) noexcept
+                drive(KeepGoing keep_going, std::size_t expected_invocations = 1,
+                      StepSync sync = StepSync::EveryStep) noexcept
                 {
                     Core::RunReport report;
-                    auto driven = drive(keep_going, report, expected_invocations);
+                    auto driven = drive(keep_going, report, expected_invocations, sync);
                     if (!driven)
                         return Core::make_error(std::move(driven.error()));
                     return std::move(report);
@@ -2662,7 +2674,8 @@ namespace SushiRuntime
                 template <class KeepGoing>
                 Core::Result<Core::RunReport*, Core::Error>
                 drive(KeepGoing keep_going, Core::RunReport& report,
-                     std::size_t expected_invocations = 1) noexcept
+                     std::size_t expected_invocations = 1,
+                     StepSync sync = StepSync::EveryStep) noexcept
                 {
                     // Before any early return. A caller reusing one report across
                     // ticks must never read the previous run's numbers back out of a
@@ -2688,7 +2701,7 @@ namespace SushiRuntime
                             "Graph references a Buffer/State freed before the run."});
                     try
                     {
-                        drive_impl(keep_going, report, expected_invocations);
+                        drive_impl(keep_going, report, expected_invocations, sync);
                         return &report;
                     }
                     catch (const Core::SushiException& e)
@@ -2712,7 +2725,8 @@ namespace SushiRuntime
 
                 template <class KeepGoing>
                 void drive_impl(KeepGoing keep_going, Core::RunReport& report,
-                                std::size_t expected_invocations = 1)
+                                std::size_t expected_invocations = 1,
+                                StepSync sync = StepSync::EveryStep)
                 {
                     using clock = std::chrono::steady_clock;
                     auto ms = [](clock::time_point a, clock::time_point b)
@@ -2750,6 +2764,40 @@ namespace SushiRuntime
                     const std::size_t h2d_before = ctx_->host_to_device_bytes();
                     const auto t0 = clock::now();
 
+                    const bool chained = plan_.chain.chainable && !ctx_->settings().force_scheduler;
+                    const std::size_t executed = chained
+                        ? run_chained(keep_going, engine, sync)
+                        : run_scheduled(keep_going, engine);
+
+                    const auto t1 = clock::now();
+                    const auto after = engine.metrics();
+
+                    const std::size_t total_tasks = task_count_ * executed;
+                    detail::fill_run_report(report, *ctx_, before, after, total_tasks,
+                                            compile_ms, ms(t0, t1));
+                    report.cancelled = engine.is_cancelled();
+                    report.layer = chained ? Core::ExecutionLayer::Chain
+                                           : Core::ExecutionLayer::Scheduler;
+
+                    // Explicit host<->device transfers issued during this run window
+                    // (selective readback). Implicit USM migration is not counted.
+                    report.device_to_host_bytes = ctx_->device_to_host_bytes() - d2h_before;
+                    report.host_to_device_bytes = ctx_->host_to_device_bytes() - h2d_before;
+
+                    // Per-node and per-worker timing, only when profiling is on.
+                    if (profiling)
+                        engine.collect_profiling(plan_, report);
+                }
+
+                /**
+                 * @brief Runs the steps on the work-stealing scheduler, waiting after each.
+                 * @param keep_going Called with the count of completed steps before each step.
+                 * @param engine     The context's execution engine.
+                 * @return The number of steps run.
+                 */
+                template <class KeepGoing>
+                std::size_t run_scheduled(KeepGoing& keep_going, Execution::IExecutionEngine& engine)
+                {
                     std::size_t executed = 0;
                     while (keep_going(executed) && !engine.is_cancelled())
                     {
@@ -2767,23 +2815,38 @@ namespace SushiRuntime
                         steps_.after_step();
                         ++executed;
                     }
+                    return executed;
+                }
 
-                    const auto t1 = clock::now();
-                    const auto after = engine.metrics();
-
-                    const std::size_t total_tasks = task_count_ * executed;
-                    detail::fill_run_report(report, *ctx_, before, after, total_tasks,
-                                            compile_ms, ms(t0, t1));
-                    report.cancelled = engine.is_cancelled();
-
-                    // Explicit host<->device transfers issued during this run window
-                    // (selective readback). Implicit USM migration is not counted.
-                    report.device_to_host_bytes = ctx_->device_to_host_bytes() - d2h_before;
-                    report.host_to_device_bytes = ctx_->host_to_device_bytes() - h2d_before;
-
-                    // Per-node and per-worker timing, only when profiling is on.
-                    if (profiling)
-                        engine.collect_profiling(plan_, report);
+                /**
+                 * @brief Runs the steps as an in-order chain from this thread.
+                 *
+                 * The per-step host work runs between submissions exactly as on the
+                 * scheduler; it only moves host pointers and host-set controls, so
+                 * it never needs the device to have finished (spec §C, layer 1).
+                 * @param keep_going Called with the count of submitted steps before each step.
+                 * @param engine     Consulted only for cancellation.
+                 * @param sync       AtEnd for a fixed step count, EveryStep when the stop test may read results.
+                 * @return The number of steps run.
+                 */
+                template <class KeepGoing>
+                std::size_t run_chained(KeepGoing& keep_going, Execution::IExecutionEngine& engine,
+                                        StepSync sync)
+                {
+                    Execution::ChainRun chain(*ctx_, plan_);
+                    std::size_t executed = 0;
+                    while (keep_going(executed) && !engine.is_cancelled())
+                    {
+                        steps_.before_step();
+                        reset_plan_state();
+                        chain.submit_step(static_cast<std::uint32_t>(executed));
+                        if (sync == StepSync::EveryStep)
+                            chain.wait();
+                        steps_.after_step();
+                        ++executed;
+                    }
+                    chain.finish();
+                    return executed;
                 }
 
                 // Appends a capture wrapper's dependency key to the read and/or
@@ -3132,6 +3195,7 @@ namespace SushiRuntime
                     require_host_device_slots(dyn);
                     auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
                     adopt_device_bindings(*lb, dyn, reads);
+                    lb->dispatch_scalar = live_scalar;
 
                     specs_.push_back([fn = std::forward<F>(fn), capacity, lb, live_scalar,
                                       reads = std::move(reads),
@@ -3383,6 +3447,7 @@ namespace SushiRuntime
                     plan_ = bg.compile();
                     plan_.profiling = profiling_requested_;
                     plan_.capture_base_state();
+                    plan_.chain = Execution::classify_chain(plan_, *ctx_);
                     dirty_ = false;
                     ++compiles_;
                 }

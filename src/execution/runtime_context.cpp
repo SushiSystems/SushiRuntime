@@ -93,6 +93,26 @@ namespace SushiRuntime
              */
             std::vector<std::atomic<bool>> profiling_built;
 
+            /** @brief Set once a device's profiling chain queue exists; read like profiling_built. */
+            std::vector<std::atomic<bool>> chain_profiling_built;
+
+            /** @brief Holds one lazily built queue and the guard that builds it once. */
+            struct LazyQueue
+            {
+                std::optional<sycl::queue> queue; /**< Empty until once fires. */
+                std::once_flag once;              /**< Guards the single build of queue. */
+            };
+
+            /**
+             * @brief Per-device in-order queues a chainable plan submits to, plain then profiling.
+             *
+             * Sized to nodes.size() once in probe_hardware() and never resized, so
+             * a reference chain_queue() hands out stays valid for the context's
+             * lifetime.
+             */
+            std::vector<LazyQueue> chain_queues;
+            std::vector<LazyQueue> chain_profiling_queues;
+
             /**
              * @brief The runtime-wide settings this context was created with.
              *
@@ -198,6 +218,8 @@ namespace SushiRuntime
 
                 for (auto& q : all_queues) drain(q);
                 for (auto& q : profiling_queues) if (q) drain(*q);
+                for (auto& q : chain_queues) if (q.queue) drain(*q.queue);
+                for (auto& q : chain_profiling_queues) if (q.queue) drain(*q.queue);
             }
         };
 
@@ -321,6 +343,9 @@ namespace SushiRuntime
                 impl_->profiling_queues = std::vector<std::optional<sycl::queue>>(impl_->nodes.size());
                 impl_->profiling_once = std::vector<std::once_flag>(impl_->nodes.size());
                 impl_->profiling_built = std::vector<std::atomic<bool>>(impl_->nodes.size());
+                impl_->chain_profiling_built = std::vector<std::atomic<bool>>(impl_->nodes.size());
+                impl_->chain_queues = std::vector<Impl::LazyQueue>(impl_->nodes.size());
+                impl_->chain_profiling_queues = std::vector<Impl::LazyQueue>(impl_->nodes.size());
 
                 for (const auto& node : impl_->nodes) 
                 {
@@ -472,7 +497,47 @@ namespace SushiRuntime
         bool RuntimeContext::has_profiling_queue(size_t index) const noexcept
         {
             return index < impl_->profiling_built.size()
-                && impl_->profiling_built[index].load(std::memory_order_acquire);
+                && (impl_->profiling_built[index].load(std::memory_order_acquire)
+                    || impl_->chain_profiling_built[index].load(std::memory_order_acquire));
+        }
+
+        /**
+         * @brief Builds device @p index's in-order chain queue of one flavour exactly once.
+         *
+         * Shares the plain queue's context and device and always carries in_order;
+         * the profiling flavour adds enable_profiling on top.
+         */
+        void RuntimeContext::build_chain_queue(size_t index, bool profiling)
+        {
+            auto& slot = profiling ? impl_->chain_profiling_queues[index] : impl_->chain_queues[index];
+            std::call_once(slot.once, [this, index, profiling, &slot]()
+            {
+                sycl::queue& plain = impl_->all_queues[index];
+                const sycl::property_list props = profiling
+                    ? sycl::property_list{ sycl::property::queue::in_order(),
+                                           sycl::property::queue::enable_profiling() }
+                    : sycl::property_list{ sycl::property::queue::in_order() };
+
+                slot.queue.emplace(plain.get_context(), plain.get_device(),
+                    [](sycl::exception_list elist)
+                    {
+                        for (auto e : elist) std::rethrow_exception(e);
+                    },
+                    props);
+                if (profiling)
+                    impl_->chain_profiling_built[index].store(true, std::memory_order_release);
+            });
+        }
+
+        /**
+         * @brief Returns device @p index's in-order chain queue, building it on first use.
+         */
+        sycl::queue& RuntimeContext::chain_queue(size_t index, bool profiling)
+        {
+            SR_THROW_IF(index >= impl_->all_queues.size(), "Queue index out of bounds.");
+            build_chain_queue(index, profiling);
+            return profiling ? *impl_->chain_profiling_queues[index].queue
+                             : *impl_->chain_queues[index].queue;
         }
 
         /**
