@@ -108,6 +108,16 @@ namespace SushiRuntime
              * simulation. Throughput workloads turn it on explicitly.
              */
             bool rebalancer = false;
+
+            /**
+             * @brief Runs every graph on the work-stealing scheduler, never on the in-order chain.
+             *
+             * Off by default: a chainable plan then submits from the calling
+             * thread to one in-order queue. On, every run takes the scheduler
+             * path, for comparison and debugging. RunReport::layer names the
+             * path a run took either way.
+             */
+            bool force_scheduler = false;
         };
 
         /**

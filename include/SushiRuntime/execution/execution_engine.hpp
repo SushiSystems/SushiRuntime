@@ -40,6 +40,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/run_report.hpp>
 #include <SushiRuntime/core/profiling_ledger.hpp>
+#include <SushiRuntime/execution/chain_plan.hpp>
 // WorkerPoolInfo is returned by worker_pool() below. runtime_settings.hpp is a
 // leaf header (no SYCL, no runtime types), so including it here does not create
 // a cycle with runtime_context.hpp, which includes this file.
@@ -136,6 +137,9 @@ namespace SushiRuntime
              * already-event-clock device record.
              */
             std::vector<bool> profiling_host_native;
+
+            /** @brief Whether and how this plan runs as an in-order chain; set by the fluent Graph at build. */
+            ChainPlan chain;
         };
 
         /**

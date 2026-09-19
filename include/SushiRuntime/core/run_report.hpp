@@ -134,6 +134,17 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Names the execution path that submitted a run's device work.
+         *
+         * A recorded-graph replay layer, when it lands, takes the next value.
+         */
+        enum class ExecutionLayer : std::uint8_t
+        {
+            Scheduler, /**< Nodes dispatched by the worker pool as their predecessors complete. */
+            Chain      /**< Nodes submitted in compiled order to one in-order queue, one wait per run. */
+        };
+
+        /**
          * @brief Summarizes the execution statistics of a single graph run.
          *
          * Aggregates execution times, NUMA topology breakdowns, and distributed network metrics.
@@ -144,6 +155,7 @@ namespace SushiRuntime
             bool is_successful = true;                  /**< Whether the run completed without error. */
             bool cancelled = false;                     /**< Whether the run stopped early on a cancellation request. */
             std::size_t total_tasks_executed = 0;       /**< Local (all NUMA) + remote tasks. */
+            ExecutionLayer layer = ExecutionLayer::Scheduler; /**< Path that submitted this run's device work. */
 
             // B. Timing / bottleneck analysis
             double total_duration_ms = 0.0;             /**< Wall-clock time of the whole run. */
@@ -188,6 +200,7 @@ namespace SushiRuntime
                 is_successful = true;
                 cancelled = false;
                 total_tasks_executed = 0;
+                layer = ExecutionLayer::Scheduler;
 
                 total_duration_ms = 0.0;
                 graph_analysis_duration_ms = 0.0;

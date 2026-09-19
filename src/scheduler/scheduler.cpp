@@ -704,7 +704,6 @@ namespace SushiRuntime
                 SR_LOG_DEBUG("Executing task: {}", task->get_name());
                 
                 int target_numa_id = 0;
-                std::vector<sycl::event> deps;
                 SushiRuntime::Graph::Node* node = nullptr;
 
                 // Downcast through the virtual is_graph_node() type tag, not RTTI:
@@ -717,8 +716,6 @@ namespace SushiRuntime
 
                     if (node->metadata.numa_affinity >= 0)
                         target_numa_id = node->metadata.numa_affinity;
-
-                    deps = node->sycl_deps.to_vector();
                 }
 
                 // A pure-CPU host task needs no queue and runs inline (see design spec §0).
@@ -845,6 +842,15 @@ namespace SushiRuntime
                 sycl::event e;
                 if (task->get_execution_mode() == Task::ExecutionMode::HOST)
                 {
+                    // execute_host() takes a vector, so this rarer path (a HOST
+                    // node that submits its own device work) still allocates one.
+                    std::vector<sycl::event> deps;
+                    if (node)
+                    {
+                        deps.reserve(node->sycl_deps.size());
+                        for (const auto& ev : node->sycl_deps)
+                            deps.push_back(ev);
+                    }
                     e = task->execute_host(q, deps);
                 }
                 else
@@ -864,7 +870,11 @@ namespace SushiRuntime
 
                     e = q.submit([&](sycl::handler& h)
                     {
-                        if (!deps.empty()) h.depends_on(deps);
+                        // Per-event depends_on() over the inline storage avoids the
+                        // heap vector SmallEventVector::to_vector() used to build here.
+                        if (node)
+                            for (const auto& ev : node->sycl_deps)
+                                h.depends_on(ev);
                         task->execute(h);
                     });
 

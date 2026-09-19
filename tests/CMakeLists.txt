@@ -118,6 +118,7 @@ add_executable(sr_functional_tests
     functional/integration/test_profiling_queue.cpp
     functional/integration/test_graph_profiling_switch.cpp
     functional/integration/test_node_event_records.cpp
+    functional/integration/test_chain_layer.cpp
     functional/integration/test_async_execution.cpp
     functional/integration/test_heterogeneous_pipeline.cpp
     functional/integration/test_scheduler_integration.cpp
@@ -227,6 +228,7 @@ if(SR_BUILD_BENCHMARKS)
         benchmark/performance/test_dynamic_graph_perf.cpp
         benchmark/performance/test_recompose_churn_perf.cpp
         benchmark/performance/test_root_fanout_perf.cpp
+        benchmark/performance/test_chain_dispatch_perf.cpp
         benchmark/performance/test_wide_fanout_perf.cpp
     )
     # Distributed offload benchmark only exists when the layer is built.

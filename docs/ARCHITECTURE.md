@@ -292,6 +292,30 @@ A program's lifecycle is always the same three phases, and they must not overlap
    meaningful start/finish split (a dry-run or replay engine) is not forced to
    fake one.
 
+**The in-order chain (layer 1).** `Graph::build_plan()` also classifies the plan
+(`Execution::classify_chain`, `execution/chain_plan.hpp`). A plan is chainable when
+every node submits device work (a kernel, or host work that submits one), is not a
+distributed offload candidate, names at least one USM region, and every region
+belongs to one device queue in the context's registry; and no node reads a
+device-written value on the host at dispatch, which the tree marks as a
+`LateBindings` `device_count`, `device_base` or `dispatch_scalar`. Anything else,
+or `RuntimeConfig::force_scheduler`, keeps the scheduler path above.
+
+A chainable plan runs through `Execution::ChainRun` (`execution/chain_run.hpp`) on
+the calling thread: each step submits the nodes in a fixed topological order to
+`RuntimeContext::chain_queue()`, an in-order queue per device on the plain queue's
+context, with no worker hand-off and no polling. The per-step host work
+(`before_step`, `rearm`, `after_step`) still runs between submissions, since it only
+writes host pointers and host-set controls. `run(n)` and `try_run(n)` submit all
+steps back to back and wait once; `run_for` and `run_until` wait after each step,
+because their stop test may read results. A disabled node is skipped at submit. A
+command group or host work on this path is built before its predecessors finish,
+so it must not read a predecessor's result on the host; that is what
+`sized_from_device` is for. With profiling requested the chain uses the profiling
+flavour of the queue and writes one `NodeEventRecord` per submission. No worker runs
+on this path, so its worker timings record no work. `RunReport::layer` names the
+path. `run_async()` and `DynamicGraph` always take the scheduler.
+
 > **Threading rule:** Phase 1 (`add_node`/`add_task`) and Phase 2 (`compile()`)
 > are **not** thread-safe relative to each other. Build the entire graph, then
 > compile, then execute.

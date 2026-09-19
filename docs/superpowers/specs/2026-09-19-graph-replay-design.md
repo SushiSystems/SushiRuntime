@@ -1,7 +1,7 @@
 # SushiRuntime: replaying a graph's device work as one submission
 
-**Status:** designed 2026-09-19; every decision in §F taken by the owner the same day. Nothing is
-built. Consumer: SushiEngine's matter device solver, whose device arm is launch-bound (§0).
+**Status:** designed 2026-09-19; every decision in §F taken by the owner the same day. P0 and P1
+are built, not measured. P2 and P3 are not started. Consumer: SushiEngine's matter device solver, whose device arm is launch-bound (§0).
 Evidence: the feasibility spike under sushiengine-30's scratchpad (`graph_spike/`, run 2026-09-19)
 and the engine's measurement report in `docs/design/MATTER_DEVICE_SOLVER.md` R28 and R29.
 

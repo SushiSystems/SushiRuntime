@@ -95,14 +95,48 @@ namespace SushiRuntime
                 std::vector<sycl::event> res;
                 res.reserve(static_count + dynamic_data.size());
 
-                for (size_t i = 0; i < static_count; ++i) 
+                for (size_t i = 0; i < static_count; ++i)
                     res.push_back(static_data[i]);
 
-                for (const auto& e : dynamic_data) 
+                for (const auto& e : dynamic_data)
                     res.push_back(e);
-                
+
                 return res;
             }
+
+            /** @brief Read-only forward iterator over the inline buffer then the overflow vector. */
+            struct const_iterator
+            {
+                const SmallEventVector* owner; /**< Vector being iterated. */
+                size_t index;                  /**< Position in the combined inline-then-overflow sequence. */
+
+                /**
+                 * @brief Dereferences the event at the current position.
+                 * @return The event, from inline storage or the overflow vector depending on @p index.
+                 */
+                inline const sycl::event& operator*() const
+                {
+                    return index < owner->static_count
+                        ? owner->static_data[index]
+                        : owner->dynamic_data[index - owner->static_count];
+                }
+
+                inline const_iterator& operator++() { ++index; return *this; }
+                inline bool operator!=(const const_iterator& other) const { return index != other.index; }
+                inline bool operator==(const const_iterator& other) const { return index == other.index; }
+            };
+
+            /**
+             * @brief Number of events currently stored, inline plus overflow.
+             * @return The event count.
+             */
+            inline size_t size() const { return static_count + dynamic_data.size(); }
+
+            /** @brief Iterator to the first stored event, or end() when empty. */
+            inline const_iterator begin() const { return {this, 0}; }
+
+            /** @brief Iterator past the last stored event. */
+            inline const_iterator end() const { return {this, static_count + dynamic_data.size()}; }
         };
 
         struct Node;
@@ -555,36 +589,40 @@ namespace SushiRuntime
              */
             void on_complete(SushiRuntime::Scheduler::ReadySink& sink) override
             {
+                for_each_successor([&sink](Node* succ)
+                {
+                    if (succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                        sink.push_back(succ);
+                });
+            }
+
+            /**
+             * @brief Calls @p visit once for every non-null successor, in storage order.
+             *
+             * Walks the inline array, the spillover list, then the cross-region
+             * boundary vector, which is mutated only at a step boundary and so
+             * needs no atomics of its own.
+             * @param visit Callable invoked as visit(Node*).
+             */
+            template <class Visit>
+            void for_each_successor(Visit&& visit) const
+            {
                 const std::int32_t count =
                     inline_successor_count.load(std::memory_order_acquire);
                 const std::int32_t max_idx = std::min(count, MAX_INLINE_SUCCESSORS);
 
                 for (std::int32_t i = 0; i < max_idx; ++i)
-                {
-                    Node* succ = inline_successors[i];
-                    if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
-                        sink.push_back(succ);
-                }
+                    if (Node* succ = inline_successors[i])
+                        visit(succ);
 
                 for (SuccessorNode* curr = successor_list.load(std::memory_order_acquire);
                      curr; curr = curr->next)
-                {
-                    Node* succ = curr->target;
-                    if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
-                        sink.push_back(succ);
-                }
+                    if (Node* succ = curr->target)
+                        visit(succ);
 
-                // Cross-region successors of the dynamic region graph. This vector is
-                // mutated only at a step boundary, with no worker running, and is
-                // read-only here, so it needs no atomics of its own; the per-target
-                // in_degree decrement carries the same acq_rel ordering as above.
-                // Empty (and so skipped) for every static-graph node and every dynamic
-                // node that exports nothing across a boundary.
                 for (Node* succ : region.boundary_successors)
-                {
-                    if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
-                        sink.push_back(succ);
-                }
+                    if (succ)
+                        visit(succ);
             }
 
             /** @brief Returns prioritized value from metadata. */

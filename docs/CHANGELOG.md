@@ -12,6 +12,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 - 2026-09-17 — Changed `Memory::UsmRegistry::record` and `RuntimeContext::adopt_usm` to take the allocation's length beside its device index (`memory/usm_registry.hpp`, `execution/runtime_context.hpp`).
 
 ### Added
+- 2026-09-19 — Added the in-order chain that runs a chainable plan from the calling thread, with `RuntimeSettings::force_scheduler` and `RunReport::layer` (`execution/chain_plan.cpp`, `execution/chain_run.cpp`, `graph.hpp`).
 - 2026-09-17 — Added `UsmRegistry::containing_allocation` and `RuntimeContext::containing_usm_base`, which resolve an interior pointer to the allocation holding it (`memory/usm_registry.hpp`, `runtime_context.cpp`).
 - 2026-09-17 — Added `add_prefix_scan` and `add_counting_sort` to `API::Region` (`api/graph/region.hpp`).
 - 2026-09-17 — Added `DynamicGraph::set_profiling_requested`, stamped into its plan and mirrored by a `node_index` renumbered densely by region key then add() order at every recompose (`api/graph/dynamic_graph.hpp`).
@@ -25,6 +26,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 - 2026-09-15 — Added a lazily built profiling queue per device on the plain queue's context (`RuntimeContext::profiling_queue`, `runtime_context.cpp`).
 
 ### Changed
+- 2026-09-19 — Restated the steady-state allocation tests' rule as a bare-SYCL baseline comparison, not an absolute per-tick count (`tests/functional/integration/test_steady_state_allocation.cpp`).
+- 2026-09-19 — Removed the per-node dependency allocation in `TaskScheduler::execute_task` by iterating `SmallEventVector` inline (`scheduler/scheduler.cpp`, `graph/node.hpp`).
 - 2026-09-17 — Changed `Graph::add_counting_sort` to run only the digits its live key range needs, skipping the rest (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
 
 ### Fixed

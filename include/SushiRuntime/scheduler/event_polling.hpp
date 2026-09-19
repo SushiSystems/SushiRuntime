@@ -34,6 +34,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/scheduler/ready_sink.hpp>
+#include <SushiRuntime/core/event_timestamps.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/profiling_ledger.hpp>
@@ -419,46 +420,15 @@ namespace SushiRuntime
                     if (!pe.task)
                         return;
 
-                    std::uint64_t submit_ns = 0, start_ns = 0, end_ns = 0;
-                    bool have_start_end = false;
-                    bool have_submit = false;
-                    if (pe.has_event)
-                    {
-                        try
-                        {
-                            start_ns = pe.event.get_profiling_info<
-                                sycl::info::event_profiling::command_start>();
-                            end_ns = pe.event.get_profiling_info<
-                                sycl::info::event_profiling::command_end>();
-                            have_start_end = true;
-                        }
-                        catch (...)
-                        {
-                            // A backend with no profiling support leaves this dispatch unrecorded.
-                        }
-
-                        if (have_start_end)
-                        {
-                            try
-                            {
-                                submit_ns = pe.event.get_profiling_info<
-                                    sycl::info::event_profiling::command_submit>();
-                                have_submit = true;
-                            }
-                            catch (...)
-                            {
-                                // No submit timestamp: degrade to submit_ns == start_ns instead of dropping the record.
-                                submit_ns = start_ns;
-                            }
-                        }
-                    }
+                    Core::EventTimestamps times;
+                    const bool have_start_end = pe.has_event && Core::read_event_timestamps(pe.event, times);
 
                     if (have_start_end)
                     {
                         if (Core::ProfilingLedger* ledger = ledger_.load(std::memory_order_acquire))
                         {
-                            if (have_submit && ledger->is_pairing_owner(pe.task))
-                                ledger->set_pairing_event_ns(submit_ns);
+                            if (times.has_submit && ledger->is_pairing_owner(pe.task))
+                                ledger->set_pairing_event_ns(times.submit_ns);
 
                             if (pe.task->is_graph_node())
                             {
@@ -469,9 +439,9 @@ namespace SushiRuntime
                                     Core::NodeEventRecord rec{};
                                     rec.node_index = node->registration_index;
                                     rec.invocation = pe.step;
-                                    rec.submit_ns  = submit_ns;
-                                    rec.start_ns   = start_ns;
-                                    rec.end_ns     = end_ns;
+                                    rec.submit_ns  = times.submit_ns;
+                                    rec.start_ns   = times.start_ns;
+                                    rec.end_ns     = times.end_ns;
                                     ledger->write(node->registration_index, slot, rec);
                                 }
                             }

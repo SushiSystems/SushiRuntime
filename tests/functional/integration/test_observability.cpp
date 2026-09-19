@@ -199,7 +199,10 @@ TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
 {
     constexpr std::size_t N = 1024;
 
-    auto rt = Runtime::create({}, profiling_config());
+    // The worker split describes the scheduler, so keep this plan off the chain.
+    RuntimeConfig config = profiling_config();
+    config.force_scheduler = true;
+    auto rt = Runtime::create({}, config);
     auto buf = rt.buffer<int>(N);
     int* p = buf.data();
 
@@ -207,6 +210,7 @@ TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
     g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
     auto rep = g.run(16);
 
+    EXPECT_EQ(rep.layer, Core::ExecutionLayer::Scheduler);
     ASSERT_FALSE(rep.worker_timings.empty());
     EXPECT_GE(rep.scheduling_overhead_ms, 0.0);
 

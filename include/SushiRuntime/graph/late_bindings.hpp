@@ -113,6 +113,25 @@ namespace SushiRuntime
 
             /** @brief Element index of the live base within device_base. */
             std::size_t device_base_index = 0;
+
+            /**
+             * @brief Host-USM word the command group reads at dispatch and bakes into the kernel.
+             *
+             * Set by the fluent layer for an internal node that takes a value a
+             * predecessor resolved this run (a reduction tile's live in_count).
+             * Recorded here only so the plan can tell the node reads the host
+             * between nodes; the kernel keeps its own copy of the pointer.
+             */
+            const std::uint32_t* dispatch_scalar = nullptr;
+
+            /**
+             * @brief Reports whether dispatch reads a value a predecessor may have written on the device.
+             * @return True when a device count, device base or dispatch scalar is bound.
+             */
+            bool reads_device_value_at_dispatch() const noexcept
+            {
+                return device_count != nullptr || device_base != nullptr || dispatch_scalar != nullptr;
+            }
         };
 
     } // namespace Graph

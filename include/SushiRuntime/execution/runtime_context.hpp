@@ -178,8 +178,8 @@ namespace SushiRuntime
                 /**
                  * @brief Whether a profiling queue already exists for a device.
                  *
-                 * True only after profiling_queue() has been called for
-                 * @p xpu_index, or RuntimeSettings::profiling built it eagerly.
+                 * True only after profiling_queue() or chain_queue(index, true) has
+                 * been called for @p xpu_index, or RuntimeSettings::profiling built it eagerly.
                  * Exists so a caller can observe the lazy-build contract (no
                  * profiling queue before the first request) without triggering
                  * the build itself by calling profiling_queue().
@@ -188,6 +188,21 @@ namespace SushiRuntime
                  * @return True if that device's profiling queue is already built.
                  */
                 bool has_profiling_queue(size_t xpu_index) const noexcept;
+
+                /**
+                 * @brief Gets the in-order queue a chainable plan submits to on one device.
+                 *
+                 * Shares the plain queue's sycl::context, so USM allocated through
+                 * this context is valid on it. Built on the first call for that
+                 * device and flavour, under a per-device once_flag, and owned for
+                 * the context's lifetime beside the plain and profiling queues.
+                 *
+                 * @param xpu_index The index of the device.
+                 * @param profiling True for the flavour that also carries enable_profiling.
+                 * @return sycl::queue& Reference to the device's in-order queue.
+                 * @throws Core::SushiException If the index is out of bounds.
+                 */
+                sycl::queue& chain_queue(size_t xpu_index, bool profiling);
 
                 /**
                  * @brief Number of device queues exposed by get_queue().
@@ -507,6 +522,14 @@ namespace SushiRuntime
                  * @pre xpu_index < device_count().
                  */
                 void build_profiling_queue(size_t xpu_index);
+
+                /**
+                 * @brief Builds device @p xpu_index's in-order chain queue of one flavour, once.
+                 * @param xpu_index The device whose chain queue to build.
+                 * @param profiling True for the flavour that carries enable_profiling.
+                 * @pre xpu_index < device_count().
+                 */
+                void build_chain_queue(size_t xpu_index, bool profiling);
         };
     
     } // namespace Execution
