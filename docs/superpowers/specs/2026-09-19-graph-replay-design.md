@@ -1,7 +1,7 @@
 # SushiRuntime: replaying a graph's device work as one submission
 
-**Status:** designed 2026-09-19; every decision in §F taken by the owner the same day. P0 and P1
-are built, not measured. P2 and P3 are not started. Consumer: SushiEngine's matter device solver, whose device arm is launch-bound (§0).
+**Status:** designed 2026-09-19; every decision in §F taken by the owner the same day. P0, P1
+and P3 are built, not measured. P2 is not started. Consumer: SushiEngine's matter device solver, whose device arm is launch-bound (§0).
 Evidence: the feasibility spike under sushiengine-30's scratchpad (`graph_spike/`, run 2026-09-19)
 and the engine's measurement report in `docs/design/MATTER_DEVICE_SOLVER.md` R28 and R29.
 
@@ -77,6 +77,13 @@ is submitted from the calling thread, in the compiled topological order, to an i
 that device, with no scheduler hand-off, no polling and one wait at the end of the run. Every step
 of `run(steps)` is submitted back to back; the single wait closes the last step. The scheduler
 path stays as it is for every plan that is not chainable.
+
+A run without profiling submits through `sycl::ext::oneapi::experimental::submit`, which returns
+no event, so the queue tracks none for the nodes in flight; the queue's order carries the
+dependency a returned event would, and the run's single wait closes it. A profiling run keeps its
+per-node events, because the ledger reads their timestamps. Measured on a chain of trivial kernels,
+the per-node cost holds near 10 us from 1 to 128 nodes, where keeping the events grew it from
+15 us to 266 us.
 
 **Layer 2, record and replay.** A chainable plan whose late-bound values all live in memory (§D)
 is recorded once into a `sycl::ext::oneapi::experimental::command_graph` when it is compiled,

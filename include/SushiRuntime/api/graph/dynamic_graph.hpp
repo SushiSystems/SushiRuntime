@@ -457,6 +457,7 @@ namespace SushiRuntime
                     auto& engine = ctx_->get_execution_engine();
 
                     async_step_pending_ = false;
+                    steps_.check_faults();
                     steps_.after_step();
 
                     const auto after = engine.metrics();
@@ -1133,6 +1134,7 @@ namespace SushiRuntime
 
                         rearm();
                         engine.execute(plan_);
+                        steps_.check_faults();
 
                         steps_.after_step();
                         ++executed;

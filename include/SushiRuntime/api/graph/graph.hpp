@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cstddef>
@@ -45,6 +46,7 @@
 #include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/api/detail/run_report_builder.hpp>
 #include <SushiRuntime/api/detail/callable_traits.hpp>
+#include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/api/detail/fixed_order_reduce.hpp>
 #include <SushiRuntime/api/detail/fixed_order_scan.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
@@ -200,6 +202,61 @@ namespace SushiRuntime
                         std::string(residency_name(lc.device->residency())) +
                         ", but the live count is read while kernels may run; "
                         "allocate it with Residency::Host."});
+            }
+        }
+
+        namespace detail
+        {
+            /**
+             * @brief Names where one LateCount's live value comes from, in a form a kernel carries.
+             */
+            struct LiveCountSource
+            {
+                const std::uint32_t* slot = nullptr; /**< Device-written word, or null for a host value. */
+                std::size_t host_live = 0;           /**< The live count when @c slot is null. */
+                std::size_t capacity = 0;            /**< Bound a device value must not exceed. */
+            };
+
+            /**
+             * @brief Resolves a LateCount's host side and names its device slot without reading it.
+             * @param lc The count to resolve.
+             * @return The source a resolver kernel reads.
+             * @throws Core::SushiException As resolve_late_count(), or invalid_access for a device index out of range.
+             */
+            inline LiveCountSource late_count_source(const LateCount& lc)
+            {
+                LiveCountSource source;
+                source.capacity = lc.capacity;
+                if (lc.host || lc.device == nullptr)
+                {
+                    source.host_live = resolve_late_count(lc);
+                    return source;
+                }
+                if (lc.device_index >= lc.device->size())
+                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                        "LateCount: device_index " + std::to_string(lc.device_index) +
+                        " is out of range for a buffer of " +
+                        std::to_string(lc.device->size()) + " elements."});
+                source.slot = lc.device->data() + lc.device_index;
+                return source;
+            }
+
+            /**
+             * @brief Reads a live count on the device; a value over capacity records a fault and yields zero.
+             * @param source Where the count lives, from late_count_source().
+             * @param fault  The resolver's fault record; null only when @p source has no slot.
+             * @return The live count, never above @p source.capacity.
+             */
+            inline std::size_t read_live_count(const LiveCountSource& source,
+                                               std::uint32_t* fault) noexcept
+            {
+                if (source.slot == nullptr)
+                    return source.host_live;
+                const std::size_t live = static_cast<std::size_t>(*source.slot);
+                if (live <= source.capacity)
+                    return live;
+                record_device_fault(fault, DEVICE_FAULT_LATE_COUNT, 0, live, source.capacity);
+                return 0;
             }
         }
 
@@ -1105,12 +1162,10 @@ namespace SushiRuntime
                         reduce_scratch_.push_back(std::static_pointer_cast<void>(owned));
                     }
 
-                    // state[i] is level i's live in_count, state[level_count+i] its
-                    // live out_count (launch width); the resolver below is its sole
-                    // writer, so every level reads a value its own Reads ordered it after.
+                    // state[i] is level i's live in_count, state[level_count+i] its live out_count.
                     const std::size_t level_count = levels.size();
                     std::shared_ptr<std::uint32_t> state = detail::make_reduce_scratch<std::uint32_t>(
-                        ctx_, 2 * level_count, input.device_index(), Residency::Host);
+                        ctx_, 2 * level_count, input.device_index(), input.residency());
                     reduce_scratch_.push_back(std::static_pointer_cast<void>(state));
                     std::uint32_t* state_ptr = state.get();
 
@@ -1123,16 +1178,11 @@ namespace SushiRuntime
                     const Core::ResourceRegion state_region{state_ptr, 0,
                                                              2 * level_count * sizeof(std::uint32_t)};
 
-                    emit_late_count_resolver(n, state_ptr, 2 * level_count,
-                        [level_count](std::size_t live_n, std::uint32_t* out)
+                    emit_late_count_resolver(std::array<LateCount, 1>{n}, input.device_index(),
+                        Writes(state_region),
+                        [state_ptr, level_count](const std::array<std::size_t, 1>& live)
                         {
-                            std::size_t count = live_n;
-                            for (std::size_t i = 0; i < level_count; ++i)
-                            {
-                                out[i] = static_cast<std::uint32_t>(count);
-                                count = detail::next_live_tile_count(count);
-                                out[level_count + i] = static_cast<std::uint32_t>(count);
-                            }
+                            detail::fill_live_level_words(level_count, live[0], state_ptr);
                         },
                         registration_token);
 
@@ -1161,15 +1211,10 @@ namespace SushiRuntime
                                                           level.out_offset * sizeof(T),
                                                           level.out_count * sizeof(T)});
 
-                        // sized_from_device's own mechanism, pointed at the resolver's slot.
-                        Dynamic dyn;
-                        dyn.device_count = state_ptr;
-                        dyn.device_count_index = level_count + i;
-
                         observe(reads);
                         observe(writes);
-                        emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
-                            level.out_count,
+                        emit_device_sized(reads.keys, writes.keys, level.out_count,
+                            state_ptr + level_count + i, state_ptr + i,
                             [src, dst, op](std::size_t t, std::size_t in_count)
                             {
                                 const std::size_t begin = t * tile;
@@ -1177,7 +1222,7 @@ namespace SushiRuntime
                                 if (end > in_count) end = in_count;
                                 dst[t] = detail::fold_tile(op, src, begin, end);
                             },
-                            registration_token, state_ptr + i);
+                            registration_token);
                     }
 
                     // A live count of zero folds no level, so this is the identity's only writer.
@@ -1185,14 +1230,15 @@ namespace SushiRuntime
                     Writes zero_writes = Writes(output);
                     observe(zero_reads);
                     observe(zero_writes);
-                    return emit_dynamic_per_element(Dynamic{}, zero_reads.keys,
-                        zero_writes.keys, std::size_t{1},
+                    emit_device_sized(zero_reads.keys, zero_writes.keys, std::size_t{1},
+                        nullptr, state_ptr,
                         [out_base, identity](std::size_t, std::size_t live_n)
                         {
                             if (live_n == 0)
                                 out_base[0] = identity;
                         },
-                        registration_token, state_ptr);
+                        registration_token);
+                    return *this;
                 }
 
                 /**
@@ -1354,7 +1400,7 @@ namespace SushiRuntime
                     // Same shape as the late-bound add_reduce, one live word instead of a level chain.
                     std::shared_ptr<std::uint32_t> state =
                         detail::make_reduce_scratch<std::uint32_t>(ctx_, 1, values.device_index(),
-                                                                    Residency::Host);
+                                                                    values.residency());
                     reduce_scratch_.push_back(std::static_pointer_cast<void>(state));
                     std::uint32_t* state_ptr = state.get();
                     const Core::ResourceRegion state_region{state_ptr, 0, sizeof(std::uint32_t)};
@@ -1362,23 +1408,20 @@ namespace SushiRuntime
                     auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
                     reduce_registration_tokens_.push_back(registration_token);
 
-                    emit_late_count_resolver(lc, state_ptr, 1,
-                        [](std::size_t live_n, std::uint32_t* out)
+                    emit_late_count_resolver(std::array<LateCount, 1>{lc}, values.device_index(),
+                        Writes(state_region),
+                        [state_ptr](const std::array<std::size_t, 1>& live)
                         {
-                            out[0] = static_cast<std::uint32_t>(live_n);
+                            state_ptr[0] = static_cast<std::uint32_t>(live[0]);
                         },
                         registration_token);
-
-                    Dynamic dyn;
-                    dyn.device_count = state_ptr;
-                    dyn.device_count_index = 0;
 
                     Reads reads = Reads(values, segment_offsets, state_region);
                     Writes writes = Writes(output);
                     observe(reads);
                     observe(writes);
-                    return emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
-                        segment_count.capacity,
+                    emit_device_sized(reads.keys, writes.keys, segment_count.capacity,
+                        state_ptr, nullptr,
                         [value_base, offset_base, out_base, op, identity](std::size_t s)
                         {
                             const std::size_t begin = offset_base[s];
@@ -1388,6 +1431,7 @@ namespace SushiRuntime
                                 : identity;
                         },
                         registration_token);
+                    return *this;
                 }
 
                 /**
@@ -1464,44 +1508,18 @@ namespace SushiRuntime
 
                     if (levels.empty())
                     {
-                        // Capacity zero: still resolve n on the host through the
-                        // shared resolver, exactly as every other capacity does, so
-                        // a live count above zero fails the run instead of being
-                        // silently ignored; resolve_late_count() builds its error
-                        // message with std::string, which a device kernel cannot
-                        // call, so the resolver node (a host task) is what runs it,
-                        // never the node below that writes the one exclusive entry
-                        // a scan of nothing has.
+                        // Capacity zero: the resolver checks the live count and writes the scan of nothing.
                         auto zero_token = std::make_shared<std::optional<std::uint32_t>>();
                         reduce_registration_tokens_.push_back(zero_token);
-
-                        std::shared_ptr<std::uint32_t> zero_state =
-                            detail::make_reduce_scratch<std::uint32_t>(
-                                ctx_, 1, counts.device_index(), Residency::Host);
-                        reduce_scratch_.push_back(std::static_pointer_cast<void>(zero_state));
-                        std::uint32_t* zero_state_ptr = zero_state.get();
-                        const Core::ResourceRegion zero_state_region{
-                            zero_state_ptr, 0, sizeof(std::uint32_t)};
-
-                        emit_late_count_resolver(n, zero_state_ptr, 1,
-                            [](std::size_t live_n, std::uint32_t* out)
-                            {
-                                out[0] = static_cast<std::uint32_t>(live_n);
-                            },
-                            zero_token);
-
-                        Reads reads = Reads(zero_state_region);
-                        Writes writes = Writes(offsets, total);
-                        observe(reads);
-                        observe(writes);
-                        return emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
-                            std::size_t{1},
-                            [offsets_base, total_base](std::size_t)
+                        emit_late_count_resolver(std::array<LateCount, 1>{n}, counts.device_index(),
+                            Writes(offsets, total),
+                            [offsets_base, total_base](const std::array<std::size_t, 1>&)
                             {
                                 offsets_base[0] = 0;
                                 total_base[0] = 0;
                             },
                             zero_token);
+                        return *this;
                     }
 
                     const std::size_t level_count = levels.size();
@@ -1540,7 +1558,7 @@ namespace SushiRuntime
                     const std::size_t state_words = 2 * level_count;
                     std::shared_ptr<std::uint32_t> state =
                         detail::make_reduce_scratch<std::uint32_t>(
-                            ctx_, state_words, counts.device_index(), Residency::Host);
+                            ctx_, state_words, counts.device_index(), counts.residency());
                     reduce_scratch_.push_back(std::static_pointer_cast<void>(state));
                     std::uint32_t* state_ptr = state.get();
                     const Core::ResourceRegion state_region{
@@ -1551,16 +1569,11 @@ namespace SushiRuntime
                     auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
                     reduce_registration_tokens_.push_back(registration_token);
 
-                    emit_late_count_resolver(n, state_ptr, state_words,
-                        [level_count](std::size_t live_n, std::uint32_t* out)
+                    emit_late_count_resolver(std::array<LateCount, 1>{n}, counts.device_index(),
+                        Writes(state_region),
+                        [state_ptr, level_count](const std::array<std::size_t, 1>& live)
                         {
-                            std::size_t count = live_n;
-                            for (std::size_t i = 0; i < level_count; ++i)
-                            {
-                                out[i] = static_cast<std::uint32_t>(count);
-                                count = detail::next_live_tile_count(count);
-                                out[level_count + i] = static_cast<std::uint32_t>(count);
-                            }
+                            detail::fill_live_level_words(level_count, live[0], state_ptr);
                         },
                         registration_token);
 
@@ -1592,14 +1605,10 @@ namespace SushiRuntime
                             up_key, level.out_offset * sizeof(std::uint32_t),
                             level.out_count * sizeof(std::uint32_t)});
 
-                        Dynamic dyn;
-                        dyn.device_count = state_ptr;
-                        dyn.device_count_index = level_count + i;
-
                         observe(reads);
                         observe(writes);
-                        emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
-                            level.out_count,
+                        emit_device_sized(reads.keys, writes.keys, level.out_count,
+                            state_ptr + level_count + i, state_ptr + i,
                             [src, dst](std::size_t t, std::size_t in_count)
                             {
                                 const std::size_t begin = t * tile;
@@ -1609,7 +1618,7 @@ namespace SushiRuntime
                                     [](std::uint32_t a, std::uint32_t b) { return a + b; },
                                     src, begin, end);
                             },
-                            registration_token, state_ptr + i);
+                            registration_token);
                     }
 
                     // Down-sweep, top to bottom: the top level has no level above it,
@@ -1643,8 +1652,8 @@ namespace SushiRuntime
                                         total);
                             observe(reads);
                             observe(writes);
-                            emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
-                                std::size_t{1},
+                            emit_device_sized(reads.keys, writes.keys, std::size_t{1},
+                                nullptr, state_ptr + i,
                                 [src, dst, offsets_base, total_base, first](
                                     std::size_t, std::size_t in_count)
                                 {
@@ -1658,7 +1667,7 @@ namespace SushiRuntime
                                     if (first)
                                         offsets_base[in_count] = acc;
                                 },
-                                registration_token, state_ptr + i);
+                                registration_token);
                             continue;
                         }
 
@@ -1683,14 +1692,10 @@ namespace SushiRuntime
                                   down_key, level.in_offset * sizeof(std::uint32_t),
                                   level.in_count * sizeof(std::uint32_t)});
 
-                        Dynamic dyn;
-                        dyn.device_count = state_ptr;
-                        dyn.device_count_index = level_count + i;
-
                         observe(reads);
                         observe(writes);
-                        emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
-                            level.out_count,
+                        emit_device_sized(reads.keys, writes.keys, level.out_count,
+                            state_ptr + level_count + i, state_ptr + i,
                             [src, dst, base_arr](std::size_t t, std::size_t in_count)
                             {
                                 const std::size_t begin = t * tile;
@@ -1703,7 +1708,7 @@ namespace SushiRuntime
                                     acc += src[j];
                                 }
                             },
-                            registration_token, state_ptr + i);
+                            registration_token);
                     }
 
                     if (level_count == 1)
@@ -1716,13 +1721,14 @@ namespace SushiRuntime
                     Writes closing_writes = Writes(offsets);
                     observe(closing_reads);
                     observe(closing_writes);
-                    return emit_dynamic_per_element(Dynamic{}, closing_reads.keys,
-                        closing_writes.keys, std::size_t{1},
+                    emit_device_sized(closing_reads.keys, closing_writes.keys, std::size_t{1},
+                        nullptr, state_ptr,
                         [offsets_base, total_base](std::size_t, std::size_t live_n)
                         {
                             offsets_base[live_n] = total_base[0];
                         },
-                        registration_token, state_ptr);
+                        registration_token);
+                    return *this;
                 }
 
                 /**
@@ -1793,70 +1799,60 @@ namespace SushiRuntime
                     constexpr std::size_t DIGIT_BINS = detail::RADIX_DIGIT_BINS;
                     const std::size_t digit_count = detail::radix_digit_count(key_range.capacity);
 
-                    // One token shared by every node this call emits: both resolvers,
-                    // the total write, the digit plan, every digit's four passes and
-                    // the closing offsets/counts passes (G1 spec §F5).
+                    // One token shared by every node this call emits (G1 spec §F5).
                     auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
                     reduce_registration_tokens_.push_back(registration_token);
 
+                    // n_state[0] is the live element count, n_state[1] its live tile count.
                     std::shared_ptr<std::uint32_t> n_state = detail::make_reduce_scratch<std::uint32_t>(
-                        ctx_, 2, keys.device_index(), Residency::Host);
+                        ctx_, 2, keys.device_index(), keys.residency());
                     reduce_scratch_.push_back(std::static_pointer_cast<void>(n_state));
                     std::uint32_t* n_state_ptr = n_state.get();
                     const Core::ResourceRegion n_state_region{n_state_ptr, 0, 2 * sizeof(std::uint32_t)};
 
-                    emit_late_count_resolver(n, n_state_ptr, 2,
-                        [](std::size_t live_n, std::uint32_t* out)
-                        {
-                            out[0] = static_cast<std::uint32_t>(live_n);
-                            out[1] = static_cast<std::uint32_t>(detail::next_live_tile_count(live_n));
-                        },
-                        registration_token);
-
-                    // The live key range fails a run that exceeds its capacity and
-                    // decides how many digits that run sorts; the offsets pass below
-                    // needs no live bucket count of its own (design doc §A3).
-                    std::shared_ptr<std::uint32_t> kr_state = detail::make_reduce_scratch<std::uint32_t>(
-                        ctx_, 1, keys.device_index(), Residency::Host);
-                    reduce_scratch_.push_back(std::static_pointer_cast<void>(kr_state));
-                    std::uint32_t* kr_state_ptr = kr_state.get();
-                    const Core::ResourceRegion kr_state_region{kr_state_ptr, 0, sizeof(std::uint32_t)};
-                    emit_late_count_resolver(key_range, kr_state_ptr, 1,
-                        [](std::size_t live_key_range, std::uint32_t* out)
-                        {
-                            out[0] = static_cast<std::uint32_t>(live_key_range);
-                        },
-                        registration_token);
-
-                    std::uint32_t* total_base = total.data();
+                    // The digit plan: per digit, its live work counts (zero past the
+                    // live key range's digits) and whether it places into the indices.
+                    std::uint32_t* plan_ptr = nullptr;
+                    if (n.capacity != 0)
                     {
-                        Reads reads = Reads(n_state_region);
-                        Writes writes = Writes(total);
-                        observe(reads);
-                        observe(writes);
-                        emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
-                            std::size_t{1},
-                            [total_base](std::size_t, std::size_t live_n)
-                            {
-                                total_base[0] = static_cast<std::uint32_t>(live_n);
-                            },
-                            registration_token, n_state_ptr);
+                        std::shared_ptr<std::uint32_t> plan = detail::make_reduce_scratch<std::uint32_t>(
+                            ctx_, digit_count * detail::RADIX_PLAN_WORDS, keys.device_index(),
+                            keys.residency());
+                        plan_ptr = plan.get();
+                        reduce_scratch_.push_back(std::static_pointer_cast<void>(plan));
                     }
+                    const Core::ResourceRegion plan_region{plan_ptr, 0,
+                        digit_count * detail::RADIX_PLAN_WORDS * sizeof(std::uint32_t)};
+
+                    // One kernel resolves both counts, publishes total and fills the digit plan (design doc §A3).
+                    std::uint32_t* total_base = total.data();
+                    emit_late_count_resolver(std::array<LateCount, 2>{n, key_range},
+                        keys.device_index(),
+                        (plan_ptr != nullptr) ? Writes(n_state_region, total, plan_region)
+                                              : Writes(n_state_region, total),
+                        [n_state_ptr, total_base, plan_ptr, digit_count](
+                            const std::array<std::size_t, 2>& live)
+                        {
+                            const std::size_t tiles = detail::next_live_tile_count(live[0]);
+                            n_state_ptr[0] = static_cast<std::uint32_t>(live[0]);
+                            n_state_ptr[1] = static_cast<std::uint32_t>(tiles);
+                            total_base[0] = static_cast<std::uint32_t>(live[0]);
+                            if (plan_ptr != nullptr)
+                                detail::fill_radix_plan(digit_count, live[0], tiles, live[1], plan_ptr);
+                        },
+                        registration_token);
 
                     if (n.capacity == 0)
                     {
-                        // No element ever arrives: every bucket starts and stays at
-                        // the live count, which resolve_late_count() has already
-                        // pinned to zero above, so this is the only writer offsets
-                        // and counts need.
+                        // No element ever arrives, so every bucket starts and stays at zero.
                         std::uint32_t* offsets_base = offsets.data();
                         std::uint32_t* counts_base = (counts != nullptr) ? counts->data() : nullptr;
                         Reads reads = Reads();
                         Writes writes = (counts != nullptr) ? Writes(offsets, *counts) : Writes(offsets);
                         observe(reads);
                         observe(writes);
-                        return emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
-                            key_range.capacity + 1,
+                        emit_device_sized(reads.keys, writes.keys, key_range.capacity + 1,
+                            nullptr, nullptr,
                             [offsets_base, counts_base, capacity = key_range.capacity](std::size_t k)
                             {
                                 offsets_base[k] = 0;
@@ -1864,27 +1860,11 @@ namespace SushiRuntime
                                     counts_base[k] = 0;
                             },
                             registration_token);
+                        return *this;
                     }
 
                     const std::size_t T_cap = detail::next_live_tile_count(n.capacity);
                     constexpr std::size_t tile = detail::REDUCE_TILE;
-
-                    // The digit plan: per digit, its live work counts (zero past the
-                    // live key range's digits) and whether it places into the indices.
-                    std::shared_ptr<std::uint32_t> plan = detail::make_reduce_scratch<std::uint32_t>(
-                        ctx_, digit_count * detail::RADIX_PLAN_WORDS, keys.device_index(),
-                        Residency::Host);
-                    reduce_scratch_.push_back(std::static_pointer_cast<void>(plan));
-                    std::uint32_t* plan_ptr = plan.get();
-                    const Core::ResourceRegion plan_region{plan_ptr, 0,
-                        digit_count * detail::RADIX_PLAN_WORDS * sizeof(std::uint32_t)};
-                    emit_host_pass(Reads(n_state_region, kr_state_region), Writes(plan_region),
-                        [n_state_ptr, kr_state_ptr, plan_ptr, digit_count]()
-                        {
-                            detail::fill_radix_plan(digit_count, n_state_ptr[0], n_state_ptr[1],
-                                                    kr_state_ptr[0], plan_ptr);
-                        },
-                        registration_token);
 
                     // hist holds raw counts until the column scan overwrites it in place with prefixes.
                     std::shared_ptr<std::uint32_t> hist = detail::make_reduce_scratch<std::uint32_t>(
@@ -1924,8 +1904,7 @@ namespace SushiRuntime
                     const Core::ResourceRegion bin_base_region{static_cast<void*>(bin_base_base), 0,
                         DIGIT_BINS * sizeof(std::uint32_t)};
 
-                    // A slot resolves by the base address of its allocation, so a digit's
-                    // live word travels as an index into the plan rather than as a pointer.
+                    // Index of one word of one digit's plan.
                     const auto plan_word = [](std::size_t digit, std::size_t word) {
                         return digit * detail::RADIX_PLAN_WORDS + word;
                     };
@@ -1951,13 +1930,10 @@ namespace SushiRuntime
                             for (const Core::ResourceRegion& r : sources.keys)
                                 reads.keys.push_back(r);
                             Writes writes = Writes(hist_region);
-                            Dynamic dyn;
-                            dyn.device_count = plan_ptr;
-                            dyn.device_count_index = plan_word(d, detail::RADIX_PLAN_TILES);
                             observe(reads);
                             observe(writes);
-                            emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
-                                T_cap,
+                            emit_device_sized(reads.keys, writes.keys, T_cap,
+                                plan_ptr + plan_word(d, detail::RADIX_PLAN_TILES), snapshot,
                                 [keys_base, indices_base, scratch_base, hist_base, first, shift,
                                  T_cap](std::size_t t, std::size_t live_n, std::size_t into_indices)
                                 {
@@ -1977,7 +1953,7 @@ namespace SushiRuntime
                                     for (std::size_t b = 0; b < DIGIT_BINS; ++b)
                                         hist_base[b * T_cap + t] = local[b];
                                 },
-                                registration_token, snapshot);
+                                registration_token);
                         }
 
                         // Column scan: one work-item per bin, sequential over its
@@ -1985,15 +1961,12 @@ namespace SushiRuntime
                         // left-to-right exclusive scan.
                         {
                             // In place over hist: each bin's column is touched by exactly one work-item, sequentially.
-                            Reads reads = Reads(hist_region, n_state_region);
+                            Reads reads = Reads(hist_region, n_state_region, plan_region);
                             Writes writes = Writes(hist_region, col_total_region);
-                            Dynamic dyn;
-                            dyn.device_count = plan_ptr;
-                            dyn.device_count_index = plan_word(d, detail::RADIX_PLAN_BINS);
                             observe(reads);
                             observe(writes);
-                            emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
-                                DIGIT_BINS,
+                            emit_device_sized(reads.keys, writes.keys, DIGIT_BINS,
+                                plan_ptr + plan_word(d, detail::RADIX_PLAN_BINS), n_state_ptr + 1,
                                 [hist_base, col_total_base, T_cap](
                                     std::size_t b, std::size_t live_T)
                                 {
@@ -2006,21 +1979,18 @@ namespace SushiRuntime
                                     }
                                     col_total_base[b] = running;
                                 },
-                                registration_token, n_state_ptr + 1);
+                                registration_token);
                         }
 
                         // Bin base: one work-item, sequential over the (always full)
                         // 256 bin totals, since the digit range never shrinks with n.
                         {
-                            Reads reads = Reads(col_total_region);
+                            Reads reads = Reads(col_total_region, plan_region);
                             Writes writes = Writes(bin_base_region);
-                            Dynamic dyn;
-                            dyn.device_count = plan_ptr;
-                            dyn.device_count_index = plan_word(d, detail::RADIX_PLAN_ONE);
                             observe(reads);
                             observe(writes);
-                            emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
-                                std::size_t{1},
+                            emit_device_sized(reads.keys, writes.keys, std::size_t{1},
+                                plan_ptr + plan_word(d, detail::RADIX_PLAN_ONE), nullptr,
                                 [col_total_base, bin_base_base](std::size_t)
                                 {
                                     std::uint32_t running = 0;
@@ -2044,13 +2014,10 @@ namespace SushiRuntime
                             Writes writes = (scratch_base != nullptr)
                                 ? Writes(indices_region, scratch_region)
                                 : Writes(indices_region);
-                            Dynamic dyn;
-                            dyn.device_count = plan_ptr;
-                            dyn.device_count_index = plan_word(d, detail::RADIX_PLAN_TILES);
                             observe(reads);
                             observe(writes);
-                            emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
-                                T_cap,
+                            emit_device_sized(reads.keys, writes.keys, T_cap,
+                                plan_ptr + plan_word(d, detail::RADIX_PLAN_TILES), snapshot,
                                 [keys_base, indices_base, scratch_base, hist_base, bin_base_base,
                                  first, shift, T_cap](
                                     std::size_t t, std::size_t live_n, std::size_t into_indices)
@@ -2074,7 +2041,7 @@ namespace SushiRuntime
                                             static_cast<std::uint32_t>(src);
                                     }
                                 },
-                                registration_token, snapshot);
+                                registration_token);
                         }
                     }
 
@@ -2088,8 +2055,8 @@ namespace SushiRuntime
                         Writes writes = Writes(offsets);
                         observe(reads);
                         observe(writes);
-                        emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
-                            key_range.capacity + 1,
+                        emit_device_sized(reads.keys, writes.keys, key_range.capacity + 1,
+                            nullptr, n_state_ptr,
                             [keys_base, indices_base, offsets_base](
                                 std::size_t k, std::size_t live_n)
                             {
@@ -2105,7 +2072,7 @@ namespace SushiRuntime
                                 }
                                 offsets_base[k] = static_cast<std::uint32_t>(lo);
                             },
-                            registration_token, n_state_ptr);
+                            registration_token);
                     }
 
                     if (counts == nullptr)
@@ -2121,13 +2088,14 @@ namespace SushiRuntime
                     Writes writes = Writes(*counts);
                     observe(reads);
                     observe(writes);
-                    return emit_dynamic_per_element(Dynamic{}, reads.keys, writes.keys,
-                        key_range.capacity,
+                    emit_device_sized(reads.keys, writes.keys, key_range.capacity,
+                        nullptr, nullptr,
                         [offsets_base, counts_base](std::size_t k)
                         {
                             counts_base[k] = offsets_base[k + 1] - offsets_base[k];
                         },
                         registration_token);
+                    return *this;
                 }
 
                 /**
@@ -2609,6 +2577,7 @@ namespace SushiRuntime
                     auto& engine = ctx_->get_execution_engine();
 
                     async_step_pending_ = false;
+                    steps_.check_faults();
                     steps_.after_step();
 
                     const auto after = engine.metrics();
@@ -2808,6 +2777,7 @@ namespace SushiRuntime
 
                         reset_plan_state();
                         engine.execute(plan_); // lvalue -> non-consuming replay
+                        steps_.check_faults();
 
                         // Advance every State after the step so its just-written
                         // next field becomes current — both for the following step
@@ -2841,11 +2811,15 @@ namespace SushiRuntime
                         reset_plan_state();
                         chain.submit_step(static_cast<std::uint32_t>(executed));
                         if (sync == StepSync::EveryStep)
+                        {
                             chain.wait();
+                            steps_.check_faults();
+                        }
                         steps_.after_step();
                         ++executed;
                     }
                     chain.finish();
+                    steps_.check_faults();
                     return executed;
                 }
 
@@ -3029,41 +3003,25 @@ namespace SushiRuntime
                 };
 
                 /**
-                 * @brief Resolves a late-bound node's base and count at dispatch.
+                 * @brief Resolves a host-sized late-bound node's base and count at dispatch.
                  *
-                 * Reads device_base and device_count from Residency::Host buffers that
-                 * completed predecessors wrote, while other kernels may run
-                 * (docs/ARCHITECTURE.md, "Late-bound device values"); otherwise reads
-                 * the step-boundary values, with USE_BAKED meaning the rest of capacity.
+                 * Reads the step-boundary values only, with USE_BAKED meaning the rest
+                 * of capacity; a node with a device count or base never comes here.
+                 * @throws Core::SushiException With invalid_graph when the window does not fit @p capacity.
                  */
                 static LiveRange resolve_live_range(
                     const ::SushiRuntime::Graph::LateBindings& lb, std::size_t capacity)
                 {
                     LiveRange range;
+                    range.base = lb.base.load(std::memory_order_relaxed);
 
-                    range.base = (lb.device_base != nullptr)
-                        ? static_cast<std::size_t>(lb.device_base[lb.device_base_index])
-                        : lb.base.load(std::memory_order_relaxed);
+                    const std::size_t live = lb.count.load(std::memory_order_relaxed);
+                    // USE_BAKED means the rest of the capacity from the base, not the whole buffer.
+                    range.count =
+                        (live == ::SushiRuntime::Graph::LateBindings::USE_BAKED)
+                            ? capacity - (range.base < capacity ? range.base : capacity)
+                            : live;
 
-                    if (lb.device_count != nullptr)
-                    {
-                        range.count =
-                            static_cast<std::size_t>(lb.device_count[lb.device_count_index]);
-                    }
-                    else
-                    {
-                        const std::size_t live = lb.count.load(std::memory_order_relaxed);
-                        // USE_BAKED means "the rest of the capacity", which with a
-                        // base means the rest from there, not the whole buffer.
-                        range.count =
-                            (live == ::SushiRuntime::Graph::LateBindings::USE_BAKED)
-                                ? capacity - (range.base < capacity ? range.base : capacity)
-                                : live;
-                    }
-
-                    // The window must fit. Clamping instead would silently drop work
-                    // - exactly the failure these seams exist to prevent - and
-                    // running past the end would corrupt whatever follows.
                     if (range.base > capacity || range.count > capacity - range.base)
                         throw Core::SushiException(Core::Error{
                             Core::Errc::invalid_graph,
@@ -3098,55 +3056,138 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Emits the one node that resolves a LateCount for a run.
-                 *
-                 * Shared shape behind every LateCount overload: reads @p n.device
-                 * when it is set, so a predecessor kernel that just wrote the live
-                 * count is a genuine dependency rather than one polled at the step
-                 * boundary before that kernel has run; writes @p state_words words of
-                 * @p state_ptr through @p fill, called with the resolved live count.
-                 *
-                 * @param n              The count to resolve.
-                 * @param state_ptr      Residency::Host scratch this call owns.
-                 * @param state_words    Element count of @p state_ptr to declare as written.
-                 * @param fill           Invoked once per run as fill(live_n, state_ptr).
-                 * @param registration_token Shared slot grouping this node's index
-                 *        with the rest of the public call's nodes.
+                 * @brief Carries a device-sized node's window sources into its kernel.
                  */
-                void emit_late_count_resolver(const LateCount& n, std::uint32_t* state_ptr,
-                                              std::size_t state_words,
-                                              std::function<void(std::size_t, std::uint32_t*)> fill,
-                                              std::shared_ptr<std::optional<std::uint32_t>>
-                                                  registration_token)
+                struct DeviceWindow
                 {
-                    const Core::ResourceRegion state_region{
-                        state_ptr, 0, state_words * sizeof(std::uint32_t)};
-                    emit_host_pass((n.device != nullptr) ? Reads(*n.device) : Reads(),
-                        Writes(state_region),
-                        [n, state_ptr, fill]()
+                    const std::uint32_t* count_slot = nullptr; /**< Device-written count, or null. */
+                    const std::uint32_t* base_slot = nullptr;  /**< Device-written base, or null. */
+                    std::size_t host_count = 0;      /**< Host count when @c count_slot is null. */
+                    std::size_t host_base = 0;       /**< Host base when @c base_slot is null. */
+                    std::size_t capacity = 0;        /**< Capacity the window must fit. */
+                    bool rest_of_capacity = false;   /**< Whether the host count is USE_BAKED. */
+                    std::uint32_t* fault = nullptr;  /**< The node's fault record. */
+                };
+
+                /**
+                 * @brief Submits a late-bound node, reading a device count or base inside the kernel.
+                 *
+                 * A node with no device slot keeps its host-resolved range. One with a
+                 * slot runs at @p capacity, each work-item past the live count returns,
+                 * and a window that does not fit is recorded in @p fault for the step to
+                 * throw (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D).
+                 */
+                template <class F>
+                static void submit_late_window(sycl::handler& h,
+                                               const ::SushiRuntime::Graph::LateBindings& lb,
+                                               std::size_t capacity, std::uint32_t* fault,
+                                               const F& fn)
+                {
+                    if (lb.device_count == nullptr && lb.device_base == nullptr)
+                    {
+                        submit_live_range(h, resolve_live_range(lb, capacity), fn);
+                        return;
+                    }
+
+                    DeviceWindow w;
+                    w.count_slot = (lb.device_count != nullptr)
+                        ? lb.device_count + lb.device_count_index : nullptr;
+                    w.base_slot = (lb.device_base != nullptr)
+                        ? lb.device_base + lb.device_base_index : nullptr;
+                    w.host_count = lb.count.load(std::memory_order_relaxed);
+                    w.host_base = lb.base.load(std::memory_order_relaxed);
+                    w.capacity = capacity;
+                    w.rest_of_capacity = (w.host_count == ::SushiRuntime::Graph::LateBindings::USE_BAKED);
+                    w.fault = fault;
+
+                    // One work-item even at capacity zero, so a fault there is still recorded.
+                    h.parallel_for(sycl::range<1>(capacity == 0 ? 1 : capacity),
+                                   [w, fn](sycl::id<1> i)
+                    {
+                        const std::size_t base = (w.base_slot != nullptr)
+                            ? static_cast<std::size_t>(*w.base_slot) : w.host_base;
+                        std::size_t count = w.host_count;
+                        if (w.count_slot != nullptr)
+                            count = static_cast<std::size_t>(*w.count_slot);
+                        else if (w.rest_of_capacity)
+                            count = w.capacity - (base < w.capacity ? base : w.capacity);
+                        if (base > w.capacity || count > w.capacity - base)
                         {
-                            fill(detail::resolve_late_count(n), state_ptr);
-                        },
-                        std::move(registration_token));
+                            if (i[0] == 0)
+                                detail::record_device_fault(w.fault, detail::DEVICE_FAULT_WINDOW,
+                                                            base, count, w.capacity);
+                            return;
+                        }
+                        if (i[0] < count)
+                            fn(base + i[0]);
+                    });
                 }
 
                 /**
-                 * @brief Emits one host node that runs @p body once per run.
-                 * @param reads              Regions @p body reads.
-                 * @param writes             Regions @p body writes.
-                 * @param body               Host work, invoked once per dispatch.
-                 * @param registration_token Shared slot grouping this node's index
-                 *        with the rest of the public call's nodes.
+                 * @brief Allocates a zeroed fault record the step checks after it finishes.
+                 * @param device Device whose context the record's host USM belongs to.
+                 * @return DEVICE_FAULT_WORDS words this graph owns.
                  */
-                void emit_host_pass(Reads reads, Writes writes, std::function<void()> body,
-                                    std::shared_ptr<std::optional<std::uint32_t>>
-                                        registration_token)
+                std::uint32_t* allocate_fault_record(DeviceIndex device)
                 {
+                    std::shared_ptr<std::uint32_t> record = detail::make_reduce_scratch<std::uint32_t>(
+                        ctx_, detail::DEVICE_FAULT_WORDS, device, Residency::Host);
+                    for (std::size_t w = 0; w < detail::DEVICE_FAULT_WORDS; ++w)
+                        record.get()[w] = 0;
+                    reduce_scratch_.push_back(std::static_pointer_cast<void>(record));
+                    steps_.register_fault_record(record.get());
+                    return record.get();
+                }
+
+                /**
+                 * @brief Allocates a fault record for a Dynamic with a device slot, on that slot's device.
+                 * @param dyn A Dynamic that passed require_host_device_slots().
+                 * @return The record, or null when @p dyn has no device slot.
+                 */
+                std::uint32_t* fault_record_for(const Dynamic& dyn)
+                {
+                    const std::uint32_t* slot = (dyn.device_count != nullptr) ? dyn.device_count
+                                                                              : dyn.device_base;
+                    if (slot == nullptr)
+                        return nullptr;
+                    void* address = const_cast<void*>(static_cast<const void*>(slot));
+                    const std::optional<void*> base = ctx_->containing_usm_base(address);
+                    const int queue = ctx_->context_index_for_ptr(base ? *base : address);
+                    return allocate_fault_record(
+                        DeviceIndex{static_cast<std::size_t>(queue < 0 ? 0 : queue)});
+                }
+
+                /**
+                 * @brief Emits the kernel that resolves a call's LateCounts for a run.
+                 *
+                 * A host provider or plain capacity resolves in the command group and is
+                 * baked in; a device slot is read by the kernel, where a value over
+                 * capacity yields zero and a fault record the step throws
+                 * (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D.2).
+                 * @param fill Device callable run once as fill(live), @p live in the order of @p counts.
+                 */
+                template <std::size_t K, class Fill>
+                void emit_late_count_resolver(const std::array<LateCount, K>& counts,
+                                              DeviceIndex device, Writes writes, Fill fill,
+                                              std::shared_ptr<std::optional<std::uint32_t>>
+                                                  registration_token)
+                {
+                    Reads reads;
+                    bool reads_device = false;
+                    for (const LateCount& lc : counts)
+                    {
+                        if (lc.host || lc.device == nullptr)
+                            continue;
+                        const Reads slot(*lc.device);
+                        reads.keys.insert(reads.keys.end(), slot.keys.begin(), slot.keys.end());
+                        reads.lives.insert(reads.lives.end(), slot.lives.begin(), slot.lives.end());
+                        reads_device = true;
+                    }
+                    std::uint32_t* fault = reads_device ? allocate_fault_record(device) : nullptr;
+
                     observe(reads);
                     observe(writes);
-                    std::vector<Core::ResourceRegion> rr = reads.keys;
-                    std::vector<Core::ResourceRegion> rw = writes.keys;
-                    specs_.push_back([rr, rw, body = std::move(body),
+                    specs_.push_back([counts, fault, fill, rr = reads.keys, rw = writes.keys,
                                       registration_token](BackingGraph& bg)
                     {
                         std::optional<std::uint32_t> registration;
@@ -3156,50 +3197,42 @@ namespace SushiRuntime
                                 *registration_token = bg.reserve_registration();
                             registration = *registration_token;
                         }
-                        bg.add_native(rr, rw, body, {}, registration);
+                        bg.add_node([counts, fault, fill](sycl::handler& h)
+                        {
+                            std::array<detail::LiveCountSource, K> sources;
+                            for (std::size_t k = 0; k < K; ++k)
+                                sources[k] = detail::late_count_source(counts[k]);
+                            h.single_task([sources, fault, fill]()
+                            {
+                                std::array<std::size_t, K> live{};
+                                for (std::size_t k = 0; k < K; ++k)
+                                    live[k] = detail::read_live_count(sources[k], fault);
+                                fill(live);
+                            });
+                        }, rr, rw, {}, registration);
                     });
                     ++task_count_;
                     dirty_ = true;
                 }
 
-                // Emits a 1-D per-element task whose iteration size and enablement
-                // are late-bound through a LateBindings block. The kernel resolves the
-                // live count at submit, so the node follows per-step size changes —
-                // from the host, or from a count a predecessor kernel just wrote —
-                // without recompiling; the scheduler honours the enabled flag. The
-                // dependency regions cover the full capacity, so any live size within
-                // it is race-free, and a device count source adds itself to the reads
-                // so the producer is necessarily a predecessor.
                 /**
-                 * @param registration_token Shared slot grouping this node's index
-                 *        with others from one public add() call; null draws a plain
-                 *        fresh index, as emit_per_element_tracked() does.
-                 * @param live_scalar Optional Residency::Host word read once per
-                 *        dispatch, after this node's Reads are satisfied, and passed
-                 *        to @p fn as a second argument (fn(t, scalar)) baked into the
-                 *        kernel by value; null keeps the plain fn(t) call. Lets a
-                 *        value a predecessor node resolved this run (a tile's live
-                 *        in_count) reach every work-item without each one loading it
-                 *        from host USM itself. A three-argument fn(t, a, b) reads
-                 *        two adjacent words instead.
+                 * @brief Emits an internal node run at its capacity that reads its live width on the device.
+                 *
+                 * Work-items at or past *@p live_count return at once; the word at
+                 * @p live_scalar, or the two from it, follow the index into @p fn
+                 * (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D.2).
+                 * @pre The caller's reads name the regions @p live_count and @p live_scalar lie in.
                  */
                 template <class F>
-                Graph& emit_dynamic_per_element(Dynamic dyn,
-                                                std::vector<Core::ResourceRegion> reads,
-                                                std::vector<Core::ResourceRegion> writes,
-                                                std::size_t capacity, F&& fn,
-                                                std::shared_ptr<std::optional<std::uint32_t>>
-                                                    registration_token = nullptr,
-                                                const std::uint32_t* live_scalar = nullptr)
+                void emit_device_sized(std::vector<Core::ResourceRegion> reads,
+                                       std::vector<Core::ResourceRegion> writes,
+                                       std::size_t capacity, const std::uint32_t* live_count,
+                                       const std::uint32_t* live_scalar, F fn,
+                                       std::shared_ptr<std::optional<std::uint32_t>>
+                                           registration_token)
                 {
-                    require_host_device_slots(dyn);
-                    auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
-                    adopt_device_bindings(*lb, dyn, reads);
-                    lb->dispatch_scalar = live_scalar;
-
-                    specs_.push_back([fn = std::forward<F>(fn), capacity, lb, live_scalar,
-                                      reads = std::move(reads),
-                                      writes = std::move(writes),
+                    specs_.push_back([fn, capacity, live_count, live_scalar,
+                                      reads = std::move(reads), writes = std::move(writes),
                                       registration_token](BackingGraph& bg)
                     {
                         std::optional<std::uint32_t> registration;
@@ -3209,36 +3242,62 @@ namespace SushiRuntime
                                 *registration_token = bg.reserve_registration();
                             registration = *registration_token;
                         }
-                        bg.add_node([fn, capacity, lb, live_scalar](sycl::handler& h)
+                        bg.add_node([fn, capacity, live_count, live_scalar](sycl::handler& h)
                         {
-                            const LiveRange range = resolve_live_range(*lb, capacity);
-                            // A one-argument kernel needs no live scalar; name it so -Wunused stays quiet.
-                            (void)live_scalar;
-                            if constexpr (std::is_invocable_v<F, std::size_t, std::size_t, std::size_t>)
+                            if (capacity == 0)
                             {
-                                assert(live_scalar != nullptr &&
-                                       "a three-argument fn requires a live_scalar");
-                                // Two adjacent host words, read once at dispatch.
-                                const std::size_t first = static_cast<std::size_t>(live_scalar[0]);
-                                const std::size_t second = static_cast<std::size_t>(live_scalar[1]);
-                                submit_live_range(h, range,
-                                    [fn, first, second](std::size_t t) { fn(t, first, second); });
+                                h.single_task([]() {});
+                                return;
                             }
-                            else if constexpr (std::is_invocable_v<F, std::size_t, std::size_t>)
+                            h.parallel_for(sycl::range<1>(capacity),
+                                           [fn, live_count, live_scalar](sycl::id<1> id)
                             {
-                                assert(live_scalar != nullptr &&
-                                       "a two-argument fn requires a live_scalar");
-                                // One host read at dispatch, baked into the kernel by value.
-                                const std::size_t snapshot =
-                                    static_cast<std::size_t>(*live_scalar);
-                                submit_live_range(h, range,
-                                    [fn, snapshot](std::size_t t) { fn(t, snapshot); });
-                            }
-                            else
-                            {
-                                submit_live_range(h, range, fn);
-                            }
-                        }, reads, writes, lb, {}, registration);
+                                const std::size_t t = id[0];
+                                if (live_count != nullptr && t >= static_cast<std::size_t>(*live_count))
+                                    return;
+                                if constexpr (std::is_invocable_v<F, std::size_t, std::size_t, std::size_t>)
+                                    fn(t, static_cast<std::size_t>(live_scalar[0]),
+                                       static_cast<std::size_t>(live_scalar[1]));
+                                else if constexpr (std::is_invocable_v<F, std::size_t, std::size_t>)
+                                    fn(t, static_cast<std::size_t>(live_scalar[0]));
+                                else
+                                {
+                                    (void)live_scalar;
+                                    fn(t);
+                                }
+                            });
+                        }, reads, writes, {}, registration);
+                    });
+                    ++task_count_;
+                    dirty_ = true;
+                }
+
+                /**
+                 * @brief Emits a 1-D per-element task whose size, base and enablement are late-bound.
+                 *
+                 * The node is compiled once and follows per-step changes without a
+                 * recompile; its reads cover the full capacity and any device slot, so
+                 * a slot's producer is always a predecessor. See submit_late_window().
+                 */
+                template <class F>
+                Graph& emit_dynamic_per_element(Dynamic dyn,
+                                                std::vector<Core::ResourceRegion> reads,
+                                                std::vector<Core::ResourceRegion> writes,
+                                                std::size_t capacity, F&& fn)
+                {
+                    require_host_device_slots(dyn);
+                    auto lb = std::make_shared<::SushiRuntime::Graph::LateBindings>();
+                    adopt_device_bindings(*lb, dyn, reads);
+                    std::uint32_t* fault = fault_record_for(dyn);
+
+                    specs_.push_back([fn = std::forward<F>(fn), capacity, lb, fault,
+                                      reads = std::move(reads),
+                                      writes = std::move(writes)](BackingGraph& bg)
+                    {
+                        bg.add_node([fn, capacity, lb, fault](sycl::handler& h)
+                        {
+                            submit_late_window(h, *lb, capacity, fault, fn);
+                        }, reads, writes, lb);
                     });
                     steps_.register_binding_updater(lb, std::move(dyn));
                     ++task_count_;
@@ -3362,24 +3421,18 @@ namespace SushiRuntime
 
                     std::vector<Core::ResourceRegion> reads{ s.read_key() };
                     adopt_device_bindings(*lb, dyn, reads);
+                    std::uint32_t* fault = fault_record_for(dyn);
 
-                    specs_.push_back([fn = std::forward<F>(fn), view, sp, lb,
+                    specs_.push_back([fn = std::forward<F>(fn), view, sp, lb, fault,
                                       reads = std::move(reads)](BackingGraph& bg)
                     {
                         const std::size_t capacity = sp->size();
-                        bg.add_node([fn, view, lb, capacity](sycl::handler& h)
+                        bg.add_node([fn, view, lb, capacity, fault](sycl::handler& h)
                         {
                             const T* cur = view->cur;
                             T* next = view->next;
-                            const LiveRange range = resolve_live_range(*lb, capacity);
-                            if (range.count == 0)
-                            {
-                                h.single_task([]() {});
-                                return;
-                            }
-                            const std::size_t base = range.base;
-                            h.parallel_for(sycl::range<1>(range.count),
-                                           [=](sycl::id<1> i) { fn(base + i[0], cur, next); });
+                            submit_late_window(h, *lb, capacity, fault,
+                                               [fn, cur, next](std::size_t i) { fn(i, cur, next); });
                         }, reads, { sp->write_key() }, lb);
                     });
 

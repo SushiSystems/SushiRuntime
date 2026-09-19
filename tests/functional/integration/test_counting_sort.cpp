@@ -594,11 +594,11 @@ TEST(Integration_CountingSort, EachRunSortsItsOwnKeys)
 TEST(Integration_CountingSort, SharesOneNodeIndexAcrossStepsAndPasses)
 {
     // key_range.capacity = 50 needs one digit (50 - 1 fits in 6 bits), so
-    // this call emits 2 (resolvers) + 1 (total) + 1 (digit plan) + 1 * 4 (one
-    // digit block) + 1 (offsets) + 1 (counts) = 10 nodes.
+    // this call emits 1 (resolver, total and digit plan) + 1 * 4 (one digit
+    // block) + 1 (offsets) + 1 (counts) = 7 nodes.
     constexpr std::size_t N_CAPACITY = 300;
     constexpr std::size_t KEY_CAPACITY = 50;
-    constexpr std::size_t EXPECTED_PASSES = 10;
+    constexpr std::size_t EXPECTED_PASSES = 7;
     constexpr std::size_t STEPS = 4;
 
     auto rt      = Runtime::create();

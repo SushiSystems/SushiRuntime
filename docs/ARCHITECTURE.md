@@ -296,10 +296,11 @@ A program's lifecycle is always the same three phases, and they must not overlap
 (`Execution::classify_chain`, `execution/chain_plan.hpp`). A plan is chainable when
 every node submits device work (a kernel, or host work that submits one), is not a
 distributed offload candidate, names at least one USM region, and every region
-belongs to one device queue in the context's registry; and no node reads a
-device-written value on the host at dispatch, which the tree marks as a
-`LateBindings` `device_count`, `device_base` or `dispatch_scalar`. Anything else,
-or `RuntimeConfig::force_scheduler`, keeps the scheduler path above.
+belongs to one device queue in the context's registry. Anything else, or
+`RuntimeConfig::force_scheduler`, keeps the scheduler path above. No node reads a
+device-written value on the host between nodes: device-sized nodes resolve their
+count inside the kernel (see "Counts the device produces"), so a plan built from
+`sized_from_device`, the scan, the counting sort and the reductions chains.
 
 A chainable plan runs through `Execution::ChainRun` (`execution/chain_run.hpp`) on
 the calling thread: each step submits the nodes in a fixed topological order to
@@ -343,20 +344,34 @@ fore also carries a `device_count` pointer — a host-readable slot a predecesso
 kernel writes — set by `API::sized_from_device(counter)` on a `Residency::Host`
 buffer.
 
-This is sound because of *when* a node's command group is built. `execute_task`
-constructs it on a worker at dispatch, and a node is only dispatched once
-`EventPolling::poll_events` has seen every predecessor's event complete and called
-`event.wait()` on it. By that point the predecessor's USM writes are visible, so
-the count can simply be read. The result is one composition per tick with no
-mid-step readback and no launch at worst-case width, and `compile_count()` still
-1 while the count changes every step.
+The host never reads that slot. The node is dispatched at its capacity and its
+kernel reads the count (and a `based_at_device` base) from the slot, returning at
+once in every work-item past the live window, one bounds check each
+(`Graph::submit_late_window`, spec
+`docs/superpowers/specs/2026-09-19-graph-replay-design.md` §D). The scan, counting
+sort and late-bound reductions work the same way: each call emits one resolver
+kernel that reads its `LateCount`s (a host provider or plain capacity is resolved in
+the command group and baked in) and writes the per-level widths, the total and the
+counting sort's digit plan into device scratch, and every later pass reads its
+width from there (`Graph::emit_late_count_resolver`, `Graph::emit_device_sized`).
+The fold and tile order is the one the host-sized lowering had, so results are
+bit-identical. The result is one composition per tick with no mid-step readback,
+no host node between passes, and `compile_count()` still 1 while the count
+changes every step.
 
 **Late-bound device values.** A device-written value the host reads during a run
 must live in `Residency::Host` memory. `sized_from_device` and `based_at_device`
 reject a `Residency::Device` or `Residency::Shared` buffer at the call site with
-`invalid_access`, and a live count above the node's compiled capacity fails the
-run rather than truncating. The counter's element is registered as one of the
-consuming task's reads, so the producer is necessarily a predecessor.
+`invalid_access`. A device-written count above the node's compiled capacity makes
+the kernel skip its work and write a fault record in host USM
+(`api/detail/device_fault.hpp`); the driver checks every record once the step has
+finished (after each step on the scheduler, after each wait on the chain) and
+fails the run with `invalid_graph`. A resolver that faults hands its passes a live
+count of zero, so nothing reads or writes past a buffer. On the chain with a fixed
+step count the failure surfaces at the run's single wait, after the later steps
+ran. A host-provided count above capacity still fails in the command group, before
+the node runs. The counter's element is registered as one of the consuming task's
+reads, so the producer is necessarily a predecessor.
 
 The predecessor has finished, but other kernels may still be running on the same
 device when the consumer's command group is built. On the CUDA backend, shared

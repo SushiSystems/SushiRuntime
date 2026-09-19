@@ -26,6 +26,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 - 2026-09-15 — Added a lazily built profiling queue per device on the plain queue's context (`RuntimeContext::profiling_queue`, `runtime_context.cpp`).
 
 ### Changed
+- 2026-09-20 — Submitted the chain layer's unprofiled nodes through `ext::oneapi::experimental::submit`, which keeps no per-node event (`ChainRun::submit_node_discarding`, `src/execution/chain_run.cpp`).
+- 2026-09-19 — Kept a worker holding in-flight events on yield instead of the 100 us sleep (`TaskScheduler::worker_loop`, `src/scheduler/scheduler.cpp`).
+- 2026-09-19 — Changed the scan, counting sort, late-bound reductions and `sized_from_device` tasks to size themselves on the device, so their plans take the chain (`graph.hpp`, `chain_plan.cpp`, `device_fault.hpp`).
 - 2026-09-19 — Restated the steady-state allocation tests' rule as a bare-SYCL baseline comparison, not an absolute per-tick count (`tests/functional/integration/test_steady_state_allocation.cpp`).
 - 2026-09-19 — Removed the per-node dependency allocation in `TaskScheduler::execute_task` by iterating `SmallEventVector` inline (`scheduler/scheduler.cpp`, `graph/node.hpp`).
 - 2026-09-17 — Changed `Graph::add_counting_sort` to run only the digits its live key range needs, skipping the rest (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
