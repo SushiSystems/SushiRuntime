@@ -48,13 +48,16 @@ TEST(Integration_LateCountOrdering, ReduceSeesTheCountItsPredecessorJustWrote)
     auto rt      = Runtime::create();
     auto values  = rt.buffer<double>(CAPACITY);
     auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
+    auto source  = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
     auto out     = rt.buffer<double>(1);
 
     for (std::size_t i = 0; i < CAPACITY; ++i)
         values[i] = 1.0;
 
-    std::uint32_t next_count = 0;
-    std::uint32_t* next_count_ptr = &next_count;
+    // The producer reads its next count from a buffer rather than from a host
+    // stack variable: the kernel may run on the device, which cannot reach this
+    // function's frame at all.
+    const std::uint32_t* source_ptr = source.data();
     std::uint32_t* counter_ptr = counter.data();
 
     LateCount lc;
@@ -62,16 +65,16 @@ TEST(Integration_LateCountOrdering, ReduceSeesTheCountItsPredecessorJustWrote)
     lc.device = &counter;
 
     auto g = rt.graph();
-    g.add(Reads(), Writes(counter), std::size_t{1},
-          [counter_ptr, next_count_ptr](std::size_t) { counter_ptr[0] = *next_count_ptr; });
+    g.add(Reads(source), Writes(counter), std::size_t{1},
+          [counter_ptr, source_ptr](std::size_t) { counter_ptr[0] = source_ptr[0]; });
     g.add_reduce(values, out, lc, Sum<double>{});
 
-    next_count = 300;
+    source[0] = 300;
     g.run();
     EXPECT_DOUBLE_EQ(out[0], 300.0)
         << "the reduce must fold the count its own step's producer wrote";
 
-    next_count = 700;
+    source[0] = 700;
     g.run();
     EXPECT_DOUBLE_EQ(out[0], 700.0)
         << "a changed count must take effect the same run, not one run late";
