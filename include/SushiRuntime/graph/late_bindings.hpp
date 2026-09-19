@@ -70,11 +70,10 @@ namespace SushiRuntime
              * that many — a number that does not exist yet when the step boundary
              * polls the host-side providers.
              *
-             * It works because a node's command group is built on a worker at
-             * dispatch, and a node is only dispatched once every predecessor's event
-             * has completed and been waited on, so a value a predecessor kernel wrote
-             * is visible here. Null on every ordinary node, in which case the
-             * atomic count above is used.
+             * The node's kernel reads it on the device, runs at its capacity and
+             * returns past the live count, so no host read happens between nodes
+             * (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D). Null on
+             * every ordinary node, in which case the atomic count above is used.
              *
              * Written once when the task is recorded — before any run — and only read
              * afterwards, so unlike the two fields above it needs no atomicity. The
@@ -105,33 +104,14 @@ namespace SushiRuntime
              * The device-sourced counterpart of base, and the companion of
              * device_count: a pass that computes both a colour's offset and its
              * length on the device should be able to hand over both the same way.
-             * Read at dispatch under the same reasoning (and the same
-             * host-addressable requirement) as device_count. Null on every ordinary
+             * Read by the kernel as device_count is, under the same host-USM
+             * requirement. Null on every ordinary
              * node, in which case the atomic base above is used.
              */
             const std::uint32_t* device_base = nullptr;
 
             /** @brief Element index of the live base within device_base. */
             std::size_t device_base_index = 0;
-
-            /**
-             * @brief Host-USM word the command group reads at dispatch and bakes into the kernel.
-             *
-             * Set by the fluent layer for an internal node that takes a value a
-             * predecessor resolved this run (a reduction tile's live in_count).
-             * Recorded here only so the plan can tell the node reads the host
-             * between nodes; the kernel keeps its own copy of the pointer.
-             */
-            const std::uint32_t* dispatch_scalar = nullptr;
-
-            /**
-             * @brief Reports whether dispatch reads a value a predecessor may have written on the device.
-             * @return True when a device count, device base or dispatch scalar is bound.
-             */
-            bool reads_device_value_at_dispatch() const noexcept
-            {
-                return device_count != nullptr || device_base != nullptr || dispatch_scalar != nullptr;
-            }
         };
 
     } // namespace Graph

@@ -23,6 +23,7 @@
 
 #include <chrono>
 #include <vector>
+#include <sycl/ext/oneapi/experimental/enqueue_functions.hpp>
 #include <SushiRuntime/core/event_timestamps.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/graph/node.hpp>
@@ -98,7 +99,7 @@ namespace SushiRuntime
                 if (profiling_)
                     submit_profiled(*node, step);
                 else
-                    submit_node(*node);
+                    submit_node_discarding(*node);
             }
         }
 
@@ -136,6 +137,33 @@ namespace SushiRuntime
             }
 
             return queue_.submit([&node](sycl::handler& h)
+            {
+                for (const auto& ev : node.sycl_deps)
+                    h.depends_on(ev);
+                node.execute(h);
+            });
+        }
+
+        /**
+         * @brief Submits one node's device work without keeping an event for it.
+         *
+         * The in-order queue carries the ordering a returned event would, and
+         * the run waits once in @ref wait, so no caller reads a per-node event
+         * on this path.
+         */
+        void ChainRun::submit_node_discarding(Graph::Node& node)
+        {
+            if (node.get_execution_mode() == Scheduler::Task::ExecutionMode::HOST)
+            {
+                std::vector<sycl::event> deps;
+                deps.reserve(node.sycl_deps.size());
+                for (const auto& ev : node.sycl_deps)
+                    deps.push_back(ev);
+                node.execute_host(queue_, deps);
+                return;
+            }
+
+            sycl::ext::oneapi::experimental::submit(queue_, [&node](sycl::handler& h)
             {
                 for (const auto& ev : node.sycl_deps)
                     h.depends_on(ev);

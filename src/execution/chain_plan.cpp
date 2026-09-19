@@ -38,7 +38,7 @@ namespace SushiRuntime
             /**
              * @brief Reports whether one node's kind and bindings allow it on the chain.
              * @param node A compiled, non-sentinel node.
-             * @return False for native host work, an offload candidate, or a device value read at dispatch.
+             * @return False for native host work or an offload candidate.
              */
             bool node_kind_is_chainable(const Graph::Node& node) noexcept
             {
@@ -48,8 +48,6 @@ namespace SushiRuntime
                 if (!submits_device)
                     return false;
                 if (node.metadata.op_id.value != 0)
-                    return false;
-                if (node.bindings_ && node.bindings_->reads_device_value_at_dispatch())
                     return false;
                 return true;
             }

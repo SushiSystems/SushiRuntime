@@ -634,7 +634,8 @@ namespace SushiRuntime
                     // so that a sleeping thread does not stall the global memory reclamation process.
                     spin_count++;
                     const auto bk0 = prof ? sclock::now() : sclock::time_point{};
-                    if (spin_count < 100)
+                    // A worker holding in-flight events never sleeps: its successors wait on its poll.
+                    if (spin_count < 100 || !active_events.is_empty())
                         std::this_thread::yield();
                     else
                         std::this_thread::sleep_for(std::chrono::microseconds(100));

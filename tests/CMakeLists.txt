@@ -119,6 +119,7 @@ add_executable(sr_functional_tests
     functional/integration/test_graph_profiling_switch.cpp
     functional/integration/test_node_event_records.cpp
     functional/integration/test_chain_layer.cpp
+    functional/integration/test_device_sized_primitives.cpp
     functional/integration/test_async_execution.cpp
     functional/integration/test_heterogeneous_pipeline.cpp
     functional/integration/test_scheduler_integration.cpp

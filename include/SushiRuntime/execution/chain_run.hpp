@@ -83,6 +83,12 @@ namespace SushiRuntime
                 sycl::event submit_node(Graph::Node& node);
 
                 /**
+                 * @brief Submits one node's device work without keeping an event for it.
+                 * @param node The node to submit.
+                 */
+                void submit_node_discarding(Graph::Node& node);
+
+                /**
                  * @brief Submits one node and keeps its event for the ledger.
                  * @param node The node to submit.
                  * @param step Zero-based step index within the run.

@@ -99,6 +99,24 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Writes a live count's per-level widths as flat words a kernel reads.
+             * @param level_count Number of levels, from plan_tiled_levels(capacity).size().
+             * @param live_n      Live element count; must not exceed that capacity.
+             * @param out         2 * @p level_count words: level i's in_count at i, its out_count at level_count + i.
+             */
+            inline void fill_live_level_words(std::size_t level_count, std::size_t live_n,
+                                              std::uint32_t* out) noexcept
+            {
+                std::size_t count = live_n;
+                for (std::size_t i = 0; i < level_count; ++i)
+                {
+                    out[i] = static_cast<std::uint32_t>(count);
+                    count = next_live_tile_count(count);
+                    out[level_count + i] = static_cast<std::uint32_t>(count);
+                }
+            }
+
+            /**
              * @brief Derives a live count's per-level widths over a capacity's levels.
              *
              * The allocating, vector-returning wrapper over fill_live_tile_levels();

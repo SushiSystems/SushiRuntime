@@ -30,6 +30,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/data/state.hpp>
+#include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/graph/node.hpp>
@@ -131,6 +132,27 @@ namespace SushiRuntime
                         });
                     }
 
+                    /**
+                     * @brief Registers a device fault record every finished step checks.
+                     * @param record DEVICE_FAULT_WORDS host-USM words the owning graph keeps alive.
+                     */
+                    void register_fault_record(std::uint32_t* record)
+                    {
+                        fault_records_.push_back(record);
+                    }
+
+                    /**
+                     * @brief Throws the first fault a finished step's kernels recorded.
+                     * @pre Every kernel of the step has completed.
+                     */
+                    void check_faults() const
+                    {
+                        for (std::uint32_t* record : fault_records_)
+                            throw_if_device_fault(record);
+                        for (const StepMachinery* s : aggregated_)
+                            s->check_faults();
+                    }
+
                     // Records a re-point hook for a double-buffered offload node, run
                     // before each step so the coordinator resolves the step's handles.
                     void add_dist_io_updater(StepHook updater)
@@ -207,6 +229,8 @@ namespace SushiRuntime
                     // pointer lists at the step's current/next allocations before each
                     // step. Empty unless a distributed State step was added.
                     std::vector<StepHook> dist_io_updaters_;
+                    /** @brief Device fault records of this machinery's late-bound nodes. */
+                    std::vector<std::uint32_t*> fault_records_;
                     // Other machineries this one drives in addition to its own hooks. A
                     // composer aggregates each live region's machinery here; empty for a
                     // region's or a static graph's own machinery.
