@@ -342,11 +342,16 @@ on that GPU; the read faults with 0xC0000006.
 `Integration_DeviceCount.ChainedProducerCountsInOneComposition` hit exactly that:
 stage 2 read its counter while stage 1's kernel still ran. Pinned host USM is not
 managed memory, so the host can read it at an arbitrary moment; on Windows WDDM
-this rests on the owner's RTX 3080 Ti run, not on an NVIDIA statement. The
-raw-pointer chain setters `and_sized_from_device` / `and_based_at_device` take no
-buffer, so `add()` checks their pointer instead: it resolves the owning context
-through the registry and requires `sycl::usm::alloc::host`, throwing
-`invalid_access` before the graph changes.
+this rests on the owner's RTX 3080 Ti run, not on an NVIDIA statement. The rule
+is the same whichever control carries the value: a late-bound count or base must
+be a `Residency::Host` allocation, and an interior pointer into one is accepted at
+registration. The raw-pointer chain setters `and_sized_from_device` /
+`and_based_at_device` take no buffer, so `add()` checks their pointer instead. It
+asks the address for its kind first. An offset into a per-device plan array
+answers unknown there, because SYCL resolves base addresses only, so the check
+then finds the recorded allocation the address lies inside and asks the base. A
+slot inside a non-host allocation and a slot this context never allocated are
+different faults, and the `invalid_access` says which, before the graph changes.
 
 **Where the node starts.** `count` says how many elements, `base` says from
 where. Graph colouring is the case that needs it: each colour is a contiguous
@@ -562,11 +567,19 @@ node.
 
 `RuntimeContext::malloc_shared` / `malloc_device` / `malloc_shared_on` /
 `malloc_device_on` call SYCL directly and record the owning device index in a
-`UsmRegistry`; `free_usm` resolves and erases it in one step and frees against
-that device's queue. USM is bound to the context it was allocated from, so both
-halves matter: a free against the wrong queue is undefined, and a kernel must run
+`UsmRegistry` together with the allocation's length; `free_usm` resolves and
+erases it in one step and frees against that device's queue. USM is bound to the
+context it was allocated from, so both halves matter: a free against the wrong queue is undefined, and a kernel must run
 where its data lives. `context_index_for_ptr` is the lookup the scheduler's
 cross-context guard uses on a node's first dispatch (§10).
+
+The length answers a question `owner_of` cannot: which allocation an interior
+pointer belongs to. `containing_allocation` scans the table for it, which is
+linear in live allocations, so it stays off the dispatch path — graph
+registration calls it once per raw slot pointer a caller hands over (§4). An
+address adopted from outside the runtime may arrive without a length; that entry
+resolves at its own base and contains nothing, so a missing size is never read as
+a zero-byte allocation.
 
 SYCL offers no portable, reliable way to ask a pointer where it came from — on
 some platforms one context's USM is visible, as a different kind, from a sibling

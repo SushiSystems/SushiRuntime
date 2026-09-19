@@ -25,7 +25,9 @@
 #include <SushiRuntime/memory/usm_registry.hpp>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -36,12 +38,22 @@ namespace
     // Registry keys are opaque; nothing is dereferenced, so distinct fake
     // addresses are enough and keep the test free of a Runtime.
     void* fake(std::uintptr_t n) { return reinterpret_cast<void*>(n * 64u + 64u); }
+
+    // Fake addresses sit 64 bytes apart, so a 64-byte extent covers one of them
+    // exactly and never reaches its neighbour.
+    constexpr std::size_t EXTENT = 64;
+
+    // An address inside fake(n)'s extent, for the interior-pointer cases.
+    void* inside(std::uintptr_t n, std::size_t offset)
+    {
+        return static_cast<unsigned char*>(fake(n)) + offset;
+    }
 }
 
 TEST(Unit_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 {
     UsmRegistry registry;
-    registry.record(fake(1), 3);
+    registry.record(fake(1), 3, EXTENT);
 
     const auto owner = registry.owner_of(fake(1));
     ASSERT_TRUE(owner.has_value());
@@ -51,7 +63,7 @@ TEST(Unit_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 TEST(Unit_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 {
     UsmRegistry registry;
-    registry.record(fake(1), 0);
+    registry.record(fake(1), 0, EXTENT);
 
     EXPECT_FALSE(registry.owner_of(fake(2)).has_value());
     EXPECT_FALSE(registry.owner_of(nullptr).has_value());
@@ -60,7 +72,7 @@ TEST(Unit_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 TEST(Unit_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
 {
     UsmRegistry registry;
-    registry.record(fake(1), 2);
+    registry.record(fake(1), 2, EXTENT);
 
     const auto taken = registry.take(fake(1));
     ASSERT_TRUE(taken.has_value());
@@ -80,8 +92,8 @@ TEST(Unit_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
     // has always done, and is asserted so a future change to the container does
     // not quietly turn it into first-writer-wins.
     UsmRegistry registry;
-    registry.record(fake(1), 1);
-    registry.record(fake(1), 4);
+    registry.record(fake(1), 1, EXTENT);
+    registry.record(fake(1), 4, EXTENT);
 
     const auto owner = registry.owner_of(fake(1));
     ASSERT_TRUE(owner.has_value());
@@ -93,8 +105,8 @@ TEST(Unit_UsmRegistry, SizeCountsLiveEntries)
     UsmRegistry registry;
     EXPECT_EQ(registry.size(), 0u);
 
-    registry.record(fake(1), 0);
-    registry.record(fake(2), 0);
+    registry.record(fake(1), 0, EXTENT);
+    registry.record(fake(2), 0, EXTENT);
     EXPECT_EQ(registry.size(), 2u);
 
     registry.take(fake(1));
@@ -121,7 +133,7 @@ TEST(Unit_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
             for (int i = 0; i < PER_THREAD; ++i)
             {
                 void* p = fake(static_cast<std::uintptr_t>(t * PER_THREAD + i + 1));
-                registry.record(p, static_cast<std::size_t>(t));
+                registry.record(p, static_cast<std::size_t>(t), EXTENT);
                 if (auto owner = registry.take(p))
                 {
                     EXPECT_EQ(*owner, static_cast<std::size_t>(t));
@@ -135,4 +147,53 @@ TEST(Unit_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
 
     EXPECT_EQ(taken.load(), THREADS * PER_THREAD);
     EXPECT_EQ(registry.size(), 0u);
+}
+
+TEST(Unit_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
+{
+    // The case the graph builder needs: a caller offsets into a plan array and
+    // hands over an address the base-keyed table cannot find.
+    UsmRegistry registry;
+    registry.record(fake(1), 5, EXTENT);
+
+    const auto found = registry.containing_allocation(inside(1, 16));
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(found->base, fake(1));
+    EXPECT_EQ(found->device_index, 5u);
+
+    // The base itself and the last byte are both inside; one past the end is not.
+    EXPECT_TRUE(registry.containing_allocation(fake(1)).has_value());
+    EXPECT_TRUE(registry.containing_allocation(inside(1, EXTENT - 1)).has_value());
+    EXPECT_FALSE(registry.containing_allocation(inside(1, EXTENT)).has_value());
+}
+
+TEST(Unit_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
+{
+    UsmRegistry registry;
+    registry.record(fake(1), 0, EXTENT);
+
+    EXPECT_FALSE(registry.containing_allocation(fake(9)).has_value());
+    EXPECT_FALSE(registry.containing_allocation(nullptr).has_value());
+}
+
+TEST(Unit_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
+{
+    // An adopted address whose importer knew no size must not read as zero-length
+    // nor swallow offsets it cannot vouch for.
+    UsmRegistry registry;
+    registry.record(fake(1), 7, std::nullopt);
+
+    const auto base = registry.containing_allocation(fake(1));
+    ASSERT_TRUE(base.has_value());
+    EXPECT_EQ(base->device_index, 7u);
+    EXPECT_FALSE(registry.containing_allocation(inside(1, 8)).has_value());
+}
+
+TEST(Unit_UsmRegistry, ContainingAllocationForgetsATakenPointer)
+{
+    UsmRegistry registry;
+    registry.record(fake(1), 0, EXTENT);
+    registry.take(fake(1));
+
+    EXPECT_FALSE(registry.containing_allocation(inside(1, 8)).has_value());
 }

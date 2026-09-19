@@ -475,7 +475,7 @@ Discovers and describes the machine:
 
 ### Memory (`memory/`)
 Allocation tuned for parallel, heterogeneous workloads:
-- `UsmRegistry` — records which device each USM allocation belongs to, so a pointer is freed against the queue that owns it and a kernel runs where its data lives. SYCL has no portable way to ask a pointer that, so the answer is recorded at allocation.
+- `UsmRegistry` — records which device each USM allocation belongs to and how long it is, so a pointer is freed against the queue that owns it, a kernel runs where its data lives, and an interior pointer can be traced back to its allocation. SYCL has no portable way to ask a pointer that, so the answer is recorded at allocation.
 - `epoch_reclamation` — epoch-based reclamation (EBR) for safely freeing memory that other threads might still be reading, without locks. Retired nodes are pooled per thread to avoid hitting the global allocator on the hot path.
 
 ### Graph (`graph/`)

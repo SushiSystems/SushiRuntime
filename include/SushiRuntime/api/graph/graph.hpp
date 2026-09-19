@@ -1922,6 +1922,12 @@ namespace SushiRuntime
                     const Core::ResourceRegion bin_base_region{static_cast<void*>(bin_base_base), 0,
                         DIGIT_BINS * sizeof(std::uint32_t)};
 
+                    // A slot resolves by the base address of its allocation, so a digit's
+                    // live word travels as an index into the plan rather than as a pointer.
+                    const auto plan_word = [](std::size_t digit, std::size_t word) {
+                        return digit * detail::RADIX_PLAN_WORDS + word;
+                    };
+
                     for (std::size_t d = 0; d < digit_count; ++d)
                     {
                         const bool first = (d == 0);
@@ -1944,8 +1950,8 @@ namespace SushiRuntime
                                 reads.keys.push_back(r);
                             Writes writes = Writes(hist_region);
                             Dynamic dyn;
-                            dyn.device_count = digit_plan;
-                            dyn.device_count_index = detail::RADIX_PLAN_TILES;
+                            dyn.device_count = plan_ptr;
+                            dyn.device_count_index = plan_word(d, detail::RADIX_PLAN_TILES);
                             observe(reads);
                             observe(writes);
                             emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
@@ -1980,8 +1986,8 @@ namespace SushiRuntime
                             Reads reads = Reads(hist_region, n_state_region);
                             Writes writes = Writes(hist_region, col_total_region);
                             Dynamic dyn;
-                            dyn.device_count = digit_plan;
-                            dyn.device_count_index = detail::RADIX_PLAN_BINS;
+                            dyn.device_count = plan_ptr;
+                            dyn.device_count_index = plan_word(d, detail::RADIX_PLAN_BINS);
                             observe(reads);
                             observe(writes);
                             emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
@@ -2007,8 +2013,8 @@ namespace SushiRuntime
                             Reads reads = Reads(col_total_region);
                             Writes writes = Writes(bin_base_region);
                             Dynamic dyn;
-                            dyn.device_count = digit_plan;
-                            dyn.device_count_index = detail::RADIX_PLAN_ONE;
+                            dyn.device_count = plan_ptr;
+                            dyn.device_count_index = plan_word(d, detail::RADIX_PLAN_ONE);
                             observe(reads);
                             observe(writes);
                             emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
@@ -2037,8 +2043,8 @@ namespace SushiRuntime
                                 ? Writes(indices_region, scratch_region)
                                 : Writes(indices_region);
                             Dynamic dyn;
-                            dyn.device_count = digit_plan;
-                            dyn.device_count_index = detail::RADIX_PLAN_TILES;
+                            dyn.device_count = plan_ptr;
+                            dyn.device_count_index = plan_word(d, detail::RADIX_PLAN_TILES);
                             observe(reads);
                             observe(writes);
                             emit_dynamic_per_element(std::move(dyn), reads.keys, writes.keys,
@@ -3191,35 +3197,55 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Throws unless @p slot is null or host USM in its owning context.
+                 * @brief Throws unless @p slot is null or lands in host USM.
+                 *
+                 * Asks the slot's own address first, then, when that answers anything
+                 * but host, resolves it to the allocation containing it and asks
+                 * again: a caller offsetting into a plan array hands over an interior
+                 * pointer, which SYCL reports as unknown. Runs while add() builds a
+                 * node, so the containment search never meets a dispatch.
                  * @param slot The slot pointer to check; null passes.
                  * @param what Name of the control that set it, for the message.
-                 * @throws Core::SushiException With invalid_access for a non-host slot.
+                 * @throws Core::SushiException With invalid_access for a slot that is
+                 *         not host USM and for one this context never allocated.
                  */
                 void require_host_slot(const std::uint32_t* slot, const char* what) const
                 {
                     if (slot == nullptr)
                         return;
                     void* address = const_cast<void*>(static_cast<const void*>(slot));
-                    sycl::usm::alloc kind = sycl::usm::alloc::unknown;
+                    if (usm_kind_of(address) == sycl::usm::alloc::host)
+                        return;
+                    const std::optional<void*> base = ctx_->containing_usm_base(address);
+                    if (!base)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                            std::string(what) + ": this runtime never allocated the slot, so "
+                            "its residency is unknowable; pass a Residency::Host buffer this "
+                            "runtime allocated, with the element's index."});
+                    if (usm_kind_of(*base) == sycl::usm::alloc::host)
+                        return;
+                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                        std::string(what) + ": the slot lies inside an allocation that is not "
+                        "Residency::Host, and the host reads it while kernels may run; pass a "
+                        "Residency::Host buffer, with the element's index."});
+                }
+
+                /**
+                 * @brief Reports which kind of USM an address is, in its owning context.
+                 * @param address The address to classify; resolved through the registry.
+                 * @return The SYCL allocation kind, or unknown when nothing resolves it.
+                 */
+                sycl::usm::alloc usm_kind_of(void* address) const
+                {
                     try
                     {
-                        kind = sycl::get_pointer_type(
+                        return sycl::get_pointer_type(
                             address, ctx_->get_queue_for_ptr(address).get_context());
                     }
                     catch (const sycl::exception&)
                     {
-                        kind = sycl::usm::alloc::unknown;
+                        return sycl::usm::alloc::unknown;
                     }
-                    if (kind == sycl::usm::alloc::host)
-                        return;
-                    const char* kind_name = kind == sycl::usm::alloc::shared ? "shared"
-                                          : kind == sycl::usm::alloc::device ? "device"
-                                                                              : "unknown";
-                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                        std::string(what) + ": the slot is " + kind_name + " USM, but the "
-                        "value is read on the host while kernels may run; point it into a "
-                        "Residency::Host buffer."});
                 }
 
                 // Copies a Dynamic's device count source onto the node's bindings and

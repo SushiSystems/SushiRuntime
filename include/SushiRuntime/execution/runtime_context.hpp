@@ -342,8 +342,27 @@ namespace SushiRuntime
                  * @brief Records an externally-allocated address as owned by one device queue.
                  * @param address      The address to record; not allocated by this call.
                  * @param device_index Target device queue that owns @p address.
+                 * @param bytes        Length of the mapping, or nothing when the importer
+                 *                     cannot know it; without a length only @p address
+                 *                     itself resolves, never an offset into it.
                  */
-                void adopt_usm(void* address, std::size_t device_index);
+                void adopt_usm(void* address, std::size_t device_index,
+                               std::optional<std::size_t> bytes);
+
+                /**
+                 * @brief Finds the start of the recorded allocation an address falls in.
+                 *
+                 * Lets a caller holding an interior pointer name the allocation it
+                 * belongs to, which get_queue_for_ptr() and sycl::get_pointer_type()
+                 * cannot: both answer on exact base addresses. The search is linear in
+                 * live allocations, so call it while building a graph, never per
+                 * dispatch.
+                 *
+                 * @param ptr Any address, interior or base. Null resolves to nothing.
+                 * @return The allocation's first address, or nothing when this context
+                 *         recorded no allocation covering @p ptr.
+                 */
+                std::optional<void*> containing_usm_base(void* ptr) const;
 
                 /**
                  * @brief Drops @p address's owner record without freeing it.

@@ -551,7 +551,7 @@ namespace SushiRuntime
             void* p = sycl::malloc_shared(bytes, q);
             if (p)
             {
-                impl_->usm_registry.record(p, device_index);
+                impl_->usm_registry.record(p, device_index, bytes);
             }
             return p;
         }
@@ -570,7 +570,7 @@ namespace SushiRuntime
             void* p = sycl::malloc_device(bytes, q);
             if (p)
             {
-                impl_->usm_registry.record(p, device_index);
+                impl_->usm_registry.record(p, device_index, bytes);
             }
             return p;
         }
@@ -589,7 +589,7 @@ namespace SushiRuntime
             void* p = sycl::malloc_host(bytes, q);
             if (p)
             {
-                impl_->usm_registry.record(p, device_index);
+                impl_->usm_registry.record(p, device_index, bytes);
             }
             return p;
         }
@@ -611,7 +611,7 @@ namespace SushiRuntime
                 // scheduler can later dispatch onto the exact same context.
                 for (size_t i = 0; i < impl_->all_queues.size(); ++i)
                 {
-                    if (impl_->all_queues[i] == q) { impl_->usm_registry.record(p, i); break; }
+                    if (impl_->all_queues[i] == q) { impl_->usm_registry.record(p, i, bytes); break; }
                 }
             }
             return p;
@@ -632,7 +632,7 @@ namespace SushiRuntime
             {
                 for (size_t i = 0; i < impl_->all_queues.size(); ++i)
                 {
-                    if (impl_->all_queues[i] == q) { impl_->usm_registry.record(p, i); break; }
+                    if (impl_->all_queues[i] == q) { impl_->usm_registry.record(p, i, bytes); break; }
                 }
             }
             return p;
@@ -651,7 +651,7 @@ namespace SushiRuntime
             sycl::queue& q = get_queue(device_index); // throws if out of bounds
             void* p = sycl::aligned_alloc_host(alignment, bytes, q);
             if (p)
-                impl_->usm_registry.record(p, device_index);
+                impl_->usm_registry.record(p, device_index, bytes);
             return p;
         }
 
@@ -660,11 +660,29 @@ namespace SushiRuntime
          *
          * @param address      The address to record; not allocated by this call.
          * @param device_index The device queue that owns @p address.
+         * @param bytes        Length of the mapping, or nothing when it is unknown.
          */
-        void RuntimeContext::adopt_usm(void* address, size_t device_index)
+        void RuntimeContext::adopt_usm(void* address, size_t device_index,
+                                       std::optional<std::size_t> bytes)
         {
             get_queue(device_index); // throws if out of bounds
-            impl_->usm_registry.record(address, device_index);
+            impl_->usm_registry.record(address, device_index, bytes);
+        }
+
+        /**
+         * @brief Finds the start of the recorded allocation an address falls in.
+         *
+         * Resolves an interior pointer to the base that owner_of() knows, for
+         * callers validating a pointer a user handed them. Linear in live
+         * allocations; a registration-time query, not a dispatch-time one.
+         *
+         * @param ptr Any address, interior or base. Null resolves to nothing.
+         * @return The allocation's first address, or nothing when none covers @p ptr.
+         */
+        std::optional<void*> RuntimeContext::containing_usm_base(void* ptr) const
+        {
+            const auto found = impl_->usm_registry.containing_allocation(ptr);
+            return found ? std::optional<void*>(found->base) : std::nullopt;
         }
 
         /**
