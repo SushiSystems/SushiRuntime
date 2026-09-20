@@ -131,6 +131,30 @@ namespace
         }
 
         /**
+         * @brief Adds the kernel that folds this step's live words of @p source into the digest.
+         * @param g      The graph the kernel joins.
+         * @param source The buffer whose live prefix is folded.
+         * @param extra  Words the primitive writes past the live count.
+         * @pre @p source holds stale words above the live count, so a fixed fold would not move.
+         */
+        void add_live_digest(API::Graph& g, const API::Buffer<std::uint32_t>& source, std::size_t extra)
+        {
+            const std::uint32_t* src = source.data();
+            const std::uint32_t* st = step.data();
+            const std::uint32_t* c = counter.data();
+            std::uint32_t* h = history.data();
+            g.add(Reads(source, step, counter), Writes(history), std::size_t{1},
+                  [src, st, c, h, extra](std::size_t)
+                  {
+                      const std::size_t words = static_cast<std::size_t>(c[0]) + extra;
+                      std::uint32_t acc = 2166136261u;
+                      for (std::size_t i = 0; i < words; ++i)
+                          acc = (acc ^ src[i]) * 16777619u;
+                      h[st[0] - 1u] = acc;
+                  });
+        }
+
+        /**
          * @brief Runs @p g for STEPS steps and copies the digests out.
          */
         Recording record(API::Graph& g)
@@ -265,7 +289,7 @@ TEST(Integration_DeviceSizedPrimitives, PrefixScanChainMatchesSchedulerAsTheCoun
         auto g = rt.graph();
         hx.add_producer(g);
         g.add_prefix_scan(counts, offsets, total, device_count(hx.counter, CAPACITY));
-        hx.add_digest(g, offsets, CAPACITY + 1);
+        hx.add_live_digest(g, offsets, 1);
         return hx.record(g);
     });
 }
