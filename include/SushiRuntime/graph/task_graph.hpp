@@ -64,6 +64,9 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API TaskGraph 
         {
             public:
+                /** @brief Stands for "no node carries an index yet". */
+                static constexpr std::uint32_t NO_REGISTRATION = static_cast<std::uint32_t>(-1);
+
                 /**
                  * @brief Creates a new task graph.
                  * @param ctx Reference to the associated RuntimeContext.
@@ -165,6 +168,16 @@ namespace SushiRuntime
                  * @return The reserved registration index.
                  */
                 std::uint32_t reserve_registration() noexcept;
+
+                /**
+                 * @brief Returns the registration index stamped on the last node added.
+                 *
+                 * Reads the same node name_last_node() names, so a builder that
+                 * replays one recorded rule can ask which index that rule took.
+                 *
+                 * @return The index, or @ref NO_REGISTRATION while the graph holds no node.
+                 */
+                std::uint32_t last_registration_index() const noexcept;
 
                 /**
                  * @brief Adds a semantic task into the graph with explicit device and host fallback work.

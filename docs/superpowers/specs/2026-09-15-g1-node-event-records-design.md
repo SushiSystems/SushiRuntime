@@ -201,6 +201,14 @@ skill governs deprecation and should be read by the implementer. Decided in F3.
   creation sequence and order by it. Option (a) is taken (F6), because it matches the documented
   cross-region ordering (`dynamic_graph.hpp:72-76`) and needs no new state. Decided in F6.
 
+The index the records carry was not readable through the API that produced them: `Graph`
+reported `size()`, a count of recorded rules, while a record named a registration index, and a
+caller wanting to attribute a dispatch to its own `add()` had to guess the relation. SushiEngine
+guessed the two were the same sequence and its matter solver's stage attribution silently blamed
+the wrong stage. `Graph::rule_registration(rule)` closes it: the index each recorded rule took,
+resolved when the plan compiles, `no_registration` before that and renumbered by a recompile.
+
+
 ## E. Tests (sr test), each failing for its own reason
 
 1. `ProfilingNotRequestedLeavesNodeEventsEmpty` - profiling-capable runtime, graph not requested;

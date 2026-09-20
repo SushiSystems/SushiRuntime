@@ -12,6 +12,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 - 2026-09-17 — Changed `Memory::UsmRegistry::record` and `RuntimeContext::adopt_usm` to take the allocation's length beside its device index (`memory/usm_registry.hpp`, `execution/runtime_context.hpp`).
 
 ### Added
+- 2026-09-20 — Added `API::Graph::rule_registration`, which returns the registration index a recorded rule took, the identity `RunReport::node_events` numbers by (`api/graph/graph.hpp`, `graph/task_graph.hpp`).
 - 2026-09-19 — Added the in-order chain that runs a chainable plan from the calling thread, with `RuntimeSettings::force_scheduler` and `RunReport::layer` (`execution/chain_plan.cpp`, `execution/chain_run.cpp`, `graph.hpp`).
 - 2026-09-17 — Added `UsmRegistry::containing_allocation` and `RuntimeContext::containing_usm_base`, which resolve an interior pointer to the allocation holding it (`memory/usm_registry.hpp`, `runtime_context.cpp`).
 - 2026-09-17 — Added `add_prefix_scan` and `add_counting_sort` to `API::Region` (`api/graph/region.hpp`).
