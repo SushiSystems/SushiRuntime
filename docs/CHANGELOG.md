@@ -34,6 +34,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — versions fo
 - 2026-09-17 — Changed `Graph::add_counting_sort` to run only the digits its live key range needs, skipping the rest (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
 
 ### Fixed
+- 2026-09-20 — Fixed the prefix scan chain test folding its digest over the whole capacity, so the stale tail held it constant (`tests/functional/integration/test_device_sized_primitives.cpp`).
 - 2026-09-17 — Fixed `Graph::add` rejecting an interior pointer into a `Residency::Host` slot, and named the fault when a late-bound slot does not resolve (`api/graph/graph.hpp`).
 - 2026-09-17 — Fixed `add_counting_sort` passing `sized_from_device` an interior pointer into its radix plan, which threw on a CUDA device (`api/graph/graph.hpp`).
 
