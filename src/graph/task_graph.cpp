@@ -566,6 +566,15 @@ namespace SushiRuntime
             return impl_->registration_counter_.fetch_add(1, std::memory_order_relaxed);
         }
 
+        /**
+         * @brief Returns the registration index stamped on the last node added.
+         */
+        std::uint32_t TaskGraph::last_registration_index() const noexcept
+        {
+            NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
+            return head && head->node ? head->node->registration_index : NO_REGISTRATION;
+        }
+
         void TaskGraph::add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                    const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                    std::function<void()> work,

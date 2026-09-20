@@ -2252,6 +2252,28 @@ namespace SushiRuntime
                  */
                 std::size_t size() const noexcept { return task_count_; }
 
+                /** @brief Stands for "this rule has no index yet". */
+                static constexpr std::uint32_t no_registration = BackingGraph::NO_REGISTRATION;
+
+                /**
+                 * @brief Returns the registration index the rule at @p rule took.
+                 *
+                 * RunReport numbers a node event by registration index, and the
+                 * several nodes one add() lowers to share one index, so this is how
+                 * a caller maps a record back to the call that recorded it. The
+                 * indices are drawn when the graph compiles, so every rule reports
+                 * @ref no_registration until the first run, and a recompile may
+                 * renumber them.
+                 *
+                 * @param rule Position in add() order, below @ref size().
+                 * @return The index, or @ref no_registration when @p rule is out of
+                 *         range or the graph has not compiled yet.
+                 */
+                std::uint32_t rule_registration(std::size_t rule) const noexcept
+                {
+                    return rule < specs_.size() ? specs_[rule].registration : no_registration;
+                }
+
                 /**
                  * @brief Number of times the graph has been compiled.
                  *
@@ -3496,6 +3518,7 @@ namespace SushiRuntime
                     {
                         spec.emit(bg);
                         bg.name_last_node(spec.name);
+                        spec.registration = bg.last_registration_index();
                     }
                     plan_ = bg.compile();
                     plan_.profiling = profiling_requested_;
@@ -3534,6 +3557,7 @@ namespace SushiRuntime
 
                     std::function<void(BackingGraph&)> emit;
                     const char* name = nullptr;
+                    std::uint32_t registration = BackingGraph::NO_REGISTRATION;
                 };
                 std::vector<NodeSpec> specs_;
 
