@@ -32,6 +32,7 @@
 #include <optional>
 #include <functional>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/run_report.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
 #include <SushiRuntime/core/resource_region.hpp>
@@ -445,6 +446,9 @@ namespace SushiRuntime
              * label and two same-named nodes stay distinct. Zero until compiled.
              */
             std::size_t plan_index = 0;
+
+            /** @brief Elements this node's dispatch launches over, or Core::WIDTH_UNKNOWN. */
+            std::size_t baked_width = Core::WIDTH_UNKNOWN;
 
             /**
              * @brief Identity of the public add() call that registered this node.

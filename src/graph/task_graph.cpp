@@ -557,6 +557,37 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Stamps the element count on the node most recently added.
+         *
+         * Mirrors name_last_node(): all_nodes is a LIFO stack, so its head is the
+         * last node pushed, and a call with no node yet added is a no-op.
+         */
+        void TaskGraph::width_last_node(std::size_t width) noexcept
+        {
+            NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
+            if (head && head->node)
+                head->node->baked_width = width;
+        }
+
+        /**
+         * @brief Returns the element count stamped on the last node added.
+         */
+        std::size_t TaskGraph::last_node_width() const noexcept
+        {
+            NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
+            return head && head->node ? head->node->baked_width : Core::WIDTH_UNKNOWN;
+        }
+
+        /**
+         * @brief Returns the node most recently added, for a caller reading its state.
+         */
+        const Node* TaskGraph::last_node_added() const noexcept
+        {
+            NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
+            return head ? head->node.get() : nullptr;
+        }
+
+        /**
          * @brief Draws a fresh registration index from this graph's counter.
          *
          * See Impl::registration_counter_; every call returns a distinct value.
