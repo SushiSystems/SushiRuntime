@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <SushiRuntime/core/dispatch_width.hpp>
 
 namespace SushiRuntime
 {
@@ -100,9 +101,6 @@ namespace SushiRuntime
             double polling_ms = 0.0; /**< Time spent polling in-flight events for completion. */
             double idle_ms = 0.0;    /**< Time spent backing off or waiting to be armed. */
         };
-
-        /** @brief Marks a dispatch whose element count the runtime does not carry. */
-        inline constexpr std::uint32_t WIDTH_UNKNOWN = 0xFFFFFFFFu;
 
         /**
          * @brief Times one dispatch of one node, in nanoseconds on the backend's event clock.

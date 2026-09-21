@@ -584,7 +584,7 @@ namespace SushiRuntime
         const Node* TaskGraph::last_node_added() const noexcept
         {
             NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
-            return head ? head->node.get() : nullptr;
+            return head && head->node ? head->node.get() : nullptr;
         }
 
         /**

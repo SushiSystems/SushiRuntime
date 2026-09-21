@@ -26,25 +26,63 @@
 // know which of several internal widths it took.
 
 #include <cstddef>
+#include <string>
+#include <type_traits>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/run_report.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
 
+static_assert(std::is_same<decltype(Node::baked_width), std::size_t>::value,
+              "Node::baked_width must stay std::size_t; Task 3 widens NodeEventRecord "
+              "from it and relies on this exact type.");
+static_assert(noexcept(std::declval<TaskGraph&>().width_last_node(std::size_t{0})),
+              "width_last_node must stay noexcept, like its name_last_node sibling.");
+
+// Node cannot be checked with a static_assert(Node{}.baked_width == ...): its
+// std::function, std::vector and unique_ptr<NodeExtensions> members give it a
+// non-trivial destructor, so it is not a literal type and clang rejects
+// `Node{}` in a constant expression (verified: "non-literal type 'Node'
+// cannot be used in a constant expression"). DefaultConstructedNodeReportsUnknown
+// below is the runtime equivalent of that check.
+
 namespace
 {
-    /** @brief A no-op device node body; these tests check bookkeeping, not results. */
+    /** @brief A no-op device node body. */
     TaskWork noop_work()
     {
         return [](sycl::handler&) {};
     }
+
+    /** @brief Finds the one compiled node named @p name, failing if missing or duplicated. */
+    const Node& find_named(const Execution::CompiledGraph& plan, const char* name)
+    {
+        const Node* found = nullptr;
+        for (const auto& n : plan.all_nodes)
+        {
+            if (std::string(n->metadata.name) == name)
+            {
+                EXPECT_EQ(found, nullptr) << "Node name '" << name << "' is not unique.";
+                found = n.get();
+            }
+        }
+        EXPECT_NE(found, nullptr) << "No compiled node named '" << name << "'.";
+        return *found;
+    }
+}
+
+TEST(Unit_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
+{
+    const Node node;
+    EXPECT_EQ(node.baked_width, std::size_t{Core::WIDTH_UNKNOWN});
 }
 
 TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
@@ -71,7 +109,36 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsTheNodeNameLastNodeNames)
     EXPECT_STREQ(graph.last_node_added()->metadata.name, "stamped");
 }
 
-TEST(Unit_NodeDispatchWidth, WidthLastNodeOnAnEmptyGraphIsHarmless)
+/**
+ * @brief Verifies width_last_node() stamps only the node most recently added,
+ *        not merely a node the accessors happen to agree on.
+ *
+ * A single-node graph cannot tell "stamps the last node" apart from "stamps
+ * the first node" or "stamps whichever node all_nodes' storage order
+ * exposes": with one node every candidate implementation reads back the same
+ * value. Building two named nodes and checking both after compile() forces
+ * the distinction: the second node must carry the stamp and the first must
+ * still read WIDTH_UNKNOWN.
+ */
+TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsOnlyTheMostRecentNode)
+{
+    RuntimeContext ctx;
+    TaskGraph graph(ctx);
+
+    graph.add_node(noop_work());
+    graph.name_last_node("first");
+    graph.add_node(noop_work());
+    graph.name_last_node("second");
+    graph.width_last_node(4096);
+
+    Execution::CompiledGraph plan = graph.compile();
+    ASSERT_EQ(plan.all_nodes.size(), 2u);
+
+    EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Core::WIDTH_UNKNOWN});
+    EXPECT_EQ(find_named(plan, "second").baked_width, std::size_t{4096});
+}
+
+TEST(Unit_NodeDispatchWidth, WidthLastNodeOnAnEmptyGraphLeavesTheWidthUnknown)
 {
     RuntimeContext ctx;
     TaskGraph graph(ctx);
