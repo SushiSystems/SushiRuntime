@@ -1013,6 +1013,7 @@ namespace SushiRuntime
                         // real node, so downstream readers order after it as usual.
                         const Reads reads;
                         const Writes writes(output);
+                        // Replicates add()'s liveness-observe step; see emit_per_element_tracked().
                         observe(reads);
                         observe(writes);
                         return emit_per_element_tracked(reads.keys, writes.keys, std::size_t{1},
@@ -1320,6 +1321,7 @@ namespace SushiRuntime
 
                     const Reads reads(values, segment_offsets);
                     const Writes writes(output);
+                    // Replicates add()'s liveness-observe step; see emit_per_element_tracked().
                     observe(reads);
                     observe(writes);
                     return emit_per_element_tracked(reads.keys, writes.keys, segment_count,
