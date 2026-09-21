@@ -37,8 +37,11 @@ using namespace SushiRuntime;
 
 // 40 bytes, trivially copyable: the shape the engine backend copies with no
 // translation. A padding change or an added field here breaks that contract.
-TEST(Unit_NodeEventRecord, LayoutIsThirtyTwoBytesAndTriviallyCopyable)
+TEST(Unit_NodeEventRecord, LayoutIsFortyBytesAndTriviallyCopyable)
 {
+    static_assert(sizeof(Core::NodeEventRecord) == 40u, "NodeEventRecord must stay 40 bytes");
+    static_assert(std::is_trivially_copyable<Core::NodeEventRecord>::value,
+                  "NodeEventRecord must stay trivially copyable");
     EXPECT_EQ(sizeof(Core::NodeEventRecord), 40u);
     EXPECT_TRUE(std::is_trivially_copyable<Core::NodeEventRecord>::value);
 }
@@ -77,6 +80,7 @@ TEST(Unit_NodeEventRecord, ResetZeroesClockPairing)
 TEST(Unit_NodeEventRecord, WidthsDefaultToUnknown)
 {
     const Core::NodeEventRecord rec{};
+    EXPECT_EQ(Core::WIDTH_UNKNOWN, 0xFFFFFFFFu);
     EXPECT_EQ(rec.launched_width, Core::WIDTH_UNKNOWN);
     EXPECT_EQ(rec.live_width, Core::WIDTH_UNKNOWN);
 }
