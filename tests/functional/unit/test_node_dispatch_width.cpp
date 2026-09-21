@@ -47,12 +47,7 @@ static_assert(std::is_same<decltype(Node::baked_width), std::size_t>::value,
 static_assert(noexcept(std::declval<TaskGraph&>().width_last_node(std::size_t{0})),
               "width_last_node must stay noexcept, like its name_last_node sibling.");
 
-// Node cannot be checked with a static_assert(Node{}.baked_width == ...): its
-// std::function, std::vector and unique_ptr<NodeExtensions> members give it a
-// non-trivial destructor, so it is not a literal type and clang rejects
-// `Node{}` in a constant expression (verified: "non-literal type 'Node'
-// cannot be used in a constant expression"). DefaultConstructedNodeReportsUnknown
-// below is the runtime equivalent of that check.
+// Node{} cannot be a static_assert operand: "non-literal type 'Node' cannot be used in a constant expression".
 
 namespace
 {
@@ -109,17 +104,7 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsTheNodeNameLastNodeNames)
     EXPECT_STREQ(graph.last_node_added()->metadata.name, "stamped");
 }
 
-/**
- * @brief Verifies width_last_node() stamps only the node most recently added,
- *        not merely a node the accessors happen to agree on.
- *
- * A single-node graph cannot tell "stamps the last node" apart from "stamps
- * the first node" or "stamps whichever node all_nodes' storage order
- * exposes": with one node every candidate implementation reads back the same
- * value. Building two named nodes and checking both after compile() forces
- * the distinction: the second node must carry the stamp and the first must
- * still read WIDTH_UNKNOWN.
- */
+/** @brief Verifies width_last_node() stamps the second of two nodes, not the first. */
 TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsOnlyTheMostRecentNode)
 {
     RuntimeContext ctx;
