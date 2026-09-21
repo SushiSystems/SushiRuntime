@@ -32,7 +32,7 @@
 #include <optional>
 #include <functional>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/core/run_report.hpp>
+#include <SushiRuntime/core/dispatch_width.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
 #include <SushiRuntime/core/resource_region.hpp>
