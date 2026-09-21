@@ -201,7 +201,8 @@ namespace SushiRuntime
                 ledger.set_pairing_submit_window(steady_ns(t0), steady_ns(t1) - steady_ns(t0));
             }
 
-            graph_.chain.pending_events.push_back(PendingEvent{&node, step, std::move(event)});
+            graph_.chain.pending_events.push_back(
+                PendingEvent{&node, step, std::move(event), Graph::snapshot_widths(node)});
         }
 
         /**
@@ -228,6 +229,8 @@ namespace SushiRuntime
                 Core::NodeEventRecord rec{};
                 rec.node_index = index;
                 rec.invocation = pe.step;
+                rec.launched_width = pe.widths.launched;
+                rec.live_width     = pe.widths.live;
                 rec.submit_ns  = times.submit_ns;
                 rec.start_ns   = times.start_ns;
                 rec.end_ns     = times.end_ns;

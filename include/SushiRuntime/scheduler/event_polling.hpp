@@ -82,6 +82,9 @@ namespace SushiRuntime
 
                     /** @brief Run step this dispatch belongs to, captured by the submitting worker. */
                     std::uint32_t step = 0;
+
+                    /** @brief The dispatched node's widths, snapshotted where the event is armed. */
+                    SushiRuntime::Graph::NodeWidths widths;
                 };
 
                 /**
@@ -439,6 +442,8 @@ namespace SushiRuntime
                                     Core::NodeEventRecord rec{};
                                     rec.node_index = node->registration_index;
                                     rec.invocation = pe.step;
+                                    rec.launched_width = pe.widths.launched;
+                                    rec.live_width     = pe.widths.live;
                                     rec.submit_ns  = times.submit_ns;
                                     rec.start_ns   = times.start_ns;
                                     rec.end_ns     = times.end_ns;
