@@ -35,11 +35,11 @@
 
 using namespace SushiRuntime;
 
-// 32 bytes, trivially copyable: the shape the engine backend copies with no
+// 40 bytes, trivially copyable: the shape the engine backend copies with no
 // translation. A padding change or an added field here breaks that contract.
 TEST(Unit_NodeEventRecord, LayoutIsThirtyTwoBytesAndTriviallyCopyable)
 {
-    EXPECT_EQ(sizeof(Core::NodeEventRecord), 32u);
+    EXPECT_EQ(sizeof(Core::NodeEventRecord), 40u);
     EXPECT_TRUE(std::is_trivially_copyable<Core::NodeEventRecord>::value);
 }
 
@@ -48,8 +48,8 @@ TEST(Unit_NodeEventRecord, LayoutIsThirtyTwoBytesAndTriviallyCopyable)
 TEST(Unit_NodeEventRecord, ResetKeepsNodeEventsCapacity)
 {
     Core::RunReport report;
-    report.node_events.push_back(Core::NodeEventRecord{1, 0, 10, 20, 30});
-    report.node_events.push_back(Core::NodeEventRecord{2, 0, 40, 50, 60});
+    report.node_events.push_back(Core::NodeEventRecord{1, 0, Core::WIDTH_UNKNOWN, Core::WIDTH_UNKNOWN, 10, 20, 30});
+    report.node_events.push_back(Core::NodeEventRecord{2, 0, Core::WIDTH_UNKNOWN, Core::WIDTH_UNKNOWN, 40, 50, 60});
     const std::size_t capacity_before = report.node_events.capacity();
 
     report.reset();
@@ -70,4 +70,13 @@ TEST(Unit_NodeEventRecord, ResetZeroesClockPairing)
     EXPECT_EQ(report.clock.event_ns, 0u);
     EXPECT_EQ(report.clock.steady_ns, 0u);
     EXPECT_EQ(report.clock.uncertainty_ns, 0u);
+}
+
+// The widths default to WIDTH_UNKNOWN rather than zero, because zero is a real
+// dispatch width on an empty pass and would read as a measured value.
+TEST(Unit_NodeEventRecord, WidthsDefaultToUnknown)
+{
+    const Core::NodeEventRecord rec{};
+    EXPECT_EQ(rec.launched_width, Core::WIDTH_UNKNOWN);
+    EXPECT_EQ(rec.live_width, Core::WIDTH_UNKNOWN);
 }
