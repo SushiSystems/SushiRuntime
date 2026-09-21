@@ -74,6 +74,12 @@ Commands are grouped under these subcommands:
 Run any command with `--help` to see its options. Running `sr docker` with no
 subcommand prints that group's help.
 
+`sr --help` groups the commands under Toolchain, Project, Diagnostics and Container,
+and each command's own help ends with examples. On a colour terminal the root screen
+shows the logo. On a dark terminal add `[cli]` and `background = "dark"` to
+`cli/config.local.toml` to give it a glow; `COLORFGBG` is read when the terminal sets
+it, and Windows Terminal does not.
+
 ## `sr toolchain` — choose the SYCL toolchain
 
 SushiRuntime builds against one of three SYCL toolchains. `sr toolchain` records

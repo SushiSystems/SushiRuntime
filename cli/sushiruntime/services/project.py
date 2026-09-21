@@ -591,7 +591,7 @@ def run(target: str | None = None, sort: bool = False,
         forwarded.append(f"--distributed={distributed_role}")
 
     console.info(f"Executing: {exe.name}")
-    console.console.print(f"[dim]{exe}[/dim]")
+    console.console.print(f"[muted]{exe}[/muted]")
     return _RUNNER.run([str(exe), *forwarded], root, env)
 
 
