@@ -906,7 +906,9 @@ namespace SushiRuntime
                 // inverse, cached so the poll loop never reconstructs sycl::event{}.
                 const bool ready = (e == sycl::event{});
                 const SushiRuntime::Graph::NodeWidths widths =
-                    node ? SushiRuntime::Graph::snapshot_widths(*node) : SushiRuntime::Graph::NodeWidths{};
+                    (node && profiling_active_.load(std::memory_order_acquire))
+                        ? SushiRuntime::Graph::snapshot_widths(*node)
+                        : SushiRuntime::Graph::NodeWidths{};
                 events.push({e, task, ready, /*has_event=*/!ready,
                             current_dispatch_step_.load(std::memory_order_acquire), widths});
             } 

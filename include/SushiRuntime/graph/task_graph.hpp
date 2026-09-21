@@ -162,6 +162,8 @@ namespace SushiRuntime
                 /**
                  * @brief Stamps the element count on the node most recently added.
                  * @param width Elements the node's dispatch launches over.
+                 * @pre Compilation is single-threaded, so "most recently added" names
+                 *      one node; a parallel compiler must stamp width at the add call.
                  */
                 void width_last_node(std::size_t width) noexcept;
 
