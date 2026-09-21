@@ -632,6 +632,46 @@ TEST(Integration_CountingSort, SharesOneNodeIndexAcrossStepsAndPasses)
         EXPECT_EQ(per_invocation[step], EXPECTED_PASSES) << "step " << step;
 }
 
+// Device-solver-instrument coverage: each internal pass's launched_width must
+// be its own row of the width table, not merely "some width was stamped".
+// Every pass here reads a region the one before it wrote (plan_region, then
+// hist_region, then col_total_region, then bin_base_region, then the shared
+// indices buffer, then offsets), so report.node_events lands in that same
+// dependency order regardless of which execution path ran it.
+TEST(Integration_CountingSort, InternalNodeWidthsMatchTheDispatchTable)
+{
+    // Same shape as SharesOneNodeIndexAcrossStepsAndPasses: key_range.capacity
+    // = 50 needs one digit, T_cap = next_live_tile_count(300) = 2, DIGIT_BINS =
+    // 256; order is resolver, histogram, column scan, bin base, placement,
+    // offsets, counts.
+    constexpr std::size_t N_CAPACITY = 300;
+    constexpr std::size_t KEY_CAPACITY = 50;
+    const std::vector<std::uint32_t> expected_widths = {1u, 2u, 256u, 1u, 2u, 51u, 50u};
+
+    auto rt      = Runtime::create();
+    auto keys    = rt.buffer<std::uint32_t>(N_CAPACITY);
+    auto indices = rt.buffer<std::uint32_t>(N_CAPACITY);
+    auto offsets = rt.buffer<std::uint32_t>(KEY_CAPACITY + 1);
+    auto total   = rt.buffer<std::uint32_t>(1);
+    auto counts  = rt.buffer<std::uint32_t>(KEY_CAPACITY);
+    for (std::size_t i = 0; i < N_CAPACITY; ++i)
+        keys[i] = static_cast<std::uint32_t>(i % KEY_CAPACITY);
+
+    auto g = rt.graph();
+    g.set_profiling_requested(true);
+    g.add_counting_sort(keys, indices, offsets, total, fixed(N_CAPACITY), fixed(KEY_CAPACITY),
+                        &counts);
+
+    auto report = g.run();
+
+    ASSERT_EQ(report.node_events.size(), expected_widths.size());
+    for (std::size_t i = 0; i < expected_widths.size(); ++i)
+    {
+        EXPECT_EQ(report.node_events[i].launched_width, expected_widths[i]) << "pass " << i;
+        EXPECT_EQ(report.node_events[i].live_width, expected_widths[i]) << "pass " << i;
+    }
+}
+
 // A live element count above its capacity fails the run rather than reading
 // or writing past the buffers it was planned for.
 TEST(Integration_CountingSort, LateBoundCountAboveCapacityFailsTheRun)
