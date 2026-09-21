@@ -667,5 +667,19 @@ namespace SushiRuntime
             }
         };
 
+        /** @brief Pairs the range a dispatch launched over with the count that did work. */
+        struct NodeWidths
+        {
+            std::uint32_t launched = Core::WIDTH_UNKNOWN; /**< Elements the dispatch launched over. */
+            std::uint32_t live     = Core::WIDTH_UNKNOWN; /**< Elements that did work. */
+        };
+
+        /**
+         * @brief Reads @p node's widths as they stand at submit.
+         * @param node A compiled node, with or without late bindings.
+         * @return The baked width for both, narrowed by the bindings' live count when it holds one.
+         */
+        SUSHIRUNTIME_API NodeWidths snapshot_widths(const Node& node) noexcept;
+
     } // namespace Graph
 } // namespace SushiRuntime

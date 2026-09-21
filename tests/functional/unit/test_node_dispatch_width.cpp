@@ -133,3 +133,64 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeOnAnEmptyGraphLeavesTheWidthUnknown)
     EXPECT_EQ(graph.last_node_width(), std::size_t{Core::WIDTH_UNKNOWN});
     EXPECT_EQ(graph.last_node_added(), nullptr);
 }
+
+// A node with no late bindings reports its baked width as both launched and
+// live, because nothing narrows it at run time.
+TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
+{
+    RuntimeContext ctx;
+    Graph::TaskGraph graph(ctx);
+    graph.add_node([](sycl::handler&) {});
+    graph.width_last_node(1024);
+
+    const Graph::NodeWidths widths = Graph::snapshot_widths(*graph.last_node_added());
+    EXPECT_EQ(widths.launched, 1024u);
+    EXPECT_EQ(widths.live, 1024u);
+}
+
+// A dynamic node launches over its capacity and does work over its live count,
+// and the instrument has to show both or the narrow kernels look wide.
+TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
+{
+    auto bindings = std::make_shared<Graph::LateBindings>();
+    bindings->count.store(129, std::memory_order_relaxed);
+
+    RuntimeContext ctx;
+    Graph::TaskGraph graph(ctx);
+    graph.add_node([](sycl::handler&) {}, {}, {}, bindings);
+    graph.width_last_node(1024);
+
+    const Graph::NodeWidths widths = Graph::snapshot_widths(*graph.last_node_added());
+    EXPECT_EQ(widths.launched, 1024u);
+    EXPECT_EQ(widths.live, 129u);
+}
+
+// USE_BAKED means "the rest of capacity", not a count, so it must not be
+// reported as a measured live width.
+TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
+{
+    auto bindings = std::make_shared<Graph::LateBindings>();
+    bindings->count.store(Graph::LateBindings::USE_BAKED, std::memory_order_relaxed);
+
+    RuntimeContext ctx;
+    Graph::TaskGraph graph(ctx);
+    graph.add_node([](sycl::handler&) {}, {}, {}, bindings);
+    graph.width_last_node(1024);
+
+    EXPECT_EQ(Graph::snapshot_widths(*graph.last_node_added()).live, 1024u);
+}
+
+// A width that does not fit in uint32_t is reported unknown, not truncated:
+// launched_width is 32 bits wide, and a wraparound would read as a real,
+// wrong measurement instead of "not representable".
+TEST(Unit_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
+{
+    RuntimeContext ctx;
+    Graph::TaskGraph graph(ctx);
+    graph.add_node([](sycl::handler&) {});
+    graph.width_last_node(std::size_t{0xFFFFFFFFu} + 1);
+
+    const Graph::NodeWidths widths = Graph::snapshot_widths(*graph.last_node_added());
+    EXPECT_EQ(widths.launched, Core::WIDTH_UNKNOWN);
+    EXPECT_EQ(widths.live, Core::WIDTH_UNKNOWN);
+}

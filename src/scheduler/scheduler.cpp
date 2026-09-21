@@ -668,7 +668,7 @@ namespace SushiRuntime
                                    static_cast<SushiRuntime::Graph::Node*>(task)->is_sentinel;
                 if (!is_sentinel)
                 {
-                    events.push({sycl::event{}, task, true});
+                    events.push({sycl::event{}, task, true, false, 0, {}});
                     return;
                 }
             }
@@ -686,7 +686,7 @@ namespace SushiRuntime
                 if (gnode->bindings_ &&
                     !gnode->bindings_->enabled.load(std::memory_order_relaxed))
                 {
-                    events.push({sycl::event{}, task, true});
+                    events.push({sycl::event{}, task, true, false, 0, {}});
                     return;
                 }
             }
@@ -747,6 +747,7 @@ namespace SushiRuntime
                                 Core::NodeEventRecord rec{};
                                 rec.node_index = node->registration_index;
                                 rec.invocation = step;
+                                // A host node submits no dispatch: launched_width and live_width stay WIDTH_UNKNOWN.
                                 rec.submit_ns  = h0_ns;
                                 rec.start_ns   = h0_ns;
                                 rec.end_ns     = h1_ns;
@@ -758,7 +759,7 @@ namespace SushiRuntime
                     {
                         node->execute_native();
                     }
-                    events.push({sycl::event{}, task, true});
+                    events.push({sycl::event{}, task, true, false, 0, {}});
                     return;
                 }
 
@@ -904,8 +905,10 @@ namespace SushiRuntime
                 // ready == "no real event" (inline host work); has_event is its
                 // inverse, cached so the poll loop never reconstructs sycl::event{}.
                 const bool ready = (e == sycl::event{});
+                const SushiRuntime::Graph::NodeWidths widths =
+                    node ? SushiRuntime::Graph::snapshot_widths(*node) : SushiRuntime::Graph::NodeWidths{};
                 events.push({e, task, ready, /*has_event=*/!ready,
-                            current_dispatch_step_.load(std::memory_order_acquire)});
+                            current_dispatch_step_.load(std::memory_order_acquire), widths});
             } 
             catch (...)
             {
@@ -919,7 +922,7 @@ namespace SushiRuntime
                 // Route the failed task through the poller as ready so its
                 // successors still fire; combined with the run_failed_ skip path
                 // above, the whole DAG drains to the sentinel rather than hanging.
-                events.push({sycl::event{}, task, true});
+                events.push({sycl::event{}, task, true, false, 0, {}});
             }
         }
 

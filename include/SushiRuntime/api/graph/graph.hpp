@@ -1576,6 +1576,7 @@ namespace SushiRuntime
                             detail::fill_live_level_words(level_count, live[0], state_ptr);
                         },
                         registration_token);
+                    specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
 
                     void* up_key = static_cast<void*>(up_scratch);
                     void* down_key = static_cast<void*>(down_scratch);
@@ -1619,6 +1620,7 @@ namespace SushiRuntime
                                     src, begin, end);
                             },
                             registration_token);
+                        specs_.push_back([w = level.out_count](BackingGraph& bg) { bg.width_last_node(w); });
                     }
 
                     // Down-sweep, top to bottom: the top level has no level above it,
@@ -1668,6 +1670,7 @@ namespace SushiRuntime
                                         offsets_base[in_count] = acc;
                                 },
                                 registration_token);
+                            specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
                             continue;
                         }
 
@@ -1709,6 +1712,7 @@ namespace SushiRuntime
                                 }
                             },
                             registration_token);
+                        specs_.push_back([w = level.out_count](BackingGraph& bg) { bg.width_last_node(w); });
                     }
 
                     if (level_count == 1)
@@ -1728,6 +1732,7 @@ namespace SushiRuntime
                             offsets_base[live_n] = total_base[0];
                         },
                         registration_token);
+                    specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
                     return *this;
                 }
 
@@ -1841,6 +1846,7 @@ namespace SushiRuntime
                                 detail::fill_radix_plan(digit_count, live[0], tiles, live[1], plan_ptr);
                         },
                         registration_token);
+                    specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
 
                     if (n.capacity == 0)
                     {
@@ -1860,6 +1866,7 @@ namespace SushiRuntime
                                     counts_base[k] = 0;
                             },
                             registration_token);
+                        specs_.push_back([w = key_range.capacity + 1](BackingGraph& bg) { bg.width_last_node(w); });
                         return *this;
                     }
 
@@ -1954,6 +1961,7 @@ namespace SushiRuntime
                                         hist_base[b * T_cap + t] = local[b];
                                 },
                                 registration_token);
+                            specs_.push_back([w = T_cap](BackingGraph& bg) { bg.width_last_node(w); });
                         }
 
                         // Column scan: one work-item per bin, sequential over its
@@ -1980,6 +1988,7 @@ namespace SushiRuntime
                                     col_total_base[b] = running;
                                 },
                                 registration_token);
+                            specs_.push_back([](BackingGraph& bg) { bg.width_last_node(DIGIT_BINS); });
                         }
 
                         // Bin base: one work-item, sequential over the (always full)
@@ -2001,6 +2010,7 @@ namespace SushiRuntime
                                     }
                                 },
                                 registration_token);
+                            specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
                         }
 
                         // Placement: one work-item per tile, walking its elements in
@@ -2042,6 +2052,7 @@ namespace SushiRuntime
                                     }
                                 },
                                 registration_token);
+                            specs_.push_back([w = T_cap](BackingGraph& bg) { bg.width_last_node(w); });
                         }
                     }
 
@@ -2073,6 +2084,7 @@ namespace SushiRuntime
                                 offsets_base[k] = static_cast<std::uint32_t>(lo);
                             },
                             registration_token);
+                        specs_.push_back([w = key_range.capacity + 1](BackingGraph& bg) { bg.width_last_node(w); });
                     }
 
                     if (counts == nullptr)
@@ -2095,6 +2107,7 @@ namespace SushiRuntime
                             counts_base[k] = offsets_base[k + 1] - offsets_base[k];
                         },
                         registration_token);
+                    specs_.push_back([w = key_range.capacity](BackingGraph& bg) { bg.width_last_node(w); });
                     return *this;
                 }
 
@@ -3320,6 +3333,7 @@ namespace SushiRuntime
                         {
                             submit_late_window(h, *lb, capacity, fault, fn);
                         }, reads, writes, lb);
+                        bg.width_last_node(capacity);
                     });
                     steps_.register_binding_updater(lb, std::move(dyn));
                     ++task_count_;
@@ -3456,6 +3470,7 @@ namespace SushiRuntime
                             submit_late_window(h, *lb, capacity, fault,
                                                [fn, cur, next](std::size_t i) { fn(i, cur, next); });
                         }, reads, { sp->write_key() }, lb);
+                        bg.width_last_node(capacity);
                     });
 
                     steps_.register_advance(s, view);
