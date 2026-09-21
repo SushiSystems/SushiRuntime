@@ -260,6 +260,44 @@ TEST(Integration_PrefixScan, SharesOneNodeIndexAcrossStepsAndPasses)
         EXPECT_EQ(per_invocation[step], EXPECTED_PASSES) << "step " << step;
 }
 
+// Device-solver-instrument coverage: each internal pass's launched_width must
+// be its own row of the width table, not merely "some width was stamped".
+// Every pass here reads a region the one before it wrote (state_region, then
+// up_scratch, then down_scratch, then the whole-buffer WAW on offsets), so
+// report.node_events lands in that same dependency order regardless of which
+// execution path ran it.
+TEST(Integration_PrefixScan, InternalNodeWidthsMatchTheDispatchTable)
+{
+    // Same shape as SharesOneNodeIndexAcrossStepsAndPasses: plan_tiled_levels(600)
+    // gives level0 600 -> 3, level1 3 -> 1; order is resolver, up0, down-top,
+    // down0, closing.
+    constexpr std::size_t CAPACITY = 600;
+    const std::vector<std::uint32_t> expected_widths = {1u, 3u, 1u, 3u, 1u};
+
+    auto rt      = Runtime::create();
+    auto counts  = rt.buffer<std::uint32_t>(CAPACITY);
+    auto offsets = rt.buffer<std::uint32_t>(CAPACITY + 1);
+    auto total   = rt.buffer<std::uint32_t>(1);
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        counts[i] = static_cast<std::uint32_t>((i % 7) + 1);
+
+    LateCount lc;
+    lc.capacity = CAPACITY;
+
+    auto g = rt.graph();
+    g.set_profiling_requested(true);
+    g.add_prefix_scan(counts, offsets, total, lc);
+
+    auto report = g.run();
+
+    ASSERT_EQ(report.node_events.size(), expected_widths.size());
+    for (std::size_t i = 0; i < expected_widths.size(); ++i)
+    {
+        EXPECT_EQ(report.node_events[i].launched_width, expected_widths[i]) << "pass " << i;
+        EXPECT_EQ(report.node_events[i].live_width, expected_widths[i]) << "pass " << i;
+    }
+}
+
 // Capacity zero: the live count is always zero, so total and offsets[0] are
 // always zero, and the buffers start from a canary rather than a lucky zero.
 TEST(Integration_PrefixScan, ZeroCapacityWritesZeroTotal)
