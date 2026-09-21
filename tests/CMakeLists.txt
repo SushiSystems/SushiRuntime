@@ -105,6 +105,7 @@ add_executable(sr_functional_tests
     functional/integration/test_late_count_ordering.cpp
     functional/integration/test_prefix_scan.cpp
     functional/integration/test_counting_sort.cpp
+    functional/integration/test_reduce_dispatch_width.cpp
     functional/unit/test_range_task.cpp
     functional/unit/test_dependency_tracker.cpp
     functional/unit/test_thermal_rebalance.cpp
