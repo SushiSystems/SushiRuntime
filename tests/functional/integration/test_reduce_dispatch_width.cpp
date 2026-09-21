@@ -96,14 +96,17 @@ TEST(Integration_ReduceDispatchWidth, LateBoundSegmentedReduceWidthsMatchResolve
     constexpr std::size_t SEGMENTS = 128;
     const std::vector<std::uint32_t> expected_widths = {1u, static_cast<std::uint32_t>(SEGMENTS)};
 
+    // segment_offsets and output are each oversized past segment_count by a
+    // distinct amount, so a width stamp that read either buffer's own size
+    // instead of the launch range would fail rather than pass by accident.
     auto rt      = Runtime::create();
-    auto offsets = rt.buffer<std::uint32_t>(SEGMENTS + 1);
+    auto offsets = rt.buffer<std::uint32_t>(SEGMENTS + 9);
     for (std::size_t s = 0; s <= SEGMENTS; ++s)
         offsets[s] = static_cast<std::uint32_t>(s);
     auto values = rt.buffer<std::uint32_t>(SEGMENTS);
     for (std::size_t i = 0; i < SEGMENTS; ++i)
         values[i] = 1u;
-    auto out = rt.buffer<std::uint32_t>(SEGMENTS);
+    auto out = rt.buffer<std::uint32_t>(SEGMENTS + 8);
 
     LateCount lc;
     lc.capacity = SEGMENTS;
@@ -130,14 +133,17 @@ TEST(Integration_ReduceDispatchWidth, EagerSegmentedReduceWidthMatchesSegmentCou
 {
     constexpr std::size_t SEGMENTS = 64;
 
+    // Same oversizing as the late-bound case above: segment_offsets and
+    // output each carry a distinct amount of padding past segment_count, so
+    // the stamp can be pinned to the launch range rather than either size.
     auto rt      = Runtime::create();
-    auto offsets = rt.buffer<std::uint32_t>(SEGMENTS + 1);
+    auto offsets = rt.buffer<std::uint32_t>(SEGMENTS + 9);
     for (std::size_t s = 0; s <= SEGMENTS; ++s)
         offsets[s] = static_cast<std::uint32_t>(s);
     auto values = rt.buffer<std::uint32_t>(SEGMENTS);
     for (std::size_t i = 0; i < SEGMENTS; ++i)
         values[i] = 1u;
-    auto out = rt.buffer<std::uint32_t>(SEGMENTS);
+    auto out = rt.buffer<std::uint32_t>(SEGMENTS + 8);
 
     auto g = rt.graph();
     g.set_profiling_requested(true);
