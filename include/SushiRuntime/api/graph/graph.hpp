@@ -1184,7 +1184,7 @@ namespace SushiRuntime
                         {
                             detail::fill_live_level_words(level_count, live[0], state_ptr);
                         },
-                        registration_token);
+                        registration_token, std::size_t{1});
 
                     const T* in_base = input.data();
                     void* scratch_key = static_cast<void*>(scratch);
@@ -1222,7 +1222,7 @@ namespace SushiRuntime
                                 if (end > in_count) end = in_count;
                                 dst[t] = detail::fold_tile(op, src, begin, end);
                             },
-                            registration_token);
+                            registration_token, level.out_count);
                     }
 
                     // A live count of zero folds no level, so this is the identity's only writer.
@@ -1237,7 +1237,7 @@ namespace SushiRuntime
                             if (live_n == 0)
                                 out_base[0] = identity;
                         },
-                        registration_token);
+                        registration_token, std::size_t{1});
                     return *this;
                 }
 
@@ -1518,7 +1518,7 @@ namespace SushiRuntime
                                 offsets_base[0] = 0;
                                 total_base[0] = 0;
                             },
-                            zero_token);
+                            zero_token, std::size_t{1});
                         return *this;
                     }
 
