@@ -1011,11 +1011,16 @@ namespace SushiRuntime
                     {
                         // Nothing to fold: the identity is the whole answer. Still a
                         // real node, so downstream readers order after it as usual.
-                        return add(Reads(), Writes(output), std::size_t{1},
+                        const Reads reads;
+                        const Writes writes(output);
+                        observe(reads);
+                        observe(writes);
+                        return emit_per_element_tracked(reads.keys, writes.keys, std::size_t{1},
                                    [out_base, identity](std::size_t)
                                    {
                                        out_base[0] = identity;
-                                   });
+                                   },
+                                   nullptr, std::size_t{1});
                     }
 
                     const std::vector<detail::ReduceLevel> levels = detail::plan_reduction(n);
@@ -1070,7 +1075,7 @@ namespace SushiRuntime
                                 if (end > in_count) end = in_count;
                                 dst[t] = detail::fold_tile(op, src, begin, end);
                             },
-                            registration_token);
+                            registration_token, level.out_count);
                     }
                     return *this;
                 }
@@ -1414,7 +1419,7 @@ namespace SushiRuntime
                         {
                             state_ptr[0] = static_cast<std::uint32_t>(live[0]);
                         },
-                        registration_token);
+                        registration_token, std::size_t{1});
 
                     Reads reads = Reads(values, segment_offsets, state_region);
                     Writes writes = Writes(output);
@@ -1430,7 +1435,7 @@ namespace SushiRuntime
                                 ? detail::fold_tile(op, value_base, begin, end)
                                 : identity;
                         },
-                        registration_token);
+                        registration_token, segment_count.capacity);
                     return *this;
                 }
 
@@ -2983,18 +2988,20 @@ namespace SushiRuntime
                  * @param registration_token Shared slot grouping this node's index
                  *        with others from one public add() call; null draws a plain
                  *        fresh index.
+                 * @param width This node's own launch width; stamped where it is added.
                  */
                 template <class F>
                 Graph& emit_per_element_tracked(std::vector<Core::ResourceRegion> reads,
                                                 std::vector<Core::ResourceRegion> writes,
                                                 std::size_t n, F&& fn,
                                                 std::shared_ptr<std::optional<std::uint32_t>>
-                                                    registration_token = nullptr)
+                                                    registration_token = nullptr,
+                                                std::size_t width = Core::WIDTH_UNKNOWN)
                 {
                     specs_.push_back([fn = std::forward<F>(fn), n,
                                       reads = std::move(reads),
                                       writes = std::move(writes),
-                                      registration_token](BackingGraph& bg)
+                                      registration_token, width](BackingGraph& bg)
                     {
                         std::optional<std::uint32_t> registration;
                         if (registration_token)
@@ -3008,6 +3015,7 @@ namespace SushiRuntime
                             h.parallel_for(sycl::range<1>(n),
                                            [fn](sycl::id<1> i) { fn(i[0]); });
                         }, reads, writes, {}, registration);
+                        bg.width_last_node(width);
                     });
                     ++task_count_;
                     dirty_ = true;
