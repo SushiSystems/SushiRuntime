@@ -84,7 +84,7 @@ namespace SushiRuntime
                     std::uint32_t step = 0;
 
                     /** @brief The dispatched node's widths, snapshotted where the event is armed. */
-                    SushiRuntime::Graph::NodeWidths widths;
+                    SushiRuntime::Graph::NodeWidths widths{};
                 };
 
                 /**

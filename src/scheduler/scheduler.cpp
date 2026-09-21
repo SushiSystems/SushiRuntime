@@ -668,7 +668,7 @@ namespace SushiRuntime
                                    static_cast<SushiRuntime::Graph::Node*>(task)->is_sentinel;
                 if (!is_sentinel)
                 {
-                    events.push({sycl::event{}, task, true, false, 0, {}});
+                    events.push({sycl::event{}, task, true});
                     return;
                 }
             }
@@ -686,7 +686,7 @@ namespace SushiRuntime
                 if (gnode->bindings_ &&
                     !gnode->bindings_->enabled.load(std::memory_order_relaxed))
                 {
-                    events.push({sycl::event{}, task, true, false, 0, {}});
+                    events.push({sycl::event{}, task, true});
                     return;
                 }
             }
@@ -759,7 +759,7 @@ namespace SushiRuntime
                     {
                         node->execute_native();
                     }
-                    events.push({sycl::event{}, task, true, false, 0, {}});
+                    events.push({sycl::event{}, task, true});
                     return;
                 }
 
@@ -922,7 +922,7 @@ namespace SushiRuntime
                 // Route the failed task through the poller as ready so its
                 // successors still fire; combined with the run_failed_ skip path
                 // above, the whole DAG drains to the sentinel rather than hanging.
-                events.push({sycl::event{}, task, true, false, 0, {}});
+                events.push({sycl::event{}, task, true});
             }
         }
 

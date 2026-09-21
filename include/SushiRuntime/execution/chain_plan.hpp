@@ -54,7 +54,7 @@ namespace SushiRuntime
             Graph::Node* node;          /**< Node the event belongs to. */
             std::uint32_t step;         /**< Step index the node was submitted in. */
             sycl::event event;          /**< The submission's event. */
-            Graph::NodeWidths widths;   /**< Node's widths, snapshotted at submit. */
+            Graph::NodeWidths widths{}; /**< Node's widths, snapshotted at submit. */
         };
 
         /**
