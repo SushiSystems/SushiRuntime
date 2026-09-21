@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -45,6 +46,8 @@ namespace SushiRuntime
 
     namespace Graph
     {
+        struct Node;
+
         /**
          * @brief Task work type defined as a SYCL kernel or transfer.
          */
@@ -155,6 +158,24 @@ namespace SushiRuntime
                  *             the intended use. Null, or no node yet added, is a no-op.
                  */
                 void name_last_node(const char* name) noexcept;
+
+                /**
+                 * @brief Stamps the element count on the node most recently added.
+                 * @param width Elements the node's dispatch launches over.
+                 */
+                void width_last_node(std::size_t width) noexcept;
+
+                /**
+                 * @brief Returns the element count stamped on the last node added.
+                 * @return The width, or Core::WIDTH_UNKNOWN while the graph holds no node.
+                 */
+                std::size_t last_node_width() const noexcept;
+
+                /**
+                 * @brief Returns the node most recently added, for a caller reading its state.
+                 * @return The node, or nullptr while the graph holds no node.
+                 */
+                const Node* last_node_added() const noexcept;
 
                 /**
                  * @brief Draws a fresh registration index from this graph's counter.
