@@ -1575,8 +1575,7 @@ namespace SushiRuntime
                         {
                             detail::fill_live_level_words(level_count, live[0], state_ptr);
                         },
-                        registration_token);
-                    specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
+                        registration_token, std::size_t{1});
 
                     void* up_key = static_cast<void*>(up_scratch);
                     void* down_key = static_cast<void*>(down_scratch);
@@ -1619,8 +1618,7 @@ namespace SushiRuntime
                                     [](std::uint32_t a, std::uint32_t b) { return a + b; },
                                     src, begin, end);
                             },
-                            registration_token);
-                        specs_.push_back([w = level.out_count](BackingGraph& bg) { bg.width_last_node(w); });
+                            registration_token, level.out_count);
                     }
 
                     // Down-sweep, top to bottom: the top level has no level above it,
@@ -1669,8 +1667,7 @@ namespace SushiRuntime
                                     if (first)
                                         offsets_base[in_count] = acc;
                                 },
-                                registration_token);
-                            specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
+                                registration_token, std::size_t{1});
                             continue;
                         }
 
@@ -1711,8 +1708,7 @@ namespace SushiRuntime
                                     acc += src[j];
                                 }
                             },
-                            registration_token);
-                        specs_.push_back([w = level.out_count](BackingGraph& bg) { bg.width_last_node(w); });
+                            registration_token, level.out_count);
                     }
 
                     if (level_count == 1)
@@ -1731,8 +1727,7 @@ namespace SushiRuntime
                         {
                             offsets_base[live_n] = total_base[0];
                         },
-                        registration_token);
-                    specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
+                        registration_token, std::size_t{1});
                     return *this;
                 }
 
@@ -1845,8 +1840,7 @@ namespace SushiRuntime
                             if (plan_ptr != nullptr)
                                 detail::fill_radix_plan(digit_count, live[0], tiles, live[1], plan_ptr);
                         },
-                        registration_token);
-                    specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
+                        registration_token, std::size_t{1});
 
                     if (n.capacity == 0)
                     {
@@ -1865,8 +1859,7 @@ namespace SushiRuntime
                                 if (counts_base != nullptr && k < capacity)
                                     counts_base[k] = 0;
                             },
-                            registration_token);
-                        specs_.push_back([w = key_range.capacity + 1](BackingGraph& bg) { bg.width_last_node(w); });
+                            registration_token, key_range.capacity + 1);
                         return *this;
                     }
 
@@ -1960,8 +1953,7 @@ namespace SushiRuntime
                                     for (std::size_t b = 0; b < DIGIT_BINS; ++b)
                                         hist_base[b * T_cap + t] = local[b];
                                 },
-                                registration_token);
-                            specs_.push_back([w = T_cap](BackingGraph& bg) { bg.width_last_node(w); });
+                                registration_token, T_cap);
                         }
 
                         // Column scan: one work-item per bin, sequential over its
@@ -1987,8 +1979,7 @@ namespace SushiRuntime
                                     }
                                     col_total_base[b] = running;
                                 },
-                                registration_token);
-                            specs_.push_back([](BackingGraph& bg) { bg.width_last_node(DIGIT_BINS); });
+                                registration_token, DIGIT_BINS);
                         }
 
                         // Bin base: one work-item, sequential over the (always full)
@@ -2009,8 +2000,7 @@ namespace SushiRuntime
                                         running += col_total_base[b];
                                     }
                                 },
-                                registration_token);
-                            specs_.push_back([](BackingGraph& bg) { bg.width_last_node(std::size_t{1}); });
+                                registration_token, std::size_t{1});
                         }
 
                         // Placement: one work-item per tile, walking its elements in
@@ -2051,8 +2041,7 @@ namespace SushiRuntime
                                             static_cast<std::uint32_t>(src);
                                     }
                                 },
-                                registration_token);
-                            specs_.push_back([w = T_cap](BackingGraph& bg) { bg.width_last_node(w); });
+                                registration_token, T_cap);
                         }
                     }
 
@@ -2083,8 +2072,7 @@ namespace SushiRuntime
                                 }
                                 offsets_base[k] = static_cast<std::uint32_t>(lo);
                             },
-                            registration_token);
-                        specs_.push_back([w = key_range.capacity + 1](BackingGraph& bg) { bg.width_last_node(w); });
+                            registration_token, key_range.capacity + 1);
                     }
 
                     if (counts == nullptr)
@@ -2106,8 +2094,7 @@ namespace SushiRuntime
                         {
                             counts_base[k] = offsets_base[k + 1] - offsets_base[k];
                         },
-                        registration_token);
-                    specs_.push_back([w = key_range.capacity](BackingGraph& bg) { bg.width_last_node(w); });
+                        registration_token, key_range.capacity);
                     return *this;
                 }
 
@@ -3195,17 +3182,17 @@ namespace SushiRuntime
                 /**
                  * @brief Emits the kernel that resolves a call's LateCounts for a run.
                  *
-                 * A host provider or plain capacity resolves in the command group and is
-                 * baked in; a device slot is read by the kernel, where a value over
-                 * capacity yields zero and a fault record the step throws
-                 * (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D.2).
-                 * @param fill Device callable run once as fill(live), @p live in the order of @p counts.
+                 * A host count bakes in; a device count is read here, zeroed and faulted
+                 * past capacity (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D.2).
+                 * @param fill Device callable run once as fill(live), in @p counts' order.
+                 * @param width This node's own launch width; stamped where it is added.
                  */
                 template <std::size_t K, class Fill>
                 void emit_late_count_resolver(const std::array<LateCount, K>& counts,
                                               DeviceIndex device, Writes writes, Fill fill,
                                               std::shared_ptr<std::optional<std::uint32_t>>
-                                                  registration_token)
+                                                  registration_token,
+                                              std::size_t width = Core::WIDTH_UNKNOWN)
                 {
                     Reads reads;
                     bool reads_device = false;
@@ -3223,7 +3210,7 @@ namespace SushiRuntime
                     observe(reads);
                     observe(writes);
                     specs_.push_back([counts, fault, fill, rr = reads.keys, rw = writes.keys,
-                                      registration_token](BackingGraph& bg)
+                                      registration_token, width](BackingGraph& bg)
                     {
                         std::optional<std::uint32_t> registration;
                         if (registration_token)
@@ -3245,6 +3232,7 @@ namespace SushiRuntime
                                 fill(live);
                             });
                         }, rr, rw, {}, registration);
+                        bg.width_last_node(width);
                     });
                     ++task_count_;
                     dirty_ = true;
@@ -3253,10 +3241,10 @@ namespace SushiRuntime
                 /**
                  * @brief Emits an internal node run at its capacity that reads its live width on the device.
                  *
-                 * Work-items at or past *@p live_count return at once; the word at
-                 * @p live_scalar, or the two from it, follow the index into @p fn
+                 * Work-items past *@p live_count return at once; @p live_scalar feeds @p fn
                  * (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D.2).
                  * @pre The caller's reads name the regions @p live_count and @p live_scalar lie in.
+                 * @param width This node's own launch width; stamped where it is added.
                  */
                 template <class F>
                 void emit_device_sized(std::vector<Core::ResourceRegion> reads,
@@ -3264,11 +3252,12 @@ namespace SushiRuntime
                                        std::size_t capacity, const std::uint32_t* live_count,
                                        const std::uint32_t* live_scalar, F fn,
                                        std::shared_ptr<std::optional<std::uint32_t>>
-                                           registration_token)
+                                           registration_token,
+                                       std::size_t width = Core::WIDTH_UNKNOWN)
                 {
                     specs_.push_back([fn, capacity, live_count, live_scalar,
                                       reads = std::move(reads), writes = std::move(writes),
-                                      registration_token](BackingGraph& bg)
+                                      registration_token, width](BackingGraph& bg)
                     {
                         std::optional<std::uint32_t> registration;
                         if (registration_token)
@@ -3302,6 +3291,7 @@ namespace SushiRuntime
                                 }
                             });
                         }, reads, writes, {}, registration);
+                        bg.width_last_node(width);
                     });
                     ++task_count_;
                     dirty_ = true;
