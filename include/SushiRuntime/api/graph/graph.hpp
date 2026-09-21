@@ -3241,8 +3241,8 @@ namespace SushiRuntime
                 /**
                  * @brief Emits an internal node run at its capacity that reads its live width on the device.
                  *
-                 * Work-items past *@p live_count return at once; @p live_scalar feeds @p fn
-                 * (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D.2).
+                 * Work-items at or past *@p live_count return at once; @p live_scalar feeds @p fn
+                 * one or two words by its arity (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D.2).
                  * @pre The caller's reads name the regions @p live_count and @p live_scalar lie in.
                  * @param width This node's own launch width; stamped where it is added.
                  */
