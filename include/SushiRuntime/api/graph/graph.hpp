@@ -1318,7 +1318,11 @@ namespace SushiRuntime
                     const std::uint32_t* offset_base = segment_offsets.data();
                     T* out_base = output.data();
 
-                    return add(Reads(values, segment_offsets), Writes(output), segment_count,
+                    const Reads reads(values, segment_offsets);
+                    const Writes writes(output);
+                    observe(reads);
+                    observe(writes);
+                    return emit_per_element_tracked(reads.keys, writes.keys, segment_count,
                                [value_base, offset_base, out_base, op, identity](std::size_t s)
                                {
                                    const std::size_t begin = offset_base[s];
@@ -1326,7 +1330,8 @@ namespace SushiRuntime
                                    out_base[s] = (end > begin)
                                        ? detail::fold_tile(op, value_base, begin, end)
                                        : identity;
-                               });
+                               },
+                               nullptr, segment_count);
                 }
 
                 /**

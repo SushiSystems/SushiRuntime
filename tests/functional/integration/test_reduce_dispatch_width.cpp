@@ -123,3 +123,31 @@ TEST(Integration_ReduceDispatchWidth, LateBoundSegmentedReduceWidthsMatchResolve
     for (std::size_t s = 0; s < SEGMENTS; ++s)
         EXPECT_EQ(out[s], 1u) << "segment " << s;
 }
+
+// The fixed-count overload emits one node over exactly segment_count
+// elements, so its launch width is segment_count itself.
+TEST(Integration_ReduceDispatchWidth, EagerSegmentedReduceWidthMatchesSegmentCount)
+{
+    constexpr std::size_t SEGMENTS = 64;
+
+    auto rt      = Runtime::create();
+    auto offsets = rt.buffer<std::uint32_t>(SEGMENTS + 1);
+    for (std::size_t s = 0; s <= SEGMENTS; ++s)
+        offsets[s] = static_cast<std::uint32_t>(s);
+    auto values = rt.buffer<std::uint32_t>(SEGMENTS);
+    for (std::size_t i = 0; i < SEGMENTS; ++i)
+        values[i] = 1u;
+    auto out = rt.buffer<std::uint32_t>(SEGMENTS);
+
+    auto g = rt.graph();
+    g.set_profiling_requested(true);
+    g.add_segmented_reduce(values, offsets, out, SEGMENTS, Sum<std::uint32_t>{});
+
+    const auto report = g.run();
+
+    ASSERT_EQ(report.node_events.size(), 1u);
+    EXPECT_EQ(report.node_events[0].launched_width, static_cast<std::uint32_t>(SEGMENTS));
+    EXPECT_EQ(report.node_events[0].live_width, static_cast<std::uint32_t>(SEGMENTS));
+    for (std::size_t s = 0; s < SEGMENTS; ++s)
+        EXPECT_EQ(out[s], 1u) << "segment " << s;
+}
