@@ -57,16 +57,16 @@ def show() -> int:
     table.add_column("", width=3, justify="center")          # active marker
     table.add_column("Toolchain", style="bold")
     table.add_column("Status")
-    table.add_column("Description", style="dim")
-    table.add_column("Install with", style="cyan")
+    table.add_column("Description", style="muted")
+    table.add_column("Install with", style="cmd")
 
     for name in TOOLCHAINS:
         active = name == cfg.toolchain
         installed = _toolchain_installed(name, cfg)
-        status = "[green]installed[/green]" if installed else "[yellow]not installed[/yellow]"
+        status = "[success]installed[/success]" if installed else "[warn]not installed[/warn]"
         get_it = "" if installed else _install_hint(name)
         table.add_row(
-            "[bold green]→[/bold green]" if active else "",
+            "[success]→[/success]" if active else "",
             name,
             status,
             _DESCRIPTIONS[name],
@@ -75,10 +75,10 @@ def show() -> int:
 
     console.console.print(table)
     console.info(f"Active: [bold]{cfg.toolchain}[/bold]  "
-                 f"(switch with [cyan]sr toolchain <name>[/cyan])")
+                 f"(switch with [cmd]sr toolchain <name>[/cmd])")
     if not _toolchain_installed(cfg.toolchain, cfg):
         console.warn(f"The active toolchain '{cfg.toolchain}' is not installed yet — "
-                     f"run [cyan]{_install_hint(cfg.toolchain)}[/cyan] to install it.")
+                     f"run [cmd]{_install_hint(cfg.toolchain)}[/cmd] to install it.")
     return 0
 
 
@@ -93,7 +93,7 @@ def select(toolchain: str) -> int:
     cfg = load_config()
     path = set_toolchain(toolchain)
     console.success(f"Toolchain set to '{toolchain}'.")
-    console.console.print(f"[dim]{path}[/dim]")
+    console.console.print(f"[muted]{path}[/muted]")
 
     if not _toolchain_installed(toolchain, cfg):
         # The whole point of the message the user asked for: tell them exactly
@@ -101,11 +101,11 @@ def select(toolchain: str) -> int:
         hint = _install_hint(toolchain)
         console.warn(
             f"'{toolchain}' is not installed yet. Builds will fail until you install it:\n"
-            f"    [bold cyan]{hint}[/bold cyan]"
+            f"    [cmd]{hint}[/cmd]"
         )
         if toolchain == "oneapi":
-            console.info("oneAPI is several GB; use [cyan]hub install --customize[/cyan] "
+            console.info("oneAPI is several GB; use [cmd]hub install --customize[/cmd] "
                          "to install it on its own instead of everything.")
     else:
-        console.info("Run [cyan]sr build --clean[/cyan] to reconfigure with the new toolchain.")
+        console.info("Run [cmd]sr build --clean[/cmd] to reconfigure with the new toolchain.")
     return 0

@@ -11,6 +11,7 @@ import sys
 from typing import List, Optional
 
 import typer
+from sushicore.typer_help import help_group
 
 from . import console
 from .services import diag as diag_svc
@@ -20,17 +21,29 @@ from .services import project as project_svc
 from .services import select as select_svc
 from .services.project import BuildType, Suite
 
+K_TOOLCHAIN = "Toolchain"
+K_PROJECT = "Project"
+K_DIAGNOSTICS = "Diagnostics"
+K_CONTAINER = "Container"
+
+_help_group = help_group(console.current)
+
 app = typer.Typer(
     name="sr",
+    cls=_help_group,
     help="SushiRuntime developer CLI — build, test, run, and Docker management.",
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="rich",
 )
 
-docker_app = typer.Typer(help="Docker environment management.",
-                         no_args_is_help=True)
-app.add_typer(docker_app, name="docker")
+docker_app = typer.Typer(
+    cls=_help_group,
+    help="Docker environment management.",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+app.add_typer(docker_app, name="docker", rich_help_panel=K_CONTAINER)
 
 
 class DockerAction(str, enum.Enum):
@@ -41,7 +54,12 @@ class DockerAction(str, enum.Enum):
 # --------------------------------------------------------------------------- #
 # toolchain (SYCL toolchain)
 # --------------------------------------------------------------------------- #
-@app.command("toolchain")
+@app.command(
+    "toolchain",
+    rich_help_panel=K_TOOLCHAIN,
+    epilog="sr toolchain  # List the choices and show the active one\n"
+           "sr toolchain adaptivecpp  # Persist a toolchain to config.local.toml",
+)
 def toolchain(
     name: Optional[str] = typer.Argument(
         None, help="SYCL toolchain: intel-llvm | adaptivecpp | oneapi. "
@@ -57,7 +75,14 @@ def toolchain(
 # --------------------------------------------------------------------------- #
 # build / test / run / clean / doxygen
 # --------------------------------------------------------------------------- #
-@app.command("build")
+@app.command(
+    "build",
+    rich_help_panel=K_PROJECT,
+    epilog="sr build\n"
+           "sr build --type debug --clean  # Rebuild from an empty tree\n"
+           "sr build --no-cuda  # Portable CPU/OpenCL path\n"
+           "sr build --distributed --no-test",
+)
 def build(
     type: BuildType = typer.Option(
         BuildType.release, "--type", "-t", case_sensitive=False,
@@ -81,7 +106,14 @@ def build(
     raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force, tests=not no_test))
 
 
-@app.command("test")
+@app.command(
+    "test",
+    rich_help_panel=K_PROJECT,
+    epilog="sr test\n"
+           "sr test --suite all\n"
+           "sr test --filter 'Suite.Case'  # ctest -R regex\n"
+           "sr test --repeat 5  # Hunt a flaky test",
+)
 def test(
     suite: Suite = typer.Option(
         Suite.functional, "--suite", "-s", case_sensitive=False,
@@ -108,6 +140,10 @@ def test(
 
 @app.command(
     "run",
+    rich_help_panel=K_PROJECT,
+    epilog="sr run sr_benchmark_tests  # Exact name, then substring match\n"
+           "sr run --sort  # Pick an executable interactively\n"
+           "sr run sr_benchmark_tests -- --gtest_filter='Bench.*'  # Arguments after -- go to it",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
 def run(
@@ -122,10 +158,7 @@ def run(
     asan: bool = typer.Option(
         False, "--asan", help="Run binaries from the build-asan tree."),
 ):
-    """Run a built executable. Args after `--` are forwarded to it.
-
-    Example: sr run sr_benchmark_tests -- --gtest_filter='Bench.*'
-    """
+    """Run a built executable. Args after `--` are forwarded to it."""
     role = distributed if distributed and distributed.lower() in ("master", "worker") else None
     if distributed and role is None:
         console.warn(f"Unknown --distributed role '{distributed}'; not forwarding.")
@@ -135,7 +168,12 @@ def run(
     )
 
 
-@app.command("package")
+@app.command(
+    "package",
+    rich_help_panel=K_PROJECT,
+    epilog="sr package\n"
+           "sr package --prefix build/dist --no-archive  # Install only, no CPack",
+)
 def package(
     prefix: Optional[str] = typer.Option(
         None, "--prefix", help="Where to install. Defaults to build/dist."),
@@ -152,13 +190,21 @@ def package(
     raise typer.Exit(packaging_svc.package(prefix=prefix, archive=not no_archive))
 
 
-@app.command("clean")
+@app.command(
+    "clean",
+    rich_help_panel=K_PROJECT,
+    epilog="sr clean",
+)
 def clean():
     """Remove the build/ and build-asan/ trees."""
     raise typer.Exit(project_svc.clean())
 
 
-@app.command("doxygen")
+@app.command(
+    "doxygen",
+    rich_help_panel=K_PROJECT,
+    epilog="sr doxygen",
+)
 def doxygen():
     """Generate Doxygen documentation."""
     raise typer.Exit(project_svc.doxygen())
@@ -167,7 +213,11 @@ def doxygen():
 # --------------------------------------------------------------------------- #
 # docker
 # --------------------------------------------------------------------------- #
-@docker_app.command("build")
+@docker_app.command(
+    "build",
+    epilog="sr docker build\n"
+           "sr docker build --no-cache --oneapi  # Every layer again, with icpx",
+)
 def docker_build(
     no_cache: bool = typer.Option(
         False, "--no-cache",
@@ -181,7 +231,12 @@ def docker_build(
     raise typer.Exit(docker_svc.build(no_cache=no_cache, oneapi=oneapi))
 
 
-@docker_app.command("run")
+@docker_app.command(
+    "run",
+    epilog="sr docker run\n"
+           "sr docker run --no-gpu  # Headless or CI machines\n"
+           "sr docker run --admin  # Privileged, for profiling",
+)
 def docker_run(
     admin: bool = typer.Option(
         False, "--admin",
@@ -197,13 +252,22 @@ def docker_run(
 # --------------------------------------------------------------------------- #
 # config / env (diagnostics)
 # --------------------------------------------------------------------------- #
-@app.command("config")
+@app.command(
+    "config",
+    rich_help_panel=K_DIAGNOSTICS,
+    epilog="sr config",
+)
 def config():
     """Print the resolved config and where each value came from."""
     raise typer.Exit(diag_svc.config_show())
 
 
-@app.command("env")
+@app.command(
+    "env",
+    rich_help_panel=K_DIAGNOSTICS,
+    epilog="sr env --all  # Every variable, not just the build-relevant ones\n"
+           "sr env --asan  # The build-asan tree's environment",
+)
 def env(
     all: bool = typer.Option(
         False, "--all", help="Show every variable, not just build-relevant ones."),
