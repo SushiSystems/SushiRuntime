@@ -27,6 +27,9 @@ curl -fsSL https://sushisystems.io/install.sh | bash
 irm https://sushisystems.io/install.ps1 | iex
 ```
 
+With only this checkout, install the CLI and run `sr setup`; it installs what
+`cli/sushistack.deps.toml` declares without a workspace.
+
 If you already have a SYCL toolchain (Intel oneAPI DPC++ or an intel/llvm
 `clang++ -fsycl`), CMake ≥ 3.20, hwloc, and GoogleTest, install the CLI and build
 directly:
@@ -327,12 +330,11 @@ marketing, no adjectives selling the change, no "this finally makes X great".
 
 ## 7. Adding a C++ dependency
 
-Dependency provisioning is owned by [SushiStack](https://sushisystems.io) (the
-`hub` CLI), not this repo — it installs shared toolchains and libraries for the
-whole stack into one workspace-level `dependencies/` tree. SushiRuntime only
-*declares* the dependencies it needs, in its own manifest fragment,
-[`cli/sushistack.deps.toml`](../cli/sushistack.deps.toml), which `hub` aggregates
-alongside every other module's fragment.
+SushiRuntime declares the dependencies it needs in its own manifest fragment,
+[`cli/sushistack.deps.toml`](../cli/sushistack.deps.toml). `sr setup` installs
+them for this checkout into `~/.sushisystems`. To provision several checkouts at
+once, [SushiStack](https://sushisystems.io)'s `hub install` reads this fragment
+alongside every other module's.
 
 ### Manifest entry
 
@@ -372,7 +374,7 @@ windows_vcpkg = []            # not installed on Windows
 
 ### What else to touch
 
-Adding an entry to the manifest is enough for `hub install` to pull in the
+Adding an entry to the manifest is enough for `sr setup` to pull in the
 package. The build system and Docker image are intentionally outside the
 manifest's scope — update them separately if needed:
 
@@ -387,13 +389,15 @@ both consume.
 
 ### Verifying the addition
 
-After editing the manifest, run `hub doctor` to confirm the entry is parsed and
-displayed correctly, then `hub install` to install it on the current platform:
+After editing the manifest, run `sr setup --dry-run` to confirm the entry is
+parsed and listed, then `sr setup` to install it on the current platform:
 
 ```bash
-hub doctor       # confirm the entry appears in the dependency table
-hub install      # install it (skipped automatically if check_cmd passes)
+sr setup --dry-run   # confirm the entry appears in the dependency table
+sr setup             # install it (skipped automatically if check_cmd passes)
 ```
+
+`hub install` does the same for every checkout in a workspace.
 
 ---
 

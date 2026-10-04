@@ -9,19 +9,17 @@ The active platform's ``[tool.<platform>]`` table is merged over the common
 
 from __future__ import annotations
 
-import os
-import platform
-
 from dataclasses import dataclass
 from pathlib import Path
 
 # Domain-agnostic config plumbing shared by every Sushi* CLI. The generic build-
 # tool schema (cmake/ninja/vcpkg paths) and the layered-load / [tool]-write
 # skeleton live in sushicore; this repo adds only the SYCL-specific fields below.
-from sushicore.config_base import ToolConfig, write_tool_section
+from sushicore.config_base import write_tool_section
 from sushicore.module_config import ModuleConfig
 from sushicore.profile import ModuleProfile
-from sushicore.workspace import has_marker, resolve_env_path, walk_up
+from sushicore.provision import probe
+from sushicore.provision.config import ProvisionSettings
 
 
 #: How SushiRuntime describes itself to the shared machinery. Unlike the heads
@@ -71,55 +69,6 @@ find_project_root = _MODULE.find_project_root
 config_dir = _MODULE.config_dir
 
 
-def sushistack_home(root: Path | None = None) -> Path | None:
-    """Locate the enclosing SushiStack workspace root, or None when standalone.
-
-    SushiStack is the umbrella that provisions one shared dependency tree for the
-    whole stack. When the runtime is checked out inside a workspace
-    (``<workspace>/sushiruntime``), its toolchain and vcpkg come from
-    ``<workspace>/dependencies`` rather than a repo-local tree. Resolution:
-    ``SUSHISTACK_HOME`` env var, then a walk up for the ``.sushistack`` marker.
-    """
-    home = resolve_env_path("SUSHISTACK_HOME")
-    if home:
-        return home
-    try:
-        start = root or find_project_root()
-    except SystemExit:
-        return None
-    return walk_up(start, has_marker(".sushistack"))
-
-
-def deps_dir() -> Path:
-    """The single self-contained directory the shared toolchain lives in.
-
-    Everything vendorable — the intel/llvm bundle, AdaptiveCpp, a portable CMake
-    and Ninja, and the vcpkg tree with its C++ library ports — lands under here,
-    so a user can see exactly what was fetched and reclaim it all by deleting one
-    folder. Inside a SushiStack workspace this is the shared
-    ``<workspace>/dependencies`` (provisioned by ``hub install`` and used by every
-    module); standalone it is ``<repo>/dependencies`` (git-ignored). Override with
-    ``SUSHISTACK_DEPS_DIR``. Falls back to a user-local path when not inside a
-    checkout.
-
-    System-level prerequisites that cannot live in one folder (the host C++
-    compiler — MSVC+SDK on Windows, gcc and a few -dev packages on Linux — and
-    CUDA) are intentionally *not* placed here; the installer reports them instead.
-    """
-    override = os.environ.get("SUSHISTACK_DEPS_DIR")
-    if override:
-        return Path(override)
-    home = sushistack_home()
-    if home:
-        return home / "dependencies"
-    try:
-        return find_project_root() / "dependencies"
-    except SystemExit:
-        local = os.environ.get("LOCALAPPDATA", "")
-        base = Path(local) if local else Path.home() / ".local"
-        return base / "SushiRuntime" / "dependencies"
-
-
 # The SYCL toolchains a user can select. Must match SR_SYCL_TOOLCHAIN in
 # CMakeLists.txt: intel-llvm (primary), adaptivecpp (secondary), oneapi (supported).
 TOOLCHAINS = ("intel-llvm", "adaptivecpp", "oneapi")
@@ -146,13 +95,18 @@ _ENV_OVERRIDES = PROFILE.env_overrides()
 
 
 @dataclass
-class Config(ToolConfig):
+class Config(ProvisionSettings):
     """Resolved, platform-specific tool configuration for the SYCL runtime build.
 
-    Inherits the generic host build-tool fields (cmake/ninja/vcpkg paths, etc.)
-    from :class:`ToolConfig` and adds the SYCL toolchain selection and the
-    compiler roots the runtime provisions.
+    Inherits the host build-tool fields and the toolchain roots (``oneapi_root``,
+    ``icx_compiler``, ``llvm_root``, ``acpp_exe``) from :class:`ProvisionSettings`
+    and adds the SYCL toolchain selection.
     """
+
+    # llvm_root is the intel/llvm bundle root (holds bin/clang++) for the intel-llvm
+    # toolchain, and acpp_exe the AdaptiveCpp compiler for the adaptivecpp toolchain.
+    # On Windows these are how the non-oneAPI toolchains provide a SYCL compiler;
+    # `sr setup` and `hub install` discover them and write them to config.local.toml.
 
     # SYCL toolchain selection (intel-llvm | adaptivecpp | oneapi). Persisted by
     # `sr toolchain` and consumed as -DSR_SYCL_TOOLCHAIN at configure time.
@@ -161,15 +115,6 @@ class Config(ToolConfig):
     # The C compiler. Empty cc/cxx (cxx from ToolConfig) means "derive from the
     # toolchain" via TOOLCHAIN_COMPILERS.
     cc: str = ""
-
-    oneapi_root: str = ""
-    icx_compiler: str = ""
-    # intel/llvm nightly bundle root (holds bin/clang++) for the intel-llvm
-    # toolchain, and the AdaptiveCpp compiler for the adaptivecpp toolchain.
-    # On Windows these are how the non-oneAPI toolchains provide a SYCL compiler;
-    # they are discovered by `hub install` and written to config.local.toml.
-    llvm_root: str = ""
-    acpp_exe: str = ""
 
     # Run defaults
     target_bin: str = "sr_functional_tests"
@@ -185,27 +130,20 @@ class Config(ToolConfig):
         return (self.cc or default_cc, self.cxx or default_cxx)
 
     def resolved_llvm_root(self) -> str:
-        """The intel/llvm bundle root to build with, or '' when none is present.
+        """Return the intel/llvm bundle root to build with, or '' when none is present.
 
-        Prefers an explicit ``llvm_root`` from config.local.toml, since a user who
-        pinned a path meant it. Otherwise probes the shared dependency tree for
-        the names ``hub install`` uses, so a fresh checkout finds the bundle that
-        is actually installed instead of the one this repo used to assume.
-
-        :return: An absolute bundle root holding bin/clang++, or '' if no
-                 configured or probed candidate has one.
+        A pinned ``llvm_root`` wins; otherwise the first bundle holding bin/clang++
+        under the dependency roots is returned.
         """
-        compiler = "clang++.exe" if self.is_windows else "clang++"
-
         pinned = self.expand(self.llvm_root)
         if pinned:
             return pinned
 
-        toolchains = deps_dir() / "toolchains"
+        compiler = "clang++.exe" if self.is_windows else "clang++"
         for name in INTEL_LLVM_BUNDLE_DIRS:
-            candidate = toolchains / name
-            if (candidate / "bin" / compiler).is_file():
-                return str(candidate)
+            found = probe.installed_toolchain(name, Path("bin") / compiler)
+            if found is not None:
+                return str(found.parents[1])
         return ""
 
     def llvm_bin(self) -> str:

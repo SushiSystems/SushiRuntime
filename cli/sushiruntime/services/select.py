@@ -10,9 +10,10 @@ import shutil
 from pathlib import Path
 
 from rich.table import Table
+from sushicore.provision import probe
 
 from .. import console
-from ..config import TOOLCHAINS, deps_dir, load_config, set_toolchain
+from ..config import TOOLCHAINS, load_config, set_toolchain
 
 # Short, user-facing description for each toolchain shown by `sr toolchain`.
 _DESCRIPTIONS = {
@@ -25,7 +26,6 @@ _DESCRIPTIONS = {
 def _toolchain_installed(name: str, cfg) -> bool:
     """Best-effort check: is the compiler for *name* actually present?"""
     win = cfg.is_windows
-    tdir = deps_dir() / "toolchains"
     if name == "intel-llvm":
         root = cfg.resolved_llvm_root()
         return bool(root) and \
@@ -33,7 +33,8 @@ def _toolchain_installed(name: str, cfg) -> bool:
     if name == "adaptivecpp":
         if cfg.acpp_exe and Path(cfg.expand(cfg.acpp_exe)).is_file():
             return True
-        if any((tdir / "adaptivecpp" / "bin" / n).is_file() for n in ("acpp.bat", "acpp")):
+        if any(probe.installed_toolchain("adaptivecpp", Path("bin") / n)
+               for n in ("acpp.bat", "acpp")):
             return True
         return shutil.which("acpp") is not None
     if name == "oneapi":
@@ -45,7 +46,7 @@ def _toolchain_installed(name: str, cfg) -> bool:
 
 def _install_hint(name: str) -> str:
     """The command that installs toolchain *name*."""
-    return f"hub install --customize   (pick '{name}')"
+    return f"sr setup --toolchain {name}"
 
 
 def show() -> int:

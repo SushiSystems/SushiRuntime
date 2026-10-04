@@ -11,9 +11,11 @@ import sys
 from typing import List, Optional
 
 import typer
+from sushicore.provision.commands import ModuleProvision, register_provision_commands
 from sushicore.typer_help import help_group
 
 from . import console
+from .config import PROFILE, find_project_root, load_config
 from .services import diag as diag_svc
 from .services import docker as docker_svc
 from .services import packaging as packaging_svc
@@ -276,6 +278,16 @@ def env(
 ):
     """Print the environment cmake/ctest/run subprocesses execute under."""
     raise typer.Exit(diag_svc.env_dump(show_all=all, asan=asan))
+
+
+register_provision_commands(app, ModuleProvision(
+    profile=PROFILE,
+    project_root=find_project_root,
+    load_config=load_config,
+    console=lambda: console,
+    panel=K_DIAGNOSTICS,
+    uses_base=True,
+))
 
 
 if __name__ == "__main__":

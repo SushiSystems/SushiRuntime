@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from sushiruntime import config
+from sushiruntime.config import Config
 
 
 def test_find_project_root_raises_outside_checkout(tmp_path):
@@ -44,3 +45,22 @@ def test_toolchain_fallback_on_unknown(monkeypatch):
     if cfg.toolchain not in config.TOOLCHAINS:
         cfg.toolchain = "intel-llvm"
     assert cfg.toolchain == "intel-llvm"
+
+
+def test_llvm_root_is_found_under_the_provision_root(tmp_path, monkeypatch):
+    """Assert a bundle under ~/.sushisystems is the resolved llvm root."""
+    monkeypatch.setenv("SUSHISYSTEMS_HOME", str(tmp_path))
+    monkeypatch.delenv("SUSHISTACK_HOME", raising=False)
+    monkeypatch.delenv("SUSHISTACK_DEPS_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(platform="linux")
+    exe = tmp_path / "toolchains" / "llvm-sycl" / "bin" / "clang++"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("")
+    assert cfg.resolved_llvm_root() == str(tmp_path / "toolchains" / "llvm-sycl")
+
+
+def test_a_pinned_llvm_root_wins(tmp_path, monkeypatch):
+    """Assert an explicit llvm_root is returned without probing."""
+    monkeypatch.setenv("SUSHISYSTEMS_HOME", str(tmp_path))
+    assert Config(platform="linux", llvm_root="/opt/llvm").resolved_llvm_root() == "/opt/llvm"

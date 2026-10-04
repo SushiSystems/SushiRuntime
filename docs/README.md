@@ -26,10 +26,10 @@ It is built around four ideas:
   `host_task` invocation; on a C++20/23 toolchain these thin out to standard
   aliases.
 
-C++ library dependencies and SYCL toolchains are provisioned by
-[SushiStack](https://sushisystems.io) (the `hub` CLI), which owns dependency
-installation for the whole stack (not just this repo) into one shared,
-workspace-level `dependencies/` tree.
+`sr setup` installs the C++ libraries and the SYCL toolchain this repo declares
+in `cli/sushistack.deps.toml` into `~/.sushisystems`.
+[SushiStack](https://sushisystems.io) (the `hub` CLI) provisions several
+checkouts at once.
 
 ## Quick start (one script)
 
@@ -46,6 +46,9 @@ curl -fsSL https://sushisystems.io/install.sh | bash
 irm https://sushisystems.io/install.ps1 | iex
 ```
 
+With only this checkout, install the CLI and run `sr setup`; it installs what
+`cli/sushistack.deps.toml` declares without a workspace.
+
 On Windows use `irm`, not `curl` — in PowerShell `curl` is an alias for
 `Invoke-WebRequest` and does not pipe a script the same way.
 
@@ -56,8 +59,8 @@ and for `hub doctor` / `hub status` to inspect what's installed.
 ### Adding a dependency
 
 See [CONTRIBUTING.md §7](CONTRIBUTING.md#7-adding-a-c-dependency) — dependencies
-are declared in this repo's `cli/sushistack.deps.toml` fragment, which `hub`
-aggregates and installs.
+are declared in this repo's `cli/sushistack.deps.toml` fragment, which `sr setup`
+installs.
 
 ### Using SushiRuntime from another project
 
@@ -538,8 +541,6 @@ cli/                    Python `sr` / `sushiruntime` CLI package (Typer + rich)
 .github/workflows/      CI: functional tests per push, benchmarks nightly
 docs/                   Changelog, guides, and the fluent API reference (api/, Doxyfile)
 Dockerfile              CUDA + Clang/LLVM SYCL build environment
-dependencies/           Local install target for toolchains, tools, and vcpkg packages
-                        (populated by the installer; gitignored)
 ```
 
 ## Distributed execution (optional)
