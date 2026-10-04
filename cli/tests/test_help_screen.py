@@ -15,7 +15,7 @@ from sushiruntime.cli import app
 K_GROUPS = {
     "Toolchain": ["toolchain"],
     "Project": ["build", "test", "run", "package", "clean", "doxygen"],
-    "Diagnostics": ["config", "env"],
+    "Diagnostics": ["config", "env", "setup", "doctor", "link", "unlink"],
     "Container": ["docker"],
 }
 K_DOCKER_COMMANDS = ["build", "run"]

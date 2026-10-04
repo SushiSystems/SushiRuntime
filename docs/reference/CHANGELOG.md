@@ -10,3 +10,5 @@
 - 2026-09-22 — Drew `sr --help` as sushicore's grouped help page, with examples on every command (`cli/sushiruntime/cli.py`, `console.py`).
 - 2026-09-22 — Took the theme's style names for the CLI's colours in place of raw Rich colour names (`services/select.py`, `services/project.py`).
 - 2026-09-22 — Raised the `sushicore` lower bound to 0.4.0 (`cli/pyproject.toml`).
+- 2026-10-04 — cli: Named sr setup --toolchain as the way to install a missing toolchain (`cli/sushiruntime/services/select.py`).
+- 2026-10-04 — cli: Added setup, doctor, link and unlink from sushicore and stopped reading a repo-local dependencies folder (`cli/sushiruntime/cli.py`, `cli/sushiruntime/config.py`).

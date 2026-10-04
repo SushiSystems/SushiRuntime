@@ -50,8 +50,8 @@ The CLI reads toolchain paths from two files:
   Studio roots, vcpkg location, compiler executables). This file is gitignored,
   so your personal paths never get committed.
 
-If you ran `hub install` (SushiStack owns dependency provisioning for the whole
-stack), `config.local.toml` was written for you. If you're setting paths by
+`sr setup` writes `config.local.toml` for you. `hub install` does the same for
+every checkout in a SushiStack workspace at once. If you're setting paths by
 hand, copy the commented Windows block from `config.toml` as a starting
 point — it uses the same `[tool.<platform>]` section layout.
 
@@ -70,6 +70,9 @@ Commands are grouped under these subcommands:
 | `sr docker`  | Build and run the development container                     |
 | `sr config`  | Show the resolved configuration                             |
 | `sr env`     | Show the environment your builds run under                  |
+| `sr setup`   | Install what this checkout needs to build                   |
+| `sr doctor`  | Report whether this machine is ready to build               |
+| `sr link` / `unlink` | Register this checkout in a SushiStack workspace, or remove it |
 
 Run any command with `--help` to see its options. Running `sr docker` with no
 subcommand prints that group's help.
@@ -295,6 +298,40 @@ sr env            # print the environment cmake/ctest/run subprocesses run under
 sr env --all      # show every variable, not just the build-relevant ones
 sr env --asan     # inspect the build-asan/ tree's environment instead
 ```
+
+## `sr setup`, `sr doctor`, `sr link` and `sr unlink` — provisioning
+
+These four commands come from `sushicore` and work the same in every module CLI.
+
+```bash
+sr setup                          # install what this checkout needs, then run doctor
+sr setup --dry-run                # list what would be installed and written; change nothing
+sr setup --toolchain adaptivecpp  # also install this SYCL toolchain (repeatable)
+sr setup --no-gpu                 # skip the toolkit for this machine's GPU
+sr setup --yes                    # answer yes to the LLVM download prompt
+
+sr doctor                         # check the tools, toolchains and libraries a build needs
+sr doctor --for test              # restrict the report to one check group
+
+sr link --workspace <dir>         # record this checkout in a workspace's module registry
+sr unlink --workspace <dir>       # remove it
+```
+
+`sr setup` reads two dependency fragments: the shared base that ships with
+`sushicore`, and this repo's `cli/sushistack.deps.toml`. It installs into
+`~/.sushisystems` (set `SUSHISYSTEMS_HOME` to move it) and writes the paths it
+found to `cli/config.local.toml`. A toolchain already installed in a SushiStack
+workspace's `dependencies/` tree counts as present. `sr` does not read a
+`dependencies/` folder inside this repository.
+
+`sr doctor` exits non-zero when a check fails, and each failed row names the
+command that fixes it.
+
+`sr link` and `sr unlink` take the workspace from `--workspace`, then
+`SUSHISTACK_HOME`, then the nearest parent directory that holds a `.sushistack`
+marker.
+
+To provision several checkouts at once, use `hub install` from SushiStack.
 
 ## Building without the CLI
 

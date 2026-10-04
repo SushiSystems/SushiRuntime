@@ -55,7 +55,8 @@ sr test              # run the fast functional test suite
 You'll need a SYCL 2020 compiler — intel-llvm (`clang++ -fsycl`, primary),
 AdaptiveCpp (`acpp`), or Intel oneAPI DPC++ — plus CMake 3.20+, hwloc, and
 GoogleTest. Pick the toolchain with `sr toolchain`. The CLI reads your toolchain
-paths from `cli/config.local.toml`; `hub install` generates that file for you.
+paths from `cli/config.local.toml`; `sr setup` generates that file for you, and
+`hub install` does the same for every checkout in a workspace.
 See the [README](README.md) for the full requirements list and the CMake
 options if you want to skip the CLI.
 
