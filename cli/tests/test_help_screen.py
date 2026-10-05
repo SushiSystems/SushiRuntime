@@ -19,11 +19,11 @@ from sushiruntime.cli import app
 
 K_GROUPS = {
     "Toolchain": ["toolchain"],
-    "Project": ["build", "test", "run", "package", "clean", "doxygen"],
+    "Project": ["build", "test", "run", "package", "clean", "docs"],
     "Diagnostics": ["config", "env", "setup", "doctor", "link", "unlink"],
-    "Container": ["docker"],
+    "Container": ["container"],
 }
-K_DOCKER_COMMANDS = ["build", "run"]
+K_CONTAINER_COMMANDS = ["build", "run"]
 K_COLOURS = "green|red|yellow|cyan|blue|dim"
 K_RAW_MARKUP = re.compile(rf"\[/?(?:bold |italic )?(?:{K_COLOURS})\]")
 K_RAW_STYLE = re.compile(rf"(?:bold )?(?:{K_COLOURS})")
@@ -72,28 +72,33 @@ def test_no_command_is_listed_under_a_group_it_does_not_belong_to():
 
 @pytest.mark.parametrize(
     "command",
-    [name for names in K_GROUPS.values() for name in names if name != "docker"],
+    [name for names in K_GROUPS.values() for name in names if name != "container"],
 )
 def test_a_command_help_carries_examples(command):
     out = _run(command, "--help")
     assert "Examples" in out and f"sr {command}" in out
 
 
-@pytest.mark.parametrize("command", K_DOCKER_COMMANDS)
-def test_a_docker_command_help_carries_examples(command):
-    out = _run("docker", command, "--help")
-    assert "Examples" in out and f"sr docker {command}" in out
+@pytest.mark.parametrize("command", K_CONTAINER_COMMANDS)
+def test_a_container_command_help_carries_examples(command):
+    out = _run("container", command, "--help")
+    assert "Examples" in out and f"sr container {command}" in out
 
 
-def test_the_docker_sub_app_draws_a_page_listing_its_commands():
-    listed = _commands_by_heading(_run("docker", "--help"))["Commands"]
-    assert listed == K_DOCKER_COMMANDS
+def test_the_container_sub_app_draws_a_page_listing_its_commands():
+    listed = _commands_by_heading(_run("container", "--help"))["Commands"]
+    assert listed == K_CONTAINER_COMMANDS
 
 
-def test_the_docker_sub_app_without_arguments_draws_the_same_page():
-    result = CliRunner().invoke(app, ["docker"])
+def test_the_container_sub_app_without_arguments_draws_the_same_page():
+    result = CliRunner().invoke(app, ["container"])
     assert "Commands" in result.output and "Examples" not in result.output
-    assert _commands_by_heading(result.output)["Commands"] == K_DOCKER_COMMANDS
+    assert _commands_by_heading(result.output)["Commands"] == K_CONTAINER_COMMANDS
+
+
+def test_the_root_help_lists_the_root_options():
+    out = _run("--help")
+    assert "--version" in out and "--describe" in out
 
 
 def test_the_root_without_arguments_draws_the_group_page():

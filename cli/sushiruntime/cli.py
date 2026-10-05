@@ -11,23 +11,26 @@ layer in ``sushiruntime.services``.
 
 from __future__ import annotations
 
-import enum
-import sys
-from typing import List, Optional
+from typing import Callable, NamedTuple, Optional
 
 import typer
+from sushicore import entry
+from sushicore.diag_commands import register_diagnostic_commands
 from sushicore.provision.commands import ModuleProvision, register_provision_commands
+from sushicore.root_options import register_root_options
 from sushicore.typer_help import help_group
 
 from . import console
+from .aliases import ALIASES
 from .config import PROFILE, find_project_root, load_config
 from .services import diag as diag_svc
 from .services import docker as docker_svc
 from .services import packaging as packaging_svc
 from .services import project as project_svc
 from .services import select as select_svc
-from .services.project import BuildType, Suite
+from .services.project import BuildType, DistributedRole, Suite
 
+K_DISTRIBUTION = "sushiruntime-cli"
 K_TOOLCHAIN = "Toolchain"
 K_PROJECT = "Project"
 K_DIAGNOSTICS = "Diagnostics"
@@ -38,29 +41,32 @@ _help_group = help_group(console.current)
 app = typer.Typer(
     name="sr",
     cls=_help_group,
-    help="SushiRuntime developer CLI — build, test, run, and Docker management.",
+    help="SushiRuntime developer CLI — build, test, run, and container management.",
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="rich",
 )
 
-docker_app = typer.Typer(
-    cls=_help_group,
-    help="Docker environment management.",
-    no_args_is_help=True,
-    rich_markup_mode="rich",
-)
-app.add_typer(docker_app, name="docker", rich_help_panel=K_CONTAINER)
+register_root_options(app, distribution=K_DISTRIBUTION)
 
 
-class DockerAction(str, enum.Enum):
-    build = "build"
-    run = "run"
+def _group(help_text: str) -> typer.Typer:
+    """Returns a sub-application that draws the shared help page under *help_text*."""
+    return typer.Typer(
+        cls=_help_group,
+        help=help_text,
+        no_args_is_help=True,
+        rich_markup_mode="rich",
+    )
 
 
-# --------------------------------------------------------------------------- #
-# toolchain (SYCL toolchain)
-# --------------------------------------------------------------------------- #
+container_app = _group("Build and run the development container.")
+app.add_typer(container_app, name="container", rich_help_panel=K_CONTAINER)
+
+docker_alias_app = _group("The old spelling of `sr container`.")
+app.add_typer(docker_alias_app, name="docker", hidden=True)
+
+
 @app.command(
     "toolchain",
     rich_help_panel=K_TOOLCHAIN,
@@ -78,10 +84,6 @@ def toolchain(
     raise typer.Exit(select_svc.select(name))
 
 
-
-# --------------------------------------------------------------------------- #
-# build / test / run / clean / doxygen
-# --------------------------------------------------------------------------- #
 @app.command(
     "build",
     rich_help_panel=K_PROJECT,
@@ -159,16 +161,14 @@ def run(
         None, help="Executable name to run (exact, then substring match)."),
     sort: bool = typer.Option(
         False, "--sort", help="Interactively pick an executable."),
-    distributed: Optional[str] = typer.Option(
-        None, "--distributed", metavar="ROLE",
+    distributed: Optional[DistributedRole] = typer.Option(
+        None, "--distributed", metavar="ROLE", case_sensitive=False,
         help="Forward a role (master|worker) to the application."),
     asan: bool = typer.Option(
         False, "--asan", help="Run binaries from the build-asan tree."),
 ):
     """Run a built executable. Args after `--` are forwarded to it."""
-    role = distributed if distributed and distributed.lower() in ("master", "worker") else None
-    if distributed and role is None:
-        console.warn(f"Unknown --distributed role '{distributed}'; not forwarding.")
+    role = distributed.value if distributed else None
     raise typer.Exit(
         project_svc.run(target=target, sort=sort, distributed_role=role,
                         asan=asan, app_args=list(ctx.args))
@@ -179,13 +179,18 @@ def run(
     "package",
     rich_help_panel=K_PROJECT,
     epilog="sr package\n"
-           "sr package --prefix build/dist --no-archive  # Install only, no CPack",
+           "sr package --prefix build/dist --no-archive  # Install only, no CPack\n"
+           "sr package --prefix ../staging --force  # Clear a directory sr did not stage",
 )
 def package(
     prefix: Optional[str] = typer.Option(
-        None, "--prefix", help="Where to install. Defaults to build/dist."),
+        None, "--prefix",
+        help="Where to install; the directory is emptied first. Defaults to build/dist."),
     no_archive: bool = typer.Option(
         False, "--no-archive", help="Install only; do not run CPack."),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Clear a --prefix that holds files this command did not stage."),
 ):
     """Install the built tree to a prefix and archive it for redistribution.
 
@@ -194,7 +199,8 @@ def package(
     it with nothing on PATH but the prefix, which is what catches a package that
     only works because this machine already has the SYCL runtime installed.
     """
-    raise typer.Exit(packaging_svc.package(prefix=prefix, archive=not no_archive))
+    raise typer.Exit(
+        packaging_svc.package(prefix=prefix, archive=not no_archive, force=force))
 
 
 @app.command(
@@ -208,24 +214,21 @@ def clean():
 
 
 @app.command(
-    "doxygen",
+    "docs",
     rich_help_panel=K_PROJECT,
-    epilog="sr doxygen",
+    epilog="sr docs",
 )
-def doxygen():
-    """Generate Doxygen documentation."""
-    raise typer.Exit(project_svc.doxygen())
+def docs():
+    """Build the API documentation with Doxygen."""
+    raise typer.Exit(project_svc.docs())
 
 
-# --------------------------------------------------------------------------- #
-# docker
-# --------------------------------------------------------------------------- #
-@docker_app.command(
+@container_app.command(
     "build",
-    epilog="sr docker build\n"
-           "sr docker build --no-cache --oneapi  # Every layer again, with icpx",
+    epilog="sr container build\n"
+           "sr container build --no-cache --oneapi  # Every layer again, with icpx",
 )
-def docker_build(
+def container_build(
     no_cache: bool = typer.Option(
         False, "--no-cache",
         help="Rebuild every layer from scratch (ignore Docker's cache)."),
@@ -238,13 +241,13 @@ def docker_build(
     raise typer.Exit(docker_svc.build(no_cache=no_cache, oneapi=oneapi))
 
 
-@docker_app.command(
+@container_app.command(
     "run",
-    epilog="sr docker run\n"
-           "sr docker run --no-gpu  # Headless or CI machines\n"
-           "sr docker run --admin  # Privileged, for profiling",
+    epilog="sr container run\n"
+           "sr container run --no-gpu  # Headless or CI machines\n"
+           "sr container run --admin  # Privileged, for profiling",
 )
-def docker_run(
+def container_run(
     admin: bool = typer.Option(
         False, "--admin",
         help="Run with --privileged --cap-add=SYS_ADMIN (for profiling)."),
@@ -256,28 +259,39 @@ def docker_run(
     raise typer.Exit(docker_svc.run(admin=admin, no_gpu=no_gpu))
 
 
-# --------------------------------------------------------------------------- #
-# config / env (diagnostics)
-# --------------------------------------------------------------------------- #
-@app.command(
-    "config",
-    rich_help_panel=K_DIAGNOSTICS,
-    epilog="sr config",
+class _AliasRow(NamedTuple):
+    """Holds where an old spelling answers, its word there, and the command it runs."""
+
+    parent: typer.Typer
+    word: str
+    callback: Callable[..., None]
+    old: str
+
+
+_ALIAS_ROWS: tuple[_AliasRow, ...] = (
+    _AliasRow(app, "doxygen", docs, "sr doxygen"),
+    _AliasRow(docker_alias_app, "build", container_build, "sr docker build"),
+    _AliasRow(docker_alias_app, "run", container_run, "sr docker run"),
 )
-def config():
-    """Print the resolved config and where each value came from."""
-    raise typer.Exit(diag_svc.config_show())
+
+for _row in _ALIAS_ROWS:
+    ALIASES.command(_row.parent, _row.word, _row.callback, _row.old, hidden=_row.parent is app)
+
+
+register_diagnostic_commands(
+    app, diag_svc.DIAGNOSTICS, program=PROFILE.program, panel=K_DIAGNOSTICS, env=False)
 
 
 @app.command(
     "env",
     rich_help_panel=K_DIAGNOSTICS,
-    epilog="sr env --all  # Every variable, not just the build-relevant ones\n"
+    epilog="sr env\n"
+           "sr env --all  # Every variable, not just the build-relevant ones\n"
            "sr env --asan  # The build-asan tree's environment",
 )
 def env(
     all: bool = typer.Option(
-        False, "--all", help="Show every variable, not just build-relevant ones."),
+        False, "--all", "-a", help="Show every variable, not just build-relevant ones."),
     asan: bool = typer.Option(
         False, "--asan", help="Inspect the build-asan tree's environment."),
 ):
@@ -295,5 +309,15 @@ register_provision_commands(app, ModuleProvision(
 ))
 
 
+def _print_error(message: str) -> None:
+    """Prints one error line through the CLI's console."""
+    console.error(message)
+
+
+def main() -> None:
+    """Runs `sr`, turning a failure the user can act on into one line and exit code 1."""
+    entry.run(app, _print_error)
+
+
 if __name__ == "__main__":
-    app()
+    main()

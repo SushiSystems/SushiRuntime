@@ -35,7 +35,7 @@ PROFILE = ModuleProfile(
     name="SushiRuntime",
     program="sr",
     env_prefix="SR",
-    root_marker="CMakeLists.txt",
+    root_marker="sushi-module.toml",
     default_target="sr_functional_tests",
     extra_env_overrides={
         "toolchain": "SR_SYCL_TOOLCHAIN",

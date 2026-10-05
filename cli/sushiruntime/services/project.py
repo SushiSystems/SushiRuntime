@@ -27,6 +27,7 @@ from .. import console
 from ..config import Config, PROFILE, find_project_root, load_config
 from ..env import load_build_env
 from . import discovery
+from .install_hint import toolchain_install_command
 
 # Isolated ASan tree. Kept separate from the CUDA `build/` so it is never
 # clobbered: ASan forces CUDA OFF (the CUDA UR adapter's urVirtualMemReserve
@@ -111,6 +112,13 @@ class BuildType(str, enum.Enum):
     debug = "debug"
     relwithdebinfo = "relwithdebinfo"
     asan = "asan"
+
+
+class DistributedRole(str, enum.Enum):
+    """Names the role `sr run --distributed` forwards to the application."""
+
+    master = "master"
+    worker = "worker"
 
 
 class Suite(str, enum.Enum):
@@ -362,13 +370,13 @@ def _check_windows_compiler(cfg: Config, env: dict[str, str]) -> int:
     found = Path(cxx).is_file() or _RUNNER.resolve_exe(cxx, env) != cxx
     if found:
         return 0
+    install = f"Install it with `{toolchain_install_command(cfg.toolchain)}`"
     hint = {
-        "adaptivecpp": "AdaptiveCpp (acpp) is not installed. Install it with "
-                       "`hub install`, or switch back with `sr toolchain intel-llvm`.",
-        "intel-llvm": "The intel/llvm bundle (clang++) is not installed. Install it "
-                      "with `hub install`.",
-        "oneapi": "Intel oneAPI (icx-cl) is not installed. Install it with "
-                  "`hub install`, or set icx_compiler in config.local.toml.",
+        "adaptivecpp": f"AdaptiveCpp (acpp) is not installed. {install}, or switch "
+                       "back with `sr toolchain intel-llvm`.",
+        "intel-llvm": f"The intel/llvm bundle (clang++) is not installed. {install}.",
+        "oneapi": f"Intel oneAPI (icx-cl) is not installed. {install}, or set "
+                  "icx_compiler in config.local.toml.",
     }.get(cfg.toolchain, "")
     console.error(
         f"Toolchain '{cfg.toolchain}' compiler '{cxx}' was not found.\n  - {hint}")
@@ -403,7 +411,8 @@ def _check_sanitizer_runtime(cfg: Config) -> int:
         f"(no clang_rt.asan* under lib/clang/*/lib).\n"
         f"  - an ASan build cannot link against it, and this is a property of the "
         f"bundle, not of the project.\n"
-        f"  - install a bundle that carries compiler-rt with `hub install`, or point "
+        f"  - install a bundle that carries compiler-rt with "
+        f"`{toolchain_install_command(cfg.toolchain)}`, or point "
         f"llvm_root in cli/config.local.toml at one that does.")
     return 1
 
@@ -612,7 +621,8 @@ def clean() -> int:
     return 0
 
 
-def doxygen() -> int:
+def docs() -> int:
+    """Builds the API reference with Doxygen and returns its exit code."""
     console.header("Doxygen Generation")
     root = find_project_root()
     cfg = load_config()

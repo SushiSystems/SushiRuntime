@@ -24,12 +24,11 @@ They are identical; use whichever you prefer. Every example below uses `sr`.
 To install:
 
 ```bash
-hub install-cli sushiruntime      # add --no-editable for a non-dev install
+hub install-cli sushiruntime      # always an editable install
 ```
 
-On Windows this installs through **pipx**; on Linux and macOS it installs with
-**pip** into your current environment. You can also install the package
-directly if you'd rather manage it yourself:
+This installs through **pipx**, into an isolated environment, on every platform.
+You can also install the package directly if you'd rather manage it yourself:
 
 ```bash
 pipx install ./cli               # or:  pip install ./cli   (inside a venv/conda env)
@@ -65,17 +64,25 @@ Commands are grouped under these subcommands:
 | Group        | What it's for                                               |
 |--------------|-------------------------------------------------------------|
 | `sr toolchain` | Choose the SYCL toolchain (intel-llvm / adaptivecpp / oneapi) |
-| `sr build` / `test` / `run` / `clean` / `doxygen` | Build, test, run, and document the C++ project |
+| `sr build` / `test` / `run` / `clean` / `docs` | Build, test, run, and document the C++ project |
 | `sr package` | Install the built tree to a prefix and archive it with CPack |
-| `sr docker`  | Build and run the development container                     |
+| `sr container` | Build and run the development container                   |
 | `sr config`  | Show the resolved configuration                             |
 | `sr env`     | Show the environment your builds run under                  |
 | `sr setup`   | Install what this checkout needs to build                   |
 | `sr doctor`  | Report whether this machine is ready to build               |
 | `sr link` / `unlink` | Register this checkout in a SushiStack workspace, or remove it |
 
-Run any command with `--help` to see its options. Running `sr docker` with no
+Run any command with `--help` to see its options. Running `sr container` with no
 subcommand prints that group's help.
+
+`sr --version` prints the CLI's distribution name and version. `sr --describe` prints
+every command and its options as JSON, for a tool that drives the CLI.
+
+Two commands were renamed: `sr doxygen` is now `sr docs`, and `sr docker` is now
+`sr container`. The old words still run until 2027-03-25 and print one line that names
+the new spelling; set `SR_NO_DEPRECATION_NOTICE=1` to silence it. They are listed in
+neither `--help` nor `--describe`.
 
 `sr --help` groups the commands under Toolchain, Project, Diagnostics and Container,
 and each command's own help ends with examples. On a colour terminal the root screen
@@ -100,7 +107,7 @@ After switching, reconfigure with `sr build --clean` so CMake picks up
 the new toolchain. To override per-invocation without persisting, set the
 `SR_SYCL_TOOLCHAIN` environment variable.
 
-## `sr build` / `test` / `run` / `clean` / `doxygen`
+## `sr build` / `test` / `run` / `clean` / `docs`
 
 This is the group you'll use most.
 
@@ -113,7 +120,7 @@ sr build                  # Release build (the default)
 sr build --type debug     # Debug build
 sr build --type asan      # AddressSanitizer — built in a separate build-asan/ tree, CUDA off
 sr build --distributed    # also compile the optional master-worker layer
-sr build --no-cuda        # Linux only: turn the SYCL CUDA backend off
+sr build --no-cuda        # build the portable CPU/OpenCL path instead of detecting accelerators
 sr build --no-test        # skip compiling the test suite (SR_BUILD_TESTS=OFF)
 sr build --clean          # delete the build tree first, then build from scratch
 sr build --force          # fall back to clang++/clang if the selected toolchain's
@@ -141,12 +148,14 @@ LLVM. Two further details are handled by the CLI and worth knowing about:
   `-fsycl` compiles every translation unit for the host *and* for the SPIR-V
   device, and there is no device AddressSanitizer. Passed unqualified it draws a
   `-Woption-ignored` that `-Werror` turns into a build failure.
-- MSVC's STL container annotations are disabled
-  (`_DISABLE_STRING_ANNOTATION` / `_DISABLE_VECTOR_ANNOTATION`), because they
-  require `stl_asan.lib`, which ships with the Visual Studio "C++
+- MSVC's STL container annotations are disabled (`_DISABLE_STL_ANNOTATION`),
+  because they require `stl_asan.lib`, which ships with the Visual Studio "C++
   AddressSanitizer" component rather than with the compiler. The cost is
-  container-overflow detection inside `std::string` and `std::vector`; heap
-  overflow, stack overflow, use-after-free and double-free are unaffected.
+  container-overflow detection inside the STL containers; heap overflow, stack
+  overflow, use-after-free and double-free are unaffected.
+- `-fsanitize-address-use-after-return=never` is passed, so use-after-return
+  detection is off on Windows. With it on, a `throw` from inside a `catch`
+  handler faults in the MSVC unwinder.
 
 TSan has no Windows support upstream, so `--type debug`'s ThreadSanitizer is a
 Linux-only lane (see `cmake/Sanitizers.cmake`).
@@ -228,17 +237,18 @@ sr run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555
 sr run sr_distributed_demo --distributed=master --port=5555 --workers=1
 ```
 
-(Only `master` and `worker` are accepted; anything else is ignored with a
-warning.) Add `--asan` to run binaries from the `build-asan/` tree.
+Only `master` and `worker` are accepted. Any other role stops the command with
+exit code 2 before the program starts. Add `--asan` to run binaries from the
+`build-asan/` tree.
 
-### `sr clean` and `sr doxygen`
+### `sr clean` and `sr docs`
 
 ```bash
 sr clean       # remove the build/ and build-asan/ trees
-sr doxygen     # build the fluent API reference into docs/api-site/html
+sr docs        # build the fluent API reference into docs/api-site/html
 ```
 
-`sr doxygen` runs Doxygen against the repo-root `Doxyfile` (scoped to the
+`sr docs` runs Doxygen against the repo-root `Doxyfile` (scoped to the
 public `include/SushiRuntime/api` surface). Doxygen is an external tool, not
 vendored: install it (`winget install DimitriVanHeesch.Doxygen` on Windows,
 `apt-get install doxygen graphviz` on Linux, `brew install doxygen graphviz` on
@@ -252,31 +262,46 @@ produce the archive.
 
 ```bash
 sr package                       # install to build/dist, then archive
-sr package --prefix /opt/staging # install somewhere else
+sr package --prefix ../staging   # install somewhere else
+sr package --prefix ../staging --force  # clear a directory sr did not stage
 sr package --no-archive          # install only, skip CPack
 ```
 
-The prefix is wiped before the install, so a file the current build no longer
-produces cannot survive from a previous run into the archive. The build tree must
-already be configured — run `sr build` first. If the tree has no
-`CPackConfig.cmake`, the archive step is skipped with a warning.
+The prefix is emptied before the install, so a file the current build no longer
+produces cannot survive from a previous run into the archive. Because of that,
+`sr package` chooses carefully what it empties:
+
+- It never stages into a filesystem root, your home directory, the project root,
+  any directory above the project root, or the `build/` tree itself. `--force`
+  does not change this.
+- A `--prefix` that does not exist yet, or is empty, is used as it is.
+- A `--prefix` that holds files is emptied only when `sr package` staged it
+  before. It knows by the `.sr-stage` file it writes into every stage tree.
+  For any other directory with files in it, pass `--force`.
+- `build/dist`, the default, is always emptied.
+
+A refusal prints one error line and exits with code 1, and nothing is deleted.
+The same happens when the old tree cannot be removed completely.
+
+The build tree must already be configured — run `sr build` first. If the tree
+has no `CPackConfig.cmake`, the archive step is skipped with a warning.
 
 `sr package` produces the artifact; it does not check it. `sr test --suite
 package` is the check.
 
-## `sr docker` — the development container
+## `sr container` — the development container
 
 A `Dockerfile` provides a complete SYCL toolchain (an intel/llvm nightly bundle,
 the `intel-llvm` toolchain) plus the Intel OpenCL CPU runtime, so you can build
 and run — including the CUDA backend — without installing a compiler on your host.
 
 ```bash
-sr docker build              # build the image (intel-llvm + adaptivecpp toolchains)
-sr docker build --no-cache   # rebuild every layer from scratch, ignoring Docker's cache
-sr docker build --oneapi     # also install the Intel oneAPI DPC++ compiler (icpx; several GB)
-sr docker run                # start the container with the repo mounted
-sr docker run --admin        # run with --privileged --cap-add=SYS_ADMIN (needed for profiling)
-sr docker run --no-gpu       # omit --gpus all (headless / CI environments)
+sr container build              # build the image (intel-llvm + adaptivecpp toolchains)
+sr container build --no-cache   # rebuild every layer from scratch, ignoring Docker's cache
+sr container build --oneapi     # also install the Intel oneAPI DPC++ compiler (icpx; several GB)
+sr container run                # start the container with the repo mounted
+sr container run --admin        # run with --privileged --cap-add=SYS_ADMIN (needed for profiling)
+sr container run --no-gpu       # omit --gpus all (headless / CI environments)
 ```
 
 By default the image ships the `intel-llvm` (primary) and `adaptivecpp`
@@ -295,7 +320,7 @@ what the CLI actually decided to do.
 sr config         # print the resolved config and where each value came from
 
 sr env            # print the environment cmake/ctest/run subprocesses run under
-sr env --all      # show every variable, not just the build-relevant ones
+sr env --all      # show every variable, not just the build-relevant ones (-a for short)
 sr env --asan     # inspect the build-asan/ tree's environment instead
 ```
 
@@ -337,4 +362,4 @@ To provision several checkouts at once, use `hub install` from SushiStack.
 
 The CLI is a convenience, not a requirement — it only runs CMake and CTest for
 you. If you'd rather drive CMake yourself, see the **Building with CMake
-directly** section of the top-level [README](README.md).
+directly** section of the [README](README.md).
