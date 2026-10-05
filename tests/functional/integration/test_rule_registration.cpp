@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Graph::rule_registration is the only way a caller can read a RunReport's
-// node events, which number nodes by registration index while the add() order
-// a caller thinks in is a different sequence. These cases hold that bridge.
+/**
+ * @file test_rule_registration.cpp
+ * @brief Tests Graph::rule_registration, which maps an add() call to its registration index.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <cstdint>

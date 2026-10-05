@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file dependencies.hpp
+ * @brief Declares Reads and Writes, the lists of dependency keys a task names.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/vocabulary/README.md
+ */
+
 #pragma once
 
 #include <utility>
@@ -22,12 +29,7 @@ namespace SushiRuntime
     {
         namespace detail
         {
-            // Pulls the read/write dependency region out of either data handle. A
-            // Buffer maps to its whole-buffer region; a State exposes its current
-            // buffer as the read region and its next buffer as the write region.
-            // These free functions let the Reads/Writes wrappers accept handles
-            // uniformly, and an explicit ResourceRegion (e.g. buf.region({off, len}))
-            // passes through, so a caller can name a sub-range to read or write.
+            // A State reads through its current buffer and writes through its next buffer.
             template <typename T>
             inline Core::ResourceRegion read_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
             template <typename T>
@@ -39,18 +41,17 @@ namespace SushiRuntime
             inline Core::ResourceRegion write_key_of(const State<T>& s) noexcept { return s.write_key(); }
             inline Core::ResourceRegion write_key_of(const Core::ResourceRegion& r) noexcept { return r; }
 
-            // The liveness observer of a tracked handle. A Buffer/State yields its
-            // token observer; a bare ResourceRegion (a raw sub-range the caller
-            // manages) yields an empty observer, so only typed handles are watched.
+            // Only typed handles are watched; a bare ResourceRegion yields an empty observer.
             template <typename T>
             inline Core::LivenessObserver liveness_of(const Buffer<T>& b) noexcept { return b.liveness(); }
             template <typename T>
             inline Core::LivenessObserver liveness_of(const State<T>& s) noexcept { return s.liveness(); }
             inline Core::LivenessObserver liveness_of(const Core::ResourceRegion&) noexcept { return {}; }
 
-            // Appends a handle's observer only when it actually watches an allocation,
-            // so empty observers (raw regions) never enter the list and a later
-            // expired() test means a once-live handle was freed, not "never tracked".
+            /**
+             * @brief Appends a handle's observer only when it watches an allocation.
+             * @see include/SushiRuntime/api/vocabulary/README.md
+             */
             template <class Handle>
             inline void gather_life(std::vector<Core::LivenessObserver>& out, const Handle& h)
             {

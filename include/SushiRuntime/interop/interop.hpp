@@ -47,13 +47,9 @@ namespace SushiRuntime
 
             /**
              * @brief Allocates host memory another API can import.
-             * @param context      The context that allocates and owns the memory.
-             * @param bytes        Minimum number of bytes to export.
-             * @param device_index The device queue to allocate on.
-             * @param alignment    Byte alignment of the returned region.
-             * @return An allocation aligned and rounded to @p alignment.
+             * @return An allocation aligned and rounded to alignment.
              * @throws Core::SushiException With allocation_failed on a non-power-of-two
-             *         alignment, or when the allocation fails.
+             *        alignment, or when the allocation fails.
              */
             SUSHIRUNTIME_API Memory::Allocation export_host_memory(
                 const std::shared_ptr<Execution::RuntimeContext>& context, std::size_t bytes,
@@ -61,14 +57,10 @@ namespace SushiRuntime
 
             /**
              * @brief Imports device memory another API exported.
-             * @param context      The context that imports and owns the mapping.
-             * @param descriptor   Names the exported handle and its device.
-             * @param bytes        Number of bytes to map from the handle.
-             * @param device_index The device queue to import on.
-             * @return An allocation over the imported, mapped region.
+             * @param descriptor Names the exported handle and its device.
              * @throws Core::SushiException With unsupported when the device cannot import
-             *         external memory, or invalid_access when @p descriptor names a
-             *         different device.
+             *        external memory, or invalid_access when @p descriptor names a
+             *        different device.
              */
             SUSHIRUNTIME_API Memory::Allocation import_device_memory(
                 const std::shared_ptr<Execution::RuntimeContext>& context,

@@ -3,20 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Detection is one question, asked in one place, on every platform.
+"""Tests that the Windows configure arguments carry the resolved GPU backend.
 
-Windows was frozen to `-DSR_GPU_BACKEND=cpu` here, on the grounds that the host has no nvptx
-toolchain. That stopped being true -- this workspace's intel/llvm bundle compiles
-`-fsycl-targets=spir64,nvidia_gpu_sm_89` against the installed CUDA toolkit, and `hub install`
-offers that toolkit as a component -- so the freeze meant provisioning a toolkit the build could
-never use, with no flag to override it.
-
-Worse, it made the two CLIs disagree about the same machine: SushiEngine passed no backend at
-all and so got cmake/gpu/DetectGpu's "auto", while SushiRuntime forced "cpu". One checkout, one
-host, two answers about which hardware to target.
-
-Both CLIs delegate to DetectGpu now. These tests pin the delegation rather than the answer,
-because the answer is the part that is supposed to depend on the machine.
+See cli/README.md.
 """
 
 from pathlib import Path

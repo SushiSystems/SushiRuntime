@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file hw_discovery.hpp
+ * @brief Declares HardwareDiscovery and the hardware node and filter types.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/topology/README.md
+ */
+
 #pragma once
 #include <string>
 #include <vector>
@@ -56,14 +63,8 @@ namespace SushiRuntime
             bool include_accelerator = true;
 
             /**
-             * @brief Drop devices that cannot execute double-precision arithmetic.
-             *
-             * A kernel using `double` on a device without `sycl::aspect::fp64`
-             * fails at launch with a driver-shaped error that names neither the
-             * device nor the reason. Setting this moves the failure to discovery,
-             * where the offending device is simply not selected and the choice is
-             * logged. Off by default: a single-precision workload has no reason to
-             * lose a device over it.
+             * @brief Drops devices that cannot execute double-precision arithmetic; off by default.
+             * @see include/SushiRuntime/topology/README.md
              */
             bool require_fp64 = false;
         };

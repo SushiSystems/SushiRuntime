@@ -6,15 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// The "hello, dependencies" example: C = A + B over typed buffers, with the two
-// tasks ordered automatically by the data they touch.
-//
-// Three buffers are allocated as Buffer<float> handles. A first task fills A and
-// B (it writes them); a second task reads A and B and writes C. Because the add
-// task reads what the fill task wrote, the runtime infers a read-after-write edge
-// and runs them in order — no dependency is wired by hand. In(...)/Out(...) wrap a
-// buffer so add() both registers the access for the tracker and hands the kernel
-// the raw element pointer as an argument.
+/**
+ * @file vecadd_demo.cpp
+ * @brief Runs C = A + B over typed buffers, with two tasks ordered by the data they touch.
+ * @author Mustafa Garip
+ * @see examples/README.md
+ */
 
 #include <cstdio>
 
@@ -34,8 +31,7 @@ int main()
 
     auto g = rt.graph();
 
-    // Fill A and B on the device. Out(a)/Out(b) register the writes and pass the
-    // element pointers, so the kernel writes through them directly.
+    // Out(a) and Out(b) register the writes and pass the kernel the element pointers.
     g.add(Extent{N}, Out(a), Out(b),
         [](sycl::id<1> id, float* a, float* b)
         {
@@ -44,8 +40,7 @@ int main()
             b[i] = static_cast<float>(2 * i);
         });
 
-    // C = A + B. Reading A and B (which the fill task wrote) is what orders this
-    // task after it. The runtime serializes only this true dependency.
+    // Reading A and B, which the fill task wrote, orders this task after it.
     g.add(Extent{N}, In(a), In(b), Out(c),
         [](sycl::id<1> id, const float* a, const float* b, float* c)
         {
@@ -55,8 +50,7 @@ int main()
 
     g.run();
 
-    // Read a couple of values back. Shared buffers are host-addressable, so the
-    // host can index them directly once the run has completed.
+    // Shared buffers are host-addressable once the run has completed.
     std::printf("vecadd: N = %zu\n", N);
     std::printf("  C[1]       = %.1f  (expected 3)\n",      c[1]);
     std::printf("  C[100]     = %.1f  (expected 300)\n",    c[100]);

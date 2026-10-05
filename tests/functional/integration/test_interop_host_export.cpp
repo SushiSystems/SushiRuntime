@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_interop_host_export.cpp
+ * @brief Tests export_host for alignment, registry routing, kernel writes and unsupported import.
+ * @author Mustafa Garip
+ */
+
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>

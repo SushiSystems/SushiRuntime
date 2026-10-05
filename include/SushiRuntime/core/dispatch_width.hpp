@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file dispatch_width.hpp
+ * @brief Defines WIDTH_UNKNOWN, the marker of a dispatch with no element count.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <cstdint>

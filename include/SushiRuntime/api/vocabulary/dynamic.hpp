@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file dynamic.hpp
+ * @brief Declares Dynamic, the late-binding controls of a task, and its factories.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/vocabulary/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -25,15 +32,10 @@ namespace SushiRuntime
         {
             /**
              * @brief Validates a buffer slot a late-bound control will read at dispatch.
-             *
-             * The rule is written in docs/architecture/ARCHITECTURE.md, "Late-bound device values".
-             *
-             * @param slot  Buffer holding the value; must be Residency::Host.
-             * @param index Element index within @p slot.
-             * @param what  Name of the calling factory, for the error message.
-             * @return A pointer to the buffer's first element.
+             * @see docs/architecture/ARCHITECTURE.md, "Late-bound device values".
+             * @param slot Buffer holding the value; must be Residency::Host.
              * @throws Core::SushiException With invalid_access if @p slot is not
-             *         Residency::Host or @p index is out of range.
+             *        Residency::Host or @p index is out of range.
              */
             inline const std::uint32_t* checked_device_slot(
                 const Buffer<std::uint32_t>& slot, std::size_t index, const char* what)
@@ -54,21 +56,8 @@ namespace SushiRuntime
         } // namespace detail
 
         /**
-         * @brief Opt-in late-binding controls for a task, evaluated once per step.
-         *
-         * Passed as the leading argument to add() to make a node's iteration size
-         * or its participation vary every step without recompiling the graph.
-         * when() gates whether the node runs at all (a sleeping island, an
-         * LOD-disabled system); sized() sets how many elements it iterates, which
-         * must stay within the capacity its buffers were allocated for. The two
-         * compose — when(pred).and_sized(count) — and each provider is polled on the
-         * driver thread before the plan replays, so the compiled topology is reused
-         * across steps and the graph compiles exactly once.
-         *
-         * The providers are stored in allocation-free Core::Delegate slots, so a
-         * Dynamic is move-only (a stored provider has one owner). Build one from a
-         * when()/sized() temporary and pass it straight to add(), or std::move a
-         * named Dynamic into the call.
+         * @brief Holds opt-in late-binding controls for a task, evaluated once per step.
+         * @see include/SushiRuntime/api/vocabulary/README.md
          */
         struct Dynamic
         {
@@ -112,11 +101,7 @@ namespace SushiRuntime
             /** @brief Element index of the live base within device_base. */
             std::size_t device_base_index = 0;
 
-            // The chaining setters are ref-qualified so a move-only Dynamic chains in
-            // both shapes: mutating a named Dynamic in place (the lvalue overload
-            // returns a reference) and building one inline — when(p).and_sized(c) —
-            // where the rvalue overload returns by value so the result moves straight
-            // into add()'s by-value parameter.
+            // Chaining setters are ref-qualified: lvalues return *this, rvalues return by value.
 
             /**
              * @brief Sets the enable predicate on a named Dynamic.
@@ -163,13 +148,11 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Points a named Dynamic at a device-written count; returns *this.
-             *
-             * Drops any host-side sized() provider, since the two cannot both decide
-             * the iteration size. See sized_from_device() for the contract.
-             * @param counter Slot in a Residency::Host allocation a predecessor writes; checked at add().
-             * @param index   Element index of the count within @p counter.
-             * @return *this, for chaining.
+             * @brief Points a named Dynamic at a device-written count and drops any sized()
+             *        provider.
+             * @param counter Slot in a Residency::Host allocation a predecessor writes; checked at
+             *        add().
+             * @see include/SushiRuntime/api/vocabulary/README.md
              */
             Dynamic& and_sized_from_device(const std::uint32_t* counter, std::size_t index) &
             {
@@ -224,13 +207,11 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Points a named Dynamic at a device-written base; returns *this.
-             *
-             * Drops any host-side based_at() provider, since the two cannot both
-             * decide where the node starts.
-             * @param slot  Slot in a Residency::Host allocation a predecessor writes; checked at add().
-             * @param index Element index of the base within @p slot.
-             * @return *this, for chaining.
+             * @brief Points a named Dynamic at a device-written base and drops any based_at()
+             *        provider.
+             * @param slot Slot in a Residency::Host allocation a predecessor writes; checked at
+             *        add().
+             * @see include/SushiRuntime/api/vocabulary/README.md
              */
             Dynamic& and_based_at_device(const std::uint32_t* slot, std::size_t index) &
             {
@@ -283,33 +264,10 @@ namespace SushiRuntime
 
         /**
          * @brief Builds a Dynamic whose size comes from a count the device produced.
-         *
-         * sized() answers "how many elements does the host already know we want",
-         * polled at the step boundary. This answers the question a producer/consumer
-         * chain actually asks: how many did the *device* just produce. A broadphase
-         * writes its pair count and the narrowphase must iterate exactly that many —
-         * a number that does not exist yet when the step boundary runs, so a
-         * host-side provider cannot supply it without a mid-step readback or a
-         * second run.
-         *
-         * The count is instead read when the node is dispatched, which is after every
-         * predecessor's event has completed, so a value a predecessor kernel wrote is
-         * visible. The task that consumes the count is automatically ordered after
-         * whoever writes @p counter, because add() registers @p counter as one of its
-         * reads — the ordering is structural, not a note the caller must remember.
-         *
-         * Two constraints, both enforced rather than documented: @p counter must be
-         * Residency::Host, checked here; and the live count must not
-         * exceed the capacity the node was compiled for, checked at dispatch, where
-         * exceeding it fails the run rather than silently truncating the work.
-         *
-         * Replaces any sized() provider on the same Dynamic; when() still composes.
-         *
          * @param counter Residency::Host buffer a predecessor writes the count into.
-         * @param index   Element index of the count within @p counter.
-         * @return A Dynamic carrying the device count source, ready to pass to add().
          * @throws Core::SushiException If @p counter is not Residency::Host or @p index
-         *         is out of range.
+         *        is out of range.
+         * @see include/SushiRuntime/api/vocabulary/README.md
          */
         inline Dynamic sized_from_device(const Buffer<std::uint32_t>& counter,
                                          std::size_t index = 0)
@@ -322,23 +280,8 @@ namespace SushiRuntime
 
         /**
          * @brief Builds a Dynamic whose node starts at a per-step element offset.
-         *
-         * sized() says how many elements a node iterates; this says from where. The
-         * pair is what a graph-coloured solver needs: each colour is a contiguous
-         * slice of one constraint buffer, and every colour's offset shifts as soon
-         * as constraints are added or removed. Without it the kernel has to reach
-         * its own work through an index-indirection buffer, paying an extra load
-         * per element for something the launch could have carried for free.
-         *
-         * The offset is applied by the runtime, so the callable still receives
-         * absolute indices: `fn(base + i)` for i in [0, count). The window must fit
-         * inside the capacity the node was compiled for; one that does not fails
-         * the run rather than reading past the end.
-         *
-         * Composes with when() and sized()/sized_from_device().
-         *
          * @param base Polled before each step; the first element to iterate.
-         * @return A Dynamic carrying the base provider, ready to pass to add().
+         * @see include/SushiRuntime/api/vocabulary/README.md
          */
         inline Dynamic based_at(Dynamic::BaseProvider base)
         {
@@ -349,21 +292,10 @@ namespace SushiRuntime
 
         /**
          * @brief Builds a Dynamic whose base comes from a slot the device wrote.
-         *
-         * The device-sourced form of based_at(), and the companion of
-         * sized_from_device(): a colouring pass that computes both a slice's offset
-         * and its length on the device hands over both the same way, and the slot is
-         * registered as one of the consuming task's reads so the producer is
-         * necessarily ordered first.
-         *
-         * Replaces any based_at() provider on the same Dynamic; when() and the size
-         * controls still compose.
-         *
-         * @param slot  Residency::Host buffer a predecessor writes the base into.
-         * @param index Element index of the base within @p slot.
-         * @return A Dynamic carrying the device base source, ready to pass to add().
+         * @param slot Residency::Host buffer a predecessor writes the base into.
          * @throws Core::SushiException If @p slot is not Residency::Host or @p index is
-         *         out of range.
+         *        out of range.
+         * @see include/SushiRuntime/api/vocabulary/README.md
          */
         inline Dynamic based_at_device(const Buffer<std::uint32_t>& slot,
                                        std::size_t index = 0)

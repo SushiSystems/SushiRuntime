@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Unit coverage for epoch-based reclamation (EBR). EpochManager is a process-
-// wide singleton, so these assert observable contracts: retired objects are
-// eventually deleted once, EpochGuard enter/exit is balanced, and a thread that
-// retires then exits hands its nodes to the global orphan list.
+/**
+ * @file test_epoch_reclamation.cpp
+ * @brief Tests that epoch reclamation frees retired objects once and adopts dead threads' orphans.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <memory>
@@ -31,16 +33,7 @@ namespace
      */
     inline Counter make_counter() { return std::make_shared<std::atomic<int>>(0); }
 
-    /**
-     * @brief Heap payload that bumps a shared counter on destruction.
-     *
-     * Used so a test can observe reclamation without reaching into EpochManager internals.
-     * The counter is a shared_ptr, NOT a raw pointer to a stack atomic: EBR
-     * reclamation is deferred, so a tail of retired objects can be freed during a
-     * later test. A raw stack pointer would then be written after this frame is
-     * gone — a stack-use-after-return. shared_ptr keeps the counter alive as long
-     * as any Tracked references it.
-     */
+    /** @brief Holds a heap payload that bumps a shared counter on destruction. */
     struct Tracked
     {
         Counter destroyed;
@@ -49,13 +42,8 @@ namespace
     };
 
     /**
-     * @brief Retires a count of objects, then runs extra guarded passes to advance the epoch.
-     *
-     * Used to drain pending nodes and test reclamation.
-     *
-     * @param destroyed The shared counter to observe.
-     * @param count The number of objects to retire.
-     * @return The number of reclaimed objects.
+     * @brief Retires a count of objects, runs extra guarded passes and returns the number
+     *        reclaimed.
      */
     int retire_and_drain(const Counter& destroyed, int count)
     {
@@ -100,8 +88,7 @@ TEST(Unit_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
 
     int reclaimed = retire_and_drain(destroyed, RETIRED);
 
-    // Most should be gone; survivors are those retired in the final, not-yet-
-    // advanced epoch. The bound is generous to stay non-flaky.
+    // Objects retired in the last epoch may survive, so the bound is loose; see README.md.
     EXPECT_GT(reclaimed, RETIRED) << "Epoch reclamation did not collect retired objects.";
 }
 
@@ -122,13 +109,11 @@ TEST(Unit_EpochReclamationTest, ThreadExitHandsOffOrphans)
             EpochGuard guard;
             EpochManager::instance().retire(new Tracked(destroyed));
         }
-        // Thread exits here -> its dtor donates the remaining retire_list to the
-        // global orphan list.
+        // The exiting thread's destructor gives its retire list to the orphan list; see README.md.
     });
     producer.join();
 
-    // Main thread drains: each guarded retire triggers check_and_reclaim, which
-    // pulls in the orphaned nodes and frees those past the safe epoch.
+    // Each guarded retire adopts orphans and frees those past the safe epoch; see README.md.
     Counter drain_sink = make_counter();
     for (int i = 0; i < 1024; ++i)
     {

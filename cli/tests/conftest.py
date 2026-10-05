@@ -3,17 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Test fixtures for the SushiRuntime CLI.
+"""Makes the real sushicore importable for the SushiRuntime CLI test suite.
 
-``sushiruntime`` imports :mod:`sushicore` -- the shared core underneath every Sushi*
-CLI -- at module load, so the suite cannot even be collected without it.
-
-These tests used to run against a hand-written stub of that package. The stub
-was a liability twice over: it had to grow every time sushicore did, and a test
-could end up pinning the imitation rather than the contract (one of them
-asserted on an attribute only the fake had). sushicore now ships inside the
-SushiStack repository, so the real thing is reachable -- installed in the
-environment, or sitting next door -- and that is what these tests use.
+See cli/README.md.
 """
 
 from __future__ import annotations

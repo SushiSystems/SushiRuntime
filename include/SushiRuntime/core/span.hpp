@@ -6,23 +6,18 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-#pragma once
-
 /**
  * @file span.hpp
- * @brief Provides a non-owning view over a contiguous sequence of objects.
- * 
- * Implements a C++17 compatible subset of std::span to facilitate memory-safe array operations.
+ * @brief Provides SushiRuntime::span: std::span from C++20 on, a C++17 subset before it.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
  */
+
+#pragma once
 
 #include <cstddef>
 
-// Key the choice on __cplusplus (the language standard), NOT the library macro
-// __cpp_lib_span: the latter is only defined after a header that provides it
-// (<version>/<span>) has been included, so its visibility varies per translation
-// unit — which silently splits SushiRuntime::span into std::span in one TU and
-// the shim in another, producing link errors (mismatched mangled signatures).
-// __cplusplus is defined uniformly for every TU in the build, so all TUs agree.
+// The choice is keyed on __cplusplus, which every translation unit sees alike.
 #if __cplusplus >= 202002L
 
     #include <span>
@@ -103,15 +98,7 @@
                 constexpr span(element_type (&arr)[N]) noexcept
                     : data_(arr), size_(N) {}
 
-                /**
-                 * @brief Constructs a span from a contiguous container.
-                 * 
-                 * Resolves the underlying pointer and size via the container's data() and size() methods.
-                 *
-                 * @tparam Container The deduced container type.
-                 * @tparam Decayed The stripped type of the container for SFINAE checks.
-                 * @param c The contiguous container to view.
-                 */
+                /** @brief Constructs a span from a contiguous container's data() and size(). */
                 template <typename Container,
                           typename Decayed = std::remove_cv_t<std::remove_reference_t<Container>>,
                           typename = std::enable_if_t<

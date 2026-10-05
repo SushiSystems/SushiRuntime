@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_graph.cpp
+ * @brief Tests TaskGraph ordering for a sequential dependency, independent roots and a diamond.
+ * @author Mustafa Garip
+ */
+
 #include <atomic>
 #include <vector>
 #include <mutex>

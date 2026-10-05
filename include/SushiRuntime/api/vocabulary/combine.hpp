@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file combine.hpp
+ * @brief Declares the Sum, Minimum and Maximum combiners of Graph::add_reduce().
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/vocabulary/README.md
+ */
+
 #pragma once
 
 #include <limits>
@@ -14,21 +21,6 @@ namespace SushiRuntime
 {
     namespace API
     {
-        /**
-         * @brief The combining operators Graph::add_reduce() understands.
-         *
-         * A combiner is any binary functor that is trivially copyable, so it can be
-         * captured into a device kernel. These three cover the common cases and each
-         * supplies the identity its reduction needs for an empty input, which is why
-         * they are types rather than lambdas: a lambda cannot carry identity(), so a
-         * caller passing one uses the add_reduce overload that takes the identity
-         * explicitly.
-         *
-         * The combiner does NOT determine the order values are combined in. That is
-         * fixed by the reduction's element layout alone (see add_reduce), which is
-         * what makes a floating-point sum reproducible.
-         */
-
         /**
          * @brief Adds two values; identity is the value-initialised T.
          * @tparam T Element type being reduced.

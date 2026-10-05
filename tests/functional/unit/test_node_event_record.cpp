@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Unit coverage for Core::NodeEventRecord's layout and for RunReport::reset()
-// keeping node_events' capacity while zeroing the clock pairing. The engine
-// side copies NodeEventRecord field-for-field with no translation, so its
-// size and triviality are pinned down here rather than left to drift.
+/**
+ * @file test_node_event_record.cpp
+ * @brief Tests Core::NodeEventRecord's layout and what RunReport::reset() keeps and zeroes.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstdint>
 #include <type_traits>
@@ -20,8 +22,7 @@
 
 using namespace SushiRuntime;
 
-// 40 bytes, trivially copyable: the shape the engine backend copies with no
-// translation. A padding change or an added field here breaks that contract.
+/** @brief Tests that NodeEventRecord is 40 bytes and trivially copyable. */
 TEST(Unit_NodeEventRecord, LayoutIsFortyBytesAndTriviallyCopyable)
 {
     static_assert(sizeof(Core::NodeEventRecord) == 40u, "NodeEventRecord must stay 40 bytes");
@@ -31,8 +32,7 @@ TEST(Unit_NodeEventRecord, LayoutIsFortyBytesAndTriviallyCopyable)
     EXPECT_TRUE(std::is_trivially_copyable<Core::NodeEventRecord>::value);
 }
 
-// reset() must not free node_events' storage, matching the retained-capacity
-// contract every other RunReport vector already carries.
+/** @brief Tests that reset() keeps the capacity of node_events. */
 TEST(Unit_NodeEventRecord, ResetKeepsNodeEventsCapacity)
 {
     Core::RunReport report;
@@ -46,8 +46,7 @@ TEST(Unit_NodeEventRecord, ResetKeepsNodeEventsCapacity)
     EXPECT_EQ(report.node_events.capacity(), capacity_before);
 }
 
-// reset() must zero the clock pairing, so a stale pairing from a previous run
-// never survives into a report that reads as freshly reset.
+/** @brief Tests that reset() zeroes the clock pairing. */
 TEST(Unit_NodeEventRecord, ResetZeroesClockPairing)
 {
     Core::RunReport report;
@@ -60,8 +59,7 @@ TEST(Unit_NodeEventRecord, ResetZeroesClockPairing)
     EXPECT_EQ(report.clock.uncertainty_ns, 0u);
 }
 
-// The widths default to WIDTH_UNKNOWN rather than zero, because zero is a real
-// dispatch width on an empty pass and would read as a measured value.
+/** @brief Tests that the widths default to WIDTH_UNKNOWN. */
 TEST(Unit_NodeEventRecord, WidthsDefaultToUnknown)
 {
     const Core::NodeEventRecord rec{};

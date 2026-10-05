@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file buffer.hpp
+ * @brief Declares Buffer, the owning handle to a typed block of unified shared memory.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/data/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -54,18 +61,8 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Where a Buffer/State keeps its memory across steps.
-         *
-         * Shared USM is host-addressable, so the host may seed and read it directly,
-         * but at large element counts the driver may migrate it between host and
-         * device. Device USM stays resident on its device — the right choice for a
-         * world kept on the GPU across frames — but is not host-addressable, so the
-         * host touches it only through read_range()/write_range(). Host USM is
-         * pinned host memory that device kernels on the owning context write and the
-         * host reads at any moment, including while kernels run. Kernels reach host USM
-         * across the bus and it is page-locked RAM, so it suits small values the host
-         * reads mid-run, not bulk kernel data. The handle API is
-         * otherwise identical; residency is chosen once at allocation.
+         * @brief Names where a Buffer or State keeps its memory across steps.
+         * @see include/SushiRuntime/api/data/README.md
          */
         enum class Residency
         {
@@ -114,20 +111,10 @@ namespace SushiRuntime
         } // namespace detail
 
         /**
-         * @brief Owning handle to a typed block of unified shared memory.
-         *
-         * A Buffer is the fluent API's unit of data: a typed USM allocation that
-         * the runtime tracks by owning queue, so a task touching it is dispatched
-         * to the device that holds it. Passing a Buffer to Graph::add() is what
-         * lets the runtime register the task's reads and writes automatically — the
-         * handle's address is the identity the dependency tracker keys on.
-         *
-         * The memory is shared USM, so the host may index it directly (to seed or
-         * read back data) and a device kernel may capture data() and use it on the
-         * device. The handle owns the allocation and frees it on destruction, so it
-         * must outlive every graph run that touches it. Move-only.
-         *
-         * @tparam T Element type. Must be trivially copyable for device use.
+         * @brief Owns a typed block of unified shared memory that the runtime tracks by owning
+         *        queue.
+         * @tparam T Element type; must be trivially copyable for device use.
+         * @see include/SushiRuntime/api/data/README.md
          */
         template <typename T>
         class Buffer
@@ -140,17 +127,9 @@ namespace SushiRuntime
                 Buffer() = default;
 
                 /**
-                 * @brief Allocates @p count elements of USM on one device.
-                 *
-                 * Allocation is pinned to @p device_index and its owner recorded, so
-                 * buffers used together (e.g. a State's two fields) share a context
-                 * and a kernel touching them never makes a cross-context access. Do
-                 * not construct a Buffer over foreign USM.
-                 *
-                 * @param ctx          The runtime context that owns the allocation.
-                 * @param count        Number of elements to allocate.
-                 * @param device_index Target device queue; selects the owning context.
-                 * @param residency    Shared, Device or Host; see Residency.
+                 * @brief Allocates count elements of USM pinned to one device and records the
+                 *        owner.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 Buffer(std::shared_ptr<Execution::RuntimeContext> ctx,
                        std::size_t count, DeviceIndex device_index = DeviceIndex{0},
@@ -175,15 +154,11 @@ namespace SushiRuntime
 
                 /**
                  * @brief Wraps memory another component allocated and will release.
-                 * @param ctx          The runtime context this buffer is pinned to.
                  * @param allocation   Owns at least count * sizeof(T) bytes; released
-                 *                     when this buffer is.
-                 * @param count        Number of elements @p allocation covers.
-                 * @param device_index Target device queue.
-                 * @param residency    Shared, Device or Host; see Residency.
+                 *        when this buffer is.
                  * @throws SushiException With allocation_failed when @p count overflows
-                 *         its byte count, or @p allocation is smaller than it; @p allocation
-                 *         is released before the exception propagates.
+                 *        its byte count, or @p allocation is smaller than it; @p allocation
+                 *        is released before the exception propagates.
                  */
                 Buffer(std::shared_ptr<Execution::RuntimeContext> ctx, Memory::Allocation allocation,
                        std::size_t count, DeviceIndex device_index, Residency residency)
@@ -213,23 +188,11 @@ namespace SushiRuntime
                 Buffer& operator=(const Buffer&) = delete;
 
                 /**
-                 * @brief Takes ownership of @p other's allocation.
-                 *
-                 * The liveness token moves WITH the allocation, by design: replay and
-                 * factory patterns (`auto s = rt.state<T>(n)`, returning a handle,
-                 * moving one into place before recording it) rely on the token
-                 * following the value.
-                 *
-                 * @warning A fluent graph records a handle by its object ADDRESS
-                 * (State kernels capture `&state` and dereference it each step). Once
-                 * a Buffer/State has been passed to `Graph::add(...)`, do NOT move it
-                 * (or store it in a container that may reallocate, e.g. push_back into
-                 * a `std::vector<State>` after recording an element): the graph keeps
-                 * pointing at the old address while the object lives at the new one,
-                 * and — because the token travels with the value — the liveness guard
-                 * cannot detect it. Keep recorded handles fixed for the graph's life.
-                 *
-                 * @param other Buffer to take the allocation from; left empty.
+                 * @brief Takes ownership of other's allocation and liveness token, leaving other
+                 *        empty.
+                 * @warning Do not move a handle after Graph::add() recorded it; the graph keeps its
+                 *        old address.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 Buffer(Buffer&& other) noexcept
                     : ctx_(std::move(other.ctx_)),
@@ -303,19 +266,9 @@ namespace SushiRuntime
                 bool host_accessible() const noexcept { return residency_ != Residency::Device; }
 
                 /**
-                 * @brief Host-side element access; valid only for shared or host USM.
-                 *
-                 * Device-resident memory is not host-addressable, so indexing it on the
-                 * host is invalid. Rather than dereference into undefined behaviour, this
-                 * throws on a device-resident buffer — a deterministic failure in every
-                 * build, not just a debug assert. For device residency use
-                 * read_range()/write_range(), or host() for a bulk host view. Kernels
-                 * capture data() directly and never go through this operator, so the
-                 * residency check costs nothing on the device path.
-                 *
-                 * @param i Element index to access.
-                 * @return A reference to element @p i.
+                 * @brief Returns element i for host code; valid only for shared or host USM.
                  * @throws SushiException If the buffer is device-resident.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 T& operator[](std::size_t i) const
                 {
@@ -324,16 +277,11 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief A host-addressable view over the whole buffer.
-                 *
-                 * The branch-free bulk seam for host code: the residency is checked once,
-                 * here, and the returned span indexes with no further checks — seed or
-                 * read back in a tight loop without paying per-element validation. Valid
-                 * only for shared or host USM; a device-resident buffer throws, since its memory
-                 * is not host-addressable (use read_range()/write_range() there).
-                 *
+                 * @brief Returns a host-addressable span over the whole buffer after one residency
+                 *        check.
                  * @return A span over all elements, valid while this buffer lives.
                  * @throws SushiException If the buffer is device-resident.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 span<T> host() const
                 {
@@ -342,16 +290,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Copies a sub-range out to the host, for any residency.
-                 *
-                 * The selective-readback seam: rather than host-mapping a whole
-                 * device-resident field, copy just [offset, offset+count) through the
-                 * owning queue into a host vector — telemetry, IO, or a debug window.
-                 * Synchronous: the copy is waited on before returning. The range is
-                 * clamped to what the buffer holds.
-                 *
+                 * @brief Copies a sub-range out to a host vector through the owning queue and waits
+                 *        for it.
                  * @param range Element window to read; count is clamped to the remainder.
-                 * @return A host vector holding the copied elements.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 std::vector<T> read_range(ElementRange range) const
                 {
@@ -371,14 +313,11 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Copies a host range into a sub-range, for any residency.
-                 *
-                 * The counterpart to read_range and the way to seed a device-resident
-                 * buffer the host cannot index. Synchronous: the copy is waited on
-                 * before returning. The range is clamped to what the buffer holds.
-                 *
+                 * @brief Copies a host range into a sub-range through the owning queue and waits
+                 *        for it.
                  * @param range Element window to write; count is clamped to the remainder.
-                 * @param src   Host source of at least range.count elements.
+                 * @param src Host source of at least range.count elements.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 void write_range(ElementRange range, const T* src)
                 {
@@ -396,40 +335,25 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief The dependency-tracking identity of this buffer.
-                 *
-                 * Graph::add() passes this to the dependency tracker as the
-                 * read/write key. It is the allocation's base address, which the
-                 * tracker treats as the whole-buffer region.
-                 *
+                 * @brief Returns the allocation's base address, which the dependency tracker uses
+                 *        as the key.
                  * @return The base pointer as a void*, or nullptr when empty.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 void* dependency_key() const noexcept { return static_cast<void*>(data()); }
 
                 /**
-                 * @brief A weak observer of this buffer's allocation lifetime.
-                 *
-                 * A graph that records this buffer keeps the returned observer; it stays
-                 * valid while the buffer lives and expires when the buffer is destroyed
-                 * or moved-from. That lets a run detect a buffer freed before it ran and
-                 * fail cleanly instead of dispatching against released memory. Empty for
-                 * a handle that owns no allocation.
-                 *
-                 * @return A weak observer of the allocation, empty when this handle is empty.
+                 * @brief Returns a weak observer that expires when this buffer is destroyed or
+                 *        moved from.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 Core::LivenessObserver liveness() const noexcept { return liveness_; }
 
                 /**
-                 * @brief Names a sub-range of this buffer for fine-grained ordering.
-                 *
-                 * Two tasks declaring regions of the same buffer are serialized only
-                 * when their ranges overlap, so disjoint slices (an array's halves, a
-                 * grid's interior versus its halo) run in parallel. Pass the result to
-                 * Reads(...)/Writes(...) in place of the buffer itself. Offsets are in
-                 * elements; the buffer keeps the whole-buffer default when used bare.
-                 *
-                 * @param range Element window to name; count is clamped to the remainder.
-                 * @return A region keyed on this allocation, covering the element window.
+                 * @brief Names a sub-range of this buffer so that tasks on disjoint ranges are not
+                 *        serialized.
+                 * @param range Element window, in elements; count is clamped to the remainder.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 Core::ResourceRegion region(ElementRange range) const noexcept
                 {
@@ -444,23 +368,11 @@ namespace SushiRuntime
 
 #ifdef SR_DISTRIBUTED
                 /**
-                 * @brief Registers this buffer as distributable (Master mode).
-                 *
-                 * Opt-in: only a registered buffer can cross to a worker, and the
-                 * master stays authoritative for it. No-op when empty.
-                 *
-                 * Two overloads exist to make chaining safe. The lvalue overload
-                 * (on a named buffer) returns *this. The rvalue overload (on a
-                 * temporary returned by Runtime::buffer()) moves the buffer into
-                 * the caller so the allocation survives the chain:
-                 * `auto a = rt.buffer<float>(n).distributed();`
-                 *
-                 * A State<T> is also distributable (State::distributed()); it
-                 * registers both of its allocations and the offload path resolves the
-                 * step's read/write handles from the live pointers, so the swap is
-                 * followed without breaking the version-by-pointer coherence model.
-                 *
-                 * @return *this (lvalue overload) or the buffer by value (rvalue overload).
+                 * @brief Registers this buffer as distributable in Master mode; does nothing when
+                 *        empty.
+                 * @return *this from the lvalue overload, the buffer by value from the rvalue
+                 *        overload.
+                 * @see include/SushiRuntime/api/data/README.md
                  */
                 Buffer& distributed() &
                 {
@@ -494,8 +406,7 @@ namespace SushiRuntime
                 {
                     allocation_.reset();
                     size_ = 0;
-                    // Drop the token so any graph observing this allocation sees it
-                    // expire — the signal that the buffer no longer backs its pointer.
+                    // Resetting the token expires every graph's observer of this allocation.
                     liveness_.reset();
                 }
 

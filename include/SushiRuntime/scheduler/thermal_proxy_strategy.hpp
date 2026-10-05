@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file thermal_proxy_strategy.hpp
+ * @brief Declares ThermalProxyStrategy, a rebalance strategy for throttled workers.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/scheduler/README.md
+ */
+
 #pragma once
 #include "rebalancer_interfaces.hpp"
 #include <SushiRuntime/core/logger.hpp>
@@ -17,13 +24,8 @@ namespace SushiRuntime
     namespace Scheduler
     {
         /**
-         * @brief Rebalance strategy that detects throttled (hot) workers and offloads them.
-         *
-         * Identifies the worker whose queue is growing fastest but completing
-         * fewest tasks (a thermal or load-spike signature) and moves half of its
-         * backlog to the idlest worker. Fires only when the queue imbalance
-         * exceeds IMBALANCE_THRESHOLD and the victim's completion rate is at or
-         * below THROTTLING_RATE.
+         * @brief Detects throttled workers and moves half of their backlog to the idlest worker.
+         * @see include/SushiRuntime/scheduler/README.md
          */
         class ThermalProxyStrategy : public IRebalanceStrategy
         {
@@ -37,14 +39,8 @@ namespace SushiRuntime
 
             public:
                 /**
-                 * @brief Scans all workers for a throttled bottleneck and migrates tasks.
-                 *
-                 * Compares each worker's queue depth and per-interval completion rate.
-                 * When a bottleneck (high queue, low rate) and an idle worker (lowest
-                 * queue) are found, moves half the imbalance to the idle worker.
-                 *
-                 * @param telemetry Live scheduler counters.
-                 * @param migrator  Migration actuator to move tasks.
+                 * @brief Scans all workers for a throttled bottleneck and migrates tasks to the
+                 *        idlest one.
                  */
                 void evaluate_and_rebalance(const ITelemetryProvider& telemetry, ITaskMigrator& migrator) override
                 {

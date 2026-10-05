@@ -6,12 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// §5.4 coverage: a single kernel cannot dereference USM from two non-peer device
-// contexts. Rather than letting such a node hit an illegal cross-context access, the
-// scheduler detects the split on the node's first dispatch and fails the run with a
-// precise error. (Real cross-device execution — splitting data with the work — is a
-// WP-5 concern; this guard enforces the co-location contract until then.) The check
-// needs at least two device contexts, so it skips on single-device setups.
+/**
+ * @file test_cross_context_guard.cpp
+ * @brief Tests that a node spanning two device contexts fails the run with an error.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -33,14 +33,12 @@ TEST(Integration_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
     int* pb = b.data();
     const int* pa = a.data();
 
-    // A node that reads context-0 data and writes context-1 data: no single queue can
-    // run it correctly.
+    // No one queue can run a node that reads context 0 and writes context 1; see README.md.
     auto g = rt.graph();
     g.add(API::Reads(a), API::Writes(b), N,
           [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; });
 
-    // The run fails with a clear error instead of an illegal memory access, and the
-    // runtime stays usable afterward (the error-isolation contract).
+    // The run fails with an error and the runtime stays usable afterward; see README.md.
     auto result = g.try_run();
     ASSERT_FALSE(result) << "a cross-context node must not run successfully";
     EXPECT_EQ(result.error().code, Core::Errc::invalid_graph);

@@ -8,7 +8,7 @@
 This replaces the project/*.sh and project/*.bat scripts. It holds SushiRuntime's own
 build policy — which cache variables it passes, which targets and test suites it has,
 its sanitizer lanes and configure stamp — and drives cmake and ctest through
-``sushicore.cmake_driver.CMakeDriver`` with the snapshotted build env.
+``sushicore.cmake_driver.CMakeDriver`` with the snapshotted build env. See cli/README.md.
 """
 
 from __future__ import annotations
@@ -29,80 +29,19 @@ from ..env import load_build_env
 from . import discovery
 from .install_hint import toolchain_install_command
 
-# Isolated ASan tree. Kept separate from the CUDA `build/` so it is never
-# clobbered: ASan forces CUDA OFF (the CUDA UR adapter's urVirtualMemReserve
-# collides with ASan's reserved VA) and stays a Release build (so CMakeLists'
-# Debug|RelWithDebInfo auto-TSan block never fires -- TSan and ASan can't coexist).
+# The ASan tree is separate from build/, CUDA off and Release; see cli/README.md.
 ASAN_FLAGS = "-fsanitize=address -fno-omit-frame-pointer -g -O1"
 
-# Windows needs two adjustments the Linux driver does not.
-#
-# -Xarch_host: `-fsycl` compiles every translation unit twice, once for the host
-# and once for the SPIR-V device, and AddressSanitizer exists only for the host.
-# Passed unqualified, the Windows driver reports `-Woption-ignored` for the device
-# pass and the tree's `-Werror` turns that into a failure on the first source
-# file. Scoping the flag to the host pass leaves no diagnostic to suppress —
-# suppressing it would not have worked anyway, since the target-level `-Werror`
-# lands *after* CMAKE_CXX_FLAGS on the command line and re-promotes everything.
-#
-# _DISABLE_STL_ANNOTATION: MSVC's STL links `stl_asan.lib` for its container
-# annotations, and that library ships with the Visual Studio "C++ AddressSanitizer"
-# component rather than with the compiler, so a stock Build Tools install does not
-# have it. Turning the annotations off keeps the lane buildable there. The cost is
-# container-overflow detection inside the annotated containers; heap overflow,
-# stack overflow, use-after-free and double-free reporting are unaffected.
-#
-# The umbrella macro, not the per-container ones. Naming the containers
-# individually (_DISABLE_STRING_ANNOTATION, _DISABLE_VECTOR_ANNOTATION) went stale
-# the moment MSVC's STL learned to annotate one more: 14.51 added std::optional,
-# whose annotation kept emitting the `stl_asan.lib` autolink and broke the link
-# with `could not open 'stl_asan.lib'`. _DISABLE_STL_ANNOTATION is the documented
-# switch that covers all of them (see __msvc_sanitizer_annotate_container.hpp) and
-# will keep covering whatever is added next.
-#
-# -fsanitize-address-use-after-return=never: ASan's use-after-return detection
-# moves locals into a heap-allocated "fake stack", and on the MSVC ABI that
-# codegen produces EH state tables the CRT unwinder cannot read. Any throw issued
-# from inside a catch handler — a bare `throw;` rethrow or a fresh throw, it makes
-# no difference — then faults in `__FrameHandler3::GetUnwindTryBlock` on a null
-# read, before reaching any handler. Reduced to a 20-line program with no
-# SushiRuntime code involved, so this is the toolchain, not the tree; the same
-# program is correct at -O0 for a rethrow and still dies for a throw-copy, which
-# is why the flag is the fix and lowering the optimisation level is not.
-#
-# The setting costs nothing here: the fake stack is what the flag removes, and its
-# reporting is off unless ASAN_OPTIONS carries detect_stack_use_after_return=1,
-# which this CLI has never set (see env.py's _inject_sanitizer_options, which
-# handles LSAN_OPTIONS only). Heap overflow, use-after-free, double-free and
-# global overflow reporting are all unaffected — verified against a deliberate
-# heap-buffer-overflow with the flag on.
-#
-# Windows only. The Itanium ABI unwinder Linux uses is not affected, and ASAN_FLAGS
-# keeps full use-after-return instrumentation there.
+# The Windows ASan flags differ from the Linux ones in three ways; see cli/README.md.
 ASAN_FLAGS_WINDOWS = (
     "-Xarch_host -fsanitize=address -fsanitize-address-use-after-return=never "
     "-fno-omit-frame-pointer -g -O1 -D_DISABLE_STL_ANNOTATION=1")
 
-# The C driver has no device pass, so it takes the plain form: `-Xarch_host` is
-# only meaningful to an offloading compilation.
-#
-# Not passed to CMake as CMAKE_C_FLAGS, and deliberately so. Both projects declare
-# `project(... LANGUAGES CXX)` and nothing calls enable_language(C), so C is never
-# enabled, the C compiler probe never runs, and CMake reported CMAKE_C_COMPILER /
-# CMAKE_C_FLAGS as "manually-specified variables not used" on every configure. The
-# string is kept because it feeds the ASan configure stamp below, and because it is
-# the right value to pass on the day something does enable C -- rediscovering the
-# use-after-return tuning would be the expensive part.
+# The C driver has no device pass and takes no -Xarch_host; see cli/README.md.
 ASAN_C_FLAGS_WINDOWS = ("-fsanitize=address -fsanitize-address-use-after-return=never "
                         "-fno-omit-frame-pointer -g -O1")
 
-# The benchmark binary installs a global operator new/delete replacement to count
-# allocations (tests/benchmark/performance/test_recompose_churn_perf.cpp), which
-# is the same thing AddressSanitizer replaces — on Windows the two collide as a
-# duplicate-symbol link error. Excluding the suite is the right call regardless:
-# ASan's redzones and quarantine make its timings and allocation counts
-# meaningless, so an ASan benchmark run would report numbers nobody should read.
-# The sanitizer lane exists for correctness; the benchmark lane runs uninstrumented.
+# An ASan build leaves the benchmark suite out; see cli/README.md.
 ASAN_BENCHMARKS = "OFF"
 STAMP_NAME = ".sushiruntime_dist"
 
@@ -122,8 +61,7 @@ class DistributedRole(str, enum.Enum):
 
 
 class Suite(str, enum.Enum):
-    # Fine-grained CTest labels (assigned in tests/CMakeLists.txt from the GTest
-    # suite-name prefix convention).
+    # The values are the CTest labels tests/CMakeLists.txt assigns from GTest suite prefixes.
     unit = "unit"
     regression = "regression"
     integration = "integration"
@@ -135,11 +73,7 @@ class Suite(str, enum.Enum):
     all = "all"
 
 
-# Each suite maps to a CTest label-selection regex (`ctest -L`). The single
-# categories anchor an exact match; the two umbrellas (functional / benchmark)
-# are an alternation over their sub-labels rather than a label of their own,
-# because a baked-in umbrella label does not survive gtest_discover_tests on
-# current CMake (see tests/CMakeLists.txt). `all` selects everything (no -L).
+# Each suite maps to a `ctest -L` regex, an umbrella to an alternation; see cli/README.md.
 _SUITE_LABEL_REGEX = {
     Suite.unit: "^unit$",
     Suite.regression: "^regression$",
@@ -261,8 +195,7 @@ def _stamp_differs(build_dir: Path, stamp_key: str) -> bool:
     stamp = build_dir / STAMP_NAME
     if stamp.is_file():
         return stamp.read_text().strip() != stamp_key
-    # No stamp (a pre-upgrade tree or a hand-run cmake): reconfigure once so the
-    # tree is known to match the requested configuration.
+    # A tree without a stamp is reconfigured once, so it matches the requested configuration.
     return True
 
 
@@ -334,10 +267,7 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
         f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_C_COMPILER={cc}",
         f"-DCMAKE_CXX_COMPILER={cxx}",
-        # GPU-agnostic: CMake's cmake/gpu/DetectGpu resolves the vendor
-        # (nvidia->cuda / amd->rocm / intel / cpu). "auto" lets it detect; "cpu"
-        # forces the portable OpenCL path (--no-cuda / ASan). This is the single
-        # source of truth — the CLI no longer probes nvcc itself.
+        # cmake/gpu/DetectGpu resolves the vendor from "auto"; "cpu" forces the OpenCL path.
         f"-DSR_GPU_BACKEND={gpu_backend}",
         f"-DSR_ENABLE_DISTRIBUTED={dist}",
         f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
@@ -424,10 +354,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
     triplet = cfg.vcpkg_triplet
     asan_flags = f" {ASAN_FLAGS_WINDOWS}" if asan else ""
 
-    # The compiler is toolchain-specific: intel-llvm -> clang++, oneapi -> icx-cl,
-    # adaptivecpp -> acpp. Pass -DSR_SYCL_TOOLCHAIN explicitly so CMakeLists does
-    # not auto-force it from the compiler name (e.g. icx-cl => oneapi), which would
-    # diverge from the environment the CLI actually snapshots.
+    # -DSR_SYCL_TOOLCHAIN is explicit so CMakeLists does not infer it; see cli/README.md.
     cxx = cfg.resolved_windows_compiler()
     args = [
         _DRIVER.cmake(cfg), "-B", str(build_dir), "-G", "Ninja",
@@ -448,8 +375,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
     if cfg.rc_exe:
         args.append(f"-DCMAKE_RC_COMPILER={cfg.expand(cfg.rc_exe)}")
-    # AdaptiveCpp (acpp) injects its own SYCL flags via add_sycl_to_target; the
-    # -fsycl flag is only meaningful to the clang-based intel-llvm/oneapi drivers.
+    # acpp adds its own SYCL flags; -fsycl means something only to the clang-based drivers.
     if cfg.toolchain == "adaptivecpp":
         if asan:
             args += [f"-DCMAKE_CXX_FLAGS={ASAN_FLAGS}"]
@@ -478,22 +404,7 @@ def build(build_type: BuildType, distributed: bool = False,
         console.info("AddressSanitizer: ON (isolated build-asan tree, CUDA OFF)")
     console.info(f"Tests: {'ON' if tests else 'OFF'}")
 
-    # GPU backend selection is delegated to CMake (cmake/gpu/DetectGpu), on every
-    # platform. "auto" detects which vendors have both a toolkit and hardware and
-    # targets them; where nothing answers it builds the portable CPU/OpenCL path,
-    # so a missing CUDA toolkit does not hard-fail with "cannot find libdevice".
-    #
-    # Windows used to be frozen to "cpu" here on the grounds that it has no nvptx
-    # toolchain. That stopped being true: this host compiles
-    # -fsycl-targets=spir64,nvidia_gpu_sm_89 with the bundled intel/llvm and the
-    # installed CUDA toolkit, and `hub install` offers that toolkit as a component --
-    # so the freeze meant provisioning a toolkit the build could never use, with no
-    # way to override it. It also made the two CLIs in this workspace disagree about
-    # the same machine, since SushiEngine passed no backend at all and got "auto".
-    # Detection is one question with one answer; it is asked in one place now.
-    #
-    # ASan and --no-cuda still force CPU, and --no-cuda now means something on
-    # Windows rather than printing that it does not.
+    # cmake/gpu/DetectGpu selects the GPU backend on every platform; see cli/README.md.
     if no_cuda or asan:
         gpu_backend = "cpu"
     else:
@@ -561,11 +472,9 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
         console.info("Note: distributed tests only exist if built with --distributed.")
 
     env = load_build_env(cfg, build_dir)
-    # ctest spawns the test binaries, so it hits the same run-time UR mismatch as
-    # `run`; neutralize setvars' LD_LIBRARY_PATH for the oneAPI build.
+    # ctest spawns the test binaries, so it needs the same LD_LIBRARY_PATH repair as `run`.
     _neutralize_runtime_ld(cfg, env)
-    # Same reason as `run`: a stray CUDA_LAUNCH_BLOCKING=1 serializes every kernel
-    # and silently breaks the async/overlap tests, so clear any inherited value.
+    # An inherited CUDA_LAUNCH_BLOCKING=1 serializes every kernel and breaks the overlap tests.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
     return _DRIVER.ctest_run(
         cfg, build_dir, env,
@@ -585,12 +494,10 @@ def run(target: str | None = None, sort: bool = False,
         return 1
 
     env = load_build_env(cfg, build_dir)
-    # CUDA_LAUNCH_BLOCKING=1 serializes every kernel and silently kills the
-    # async/overlap tests; clear any inherited value so a stray one can't poison us.
+    # An inherited CUDA_LAUNCH_BLOCKING=1 serializes every kernel and breaks the overlap tests.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
     _neutralize_runtime_ld(cfg, env)
-    # ASan binaries were built CUDA-OFF; pin to the OpenCL CPU device so the SYCL
-    # runtime never loads the CUDA UR adapter (which collides with ASan's VA).
+    # ASan binaries are built CUDA-off, so the run is pinned to the OpenCL CPU device.
     if asan:
         env.setdefault("ONEAPI_DEVICE_SELECTOR", "opencl:cpu")
         env.setdefault("ASAN_OPTIONS", "detect_leaks=0:abort_on_error=1")

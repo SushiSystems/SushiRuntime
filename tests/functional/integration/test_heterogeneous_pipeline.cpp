@@ -6,13 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Combines the work-stealing scheduler, host<->device mixed tasks, and
-// concurrent device execution through the full TaskGraph -> ExecutionEngine ->
-// TaskScheduler path. Many independent host->device->host chains run at once.
-//
-// Shared USM is context-bound: a buffer allocated on one device's queue is not
-// valid on another's. So each chain pins both its allocation and its kernel to
-// the SAME explicit device queue, and a chain is either all-device or all-host.
+/**
+ * @file test_heterogeneous_pipeline.cpp
+ * @brief Tests many independent host, device, host chains running at once through the scheduler.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cmath>
 #include <vector>
@@ -45,10 +44,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     constexpr float  SCALE  = 3.0f;
     constexpr float  BIAS   = 5.0f;
 
-    // One explicit queue per device. Iterate ctx's own post-dedup queue set, not
-    // sycl::device::get_devices(): the latter can list more devices (e.g.
-    // AdaptiveCpp's duplicate OpenMP host device) than ctx exposes, so indexing
-    // get_queue() by the raw SYCL list overruns it ("Queue index out of bounds").
+    // The queues come from ctx's deduplicated set, which get_devices() can exceed; see README.md.
     std::vector<sycl::queue*> device_queues;
     for (size_t i = 0; i < ctx.device_count(); ++i)
     {

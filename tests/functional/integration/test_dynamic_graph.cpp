@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for the dynamic, region-partitioned graph (Runtime::dynamic_graph()).
-// Each test asserts both the numerical outcome and the composition behaviour:
-// regions run together, cross-region data dependencies order correctly, dropping
-// a region removes its work, and an unmutated run never recomposes.
+/**
+ * @file test_dynamic_graph.cpp
+ * @brief Tests the region-partitioned graph that Runtime::dynamic_graph() returns.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <chrono>
@@ -20,9 +22,7 @@
 
 using namespace SushiRuntime;
 
-// Two independent regions each own a buffer and increment it once per step. Over
-// several steps both buffers advance, and a run that mutates nothing composes the
-// combined plan exactly once.
+/** @brief Tests that two independent regions advance their buffers and compose the plan once. */
 TEST(Integration_DynamicGraph, IndependentRegionsRunAndComposeOnce)
 {
     constexpr std::size_t N     = 16;
@@ -53,11 +53,9 @@ TEST(Integration_DynamicGraph, IndependentRegionsRunAndComposeOnce)
     }
 }
 
-// A producer region writes x; a consumer region in a *different* region reads x
-// and writes y. Because both touch x, the composer must wire a cross-region edge
-// so the consumer observes the producer's writes — y[i] == 2*(i+1). Cross-region
-// ordering follows ascending region key, so the producer is keyed (10) below the
-// consumer (11), matching the documented contract.
+/**
+ * @brief Tests that a consumer region observes the writes of a producer region with a lower key.
+ */
 TEST(Integration_DynamicGraph, CrossRegionDependencyOrders)
 {
     constexpr std::size_t N = 32;
@@ -84,8 +82,9 @@ TEST(Integration_DynamicGraph, CrossRegionDependencyOrders)
         ASSERT_EQ(y[i], static_cast<int>(2 * (i + 1))) << "at i=" << i;
 }
 
-// Dropping a region removes its work at the next step boundary: after the drop
-// the surviving region keeps advancing while the dropped region's buffer freezes.
+/**
+ * @brief Tests that a dropped region's buffer freezes while the surviving region keeps advancing.
+ */
 TEST(Integration_DynamicGraph, DropRegionStopsItsWork)
 {
     constexpr std::size_t N = 8;
@@ -118,8 +117,9 @@ TEST(Integration_DynamicGraph, DropRegionStopsItsWork)
     EXPECT_EQ(world.region_count(), 1u);
 }
 
-// Adding a region between steps recomposes exactly once and the new region's work
-// takes effect immediately on the following run.
+/**
+ * @brief Tests that adding a region between steps recomposes once and takes effect on the next run.
+ */
 TEST(Integration_DynamicGraph, AddRegionBetweenSteps)
 {
     constexpr std::size_t N = 8;
@@ -150,9 +150,7 @@ TEST(Integration_DynamicGraph, AddRegionBetweenSteps)
     }
 }
 
-// Mutating one region out of many recomposes a single time; the unchanged regions
-// are not rebuilt (proven indirectly: results stay correct and compile_count
-// advances by exactly one per mutation, not per region).
+/** @brief Tests that mutating one region recomposes exactly once. */
 TEST(Integration_DynamicGraph, SingleRecomposePerMutation)
 {
     constexpr std::size_t N        = 4;
@@ -195,9 +193,9 @@ TEST(Integration_DynamicGraph, SingleRecomposePerMutation)
         }
 }
 
-// Reading a region through find_region() is not a mutation: the plan must not
-// recompose on the next run, and an absent key answers nullptr rather than
-// creating the region the way region() does.
+/**
+ * @brief Tests that find_region() reads without recomposing and returns nullptr for an absent key.
+ */
 TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
 {
     constexpr std::size_t N = 4;
@@ -227,10 +225,7 @@ TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
         ASSERT_EQ(a[i], 2) << "at i=" << i;
 }
 
-// A three-hop cross-region chain over three buffers: region 0 writes x, region 1
-// reads x and writes y, region 2 reads y and writes z. Each hop is a separate
-// boundary; the composer must order 0 -> 1 -> 2 so z carries the value threaded
-// through both hops: z[i] == 2*(i+1) + 1.
+/** @brief Tests that a three-region chain threads a value through both hops. */
 TEST(Integration_DynamicGraph, ThreeRegionChainThreadsValue)
 {
     constexpr std::size_t N = 24;
@@ -261,10 +256,7 @@ TEST(Integration_DynamicGraph, ThreeRegionChainThreadsValue)
         ASSERT_EQ(z[i], static_cast<int>(2 * (i + 1) + 1)) << "at i=" << i;
 }
 
-// One producer writes base; two consumer regions both READ base (and write their
-// own outputs). The two readers share no hazard, so the composer must not order
-// them against each other — both simply see the producer's writes. Correctness is
-// the observable here: each reader's output reflects base.
+/** @brief Tests that two regions reading one producer's buffer both see its writes. */
 TEST(Integration_DynamicGraph, ReadReadSharingStaysConsistent)
 {
     constexpr std::size_t N = 24;
@@ -298,10 +290,7 @@ TEST(Integration_DynamicGraph, ReadReadSharingStaysConsistent)
     }
 }
 
-// Streaming a consumer in next to an existing producer must re-stitch the
-// producer's boundary: region 0 (writes x) runs alone first, then region 1
-// (reads x) streams in and on the next run observes x. Exercises the neighbour
-// re-wire path — an unchanged region's exit pin gaining a cross-region successor.
+/** @brief Tests that streaming a consumer in rewires the existing producer's boundary. */
 TEST(Integration_DynamicGraph, StreamInConsumerRewiresProducer)
 {
     constexpr std::size_t N = 16;
@@ -331,9 +320,7 @@ TEST(Integration_DynamicGraph, StreamInConsumerRewiresProducer)
         ASSERT_EQ(y[i], static_cast<int>(i + 1) * 3) << "at i=" << i;
 }
 
-// Dropping the producer must cleanly un-wire the boundary and leave the consumer
-// runnable (now without an upstream edge). Region 1 keeps running after region 0
-// is dropped; the run does not deadlock or fault.
+/** @brief Tests that dropping the producer leaves the consumer runnable. */
 TEST(Integration_DynamicGraph, DropProducerLeavesConsumerRunnable)
 {
     constexpr std::size_t N = 16;
@@ -360,21 +347,15 @@ TEST(Integration_DynamicGraph, DropProducerLeavesConsumerRunnable)
     world.run();                 // consumer alone; must not deadlock
 
     EXPECT_EQ(world.region_count(), 1u);
-    // y accumulated px across two steps; the exact value is not the point — the
-    // point is the run completed and the consumer kept executing.
+    // The exact value of y is not asserted, only that the consumer kept executing; see README.md.
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(y[i], static_cast<int>(i) * 2) << "at i=" << i;
 }
 
-// Two regions writing DISJOINT element ranges of one buffer must not be ordered
-// against each other. There is no public way to inspect the boundary edges, so
-// this proves it behaviourally: both region tasks rendezvous on a shared counter
-// with a bounded deadline, and each records whether it saw the other arrive.
-// Concurrent -> both see it. Serialized -> the first one times out and only the
-// second counts, which is exactly what an allocation-granular boundary produces.
-//
-// The bound means a failure reports rather than hangs. Skipped on a machine that
-// cannot run two tasks at once, where the question is meaningless.
+/**
+ * @brief Tests that two regions writing disjoint ranges of one buffer are not ordered against each
+ *        other.
+ */
 TEST(Integration_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
 {
     if (std::thread::hardware_concurrency() < 2)
@@ -416,10 +397,7 @@ TEST(Integration_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
            "although their element ranges are disjoint";
 }
 
-// The counterpart: two regions writing the SAME range of one buffer must still be
-// ordered. Serialized means the earlier task cannot see the later one arrive, so
-// exactly one of the two records the rendezvous — and the arithmetic, which is
-// order-sensitive, comes out to the ordered answer.
+/** @brief Tests that two regions writing the same range of one buffer are still ordered. */
 TEST(Integration_DynamicGraph, OverlappingRangeRegionsStillSerialize)
 {
     constexpr std::size_t N = 64;
@@ -467,9 +445,7 @@ TEST(Integration_DynamicGraph, OverlappingRangeRegionsStillSerialize)
         ASSERT_EQ(shared[i], 3) << "at i=" << i;
 }
 
-// Sub-range boundary ordering must still produce the right values: two regions
-// write disjoint halves and a third reads the whole buffer, so the reader
-// overlaps both and has to run after each of them.
+/** @brief Tests that a whole-buffer reader runs after both half writers. */
 TEST(Integration_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
 {
     constexpr std::size_t N = 128;

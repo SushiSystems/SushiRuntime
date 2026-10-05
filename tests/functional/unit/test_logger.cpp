@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_logger.cpp
+ * @brief Tests that an info log formats without throwing and SR_THROW_IF throws only when true.
+ * @author Mustafa Garip
+ */
+
 #include <string>
 #include <iostream>
 #include <gtest/gtest.h>

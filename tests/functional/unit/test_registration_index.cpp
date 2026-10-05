@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Unit coverage for Node::registration_index and Graph::add_reduce()'s
-// grouping of its tile levels under one index (spec
-// 2026-09-15-g1-node-event-records-design.md, section D, F5).
+/**
+ * @file test_registration_index.cpp
+ * @brief Tests Node::registration_index and that add_reduce()'s tile levels share one index.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <algorithm>
 #include <cstdint>
@@ -204,15 +207,7 @@ TEST(Unit_RegistrationIndex, AddReduceGroupsTileLevelsUnderOneIndex)
         << "'after' must be before+2: the group draws exactly one index.";
 }
 
-/**
- * @brief Verifies add_reduce()'s group survives a rebuild onto a fresh
- *        BackingGraph, whose registration counter restarts at 0.
- *
- * Adds a plain node after add_reduce(), marking the graph dirty_, then runs
- * twice so build_plan() replays the specs into a second BackingGraph. The
- * reduce's levels must still share one index, distinct from every other
- * node's, and every node's index must be dense 0..n-1 in registration order.
- */
+/** @brief Tests that add_reduce()'s group survives a rebuild onto a fresh BackingGraph. */
 TEST(Unit_RegistrationIndex, AddReduceGroupSurvivesRebuild)
 {
     using API::detail::RegistrationIndexTestAccess;
@@ -230,8 +225,7 @@ TEST(Unit_RegistrationIndex, AddReduceGroupSurvivesRebuild)
     g.add_reduce(in, out, N, Sum<float>{});
     g.run();
 
-    // A second add() after the first run marks the graph dirty_, forcing
-    // build_plan() to replay every spec onto a fresh BackingGraph.
+    // An add() after the first run dirties the graph, so every spec is replayed; see README.md.
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("after");
     g.run();
 
@@ -266,13 +260,8 @@ TEST(Unit_RegistrationIndex, AddReduceGroupSurvivesRebuild)
 }
 
 /**
- * @brief Verifies the LateCount overload of add_reduce() groups its tile
- *        levels, and the trailing zero-count identity write, under one index.
- *
- * Mirrors AddReduceGroupsTileLevelsUnderOneIndex, but the count is bound
- * through a LateCount host provider planned for a capacity of at least three
- * tile levels, exercising the dynamic emitter's registration token instead
- * of the fixed-count path's.
+ * @brief Tests that the LateCount overload of add_reduce() groups its tile levels and the identity
+ *        write under one index.
  */
 TEST(Unit_RegistrationIndex, LateBoundAddReduceGroupsTileLevelsUnderOneIndex)
 {

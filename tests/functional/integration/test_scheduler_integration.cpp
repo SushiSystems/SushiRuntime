@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Fast, deterministic scheduler checks (heavy load lives in benchmark/stress):
-// it must run exactly the tasks submitted, honor priority bypass, and survive a
-// clean arm -> submit -> stop round.
+/**
+ * @file test_scheduler_integration.cpp
+ * @brief Tests the scheduler for exact task execution, priority bypass and a clean stop.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <chrono>

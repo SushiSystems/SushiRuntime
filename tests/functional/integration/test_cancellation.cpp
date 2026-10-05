@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// A run must be cancellable from another thread: an otherwise unbounded
-// run_until has to return promptly when a second thread calls cancel(), and the
-// pool must stay usable so a later run completes normally (cancellation is reset
-// per run, not latched).
+/**
+ * @file test_cancellation.cpp
+ * @brief Tests that cancel() from another thread stops run_until and leaves the next run alone.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <chrono>
 #include <cstddef>

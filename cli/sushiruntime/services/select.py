@@ -7,6 +7,8 @@
 
 Persists the chosen toolchain into config.local.toml so every later build picks
 it up. The choice flows to CMake as -DSR_SYCL_TOOLCHAIN at configure time.
+
+See cli/README.md.
 """
 
 from __future__ import annotations
@@ -98,8 +100,7 @@ def select(toolchain: str) -> int:
     console.console.print(f"[muted]{path}[/muted]")
 
     if not _toolchain_installed(toolchain, cfg):
-        # The whole point of the message the user asked for: tell them exactly
-        # which profile to install when the chosen toolchain isn't present.
+        # The warning names the exact profile that installs the missing toolchain.
         hint = toolchain_install_command(toolchain)
         console.warn(
             f"'{toolchain}' is not installed yet. Builds will fail until you install it:\n"

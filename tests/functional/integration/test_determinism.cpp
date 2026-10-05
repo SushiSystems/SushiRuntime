@@ -6,23 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// The determinism conformance suite: the same graph, on the same machine, must
-// produce byte-identical output no matter how many workers ran it.
-//
-// This is the guarantee a rollback netcode or a replay file is built on, and it
-// has two independent ways to break. The scheduler can break it — if the
-// combination order of a reduction depended on which worker picked up which
-// tile, a two-worker run and a sixteen-worker run would disagree in the low bits
-// and nothing would report an error. The compiler can break it — fast-math
-// licenses reassociation, so the same source folded in a different order between
-// two builds, and FMA contraction rounds once where the source says twice.
-// Unit_FixedOrderReduce pins the reduction's order at a fixed pool size; this
-// suite varies the pool size itself, which is what BB-2's worker_count knob made
-// expressible, and separately asserts the compiler contract that no amount of
-// scheduling discipline can substitute for.
-//
-// Every comparison here is on the raw bytes. A tolerance-based check would pass
-// on exactly the divergence that ruins a replay a thousand steps later.
+/**
+ * @file test_determinism.cpp
+ * @brief Tests that the same graph produces byte-identical output for every worker count.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <cstring>
@@ -39,18 +28,16 @@ namespace
     constexpr std::size_t N     = 40000;
     constexpr std::size_t STEPS = 4;
 
-    // One large value followed by many small ones: each small value vanishes
-    // when added to the running total but survives when the small values are
-    // summed together first. A sum over this input is a different number for a
-    // different combination order, which is what gives a bit comparison teeth.
-    // Without it the test would pass on a runtime that reassociated freely.
+    /**
+     * @brief Returns one large value followed by many small ones, so a sum depends on its
+     *        combination order.
+     */
     float order_sensitive_value(std::size_t i)
     {
         return (i == 0) ? 1.0e8f : 1.0f;
     }
 
-    // A second pattern, alternating in sign, so a divergence that happened to
-    // cancel in the first reduction still shows up in the output.
+    /** @brief Returns a second pattern that alternates in sign. */
     float alternating_value(std::size_t i)
     {
         const float magnitude = (i % 512 == 0) ? 1.0e7f : 0.5f;
@@ -66,12 +53,10 @@ namespace
         std::size_t        workers      = 0;
     };
 
-    // Runs the same fixed workload on a runtime built for @p worker_count
-    // workers (0 meaning the whole machine) and copies the results out. Two
-    // independent reduction chains compete for the pool, so the worker that
-    // folds a given tile genuinely varies with the pool size; a map then mixes
-    // both totals into every output element, so any divergence in either chain
-    // reaches the bytes being compared.
+    /**
+     * @brief Runs the fixed workload on a runtime built for the given worker count and copies the
+     *        results out.
+     */
     Outcome run_workload(std::size_t worker_count)
     {
         API::RuntimeConfig config;
@@ -122,16 +107,14 @@ namespace
         return outcome;
     }
 
-    // Byte equality, not numeric equality: a 1-ulp difference must fail, and NaN
-    // payloads must compare as the bits they are.
+    /** @brief Returns whether two float vectors are equal byte for byte. */
     bool bytes_equal(const std::vector<float>& a, const std::vector<float>& b)
     {
         return a.size() == b.size() &&
                std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0;
     }
 
-    // Index of the first differing element, for a failure message that points at
-    // something instead of just saying "not equal".
+    /** @brief Returns the index of the first differing element. */
     std::size_t first_difference(const std::vector<float>& a, const std::vector<float>& b)
     {
         const std::size_t n = (a.size() < b.size()) ? a.size() : b.size();
@@ -142,12 +125,7 @@ namespace
     }
 }
 
-// The compiler half of the contract, asserted where a consumer would feel it.
-// This translation unit is not part of the library — it compiles against the
-// installed-style interface — so a definition arriving here is evidence the FP
-// contract travels with the target instead of stopping at the library edge.
-// Restoring /fp:fast or -ffast-math turns this red at compile time, which is the
-// property BB-3 asks the suite to have.
+/** @brief Tests that the floating-point compile contract reaches a consumer translation unit. */
 TEST(Integration_Determinism, TheFloatingPointContractReachesConsumerCode)
 {
 #ifndef SR_DETERMINISTIC_FP
@@ -166,11 +144,7 @@ TEST(Integration_Determinism, TheFloatingPointContractReachesConsumerCode)
 #endif
 }
 
-// Reassociation, caught at run time rather than by a macro — the check that
-// still works on a compiler whose fast-math does not announce itself. The two
-// expressions are the same three values in the same order, grouped differently;
-// they are required to disagree. A compiler allowed to reassociate would rewrite
-// one into the other and they would match.
+/** @brief Tests that the compiler does not reassociate host arithmetic. */
 TEST(Integration_Determinism, HostArithmeticIsNotReassociated)
 {
     volatile double big   = 1.0e16;
@@ -187,16 +161,14 @@ TEST(Integration_Determinism, HostArithmeticIsNotReassociated)
     EXPECT_DOUBLE_EQ(right, 0.0);
 }
 
-// The suite's core claim. One worker, two workers and the whole machine must
-// agree on every byte of the output.
+/** @brief Tests that one worker, two workers and the whole machine agree on every output byte. */
 TEST(Integration_Determinism, OutputIsByteEqualAcrossWorkerCounts)
 {
     const Outcome single = run_workload(1);
     const Outcome pair   = run_workload(2);
     const Outcome full   = run_workload(0);   // 0 == the whole machine
 
-    // Guard against a vacuous pass: if every configuration collapsed to the same
-    // pool, nothing about the schedule actually varied.
+    // With fewer than two workers every configuration is the same pool; see README.md.
     if (full.workers < 2)
         GTEST_SKIP() << "single-core machine (pool = " << full.workers
                      << "); worker-count variation is not observable here";
@@ -219,11 +191,7 @@ TEST(Integration_Determinism, OutputIsByteEqualAcrossWorkerCounts)
     EXPECT_EQ(std::memcmp(&single.second_total, &full.second_total, sizeof(float)), 0);
 }
 
-// The same configuration, run again from scratch, must land on the same bytes.
-// Distinct from the check above: that one varies the pool size, this one varies
-// nothing at all and relies on the run-to-run scheduling jitter of an unchanged
-// pool — which steal wins a race, which worker parks — to expose an order
-// dependence.
+/** @brief Tests that the same configuration run again from scratch lands on the same bytes. */
 TEST(Integration_Determinism, RepeatedConfigurationsAgreeByteForByte)
 {
     const Outcome first  = run_workload(0);
@@ -235,10 +203,7 @@ TEST(Integration_Determinism, RepeatedConfigurationsAgreeByteForByte)
         << first_difference(first.output, second.output);
 }
 
-// A replayed graph must not drift: every step of a multi-step run recomputes the
-// same reduction from the same input, so step 1 and step STEPS have to produce
-// the same bytes. A drift here would mean the plan's per-step state leaked into
-// the arithmetic.
+/** @brief Tests that the first and the last step of a multi-step run produce the same bytes. */
 TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
 {
     API::RuntimeConfig config;

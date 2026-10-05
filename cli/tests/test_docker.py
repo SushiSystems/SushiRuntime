@@ -3,17 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""`sr docker` used to hand-roll its own subprocess runner instead of going through
-:class:`sushicore.proc.Runner`. That copy printed `" ".join(cmd)` (wrong quoting for an
-argument containing a space), passed the bare "docker" name as argv[0] instead of a
-resolved path, and let a missing docker binary raise an unhandled FileNotFoundError
-instead of the shared not-found guidance.
+"""Tests the argv and stdio that `sr docker` hands to sushicore's Runner.
 
-Routing it through Runner fixes all three, but changes real behaviour with no prior
-coverage, so this pins what `docker.build` and `docker.run` hand to it: the argv for
-every flag combination, and that the interactive `docker run -it` invocation still
-lets Runner.run inherit this process's stdio exactly as `subprocess.run(cmd, cwd=str(cwd))`
-did.
+See cli/README.md.
 """
 
 from pathlib import Path

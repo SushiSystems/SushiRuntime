@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file in_process_transport.hpp
+ * @brief Declares InProcessFabric and InProcessTransport, an in-process simulated transport.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <cstddef>

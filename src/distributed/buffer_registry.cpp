@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file buffer_registry.cpp
+ * @brief Maps USM pointers to stable buffer ids and versions.
+ * @author Mustafa Garip
+ */
+
 #include <SushiRuntime/distributed/buffer_registry.hpp>
 
 namespace SushiRuntime
@@ -13,8 +19,7 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Registers a USM memory buffer with the distributed registry to track its state and version.
-         * Assigns a new unique ID or increments the version if the pointer was previously registered.
+         * @brief Registers a USM buffer or bumps a known one's version (src/distributed/README.md).
          * @param usm_ptr The memory pointer to track.
          * @param size_bytes The size of the memory buffer in bytes.
          * @return A BufferHandle containing the registration details.
@@ -23,9 +28,7 @@ namespace SushiRuntime
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
-            // Re-registering a live pointer means the USM address was handed back
-            // out (allocator reuse): keep the stable id but bump the version so any
-            // worker caching the old bytes treats its copy as stale.
+            // A live pointer keeps its id and gains a version (src/distributed/README.md).
             if (auto it = by_ptr_.find(usm_ptr); it != by_ptr_.end())
             {
                 ++it->second.version;

@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file i_transport.hpp
+ * @brief Declares ITransport, the message-passing interface of the cluster.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <SushiRuntime/core/span.hpp>

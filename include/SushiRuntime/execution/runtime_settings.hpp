@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file runtime_settings.hpp
+ * @brief Declares PinPolicy, RuntimeSettings and WorkerPoolInfo.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/execution/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -15,14 +22,8 @@ namespace SushiRuntime
     namespace Execution
     {
         /**
-         * @brief Whether workers are bound to specific cores or left to the OS.
-         *
-         * Pinning is what lets a host application reserve cores: bound workers
-         * cannot drift onto the core the render or audio thread is using. Float
-         * gives that up in exchange for letting the OS scheduler move a worker
-         * off a core that a higher-priority thread has taken over, which is the
-         * better trade on an oversubscribed machine or inside a container whose
-         * CPU allowance is enforced by quota rather than by affinity.
+         * @brief Selects whether workers are bound to specific cores or left to the OS.
+         * @see include/SushiRuntime/execution/README.md
          */
         enum class PinPolicy
         {
@@ -31,18 +32,8 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Runtime-wide settings chosen once, when the runtime is created.
-         *
-         * Separate from the hardware filter: this shapes the runtime itself
-         * (threads, placement, background work) rather than which devices are
-         * selected. Every field defaults to the behaviour a deterministic
-         * simulation wants, because that is the primary workload — a batch
-         * consumer opts out of the parts it does not need.
-         *
-         * The type lives in the Execution layer rather than in API because
-         * RuntimeContext and TaskScheduler consume it, and a lower layer may not
-         * depend on a higher one. API::RuntimeConfig is the public spelling of
-         * this same type.
+         * @brief Holds the runtime-wide settings chosen once, when the runtime is created.
+         * @see include/SushiRuntime/execution/README.md
          */
         struct RuntimeSettings
         {
@@ -57,26 +48,14 @@ namespace SushiRuntime
             bool profiling = false;
 
             /**
-             * @brief How many worker threads to run. 0 means one per logical core.
-             *
-             * A runtime inside a game is not the machine's only tenant: it shares
-             * it with a main thread, a render thread, an audio callback, asset
-             * I/O and the compositor. Taking every core means the host's own
-             * threads are preempted by workers. Naming a smaller count, together
-             * with first_core, is how the host reserves cores for itself.
-             *
-             * Clamped to Core::MAX_WORKER_THREADS.
+             * @brief Sets how many worker threads run; 0 means one per logical core.
+             * @see include/SushiRuntime/execution/README.md
              */
             std::size_t worker_count = 0;
 
             /**
-             * @brief First core of the range workers are pinned into.
-             *
-             * Worker i binds to core (first_core + i), so a host that keeps its
-             * own threads on cores 0..3 sets first_core = 4. Ignored under
-             * PinPolicy::Float. If the range would run past the machine's last
-             * core the runtime clamps it and logs what it did, rather than
-             * pinning to core indices the OS will silently ignore.
+             * @brief Sets the first core of the range workers are pinned into.
+             * @see include/SushiRuntime/execution/README.md
              */
             std::size_t first_core = 0;
 
@@ -84,13 +63,8 @@ namespace SushiRuntime
             PinPolicy pinning = PinPolicy::Pin;
 
             /**
-             * @brief Run the background thermal rebalancer.
-             *
-             * Off by default. It migrates tasks between workers on a 5 ms
-             * heartbeat, which trades run-to-run reproducibility and a low jitter
-             * floor for throughput on long batch work — the opposite of what a
-             * simulation frame wants, and the runtime's primary consumer is a
-             * simulation. Throughput workloads turn it on explicitly.
+             * @brief Turns on the background thermal rebalancer; off by default.
+             * @see include/SushiRuntime/execution/README.md
              */
             bool rebalancer = false;
 
@@ -106,13 +80,8 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief The worker pool as actually built, which may differ from the request.
-         *
-         * RuntimeSettings is what the caller asked for; this is what the runtime
-         * could give. They diverge when the requested core range does not fit the
-         * machine, or when the count exceeds Core::MAX_WORKER_THREADS. A host that
-         * reserved cores should verify against this rather than against its own
-         * request — the whole point of reserving is that it actually happened.
+         * @brief Reports the worker pool as built, which may differ from the request.
+         * @see include/SushiRuntime/execution/README.md
          */
         struct WorkerPoolInfo
         {

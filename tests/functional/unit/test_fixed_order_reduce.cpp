@@ -6,16 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for Graph::add_reduce / add_segmented_reduce and the fixed-tile plan
-// underneath them. The claim under test is not "the sum is right" — a parallel
-// reduce gets that too — but that the COMBINATION ORDER is a function of the
-// element layout alone, so the bit pattern is reproducible.
-//
-// The strongest available check is a host reference that performs the identical
-// fixed-tile fold and an exact bit comparison against it: if the device result
-// matched some other order, the two would differ in the low bits of a float sum.
-// The inputs below are built so the naive left-to-right sum differs from the
-// tiled one, which is what gives that comparison teeth.
+/**
+ * @file test_fixed_order_reduce.cpp
+ * @brief Tests that add_reduce and add_segmented_reduce combine values in a layout-fixed order.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -30,8 +26,10 @@ using namespace SushiRuntime;
 
 namespace
 {
-    // The host mirror of detail::fold_tile over a whole level: fold each tile of
-    // at most TILE values left to right, seeded with the tile's first element.
+    /**
+     * @brief Folds each tile of at most `tile` values left to right, as detail::fold_tile does over
+     *        a whole level.
+     */
     template <typename T>
     std::vector<T> fold_level(const std::vector<T>& in, std::size_t tile)
     {
@@ -47,8 +45,9 @@ namespace
         return out;
     }
 
-    // The value the runtime is required to produce for a sum: repeated levels of
-    // fold_level until one value remains. Mirrors detail::plan_reduction.
+    /**
+     * @brief Returns the sum the runtime must produce, by folding levels until one value remains.
+     */
     template <typename T>
     T fixed_order_sum(std::vector<T> values, std::size_t tile)
     {
@@ -57,9 +56,10 @@ namespace
         return values.front();
     }
 
-    // A sum whose result depends on the order the values are combined in: one
-    // large magnitude followed by many values small enough to vanish when added
-    // to the running total but not when added to each other first.
+    /**
+     * @brief Returns one large value followed by many small ones, so the sum depends on the
+     *        combination order.
+     */
     std::vector<float> order_sensitive_input(std::size_t n)
     {
         std::vector<float> v(n);
@@ -78,9 +78,7 @@ namespace
         return pa == pb;
     }
 
-    // As bit_equal(float, float): the double overload the byte-identity checks
-    // below need, since EXPECT_DOUBLE_EQ tolerates a 4-ULP difference and the
-    // late-bound contract is byte-identical, not merely close.
+    /** @brief Returns whether two doubles have the same bit pattern. */
     bool bit_equal(double a, double b)
     {
         std::uint64_t pa = 0, pb = 0;
@@ -92,8 +90,10 @@ namespace
     constexpr std::size_t TILE = 256;
 }
 
-// The plan is a pure function of the element count: level counts divide by the
-// tile size until one value remains, and consecutive levels never share scratch.
+/**
+ * @brief Tests that the plan depends only on the element count and that consecutive levels share no
+ *        scratch.
+ */
 TEST(Unit_FixedOrderReduce, PlanLayoutIsPureAndDisjoint)
 {
     using SushiRuntime::API::detail::plan_reduction;
@@ -125,9 +125,10 @@ TEST(Unit_FixedOrderReduce, PlanLayoutIsPureAndDisjoint)
     EXPECT_EQ(reduce_scratch_count(three), three[0].out_count + three[1].out_count);
 }
 
-// The sum matches a host fold that performs the identical tile structure, bit
-// for bit — and differs from the naive left-to-right sum, which is what proves
-// the comparison is actually discriminating between orders.
+/**
+ * @brief Tests that the sum matches the fixed-order host fold bit for bit and differs from the
+ *        naive sum.
+ */
 TEST(Unit_FixedOrderReduce, SumMatchesTheFixedOrderReferenceExactly)
 {
     constexpr std::size_t N = 100000;
@@ -157,11 +158,7 @@ TEST(Unit_FixedOrderReduce, SumMatchesTheFixedOrderReferenceExactly)
            "schedule-dependent combination order";
 }
 
-// Repeated runs of the same graph, and a fresh graph on a runtime running the
-// background rebalancer, must all agree bit for bit. Work stealing and the
-// rebalancer change which worker folds which tile; neither may change the
-// result. This varies the schedule at a fixed pool size; varying the pool size
-// itself is the graph-level conformance suite's job (Integration_Determinism).
+/** @brief Tests that repeated runs and a run with the rebalancer on agree bit for bit. */
 TEST(Unit_FixedOrderReduce, ResultIsStableAcrossSchedules)
 {
     constexpr std::size_t N = 70000;
@@ -189,8 +186,7 @@ TEST(Unit_FixedOrderReduce, ResultIsStableAcrossSchedules)
     }
     EXPECT_EQ(g.compile_count(), 1u) << "a replayed reduction must not recompile";
 
-    // Same input, rebalancer on: a different scheduling regime entirely, since
-    // task migration reassigns tiles to workers mid-run.
+    // With the rebalancer on, task migration reassigns tiles to workers mid-run; see README.md.
     auto quiet = Runtime::create();
     quiet.rebalancer(true);
     auto qin  = quiet.buffer<float>(N);
@@ -206,9 +202,7 @@ TEST(Unit_FixedOrderReduce, ResultIsStableAcrossSchedules)
         << "the rebalancer changed the result: the combination order is not fixed";
 }
 
-// Element counts around the tile boundaries, and the degenerate ones: a single
-// value, an empty reduction (which yields the identity), and counts that land
-// exactly on a level boundary.
+/** @brief Tests element counts at the tile boundaries, a single value and an empty reduction. */
 TEST(Unit_FixedOrderReduce, EdgeCounts)
 {
     const std::size_t counts[] = { 1, 2, TILE - 1, TILE, TILE + 1,
@@ -245,8 +239,7 @@ TEST(Unit_FixedOrderReduce, EdgeCounts)
     EXPECT_DOUBLE_EQ(out[0], 0.0);
 }
 
-// Minimum and Maximum reduce with the same machinery; their identities must let
-// any element win.
+/** @brief Tests the Minimum and Maximum reductions. */
 TEST(Unit_FixedOrderReduce, MinimumAndMaximum)
 {
     constexpr std::size_t N = 5000;
@@ -276,8 +269,7 @@ TEST(Unit_FixedOrderReduce, MinimumAndMaximum)
     EXPECT_EQ(hi[0], expected_hi);
 }
 
-// A reduction is an ordinary tracked task: a consumer that reads the output is
-// ordered after the whole reduction chain, not just after its first level.
+/** @brief Tests that a consumer of the output is ordered after the whole reduction chain. */
 TEST(Unit_FixedOrderReduce, ConsumerSeesTheFinishedResult)
 {
     constexpr std::size_t N = 40000;
@@ -305,8 +297,7 @@ TEST(Unit_FixedOrderReduce, ConsumerSeesTheFinishedResult)
     EXPECT_EQ(twice[0], static_cast<int>(N) * 2);
 }
 
-// Segmented reduce over ragged segments, including an empty one, which must
-// yield the identity rather than reading past its (zero-length) window.
+/** @brief Tests a segmented reduce over ragged segments, an empty one included. */
 TEST(Unit_FixedOrderReduce, SegmentedReduceOverRaggedSegments)
 {
     const std::vector<std::uint32_t> offsets = { 0, 3, 3, 10, 11, 1011 };
@@ -349,8 +340,7 @@ TEST(Unit_FixedOrderReduce, SegmentedReduceOverRaggedSegments)
     }
 }
 
-// Mis-sized arguments are rejected when the task is recorded, at the call site,
-// rather than faulting on the device mid-run.
+/** @brief Tests that mis-sized arguments are rejected when the task is recorded. */
 TEST(Unit_FixedOrderReduce, RejectsMisSizedArguments)
 {
     auto rt      = Runtime::create();
@@ -366,9 +356,10 @@ TEST(Unit_FixedOrderReduce, RejectsMisSizedArguments)
                  SushiException);
 }
 
-// A LateCount reduce planned for a capacity must match the fixed-count overload
-// bit for bit at every live count tested, since the design promises the same
-// fold order for a live n as the fixed-count path would produce for that n.
+/**
+ * @brief Tests that a LateCount reduce matches the fixed-count overload bit for bit at every live
+ *        count.
+ */
 TEST(Unit_FixedOrderReduce, LateBoundMatchesFixedCountExactly)
 {
     constexpr std::size_t CAPACITY = 65537;
@@ -405,9 +396,7 @@ TEST(Unit_FixedOrderReduce, LateBoundMatchesFixedCountExactly)
     }
 }
 
-// A late-bound reduce whose live count changes between runs must not recompile:
-// the topology (levels, scratch, node count) is fixed at the capacity, and only
-// the live count varies per step.
+/** @brief Tests that a late-bound reduce whose live count changes keeps one compile. */
 TEST(Unit_FixedOrderReduce, LateBoundChangingCountKeepsOneCompile)
 {
     constexpr std::size_t CAPACITY = 700000;
@@ -441,8 +430,7 @@ TEST(Unit_FixedOrderReduce, LateBoundChangingCountKeepsOneCompile)
         << "a live count change between runs must not trigger a recompile";
 }
 
-// A LateCount above its capacity fails the run rather than reading past the
-// buffers it was planned for.
+/** @brief Tests that a LateCount above its capacity fails the run. */
 TEST(Unit_FixedOrderReduce, LateBoundAboveCapacityFailsTheRun)
 {
     auto rt  = Runtime::create();

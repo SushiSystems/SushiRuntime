@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file tcp_transport.cpp
+ * @brief Carries framed messages between a master and its workers over TCP sockets.
+ * @author Mustafa Garip
+ */
+
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 
 #include <mutex>
@@ -100,14 +106,8 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Bounds blocking reads with a receive timeout (SO_RCVTIMEO).
-             *
-             * Without this a peer that connects and then never sends (or sends a
-             * partial frame) parks read_n forever, permanently occupying a worker
-             * slot — a trivial connection-slot denial of service. With a timeout an
-             * idle recv fails, tears the connection down, and frees the slot.
-             *
-             * @param s       Socket to configure.
+             * @brief Bounds blocking socket reads with SO_RCVTIMEO (src/distributed/README.md).
+             * @param s Socket to configure.
              * @param seconds Idle-read timeout in seconds.
              */
             void set_recv_timeout(socket_t s, int seconds)
@@ -201,9 +201,7 @@ namespace SushiRuntime
                     std::memcpy(&len, hdr, 4);
                     MsgType type = static_cast<MsgType>(hdr[4]);
 
-                    // Trust the length only up to a sane cap: a corrupt or
-                    // mismatched-protocol peer can send an arbitrary 32-bit length,
-                    // and allocating it blindly is a trivial OOM. Drop the peer.
+                    // A length above MAX_FRAME_BYTES drops the peer (src/distributed/README.md).
                     if (len > MAX_FRAME_BYTES)
                     {
                         SR_LOG_ERROR("Peer {} sent oversized frame ({} bytes > {} cap); "
@@ -220,13 +218,8 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Sends a message to a specific peer socket.
-             * Packages the payload into a frame and transmits it synchronously.
-             * @param sock The socket_t descriptor to send to.
-             * @param m The std::mutex to protect concurrent writes to the socket.
-             * @param peer The integer ID of the peer.
-             * @param type The MsgType of the message to send.
-             * @param payload A span of bytes representing the payload.
+             * @brief Sends one frame; a failed write shuts the socket (src/distributed/README.md).
+             * @param m The mutex that serialises writes to this socket.
              */
             void send_to(socket_t sock, std::mutex& m, int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
             {
@@ -237,12 +230,7 @@ namespace SushiRuntime
                 hdr[4] = static_cast<unsigned char>(type);
 
                 std::lock_guard<std::mutex> lk(m);
-                // A failed write means the peer's connection is gone (reset or
-                // half-open). Don't swallow it: shut the socket down so the peer's
-                // reader thread unblocks and exits, turning a wedged link into a
-                // clean teardown — the master's liveness monitor then reaps the
-                // worker (or the worker notices the master is gone). Idempotent:
-                // a subsequent send on the same dead socket just shuts it again.
+                // A failed write shuts the socket down (src/distributed/README.md).
                 if (!write_n(sock, hdr, sizeof(hdr)) ||
                     (len && !write_n(sock, payload.data(), len)))
                 {
@@ -262,8 +250,7 @@ namespace SushiRuntime
                     socket_t s = ::accept(listen_sock, nullptr, nullptr);
                     if (s == INVALID_SOCK) break;
                     set_nodelay(s);
-                    // Bound idle reads so a peer that connects but never sends cannot
-                    // hold this worker slot forever (connection-slot DoS).
+                    // Idle reads time out after 30 s (src/distributed/README.md).
                     set_recv_timeout(s, 30);
                     peers[static_cast<size_t>(i)] = s;
                     readers.emplace_back([this, s, i] { reader_loop(s, i); });
@@ -390,8 +377,7 @@ namespace SushiRuntime
                 if (::inet_pton(AF_INET, impl_->host.c_str(), &addr.sin_addr) != 1)
                     throw std::runtime_error("TcpTransport: bad master host '" + impl_->host + "'.");
 
-                // Retry so the worker can be started before the master (the
-                // natural lab order) — keep trying until connected or stop().
+                // The worker retries so it can start before the master (src/distributed/README.md).
                 constexpr int  MAX_ATTEMPTS = 300;   // ~60s at 200ms
                 socket_t s = INVALID_SOCK;
                 for (int attempt = 0; impl_->running.load() && attempt < MAX_ATTEMPTS; ++attempt)
@@ -428,9 +414,7 @@ namespace SushiRuntime
             if (!impl_->running.compare_exchange_strong(expected, false))
                 return;
 
-            // First shutdown() every socket so threads blocked in recv()/accept()
-            // wake up — close() alone would not unblock them, and we would then
-            // deadlock joining the reader threads.
+            // shutdown() first; close() alone leaves recv() blocked (src/distributed/README.md).
             shutdown_sock(impl_->listen_sock);
             for (auto& s : impl_->peers)
                 shutdown_sock(s);

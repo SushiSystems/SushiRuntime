@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file offload_policy.cpp
+ * @brief Picks the worker with the lowest estimated completion cost for an offloaded task.
+ * @author Mustafa Garip
+ */
+
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
 
 #include <limits>
@@ -16,22 +22,10 @@ namespace SushiRuntime
     {
         namespace
         {
-            // --- cost-model tunables (file-local; documented heuristics) --------
-            //
-            // The policy ranks workers by an *estimated completion cost* in
-            // microseconds, the network-tier analogue of the scheduler's NUMA
-            // distance: a worker's cost is how long we expect the task to take to
-            // get there, run, and free its slot, approximated from live telemetry.
-
-            // Assumed effective wire bandwidth for the transfer-time term. ~1 GB/s
-            // (1000 B/us) is a deliberately conservative homogeneous-lab figure: it
-            // over-counts transfer cost slightly so a large payload only offloads
-            // when a worker is genuinely worth the trip.
+            /// @brief Holds the assumed wire bandwidth in B/us (src/distributed/README.md).
             constexpr double BYTES_PER_MICROSECOND = 1000.0;
 
-            // How much each already-inflight task is assumed to delay a newcomer in
-            // that worker's queue. Keeps the "least loaded" intent: between two
-            // equally-near workers the emptier one wins.
+            /// @brief Holds the microseconds one inflight task adds (src/distributed/README.md).
             constexpr double QUEUE_PENALTY_US_PER_TASK = 1000.0;
         }
 
@@ -63,9 +57,7 @@ namespace SushiRuntime
                 if (w.free_mem != 0 && w.free_mem < est_bytes)
                     continue; // not enough headroom on that worker
 
-                // cost = round trip + data transfer + queue backlog penalty.
-                // rtt_micros is refreshed by the coordinator's PING/PONG probe; a
-                // distant or laggy worker is naturally deprioritized here.
+                // Cost is round trip plus transfer plus queue backlog (src/distributed/README.md).
                 const double cost = static_cast<double>(w.rtt_micros)
                                   + transfer_us
                                   + static_cast<double>(w.inflight) * QUEUE_PENALTY_US_PER_TASK;

@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file chain_plan.hpp
+ * @brief Declares ChainPlan and classify_chain for the in-order chain.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/execution/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -67,13 +74,10 @@ namespace SushiRuntime
 
         /**
          * @brief Classifies a compiled plan for the in-order chain.
-         *
-         * Any doubt leaves the plan on the scheduler: native host work, an
-         * offload candidate, a device value read at dispatch, a node with no
-         * USM region, a region this context did not allocate, or two devices.
          * @param graph A plan after capture_base_state().
-         * @param ctx   The context whose USM registry owns the plan's regions.
+         * @param ctx The context whose USM registry owns the plan's regions.
          * @return The classification; not chainable on any doubt.
+         * @see include/SushiRuntime/execution/README.md
          */
         SUSHIRUNTIME_API ChainPlan classify_chain(const CompiledGraph& graph, RuntimeContext& ctx);
 

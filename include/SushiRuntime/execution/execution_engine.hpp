@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file execution_engine.hpp
+ * @brief Declares CompiledGraph, IExecutionEngine and ExecutionEngine.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/execution/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -15,20 +22,13 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-// CompiledGraph holds sushi_ptr<Graph::Node> members and is dllexport'd
-// (SUSHIRUNTIME_API). On Windows, exporting a class forces its implicit special
-// members to be instantiated at the class definition, which requires Node to be
-// complete here — a forward declaration triggers "member access into incomplete
-// type" under clang. Including the definition keeps the build valid on Windows
-// and is a no-op on platforms where the class is not exported (e.g. Linux).
+// CompiledGraph is exported, so Node must be complete here.
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/run_report.hpp>
 #include <SushiRuntime/core/profiling_ledger.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
-// WorkerPoolInfo is returned by worker_pool() below. runtime_settings.hpp is a
-// leaf header (no SYCL, no runtime types), so including it here does not create
-// a cycle with runtime_context.hpp, which includes this file.
+// runtime_settings.hpp is a leaf header, so this include creates no cycle.
 #include <SushiRuntime/execution/runtime_settings.hpp>
 
 namespace SushiRuntime
@@ -64,24 +64,15 @@ namespace SushiRuntime
 
             /**
              * @brief Snapshots each node's compiled in-degree so the plan can replay.
-             *
-             * execute() consumes a node's in_degree as it releases successors, so a
-             * second run needs the original counts restored first. Call this once
-             * after compile(); rearm() then restores from the snapshot before every
-             * subsequent run. Keeping this here (next to Node) instead of in the
-             * fluent API is what lets the public API stop reaching into Node's
-             * scheduler-internal fields.
+             * @pre compile() has run.
+             * @see include/SushiRuntime/execution/README.md
              */
             void capture_base_state();
 
             /**
              * @brief Sizes profiling_multiplicities and profiling_host_native from all_nodes.
-             *
-             * Shared by capture_base_state() (the static Graph) and DynamicGraph's
-             * commit(), which has no compiled in-degree baseline of its own to
-             * capture but needs this sizing whenever it (re)populates all_nodes.
-             * Safe to call only once all_nodes carries its final registration
-             * indices for this compose.
+             * @pre all_nodes carries its final registration indices for this compose.
+             * @see include/SushiRuntime/execution/README.md
              */
             void capture_profiling_state();
 
@@ -166,63 +157,32 @@ namespace SushiRuntime
 
             /**
              * @brief Runs a compiled graph in place and blocks until completion.
-             *
-             * Non-consuming: the engine reads @p graph's roots and sentinel and
-             * resets/re-arms its scheduler for the round, but does not take
-             * ownership of the nodes. This is what makes replay possible — the
-             * caller keeps one CompiledGraph and runs it many times, resetting node
-             * state between runs. The one-shot rvalue overload below delegates here.
-             *
-             * @param graph The compiled graph to run; left intact (nodes' per-run
-             *              state such as in_degree is consumed and must be reset by
-             *              the caller before the next run).
-             *
-             * Returns nothing. It used to return a default-constructed sycl::event
-             * that carried no information -- the run is already finished when this
-             * returns, so there was never a hardware event to chain on, and the
-             * docs said so. Constructing one is not free: on oneAPI's libsycl
-             * sycl::event{} heap-allocates, which put one allocation per tick on
-             * the steady-state loop that run(RunReport&) promises will not allocate.
+             * @param graph The graph to run; its nodes' per-run state must be reset before the next
+             *        run.
+             * @see include/SushiRuntime/execution/README.md
              */
             virtual void execute(CompiledGraph& graph) = 0;
 
             /**
-             * @brief One-shot convenience: runs a temporary compiled graph.
-             *
-             * Binds rvalues (e.g. execute(graph.compile())) and delegates to the
-             * in-place overload. The moved-in graph is destroyed when the call
-             * returns, so this is the right entry point for a single run.
-             *
-             * @param graph A compiled graph to run once and discard.
+             * @brief Runs a temporary compiled graph once and discards it.
+             * @see include/SushiRuntime/execution/README.md
              */
             void execute(CompiledGraph&& graph);
 
             /**
-             * @brief Whether this engine can start a run without blocking.
-             *
-             * Reported rather than assumed so a strategy that has no meaningful
-             * split between starting and finishing a run (a dry-run engine, a
-             * replay engine, a test double) is not forced to fake one. False by
-             * default; callers must check before using submit()/complete().
-             *
+             * @brief Returns whether this engine can start a run without blocking.
              * @return True when submit()/complete() are implemented.
+             * @see include/SushiRuntime/execution/README.md
              */
             virtual bool supports_asynchronous_run() const { return false; }
 
             /**
              * @brief Starts a run and returns immediately, without waiting.
-             *
-             * The half of execute() that hands work to the scheduler. Everything
-             * execute() does up to blocking happens here, so the work proceeds on
-             * the worker pool while the caller does something else — extracting
-             * the previous step's state for a renderer, say. Every submit() must
-             * be paired with exactly one complete(); until it is, the engine
-             * rejects another run and the compiled plan must stay alive.
-             *
-             * @param graph The compiled graph to run in place (not consumed).
+             * @pre Exactly one complete() follows, and the plan stays alive until it returns.
              * @throws Core::SushiException If the engine does not support this,
-             *         is shut down, the graph has no roots, or a run is already
-             *         in progress.
+             *        is shut down, the graph has no roots, or a run is already
+             *        in progress.
+             * @see include/SushiRuntime/execution/README.md
              */
             virtual void submit(CompiledGraph& /*graph*/)
             {
@@ -233,14 +193,10 @@ namespace SushiRuntime
 
             /**
              * @brief Blocks until the run started by submit() has finished.
-             *
-             * The other half of execute(): waits for the completion sentinel,
-             * drains the pool, releases the engine for the next run, and
-             * rethrows a task exception exactly as execute() would. Calling it
-             * without a matching submit() is a programming error.
-             *
+             * @pre submit() was called.
              * @throws Core::SushiException If the engine does not support this.
              * @throws The first exception a task threw during the run.
+             * @see include/SushiRuntime/execution/README.md
              */
             virtual void complete()
             {
@@ -250,13 +206,10 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Whether a submitted run has already finished, without waiting.
-             *
-             * Lets a caller decide whether waiting would block — the difference
-             * between overlapping more work and stalling. Meaningless (and true)
-             * when no run is in flight.
-             *
-             * @return True once the run's completion sentinel has reported in.
+             * @brief Returns whether a submitted run has already finished, without waiting.
+             * @return True once the completion sentinel has reported in, or when no run is in
+             *        flight.
+             * @see include/SushiRuntime/execution/README.md
              */
             virtual bool run_finished() { return true; }
 
@@ -302,25 +255,16 @@ namespace SushiRuntime
             virtual bool rebalancer_enabled() const { return false; }
 
             /**
-             * @brief The worker pool this engine actually built.
-             *
-             * Reports the applied count and core placement, which differ from the
-             * requested RuntimeSettings when the range did not fit the machine.
-             * Default is an empty pool so engines without worker threads (and test
-             * doubles) need not implement it.
-             *
-             * @return The pool's size, first bound core, and pin policy.
+             * @brief Returns the worker pool this engine built; an empty pool by default.
+             * @see include/SushiRuntime/execution/README.md
              */
             virtual WorkerPoolInfo worker_pool() const { return {}; }
 
             /**
-             * @brief Clears profiling accumulators before a profiled run.
-             *
-             * Default no-op so engines that gather no timing (and test doubles) need
-             * not implement it.
-             * @param graph The compiled plan whose counters reset.
-             * @param expected_invocations Per-node dispatch count the caller expects
-             *        this run to reach; sizes the event ledger before dispatch starts.
+             * @brief Clears profiling accumulators before a profiled run; does nothing by default.
+             * @param expected_invocations Per-node dispatch count the caller expects; sizes the
+             *        ledger.
+             * @see include/SushiRuntime/execution/README.md
              */
             virtual void reset_profiling(CompiledGraph& /*graph*/,
                                          std::size_t /*expected_invocations*/ = 1) {}
@@ -365,13 +309,8 @@ namespace SushiRuntime
             ExecutionEngine& operator=(const ExecutionEngine&) = delete;
 
             /**
-             * @brief Executes a compiled graph synchronously.
-             *
-             * Injects all root nodes into the persistent scheduler, re-arms the
-             * running flag for this execution round, then blocks on the sentinel's
-             * completion promise. Does NOT recreate any threads.
-             *
-             * @param graph Compiled graph to run in place (not consumed).
+             * @brief Executes a compiled graph synchronously on the persistent scheduler.
+             * @see include/SushiRuntime/execution/README.md
              */
             void execute(CompiledGraph& graph) override;
 
@@ -382,13 +321,9 @@ namespace SushiRuntime
 
             /**
              * @brief Starts a run on the worker pool and returns immediately.
-             *
-             * execute() is exactly submit() followed by complete(); the two exist
-             * separately so a caller can put its own work between them. See
-             * IExecutionEngine::submit for the pairing contract.
-             *
-             * @param graph Compiled graph to run in place (not consumed); it must
-             *              stay alive until the matching complete() returns.
+             * @param graph Graph to run in place; it must stay alive until the matching complete()
+             *        returns.
+             * @see include/SushiRuntime/execution/README.md
              */
             void submit(CompiledGraph& graph) override;
 
@@ -422,15 +357,8 @@ namespace SushiRuntime
             void reset_cancellation() override;
 
             /**
-             * @brief Turns the background thermal rebalancer on or off.
-             *
-             * The rebalancer migrates tasks between workers for throughput, but it
-             * is a background thread doing work mid-run and a source of run-to-run
-             * nondeterminism. Disable it for a low-jitter real-time frame or a
-             * deterministic/replay run; leave it on (the default) for batch
-             * throughput. Safe to call between runs.
-             *
-             * @param enabled True to run the rebalancer, false to stop it.
+             * @brief Turns the background thermal rebalancer on or off; safe to call between runs.
+             * @see include/SushiRuntime/execution/README.md
              */
             void set_rebalancer_enabled(bool enabled) override;
 
@@ -441,32 +369,17 @@ namespace SushiRuntime
             WorkerPoolInfo worker_pool() const override;
 
             /**
-             * @brief Clears all profiling accumulators before a profiled run.
-             *
-             * Zeroes every node's per-run timing in @p graph and the scheduler's
-             * per-worker time buckets, so the resulting report covers only the run
-             * about to start. The driver calls this only when profiling is on.
-             *
-             * Also resets the plan's event ledger, sizing it to @p expected_invocations
-             * per node (or the previous run's high-water mark, whichever is larger),
-             * so capture never allocates once a shape has been seen.
-             *
-             * @param graph The compiled plan whose node counters are reset.
+             * @brief Clears all profiling accumulators and resets the event ledger before a
+             *        profiled run.
              * @param expected_invocations Per-node dispatch count this run expects.
+             * @see include/SushiRuntime/execution/README.md
              */
             void reset_profiling(CompiledGraph& graph, std::size_t expected_invocations) override;
 
             /**
              * @brief Fills a report's profiling breakdown after a profiled run.
-             *
-             * Reads each node's accumulated device/host time and invocation count
-             * into @p report.node_timings (skipping nodes that never ran), the
-             * per-worker time split into @p report.worker_timings, and derives
-             * scheduling_overhead_ms from the workers' completion-polling time.
-             *
-             * @param graph  The compiled plan whose node counters are read.
-             * @param report The report to populate; left untouched for nodes that
-             *               did not run.
+             * @param report The report to populate; left untouched for nodes that did not run.
+             * @see include/SushiRuntime/execution/README.md
              */
             void collect_profiling(CompiledGraph& graph, Core::RunReport& report) const override;
 

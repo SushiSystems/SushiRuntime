@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file node.hpp
+ * @brief Declares Node, one node of the compiled task DAG, and its supporting types.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/graph/README.md
+ */
+
 #pragma once
 
 #include <algorithm>
@@ -140,13 +147,8 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Cross-region (boundary) dependency layer for the dynamic graph.
-         *
-         * The dynamic region graph splits a node's dependencies into a stable
-         * intra-region interior, baked once when the region compiles, and a
-         * recomputable cross-region boundary layer the composer maintains as
-         * neighbouring regions stream in and out. A static-graph node leaves every
-         * field at its default and never reads this layer.
+         * @brief Holds the cross-region (boundary) dependency layer for the dynamic graph.
+         * @see include/SushiRuntime/graph/README.md
          */
         struct RegionLink
         {
@@ -211,14 +213,8 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Per-run profiling accumulators, summed across a run's steps.
-         *
-         * Written only when the runtime was built with profiling on; otherwise the
-         * dispatch and completion paths never touch them. Relaxed atomics: each is a
-         * monotonic counter accumulated as steps replay and read once at the run
-         * boundary, with no ordering dependency on other state. A given step's
-         * completion is reaped by exactly one worker, but different steps may be
-         * reaped by different workers, so the adds are atomic.
+         * @brief Holds per-run profiling accumulators, summed across a run's steps.
+         * @see include/SushiRuntime/graph/README.md
          */
         struct NodeProfiling
         {
@@ -249,13 +245,8 @@ namespace SushiRuntime
             std::vector<void*> writes;
 
             /**
-             * @brief Live read/write pointers for a double-buffered offload node.
-             *
-             * A State node rotates which allocation it reads and writes every step,
-             * so the fluent layer re-points these before each step and the
-             * coordinator resolves handles from them at dispatch — keeping the
-             * compiled plan replayable while following the swap. Null for every
-             * ordinary node, whose fixed handles are baked into in_handles/out_handles.
+             * @brief Hold the live read and write pointers of a double-buffered offload node.
+             * @see include/SushiRuntime/graph/README.md
              */
             std::shared_ptr<std::vector<void*>> live_reads;
             std::shared_ptr<std::vector<void*>> live_writes;
@@ -273,22 +264,10 @@ namespace SushiRuntime
 #endif
 
         /**
-         * @brief Optional, lazily-allocated per-node state kept off the node body.
-         *
-         * Holds concerns absent on most nodes — and, for the distributed offload
-         * state, absent entirely in a standalone build. Keeping them behind one
-         * pointer fixes Node's layout independent of build flags: SR_DISTRIBUTED
-         * changes what a NodeExtensions contains, never sizeof(Node). Empty (and
-         * never allocated) in a standalone build.
-         *
-         * @warning That stabilises Node, not this. THIS type's size still depends
-         * on the flag, and the unique_ptr's deleter is instantiated in whichever
-         * translation unit destroys the Node — which includes consumer code, since
-         * the API layer creates and destroys nodes from header-inline templates.
-         * The library and its consumers must therefore still agree on the flag,
-         * which is why SR_DISTRIBUTED is a PUBLIC define (see src/CMakeLists.txt).
-         * Making it private would require this type to become opaque: declared
-         * here, defined and deleted only inside the library.
+         * @brief Holds optional, lazily allocated per-node state kept off the node body.
+         * @warning The library and its consumers must agree on SR_DISTRIBUTED; this type's size
+         *          depends on it.
+         * @see include/SushiRuntime/graph/README.md
          */
         struct NodeExtensions
         {
@@ -298,13 +277,8 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief One node in the compiled task DAG.
-         *
-         * Inherits from Task so the scheduler can dispatch it without knowing the DAG
-         * layer. Dependency management is lock-free: in_degree is decremented with
-         * acq_rel by EventPolling as predecessors complete; when it reaches zero the
-         * node is pushed to the ready queue. Successors are stored inline (up to
-         * MAX_INLINE_SUCCESSORS) and overflow into a lock-free linked list.
+         * @brief Represents one node in the compiled task DAG.
+         * @see include/SushiRuntime/graph/README.md
          */
         struct Node : public SushiRuntime::Scheduler::Task
         {
@@ -336,14 +310,8 @@ namespace SushiRuntime
             std::atomic<int32_t> in_degree{0};
 
             /**
-             * @brief Cross-region (boundary) dependency layer.
-             *
-             * The dynamic region graph splits a node's dependencies into a stable
-             * intra-region interior and a recomputable cross-region boundary layer;
-             * this holds the latter (see RegionLink). Each step resets the live
-             * in_degree to region.intra_in_degree + region.boundary_in_degree, so the
-             * boundary layer can be re-stitched without disturbing the frozen
-             * interior. Left at its defaults by the static graph, which never reads it.
+             * @brief Holds this node's cross-region (boundary) dependency layer; see RegionLink.
+             * @see include/SushiRuntime/graph/README.md
              */
             RegionLink region;
 
@@ -359,67 +327,34 @@ namespace SushiRuntime
             SmallEventVector sycl_deps;
 
             /**
-             * @brief Marks the graph's completion sentinel.
-             *
-             * The sentinel delivers run completion (and, on a failed run, the
-             * error) through its host_work, so it must run even after a task
-             * exception flips the scheduler into drain-without-executing mode —
-             * skipping it would leave the completion promise unset and hang
-             * execute(). Set by ExecutionEngine when it wires the sentinel.
+             * @brief Marks the graph's completion sentinel, which must run even after a task
+             *        exception.
+             * @see include/SushiRuntime/graph/README.md
              */
             bool is_sentinel = false;
 
             /**
-             * @brief USM read/write regions this node touches.
-             *
-             * Retained on every build (not just distributed) so the scheduler can
-             * route a KERNEL submit to the queue whose context actually owns the
-             * data — it anchors on a region's base. USM is pinned to the
-             * device/context it was allocated on; running the kernel on a sibling
-             * device's queue (e.g. CPU USM on a CUDA queue) is an illegal
-             * cross-context access. See TaskScheduler::execute_task.
+             * @brief Hold the USM read and write regions this node touches.
+             * @see include/SushiRuntime/graph/README.md
              */
             std::vector<SushiRuntime::Core::ResourceRegion> io_reads_;
             std::vector<SushiRuntime::Core::ResourceRegion> io_writes_;
 
             /**
-             * @brief Set once the node's data has been checked for co-location.
-             *
-             * The scheduler verifies on a node's first dispatch that all its USM
-             * lives on one device context — a single kernel cannot touch two
-             * non-peer contexts at once — and caches the result here so later steps
-             * pay nothing. A node is dispatched serially across steps, so a plain
-             * flag needs no synchronisation. (Cross-device execution is a WP-5
-             * concern; until then co-location is the contract this guard enforces.)
+             * @brief Tells whether the node's data has been checked for co-location.
+             * @see include/SushiRuntime/graph/README.md
              */
             bool locality_checked_ = false;
 
             /**
-             * @brief Cached owning-queue index for this node's anchor USM, or -1.
-             *
-             * Resolved once on the node's first dispatch (alongside locality_checked_,
-             * from the same context_index_for_ptr lookup) when the anchor is a pointer
-             * this context allocated. Later steps route straight to
-             * RuntimeContext::get_queue(index) instead of get_queue_for_ptr(), which
-             * takes a process-global mutex on every device dispatch. -1 keeps the
-             * introspection / NUMA round-robin fallback for pointers this context did
-             * not allocate (rare). Stable across replay: all_queues never changes and
-             * the node's anchor buffer is fixed, so the index cannot go stale.
-             * Dispatched serially per node, so a plain int needs no synchronisation.
+             * @brief Caches the owning-queue index of this node's anchor USM, or -1.
+             * @see include/SushiRuntime/graph/README.md
              */
             int cached_queue_index_ = -1;
 
             /**
-             * @brief Late-bound per-step controls (enabled flag and live size).
-             *
-             * Null for an ordinary node, so the scheduler's hot path pays one
-             * null-pointer load before falling through to normal execution. When
-             * set by a dynamic add() overload, the fluent layer re-points its
-             * fields each step: the scheduler reads enabled to decide whether to
-             * run the node, and the kernel reads count for its iteration range.
-             * Bindings may change size/enable freely but never which resources the
-             * node touches — that would invalidate the compiled dependency edges
-             * and requires a recompile.
+             * @brief Holds the late-bound per-step controls; null for an ordinary node.
+             * @see include/SushiRuntime/graph/README.md
              */
             std::shared_ptr<LateBindings> bindings_;
 
@@ -436,13 +371,9 @@ namespace SushiRuntime
             std::size_t baked_width = Core::WIDTH_UNKNOWN;
 
             /**
-             * @brief Identity of the public add() call that registered this node.
-             *
-             * Stamped once by TaskGraph at insertion time from a per-graph counter,
-             * in call order. Unlike plan_index, which reflects the compiled plan's
-             * position, this reflects registration order. Every internal node one
-             * public add() call creates (e.g. a reduction's tile levels) shares this
-             * value. Zero until the node is registered.
+             * @brief Identifies the public add() call that registered this node; zero until
+             *        registered.
+             * @see include/SushiRuntime/graph/README.md
              */
             std::uint32_t registration_index = 0;
 
@@ -460,27 +391,12 @@ namespace SushiRuntime
             std::unique_ptr<NodeExtensions> ext_;
 
             /**
-             * @brief Registers @p target as a successor of this node.
-             *
-             * Fills the inline buffer first; once it is full, pushes @p target onto
-             * the lock-free successor_list via compare_exchange_weak with
-             * release/relaxed ordering — release so the stored pointer is visible to
-             * any thread that reads successor_list with acquire ordering.
-             *
-             * @param target Node to enqueue when this node completes.
+             * @brief Registers target as a successor of this node.
+             * @see include/SushiRuntime/graph/README.md
              */
             void add_successor(Node* target) noexcept
             {
-                // Single-writer per node: successors are wired at graph build /
-                // step-boundary time, never concurrently with another add_successor
-                // on the same node. That lets us PUBLISH THE SLOT BEFORE THE COUNT:
-                // write inline_successors[idx], then release-store the incremented
-                // count. A concurrent reader in trigger_successors acquire-loads the
-                // count and, on seeing idx+1, is guaranteed to also see the slot
-                // write — closing the window where it read an incremented count but a
-                // still-null slot and silently skipped the successor (a missed
-                // in_degree decrement -> deadlock). The previous relaxed fetch_add
-                // published the count first, exposing that window.
+                // Single writer per node: the slot is written before the count is published.
                 int32_t idx = inline_successor_count.load(std::memory_order_relaxed);
                 if (idx < MAX_INLINE_SUCCESSORS)
                 {
@@ -488,8 +404,7 @@ namespace SushiRuntime
                     inline_successor_count.store(idx + 1, std::memory_order_release);
                     return;
                 }
-                // Past the inline capacity: still reserve the slot number so the
-                // count reflects the spilled entries, then push onto the list below.
+                // Past the inline capacity the count still advances to include spilled entries.
                 inline_successor_count.store(idx + 1, std::memory_order_release);
 
                 // Spillover to heap-allocated lock-free linked list
@@ -506,12 +421,7 @@ namespace SushiRuntime
 
             /**
              * @brief Re-arms the live in-degree from the two-layer baseline.
-             *
-             * Sets in_degree to region.intra_in_degree + region.boundary_in_degree,
-             * the count the scheduler decrements as predecessors complete. The
-             * dynamic graph calls this for every node before each replayed step, the
-             * equivalent of CompiledGraph::rearm for a plan whose boundary layer is
-             * maintained incrementally rather than snapshotted.
+             * @see include/SushiRuntime/graph/README.md
              */
             void arm_in_degree() noexcept
             {
@@ -522,13 +432,8 @@ namespace SushiRuntime
 
 #ifdef SR_DISTRIBUTED
             /**
-             * @brief Returns the offload state, allocating the extensions on demand.
-             *
-             * The mutable entry point for the distributed build paths that populate
-             * or update offload metadata. The first call allocates this node's
-             * NodeExtensions; later calls reuse it.
-             *
-             * @return Reference to this node's offload state.
+             * @brief Returns the offload state, allocating the extensions on first use.
+             * @see include/SushiRuntime/graph/README.md
              */
             OffloadState& offload()
             {
@@ -538,14 +443,8 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Returns the offload state if present, else nullptr.
-             *
-             * A node that never offloads never allocates its extensions, so the read
-             * paths (the scheduler's offloadable check, the completion observer) read
-             * a null return as "not offloadable / nothing to bump" without forcing an
-             * allocation.
-             *
-             * @return Pointer to the offload state, or nullptr if this node has none.
+             * @brief Returns the offload state if present, else nullptr, without allocating.
+             * @see include/SushiRuntime/graph/README.md
              */
             OffloadState* offload_state() noexcept
             {
@@ -567,14 +466,8 @@ namespace SushiRuntime
 
             /**
              * @brief Satisfies one dependency on every successor and reports the freed ones.
-             *
-             * Walks the three places a successor can live — the inline array, the
-             * lock-free spillover list, and the cross-region boundary vector — and
-             * decrements each target's in-degree. A target whose count reaches zero
-             * has no dependencies left and goes to the sink. The decrement is
-             * acq_rel so the freed successor sees every write the predecessors made.
-             *
              * @param sink Collects each successor this completion made runnable.
+             * @see include/SushiRuntime/graph/README.md
              */
             void on_complete(SushiRuntime::Scheduler::ReadySink& sink) override
             {

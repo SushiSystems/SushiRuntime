@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// WP-1 coverage: the persistent-graph / late-binding path. A graph whose live
-// size or whose per-step participation changes between steps must be compiled
-// exactly once and replayed, never recompiled. Each test asserts both the
-// numerical result and Graph::compile_count() == 1.
+/**
+ * @file test_late_bindings.cpp
+ * @brief Tests that a graph whose live size, base or participation changes per step compiles once.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -18,10 +20,7 @@
 
 using namespace SushiRuntime;
 
-// sized() shrinks the iteration range to a live prefix each step. Driving the
-// live count from 1..CAP over CAP successive run(1) calls increments buf[i]
-// exactly on the steps where i is inside the live range, so buf[i] == CAP - i.
-// The plan must compile once and follow the changing size on replay.
+/** @brief Tests that sized() shrinks the iteration range to a live prefix each step. */
 TEST(Integration_LateBindings, DynamicSizePerElement)
 {
     constexpr std::size_t CAP = 8;
@@ -50,9 +49,7 @@ TEST(Integration_LateBindings, DynamicSizePerElement)
         ASSERT_EQ(buf[i], static_cast<int>(CAP - i)) << "at i=" << i;
 }
 
-// when() gates whether the node runs at all. Toggling the predicate on/off over
-// ten steps runs the increment only on the enabled steps, so each element ends
-// at the count of enabled steps — with a single compile.
+/** @brief Tests that when() runs the node only on the enabled steps. */
 TEST(Integration_LateBindings, EnableTogglePerElement)
 {
     constexpr std::size_t N     = 16;
@@ -84,9 +81,7 @@ TEST(Integration_LateBindings, EnableTogglePerElement)
         ASSERT_EQ(buf[i], static_cast<int>(enabled_steps)) << "at i=" << i;
 }
 
-// A disabled step must release its successors so the rest of the graph still
-// runs. A downstream task that always runs should advance every step regardless
-// of the upstream node's enable state, proving instant-complete drains the DAG.
+/** @brief Tests that a disabled node still releases its successors. */
 TEST(Integration_LateBindings, DisabledNodeStillReleasesSuccessors)
 {
     constexpr std::size_t N     = 8;
@@ -102,8 +97,7 @@ TEST(Integration_LateBindings, DisabledNodeStillReleasesSuccessors)
 
     bool on = false;
     auto g = rt.graph();
-    // Upstream writes gate; downstream reads gate and writes sink, so the
-    // tracker orders downstream after upstream on the gate buffer.
+    // Downstream reads the gate buffer upstream writes, so it is ordered after; see README.md.
     g.add(API::when([&] { return on; }),
           API::Reads{}, API::Writes(gate), N,
           [gp](std::size_t i) { gp[i] += 1; });
@@ -122,9 +116,7 @@ TEST(Integration_LateBindings, DisabledNodeStillReleasesSuccessors)
     }
 }
 
-// sized() on a stepped State: the live prefix grows each step while the graph is
-// compiled once. Cells active on every step accumulate one increment per step,
-// which is what a reference single-threaded loop would produce for that prefix.
+/** @brief Tests that sized() on a stepped State follows a live prefix that grows each step. */
 TEST(Integration_LateBindings, DynamicSizeState)
 {
     constexpr std::size_t CAP   = 8;
@@ -152,9 +144,7 @@ TEST(Integration_LateBindings, DynamicSizeState)
     EXPECT_EQ(field[1], static_cast<int>(STEPS));
 }
 
-// when() and sized() compose: the node runs only while enabled, and when it
-// runs it iterates the live count. Over the run, an element is incremented once
-// per step that is both enabled and within range — still a single compile.
+/** @brief Tests that when() and sized() compose on one node. */
 TEST(Integration_LateBindings, ComposedWhenAndSized)
 {
     constexpr std::size_t CAP   = 4;
@@ -188,11 +178,7 @@ TEST(Integration_LateBindings, ComposedWhenAndSized)
 }
 
 
-// based_at() moves where a late-bound node starts, without recompiling. This is
-// the graph-colouring shape: each colour is a contiguous slice of one constraint
-// buffer and every slice shifts as constraints are added or removed. The callable
-// still receives ABSOLUTE indices, so a kernel written without knowing about
-// bases stays correct.
+/** @brief Tests that based_at() moves where a late-bound node starts without recompiling. */
 TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
 {
     constexpr std::size_t CAPACITY = 64;
@@ -238,9 +224,7 @@ TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
     EXPECT_EQ(g.compile_count(), 1u) << "moving the window must not recompile";
 }
 
-// A base with no size runs from there to the end of the capacity, not over the
-// whole buffer — the sentinel means "the rest", and with an offset the rest
-// starts at the offset.
+/** @brief Tests that a base without a size runs from the base to the end of the capacity. */
 TEST(Integration_LateBindings, BaseWithoutASizeRunsToTheEnd)
 {
     constexpr std::size_t CAPACITY = 32;
@@ -263,10 +247,10 @@ TEST(Integration_LateBindings, BaseWithoutASizeRunsToTheEnd)
         ASSERT_EQ(buf[i], 1) << "at i=" << i;
 }
 
-// based_at_device() takes the offset from a slot a predecessor wrote, so a
-// colouring pass that computes both a slice's start and its length on the device
-// can hand over both the same way. The slot is registered as a read, so the
-// producer is ordered first without the caller naming it.
+/**
+ * @brief Tests that based_at_device() and sized_from_device() take both values from slots a
+ *        predecessor wrote.
+ */
 TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
 {
     constexpr std::size_t CAPACITY = 128;
@@ -297,9 +281,7 @@ TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
     }
 }
 
-// A window that runs off the end of the capacity fails the run, naming what it
-// asked for. Clamping would silently drop the tail of a colour, which is the
-// class of failure these controls exist to make impossible.
+/** @brief Tests that a window past the capacity fails the run and names what it asked for. */
 TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
 {
     constexpr std::size_t CAPACITY = 16;
@@ -322,8 +304,7 @@ TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
     EXPECT_NO_THROW(g.run());
 }
 
-// based_at_device rejects a slot it could not read at dispatch, at the call site
-// rather than mid-run.
+/** @brief Tests that based_at_device rejects an unreadable slot at the call site. */
 TEST(Integration_LateBindings, BasedAtDeviceRejectsAnUnreadableSlot)
 {
     auto rt = Runtime::create();
@@ -337,8 +318,7 @@ TEST(Integration_LateBindings, BasedAtDeviceRejectsAnUnreadableSlot)
     EXPECT_NO_THROW(API::based_at_device(host, 1));
 }
 
-// The raw-pointer setter takes no buffer, so add() checks the pointer itself: a
-// slot inside Shared memory is rejected before the graph records the task.
+/** @brief Tests that add() rejects a raw slot inside Shared memory. */
 TEST(Integration_LateBindings, RawSharedSlotIsRejectedAtAdd)
 {
     constexpr std::size_t CAPACITY = 8;

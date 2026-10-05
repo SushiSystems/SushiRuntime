@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file run_report.hpp
+ * @brief Declares RunReport and the statistics records it carries.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -89,12 +96,7 @@ namespace SushiRuntime
 
         /**
          * @brief Times one dispatch of one node, in nanoseconds on the backend's event clock.
-         *
-         * One record per node dispatch, never per SYCL command group a host-work
-         * node submits internally. `invocation` is the step index within
-         * `run(steps)`, zero for a single run. `node_index` is the node's public
-         * registration index, so several internal nodes one `add()` call created
-         * share it and the pair may repeat within a run.
+         * @see include/SushiRuntime/core/README.md
          */
         struct NodeEventRecord
         {
@@ -172,16 +174,7 @@ namespace SushiRuntime
 
             /**
              * @brief Returns the report to its as-constructed state, keeping capacity.
-             *
-             * What makes a report reusable. Assigning a fresh RunReport over an old
-             * one would free every vector's storage and the next run would allocate
-             * it again; clearing keeps the buffers, so a report handed to
-             * `run(RunReport&)` every tick stops allocating after the first run.
-             *
-             * The retained capacity covers the rows, not what a row owns: clearing
-             * node_timings destroys each row's name string. That is why the
-             * zero-allocation claim is stated for a profiling-off steady state — with
-             * profiling on, the node labels are rebuilt each run by design.
+             * @see include/SushiRuntime/core/README.md
              */
             void reset() noexcept
             {

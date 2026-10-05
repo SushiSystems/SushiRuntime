@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file result.hpp
+ * @brief Declares Result and ErrorWrapper, the value-or-error return type.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <type_traits>
@@ -29,15 +35,7 @@ namespace SushiRuntime
             E value; /**< The error payload. */
         };
 
-        /**
-         * @brief Builds an ErrorWrapper, deducing the error type.
-         * 
-         * Constructs the wrapper using perfect forwarding and decay.
-         *
-         * @tparam E The deduced type of the incoming error.
-         * @param e The specific error instance to wrap.
-         * @return An ErrorWrapper carrying the error, suitable for Result construction.
-         */
+        /** @brief Builds an ErrorWrapper, deducing the error type. */
         template <typename E>
         ErrorWrapper<std::decay_t<E>> make_error(E&& e)
         {

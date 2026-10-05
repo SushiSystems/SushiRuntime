@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// CPU and GPU work dispatched through independent per-device queues must run
-// concurrently and race-free. Overlap speedup is measured in the benchmark
-// suite (AsyncOverlapBench); here we only assert correctness.
+/**
+ * @file test_async_execution.cpp
+ * @brief Tests that CPU and GPU work on per-device queues runs concurrently and race-free.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <vector>
 #include <gtest/gtest.h>
@@ -100,8 +103,7 @@ TEST(Integration_AsyncExecutionTest, CpuGpuConcurrentVectorAdd)
     float* cb = c_b.get();
     float* cc = c_c.get();
 
-    // Fire GPU then CPU without waiting on the GPU first; both submits return
-    // immediately and the devices proceed in parallel.
+    // Neither submit waits on the other, so the two devices run in parallel; see README.md.
     sycl::event gpu_ev = gpu_q.submit([&](sycl::handler& h)
     {
         h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { gc[i] = ga[i] + gb[i]; });

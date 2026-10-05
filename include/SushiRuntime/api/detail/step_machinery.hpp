@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file step_machinery.hpp
+ * @brief Declares StepMachinery, the per-step hooks a replayed plan runs around each step.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/detail/README.md
+ */
+
 #pragma once
 
 #include <memory>
@@ -27,39 +34,27 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief The per-step lifecycle a replayed plan runs around each step.
-             *
-             * Both the static Graph and the DynamicGraph composer drive the same
-             * compile-once / replay-many loop, and both need the identical four
-             * per-step hook lists run in the identical order. This object owns those
-             * lists (plus the State double-buffer bookkeeping that produces them) so
-             * the ordering invariant — re-point distributed live IO, refresh
-             * late-bound controls, execute, then advance every State — lives in one
-             * place instead of being copied into each driver.
-             *
-             * The building side (view_for / register_advance / register_binding_updater)
-             * is used by Graph's add() overloads as they record tasks. The driving
-             * side (resync / before_step / after_step) is used by both drivers. The
-             * aggregation side (reset_updaters / aggregate_from) lets DynamicGraph
-             * gather every live region's hooks into one before a run.
+             * @brief Owns the per-step hook lists a replayed plan runs around each step, in one
+             *        fixed order.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             class StepMachinery
             {
                 public:
-                    // A per-step hook stored without heap allocation. The capacity is
-                    // derived from the largest hook rather than written as a literal: a
-                    // binding updater captures a whole Dynamic (one provider slot per
-                    // late-bound control) plus a LateBindings shared pointer, so adding
-                    // a control widens this automatically instead of tripping
-                    // Delegate's static_assert in every translation unit.
+                    /**
+                     * @brief Stores a per-step hook without heap allocation, sized from the largest
+                     *        hook.
+                     * @see include/SushiRuntime/api/detail/README.md
+                     */
                     using StepHook = Core::Delegate<void(),
                         sizeof(Dynamic) +
                         sizeof(std::shared_ptr<::SushiRuntime::Graph::LateBindings>)>;
 
-                    // Returns the shared view for a State, creating it (and registering
-                    // its resync) on first use. Every kernel touching a State captures
-                    // the same view, so one advancer keeps all references current — the
-                    // basis for correct coupled (multi-field) updates.
+                    /**
+                     * @brief Returns the shared view for a State, creating it and its resync on
+                     *        first use.
+                     * @see include/SushiRuntime/api/detail/README.md
+                     */
                     template <typename T>
                     std::shared_ptr<StateView<T>> view_for(State<T>& s)
                     {
@@ -79,8 +74,11 @@ namespace SushiRuntime
                         return view;
                     }
 
-                    // Registers the once-per-step advance for a written State. Deduped so
-                    // a State advances exactly once per step (one update rule per field).
+                    /**
+                     * @brief Registers the once-per-step advance for a written State, at most once
+                     *        per State.
+                     * @see include/SushiRuntime/api/detail/README.md
+                     */
                     template <typename T>
                     void register_advance(State<T>& s, std::shared_ptr<StateView<T>> view)
                     {
@@ -96,11 +94,11 @@ namespace SushiRuntime
                         });
                     }
 
-                    // Wires a Dynamic's providers to a node's bindings: pushes a per-step
-                    // updater that polls when()/sized() on the driver thread and stores
-                    // the results into the shared block the kernel and scheduler read.
-                    // Skipped when the Dynamic carries no providers (the defaults — always
-                    // enabled, full range — already hold), so an unused tag costs nothing.
+                    /**
+                     * @brief Wires a Dynamic's providers to a node's bindings through a per-step
+                     *        updater.
+                     * @see include/SushiRuntime/api/detail/README.md
+                     */
                     void register_binding_updater(
                         std::shared_ptr<::SushiRuntime::Graph::LateBindings> lb, Dynamic dyn)
                     {
@@ -138,15 +136,19 @@ namespace SushiRuntime
                             s->check_faults();
                     }
 
-                    // Records a re-point hook for a double-buffered offload node, run
-                    // before each step so the coordinator resolves the step's handles.
+                    /**
+                     * @brief Records a re-point hook for a double-buffered offload node, run before
+                     *        each step.
+                     */
                     void add_dist_io_updater(StepHook updater)
                     {
                         dist_io_updaters_.push_back(std::move(updater));
                     }
 
-                    // Points every State view at its state's current/next buffers. Run
-                    // before the first step of a run (a fresh build or a continuing replay).
+                    /**
+                     * @brief Points every State view at its current and next buffers before a run's
+                     *        first step.
+                     */
                     void resync() const
                     {
                         for (auto& r : view_resyncs_)
@@ -155,8 +157,10 @@ namespace SushiRuntime
                             s->resync();
                     }
 
-                    // Runs the pre-execute hooks for one step: re-point any distributed
-                    // live IO, then refresh any late-bound size/enablement controls.
+                    /**
+                     * @brief Runs one step's pre-execute hooks: distributed live IO first, then
+                     *        late-bound controls.
+                     */
                     void before_step() const
                     {
                         for (auto& update_io : dist_io_updaters_)
@@ -167,8 +171,10 @@ namespace SushiRuntime
                             s->before_step();
                     }
 
-                    // Advances every written State after a step so its just-written next
-                    // field becomes current for the following step and for the caller.
+                    /**
+                     * @brief Advances every written State after a step so its next field becomes
+                     *        current.
+                     */
                     void after_step() const
                     {
                         for (auto& advance : step_advancers_)
@@ -177,48 +183,55 @@ namespace SushiRuntime
                             s->after_step();
                     }
 
-                    // Clears this machinery's aggregation of other machineries. A
-                    // composer calls this then re-aggregates the live regions before a
-                    // run; a region's own hooks (and the State bookkeeping that owns the
-                    // views) are untouched, since the region still owns them.
+                    /**
+                     * @brief Clears this machinery's aggregation of other machineries, leaving its
+                     *        own hooks.
+                     * @see include/SushiRuntime/api/detail/README.md
+                     */
                     void reset_updaters()
                     {
                         aggregated_.clear();
                     }
 
-                    // References another machinery's per-step hooks from this one, so a
-                    // composer drives every live region's hooks without copying them
-                    // (the hooks are move-only). The referenced machinery must outlive
-                    // every run driven through this one — it is the region's own,
-                    // owned for the region's lifetime.
+                    /**
+                     * @brief References another machinery's per-step hooks without copying them.
+                     * @pre other outlives every run driven through this one.
+                     * @see include/SushiRuntime/api/detail/README.md
+                     */
                     void aggregate_from(const StepMachinery& other)
                     {
                         aggregated_.push_back(&other);
                     }
 
                 private:
-                    // One shared StateView per State, captured by every kernel that
-                    // touches it. Type-erased; view_for() casts back to the typed view.
+                    /**
+                     * @brief Holds one type-erased StateView per State, shared by every kernel that
+                     *        touches it.
+                     */
                     std::unordered_map<const void*, std::shared_ptr<void>> state_views_;
                     // States that already have an advancer (one writer per State).
                     std::unordered_set<const void*> advanced_states_;
                     // Points each view at its state's current/next; run before each run.
                     std::vector<StepHook> view_resyncs_;
-                    // One per State update rule: advances the state and re-points its
-                    // view at the swapped buffers, run once per step boundary by run(n).
+                    /**
+                     * @brief Holds one advancer per State update rule, run once per step boundary.
+                     */
                     std::vector<StepHook> step_advancers_;
-                    // One per dynamic (late-bound) task: refreshes its size/enable
-                    // controls before each step. Empty unless a Dynamic add() was used.
+                    /**
+                     * @brief Holds one updater per late-bound task; empty unless a Dynamic add()
+                     *        was used.
+                     */
                     std::vector<StepHook> binding_updaters_;
-                    // One per double-buffered offload rule: re-points the node's live IO
-                    // pointer lists at the step's current/next allocations before each
-                    // step. Empty unless a distributed State step was added.
+                    /**
+                     * @brief Holds one live-IO re-point hook per double-buffered offload rule, run
+                     *        before each step.
+                     */
                     std::vector<StepHook> dist_io_updaters_;
                     /** @brief Device fault records of this machinery's late-bound nodes. */
                     std::vector<std::uint32_t*> fault_records_;
-                    // Other machineries this one drives in addition to its own hooks. A
-                    // composer aggregates each live region's machinery here; empty for a
-                    // region's or a static graph's own machinery.
+                    /**
+                     * @brief Lists the other machineries this one drives; empty outside a composer.
+                     */
                     std::vector<const StepMachinery*> aggregated_;
             };
         } // namespace detail

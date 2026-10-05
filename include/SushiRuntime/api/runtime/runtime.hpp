@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file runtime.hpp
+ * @brief Declares Runtime, the fluent entry point, and AdvancedControls.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/runtime/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -24,18 +31,8 @@ namespace SushiRuntime
     namespace API
     {
         /**
-         * @brief Optional runtime-wide settings chosen once at Runtime::create().
-         *
-         * The co-tenancy contract: worker count, core placement, pinning policy,
-         * profiling, and whether the background rebalancer runs. A runtime inside a
-         * game shares the machine with a render thread, an audio callback and asset
-         * I/O, so every one of these defaults is chosen for a tenant rather than an
-         * owner. See Execution::RuntimeSettings for the per-field documentation.
-         *
-         * This is an alias, not a distinct type: RuntimeContext and TaskScheduler
-         * consume the same settings and live below this layer, which may not depend
-         * on it. RuntimeConfig is the public spelling; RuntimeSettings is where it
-         * lives.
+         * @brief Names the runtime-wide settings chosen once at Runtime::create().
+         * @see include/SushiRuntime/api/runtime/README.md
          */
         using RuntimeConfig = Execution::RuntimeSettings;
 
@@ -43,14 +40,9 @@ namespace SushiRuntime
         using PinPolicy = Execution::PinPolicy;
 
         /**
-         * @brief A narrow, read-only view of runtime-internal state.
-         *
-         * The supported way to read the few internal facts a caller legitimately
-         * needs — device count, profiling/rebalancer state, cumulative transfer
-         * bytes — without exposing the whole RuntimeContext. Obtained from
-         * Runtime::advanced(); it borrows the context, so it must not outlive the
-         * Runtime. For anything beyond this surface, Runtime::unsafe_context() is the
-         * deliberate escape hatch.
+         * @brief Exposes a narrow, read-only view of runtime-internal state.
+         * @pre The view does not outlive the Runtime it came from.
+         * @see include/SushiRuntime/api/runtime/README.md
          */
         class AdvancedControls
         {
@@ -87,13 +79,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief The worker pool as built, which may differ from the request.
-                 *
-                 * A caller that reserved cores for its own threads verifies here that
-                 * the reservation took effect: a range that did not fit the machine is
-                 * clamped, and this reports the clamped result rather than the request.
-                 *
+                 * @brief Returns the worker pool as built, which may differ from the request.
                  * @return The worker count, first bound core, and pin policy in effect.
+                 * @see include/SushiRuntime/api/runtime/README.md
                  */
                 Execution::WorkerPoolInfo worker_pool() const
                 {
@@ -136,12 +124,9 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Creates a runtime with default device selection.
-                 * @param config         Device-class filter passed to hardware discovery.
-                 * @param runtime_config Runtime-wide settings — workers, core placement,
-                 *                        profiling, rebalancer; defaults to the
-                 *                        simulation profile.
-                 * @return A ready Runtime.
-                 * @throws SushiException If no device satisfies @p config.
+                 * @param config Device-class filter passed to hardware discovery.
+                 * @param runtime_config Runtime-wide settings; defaults to the simulation profile.
+                 * @throws SushiException If no device satisfies config.
                  */
                 static Runtime create(const Topology::HardwareFilterConfig& config = {},
                                       const RuntimeConfig& runtime_config = {})
@@ -158,28 +143,14 @@ namespace SushiRuntime
 
                 /**
                  * @brief Starts a new dynamic, region-partitioned graph.
-                 *
-                 * The mutable counterpart to graph(): work is grouped into regions
-                 * (region(key)) that can be added or dropped between steps, so a
-                 * streaming open world re-stitches only the cells that changed
-                 * instead of recompiling the whole graph. Defined out of line in
-                 * dynamic_graph.hpp once DynamicGraph is a complete type.
-                 *
-                 * @return A fluent DynamicGraph; populate regions, then run().
+                 * @see include/SushiRuntime/api/runtime/README.md
                  */
                 DynamicGraph dynamic_graph();
 
                 /**
                  * @brief Allocates a typed shared-USM buffer owned by this runtime.
-                 *
-                 * The buffer borrows the runtime's context for allocation and
-                 * frees itself on destruction, so it must not outlive the Runtime.
-                 *
-                 * @tparam T            Element type (trivially copyable for device use).
-                 * @param count        Number of elements.
-                 * @param device_index Target device queue; selects the owning context.
-                 * @param residency    Shared, Device or Host; see Residency.
-                 * @return An owning Buffer<T> handle.
+                 * @pre The buffer does not outlive the Runtime.
+                 * @see include/SushiRuntime/api/runtime/README.md
                  */
                 template <typename T>
                 Buffer<T> buffer(std::size_t count, DeviceIndex device_index = DeviceIndex{0},
@@ -190,16 +161,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Allocates a double-buffered, time-evolving State field.
-                 *
-                 * Use this for data a stepped graph reads as "current" and writes
-                 * as "next"; the runtime swaps the two each step. Like buffer(),
-                 * it must not outlive the Runtime.
-                 *
-                 * @tparam T            Element type (trivially copyable for device use).
-                 * @param count        Number of elements in each of the two buffers.
-                 * @param device_index Target device queue for both buffers.
-                 * @param residency    Shared, Device or Host; see Residency.
-                 * @return An owning State<T> handle.
+                 * @pre The State does not outlive the Runtime.
+                 * @see include/SushiRuntime/api/runtime/README.md
                  */
                 template <typename T>
                 State<T> state(std::size_t count, DeviceIndex device_index = DeviceIndex{0},
@@ -209,16 +172,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Enables or disables the background thermal rebalancer.
-                 *
-                 * Off unless RuntimeConfig::rebalancer asked for it. Running it
-                 * trades run-to-run reproducibility and the jitter floor for
-                 * throughput, by migrating tasks between workers on a 5 ms
-                 * heartbeat — worth it for long batch work, wrong for a simulation
-                 * frame. Safe to call between runs.
-                 *
-                 * @param enabled True to run the rebalancer, false to stop it.
-                 * @return *this, for chaining.
+                 * @brief Enables or disables the background thermal rebalancer; safe to call
+                 *        between runs.
+                 * @see include/SushiRuntime/api/runtime/README.md
                  */
                 Runtime& rebalancer(bool enabled)
                 {
@@ -239,30 +195,19 @@ namespace SushiRuntime
                 Interop interop() const noexcept { return Interop(ctx_); }
 
                 /**
-                 * @brief The full runtime context — the deliberate escape hatch.
-                 *
-                 * Exposes the internal RuntimeContext for uses the fluent surface and
-                 * advanced() do not cover. The name is a warning: code that reaches
-                 * here couples to a non-public type and may break across versions.
-                 * Prefer the fluent API or advanced().
-                 *
-                 * @return A reference to the underlying context, owned by this Runtime.
+                 * @brief Returns the full runtime context, a non-public type that may break across
+                 *        versions.
+                 * @see include/SushiRuntime/api/runtime/README.md
                  */
                 Execution::RuntimeContext& unsafe_context() noexcept { return *ctx_; }
 
 #ifdef SR_DISTRIBUTED
                 /**
-                 * @brief Promotes this runtime to a distributed Master and returns
-                 *        a Cluster handle governing it.
-                 *
-                 * Thin fluent wrapper over RuntimeContext::enable_distributed_master:
-                 * wires the transport and starts serving. Until called, the runtime
-                 * is a fully offline single machine (zero distributed overhead).
-                 *
-                 * @param transport Connected master-side transport (one peer per worker).
-                 * @param kernels   Registry shared with this binary's kernels.
-                 * @param policy    Offload policy (null → LeastLoadedOffloadPolicy).
-                 * @return A Cluster handle for tuning and telemetry.
+                 * @brief Promotes this runtime to a distributed Master and returns its Cluster
+                 *        handle.
+                 * @param transport Connected master-side transport, one peer per worker.
+                 * @param policy Offload policy; null selects LeastLoadedOffloadPolicy.
+                 * @see include/SushiRuntime/api/runtime/README.md
                  */
                 Cluster cluster(std::shared_ptr<Distributed::ITransport> transport,
                                 sushi_ptr<Distributed::KernelRegistry> kernels,

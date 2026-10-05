@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file captures.hpp
+ * @brief Declares the In, Out and InOut kernel-argument wrappers.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/vocabulary/README.md
+ */
+
 #pragma once
 
 #include <type_traits>
@@ -18,14 +25,8 @@ namespace SushiRuntime
     namespace API
     {
         /**
-         * @brief A kernel argument captured for read, with auto dependency tracking.
-         *
-         * Wraps a Buffer so add() can both register the read and hand the kernel the
-         * raw element pointer — the caller writes the data flow once and gets pointer
-         * capture and dependency ordering together. Out and InOut are the same
-         * wrapper for the other two access intents.
-         *
-         * @tparam T Element type of the wrapped buffer.
+         * @brief Wraps a Buffer captured for read so add() registers it and passes its pointer.
+         * @see include/SushiRuntime/api/vocabulary/README.md
          */
         template <typename T>
         struct In
@@ -84,17 +85,14 @@ namespace SushiRuntime
             InOut(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
         };
 
-        // Class-template argument deduction so the wrapper element type follows the
-        // buffer: In(buf), Out(buf), InOut(buf) need no <T>.
+        // The guides let In(buf), Out(buf) and InOut(buf) omit the element type.
         template <typename T> In(const Buffer<T>&) -> In<T>;
         template <typename T> Out(Buffer<T>&) -> Out<T>;
         template <typename T> InOut(Buffer<T>&) -> InOut<T>;
 
         namespace detail
         {
-            // True for the In/Out/InOut kernel-argument wrappers. Lets the
-            // auto-capture add() overload tell its capture arguments from the
-            // trailing callable.
+            /** @brief Tells the In/Out/InOut capture wrappers apart from the trailing callable. */
             template <class T> struct is_capture : std::false_type {};
             template <class T> struct is_capture<In<T>>    : std::true_type {};
             template <class T> struct is_capture<Out<T>>   : std::true_type {};

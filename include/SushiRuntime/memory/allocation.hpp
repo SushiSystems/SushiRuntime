@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file allocation.hpp
+ * @brief Declares Allocation and IAllocationOwner.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <cstddef>

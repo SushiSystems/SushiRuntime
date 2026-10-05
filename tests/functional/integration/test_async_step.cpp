@@ -6,16 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for Graph::run_async() / DynamicGraph::run_async() and the RunHandle
-// they return.
-//
-// The claim under test is that a step can be started without blocking the
-// caller, so a simulation tick overlaps with work that needs no workers (a
-// renderer or audio extract of the previous tick). "Did not block" is not
-// observable from a return value, so the overlap tests use a rendezvous: the
-// step's own task waits for a flag the caller sets AFTER run_async() returned.
-// If run_async() blocked, the flag could never be set in time and the task times
-// out. Every wait is bounded, so a regression reports rather than hangs.
+/**
+ * @file test_async_step.cpp
+ * @brief Tests Graph::run_async(), DynamicGraph::run_async() and the RunHandle they return.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <chrono>
@@ -33,9 +29,7 @@ namespace
 {
     constexpr auto GATE_TIMEOUT = std::chrono::milliseconds(2000);
 
-    // Blocks until *released* or the deadline passes; reports which happened.
-    // Used as the body of a host task so a step can be held open while the test
-    // does something on the calling thread.
+    /** @brief Blocks until the flag is set or the deadline passes and returns which happened. */
     bool wait_for_gate(const std::atomic<bool>& released)
     {
         const auto deadline = std::chrono::steady_clock::now() + GATE_TIMEOUT;
@@ -46,9 +40,7 @@ namespace
     }
 }
 
-// run_async() must return before the step finishes. The step's host task waits
-// for a flag the caller only sets afterwards, so it can only observe the flag if
-// the caller really did keep running.
+/** @brief Tests that run_async() returns before the step finishes. */
 TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
 {
     constexpr std::size_t N = 8;
@@ -82,8 +74,7 @@ TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
     EXPECT_GE(report.total_tasks_executed, 1u);
 }
 
-// An asynchronous step must be observationally identical to a synchronous one:
-// the same stepped State, driven the same number of times, ends in the same place.
+/** @brief Tests that an asynchronous step ends in the same State as a synchronous one. */
 TEST(Integration_AsyncStep, MatchesTheSynchronousResult)
 {
     constexpr std::size_t N = 32;
@@ -109,9 +100,7 @@ TEST(Integration_AsyncStep, MatchesTheSynchronousResult)
     EXPECT_EQ(ag.compile_count(), 1u) << "replaying asynchronously must not recompile";
 }
 
-// The State advance belongs to wait(), not to submit: until the step has been
-// settled its just-written field is not yet current. Getting this wrong would
-// let a reader see the next field one step early.
+/** @brief Tests that the State advances on wait(), not on submit. */
 TEST(Integration_AsyncStep, StateAdvancesOnWaitNotOnSubmit)
 {
     constexpr std::size_t N = 4;
@@ -134,9 +123,10 @@ TEST(Integration_AsyncStep, StateAdvancesOnWaitNotOnSubmit)
         ASSERT_EQ(field.current()[i], 6) << "at i=" << i;
 }
 
-// A handle that goes out of scope unwaited must still finish the step, because
-// the compiled plan cannot be destroyed while workers hold pointers into it. The
-// graph must also be runnable again afterwards.
+/**
+ * @brief Tests that destroying an unwaited handle still finishes the step and leaves the graph
+ *        runnable.
+ */
 TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
 {
     constexpr std::size_t N = 8;
@@ -163,8 +153,7 @@ TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
         ASSERT_EQ(buf[i], 2) << "at i=" << i;
 }
 
-// A second wait on the same handle has no step to wait for; it must say so
-// rather than block on a latch nobody will signal again.
+/** @brief Tests that a second wait on the same handle throws. */
 TEST(Integration_AsyncStep, WaitingTwiceThrows)
 {
     auto rt  = Runtime::create();
@@ -180,10 +169,7 @@ TEST(Integration_AsyncStep, WaitingTwiceThrows)
     EXPECT_THROW(step.wait(), SushiException);
 }
 
-// Starting a second step — synchronously or asynchronously — while one is in
-// flight must be rejected BEFORE anything touches the plan. A synchronous run
-// re-arms every node's in-degree, so letting it proceed would rewrite the
-// scheduling state of the DAG the workers are still walking.
+/** @brief Tests that a second run is rejected while a step is in flight. */
 TEST(Integration_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
 {
     constexpr std::size_t N = 4;
@@ -217,8 +203,7 @@ TEST(Integration_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
     EXPECT_EQ(buf[0], 7);
 }
 
-// A task exception surfaces from wait(), and the graph stays usable — a failing
-// step must not become a permanently failing graph.
+/** @brief Tests that a task exception surfaces from wait() and leaves the graph usable. */
 TEST(Integration_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
 {
     auto rt  = Runtime::create();
@@ -262,8 +247,7 @@ TEST(Integration_AsyncStep, TryWaitReportsFailureAsAValue)
     EXPECT_FALSE(step.pending());
 }
 
-// ready() answers "would waiting return immediately" without blocking. It must
-// be false while the step is held open and true once it has finished.
+/** @brief Tests that ready() is false while the step is held open and true once it has finished. */
 TEST(Integration_AsyncStep, ReadyTracksTheStep)
 {
     auto rt  = Runtime::create();
@@ -287,8 +271,10 @@ TEST(Integration_AsyncStep, ReadyTracksTheStep)
     EXPECT_TRUE(step.ready()) << "a settled handle owns no step, so it is ready";
 }
 
-// The region-partitioned graph gets the same treatment: a step overlaps, and a
-// pending structural change is committed before it is submitted.
+/**
+ * @brief Tests that a DynamicGraph step overlaps the caller and commits a pending structural change
+ *        first.
+ */
 TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
 {
     constexpr std::size_t N = 16;

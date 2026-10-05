@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file distributed_coordinator.cpp
+ * @brief Dispatches offloadable nodes to workers and re-injects the ones a worker loses.
+ * @author Mustafa Garip
+ */
+
 #include <SushiRuntime/distributed/distributed_coordinator.hpp>
 
 #include <mutex>
@@ -28,8 +34,7 @@ namespace SushiRuntime
         namespace
         {
             using Clock = std::chrono::steady_clock;
-            // After this many failed remote dispatches a node is pinned local so a
-            // kernel that always fails on workers cannot ping-pong forever.
+            /// @brief Caps failed remote dispatches per node (src/distributed/README.md).
             constexpr uint32_t MAX_OFFLOAD_ATTEMPTS = 2;
         }
 
@@ -45,13 +50,10 @@ namespace SushiRuntime
 
             std::mutex                       mtx;
             std::vector<WorkerStats>         workers;
-            // Per-worker bookkeeping kept parallel to `workers` so the policy-facing
-            // WorkerStats stays clean: last inbound message time (liveness) and the
-            // op set the worker advertised at HELLO (to undo op_support on death).
+            /// @brief Holds each worker's last inbound message time (src/distributed/README.md).
             std::vector<Clock::time_point>      last_seen;
             std::vector<std::vector<uint32_t>>  worker_ops;
-            // op_id -> how many workers expose it; an op is offloadable only when
-            // every live worker can run it (the negotiated common kernel set).
+            /// @brief Counts the workers that expose each op id (src/distributed/README.md).
             std::unordered_map<uint32_t, int> op_support;
 
             struct PendingTask
@@ -63,11 +65,7 @@ namespace SushiRuntime
             std::unordered_map<uint64_t, PendingTask> pending; // task_id -> {node, worker}
             std::atomic<uint64_t>            next_task_id{1};
 
-            // Per-task deadline: a dispatched task must produce a result within this
-            // bound or it is treated as failed and re-dispatched. This is a SECOND
-            // liveness axis, independent of heartbeats: a worker can keep
-            // heartbeating yet a single lost TASK_DISPATCH or TASK_RESULT would
-            // otherwise leave the task pending forever. 0 disables it.
+            /// @brief Holds the per-task deadline in ms; 0 disables it (src/distributed/README.md).
             std::atomic<int64_t>             task_deadline_ms{30000};
 
             // "ran where" telemetry, so silent local fallback is observable.
@@ -77,9 +75,7 @@ namespace SushiRuntime
             // Writebacks rejected by the version fence (stale/superseded results).
             std::atomic<uint64_t>            stale_writebacks{0};
 
-            // --- liveness monitor: declares a silent worker dead and re-injects
-            //     its in-flight tasks so the master never stalls on a lost peer --
-            //     (atomic: the public setter may race the running monitor thread)
+            /// @brief Holds the ms of silence that mark a worker dead (src/distributed/README.md).
             std::atomic<int64_t>             liveness_timeout_ms{5000};
             std::thread                      monitor_thread;
             std::mutex                       monitor_mtx;
@@ -132,9 +128,7 @@ namespace SushiRuntime
         void DistributedCoordinator::Impl::handle_message(int peer, MsgType type,
                                                           SushiRuntime::span<const std::byte> payload)
         {
-            // Any inbound traffic proves the peer is alive — refresh its liveness
-            // before dispatching on type, so heavy workers (busy pulling buffers)
-            // are never falsely reaped.
+            // Any inbound message refreshes the peer's liveness (src/distributed/README.md).
             {
                 std::lock_guard<std::mutex> lk(mtx);
                 if (peer >= 0 && peer < static_cast<int>(last_seen.size()))
@@ -149,8 +143,7 @@ namespace SushiRuntime
                     uint32_t ver = r.get<uint32_t>();
                     if (!r.ok() || ver != PROTOCOL_VERSION)
                     {
-                        // A peer speaking a different protocol must not join: its
-                        // raw structs would be parsed against an incompatible layout.
+                        // A protocol mismatch keeps the peer out (src/distributed/README.md).
                         SR_LOG_ERROR("Worker {} HELLO rejected: protocol v{} != v{}.",
                                      peer, ver, PROTOCOL_VERSION);
                         break;
@@ -192,16 +185,11 @@ namespace SushiRuntime
                 }
                 case MsgType::BUFFER_PUSH:
                 {
-                    // Worker writing an output result back into the master's
-                    // authoritative buffer (eager writeback on completion).
+                    // The worker writes an output back to the master (src/distributed/README.md).
                     auto push = BufferPushMsg::deserialize(payload);
                     if (auto e = buffers->lookup_by_id(push.handle.id))
                     {
-                        // Version fence (Kleppmann fencing token): each (re)dispatch
-                        // bumps the output version, so a writeback carrying a version
-                        // older than the buffer's current one belongs to a superseded
-                        // dispatch — e.g. a worker we declared dead that was only slow.
-                        // Accepting it would clobber a newer result, so we drop it.
+                        // The version fence drops a stale writeback (src/distributed/README.md).
                         if (push.handle.version < e->handle.version)
                         {
                             stale_writebacks.fetch_add(1, std::memory_order_relaxed);
@@ -231,16 +219,11 @@ namespace SushiRuntime
                             workers[peer].inflight > 0)
                             workers[peer].inflight--;
                     }
-                    // A stale result for a task we already re-dispatched (the worker
-                    // was slow, not dead) finds nothing in `pending` and is dropped —
-                    // both its completion AND its now-superseded output bytes.
+                    // A result absent from pending is dropped (src/distributed/README.md).
                     if (!node)
                         break;
 
-                    // Apply the inline output bytes to the master's authoritative
-                    // buffers BEFORE releasing successors, so a dependent reader sees
-                    // the produced data. Version-fenced: a result stamped older than
-                    // the buffer's current version is a superseded run and ignored.
+                    // Output bytes land before successors are released (src/distributed/README.md).
                     if (res.success)
                     {
                         for (size_t i = 0; i < res.outputs.size(); ++i)
@@ -265,9 +248,7 @@ namespace SushiRuntime
                 }
                 case MsgType::PONG:
                 {
-                    // RTT is computed entirely on the master clock: the worker
-                    // echoed the steady-clock token we stamped into the PING, so
-                    // (now - token) is the round trip free of any clock skew.
+                    // RTT is measured on the master clock alone (src/distributed/README.md).
                     auto pong = PongMsg::deserialize(payload);
                     auto sent = Clock::time_point(Clock::duration(
                         static_cast<Clock::rep>(pong.token)));
@@ -352,8 +333,7 @@ namespace SushiRuntime
         void DistributedCoordinator::set_liveness_timeout(std::chrono::milliseconds timeout)
         {
             impl_->liveness_timeout_ms.store(timeout.count(), std::memory_order_relaxed);
-            // Wake the monitor so it recomputes its poll period against the new
-            // timeout instead of finishing a sleep sized to the old (default) one.
+            // The notify makes the monitor recompute its poll period (src/distributed/README.md).
             impl_->monitor_cv.notify_all();
         }
 
@@ -365,8 +345,7 @@ namespace SushiRuntime
         void DistributedCoordinator::set_task_deadline(std::chrono::milliseconds deadline)
         {
             impl_->task_deadline_ms.store(deadline.count(), std::memory_order_relaxed);
-            // Wake the monitor so it recomputes its poll period against the new
-            // deadline rather than sleeping out a stale, longer interval.
+            // The notify makes the monitor recompute its poll period (src/distributed/README.md).
             impl_->monitor_cv.notify_all();
         }
 
@@ -492,8 +471,7 @@ namespace SushiRuntime
                 if (now - last_seen[i] < timeout)
                     continue;
 
-                // Declare the worker dead: drop it from the common kernel set and
-                // reset its load so the policy stops choosing it immediately.
+                // A dead worker leaves the kernel set with no load (src/distributed/README.md).
                 w.alive    = false;
                 w.inflight = 0;
                 for (uint32_t op : worker_ops[i])
@@ -544,9 +522,7 @@ namespace SushiRuntime
                     continue;
                 }
 
-                // The task has been in flight too long even though its worker may
-                // still be heartbeating — a lost dispatch or lost result. Treat it
-                // as failed: drop the worker's inflight count and re-inject the node.
+                // A task past its deadline counts as failed (src/distributed/README.md).
                 const int w = it->second.worker;
                 if (w >= 0 && w < static_cast<int>(workers.size()) && workers[w].inflight > 0)
                     workers[w].inflight--;
@@ -590,29 +566,23 @@ namespace SushiRuntime
             {
                 {
                     std::unique_lock<std::mutex> lk(monitor_mtx);
-                    // Poll at a fraction of the tightest deadline (worker liveness or
-                    // per-task) so detection latency is bounded without busy-spinning.
+                    // Half the tightest deadline, with a 50 ms floor (src/distributed/README.md).
                     int64_t live_ms = liveness_timeout_ms.load(std::memory_order_relaxed);
                     int64_t task_ms = task_deadline_ms.load(std::memory_order_relaxed);
                     int64_t tightest = live_ms;
                     if (task_ms > 0 && task_ms < tightest) tightest = task_ms;
                     auto period = std::chrono::milliseconds(tightest / 2);
                     if (period.count() < 50) period = std::chrono::milliseconds(50);
-                    // Plain wait (no predicate) so set_liveness_timeout()'s notify
-                    // wakes us to recompute `period` against the new timeout rather
-                    // than sleeping out a stale, longer interval.
+                    // No predicate, so a setter's notify ends the wait (src/distributed/README.md).
                     monitor_cv.wait_for(lk, period);
                 }
                 if (!monitor_running.load())
                     break;
 
-                // Refresh per-worker RTT / free_mem telemetry the offload policy
-                // reasons over, then reap anyone who has gone silent.
+                // Pings refresh the RTT and free_mem the policy reads (src/distributed/README.md).
                 send_rtt_pings();
 
-                // Two recovery axes: workers gone silent (heartbeat), and individual
-                // tasks stuck past their deadline on a still-live worker (lost
-                // dispatch/result). Both re-inject the orphaned node the same way.
+                // Dead workers and overdue tasks re-inject alike (src/distributed/README.md).
                 auto orphans = reap_dead_workers();
                 auto stuck   = reap_timed_out_tasks();
                 orphans.insert(orphans.end(), stuck.begin(), stuck.end());
@@ -637,13 +607,10 @@ namespace SushiRuntime
         {
             if (!node) return false;
 
-            // The scheduler only calls this for a node flagged offloadable, so its
-            // offload state already exists; offload() returns it without allocating.
+            // offload() allocates nothing for a flagged node (src/distributed/README.md).
             Graph::OffloadState& off = node->offload();
 
-            // A node that has already failed remotely too many times (dead worker
-            // or kernel error) is pinned local: clear its offload flag so this and
-            // future dispatch attempts run it on the home machine.
+            // A node at the attempt cap is pinned local (src/distributed/README.md).
             if (off.attempts.load(std::memory_order_relaxed) >= MAX_OFFLOAD_ATTEMPTS)
             {
                 off.offloadable = false;
@@ -651,16 +618,12 @@ namespace SushiRuntime
                 return false;
             }
 
-            // Refresh input handle versions: the master is authoritative, so a
-            // buffer written since compile() carries a newer version, which is
-            // exactly what tells a worker its cached copy is stale.
+            // Input versions come from the master registry (src/distributed/README.md).
             TaskDispatchMsg msg;
             msg.op_id = off.remote_op;
             msg.meta  = node->metadata;
 
-            // A double-buffered node carries no baked handles; resolve them from its
-            // live pointer lists for this step. Any pointer that is not (still)
-            // registered makes the task fall back to local execution.
+            // A double-buffered node takes handles from live pointers (src/distributed/README.md).
             std::vector<BufferHandle> in_handles;
             std::vector<BufferHandle> out_handles;
             const bool dynamic_io = static_cast<bool>(off.live_reads) ||
@@ -714,12 +677,7 @@ namespace SushiRuntime
                     impl_->workers[chosen].inflight++;
             }
 
-            // Only now that the task is committed to a worker, stamp its outputs
-            // with a fresh fencing token. Done after the policy decision so a
-            // declined (locally-run) task never bumps a version spuriously. Each
-            // (re)dispatch bumps again, so the master's BUFFER_PUSH handler rejects
-            // any writeback carrying an older version — the result of a superseded
-            // (slow/zombie) run that would otherwise clobber fresh data.
+            // Outputs get a fresh version once a worker is chosen (src/distributed/README.md).
             for (const auto& h : out_handles)
             {
                 impl_->buffers->bump_version_by_id(h.id);

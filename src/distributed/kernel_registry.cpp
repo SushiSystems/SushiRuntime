@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file kernel_registry.cpp
+ * @brief Stores the remote kernels a worker can run, keyed by operation id.
+ * @author Mustafa Garip
+ */
+
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 
 namespace SushiRuntime

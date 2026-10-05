@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file resource_region.hpp
+ * @brief Declares ResourceRegion, a byte interval within one tracked allocation.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -24,18 +31,8 @@ namespace SushiRuntime
         using ResourceId = void*;
 
         /**
-         * @brief A half-open byte interval within one tracked allocation.
-         *
-         * The dependency tracker keys ordering on regions, not bare pointers, so it
-         * can tell apart two sub-ranges of the same allocation (an array's two
-         * halves, a grid's interior and its halo). Two accesses are ordered iff
-         * their regions overlap; disjoint sub-ranges of the same buffer stay
-         * parallel, and distinct allocations never serialize.
-         *
-         * A bare pointer converts to the whole-buffer region implicitly, so every
-         * caller that still speaks base pointers keeps the previous behaviour: a
-         * whole region overlaps any region of the same base, degenerating the
-         * overlap test to base-pointer equality.
+         * @brief Describes a half-open byte interval within one tracked allocation.
+         * @see include/SushiRuntime/core/README.md
          */
         struct ResourceRegion
         {
@@ -72,13 +69,8 @@ namespace SushiRuntime
 
             /**
              * @brief Reports whether two regions of the same allocation intersect.
-             *
-             * The overlap test the tracker uses to decide ordering: same base and
-             * intersecting half-open intervals. WHOLE is treated as an unbounded
-             * upper end, so the comparison never overflows on the sentinel.
-             *
-             * @param o The other region to test against.
-             * @return True if the regions share a base and any byte, false otherwise.
+             * @return True if the regions share a base and any byte.
+             * @see include/SushiRuntime/core/README.md
              */
             constexpr bool overlaps(const ResourceRegion& o) const noexcept
             {
@@ -88,8 +80,7 @@ namespace SushiRuntime
                 const bool a_whole = (length == WHOLE);
                 const bool b_whole = (o.length == WHOLE);
 
-                // [a0, a1) and [b0, b1) intersect iff a0 < b1 && b0 < a1. A WHOLE
-                // upper end is +inf, which drops the half of the test it dominates.
+                // [a0, a1) and [b0, b1) intersect iff a0 < b1 && b0 < a1; a WHOLE end is unbounded.
                 if (a_whole && b_whole) return true;
                 if (a_whole)            return offset < o.offset + o.length;
                 if (b_whole)            return o.offset < offset + length;
@@ -98,13 +89,7 @@ namespace SushiRuntime
 
             /**
              * @brief Reports whether this region fully covers another.
-             *
-             * Lets the tracker stop walking history early: once a write that covers
-             * the accessed region is found, every earlier access to that range is
-             * already ordered behind it transitively.
-             *
-             * @param r The region to test for containment.
-             * @return True if @p r lies entirely within this region.
+             * @see include/SushiRuntime/core/README.md
              */
             constexpr bool contains(const ResourceRegion& r) const noexcept
             {

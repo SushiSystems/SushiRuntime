@@ -6,17 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// A graph whose *set* of work changes between steps — the open-world streaming
-// case. rt.dynamic_graph() partitions work into regions keyed by a caller id (here
-// a tile index). region(k) records tasks with the same add() surface as a static
-// graph; drop(k) removes one. Mutations take effect at the next step boundary, and
-// only the regions that changed are rebuilt — an unchanged tile is never recompiled.
-//
-// The world below holds a grid of tiles, of which only a window is active at once.
-// First the window is tiles {0,1,2,3}; then it slides to {2,3,4,5}: tiles 0 and 1
-// stream out, 4 and 5 stream in, and 2 and 3 stay live across the recomposition.
-// Each active tile's task increments every cell once per step it is active, so the
-// final cell value is exactly the number of steps that tile was in view.
+/**
+ * @file streaming_world_demo.cpp
+ * @brief Runs a dynamic graph whose window of active tiles slides between two runs.
+ * @author Mustafa Garip
+ * @see examples/README.md
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -59,8 +54,7 @@ int main()
     for (std::uint64_t k = 0; k < 4; ++k) activate(k);
     world.run(STEPS);
 
-    // Slide the window to {2,3,4,5}: stream 0 and 1 out, 4 and 5 in. Tiles 2 and 3
-    // are untouched and are not rebuilt.
+    // Tiles 0 and 1 stream out, 4 and 5 in; tiles 2 and 3 are not rebuilt.
     world.drop(0);
     world.drop(1);
     activate(4);
@@ -73,8 +67,7 @@ int main()
     for (std::size_t k = 0; k < TILES; ++k)
         std::printf("  tile %zu: cell[0] = %d\n", k, tile[k][0]);
 
-    // tiles {0,1}: one window -> STEPS; {2,3}: both windows -> 2*STEPS;
-    // {4,5}: one window -> STEPS; {6,7}: never active -> 0.
+    // A tile's cell counts the steps it was in view: STEPS, 2 * STEPS or 0.
     const bool ok =
         tile[0][0] == static_cast<int>(STEPS)     && tile[1][0] == static_cast<int>(STEPS) &&
         tile[2][0] == static_cast<int>(2 * STEPS) && tile[3][0] == static_cast<int>(2 * STEPS) &&

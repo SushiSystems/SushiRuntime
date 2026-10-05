@@ -6,15 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// "Jepsen-lite" soak: run an offload graph under a seeded random nemesis that
-// drops, duplicates, holds, reorders, and partitions messages, and assert the
-// SAFETY property our model reduces to — determinism under faults: whatever the
-// fault schedule, the authoritative buffers must end byte-identical to a
-// fault-free run (every y == 2*x), and execute() must return (liveness).
-//
-// We are an offload accelerator with a single authoritative writer (the master),
-// so this determinism check is the practical equivalent of a linearizability
-// check for a database — much cheaper, and exactly the contract we promise.
+/**
+ * @file test_distributed_jepsen.cpp
+ * @brief Tests that an offload graph under seeded message faults ends byte-equal to a clean run.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <SushiRuntime/core/span.hpp>
 #include <atomic>
@@ -129,8 +126,7 @@ namespace
         a0.start();
         a1.start();
 
-        // Let the cluster assemble cleanly BEFORE injecting faults, so this test
-        // exercises task-time recovery rather than registration loss.
+        // The cluster assembles before any fault is injected; see README.md.
         bool both = false;
         for (int i = 0; i < 500 && !both; ++i)
         {
@@ -144,8 +140,7 @@ namespace
         for (int k = 0; k < K; ++k)
             master_ctx->register_distributed_buffer(y[k], N * sizeof(float));
 
-        // --- the nemesis: a seeded per-message fault policy. Calls are serialized
-        //     by the fabric mutex, so one shared RNG is safe. -------------------
+        // The fabric mutex serializes the fault policy, so one shared RNG is safe; see README.md.
         auto rng = std::make_shared<std::mt19937_64>(seed);
         fabric.set_fault_policy([rng](int, int, MsgType) -> FaultAction
         {
@@ -197,8 +192,7 @@ namespace
                 });
         }
 
-        // Run on a side thread so a liveness regression fails by timeout rather
-        // than wedging the whole suite.
+        // A side thread runs the graph, so a liveness regression fails by timeout; see README.md.
         auto compiled = std::make_shared<CompiledGraph>(graph.compile());
         std::promise<void> done;
         auto fut = done.get_future();
@@ -210,8 +204,7 @@ namespace
 
         const bool returned = fut.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
 
-        // Tear the nemesis down and let any in-flight delivery settle before we
-        // read results and free memory.
+        // In-flight deliveries settle before results are read and memory is freed; see README.md.
         nem_running.store(false);
         if (nemesis.joinable()) nemesis.join();
         for (int w = 0; w < W; ++w) fabric.set_partitioned(w, false);

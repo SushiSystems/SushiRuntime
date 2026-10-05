@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file dynamic_graph.hpp
+ * @brief Declares DynamicGraph, a graph composed of regions that stream in and out.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/graph/README.md
+ */
+
 #pragma once
 
 #include <algorithm>
@@ -39,42 +46,9 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief A graph partitioned into regions that stream in and out cheaply.
-         *
-         * The mutable counterpart to the static Graph, built for an open world: work
-         * is grouped into regions keyed by a caller id (a spatial cell, a streaming
-         * chunk). region(key) records tasks with the static graph's add() surface;
-         * drop(key) removes one. Mutations are applied at a step boundary, never
-         * against the running DAG, so the lock-free scheduler is untouched.
-         *
-         * The composition is **incremental in the changed region and its boundary**,
-         * not the world. Each region compiles to a cached sub-graph whose interior
-         * (intra-region) edges are baked once and never touched again while the
-         * region is unchanged. Dependencies that cross a region boundary — two
-         * regions sharing a buffer — live in a separate layer on each node
-         * (Node::region, a RegionLink) that the composer
-         * maintains. When a region streams in or out only its own nodes are rebuilt
-         * and only the boundary edges of the allocations it shares are re-derived;
-         * the interior of every other region, and every boundary that did not
-         * change, is left exactly as it was. Commit therefore costs
-         * O(changed region + affected boundary pins), independent of the size of the
-         * untouched world.
-         *
-         * Cross-region ordering follows ascending region key: for an allocation two
-         * regions share, the lower-keyed region is the producer. Read/read sharing
-         * stays parallel (no edge between two regions that only read the same
-         * buffer); only true RAW/WAR/WAW hazards across regions are serialized.
-         * Tasks within one region keep their add() order.
-         *
-         * Sharing is decided on **byte intervals, not allocations**. Two regions that
-         * touch disjoint element ranges of one buffer gain no edge, which is what
-         * makes one-region-per-simulation-island viable: islands are disjoint index
-         * ranges of a shared entity column, not separate allocations, so an
-         * allocation-granular boundary would serialize islands that never meet. Name
-         * a slice with Buffer::region({offset, count}) and pass it to
-         * Reads(...)/Writes(...) exactly as within one graph.
-         *
-         * Obtain one from Runtime::dynamic_graph(). Moveable, not copyable.
+         * @brief Composes regions that stream in and out into one plan, rebuilt only where it
+         *        changed.
+         * @see include/SushiRuntime/api/graph/README.md
          */
         class DynamicGraph
         {
@@ -99,14 +73,10 @@ namespace SushiRuntime
                 DynamicGraph& operator=(const DynamicGraph&) = delete;
 
                 /**
-                 * @brief Returns the region for @p key, creating it if absent.
-                 *
-                 * The returned region records work with the same add() surface as a
-                 * static graph. Accessing a region marks it to be (re)built at the
-                 * next step boundary, since the caller accesses it to add work.
-                 *
-                 * @param key Identity of the region; stable across steps.
+                 * @brief Returns the region for key, creating it if absent, and marks it for
+                 *        rebuild.
                  * @return A reference to the region, valid until the region is dropped.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 Region& region(RegionKey key)
                 {
@@ -140,14 +110,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Removes the region for @p key from the live set.
-                 *
-                 * Takes effect on the structure immediately (region()/has_region no
-                 * longer see it); the boundary it leaves is re-stitched at the next
-                 * run, so a region is never removed from a DAG that is mid-step.
-                 * Dropping an absent region is a no-op.
-                 *
-                 * @param key Identity of the region to remove.
+                 * @brief Removes the region for key from the live set; an absent key does nothing.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 void drop(RegionKey key)
                 {
@@ -166,14 +130,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Requests or withdraws per-node device timing for this graph.
-                 *
-                 * Stamps `plan_.profiling` immediately, so it reads correctly even
-                 * with no regions to recompose, and marks every live region for a
-                 * full recompose so the next commit renumbers every node's public
-                 * registration index. Independent of every other graph on the same
-                 * runtime.
-                 * @param requested True to dispatch this graph's device nodes on the
-                 *                  runtime's profiling queue and collect NodeTiming.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 void set_profiling_requested(bool requested)
                 {
@@ -230,13 +187,8 @@ namespace SushiRuntime
                 Core::RunReport run(std::size_t steps) { return unwrap(try_run(steps)); }
 
                 /**
-                 * @brief Runs one step into a report the caller owns.
-                 *
-                 * The allocation-free form of run(); see Graph::run(Core::RunReport&)
-                 * for what "reuse" buys and where it stops.
-                 *
+                 * @brief Runs one step into a report the caller owns, without allocating.
                  * @param reuse The report to overwrite; its previous contents are lost.
-                 * @return A reference to @p reuse.
                  * @throws Core::SushiException on any synchronous or device error.
                  */
                 Core::RunReport& run(Core::RunReport& reuse)
@@ -330,23 +282,12 @@ namespace SushiRuntime
                 void cancel() { ctx_->get_execution_engine().cancel(); }
 
                 /**
-                 * @brief Starts one step and returns without waiting for it.
-                 *
-                 * Mirrors Graph::run_async(): the step goes to the worker pool and
-                 * this returns, so the caller can extract the previous step's state
-                 * while this one runs and then settle up through the handle. Any
-                 * pending structural change (a region added or dropped) is committed
-                 * before the step is submitted, exactly as a synchronous run does.
-                 *
-                 * The handle must not outlive this graph, and its destructor waits
-                 * for the step rather than letting the plan be destroyed underneath
-                 * the workers - see RunHandle.
-                 *
-                 * @return A handle for the step now in flight.
-                 * @throws Core::SushiException If there are no regions or no runnable
-                 *         tasks, a region references a freed Buffer/State, the engine
-                 *         does not support asynchronous runs, or a run is already in
-                 *         progress.
+                 * @brief Starts one step on the worker pool and returns without waiting for it.
+                 * @pre The returned handle does not outlive this graph.
+                 * @throws Core::SushiException If nothing is runnable, a handle was freed, the
+                 *        engine
+                 *         cannot run asynchronously, or a run is in progress.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 RunHandle<DynamicGraph> run_async()
                 {
@@ -405,8 +346,7 @@ namespace SushiRuntime
 
             private:
                 friend class Runtime;
-                // The handle run_async() returns settles the step through the two
-                // private members below, which is the whole of its access.
+                // RunHandle settles a step through the two private members below and nothing else.
                 template <class Owner> friend class RunHandle;
                 friend struct detail::DynamicGraphNodeEventsTestAccess;
 
@@ -425,15 +365,9 @@ namespace SushiRuntime
                 void discard_async_step() noexcept { async_step_pending_ = false; }
 
                 /**
-                 * @brief Closes out an asynchronous step once the engine reports done.
-                 *
-                 * The counterpart of Graph::finish_async_step for the composed plan:
-                 * every live region's States advance here, after the step genuinely
-                 * finished, so an asynchronous step is observationally identical to a
-                 * synchronous one.
-                 *
-                 * @param state  What run_async() recorded when it submitted the step.
+                 * @brief Closes out an asynchronous step once the engine reports it done.
                  * @param report The report to fill; reset before it is written.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 void finish_async_step(const detail::AsyncRunState& state,
                                        Core::RunReport& report)
@@ -479,17 +413,16 @@ namespace SushiRuntime
                     return *r;
                 }
 
-                // Reaches a region's Graph subobject. DynamicGraph is a friend of both
-                // Region (for the private-base conversion) and Graph (for its specs
-                // and per-step updater vectors).
+                /**
+                 * @brief Returns a region's Graph subobject through the private-base conversion.
+                 */
                 static Graph& as_graph(Region& r) noexcept { return static_cast<Graph&>(r); }
 
-                // One node's participation in a base's boundary, with the exact byte
-                // intervals it touches. Carrying the intervals — rather than just the
-                // node — is what lets two regions writing disjoint slices of one
-                // allocation stay parallel, which is the whole point of mapping one
-                // region to one simulation island: islands are index ranges of a
-                // shared column, not separate allocations.
+                /**
+                 * @brief Holds one node's participation in a base's boundary with its exact byte
+                 *        intervals.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 struct Pin
                 {
                     Node* node = nullptr;
@@ -497,30 +430,30 @@ namespace SushiRuntime
                     std::vector<Core::ResourceRegion> writes;
                 };
 
-                // A boundary pin reduced to one hazard's intervals, threaded through
-                // rewire_base as it walks the regions sharing a base.
+                /**
+                 * @brief Holds a boundary pin reduced to one hazard's intervals, used by
+                 *        rewire_base.
+                 */
                 struct BoundaryPin
                 {
                     Node* node = nullptr;
                     std::vector<Core::ResourceRegion> regions;
                 };
 
-                // The boundary access summary of one region for one shared allocation.
-                // Computed once when the region is built and consulted (read-only) by
-                // the cross-region wiring of every base the region shares. Entry pins
-                // receive incoming cross-region edges; exit pins are the sources for
-                // the next region's edges. Each pin carries both its read and its
-                // write intervals, so the wiring can apply the right hazard rule
-                // (RAW/WAW/WAR) to the right bytes — and two regions that only read
-                // the same buffer still never gain an edge.
+                /**
+                 * @brief Summarises one region's boundary accesses to one shared allocation.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 struct BaseAccess
                 {
                     std::vector<Pin> entry;  // no intra predecessor overlapping this base
                     std::vector<Pin> exit;   // accesses not shadowed by an intra successor's write
                 };
 
-                // The cached compiled sub-graph of one region: its nodes (intra edges
-                // baked), its intra-roots, and its per-shared-base boundary summary.
+                /**
+                 * @brief Caches one region's compiled sub-graph: nodes, intra-roots and boundary
+                 *        summary.
+                 */
                 struct RegionState
                 {
                     std::vector<sushi_ptr<Node>> nodes;
@@ -528,13 +461,17 @@ namespace SushiRuntime
                     std::map<Base, BaseAccess>   access;
                 };
 
-                // One recorded cross-region edge, kept per base so a base can be
-                // un-wired in isolation when it becomes dirty.
+                /**
+                 * @brief Records one cross-region edge, kept per base so a base can be un-wired
+                 *        alone.
+                 */
                 struct BoundaryEdge { Node* from; Node* to; };
 
-                // Walks a node's intra successors (inline buffer then lock-free
-                // spillover) and calls fn(succ) for each. Used only at commit, single
-                // threaded, so a relaxed load of the spillover head is fine.
+                /**
+                 * @brief Calls fn(succ) for each intra successor of a node; commit-time only,
+                 *        single threaded.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 template <class Fn>
                 static void for_each_intra_successor(Node* n, Fn&& fn)
                 {
@@ -546,9 +483,10 @@ namespace SushiRuntime
                         if (s->target) fn(s->target);
                 }
 
-                // Links a leaf node to the completion sentinel: appends the sentinel
-                // to its boundary successors and counts it on the sentinel's baseline
-                // (kept in region.intra_in_degree, the sentinel having no other predecessor).
+                /**
+                 * @brief Links a leaf node to the completion sentinel and counts it on the
+                 *        sentinel's baseline.
+                 */
                 void link_sentinel(Node* n)
                 {
                     if (n->region.sentinel_linked) return;
@@ -557,8 +495,7 @@ namespace SushiRuntime
                     n->region.sentinel_linked = true;
                 }
 
-                // Removes a node's sentinel link (it gained a real successor or is
-                // being torn down).
+                /** @brief Removes a node's sentinel link. */
                 void unlink_sentinel(Node* n)
                 {
                     if (!n->region.sentinel_linked) return;
@@ -569,9 +506,11 @@ namespace SushiRuntime
                     n->region.sentinel_linked = false;
                 }
 
-                // Adds one cross-region edge from->to for base b. A node that gains an
-                // exported successor stops being a leaf, so it drops its sentinel link;
-                // a node that gains a cross-region predecessor stops being a root.
+                /**
+                 * @brief Adds one cross-region edge from->to for base b and updates root and leaf
+                 *        bookkeeping.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void add_cross_edge(Node* from, Node* to, Base b)
                 {
                     if (from->region.sentinel_linked)
@@ -585,8 +524,10 @@ namespace SushiRuntime
                     base_edges_[b].push_back({from, to});
                 }
 
-                // Removes one previously recorded cross-region edge from->to. Reverses
-                // both the root and the sentinel bookkeeping of add_cross_edge.
+                /**
+                 * @brief Removes one recorded cross-region edge, reversing add_cross_edge's
+                 *        bookkeeping.
+                 */
                 void remove_cross_edge(Node* from, Node* to)
                 {
                     auto& v = from->region.boundary_successors;
@@ -597,9 +538,7 @@ namespace SushiRuntime
                     if (prev == 1 && to->region.intra_in_degree == 0)
                         roots_.insert(to);
 
-                    // `from` may have just lost its last exported successor; if it is an
-                    // intra-leaf with no remaining cross-region successor it becomes a
-                    // true leaf again and must release the sentinel.
+                    // An intra-leaf with no cross-region successor left holds the sentinel again.
                     if (from->region.intra_leaf && !from->region.sentinel_linked && from->region.boundary_successors.empty())
                         link_sentinel(from);
                 }
@@ -615,9 +554,7 @@ namespace SushiRuntime
                     return false;
                 }
 
-                // True when one interval in @p covers fully contains @p r, so every
-                // byte of @p r is rewritten and any access to it is transitively
-                // ordered behind that writer.
+                /** @brief Returns whether one interval in covers fully contains r. */
                 static bool covered_by_any(const Core::ResourceRegion& r,
                                            const std::vector<Core::ResourceRegion>& covers)
                 {
@@ -627,12 +564,11 @@ namespace SushiRuntime
                     return false;
                 }
 
-                // Drops from @p pins every interval a later write fully covers, and
-                // the pin itself once nothing of it is left live. Retiring only fully
-                // covered intervals is deliberately conservative: a partially
-                // overwritten pin stays live, which can only add a cross edge, never
-                // drop one. The whole boundary layer errs that way — an extra edge
-                // costs parallelism, a missing one is a data race.
+                /**
+                 * @brief Drops from pins every interval a later write fully covers, and emptied
+                 *        pins with them.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 static void retire_covered(std::vector<BoundaryPin>& pins,
                                            const std::vector<Core::ResourceRegion>& covers)
                 {
@@ -650,15 +586,11 @@ namespace SushiRuntime
                     }
                 }
 
-                // (Re)derives the cross-region edges for one shared allocation. Self
-                // contained: it first un-wires the base's current edges, then walks
-                // the regions touching it in ascending key order, threading the live
-                // writers and the pending readers through so RAW/WAR/WAW are honoured
-                // and read/read stays parallel. Every hazard test compares byte
-                // intervals, so two regions touching disjoint slices of one allocation
-                // gain no edge at all. A base whose endpoints include a torn-down node
-                // is un-wired earlier (while those nodes are still alive); the undo
-                // here is then a no-op on an empty list.
+                /**
+                 * @brief Re-derives the cross-region edges of one shared allocation from byte
+                 *        intervals.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void rewire_base(Base b)
                 {
                     auto eit = base_edges_.find(b);
@@ -673,10 +605,7 @@ namespace SushiRuntime
                     if (rit == base_regions_.end() || rit->second.size() < 2)
                         return;  // not shared: nothing crosses a boundary
 
-                    // Writes no later region has fully overwritten yet, and reads no
-                    // later region has overwritten yet. Both accumulate rather than
-                    // being replaced wholesale, because a region that writes one slice
-                    // does not shadow an earlier writer of a different slice.
+                    // Both lists accumulate; a slice write shadows no writer of another slice.
                     std::vector<BoundaryPin> live_writers;
                     std::vector<BoundaryPin> pending_reads;
 
@@ -690,9 +619,7 @@ namespace SushiRuntime
 
                         for (const Pin& in : a.entry)
                         {
-                            // RAW and WAW share a source (an earlier write) and differ
-                            // only in what the consumer does with those bytes, so one
-                            // edge per (producer, consumer) pair covers both.
+                            // One edge per producer and consumer pair covers both RAW and WAW.
                             for (const BoundaryPin& w : live_writers)
                                 if (overlaps_any(w.regions, in.reads) ||
                                     overlaps_any(w.regions, in.writes))
@@ -722,10 +649,10 @@ namespace SushiRuntime
                     }
                 }
 
-                // Builds (or rebuilds) the cached sub-graph of one region from its
-                // recorded specs: bakes intra edges, captures the intra in-degree and
-                // leaf flag of every node, gathers intra-roots, and computes the
-                // per-shared-base boundary summary. O(region).
+                /**
+                 * @brief Builds or rebuilds one region's cached sub-graph from its recorded specs,
+                 *        in O(region).
+                 */
                 void build_region(RegionKey k)
                 {
                     Graph& g = as_graph(*regions_.at(k));
@@ -759,17 +686,11 @@ namespace SushiRuntime
                     states_[k] = std::move(st);
                 }
 
-                // Fills a region's per-base boundary summary. For each allocation the
-                // region touches it classifies the region's accessor nodes into entry
-                // pins (no intra predecessor touching an OVERLAPPING range of the
-                // base) and exit pins (whatever an intra successor's write does not
-                // fully cover), keeping each pin's exact byte intervals.
-                //
-                // Both classifications test overlap rather than base equality, and
-                // both err toward keeping a pin: a node wrongly excluded from entry
-                // would lose an incoming edge, and one wrongly treated as shadowed
-                // would lose an outgoing edge — either is a data race, while an extra
-                // pin only costs an edge.
+                /**
+                 * @brief Fills a region's per-base boundary summary with entry and exit pins by
+                 *        byte interval.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void compute_access(RegionState& st)
                 {
                     struct Acc
@@ -793,8 +714,7 @@ namespace SushiRuntime
                         const Base b = bm.first;
                         auto& m = bm.second;   // node -> Acc for this base
 
-                        // Nodes with an intra predecessor overlapping them on b, and
-                        // per node the intra successors' writes that may shadow it.
+                        // Both maps are keyed by node and filled per base b.
                         std::unordered_set<Node*> has_overlapping_pred;
                         std::unordered_map<Node*, std::vector<Core::ResourceRegion>> shadowing;
 
@@ -851,10 +771,12 @@ namespace SushiRuntime
                     }
                 }
 
-                // Removes a region's contribution to the shared structures: drops its
-                // nodes from the root set and the sentinel, and unregisters it from the
-                // bases it touched (marking each dirty). Its cross-region edges must
-                // already have been undone. Frees the region's node objects.
+                /**
+                 * @brief Removes a region's nodes from the roots, the sentinel and the bases it
+                 *        touched.
+                 * @pre The region's cross-region edges are already undone.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void teardown_region(RegionKey k)
                 {
                     auto sit = states_.find(k);
@@ -878,20 +800,19 @@ namespace SushiRuntime
                     states_.erase(sit);
                 }
 
-                // True when a structural change or a region gaining tasks means the
-                // plan must be recomposed.
+                /** @brief Returns whether a structural change or new tasks require a recompose. */
                 bool needs_commit() const
                 {
                     return !committed_once_ || !dirty_regions_.empty() || !dropped_.empty();
                 }
 
-                // Re-stitches the plan touching only the changed regions and the
-                // boundaries of the allocations they share. See the class brief for
-                // the cost argument.
+                /**
+                 * @brief Re-stitches the plan from the changed regions and their shared boundaries
+                 *        only.
+                 */
                 void commit()
                 {
-                    // The set of regions whose old state must be torn down, and the
-                    // set of bases that therefore need re-wiring.
+                    // teardown lists regions to tear down; dirty_bases the bases to re-wire.
                     std::set<RegionKey> teardown(dirty_regions_.begin(), dirty_regions_.end());
                     teardown.insert(dropped_.begin(), dropped_.end());
 
@@ -904,9 +825,7 @@ namespace SushiRuntime
                                 dirty_bases.insert(ba.first);
                     }
 
-                    // Undo every cross-region edge on a dirty base while all endpoints
-                    // are still alive, so freeing torn-down nodes leaves no dangling
-                    // pointer in any other node's boundary list.
+                    // A dirty base's cross edges are undone while every endpoint is alive.
                     for (Base b : dirty_bases)
                     {
                         auto eit = base_edges_.find(b);
@@ -920,8 +839,7 @@ namespace SushiRuntime
                     for (RegionKey k : teardown)
                         teardown_region(k);
 
-                    // Rebuild the regions that are still present; register them on the
-                    // bases they touch (marking those dirty) and seed roots/sentinel.
+                    // Rebuilt regions mark their bases dirty and seed roots and sentinel.
                     for (RegionKey k : dirty_regions_)
                     {
                         if (regions_.find(k) == regions_.end()) continue;  // dropped, not re-created
@@ -945,9 +863,7 @@ namespace SushiRuntime
                     dirty_regions_.clear();
                     dropped_.clear();
 
-                    // Publish the plan the engine runs: roots to inject and the shared
-                    // sentinel to wait on. all_nodes is only read by the profiler, so
-                    // it is gathered solely when profiling is on.
+                    // Only the profiler reads all_nodes, so it is gathered only when profiling.
                     plan_.roots.assign(roots_.begin(), roots_.end());
                     plan_.sentinel = sentinel_;
                     plan_.profiling = profiling_requested_;
@@ -971,9 +887,7 @@ namespace SushiRuntime
                     std::uint32_t next_index = 0;
                     for (auto& kv : states_)   // std::map<RegionKey, ...>: ascending key
                     {
-                        // Grouped by value, not by consecutive run, so one add()
-                        // call's local index maps to exactly one global index even
-                        // if its nodes are not contiguous in st.nodes.
+                        // Grouping by value maps one add() call to exactly one global index.
                         std::unordered_map<std::uint32_t, std::uint32_t> local_to_global;
                         for (auto& np : kv.second.nodes)
                         {
@@ -986,9 +900,11 @@ namespace SushiRuntime
                     }
                 }
 
-                // Re-arms every node's live in-degree from the two-layer baseline and
-                // refreshes the per-step State / late-binding updaters. O(total) per
-                // step, which is inherent to replaying the whole plan.
+                /**
+                 * @brief Re-arms every node's live in-degree and refreshes the per-step updaters,
+                 *        O(total).
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void rearm()
                 {
                     for (auto& kv : states_)
@@ -1015,15 +931,12 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief The same driver, writing into a caller-owned report.
-                 *
-                 * Every run entry funnels through here, so the reuse overloads cannot
-                 * drift from the allocating ones. See Graph::drive().
-                 *
-                 * @param keep_going Called with the count of completed steps before
-                 *                   each step; the loop continues while it is true.
-                 * @param report     The report to fill; reset before the run starts.
-                 * @return A pointer to @p report on success, or a mapped Error.
+                 * @brief Drives the run loop into a caller-owned report; every run entry goes
+                 *        through here.
+                 * @param keep_going Called with the completed step count before each step; true
+                 *        continues.
+                 * @param report The report to fill; reset before the run starts.
+                 * @return A pointer to report on success, or a mapped Error.
                  */
                 template <class KeepGoing>
                 Core::Result<Core::RunReport*, Core::Error>
@@ -1037,9 +950,7 @@ namespace SushiRuntime
                     if (regions_.empty())
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "DynamicGraph has no regions to run."});
-                    // Before anything touches the plan: rearm() rewrites every
-                    // node's in-degree, which would corrupt a step the workers are
-                    // still executing. See Graph::drive().
+                    // rearm() must not run while the workers still execute a step.
                     if (async_step_pending_)
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                             "A step started with run_async() is still in flight; wait "
@@ -1094,8 +1005,7 @@ namespace SushiRuntime
                         throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
                                                               "DynamicGraph has no runnable tasks."});
 
-                    // Aggregate every live region's per-step updaters (State advance,
-                    // late-binding refresh, distributed live-IO) in region-key order.
+                    // Updaters are aggregated from every live region in region-key order.
                     refresh_updaters();
                     steps_.resync();
 
@@ -1139,10 +1049,10 @@ namespace SushiRuntime
                         engine.collect_profiling(plan_, report);
                 }
 
-                // Rebuilds the aggregated per-step updater lists from every live
-                // region. Cheap (proportional to the number of stateful tasks, which
-                // are iterated every step anyway) and kept here so a region added or
-                // dropped is reflected before the next run.
+                /**
+                 * @brief Rebuilds the aggregated per-step updater lists from every live region.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void refresh_updaters()
                 {
                     steps_.reset_updaters();
@@ -1152,42 +1062,45 @@ namespace SushiRuntime
 
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
 
-                // Live regions (the recorders), ordered by key for deterministic
-                // composition. unique_ptr keeps Region addresses stable and lets the
-                // composer use Region's private constructor.
+                /**
+                 * @brief Holds the live regions by key; unique_ptr keeps each Region's address
+                 *        stable.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 std::map<RegionKey, std::unique_ptr<Region>> regions_;
 
-                // Cached compiled sub-graph per region, the lifetime owner of the
-                // nodes the plan runs.
+                /**
+                 * @brief Caches the compiled sub-graph of each region and owns the nodes the plan
+                 *        runs.
+                 */
                 std::map<RegionKey, RegionState> states_;
 
-                // Which regions touch each allocation, and the cross-region edges
-                // recorded per allocation so a single base can be un-wired in isolation.
+                /** @brief Maps each allocation to the regions that touch it. */
                 std::map<Base, std::set<RegionKey>>      base_regions_;
                 std::map<Base, std::vector<BoundaryEdge>> base_edges_;
 
-                // Current DAG entry points (region.intra_in_degree == 0 and
-                // region.boundary_in_degree == 0), maintained incrementally as
-                // boundary edges and regions change.
+                /**
+                 * @brief Holds the current DAG entry points: nodes whose two in-degrees are both
+                 *        zero.
+                 */
                 std::unordered_set<Node*> roots_;
 
-                // The single completion sentinel, persistent across commits; its
-                // baseline in-degree (kept in region.intra_in_degree) is the current leaf count.
+                /**
+                 * @brief Holds the single completion sentinel; its baseline in-degree is the leaf
+                 *        count.
+                 */
                 sushi_ptr<Node> sentinel_;
 
                 // Pending structural changes applied at the next commit.
                 std::set<RegionKey> dirty_regions_;
                 std::set<RegionKey> dropped_;
 
-                // Per-step lifecycle aggregated from every live region before each
-                // run; the same machinery the static Graph uses, so both drivers run
-                // the identical per-step hook order.
+                /** @brief Aggregates every live region's per-step lifecycle before each run. */
                 detail::StepMachinery steps_;
 
                 Execution::CompiledGraph plan_;
 
-                // True between run_async() and the settling of its handle; see
-                // Graph::async_step_pending_.
+                /** @brief Tells whether a run_async() step has not been settled yet. */
                 bool async_step_pending_ = false;
                 std::size_t compiles_ = 0;
                 std::size_t plan_index_counter_ = 0;
@@ -1197,8 +1110,7 @@ namespace SushiRuntime
                 bool profiling_requested_ = false;
         };
 
-        // Defined here, where DynamicGraph is complete; declared on Runtime in
-        // runtime.hpp next to graph().
+        // Defined here because DynamicGraph is complete only from this point.
         inline DynamicGraph Runtime::dynamic_graph()
         {
             return DynamicGraph(ctx_);

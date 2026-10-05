@@ -6,22 +6,14 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-#pragma once
+/**
+ * @file protocol.hpp
+ * @brief Declares the distributed wire protocol: identifiers, frames, serializers and messages.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/distributed/README.md
+ */
 
-//
-// Distributed wire protocol.
-//
-// The whole distributed layer exists behind SR_DISTRIBUTED (CMake option
-// SR_ENABLE_DISTRIBUTED, default OFF). When the option is off this header is
-// never compiled into the library, so the offline single-machine build carries
-// zero distributed code, zero extra dependencies, and zero ABI surface.
-//
-// The core idea: compiled code cannot travel the wire. A task is a C++ closure
-// over local pointers, neither of which is meaningful on another machine. So we
-// never serialize code or pointers — we serialize *references* to code that is
-// already compiled into every node (OpID) plus *references* to data that each
-// worker can resolve to its own local USM (GlobalBufferID + version).
-//
+#pragma once
 
 #include <cstdint>
 #include <vector>
@@ -103,9 +95,7 @@ namespace SushiRuntime
             MsgType  type;
         };
 
-        // Tiny length-prefixed serializer. Both ends share the same binary and,
-        // in the target lab, the same architecture/endianness, so we keep it raw
-        // and trivially-copyable rather than pulling in a schema library.
+        // Values are written raw and length-prefixed; both ends run the same binary.
 
         /**
          * @brief Serializes trivially-copyable values and binary blobs into a contiguous byte buffer.
@@ -182,12 +172,7 @@ namespace SushiRuntime
                 SushiRuntime::span<const std::byte> get_blob()
                 {
                     uint64_t bytes = get<uint64_t>();
-                    // Bounds-check WITHOUT computing pos_ + bytes: `bytes` is an
-                    // attacker-controlled 64-bit wire value, so pos_ + bytes can
-                    // overflow and wrap to a small value that passes the check,
-                    // yielding a ~2^64-long subspan (OOB read / bad_alloc downstream).
-                    // The subtraction is safe because the invariant pos_ <= size()
-                    // always holds (the cursor only advances within bounds).
+                    // The check subtracts because pos_ + bytes can overflow on a wire value.
                     if (!ok_ || bytes > data_.size() - pos_)
                     {
                         ok_ = false;
@@ -207,9 +192,7 @@ namespace SushiRuntime
                 bool   ok_  = true;
         };
 
-        // Message bodies. These are *logical* shapes; (de)serialization is done
-        // explicitly with ByteWriter/ByteReader because they carry variable
-        // length handle lists and blobs.
+        // Message bodies are serialized by hand because they carry variable-length lists and blobs.
 
         /**
          * @brief Encodes a master-to-worker command to execute an offloaded task.
@@ -229,11 +212,7 @@ namespace SushiRuntime
                 ByteWriter w;
                 w.put(task_id);
                 w.put(op_id.value);
-                // Serialize meta's POD fields but NOT its `name` (a `const char*`):
-                // a pointer into the master's address space is a wild pointer on the
-                // worker and an ASLR information leak on the wire. The worker never
-                // dereferences a dispatched task's name, so it is dropped here and
-                // restored to a generic default on deserialize.
+                // meta.name is not serialized; a master pointer means nothing on a worker.
                 w.put(meta.task_type);
                 w.put(meta.op_id);
                 w.put(meta.priority);
@@ -252,8 +231,7 @@ namespace SushiRuntime
                 TaskDispatchMsg m;
                 m.task_id         = r.get<uint64_t>();
                 m.op_id.value     = r.get<uint32_t>();
-                // name is intentionally left at its default literal — never
-                // reconstruct the master's pointer (see serialize()).
+                // name keeps its default literal; see serialize().
                 m.meta.task_type     = r.get<Graph::TaskType>();
                 m.meta.op_id         = r.get<Graph::OpID>();
                 m.meta.priority      = r.get<int>();

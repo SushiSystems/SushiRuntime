@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for the WorkloadCoordinator heartbeat loop. Fakes for all three
-// collaborators (telemetry, migrator, strategy) keep it deterministic and
-// host-only: the loop must drive the strategy, start/stop cleanly, and swap
-// strategies at runtime.
+/**
+ * @file test_workload_coordinator.cpp
+ * @brief Tests the WorkloadCoordinator heartbeat loop with fake telemetry, migrator and strategy.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <chrono>
@@ -74,14 +76,8 @@ namespace
     };
 
     /**
-     * @brief Spin-wait until value reaches target or the budget elapses.
-     *
-     * Synchronizes concurrent test assertions against background coordinator threads.
-     *
-     * @param value The atomic integer to read.
-     * @param target The target value to wait for.
-     * @param budget The maximum duration to wait.
-     * @return true if the target was reached, false on timeout.
+     * @brief Spins until the value reaches the target or the budget elapses and returns whether it
+     *        was reached.
      */
     bool wait_until_at_least(const std::atomic<int>& value, int target,
                              std::chrono::milliseconds budget)

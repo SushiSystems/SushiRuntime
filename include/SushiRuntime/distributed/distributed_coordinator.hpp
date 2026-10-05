@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file distributed_coordinator.hpp
+ * @brief Declares DistributedCoordinator, which offloads tasks from the master node.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <chrono>
@@ -53,14 +59,8 @@ namespace SushiRuntime
                 using ResubmitHook = std::function<void(Graph::Node* node)>;
 
                 /**
-                 * @brief Constructs a new distributed coordinator.
-                 *
-                 * Wires up the coordinator with the necessary subsystems for distributed execution.
-                 *
-                 * @param kernels Registry containing the offloadable kernel implementations.
-                 * @param buffers Directory of globally addressable memory buffers.
-                 * @param transport Network layer for cluster communication.
-                 * @param policy Decision engine for worker selection and task placement.
+                 * @brief Constructs a coordinator from the kernel registry, buffers, transport and
+                 *        policy.
                  */
                 DistributedCoordinator(sushi_ptr<KernelRegistry> kernels,
                                        BufferRegistry&           buffers,

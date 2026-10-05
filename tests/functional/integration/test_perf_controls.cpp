@@ -6,15 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for the rebalancer control: it is off unless asked for, execution is
-// correct in both states, and the engine reports the flag faithfully.
-//
-// The default is the assertion that matters. The background thermal rebalancer
-// migrates tasks between workers on a 5 ms heartbeat, which changes which worker
-// folds which tile and puts a periodic wakeup under every frame — a throughput
-// trade that a simulation frame is not buying anything with. Leaving it on by
-// default meant every consumer paid for it and the primary one turned it off at
-// every construction.
+/**
+ * @file test_perf_controls.cpp
+ * @brief Tests that the rebalancer is off unless requested and that runs are correct either way.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <gtest/gtest.h>

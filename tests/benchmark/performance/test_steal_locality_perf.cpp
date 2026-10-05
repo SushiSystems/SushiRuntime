@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Real-hardware benchmark for NUMA-aware hierarchical stealing: drives the
-// scheduler with a large host-task batch and reports throughput plus the
-// local-vs-remote steal split. Locality only exists across real NUMA nodes, so
-// on a single-node box (or WSL) the test SKIPS; the logic check lives in
-// NumaStealTest.
+/**
+ * @file test_steal_locality_perf.cpp
+ * @brief Measures scheduler throughput and the local-to-remote steal split on multi-NUMA hardware.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <atomic>
 #include <chrono>
@@ -110,8 +111,7 @@ TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
 
     EXPECT_EQ(executed.load(), TOTAL);
 
-    // Only assert locality once there were enough steals for the ratio to mean
-    // something; a perfectly balanced drain can legitimately produce few steals.
+    // Locality is asserted only above 1000 steals; a balanced drain produces few.
     if (steals > 1000)
         EXPECT_GT(local_frac, 0.5)
             << "Most steals crossed NUMA nodes — hierarchical locality is not holding.";

@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file dependency_tracker.hpp
+ * @brief Declares DependencyTracker, which orders tasks by the regions they access.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/graph/README.md
+ */
+
 #pragma once
 
 #include <array>
@@ -72,15 +79,8 @@ namespace SushiRuntime
                 std::array<ResourceState, SHARD_COUNT> registry;
 
                 /**
-                 * @brief Maps an allocation's identity to a specific internal shard index.
-                 *
-                 * Shards on the owning allocation (its base), not the sub-region, so
-                 * every access to one allocation lands in the same chain and can be
-                 * compared by interval overlap. Applies a fast SplitMix64 bitwise hash
-                 * to distribute allocations uniformly.
-                 *
-                 * @param base The owning allocation identity to hash.
-                 * @return The computed array index corresponding to a specific shard.
+                 * @brief Maps an allocation's identity to a shard index with a SplitMix64 hash.
+                 * @see include/SushiRuntime/graph/README.md
                  */
                 inline size_t get_shard_idx(SushiRuntime::Core::ResourceId base) const
                 {
@@ -101,12 +101,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Reclaims any access history left behind on destruction.
-                 *
-                 * compile() normally calls reset() explicitly on its success path,
-                 * but a graph destroyed without ever compiling (or one whose
-                 * compile() failed and was then abandoned) would otherwise leak its
-                 * per-access AccessNodes. reset() is idempotent, so running it here
-                 * as well is safe.
+                 * @see include/SushiRuntime/graph/README.md
                  */
                 ~DependencyTracker() { reset(); }
 
@@ -118,16 +113,10 @@ namespace SushiRuntime
                 void reset();
 
                 /**
-                 * @brief Links a task into the implicit access dependency graph for a region.
-                 *
-                 * Appends a new access node to the owning allocation's shard and wires
-                 * predecessor constraints to every earlier access whose region overlaps
-                 * @p region, following the RAW/WAR/WAW data-flow rules.
-                 *
-                 * @param node The current task node that requires execution ordering.
-                 * @param region The byte interval of the resource being accessed. A bare
-                 *               base pointer converts to the whole-buffer region.
-                 * @param is_write Indicates whether the operation intends to modify the resource.
+                 * @brief Links a task into the access dependency graph of a region by the
+                 *        RAW/WAR/WAW rules.
+                 * @param region The byte interval accessed; a bare base pointer names the whole
+                 *        buffer.
                  */
                 void resolve(Node* node, const SushiRuntime::Core::ResourceRegion& region, bool is_write);
 

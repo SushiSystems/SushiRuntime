@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Thread-to-core pinning is best-effort: it logs a warning on failure rather
-// than throwing. These tests assert that contract, run from a worker thread so
-// the test runner's own affinity is left untouched.
+/**
+ * @file test_affinity.cpp
+ * @brief Tests that pinning to a valid core, an invalid core or one core repeatedly does not throw.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <thread>
 #include <gtest/gtest.h>

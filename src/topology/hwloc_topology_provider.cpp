@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file hwloc_topology_provider.cpp
+ * @brief Implements the default provider: SYCL discovery, hwloc NUMA mapping, cached distances.
+ * @author Mustafa Garip
+ */
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -55,8 +61,7 @@ namespace SushiRuntime
             const int npus = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PU);
             if (npus > 0)
             {
-                // Size the map by the highest OS cpu index so result[i] indexes by
-                // the same logical core id that thread pinning uses.
+                // The map is sized by the highest OS cpu index (src/topology/README.md).
                 unsigned max_os = 0;
                 for (int i = 0; i < npus; ++i)
                 {

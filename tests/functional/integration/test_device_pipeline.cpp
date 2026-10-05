@@ -6,18 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Exercises the genuine device-kernel path: add_node(TaskWork, reads, writes)
-// hands the engine a raw `void(sycl::handler&)` body, so the engine itself owns
-// the submission, queue choice, and event wiring. The graph is a diamond:
-//
-//        init (write A)
-//         /          \
-//   doubleA          incA      (both read A -> parallel readers)
-//   (A->B)            (A->C)
-//         \          /
-//        combine (read B,C -> write D)
-//
-// With A[i] = i the invariant is D[i] = 2*A[i] + (A[i] + 1) = 3i + 1.
+/**
+ * @file test_device_pipeline.cpp
+ * @brief Tests a diamond of four device-kernel nodes added with add_node(TaskWork, reads, writes).
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cmath>
 #include <vector>

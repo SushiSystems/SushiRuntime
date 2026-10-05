@@ -6,22 +6,14 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-#pragma once
-
 /**
  * @file version.hpp
- * @brief The library's version, in both of the forms a consumer needs.
- *
- * The macros are the version of the HEADERS being compiled against;
- * runtime_version() reports the version the loaded library was BUILT from.
- * Those two are different questions, and a consumer that pins by tag needs both
- * to catch the case they disagree — a stale shared library found first on the
- * loader path is otherwise a silent, arbitrarily-late failure rather than a
- * startup check. See version_matches().
- *
- * The literals here are checked against the project's CMake version at configure
- * time, so this header and the build cannot drift apart.
+ * @brief Declares the library's version macros and runtime_version().
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/README.md
  */
+
+#pragma once
 
 #include <SushiRuntime/core/export.hpp>
 
@@ -63,13 +55,8 @@ namespace SushiRuntime
     };
 
     /**
-     * @brief The version the loaded library was built from.
-     *
-     * Compiled into the library, not into the caller, so it answers "which
-     * binary am I actually running against" rather than "which headers did I
-     * compile against".
-     *
-     * @return The library's own version.
+     * @brief Returns the version the loaded library was built from.
+     * @see include/SushiRuntime/README.md
      */
     SUSHIRUNTIME_API Version runtime_version() noexcept;
 
@@ -80,19 +67,8 @@ namespace SushiRuntime
     SUSHIRUNTIME_API const char* runtime_version_string() noexcept;
 
     /**
-     * @brief Whether the loaded library matches the headers this call compiled against.
-     *
-     * The check a consumer should make once at startup. A mismatch means the
-     * headers and the binary came from different releases — the classic cause is
-     * an older shared library earlier on the loader path — and the failure it
-     * otherwise produces is a crash or wrong answer at an arbitrary later point,
-     * with nothing pointing back at the real cause.
-     *
-     * Compares major and minor only: a patch release is defined not to change
-     * layout or behaviour, so refusing to run against one would reject a
-     * legitimate upgrade.
-     *
-     * @return True when the loaded library is compatible with these headers.
+     * @brief Returns whether the loaded library matches these headers, by major and minor.
+     * @see include/SushiRuntime/README.md
      */
     inline bool version_matches() noexcept
     {

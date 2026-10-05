@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Scale probe for the dynamic region graph: many regions stream in, a few mutate
-// between steps, and the world keeps running correctly. It asserts the
-// composition contract at scale (one recompose per mutation, not per region) and
-// reports the streaming cost. The first version's wiring pass is global, so this
-// does not assert a recompose-speedup; it guards correctness and scale.
+/**
+ * @file test_dynamic_graph_perf.cpp
+ * @brief Tests that a 256-region dynamic graph recomposes once per mutation and stays correct.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <chrono>
 #include <cstddef>
@@ -51,8 +52,7 @@ TEST(Performance_DynamicGraph, ManyRegionsStreamingMutations)
     const auto t1 = clock::now();
     EXPECT_EQ(world.compile_count(), 1u);
 
-    // Stream a fresh task into a handful of regions, one mutation per run. Each
-    // run must recompose exactly once regardless of how many regions exist.
+    // Each run recomposes exactly once, whatever the region count.
     for (std::size_t m = 0; m < MUTATES; ++m)
     {
         const std::size_t r = (m * 7 + 3) % REGIONS;
@@ -68,9 +68,7 @@ TEST(Performance_DynamicGraph, ManyRegionsStreamingMutations)
     RecordProperty("regions", static_cast<int>(REGIONS));
     RecordProperty("initial_compose_run_ms", static_cast<int>(initial_ms));
 
-    // Correctness survives streaming: every region ran the initial step plus one
-    // step per run, and the mutated regions gained an extra increment on the run
-    // that streamed their second task in.
+    // A region counts every run, plus one per run after its second task streamed in.
     const std::size_t total_runs = 1 + MUTATES;
     for (std::size_t r = 0; r < REGIONS; ++r)
     {

@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Unit coverage for Core::Delegate: empty state, invocation and return values,
-// argument forwarding, move semantics (including move-out leaving the source
-// empty), correct destruction of the erased target, and that a move-only target
-// is held without copying.
+/**
+ * @file test_delegate.cpp
+ * @brief Tests Core::Delegate: empty state, invocation, argument forwarding, moves and destruction.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <memory>
 #include <utility>
@@ -81,8 +83,7 @@ namespace
         auto counter = std::make_shared<int>(0);
         std::weak_ptr<int> observer = counter;
         {
-            // The lambda owns a copy of the shared_ptr; destroying the Delegate
-            // must run the lambda's destructor and release that copy.
+            // Destroying the Delegate destroys the lambda and its shared_ptr copy; see README.md.
             Delegate<void()> d = [counter] { (void)counter; };
             counter.reset();
             EXPECT_FALSE(observer.expired());

@@ -6,15 +6,17 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file version.cpp
+ * @brief Returns the version the library was compiled with.
+ * @author Mustafa Garip
+ */
+
 #include <SushiRuntime/version.hpp>
 
 namespace SushiRuntime
 {
-    // These read the same macros the consumer sees, but they are frozen here at
-    // the moment the LIBRARY was compiled. That is the whole point: a consumer
-    // comparing its own macros against these is comparing two builds, and they
-    // only agree if the binary it loaded is the one its headers describe.
-
+    // The macros are frozen at library compile time (src/core/README.md).
     Version runtime_version() noexcept
     {
         return Version{SUSHIRUNTIME_VERSION_MAJOR,

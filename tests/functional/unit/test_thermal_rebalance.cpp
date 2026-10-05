@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Drives the real ThermalProxyStrategy with fake telemetry/migrator. Its rule:
-// migrate work away from a throttled worker (queue backing up while completion
-// crawls) toward the least-loaded one — but leave a long queue that is still
-// draining fast alone. get_completion_rate() is cumulative; on the first
-// evaluate() the delta equals the reported total.
+/**
+ * @file test_thermal_rebalance.cpp
+ * @brief Tests ThermalProxyStrategy against fake telemetry and a fake migrator.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <vector>

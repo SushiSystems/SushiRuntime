@@ -6,8 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Validates that an NVIDIA GPU (GTX 1060 / sm_61) is discovered via the CUDA
-// SYCL backend and mapped to a NUMA node by hwloc. Skips when no CUDA device.
+/**
+ * @file test_nvidia_topology.cpp
+ * @brief Tests that an NVIDIA GPU is discovered through the CUDA backend and mapped to a NUMA node.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <algorithm>
 #include <gtest/gtest.h>

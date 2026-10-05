@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file chain_run.hpp
+ * @brief Declares ChainRun, which submits a chainable plan to one in-order queue.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/execution/README.md
+ */
+
 #pragma once
 
 #include <cstdint>
@@ -22,14 +29,7 @@ namespace SushiRuntime
 
         /**
          * @brief Submits a chainable plan's steps from the calling thread to one in-order queue.
-         *
-         * One object lives for one run. Each submit_step() walks the plan's
-         * compiled order and submits every enabled node with no scheduler
-         * hand-off and no polling; the queue's order stands in for the DAG's
-         * edges. finish() is the run's single wait. With profiling on, every
-         * submission's event becomes a NodeEventRecord in the plan's ledger.
-         * The destructor drains the queue, so a throwing run never leaves work
-         * in flight against a plan about to be destroyed.
+         * @see include/SushiRuntime/execution/README.md
          */
         class SUSHIRUNTIME_API ChainRun
         {

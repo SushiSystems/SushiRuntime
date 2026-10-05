@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file chain_run.cpp
+ * @brief Submits a compiled chain plan to one device queue and records its events.
+ * @author Mustafa Garip
+ */
+
 #include <chrono>
 #include <vector>
 #include <sycl/ext/oneapi/experimental/enqueue_functions.hpp>
@@ -41,10 +47,7 @@ namespace SushiRuntime
               queue_(ctx.chain_queue(graph.chain.queue_index, graph.profiling)),
               profiling_(graph.profiling)
         {
-            // Reserved on the plan, not here: a fresh ChainRun binds to the same
-            // plan every tick, so growing graph_.chain.pending_events once and
-            // reusing it keeps later runs allocation-free instead of paying for a
-            // new buffer every time this short-lived object is built.
+            // The plan owns the reserved event buffer (src/execution/README.md).
             if (profiling_ && graph.chain.pending_events.capacity() < graph.chain.order.size())
                 graph.chain.pending_events.reserve(graph.chain.order.size());
         }
@@ -157,17 +160,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Submits one node and keeps its event for the ledger.
-         *
-         * The run's first kernel submission claims the clock pairing, as the
-         * scheduler's first device submission does. Unlike the scheduler, this
-         * path never keeps an inline host node (chain_plan.hpp's
-         * node_kind_is_chainable precondition admits only a KERNEL node or a
-         * HOST node that submits device work), so an empty event here would be a
-         * rare, unexpected case rather than the routine one the scheduler
-         * guards against; the event is kept unconditionally and
-         * record_events()'s read_event_timestamps() already drops an empty or
-         * unreadable one on its own, so no per-submission check is needed here.
+         * @brief Submits one node and keeps its event for the ledger (src/execution/README.md).
          */
         void ChainRun::submit_profiled(Graph::Node& node, std::uint32_t step)
         {

@@ -6,14 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-#pragma once
-
 /**
  * @file SushiRuntime.h
- * @brief Master header for the SushiRuntime library.
- * 
- * Including this file provides access to all public modules of the runtime.
+ * @brief Includes every public module of the SushiRuntime library.
+ * @author Mustafa Garip
  */
+
+#pragma once
 
 // Core Infrastructure
 #include "version.hpp"
@@ -48,8 +47,5 @@
 #include "scheduler/event_polling.hpp"
 #include "scheduler/rebalancer_interfaces.hpp"
 
-// Fluent v1 API — the surface most users program against. The single umbrella
-// pulls in the data handles, launch geometry, data-flow vocabulary, the chainable
-// builders (Graph / Region / DynamicGraph for streaming, mutating worlds), and the
-// Runtime entry point.
+// The fluent v1 API is the surface most users program against.
 #include "api/fluent.hpp"

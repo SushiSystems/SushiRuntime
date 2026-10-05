@@ -3,19 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Regression tests for the lazy console initialisation.
+"""Tests that sushiruntime.console builds its console on first use, not at import.
 
-The bug: console.py used to build the console at import time, which called
-config_dir() -> find_project_root() and raised SystemExit outside a checkout.
-Because cli.py imports console transitively, *every* `sr` invocation —
-including `sr --help`, which Typer can answer with no project — died with
-"Not inside a SushiRuntime project".
-
-Four of the five CLIs fixed this independently and sushiengine's copy never
-did, so `se --help` outside a checkout failed for as long as the copies
-existed. The lifecycle now lives in sushicore.cli_console.LazyConsole; these
-tests pin that *this* CLI is wired to it, which is the part a shared
-implementation cannot check on its own.
+See cli/README.md.
 """
 
 from __future__ import annotations

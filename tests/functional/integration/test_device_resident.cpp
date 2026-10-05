@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// WP-6 coverage: device-resident state. A buffer/state allocated with
-// Residency::Device stays on its device and is not host-addressable; the host
-// seeds and reads it back through write_range()/read_range() while kernels run
-// against it exactly as for shared USM.
+/**
+ * @file test_device_resident.cpp
+ * @brief Tests buffers and States allocated with Residency::Device, Shared and Host.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <numeric>
@@ -19,9 +21,9 @@
 
 using namespace SushiRuntime;
 
-// A device-resident buffer reports its residency and is not host-accessible; a
-// host seed, a kernel, and a host readback round-trip correctly without ever
-// host-indexing the allocation.
+/**
+ * @brief Tests that a device-resident buffer round-trips a host seed, a kernel and a host readback.
+ */
 TEST(Integration_DeviceResident, BufferRoundTrip)
 {
     constexpr std::size_t N = 128;
@@ -65,9 +67,10 @@ TEST(Integration_DeviceResident, SelectiveReadback)
         EXPECT_EQ(window[k], static_cast<int>(108 + k));
 }
 
-// A device-resident State steps with the fluent add(state, fn) rule and is
-// seeded / read back through its range API. The field stays resident across all
-// steps; only the windowed readback touches the host.
+/**
+ * @brief Tests that a device-resident State steps and is seeded and read back through its range
+ *        API.
+ */
 TEST(Integration_DeviceResident, StateStepsResident)
 {
     constexpr std::size_t N     = 96;
@@ -92,8 +95,7 @@ TEST(Integration_DeviceResident, StateStepsResident)
         ASSERT_EQ(out[i], static_cast<int>(STEPS)) << "at i=" << i;
 }
 
-// Shared residency stays the default and is host-addressable; its range API
-// works alongside direct indexing, so existing code is unaffected.
+/** @brief Tests that Shared residency is the default and stays host-addressable. */
 TEST(Integration_DeviceResident, SharedDefaultUnchanged)
 {
     constexpr std::size_t N = 32;
@@ -112,8 +114,7 @@ TEST(Integration_DeviceResident, SharedDefaultUnchanged)
         EXPECT_EQ(out[i], static_cast<int>(i));
 }
 
-// host() is the branch-free bulk seam for shared USM: one residency check, then
-// unchecked indexing over the whole buffer.
+/** @brief Tests that host() returns a span that indexes the whole shared buffer. */
 TEST(Integration_DeviceResident, HostSpanIndexesSharedBuffer)
 {
     constexpr std::size_t N = 16;
@@ -131,8 +132,7 @@ TEST(Integration_DeviceResident, HostSpanIndexesSharedBuffer)
         EXPECT_EQ(out[i], static_cast<int>(i * 2));
 }
 
-// A device-resident buffer is not host-addressable: host indexing now throws a
-// deterministic error in every build instead of dereferencing into UB.
+/** @brief Tests that host indexing of a device-resident buffer throws. */
 TEST(Integration_DeviceResident, HostAccessOnDeviceThrows)
 {
     constexpr std::size_t N = 16;
@@ -145,8 +145,10 @@ TEST(Integration_DeviceResident, HostAccessOnDeviceThrows)
     EXPECT_THROW((void)buf.host(), Core::SushiException);
 }
 
-// A host-resident buffer is host-addressable, a kernel on its device writes it,
-// and the host reads the result by direct indexing.
+/**
+ * @brief Tests that a kernel writes a host-resident buffer and the host reads it by direct
+ *        indexing.
+ */
 TEST(Integration_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
 {
     constexpr std::size_t N = 64;

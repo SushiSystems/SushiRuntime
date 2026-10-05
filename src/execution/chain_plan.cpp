@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file chain_plan.cpp
+ * @brief Classifies a compiled plan for the in-order chain and orders its nodes.
+ * @author Mustafa Garip
+ */
+
 #include <cstdint>
 #include <deque>
 #include <vector>

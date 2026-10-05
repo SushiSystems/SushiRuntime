@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file epoch_reclamation.hpp
+ * @brief Declares EpochManager, the epoch-based memory reclamation manager.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/memory/README.md
+ */
+
 #pragma once
 
 #include <atomic>
@@ -27,34 +34,16 @@ namespace SushiRuntime
             };
 
             /**
-             * @brief Thread-local state for epoch-based reclamation.
-             *
-             * In addition to the retire list, this struct now owns a
-             * thread-local pool of RetiredNode objects (free_node_pool).
-             * Without the pool, every call to EpochManager::retire would
-             * invoke the global operator new, which (a) is itself an
-             * allocation cost in the very mechanism that exists to manage
-             * allocations, and (b) introduces a hidden interaction with
-             * the system allocator on the hot path of any data structure
-             * using EBR (e.g., the dependency tracker's access history).
-             *
-             * The pool is bounded by FREE_POOL_CAP. When reclamation would
-             * push beyond the cap, the excess node is delete'd via global
-             * operator delete. This keeps memory bounded under workloads
-             * that retire faster than they reclaim.
+             * @brief Holds the thread-local state for epoch-based reclamation.
+             * @see include/SushiRuntime/memory/README.md
              */
             struct EpochThreadLocalState 
             {
                 int id = -1;
 
                 /**
-                 * @brief Re-entrancy depth of enter()/exit() on this thread.
-                 *
-                 * enter() only publishes the epoch slot on the outermost entry
-                 * (0 -> 1) and exit() only clears it on the outermost exit
-                 * (1 -> 0). Without this, a nested guard's exit() would zero the
-                 * slot mid-critical-section, letting another thread reclaim nodes
-                 * the outer guard is still traversing (use-after-free).
+                 * @brief Counts the re-entrancy depth of enter()/exit() on this thread.
+                 * @see include/SushiRuntime/memory/README.md
                  */
                 uint32_t nest_depth = 0;
 
@@ -132,15 +121,8 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Epoch-based memory reclamation (EBR) manager.
-         *
-         * Maintains a global epoch counter and per-thread epoch slots. Threads
-         * enter/exit critical sections with enter()/exit(); objects retired via
-         * retire<T>() are deleted only after every active thread has advanced
-         * past the epoch in which they were retired. Thread slots are cache-line
-         * padded to eliminate false sharing. Thread-safe; lock-free on the fast path.
-         *
-         * This is a singleton accessed via instance().
+         * @brief Manages epoch-based reclamation through a global epoch and per-thread slots.
+         * @see include/SushiRuntime/memory/README.md
          */
         class EpochManager
         {
@@ -149,8 +131,9 @@ namespace SushiRuntime
 
             std::atomic<uint64_t> global_epoch_{1};
 
-            // Each slot is cache-line padded so concurrent epoch stores by different
-            // threads land on separate cache lines and do not false-share.
+            /**
+             * @brief Holds one thread's epoch on its own cache line, so stores do not false-share.
+             */
             struct alignas(Core::CACHE_LINE_SIZE) ThreadEpochSlot
             {
                 std::atomic<uint64_t> epoch{0};
@@ -238,8 +221,7 @@ namespace SushiRuntime
                         curr = curr->next;
                         if (prev) prev->next = curr;
                         else tls_state.retire_list = curr;
-                        // Recycle the RetiredNode storage instead of delete'ing it.
-                        // This eliminates the hidden new/delete pair on every retire/reclaim.
+                        // The RetiredNode storage returns to the thread-local pool.
                         tls_state.release_node(to_delete);
                         tls_state.retire_count--;
                     } 
@@ -279,23 +261,13 @@ namespace SushiRuntime
                 auto& tls_state = Detail::get_tls_state();
                 if (tls_state.id == -1) tls_state.id = register_thread();
 
-                // Re-entrant: only the outermost enter() publishes the slot. A
-                // nested guard (e.g. DependencyTracker::resolve() invoked from a
-                // worker task that already holds a dispatch-loop guard) must not
-                // re-stamp, and its matching exit() must not clear the slot early.
+                // Only the outermost enter() publishes the slot.
                 if (tls_state.nest_depth++ > 0)
                     return;
 
                 uint64_t current = global_epoch_.load(std::memory_order_acquire);
                 thread_slots_[tls_state.id].epoch.store(current, std::memory_order_release);
-                // The release store above does NOT stop this thread's subsequent
-                // shared-structure reads from being reordered ahead of the slot
-                // becoming globally visible (store-buffer forwarding on x86 TSO,
-                // free reordering on ARM). Without a full fence a concurrent
-                // retire()/reclaim could miss this slot and free a node we are
-                // about to dereference — a classic Dekker-style store/load race.
-                // A seq_cst fence orders the slot publication before any later
-                // load, matching production EBRs (folly, crossbeam).
+                // The fence orders the slot publication before any later load.
                 std::atomic_thread_fence(std::memory_order_seq_cst);
             }
 
@@ -310,8 +282,7 @@ namespace SushiRuntime
                 auto& tls_state = Detail::get_tls_state();
                 if (tls_state.id == -1) return;
 
-                // Balance enter(): only the outermost exit() clears the slot.
-                // Guard against an unmatched exit() underflowing the counter.
+                // Only the outermost exit() clears the slot; an unmatched exit() is ignored.
                 if (tls_state.nest_depth == 0) return;
                 if (--tls_state.nest_depth > 0) return;
 
@@ -325,8 +296,7 @@ namespace SushiRuntime
                 auto& tls_state = Detail::get_tls_state();
                 if (tls_state.id == -1) tls_state.id = register_thread();
 
-                // Acquire a RetiredNode from the thread-local pool when available,
-                // falling back to operator new only when the pool is empty.
+                // A RetiredNode comes from the thread-local pool, or operator new if it is empty.
                 Detail::RetiredNode* node = tls_state.acquire_node();
                 node->ptr = ptr;
                 node->deleter = [](void* p) { delete static_cast<T*>(p); };
@@ -342,12 +312,9 @@ namespace SushiRuntime
 
             /**
              * @brief Deregisters a thread slot and hands its retire list to the global orphan list.
-             *
-             * Called from EpochThreadLocalState's destructor when a thread exits.
-             * Nodes in @p remaining_nodes are picked up by the next check_and_reclaim().
-             *
-             * @param id              Slot id returned by register_thread().
+             * @param id Slot id returned by register_thread().
              * @param remaining_nodes Head of the thread's unreclaimed retire list, or null.
+             * @see include/SushiRuntime/memory/README.md
              */
             void unregister_thread(int id, Detail::RetiredNode* remaining_nodes)
             {
@@ -392,9 +359,7 @@ namespace SushiRuntime
                 retire_list = nullptr;
                 retire_count = 0;
             }
-            // Free pool storage belongs to this thread alone; release it directly.
-            // Orphaned retire_list nodes are now owned by the EpochManager and may
-            // come from any thread's pool, so they cannot go back to this pool.
+            // Free pool storage belongs to this thread alone and is released directly.
             drain_free_pool();
         }
 

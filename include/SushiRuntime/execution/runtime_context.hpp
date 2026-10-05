@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file runtime_context.hpp
+ * @brief Declares RuntimeContext, the owner of hardware, queues, USM and the execution engine.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/execution/README.md
+ */
+
 #pragma once
 
 #include <memory>
@@ -47,22 +54,10 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Creates a runtime context and scans for hardware matching @p config.
-                 *
-                 * Topology discovery and NUMA distances are supplied through injected
-                 * interfaces. When null, production defaults are used:
-                 *   - provider       → HwlocTopologyProvider
-                 *   - distance_model → HwlocDistanceModel
-                 *
-                 * Pass RemappingTopologyProvider / MatrixDistanceModel in tests to
-                 * exercise multi-node logic on single-node hardware.
-                 *
-                 * @param config         Device-class filter for hardware discovery.
-                 * @param provider       Topology source; null selects the hwloc default.
+                 * @brief Creates a runtime context and scans for hardware matching config.
+                 * @param provider Topology source; null selects the hwloc default.
                  * @param distance_model NUMA distance model; null selects the hwloc default.
-                 * @param settings       Runtime-wide settings — worker count, core
-                 *                        placement, profiling, rebalancer. Defaults are
-                 *                        the simulation profile (see RuntimeSettings).
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {},
                                         std::shared_ptr<Topology::ITopologyProvider> provider = nullptr,
@@ -87,37 +82,21 @@ namespace SushiRuntime
                 void probe_hardware(const Topology::HardwareFilterConfig& config = {});
 
                 /**
-                 * @brief Whether this context's queues were built with profiling on.
-                 *
-                 * Lets the run driver skip all profiling collection when the context
-                 * was created without it, keeping the no-profiling path free of timing
-                 * reads. Fixed at construction.
-                 *
-                 * @return True if device kernel timing is available, false otherwise.
+                 * @brief Returns whether this context's queues were built with profiling on.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 bool profiling_enabled() const noexcept;
 
                 /**
-                 * @brief The runtime-wide settings this context was created with.
-                 *
-                 * The scheduler reads worker count and core placement from here at
-                 * construction, and the execution engine reads the rebalancer choice;
-                 * routing them through the context rather than through each
-                 * constructor's parameter list keeps one source of truth and stops the
-                 * signatures growing a parameter per setting. Fixed at construction.
-                 *
-                 * @return A reference to the settings, valid for this context's lifetime.
+                 * @brief Returns the runtime-wide settings this context was created with.
+                 * @return A reference valid for this context's lifetime.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 const RuntimeSettings& settings() const noexcept;
 
                 /**
-                 * @brief Records bytes copied device->host by an explicit transfer.
-                 *
-                 * Called by the selective-readback path (Buffer::read_range) so a run
-                 * report can attribute host-pull traffic. Counts only runtime-issued
-                 * copies, never the driver's implicit USM migration.
-                 *
-                 * @param bytes Number of bytes copied out to the host.
+                 * @brief Records bytes copied from device to host by an explicit transfer.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 void add_device_to_host_bytes(std::size_t bytes) noexcept;
 
@@ -141,80 +120,39 @@ namespace SushiRuntime
                 sycl::queue& get_queue(size_t xpu_index = 0);
 
                 /**
-                 * @brief Gets the profiling-enabled queue for a specific device.
-                 *
-                 * Shares the plain queue's sycl::context (and its in-order
-                 * property, when the device needs one) but carries
-                 * enable_profiling, so events it submits expose
-                 * command_submit/start/end. Built on the first call for that
-                 * device, under a per-device once_flag, unless
-                 * RuntimeSettings::profiling asked probe_hardware() to build it
-                 * already. The plain queue returned by get_queue() is unchanged
-                 * by this call. When RuntimeSettings::profiling is true the
-                 * plain queue already carries enable_profiling, so this call
-                 * returns that same queue instead of a second one.
-                 *
-                 * @param xpu_index The index of the device (default is 0).
-                 * @return sycl::queue& Reference to the device's profiling queue.
+                 * @brief Returns the profiling-enabled queue of a device, building it on first use.
                  * @throws Core::SushiException If the index is out of bounds.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 sycl::queue& profiling_queue(size_t xpu_index = 0);
 
                 /**
-                 * @brief Whether a profiling queue already exists for a device.
-                 *
-                 * True only after profiling_queue() or chain_queue(index, true) has
-                 * been called for @p xpu_index, or RuntimeSettings::profiling built it eagerly.
-                 * Exists so a caller can observe the lazy-build contract (no
-                 * profiling queue before the first request) without triggering
-                 * the build itself by calling profiling_queue().
-                 *
-                 * @param xpu_index The index of the device to check.
-                 * @return True if that device's profiling queue is already built.
+                 * @brief Returns whether a device's profiling queue already exists, without
+                 *        building it.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 bool has_profiling_queue(size_t xpu_index) const noexcept;
 
                 /**
-                 * @brief Gets the in-order queue a chainable plan submits to on one device.
-                 *
-                 * Shares the plain queue's sycl::context, so USM allocated through
-                 * this context is valid on it. Built on the first call for that
-                 * device and flavour, under a per-device once_flag, and owned for
-                 * the context's lifetime beside the plain and profiling queues.
-                 *
-                 * @param xpu_index The index of the device.
+                 * @brief Returns the in-order queue a chainable plan submits to on one device.
                  * @param profiling True for the flavour that also carries enable_profiling.
-                 * @return sycl::queue& Reference to the device's in-order queue.
                  * @throws Core::SushiException If the index is out of bounds.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 sycl::queue& chain_queue(size_t xpu_index, bool profiling);
 
                 /**
-                 * @brief Number of device queues exposed by get_queue().
-                 *
-                 * Reflects SushiRuntime's own post-dedup device set (one CPU per
-                 * NUMA node, GPUs once each), which can differ from
-                 * sycl::device::get_devices(): valid indices are [0, count).
-                 *
-                 * @return The count of addressable device queues.
+                 * @brief Returns the number of device queues exposed by get_queue().
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 size_t device_count() const;
 
                 /**
-                 * @brief Whether the device behind queue @p xpu_index is a GPU.
-                 *
-                 * Answered from the inventory probe_hardware() already built, not by
-                 * asking SYCL again. The device class of a queue cannot change while
-                 * the context is alive, so re-deriving it per call is redundant work
-                 * -- and not free work: `queue::get_device()` returns a device by
-                 * value and what that costs is defined by the SYCL runtime, not by
-                 * us. A caller on a steady-state tick path cannot hold a
-                 * zero-allocation contract across that difference, which is exactly
-                 * what run_report_builder was doing.
-                 *
+                 * @brief Returns whether the device behind a queue is a GPU, read from the
+                 *        inventory.
                  * @param xpu_index The index of the device; valid range [0, device_count()).
-                 * @return True when that device is a GPU.
                  * @throws Core::SushiException If the index is out of bounds.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 bool device_is_gpu(size_t xpu_index) const;
 
@@ -226,48 +164,24 @@ namespace SushiRuntime
                 sycl::queue& get_numa_local_queue(int numa_id);
 
                 /**
-                 * @brief Returns the queue whose context owns @p ptr (USM data).
-                 *
-                 * USM is pinned to the device/context it was allocated on, so a
-                 * kernel touching it must run on a queue sharing that context;
-                 * running it elsewhere (e.g. CPU USM on a CUDA queue) is an
-                 * illegal cross-context access. If @p ptr is null or not found in
-                 * any queue's context, falls back to get_numa_local_queue(@p
-                 * fallback_numa) — preserving round-robin for pointer-less tasks.
-                 *
-                 * @param ptr           A USM pointer the task reads or writes.
-                 * @param fallback_numa NUMA hint used when @p ptr can't be located.
-                 * @return The owning queue, or the NUMA-local fallback.
+                 * @brief Returns the queue whose context owns ptr, or the NUMA-local fallback.
+                 * @param fallback_numa NUMA hint used when ptr cannot be located.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 sycl::queue& get_queue_for_ptr(void* ptr, int fallback_numa = 0);
 
                 /**
-                 * @brief Returns the device-queue index whose context owns @p ptr.
-                 *
-                 * The integer counterpart of get_queue_for_ptr: lets the scheduler
-                 * tell whether two of a node's pointers live on the same context
-                 * (equal indices) or straddle a device boundary, without comparing
-                 * queue objects. The index is the one get_queue()/malloc_shared_on()
-                 * use, so it can re-allocate a staging copy on the owning device.
-                 *
-                 * @param ptr A USM pointer allocated through this context.
-                 * @return The owning device-queue index, or -1 if @p ptr is unknown.
+                 * @brief Returns the device-queue index whose context owns ptr.
+                 * @return The owning device-queue index, or -1 if ptr is unknown.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 int context_index_for_ptr(void* ptr) noexcept;
 
                 /**
                  * @brief Allocates shared USM and records its owning queue.
-                 *
-                 * Prefer this over a bare sycl::malloc_shared when the data will
-                 * be touched by graph tasks: the runtime remembers which queue
-                 * (device + context) the allocation belongs to, so the scheduler
-                 * can dispatch the task to that exact queue and never trigger a
-                 * cross-context illegal access. The allocation is pinned to the
-                 * NUMA-local compute queue for @p numa_id.
-                 *
-                 * @param bytes Allocation size in bytes.
-                 * @param numa_id Target NUMA node (selects the owning queue).
+                 * @param numa_id Target NUMA node; selects the owning queue.
                  * @return USM pointer, or nullptr on failure.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 void* malloc_shared(size_t bytes, int numa_id = 0);
 
@@ -279,46 +193,25 @@ namespace SushiRuntime
 
                 /**
                  * @brief Allocates shared USM pinned to one specific device queue.
-                 *
-                 * Unlike malloc_shared(bytes, numa_id), which round-robins across the
-                 * queues on a NUMA node, this allocates on exactly @p device_index
-                 * and records that owner. Use it when several buffers must share one
-                 * context — a kernel touching USM from two different device contexts
-                 * is an illegal cross-context access. The fluent Buffer/State handles
-                 * allocate through this so a graph's data stays co-located.
-                 *
-                 * @param bytes        Allocation size in bytes.
-                 * @param device_index Target device queue index ([0, device_count())).
+                 * @param device_index Target device queue index, in [0, device_count()).
                  * @return USM pointer, or nullptr on failure.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 void* malloc_shared_on(size_t bytes, size_t device_index);
 
                 /**
                  * @brief Allocates device-only USM pinned to one specific device queue.
-                 *
-                 * The device-resident counterpart of malloc_shared_on: the allocation
-                 * stays on @p device_index and is never host-addressable, so a field
-                 * kept resident across frames does not migrate to the host on access.
-                 * The owner is recorded exactly as for shared USM, so the scheduler
-                 * routes kernels to the owning queue and selective host readback copies
-                 * through it. Use it when several device-resident buffers must share one
-                 * context (a State's two fields).
-                 *
-                 * @param bytes        Allocation size in bytes.
-                 * @param device_index Target device queue index ([0, device_count())).
+                 * @param device_index Target device queue index, in [0, device_count()).
                  * @return Device USM pointer, or nullptr on failure.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 void* malloc_device_on(size_t bytes, size_t device_index);
 
                 /**
                  * @brief Allocates pinned host USM in one specific device queue's context.
-                 *
-                 * Kernels on @p device_index read and write the allocation, and the host
-                 * reads it at any time. The owner is recorded as for malloc_shared_on.
-                 *
-                 * @param bytes        Allocation size in bytes.
-                 * @param device_index Target device queue index ([0, device_count())).
+                 * @param device_index Target device queue index, in [0, device_count()).
                  * @return Host USM pointer, or nullptr on failure.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 void* malloc_host_on(size_t bytes, size_t device_index);
 
@@ -351,16 +244,10 @@ namespace SushiRuntime
 
                 /**
                  * @brief Finds the start of the recorded allocation an address falls in.
-                 *
-                 * Lets a caller holding an interior pointer name the allocation it
-                 * belongs to, which get_queue_for_ptr() and sycl::get_pointer_type()
-                 * cannot: both answer on exact base addresses. The search is linear in
-                 * live allocations, so call it while building a graph, never per
-                 * dispatch.
-                 *
-                 * @param ptr Any address, interior or base. Null resolves to nothing.
-                 * @return The allocation's first address, or nothing when this context
-                 *         recorded no allocation covering @p ptr.
+                 * @param ptr Any address, interior or base; null resolves to nothing.
+                 * @return The allocation's first address, or nothing when no recorded allocation
+                 *        covers ptr.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 std::optional<void*> containing_usm_base(void* ptr) const;
 
@@ -433,14 +320,9 @@ namespace SushiRuntime
 
                 /**
                  * @brief Promotes this context to Master mode and wires the cluster.
-                 *
-                 * Creates the buffer registry and the coordinator, installs the
-                 * scheduler completion hook, and starts the transport. Until this is
-                 * called the context behaves exactly as Standalone (zero overhead).
-                 *
-                 * @param transport Connected master-side transport (one peer per worker).
-                 * @param kernels   Registry shared with this binary's kernels.
-                 * @param policy    Offload policy (null → LeastLoadedOffloadPolicy).
+                 * @param transport Connected master-side transport, one peer per worker.
+                 * @param policy Offload policy; null selects LeastLoadedOffloadPolicy.
+                 * @see include/SushiRuntime/execution/README.md
                  */
                 void enable_distributed_master(std::shared_ptr<Distributed::ITransport> transport,
                                                sushi_ptr<Distributed::KernelRegistry>   kernels,

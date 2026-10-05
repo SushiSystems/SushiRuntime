@@ -6,23 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Gate benchmark for the "allocation-per-node churn on the recompose path" theme
-// (audit Tier B). The substrate commits O(changed region) work every step: a dirty
-// region is rebuilt, and each rebuilt node currently pays a Node allocation, two
-// IO-region vectors, an AccessNode per access, event ctors, and build list-nodes.
-// This isolates that cost two ways:
-//
-//   * commit wall-time  — portable headline. A "commit" = one region().add() that
-//     marks a region dirty + one run(1) that recomposes and steps. Compared against
-//     a no-mutation run(1) (pure replay), the delta is the recompose cost.
-//   * allocations/commit — via a gated global operator new counter. Authoritative on
-//     a single-CRT build (Linux/CI): it sees allocations inside libsushiruntime too.
-//     On a Windows DLL build it counts only exe-side (header/template) allocations,
-//     so trust the wall-time delta there and the alloc count on the CI lane.
-//
-// It asserts only correctness + the composition contract (one recompose per
-// mutation), never a speed/alloc threshold — the numbers are reported for the owner
-// to compare across the B2 changes.
+/**
+ * @file test_recompose_churn_perf.cpp
+ * @brief Measures the wall time and allocations of one dirty-region commit against a pure replay.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <atomic>
 #include <chrono>
@@ -38,9 +27,7 @@ using namespace SushiRuntime;
 
 namespace
 {
-    // --- Gated global allocation counter -------------------------------------
-    // Off by default and during every other test, so the process-wide replacement
-    // costs only a relaxed load per allocation outside the measured windows.
+    // The counter is off outside a measured window; see tests/benchmark/README.md.
     std::atomic<bool>   g_count_on{false};
     std::atomic<size_t> g_alloc_n{0};
     std::atomic<size_t> g_alloc_bytes{0};
@@ -69,8 +56,7 @@ namespace
     };
 }
 
-// Single global replacement for the whole benchmark binary. Everything routes
-// through malloc/free; the count is only taken while g_count_on is set.
+// One replacement serves the whole benchmark binary and counts only while g_count_on is set.
 void* operator new(std::size_t n)            { count_alloc(n); void* p = std::malloc(n ? n : 1); if (!p) throw std::bad_alloc(); return p; }
 void* operator new[](std::size_t n)          { count_alloc(n); void* p = std::malloc(n ? n : 1); if (!p) throw std::bad_alloc(); return p; }
 void  operator delete(void* p) noexcept              { std::free(p); }
@@ -109,8 +95,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
 
     using clock = std::chrono::steady_clock;
 
-    // Baseline: a pure-replay step with NO dirty region — steady execution cost,
-    // no recompose. Best-of-a-few to strip jitter.
+    // The baseline is a replay step with no dirty region, the best of three.
     double best_replay_ms = 1e300;
     size_t replay_allocs  = 0;
     for (int r = 0; r < 3; ++r)
@@ -127,8 +112,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
     // compile_count must NOT have moved: pure replay never recomposes.
     const std::size_t compiles_after_warm_replay = world.compile_count();
 
-    // Measured commits: each marks one region dirty then steps → exactly one
-    // recompose. Report the per-commit cost and the recompose-only delta.
+    // Each commit marks one region dirty and steps, so it recomposes exactly once.
     double total_commit_ms = 0.0;
     double best_commit_ms  = 1e300;
     double worst_commit_ms = 0.0;
@@ -181,12 +165,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
                 "     churn is the target; if the pure-replay step already allocates\n"
                 "     heavily, redirect effort to steady-state execution instead.\n");
 
-    // Correctness: every region ran the warm step + the replay-baseline steps + one
-    // step per commit; the mutated regions gained an extra increment on and after the
-    // commit that streamed their second task in. We assert forward progress + the
-    // composition contract rather than reconstruct the exact per-cell count here
-    // (the dedicated Integration_DynamicGraph tests own that); a nonzero, uniform
-    // value per region is the smoke check.
+    // A nonzero, uniform value per region is the smoke check; see tests/benchmark/README.md.
     for (std::size_t r = 0; r < REGIONS; ++r)
     {
         const int v0 = bufs[r][0];

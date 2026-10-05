@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// G1 task 5 coverage: per-dispatch node event records, the clock pairing, and
-// steady-state capture (spec
-// docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md §C, §E
-// items 1, 2, 3, 4, 6; plan task 5).
+/**
+ * @file test_node_event_records.cpp
+ * @brief Tests per-dispatch node event records and their pairing with the event clock.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <algorithm>
 #include <cstddef>
@@ -28,8 +30,7 @@ namespace SushiRuntime
     {
         namespace detail
         {
-            // Test-only friend seam onto Graph::plan_, mirroring
-            // test_registration_index.cpp's RegistrationIndexTestAccess.
+            /** @brief Declares the test-only friend access to Graph::plan_. */
             struct NodeEventRecordsTestAccess
             {
                 static const Execution::CompiledGraph& plan(const Graph& g) noexcept
@@ -81,8 +82,10 @@ TEST(Integration_NodeEventRecords, ProfilingNotRequestedLeavesNodeEventsEmpty)
     EXPECT_EQ(report.clock.steady_ns, 0u);
 }
 
-// E.2 - three independent kernel nodes, run(5): fifteen records, invocations
-// 0..4 per node, and submit <= start <= end for every one of them.
+/**
+ * @brief Tests that three kernel nodes over run(5) give fifteen records with submit <= start <=
+ *        end.
+ */
 TEST(Integration_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
 {
     constexpr std::size_t N = 64;
@@ -122,13 +125,9 @@ TEST(Integration_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
     }
 }
 
-// E.3 - lives in test_steady_state_allocation.cpp (sr_allocation_tests' own
-// process): a replacement operator new here would only ever see this
-// executable's allocations, never the shared library's (see that file's
-// header comment, lines 24-49, for why it needs its own binary).
+// The steady-state capture case is in test_steady_state_allocation.cpp; see README.md.
 
-// E.4 - node_index follows registration order, not the compiled (reversed)
-// order; cross-checked against the plan's own registration_index.
+/** @brief Tests that node_index follows registration order, not the compiled order. */
 TEST(Integration_NodeEventRecords, NodeIndexIsRegistrationOrder)
 {
     constexpr std::size_t N = 32;
@@ -141,12 +140,7 @@ TEST(Integration_NodeEventRecords, NodeIndexIsRegistrationOrder)
     int* pb = b.data();
     int* pc = c.data();
 
-    // A strict dependency chain (B reads what A wrote, C reads what B wrote)
-    // forces execution order A, B, C, giving an observation of identity that
-    // is independent of trusting registration_index off the Node object: if
-    // the plan's registration order and the run's actual dispatch order ever
-    // disagreed, sorting by earliest submit would catch it even though both
-    // still individually read as {0, 1, 2}.
+    // The strict dependency chain forces the execution order A, B, C; see README.md.
     auto g = rt.graph();
     g.set_profiling_requested(true);
     g.add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name_last("A");
@@ -180,8 +174,7 @@ TEST(Integration_NodeEventRecords, NodeIndexIsRegistrationOrder)
         << "B's dependency chain must have it dispatch no later than C";
 }
 
-// E.6 - a native host node's converted record lands inside the run's event
-// window, within the pairing's uncertainty_ns.
+/** @brief Tests that a host node's converted record lands inside the run's event window. */
 TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
 {
     constexpr std::size_t N = 64;
@@ -190,10 +183,7 @@ TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
     auto buf = rt.buffer<int>(N);
     int* p = buf.data();
 
-    // The host node reads what the kernel writes, chaining it strictly
-    // behind the kernel's completion instead of leaving the two as
-    // independent roots — so the host record's window sits inside, not just
-    // near, the run's event-clock window.
+    // The host node reads what the kernel writes, so it runs after the kernel; see README.md.
     auto g = rt.graph();
     g.set_profiling_requested(true);
     g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); }).name_last("kernel");
@@ -210,11 +200,7 @@ TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
     const auto& plan = API::detail::NodeEventRecordsTestAccess::plan(g);
     const std::uint32_t idx_kernel = registration_index_of(plan, "kernel");
 
-    // A host record's converted submit_ns and start_ns are identical (the
-    // scheduler stamps the same raw steady time into both); a device
-    // record's rarely are. That, not a stored flag, is what separates them
-    // here (NodeEventRecord stays field-for-field identical to the engine's
-    // NodeEvent, per the design's global constraints).
+    // Only a host record has submit_ns equal to start_ns; see README.md.
     const Core::NodeEventRecord* kernel_record = nullptr;
     const Core::NodeEventRecord* host_record = nullptr;
     for (const auto& rec : report.node_events)
@@ -226,9 +212,7 @@ TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
     ASSERT_NE(kernel_record, nullptr) << "no kernel record found among node_events";
     ASSERT_NE(host_record, nullptr) << "no host record found among node_events";
 
-    // The chain guarantees the host node dispatches no earlier than the
-    // kernel's completion; the tolerance only covers the pairing's own
-    // measurement uncertainty, not scheduling jitter between unrelated roots.
+    // The tolerance covers the clock pairing's measurement uncertainty only; see README.md.
     EXPECT_GE(host_record->start_ns + report.clock.uncertainty_ns, kernel_record->end_ns)
         << "the host record must not land before the kernel it depends on completed";
     EXPECT_LE(host_record->start_ns, host_record->end_ns);

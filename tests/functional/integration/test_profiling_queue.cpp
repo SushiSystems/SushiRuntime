@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// G1 task 3 coverage: RuntimeContext::profiling_queue() (spec
-// docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md §A/F2).
-// A profiled node needs SYCL command_submit/start/end, which only a queue
-// built with enable_profiling exposes; the plain queue returned by
-// get_queue() must stay exactly as it is today for every existing consumer.
+/**
+ * @file test_profiling_queue.cpp
+ * @brief Tests RuntimeContext::profiling_queue() and its relation to the plain queue.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -23,10 +24,10 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using SushiRuntime::Test::UsmShared;
 
-// With RuntimeSettings::profiling off (today's default), the plain queue
-// carries no enable_profiling property, the profiling queue does once built,
-// and the two share one sycl::context so USM allocated through the plain
-// queue stays legally accessible from the profiling queue.
+/**
+ * @brief Tests that the profiling queue carries enable_profiling and shares the plain queue's
+ *        context.
+ */
 TEST(Integration_ProfilingQueue, ProfilingQueueAddsThePropertyAndSharesTheContext)
 {
     RuntimeContext ctx;
@@ -41,8 +42,7 @@ TEST(Integration_ProfilingQueue, ProfilingQueueAddsThePropertyAndSharesTheContex
         << "the two queues must share one context so USM stays legal on either";
 }
 
-// Nothing is built before the first request: RuntimeSettings::profiling is
-// off, so probe_hardware() must not have built any device's profiling queue.
+/** @brief Tests that no profiling queue exists before the first request. */
 TEST(Integration_ProfilingQueue, NoProfilingQueueExistsBeforeTheFirstRequest)
 {
     RuntimeContext ctx;
@@ -59,8 +59,7 @@ TEST(Integration_ProfilingQueue, NoProfilingQueueExistsBeforeTheFirstRequest)
             << "requesting device 0 must not build device " << i << "'s queue";
 }
 
-// RuntimeSettings::profiling asks probe_hardware() to build every device's
-// profiling queue eagerly, before any run() could have requested one.
+/** @brief Tests that RuntimeSettings::profiling builds every device's profiling queue eagerly. */
 TEST(Integration_ProfilingQueue, SettingsProfilingBuildsEveryDeviceEagerly)
 {
     RuntimeSettings settings;
@@ -72,9 +71,10 @@ TEST(Integration_ProfilingQueue, SettingsProfilingBuildsEveryDeviceEagerly)
             << "device " << i << "'s profiling queue must exist before any request";
 }
 
-// With RuntimeSettings::profiling on, the plain queue already carries
-// enable_profiling (today's existing behaviour), so profiling_queue() must
-// hand back that same queue handle rather than a second, duplicate one.
+/**
+ * @brief Tests that profiling_queue() returns the plain queue itself when
+ *        RuntimeSettings::profiling is on.
+ */
 TEST(Integration_ProfilingQueue, SettingsProfilingReturnsThePlainQueueItself)
 {
     RuntimeSettings settings;
@@ -85,9 +85,10 @@ TEST(Integration_ProfilingQueue, SettingsProfilingReturnsThePlainQueueItself)
         << "profiling_queue() must alias the already-profiling plain queue, not duplicate it";
 }
 
-// A USM allocation made through the plain queue's context is dereferenced
-// correctly by a kernel dispatched on the profiling queue: the shared context
-// is not just reported, it is usable.
+/**
+ * @brief Tests that a kernel on the profiling queue dereferences USM allocated through the plain
+ *        queue.
+ */
 TEST(Integration_ProfilingQueue, UsmFromThePlainQueueIsUsableOnTheProfilingQueue)
 {
     constexpr std::size_t N = 256;

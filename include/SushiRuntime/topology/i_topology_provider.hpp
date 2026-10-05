@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file i_topology_provider.hpp
+ * @brief Declares ITopologyProvider and INumaDistanceModel.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/topology/README.md
+ */
+
 #pragma once
 
 #include <vector>
@@ -17,14 +24,8 @@ namespace SushiRuntime
     namespace Topology
     {
         /**
-         * @brief Interface over hardware discovery and NUMA mapping.
-         *
-         * RuntimeContext depends on this interface instead of the concrete hwloc/SYCL
-         * machinery, making topology substitutable at construction time:
-         *
-         *   - HwlocTopologyProvider      — real bare-metal discovery.
-         *   - RemappingTopologyProvider  — real devices with a synthetic NUMA layout,
-         *                                 so multi-node logic runs on single-node hardware.
+         * @brief Declares the interface over hardware discovery and NUMA mapping.
+         * @see include/SushiRuntime/topology/README.md
          */
         class SUSHIRUNTIME_API ITopologyProvider
         {
@@ -39,17 +40,8 @@ namespace SushiRuntime
                 virtual std::vector<HardwareNode> enumerate(const HardwareFilterConfig& config = {}) = 0;
 
                 /**
-                 * @brief Maps each logical CPU (OS cpu index) to its NUMA node.
-                 *
-                 * Indexed by the same logical-core id that thread pinning uses
-                 * (pin_current_thread_to_core), so a worker bound to core c has
-                 * NUMA node result[c] — with the default settings that is worker i
-                 * on core i, and under a reserved-core configuration it is worker i
-                 * on core (first_core + i). Enables NUMA-aware, hierarchical work
-                 * stealing in the scheduler.
-                 *
-                 * Default returns empty → callers fall back to a single flat tier
-                 * (NUMA-blind stealing). Override to provide real/synthetic maps.
+                 * @brief Maps each logical CPU (OS cpu index) to its NUMA node; empty by default.
+                 * @see include/SushiRuntime/topology/README.md
                  */
                 virtual std::vector<int> cpu_core_to_numa() const { return {}; }
         };

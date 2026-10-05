@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_fluent_lifecycle.cpp
+ * @brief Tests State replay, run_until, coupled fields, recompilation and errors in the fluent API.
+ * @author Mustafa Garip
+ */
+
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <SushiRuntime/SushiRuntime.h>

@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file workload_coordinator.hpp
+ * @brief Declares WorkloadCoordinator, which runs a rebalance strategy on a heartbeat.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/scheduler/README.md
+ */
+
 #pragma once
 #include "rebalancer_interfaces.hpp"
 #include <memory>
@@ -19,13 +26,8 @@ namespace SushiRuntime
     namespace Scheduler
     {
         /**
-         * @brief Background monitor that drives an IRebalanceStrategy on a fixed heartbeat.
-         *
-         * Runs a dedicated low-overhead coordinator thread that calls
-         * IRebalanceStrategy::evaluate_and_rebalance every 5 ms. The strategy
-         * inspects live telemetry via ITelemetryProvider and issues task migrations
-         * via ITaskMigrator. The strategy can be swapped at runtime while the
-         * coordinator is running.
+         * @brief Drives an IRebalanceStrategy from a background thread on a 5 ms heartbeat.
+         * @see include/SushiRuntime/scheduler/README.md
          */
         class WorkloadCoordinator
         {
@@ -33,10 +35,10 @@ namespace SushiRuntime
                 const ITelemetryProvider& telemetry_;
                 ITaskMigrator& migrator_;
 
-                // strategy_mtx_ guards strategy_ against a concurrent set_strategy()
-                // destroying the object the monitor thread is mid-call on. Held
-                // only across the (fast) evaluate_and_rebalance call and the swap,
-                // never across the 5 ms sleep.
+                /**
+                 * @brief Guards strategy_ against set_strategy() destroying it mid-call.
+                 * @see include/SushiRuntime/scheduler/README.md
+                 */
                 mutable std::mutex strategy_mtx_;
                 std::unique_ptr<IRebalanceStrategy> strategy_;
 
@@ -104,9 +106,7 @@ namespace SushiRuntime
                         old = std::move(strategy_);
                         strategy_ = std::move(new_strategy);
                     }
-                    // old is destroyed here, outside the lock and guaranteed not to
-                    // be in use by monitor_loop (which holds the same mutex around
-                    // its evaluate_and_rebalance call).
+                    // old is destroyed here, outside the lock; monitor_loop cannot be using it.
                 }
         };
     }

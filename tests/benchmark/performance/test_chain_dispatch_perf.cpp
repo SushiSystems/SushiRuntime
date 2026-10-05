@@ -6,13 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Baseline for the graph-replay design (docs/design/GRAPH_REPLAY.md),
-// §0 and §G's P0. Each node in the chain depends on the one
-// before it, so the run pays the scheduler's full per-node dispatch path — deps
-// resolution, submit, poll, successor hand-off — with no fan-out to hide it
-// behind. We sweep the chain length K and report ms/node, which is the number
-// layer 0 (removing SmallEventVector::to_vector()'s per-node allocation) and the
-// later layers are measured against.
+/**
+ * @file test_chain_dispatch_perf.cpp
+ * @brief Measures the per-node dispatch cost of a dependency chain across chain lengths.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <algorithm>
 #include <cstddef>
@@ -29,13 +28,8 @@ namespace
 
     /**
      * @brief Runs a chain of @p length trivial kernel nodes for @p steps replays.
-     *
-     * Node i reads buffer i and writes buffer i+1, so each node depends on its
-     * predecessor and the scheduler cannot dispatch two nodes concurrently.
-     * @param length Number of nodes in the chain.
-     * @param steps Number of times the compiled graph is replayed.
      * @param force_scheduler True to keep the plan on the scheduler (layer 0).
-     * @return The measured per-step and per-node wall cost, and the layer that ran.
+     * @return The per-step and per-node wall cost, and the layer that ran.
      */
     Point run_chain(std::size_t length, std::size_t steps, bool force_scheduler)
     {

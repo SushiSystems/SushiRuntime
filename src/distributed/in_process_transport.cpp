@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file in_process_transport.cpp
+ * @brief Routes messages between a master and workers inside one process, with fault injection.
+ * @author Mustafa Garip
+ */
+
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 
 #include <queue>
@@ -24,11 +30,10 @@ namespace SushiRuntime
         // Master is modelled as node_id == -1; workers are 0..N-1.
         static constexpr int MASTER_ID = -1;
 
-        // Upper bound on messages parked by FaultAction::Hold, so a test nemesis
-        // that holds aggressively cannot grow memory without bound.
+        /// @brief Caps the messages FaultAction::Hold may park (src/distributed/README.md).
         static constexpr size_t MAX_HELD = 100000;
 
-        // --- endpoint internal state (one per transport) ----------------------
+        /// @brief Holds one endpoint's inbox and the thread that pumps it.
         struct InProcessTransport::Impl
         {
             struct Message
@@ -88,7 +93,7 @@ namespace SushiRuntime
             }
         };
 
-        // --- shared switchboard ----------------------------------------------
+        /// @brief Holds the switchboard that routes messages between endpoints.
         struct InProcessFabric::Impl
         {
             int worker_count = 0;
@@ -96,7 +101,7 @@ namespace SushiRuntime
             std::weak_ptr<InProcessTransport::Impl>              master;
             std::vector<std::weak_ptr<InProcessTransport::Impl>> workers;
 
-            // --- fault injection (no-op unless a policy is installed) ----------
+            /// @brief Holds the installed fault policy; an empty one delivers every message.
             FaultPolicy fault;
 
             // Workers currently partitioned off the network (both directions).
@@ -114,8 +119,7 @@ namespace SushiRuntime
                     && partitioned[static_cast<size_t>(node_id)];
             }
 
-            // A message parked by FaultAction::Hold, resolved to its destination so
-            // flush_held() can deliver it verbatim regardless of later routing state.
+            /// @brief Holds a parked message and its resolved endpoint (src/distributed/README.md).
             struct Held
             {
                 std::weak_ptr<InProcessTransport::Impl> dst;
@@ -151,8 +155,7 @@ namespace SushiRuntime
             void route_locked(int from_peer, int to_peer, MsgType type,
                               SushiRuntime::span<const std::byte> payload)
             {
-                // A partitioned worker is cut off in both directions, regardless of
-                // any per-message fault policy.
+                // A partition cuts a worker off in both directions, before any fault policy.
                 if (is_partitioned(from_peer) || is_partitioned(to_peer))
                     return;
 
@@ -165,9 +168,7 @@ namespace SushiRuntime
                     case FaultAction::Drop:
                         return;
                     case FaultAction::Hold:
-                        // Bound the hold buffer: past the cap, a held message is
-                        // simply dropped (a link's finite buffer overflowing). The
-                        // recovery paths treat it as a normal loss.
+                        // Past MAX_HELD a held message is dropped (src/distributed/README.md).
                         if (held.size() < MAX_HELD)
                             held.push_back(Held{ dst, from_peer, type,
                                 std::vector<std::byte>(payload.begin(), payload.end()) });
@@ -229,16 +230,13 @@ namespace SushiRuntime
                 std::lock_guard<std::mutex> lk(impl_->mtx);
                 drained.swap(impl_->held);
             }
-            // Optional seeded reordering: deliver the backlog out of order to inject
-            // message reordering on top of the delay.
+            // A non-zero seed delivers the backlog out of order (src/distributed/README.md).
             if (shuffle_seed != 0 && drained.size() > 1)
             {
                 std::mt19937_64 rng(shuffle_seed);
                 std::shuffle(drained.begin(), drained.end(), rng);
             }
-            // Deliver outside the lock: enqueue only touches the destination
-            // endpoint's own queue, and we must not hold the fabric mutex while a
-            // peer's handler may call back into send().
+            // Delivery runs outside the fabric mutex (src/distributed/README.md).
             for (auto& m : drained)
                 if (auto d = m.dst.lock())
                     d->enqueue(m.from_peer, m.type, m.payload);
@@ -267,7 +265,6 @@ namespace SushiRuntime
                 impl_->partitioned[static_cast<size_t>(worker)] = partitioned;
         }
 
-        // --- transport endpoint ----------------------------------------------
         /**
          * @brief Constructs an InProcessTransport and registers it with the fabric.
          * Attaches this endpoint to the central switchboard for routing.
@@ -348,8 +345,7 @@ namespace SushiRuntime
 
             if (impl_->node_id == MASTER_ID)
             {
-                // Master -> worker(s). peer_id < 0 means broadcast. Each target is
-                // routed through the fault policy independently.
+                // A negative peer_id broadcasts; each target passes the fault policy alone.
                 if (peer_id < 0)
                 {
                     for (size_t i = 0; i < fab->workers.size(); ++i)

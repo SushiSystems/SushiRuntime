@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file work_stealing_deque.hpp
+ * @brief Declares Deque, the lock-free Chase-Lev work-stealing deque.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/scheduler/README.md
+ */
+
 #pragma once
 
 #include <atomic>
@@ -20,21 +27,8 @@ namespace SushiRuntime
     namespace Scheduler
     {
         /**
-         * @brief Lock-free Chase-Lev work-stealing deque for task scheduling.
-         *
-         * A fixed-capacity power-of-2 ring buffer avoids dynamic resizing and the
-         * memory-reclamation hazards a growable lock-free buffer would carry. The
-         * owner thread pushes and pops the bottom (LIFO); stealer threads steal
-         * from the top (FIFO). Each slot is a std::atomic<Task*> so the array is
-         * accessed atomically.
-         *
-         * Overflow never drops. push() is single-producer (owner-only), so when the
-         * ring is full the surplus goes into an owner-private overflow buffer that
-         * needs no synchronization; pop() drains it back into the ring as space
-         * frees up. A dropped task would leave its successors' in_degree above zero
-         * forever and deadlock the run, so dropping is not an option. Overflowed
-         * tasks are not visible to stealers until drained, which is acceptable: the
-         * owner always makes progress on them, and overflow is a rare pathology.
+         * @brief Implements a lock-free Chase-Lev work-stealing deque of fixed capacity.
+         * @see include/SushiRuntime/scheduler/README.md
          */
         class alignas(SushiRuntime::Core::CACHE_LINE_SIZE) Deque : public Core::RefCounted
         {
@@ -60,12 +54,7 @@ namespace SushiRuntime
         public:
             Deque() : top(0), bottom(0)
             {
-                // Default-initialize (no trailing "()"): a slot is always written by
-                // push() before any consumer can read it (push stores the slot, then
-                // publishes via the release store on bottom; steal()/pop() only read
-                // items[i] for i < bottom), so zeroing all CAPACITY slots up front is
-                // wasted work — it faults in the whole 2 MB ring eagerly. Leaving them
-                // indeterminate lets the pages fault lazily as the deque actually grows.
+                // Slots stay uninitialised; push() writes each one before any consumer reads it.
                 items = new std::atomic<Task*>[CAPACITY];
             }
 
@@ -100,21 +89,14 @@ namespace SushiRuntime
 
                 if (b - t >= CAPACITY)
                 {
-                    // Ring is full. Park the surplus privately rather than drop it;
-                    // pop() drains it back in as the ring empties.
+                    // A full ring parks the surplus in overflow_; pop() drains it back.
                     overflow_.push_back(task);
                     return;
                 }
 
                 items[b & MASK].store(task, std::memory_order_relaxed);
 
-                // Publish the slot write by releasing it through the bottom store
-                // rather than a standalone release fence. The two are equivalent for
-                // correctness — a stealer's acquire load of bottom orders the slot
-                // write before its own read — but a release store on the very
-                // variable the consumer acquires is synchronization ThreadSanitizer
-                // models precisely, whereas it does not fully track standalone
-                // atomic_thread_fence and falsely flags the published task as racy.
+                // The release store on bottom publishes the slot write.
                 bottom.store(b + 1, std::memory_order_release);
             }
 
@@ -164,15 +146,7 @@ namespace SushiRuntime
              */
             Task* steal()
             {
-                // Relaxed emptiness pre-check. A stealer scanning idle peers — and
-                // every worker at end-of-step quiescence — hits empty victims far
-                // more often than not, and the full protocol below pays a seq_cst
-                // fence (an MFENCE on x86) on every attempt. Skip it when the ring is
-                // obviously empty. This can only ever make steal() fail spuriously,
-                // which the caller already tolerates (it retries / scans other
-                // victims and the owner still makes progress); it never returns a
-                // stale task, because the fenced protocol below re-reads and
-                // re-validates via the top CAS before returning anything.
+                // A relaxed pre-check may fail spuriously but never returns a stale task.
                 if (top.load(std::memory_order_relaxed) >=
                     bottom.load(std::memory_order_relaxed))
                     return nullptr;
@@ -219,12 +193,10 @@ namespace SushiRuntime
                     overflow_.pop_back();
 
                     items[b & MASK].store(task, std::memory_order_relaxed);
-                    // Release through the bottom store, as in push() — see the note
-                    // there on why this replaces a standalone release fence.
+                    // The slot is released through the bottom store, as in push().
                     bottom.store(++b, std::memory_order_release);
 
-                    // Refresh the stolen-from end so a burst of steals lets us keep
-                    // draining rather than bailing on a stale full reading.
+                    // top is re-read so a burst of steals does not end the drain early.
                     t = top.load(std::memory_order_acquire);
                 }
             }

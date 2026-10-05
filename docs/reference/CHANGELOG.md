@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-05 — docs: Moved design reasoning out of source comments into folder READMEs and gave every source file its file block (`include/SushiRuntime/`, `src/`, `tests/`, `examples/`, `cli/`).
 - 2026-10-05 — docs: Moved the manual into the documentation tree, merged the two changelogs, added the root README and the required documents, and copied the checkers (`README.md`, `docs/`, `tools/`).
 - 2026-10-05 — cli: Renamed `sr doxygen` to `sr docs`, keeping the old word as a hidden alias until 2027-03-25 (`cli/sushiruntime/cli.py`, `cli/sushiruntime/aliases.py`).
 - 2026-10-05 — cli: Renamed `sr docker` to `sr container`, keeping the old word as a hidden alias until 2027-03-25 (`cli/sushiruntime/cli.py`, `cli/sushiruntime/aliases.py`).

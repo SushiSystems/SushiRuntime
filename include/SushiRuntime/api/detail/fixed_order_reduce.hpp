@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file fixed_order_reduce.hpp
+ * @brief Declares the level plan, scratch and tile fold of the fixed-order reduction.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/detail/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -23,24 +30,14 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief Elements one work-item folds sequentially at every level.
-             *
-             * The single number the whole determinism guarantee rests on: the tile
-             * boundaries, and therefore which values meet which, are a function of
-             * the element count and this constant alone. It is deliberately not
-             * derived from the device's work-group size, the worker count, or
-             * anything else that varies between runs or machines.
+             * @brief Fixes how many elements one work-item folds sequentially at every level.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             inline constexpr std::size_t REDUCE_TILE = 256;
 
             /**
-             * @brief One level of a fixed-tile tree reduction.
-             *
-             * A level folds @c in_count values into @c out_count = ceil(in_count /
-             * REDUCE_TILE) partials. Offsets are in elements, into the reduction's
-             * scratch allocation; the first level reads the caller's input instead
-             * of scratch and the last writes the caller's output instead of scratch,
-             * so those two offsets are unused on those levels.
+             * @brief Describes one level of a fixed-tile tree reduction.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             struct ReduceLevel
             {
@@ -51,16 +48,9 @@ namespace SushiRuntime
             };
 
             /**
-             * @brief Lays out the levels of a fixed-tile reduction over @p n values.
-             *
-             * Repeatedly divides the count by REDUCE_TILE until one value remains,
-             * assigning each level a disjoint scratch window so consecutive levels
-             * never alias — which is what lets the ordinary region tracker order them
-             * with no hand-written edges. Pure, so the layout can be asserted in a
-             * test without a device.
-             *
-             * @param n Number of values to reduce; zero yields no levels.
-             * @return The levels in execution order; empty when @p n is zero.
+             * @brief Lays out the levels of a fixed-tile reduction over n values.
+             * @return The levels in execution order; empty when n is zero.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             inline std::vector<ReduceLevel> plan_reduction(std::size_t n)
             {
@@ -92,14 +82,9 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Scratch elements a planned reduction needs.
-             *
-             * Every level but the last parks its partials in scratch; the last writes
-             * the caller's output, so its window is never allocated. At REDUCE_TILE =
-             * 256 this is under half a percent of the input.
-             *
-             * @param levels The plan from plan_reduction().
+             * @brief Returns the scratch element count a planned reduction needs.
              * @return Element count to allocate; zero when the reduction is one level.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             inline std::size_t reduce_scratch_count(const std::vector<ReduceLevel>& levels)
             {
@@ -111,20 +96,9 @@ namespace SushiRuntime
 
             /**
              * @brief Allocates the USM scratch a reduction's intermediate levels use.
-             *
-             * Allocated on the same device and with the same residency as the data
-             * being reduced, so the reduction never straddles a device context and a
-             * device-resident field is not dragged into host-addressable memory. The
-             * returned pointer owns the allocation through a deleter that keeps the
-             * context alive, so scratch cannot outlive the runtime that owns it.
-             *
-             * @tparam T Element type of the reduction.
-             * @param ctx          Runtime context that performs the allocation.
-             * @param count        Elements to allocate; must be non-zero.
-             * @param device_index Device queue to pin the allocation to.
-             * @param residency    Residency of the input being reduced.
-             * @return An owning pointer to @p count elements.
+             * @param count Elements to allocate; must be non-zero.
              * @throws Core::SushiException If the allocation fails.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             template <typename T>
             inline std::shared_ptr<T> make_reduce_scratch(
@@ -145,21 +119,9 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Folds one tile left to right, starting from its first element.
-             *
-             * The whole ordering contract in one function: the accumulator is seeded
-             * with the tile's first value and every later value is combined onto it in
-             * increasing index order. Seeding from the first element rather than from
-             * an identity keeps the identity out of the arithmetic entirely, so a
-             * floating-point sum is exactly ((v0+v1)+v2)+… and nothing else.
-             *
-             * @tparam T       Element type.
-             * @tparam Combine Binary combining functor.
-             * @param op    The combiner.
-             * @param src   Base pointer of the values.
-             * @param begin First index of the tile; must be < @p end.
-             * @param end   One past the tile's last index.
-             * @return The folded value.
+             * @brief Folds one tile left to right, seeded with the tile's first element.
+             * @param begin First index of the tile; must be < end.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             template <typename T, class Combine>
             inline T fold_tile(const Combine& op, const T* src,

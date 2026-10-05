@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file task.hpp
+ * @brief Declares Task and RangeTask, the units the scheduler dispatches.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/scheduler/README.md
+ */
+
 #pragma once
 
 #include <atomic>
@@ -64,14 +71,8 @@ namespace SushiRuntime
 
             /**
              * @brief Releases whatever this task's completion unblocked.
-             *
-             * Called once by the poller when the task is reaped, on the reaping
-             * worker's thread. A task that nothing depends on does nothing here; a
-             * graph node walks its successors, satisfies one dependency on each, and
-             * hands the sink the ones that have no dependencies left. The scheduler
-             * never has to know which kind it reaped.
-             *
              * @param sink Receives each task this completion made runnable.
+             * @see include/SushiRuntime/scheduler/README.md
              */
             virtual void on_complete(ReadySink& /*sink*/) {}
 
@@ -91,15 +92,8 @@ namespace SushiRuntime
             virtual sycl::event execute_host(sycl::queue& /*q*/, const std::vector<sycl::event>& /*deps*/) { return {}; }
 
             /**
-             * @brief Whether this task submits SYCL device work and so needs a queue.
-             *
-             * The scheduler reads this to decide between two host-execution paths:
-             * true (the safe default for every task) routes through execute_host with
-             * a real queue, so a host_work lambda that itself submits a kernel is
-             * dispatched on the queue owning its data; false marks a pure-CPU task the
-             * scheduler runs natively via execute_native(), skipping queue acquisition
-             * entirely. Only override to false when the work provably touches no SYCL
-             * device API.
+             * @brief Returns whether this task submits SYCL device work and so needs a queue.
+             * @see include/SushiRuntime/scheduler/README.md
              */
             virtual bool submits_device_work() const noexcept { return true; }
 
@@ -139,13 +133,8 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief A splittable work-stealing task over a contiguous index range.
-         *
-         * Represents work for [start, end) and can donate the lower half to a
-         * thief via split(). The start index is atomic so a split and an execute
-         * racing on the same task are both safe: each sees a consistent range.
-         * Used by the graph layer to expose large parallel_for ranges as
-         * steal-friendly units.
+         * @brief Represents a splittable work-stealing task over a contiguous index range.
+         * @see include/SushiRuntime/scheduler/README.md
          */
         class SUSHIRUNTIME_API RangeTask : public Task
         {

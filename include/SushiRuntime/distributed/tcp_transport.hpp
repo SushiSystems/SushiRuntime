@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file tcp_transport.hpp
+ * @brief Declares TcpTransport, the ITransport implementation over TCP sockets.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <string>
@@ -27,25 +33,16 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Instantiates a master network endpoint that listens for incoming worker connections.
-                 *
-                 * Pre-binds the socket to the specified port immediately, while connection acceptance is deferred until start() is invoked.
-                 *
-                 * @param port The port number to bind to, or 0 to let the operating system assign an available port.
+                 * @brief Creates a master endpoint bound to port; accepting waits until start().
+                 * @param port The port to bind, or 0 to let the operating system assign one.
                  * @param worker_count The exact number of worker connections to wait for.
-                 * @return A shared pointer to the newly created transport instance.
                  * @throws std::runtime_error If socket creation or binding fails.
                  */
                 static std::shared_ptr<TcpTransport> make_master(uint16_t port, int worker_count);
 
                 /**
-                 * @brief Instantiates a worker network endpoint configured to connect to a specific master.
-                 *
-                 * Stores the connection details for later use; the actual network connection is established when start() is invoked.
-                 *
-                 * @param host The hostname or IP address of the master node to connect to.
-                 * @param port The destination port number on the master node.
-                 * @return A shared pointer to the newly created transport instance.
+                 * @brief Creates a worker endpoint that connects to the master when start() is
+                 *        called.
                  */
                 static std::shared_ptr<TcpTransport> make_worker(const std::string& host, uint16_t port);
 
@@ -57,13 +54,9 @@ namespace SushiRuntime
                 ~TcpTransport() override;
 
                 /**
-                 * @brief Transmits a binary payload to a specified peer.
-                 *
-                 * Frames the data with a header and writes it synchronously to the target socket.
-                 *
-                 * @param peer_id The numeric ID of the target peer, or < 0 to broadcast to all peers (master only).
-                 * @param type The type of message being transmitted.
-                 * @param payload A non-owning view of the raw bytes to send.
+                 * @brief Frames a binary payload with a header and writes it synchronously to a
+                 *        peer.
+                 * @param peer_id The target peer, or < 0 to broadcast to all peers (master only).
                  */
                 void send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload) override;
 

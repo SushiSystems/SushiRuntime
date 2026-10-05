@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file runtime_context.cpp
+ * @brief Probes the hardware, builds the SYCL queues and owns the execution engine.
+ * @author Mustafa Garip
+ */
+
 #include <map>
 #include <array>
 #include <mutex>
@@ -58,13 +64,7 @@ namespace SushiRuntime
             std::vector<sycl::queue> all_queues;
 
             /**
-             * @brief Per-device profiling-enabled queue, built lazily on request.
-             *
-             * Sized to nodes.size() once in probe_hardware() and never resized
-             * again, so a reference handed out by profiling_queue() stays valid
-             * for the context's lifetime. Empty until the device's entry in
-             * profiling_once fires, either eagerly (settings.profiling) or on
-             * the first profiling_queue() call for that device.
+             * @brief Holds each device's profiling queue, built lazily (src/execution/README.md).
              */
             std::vector<std::optional<sycl::queue>> profiling_queues;
 
@@ -99,40 +99,18 @@ namespace SushiRuntime
             std::vector<LazyQueue> chain_profiling_queues;
 
             /**
-             * @brief The runtime-wide settings this context was created with.
-             *
-             * Set once at construction and never mutated: the scheduler sizes and
-             * places its worker pool from it, the execution engine reads the
-             * rebalancer choice, and probe_hardware() reads the profiling choice
-             * while the queues are being built (a SYCL queue carries the profiling
-             * property from creation and is not rebuilt to toggle it). Immutability
-             * is what makes it safe to read from worker threads without a lock.
+             * @brief Holds the runtime settings, fixed at construction (src/execution/README.md).
              */
             RuntimeSettings settings;
 
             /**
-             * @brief Cumulative bytes the runtime itself copied across the PCIe link.
-             *
-             * Counts only the explicit, runtime-initiated transfers — the selective
-             * readback in Buffer::read_range / write_range (and the distributed path)
-             * — so RunReport can report how much the host pulled from and pushed to
-             * the device during a run. Implicit shared-USM page migration by the
-             * driver is invisible to SYCL and deliberately not counted here. Relaxed
-             * atomics: the values are monotonic counters read at a run boundary, with
-             * no ordering dependency on other state.
+             * @brief Counts bytes the runtime copied over PCIe (src/execution/README.md).
              */
             std::atomic<std::size_t> device_to_host_bytes{0};
             std::atomic<std::size_t> host_to_device_bytes{0};
 
             /**
-             * @brief USM pointer -> owning queue index (into all_queues).
-             *
-             * Populated by RuntimeContext::malloc_* so the scheduler can run a
-             * task on the exact queue/context its data was allocated on. Pointer
-             * introspection (get_pointer_type/device) is unreliable for picking
-             * an owner when one platform's USM is visible (as a different kind)
-             * in sibling contexts, so this authoritative map is the source of
-             * truth; introspection remains only as a best-effort fallback.
+             * @brief Maps each USM pointer to its owning queue index (src/execution/README.md).
              */
             SushiRuntime::Memory::UsmRegistry usm_registry;
 
@@ -157,16 +135,10 @@ namespace SushiRuntime
 
             ~Impl() 
             {
-                // Destruction order is load-bearing. The ExecutionEngine goes first,
-                // which joins every worker thread and so removes any dangling
-                // reference to a queue or another Impl member. Only then is it safe
-                // to drain outstanding GPU work with wait_and_throw(), so that every
-                // hardware operation has completed before the SYCL objects it used
-                // go out of scope.
+                // The engine is destroyed before the queues drain (src/execution/README.md).
 
 #ifdef SR_DISTRIBUTED
-                // Stop the network first so no late remote completion can touch the
-                // scheduler while/after it is being torn down.
+                // The network stops first, before the scheduler (src/execution/README.md).
                 if (coordinator)
                 {
                     coordinator->stop();
@@ -182,11 +154,7 @@ namespace SushiRuntime
 
                 auto drain = [](sycl::queue& q)
                 {
-                    // Swallow a late async device error here: this runs in the
-                    // Runtime destructor (implicitly noexcept), so a throwing
-                    // wait_and_throw() would call std::terminate. We are tearing
-                    // down and cannot surface it to a caller — log and continue so
-                    // the remaining queues still drain and resources still free.
+                    // A late async device error is logged, never thrown (src/execution/README.md).
                     try
                     {
                         q.wait_and_throw();
@@ -209,10 +177,7 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Constructs a RuntimeContext with optional hardware configuration and topology providers.
-         *
-         * Initializes the compute stack, probes available hardware, and prepares the execution engine.
-         *
+         * @brief Constructs a RuntimeContext: hardware probe then engine (src/execution/README.md).
          * @param config The hardware filtering configuration.
          * @param provider Optional custom topology provider.
          * @param distance_model Optional custom NUMA distance model.
@@ -225,10 +190,7 @@ namespace SushiRuntime
         {
             SR_LOG_INFO("Initializing compute stack...");
 
-            // Recorded before probe_hardware() builds the queues, so the profiling
-            // property is applied while they are created (queues are built once and
-            // not rebuilt to toggle it), and before the ExecutionEngine below reads
-            // the worker-pool and rebalancer choices out of it.
+            // Settings land before queues and engine read them (src/execution/README.md).
             impl_->settings = settings;
 
             // Fall back to the real hwloc-backed defaults when nothing is injected.
@@ -237,16 +199,12 @@ namespace SushiRuntime
             impl_->distance_model = distance_model ? std::move(distance_model)
                                                    : std::make_shared<Topology::HwlocDistanceModel>();
 
-            // Cache the CPU->NUMA map once; the scheduler reads it to build
-            // hierarchical steal victim orders.
+            // The scheduler reads this cached map to build steal victim orders.
             impl_->core_to_numa = impl_->provider->cpu_core_to_numa();
 
             probe_hardware(config);
 
-            // Construct the ExecutionEngine after hardware is probed so the engine
-            // receives a fully-initialised context with all queues available.
-            // The scheduler it starts is persistent: it lives for the whole
-            // lifetime of the RuntimeContext rather than being rebuilt per run.
+            // The engine is built after the probe, so every queue exists (src/execution/README.md).
             impl_->engine = std::make_unique<ExecutionEngine>(*this);
         }
 
@@ -334,11 +292,7 @@ namespace SushiRuntime
 
                 for (const auto& node : impl_->nodes) 
                 {
-                    // FPGAs or custom accelerators often execute better in-order or
-                    // don't support full OOO queues natively. Profiling is added on
-                    // top when the context was built for it, so RunReport can read
-                    // each kernel's device start/end timestamps; the two properties
-                    // compose, so the FPGA case keeps its in-order guarantee.
+                    // A non-CPU, non-GPU device gets an in-order queue (src/execution/README.md).
                     const bool needs_in_order =
                         !node.sycl_dev.is_cpu() && !node.sycl_dev.is_gpu();
                     sycl::property_list props;
@@ -375,12 +329,7 @@ namespace SushiRuntime
                                node.max_compute_units);
                 }
 
-                // Reported here, where the filter that caused it is still in hand.
-                // Anything later asks for queue 0 and fails with
-                // "Queue index out of bounds" — true, but it names neither the
-                // machine's state nor the filter that produced it, and it is the
-                // first thing a player on a GPU-less machine would see. BB-5b's
-                // try_create() turns this into a returned Error rather than a throw.
+                // An empty device list is reported here, with the filter (src/execution/README.md).
                 if (impl_->all_queues.empty())
                 {
                     std::string detail = "No SYCL device satisfied the hardware filter. Active filter: ";
@@ -427,15 +376,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Builds device @p index's profiling queue exactly once.
-         *
-         * Shares the plain queue's context and device, adds enable_profiling,
-         * and keeps in_order when the plain queue carries it (the FPGA case in
-         * probe_hardware()) so the two properties still compose. When
-         * settings.profiling is true the plain queue already carries
-         * enable_profiling (probe_hardware()'s existing behaviour, kept as-is
-         * for existing consumers), so this stores the plain queue itself
-         * instead of building a duplicate second queue.
+         * @brief Builds device @p index's profiling queue exactly once (src/execution/README.md).
          */
         void RuntimeContext::build_profiling_queue(size_t index)
         {
@@ -526,15 +467,8 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Reports whether the device behind a queue is a GPU.
-         *
-         * Reads the flag probe_hardware() recorded, which is what makes it cheap and
-         * allocation-free on every platform. all_queues is filled by walking
-         * impl_->nodes in order, one queue per node with no skips, so the two share
-         * an index.
-         *
-         * @param index The global index of the queue.
-         * @return True when that device is a GPU.
+         * @brief Reports whether the device behind a queue is a GPU (src/execution/README.md).
+         * @param index The global index of the queue; the device list shares it.
          * @throws Core::SushiException If the queue index is out of bounds.
          */
         bool RuntimeContext::device_is_gpu(size_t index) const
@@ -554,13 +488,8 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Returns the closest SYCL queue for a specific NUMA node.
-         *
-         * Falls back to a default queue if none is found. Uses thread_local cursors
-         * to achieve perfect round-robin load balancing with zero atomic contention.
-         *
+         * @brief Returns a NUMA node's queue, round-robin per thread (src/execution/README.md).
          * @param numa_id Target NUMA node ID.
-         * @return sycl::queue& Reference to the queue.
          * @throws std::runtime_error If no SYCL queues are available.
          */
         sycl::queue& RuntimeContext::get_numa_local_queue(int numa_id)
@@ -657,8 +586,7 @@ namespace SushiRuntime
             void* p = sycl::malloc_shared(bytes, q);
             if (p)
             {
-                // Record the owning queue by its index in all_queues so the
-                // scheduler can later dispatch onto the exact same context.
+                // The owning queue's index is recorded for dispatch (src/execution/README.md).
                 for (size_t i = 0; i < impl_->all_queues.size(); ++i)
                 {
                     if (impl_->all_queues[i] == q) { impl_->usm_registry.record(p, i, bytes); break; }
@@ -720,12 +648,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Finds the start of the recorded allocation an address falls in.
-         *
-         * Resolves an interior pointer to the base that owner_of() knows, for
-         * callers validating a pointer a user handed them. Linear in live
-         * allocations; a registration-time query, not a dispatch-time one.
-         *
+         * @brief Finds the base of the allocation an address falls in (src/execution/README.md).
          * @param ptr Any address, interior or base. Null resolves to nothing.
          * @return The allocation's first address, or nothing when none covers @p ptr.
          */
@@ -771,8 +694,7 @@ namespace SushiRuntime
             unregister_distributed_buffer(ptr);
 #endif
 
-            // Resolve and forget in one step: two separate locks would let a second
-            // free of the same pointer read an owner this one is already acting on.
+            // take() resolves and forgets under one lock (src/execution/README.md).
             const size_t idx = impl_->usm_registry.take(ptr).value_or(SIZE_MAX);
             // Free against the owning queue's context (required for correctness).
             if (idx < impl_->all_queues.size())
@@ -782,47 +704,22 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Retrieves the queue associated with the context that allocated the given USM pointer.
-         *
-         * First relies on an authoritative internal tracking map. As a fallback, uses SYCL
-         * pointer introspection.
-         *
+         * @brief Returns the queue whose context allocated a USM pointer (src/execution/README.md).
          * @param ptr The USM pointer to inspect.
-         * @param fallback_numa The NUMA node ID to fallback to if the owner cannot be determined.
-         * @return sycl::queue& Reference to the associated queue.
+         * @param fallback_numa The NUMA node used when the owner cannot be determined.
          */
         sycl::queue& RuntimeContext::get_queue_for_ptr(void* ptr, int fallback_numa)
         {
             if (ptr)
             {
-                // 1) Authoritative: a pointer allocated through this context's
-                //    malloc_* carries an exact owning-queue record. This is the
-                //    reliable path and avoids fragile pointer introspection.
+                // The registry record is authoritative (src/execution/README.md).
                 const auto owner = impl_->usm_registry.owner_of(ptr);
                 if (owner && *owner < impl_->all_queues.size())
                     return impl_->all_queues[*owner];
             }
             if (ptr)
             {
-                // Find the queue whose CONTEXT allocated this USM. On a single
-                // platform (e.g. CUDA) a malloc_shared/malloc_device pointer is
-                // valid in sibling contexts too, but only the owning context
-                // reports it as exactly the allocation kind it created:
-                //   * device  USM -> get_pointer_type == device  in its context
-                //   * shared  USM -> get_pointer_type == shared  in its context
-                // A non-owning context typically reports a *different* kind (we
-                // observed CUDA shared USM showing up as `device` in the CPU
-                // context), so we must match device/shared against the queue's
-                // device via get_pointer_device, never trust type alone.
-                //
-                // Strategy: prefer a queue that both (a) reports device-or-shared
-                // and (b) whose own device equals get_pointer_device(). That pair
-                // uniquely identifies the allocating queue. Host USM (or anything
-                // we cannot pin) falls through to the NUMA-local fallback.
-                // 2) Best-effort fallback for USM not allocated via this context
-                //    (e.g. a test calling bare sycl::malloc_shared). A shared
-                //    allocation's true owner is the context that reports it as
-                //    exactly 'shared'; sibling contexts report a different kind.
+                // Introspection is the fallback for foreign USM (src/execution/README.md).
                 sycl::queue* best = nullptr;
                 for (auto& q : impl_->all_queues)
                 {
@@ -847,19 +744,14 @@ namespace SushiRuntime
                 if (best)
                     return *best;
             }
-            // Pointer-less (e.g. host task) or host-allocated data: keep the
-            // existing NUMA-local round-robin behaviour.
+            // A null or host pointer takes the NUMA-local queue (src/execution/README.md).
             return get_numa_local_queue(fallback_numa);
         }
 
         /**
-         * @brief Computes the distance between two NUMA nodes.
-         *
-         * Uses the internal distance model to determine proximity.
-         *
+         * @brief Computes the distance between two NUMA nodes from the injected distance model.
          * @param numa_a The first NUMA node ID.
          * @param numa_b The second NUMA node ID.
-         * @return int The distance metric between the two nodes.
          */
         int RuntimeContext::numa_distance(int numa_a, int numa_b) const
         {
@@ -918,13 +810,10 @@ namespace SushiRuntime
 
 #ifdef SR_DISTRIBUTED
         /**
-         * @brief Enables distributed Master mode on the runtime context.
-         *
-         * Initializes network communication and coordinator for remote task offloading.
-         *
-         * @param transport The transport layer for communication.
+         * @brief Promotes the context to distributed Master mode and starts its coordinator.
+         * @param transport The transport layer for communication; must not be null.
          * @param kernels The kernel registry to be used across nodes.
-         * @param policy The strategy used to offload tasks to workers.
+         * @param policy The offload strategy; null selects LeastLoadedOffloadPolicy.
          * @throws std::runtime_error If the transport is null or execution engine is unavailable.
          */
         void RuntimeContext::enable_distributed_master(
@@ -942,8 +831,7 @@ namespace SushiRuntime
             impl_->coordinator = std::make_unique<Distributed::DistributedCoordinator>(
                 std::move(kernels), *impl_->buffers, std::move(transport), std::move(policy));
 
-            // Wire the completion hook to the persistent scheduler, then attach
-            // the coordinator so the dispatch loop's offload branch goes live.
+            // The completion hook is wired before the coordinator (src/execution/README.md).
             auto& sched = impl_->engine->scheduler_ref();
             impl_->coordinator->set_completion_hook(
                 [&sched](Graph::Node* node, bool success)
@@ -951,9 +839,7 @@ namespace SushiRuntime
                     sched.complete_offloaded_node(node, success);
                 });
 
-            // Install the coordinator (and, with it, the resubmit hook) BEFORE the
-            // monitor thread starts. Otherwise a worker reaped in the first liveness
-            // window could fire on_resubmit while it is still null.
+            // The coordinator is installed before its monitor starts (src/execution/README.md).
             sched.set_coordinator(impl_->coordinator.get());
             impl_->coordinator->start();
             impl_->role = RuntimeRole::Master;

@@ -3,13 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Turn a built tree into a redistributable archive.
+"""Turns a built tree into a redistributable archive.
 
-This is the release action: install to a prefix, then archive that prefix. It
-does not check whether the result works -- that question has a pass/fail answer
-and so belongs with the tests, as `sr test --suite package`, which installs to
-the build tree's own stage directory and then builds and runs a consumer against
-it with nothing else on PATH.
+See cli/README.md.
 """
 
 from __future__ import annotations

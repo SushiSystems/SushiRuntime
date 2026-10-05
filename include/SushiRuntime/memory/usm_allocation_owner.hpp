@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file usm_allocation_owner.hpp
+ * @brief Declares UsmAllocationOwner, which frees an address through its runtime context.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <memory>

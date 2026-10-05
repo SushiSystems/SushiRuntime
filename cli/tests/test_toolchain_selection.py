@@ -3,21 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Switching the SYCL toolchain has to actually switch it, from both directions.
+"""Tests that a stated toolchain survives in CMake and changes the configure stamp.
 
-Two independent defects made `sr toolchain <name>` a no-op, and neither said anything.
-
-CMake's side inferred the toolchain from the compiler's file name under a guard that claimed to
-check "the caller left the default" but only checked that a compiler had been pinned. So an
-explicit -DSR_SYCL_TOOLCHAIN was overwritten and every STREQUAL dispatch downstream took the
-branch for a toolchain nobody asked for.
-
-The CLI's side keyed its configure stamp on the build type, distribution, GPU backend and test
-flag, but not on the toolchain — so `sr build`, `sr toolchain adaptivecpp`, `sr build` matched
-the old stamp, skipped configure entirely, and reused the previous tree. The cache in that tree
-still read the old toolchain, so nothing anywhere disagreed.
-
-Both halves had to be fixed for the command to work, which is why both are pinned here.
+See cli/README.md.
 """
 
 import re

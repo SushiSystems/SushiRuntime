@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// G1 task 6 coverage: DynamicGraph's per-graph profiling switch and its
-// registration index, dense and ordered by ascending region key then add()
-// order at every recompose (spec
-// docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md §D, §F.6;
-// plan wave 4 task 6, spec §E item 8).
+/**
+ * @file test_dynamic_graph_node_events.cpp
+ * @brief Tests DynamicGraph's per-graph profiling switch and its dense registration index.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -26,8 +27,7 @@ namespace SushiRuntime
     {
         namespace detail
         {
-            // Test-only friend seam onto DynamicGraph::plan_ (DynamicGraph has no
-            // public accessor for it), mirroring Graph's NodeEventRecordsTestAccess.
+            /** @brief Declares the test-only friend access to DynamicGraph::plan_. */
             struct DynamicGraphNodeEventsTestAccess
             {
                 static const Execution::CompiledGraph& plan(const DynamicGraph& g) noexcept
@@ -43,9 +43,7 @@ using namespace SushiRuntime;
 
 namespace
 {
-    // Registration index of the one compiled node named @p name. plan.all_nodes
-    // is only populated while the graph requests profiling (dynamic_graph.hpp's
-    // commit()), which every test here relies on.
+    /** @brief Returns the registration index of the one compiled node with the given name. */
     std::uint32_t registration_index_of(const Execution::CompiledGraph& plan, const char* name)
     {
         const Graph::Node* found = nullptr;
@@ -62,8 +60,7 @@ namespace
     }
 } // namespace
 
-// A graph that never requested profiling records nothing, whatever the
-// runtime's own default.
+/** @brief Tests that a graph that never requested profiling records nothing. */
 TEST(Integration_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
 {
     constexpr std::size_t N = 32;
@@ -82,9 +79,7 @@ TEST(Integration_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
     EXPECT_TRUE(report.node_events.empty());
 }
 
-// A requested DynamicGraph must actually produce records, not just a correctly
-// stamped flag: it needs its own CompiledGraph::capture_profiling_state() call,
-// since it has no capture_base_state() of its own to piggyback on.
+/** @brief Tests that a requested DynamicGraph produces records that match the renumbered index. */
 TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRenumberedIndex)
 {
     constexpr std::size_t N = 32;
@@ -116,8 +111,7 @@ TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRe
             << "record node_index " << rec.node_index << " matches neither renumbered index";
 }
 
-// Two regions, each with more than one add() call: node_index is dense and
-// ordered by ascending region key first, then add() order within a region.
+/** @brief Tests that node_index is dense and ordered by ascending region key, then add() order. */
 TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrder)
 {
     constexpr std::size_t N = 16;
@@ -134,8 +128,7 @@ TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrde
     auto world = rt.dynamic_graph();
     world.set_profiling_requested(true);
 
-    // Region 5 is added first but keyed above region 2, so its two calls must
-    // still land after region 2's one call once ordered by ascending key.
+    // Region 5 is keyed above region 2, so its two calls land after region 2's one; see README.md.
     world.region(5).add(API::Reads{}, API::Writes(a), N,
                         [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name_last("R5_first");
     world.region(5).add(API::Reads{}, API::Writes(b), N,
@@ -155,8 +148,7 @@ TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrde
     EXPECT_EQ(idx_r5_second, 2u);
 }
 
-// Dropping a region and re-adding it must not leave a gap in the index space:
-// the next recompose renumbers every live region densely from zero.
+/** @brief Tests that the index stays dense after a region is dropped and re-added. */
 TEST(Integration_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
 {
     constexpr std::size_t N = 16;

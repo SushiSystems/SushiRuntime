@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// A 2-D heat-diffusion stencil written entirely against the fluent API: a
-// double-buffered State, a multidimensional Extent that updates only the interior
-// (the fixed Dirichlet border is the halo it skips), and a stepped run. No raw
-// sycl::handler, no manual ping-pong.
+/**
+ * @file stencil_demo.cpp
+ * @brief Runs a 2-D heat-diffusion stencil that updates only the interior of a State.
+ * @author Mustafa Garip
+ * @see examples/README.md
+ */
 
 #include <cstdio>
 
@@ -25,9 +27,7 @@ int main()
     auto rt   = Runtime::create();
     auto temp = rt.state<float>(W * H);
 
-    // Seed both fields identically: a cold plate with a hot interior block. Both
-    // buffers are seeded because the interior-only update never writes the border,
-    // so the border must already hold its fixed boundary value in each field.
+    // Both buffers are seeded, because the interior-only update never writes the border.
     float* cur0  = temp.current();
     float* next0 = temp.next();
     for (std::size_t y = 0; y < H; ++y)
@@ -43,8 +43,7 @@ int main()
 
     auto g = rt.graph();
 
-    // Update only the (W-2) x (H-2) interior; the one-cell border is the halo and
-    // stays fixed. The kernel receives the global 2-D index already offset to (1,1).
+    // The extent covers the (W-2) x (H-2) interior and offsets the kernel's index to (1,1).
     Extent<2> interior{ sycl::range<2>(W - 2, H - 2), sycl::id<2>(1, 1) };
     g.add(temp, interior, [](sycl::id<2> idx, const float* cur, float* next)
     {

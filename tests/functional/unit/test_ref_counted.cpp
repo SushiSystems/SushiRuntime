@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Unit coverage for the intrusive refcount (RefCounted) and its smart pointer
-// (sushi_ptr): single ownership, copy/move semantics, leak(), polymorphic
-// deletion, and race-free concurrent counting.
+/**
+ * @file test_ref_counted.cpp
+ * @brief Tests the intrusive RefCounted count and the sushi_ptr that manages it.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <cstdlib>
@@ -78,7 +81,8 @@ TEST(Unit_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
 }
 
 /**
- * @brief Verifies that copying increments the refcount while moving transfers ownership without altering it.
+ * @brief Verifies that copying increments the refcount while moving transfers ownership without
+ *        altering it.
  *
  * Tracks the reference count through move and copy operations and ensures proper decrementing upon scope exit.
  */

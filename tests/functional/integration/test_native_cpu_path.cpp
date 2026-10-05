@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// WP-7 coverage: the native CPU execution path. add_host() runs plain C++ on a
-// worker thread with no SYCL submission, ordered into the graph by the data it
-// touches, and shares one completion contract with kernel tasks.
+/**
+ * @file test_native_cpu_path.cpp
+ * @brief Tests add_host(), which runs plain C++ on a worker thread ordered by the data it touches.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <cstddef>
@@ -18,9 +21,7 @@
 
 using namespace SushiRuntime;
 
-// A native host task ordered after a device kernel must see the kernel's output:
-// it is dispatched only once the kernel's event completed, so the shared USM the
-// kernel wrote is visible host-side. Ordering comes from the shared buffer a.
+/** @brief Tests that a host task ordered after a device kernel sees the kernel's output. */
 TEST(Integration_NativeCPU, HostTaskRunsAfterKernel)
 {
     constexpr std::size_t N = 64;
@@ -45,9 +46,7 @@ TEST(Integration_NativeCPU, HostTaskRunsAfterKernel)
         ASSERT_EQ(b[i], static_cast<int>(i) * 2 + 1) << "at i=" << i;
 }
 
-// A device kernel ordered after a native host task must see the host's writes:
-// the kernel waits on the host task's (inline) completion before dispatch, and
-// shared USM written on the host is visible on the device.
+/** @brief Tests that a device kernel ordered after a host task sees the host's writes. */
 TEST(Integration_NativeCPU, KernelRunsAfterHostTask)
 {
     constexpr std::size_t N = 64;
@@ -72,8 +71,7 @@ TEST(Integration_NativeCPU, KernelRunsAfterHostTask)
         ASSERT_EQ(b[i], (static_cast<int>(i) + 5) * 10) << "at i=" << i;
 }
 
-// An untracked native task runs once per step, proving the dependency-free form
-// is both a root and a leaf and replays each step.
+/** @brief Tests that an untracked host task runs once per step. */
 TEST(Integration_NativeCPU, UntrackedHostTaskRunsEveryStep)
 {
     constexpr std::size_t STEPS = 5;
@@ -89,9 +87,7 @@ TEST(Integration_NativeCPU, UntrackedHostTaskRunsEveryStep)
     EXPECT_EQ(ticks.load(), static_cast<int>(STEPS));
 }
 
-// A throwing native task fails the run (WP-0 error isolation), and the runtime
-// stays usable: a fresh graph runs cleanly afterward, proving native tasks share
-// the kernel error path rather than latching the worker pool dead.
+/** @brief Tests that a throwing host task fails the run and leaves the runtime usable. */
 TEST(Integration_NativeCPU, ThrowingHostTaskKeepsRuntimeUsable)
 {
     auto rt = Runtime::create();

@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file fixed_order_scan.hpp
+ * @brief Declares the live tile levels and the radix plan of the scan and the counting sort.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/detail/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -31,12 +38,8 @@ namespace SushiRuntime
 
             /**
              * @brief Lays out the levels a 256-tile tree has for a capacity.
-             *
-             * Reuses add_reduce's level plan so scan, radix and reduce all answer
-             * "how many levels, which slice each folds" from one source.
-             *
-             * @param capacity Upper bound the caller's buffers are sized for.
-             * @return The levels in execution order; empty when @p capacity is zero.
+             * @return The levels in execution order; empty when capacity is zero.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             inline std::vector<ReduceLevel> plan_tiled_levels(std::size_t capacity)
             {
@@ -55,21 +58,10 @@ namespace SushiRuntime
 
             /**
              * @brief Fills a caller-owned array with a live count's per-level widths.
-             *
-             * Walks the same number of physical levels @p level_count as
-             * plan_tiled_levels(capacity) planned, folding @p live_n at each level
-             * exactly as plan_reduction(live_n) would. Once the running count reaches
-             * one it stays there, so levels beyond what plan_reduction(live_n) would
-             * have produced degenerate to a single-element pass-through fold and the
-             * boundaries below that point are byte-identical to plan_reduction(live_n).
-             *
-             * Writes only through @p out, so a caller that already owns the levels
-             * (a graph's per-run resolver, sized once at registration) can call this
-             * every run with no allocation.
-             *
              * @param level_count Number of levels, from plan_tiled_levels(capacity).size().
              * @param live_n      Live element count; must not exceed that capacity.
              * @param out         Array of at least @p level_count LiveTileLevel entries.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             inline void fill_live_tile_levels(std::size_t level_count, std::size_t live_n,
                                               LiveTileLevel* out)
@@ -102,15 +94,10 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Derives a live count's per-level widths over a capacity's levels.
-             *
-             * The allocating, vector-returning wrapper over fill_live_tile_levels();
-             * fine for tests and other non-hot callers, but a per-run resolver should
-             * call fill_live_tile_levels() directly into scratch it already owns.
-             *
-             * @param capacity_levels The plan from plan_tiled_levels(capacity).
-             * @param live_n          Live element count; must not exceed capacity.
-             * @return One LiveTileLevel per entry of @p capacity_levels.
+             * @brief Derives a live count's per-level widths over a capacity's levels into a new
+             *        vector.
+             * @param live_n Live element count; must not exceed capacity.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             inline std::vector<LiveTileLevel> live_tile_levels(
                 const std::vector<ReduceLevel>& capacity_levels, std::size_t live_n)
@@ -156,16 +143,9 @@ namespace SushiRuntime
 
             /**
              * @brief Writes one run's radix plan: which digits run and where each lands.
-             *
-             * Digits at or above radix_digit_count(@p live_key_range) get zero work
-             * counts. Active digits alternate between the indices and the scratch so
-             * the last active one always writes the indices.
-             *
-             * @param digit_count Digits planned at registration, from the key range capacity.
-             * @param live_n      Live element count.
-             * @param live_tiles  Live tile count, next_live_tile_count(@p live_n).
              * @param live_key_range Live key range; must not exceed the planned capacity.
              * @param out         Array of at least @p digit_count * RADIX_PLAN_WORDS words.
+             * @see include/SushiRuntime/api/detail/README.md
              */
             inline void fill_radix_plan(std::size_t digit_count, std::size_t live_n,
                                         std::size_t live_tiles, std::size_t live_key_range,
