@@ -1,3 +1,9 @@
+# Sycl.cmake
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
+
 # Sycl.cmake — SYCL toolchain shaping.
 #
 # Single responsibility: pick and provision the SYCL toolchain. SushiRuntime is

@@ -1,3 +1,8 @@
+# test_provision_commands.py
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
 """Tests that sr carries the shared provision commands."""
 
 from __future__ import annotations

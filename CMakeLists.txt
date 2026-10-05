@@ -1,3 +1,9 @@
+# CMakeLists.txt
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
+
 cmake_minimum_required(VERSION 3.20)
 
 # SushiRuntime — compiler-agnostic, GPU-vendor-agnostic SYCL 2020 runtime.

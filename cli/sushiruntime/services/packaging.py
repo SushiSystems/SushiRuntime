@@ -1,3 +1,8 @@
+# packaging.py
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
 """Turn a built tree into a redistributable archive.
 
 This is the release action: install to a prefix, then archive that prefix. It

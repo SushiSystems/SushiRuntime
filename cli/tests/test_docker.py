@@ -1,3 +1,8 @@
+# test_docker.py
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
 """`sr docker` used to hand-roll its own subprocess runner instead of going through
 :class:`sushicore.proc.Runner`. That copy printed `" ".join(cmd)` (wrong quoting for an
 argument containing a space), passed the bare "docker" name as argv[0] instead of a

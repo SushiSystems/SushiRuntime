@@ -579,4 +579,4 @@ sr run sr_functional_tests --gtest_filter='Distributed*'
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0 - see the [LICENSE](LICENSE) file for details.
+SushiRuntime is source-available, free for non-commercial use under the PolyForm Noncommercial License 1.0.0; see [LICENSE](../LICENSE). Commercial use needs a licence from Sushi Systems, see [COMMERCIAL.md](../COMMERCIAL.md). Third-party components keep their own licences, listed in [NOTICE.md](../NOTICE.md).

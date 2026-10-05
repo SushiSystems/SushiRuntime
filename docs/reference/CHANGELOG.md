@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-05 — licence: Changed the licence from Apache-2.0 WITH LLVM-exception to PolyForm Noncommercial 1.0.0 and removed `docs/LICENSE` (`LICENSE`, `COMMERCIAL.md`, `NOTICE.md`, source headers).
 - 2026-09-21 — Fixed the late-bound `add_reduce` overload's and `add_prefix_scan`'s zero-capacity emits reporting `WIDTH_UNKNOWN` (`graph.hpp`).
 - 2026-09-21 — Fixed the scheduler path snapshotting dispatch widths with profiling off (`scheduler.cpp`).
 - 2026-09-21 — Documented `width_last_node`'s single-threaded-compilation precondition (`task_graph.hpp`).

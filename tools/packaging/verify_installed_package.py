@@ -1,3 +1,8 @@
+# verify_installed_package.py
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
 """Packaging oracle: prove an installed SushiRuntime is usable from outside its tree.
 
 Two things can be wrong with a package and only one of them shows up in an

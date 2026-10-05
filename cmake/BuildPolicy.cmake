@@ -1,3 +1,9 @@
+# BuildPolicy.cmake
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
+
 # BuildPolicy.cmake — the single entry point for this tree's compile policy.
 #
 # Single responsibility: compose the four policy targets and expose one function
