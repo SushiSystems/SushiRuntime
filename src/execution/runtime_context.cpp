@@ -668,6 +668,15 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Counts the USM allocations this context has recorded and not yet freed.
+         * @return Live records in the registry.
+         */
+        std::size_t RuntimeContext::live_usm_count() const
+        {
+            return impl_->usm_registry.size();
+        }
+
+        /**
          * @brief Returns the owning device-queue index for a USM pointer, or -1.
          */
         int RuntimeContext::context_index_for_ptr(void* ptr) noexcept

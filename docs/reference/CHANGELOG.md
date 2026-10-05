@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-05 — execution: Added `RuntimeContext::live_usm_count`, the number of USM allocations recorded and not yet freed (`runtime_context.hpp`, `runtime_context.cpp`, `test_topology.cpp`).
 - 2026-10-05 — docs: Moved design reasoning out of source comments into folder READMEs and gave every source file its file block (`include/SushiRuntime/`, `src/`, `tests/`, `examples/`, `cli/`).
 - 2026-10-05 — docs: Moved the manual into the documentation tree, merged the two changelogs, added the root README and the required documents, and copied the checkers (`README.md`, `docs/`, `tools/`).
 - 2026-10-05 — cli: Renamed `sr doxygen` to `sr docs`, keeping the old word as a hidden alias until 2027-03-25 (`cli/sushiruntime/cli.py`, `cli/sushiruntime/aliases.py`).

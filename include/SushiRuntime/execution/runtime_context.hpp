@@ -258,6 +258,13 @@ namespace SushiRuntime
                 void forget_usm(void* address) noexcept;
 
                 /**
+                 * @brief Counts the USM allocations this context has recorded and not yet freed.
+                 * @return Live records: every malloc_* or adopt_usm not yet matched by free_usm
+                 *         or forget_usm.
+                 */
+                std::size_t live_usm_count() const;
+
+                /**
                  * @brief Typed convenience wrapper over malloc_shared.
                  * @tparam T Element type.
                  * @param count Number of elements.
