@@ -21,7 +21,7 @@ If you prefer, you may also use GitHub's **private vulnerability reporting**
 A good report lets us reproduce and assess quickly:
 
 - A clear description of the issue and its impact.
-- The affected component (e.g. the TCP transport, the memory pool, the
+- The affected component (e.g. the TCP transport, the USM registry, the
   dependency tracker) and the version / commit hash.
 - Step-by-step reproduction, ideally with a minimal proof of concept.
 - The platform, toolchain (oneAPI / intel-llvm), and build configuration
@@ -46,7 +46,7 @@ please keep them in mind:
 - **The distributed layer targets a trusted LAN.** The `TcpTransport` is a
   raw-socket layer **without encryption or authentication**, designed for a
   trusted cluster network (see
-  [`DISTRIBUTED_GUIDE.md`](DISTRIBUTED_GUIDE.md) §12).
+  [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md) §12).
   Do **not** expose master/worker ports to the public internet. Reports about the
   *absence* of transport encryption are known and out of scope; reports about
   *memory-safety* bugs reachable through the protocol (malformed frames, buffer
@@ -58,7 +58,7 @@ please keep them in mind:
 
 In scope, and especially valued:
 
-- Memory-safety bugs in any layer (the lock-free pool, EBR, dependency tracker,
+- Memory-safety bugs in any layer (EBR, dependency tracker,
   scheduler, refcounting).
 - Data races or ordering bugs that corrupt state.
 - Parsing / deserialization flaws in the distributed wire protocol.

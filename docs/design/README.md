@@ -1,0 +1,16 @@
+# Design map
+
+One document per topic. Look the topic up here before writing; extend the document that exists.
+
+| Topic | Document | Status |
+| --- | --- | --- |
+| Running a graph's device work as one submission: the allocation removal, the in-order chain, record and replay | [`GRAPH_REPLAY.md`](GRAPH_REPLAY.md) | Open: P0, P1 and P3 built, P2 not started |
+| What SushiEngine needs from the runtime at its edges: interop, co-tenancy, determinism, packaging, the ship path (BB-0 to BB-8) | [`ENGINE_BACKBONE_REFACTOR.md`](ENGINE_BACKBONE_REFACTOR.md) | Open: BB-1b unbuilt, BB-5 to BB-8 not re-checked |
+| What a physics engine asks of the runtime (R1 to R9) | [`PHYSICS_SUBSTRATE_REQUIREMENTS.md`](PHYSICS_SUBSTRATE_REQUIREMENTS.md) | Open: R9 |
+| The runtime as a simulation and game-engine substrate (WP-0 to WP-7) | [`SIMULATION_ENGINE_SUBSTRATE_PLAN.md`](SIMULATION_ENGINE_SUBSTRATE_PLAN.md) | Open: WP-5 and WP-7 not built |
+
+The backlog is [`REMAINING_WORK.md`](REMAINING_WORK.md).
+
+Designs that shipped are in the archive: the USM allocation seam, the G1 node event records and
+the prefix scan and counting sort under `docs/archive/superpowers/specs/`, and the physics
+substrate implementation plan under `docs/archive/slop/`.

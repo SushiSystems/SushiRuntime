@@ -1,7 +1,9 @@
 # What a AAA Physics Engine Needs From SushiRuntime — Engineering Request
 
-**Status: the original seven are addressed**, plus R8 (raised and closed after this document's
-first pass) — see [`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](PHYSICS_SUBSTRATE_IMPLEMENTATION.md) for
+**Status:** Open — R1 to R8 are addressed; R9, the multi-colour dispatch node, is open.
+
+**The original seven are addressed**, plus R8 (raised and closed after this document's
+first pass) — see [`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](../archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md) for
 the design and [the section below](#delivery) for what each one became. **R9 is open** — raised
 2026-08-02, a dispatch-primitive gap the physics side's P8 phase measured directly; see its row
 below and `sushiengine/docs/slop/physics_system.md` §16.37/§16.42/§18 for the evidence.
@@ -117,7 +119,7 @@ written so switching to (3) is one file.
 > **Outcome.** None of the three was needed. This analysis missed *when* a node's command group is
 > built: on a worker at dispatch, after `EventPolling::poll_events` has waited on every predecessor's
 > event. The count can therefore simply be read there. See the Delivery table above and
-> `PHYSICS_SUBSTRATE_IMPLEMENTATION.md` §0; the two designs below were not built.
+> `docs/archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md` §0; the two designs below were not built.
 
 ### Two possible designs
 
@@ -216,7 +218,7 @@ The same reduction over the same input produces bit-identical output with the wo
 
 ### The evidence
 
-This repo already records the gap, in `TODO.md` under *Future work*:
+This repo already records the gap, in `TODO.md` (now `docs/archive/slop/TODO.md`) under *Future work*:
 
 > *"Cross-region ordering keys on the whole allocation, not sub-ranges — two regions writing disjoint
 > halves of one buffer are serialized though they need not be (the intra tracker already handles
@@ -264,7 +266,7 @@ because it gates anything.
 
 ## R5 — Dependency tracking on every overload
 
-`TODO.md` already carries this as an open API-surface decision:
+`TODO.md` (now `docs/archive/slop/TODO.md`) already carried this as an open API-surface decision:
 
 > *"`API::Graph::add()` calls `add_node()` without read/write pointer lists. Tasks added through the
 > fluent API do not participate in automatic RAW/WAR/WAW dependency detection unless a handle-based

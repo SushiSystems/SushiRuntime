@@ -7,8 +7,8 @@ This site is the reference for its one public surface — the **C++ fluent API**
 `SushiRuntime::API`.
 
 For the architecture beneath this layer (the scheduler, the lock-free graph, the
-memory model) see `docs/ARCHITECTURE.md`. For a guided tour with full
-programs see `docs/INTRODUCTION.md`.
+memory model) see `docs/architecture/ARCHITECTURE.md`. For a guided tour with full
+programs see `docs/getting_started/INTRODUCTION.md`.
 
 ## The model in one minute
 
@@ -65,7 +65,7 @@ auto report = sim.run(10'000);                   // compile once, replay 10k ste
 | Tune for real-time / determinism | `SushiRuntime::API::Runtime::rebalancer()` |
 | Profile per-node / per-worker timing | `SushiRuntime::API::RuntimeConfig`, `SushiRuntime::Core::NodeTiming`, `WorkerTiming` |
 | Read run results | `SushiRuntime::Core::RunReport` |
-| Consume the runtime from another project | `docs/INTEGRATION.md` (`find_package(SushiRuntime)`) |
+| Consume the runtime from another project | `docs/guides/INTEGRATION.md` (`find_package(SushiRuntime)`) |
 
 Browse the full list under **Classes** and **Namespaces** in the sidebar; every
 public type and method carries its signature, parameters, and intent.

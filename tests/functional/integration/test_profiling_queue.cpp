@@ -7,7 +7,7 @@
 /****************************************************************/
 
 // G1 task 3 coverage: RuntimeContext::profiling_queue() (spec
-// docs/superpowers/specs/2026-09-15-g1-node-event-records-design.md §A/F2).
+// docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md §A/F2).
 // A profiled node needs SYCL command_submit/start/end, which only a queue
 // built with enable_profiling exposes; the plain queue returned by
 // get_queue() must stay exactly as it is today for every existing consumer.

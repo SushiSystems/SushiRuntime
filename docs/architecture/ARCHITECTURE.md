@@ -6,7 +6,7 @@ contributors and reviewers who need an accurate mental model of the runtime —
 every class, constant, and algorithm named here exists in the headers under
 `include/SushiRuntime/`.
 
-> If you only want to *use* the library, read [`INTRODUCTION.md`](INTRODUCTION.md)
+> If you only want to *use* the library, read [`INTRODUCTION.md`](../getting_started/INTRODUCTION.md)
 > first. This document is about how the inside works.
 
 ---
@@ -84,7 +84,7 @@ exercised deterministically on a single desktop.
 
 ## 3. The public API layer (`api/`)
 
-`include/SushiRuntime/api/runtime.hpp` is the intended entry point for users who
+`include/SushiRuntime/api/runtime/runtime.hpp` is the intended entry point for users who
 do not need to reach into the lower layers.
 
 - **`API::Runtime`** — owns a `RuntimeContext` and provides the graph and data
@@ -109,9 +109,9 @@ do not need to reach into the lower layers.
   - `add(out, in0[, in1], fn)` — a coupled rule reading one or two other fields
     (Jacobi: every read sees the previous step's data).
   - `add(reads, writes, n, fn)` — per-element kernel with explicit access lists.
-  - `add(reads, writes, n, range_fn)` — range kernel; `fn(0, n, handler)` drives
+  - `add(reads, writes, n, range_kernel)` — range kernel; `fn(0, n, handler)` drives
     the handler itself, ordered by the declared lists.
-  - `add(reads, writes, raw_kernel_fn)` — raw callback for full control, ordered.
+  - `add(reads, writes, raw_kernel)` — raw callback for full control, ordered.
   - `add(reads, writes, extent, fn)` / `add(reads, writes, nd_range, fn)` — the
     multidimensional and tiled shapes, ordered.
   - `add(extent, In(a), Out(b), fn)` — captures register the access *and* hand
@@ -348,7 +348,7 @@ The host never reads that slot. The node is dispatched at its capacity and its
 kernel reads the count (and a `based_at_device` base) from the slot, returning at
 once in every work-item past the live window, one bounds check each
 (`Graph::submit_late_window`, spec
-`docs/superpowers/specs/2026-09-19-graph-replay-design.md` §D). The scan, counting
+`docs/design/GRAPH_REPLAY.md` §D). The scan, counting
 sort and late-bound reductions work the same way: each call emits one resolver
 kernel that reads its `LateCount`s (a host provider or plain capacity is resolved in
 the command group and baked in) and writes the per-level widths, the total and the
@@ -636,7 +636,7 @@ per-thread magazines and a remote-free stack under a `USMAllocator` facade. It
 was removed: nothing on the public path reached it, its 4 KB size ceiling was
 below the buffers the runtime actually allocates, and the measurement above says
 there is no allocation frequency for a pool to amortise. See
-`docs/superpowers/specs/2026-08-18-usm-allocation-seam-design.md`.
+`docs/archive/superpowers/specs/2026-08-18-usm-allocation-seam-design.md`.
 
 ### 7.3 `EpochManager` — epoch-based reclamation (EBR)
 
@@ -686,8 +686,6 @@ Builds and analyzes the task DAG.
   so the scheduler can route a kernel to the queue whose context owns the data;
 - `SmallEventVector sycl_deps` — SYCL event dependencies with `STATIC_CAP = 8`
   inline before spilling to a vector;
-- `bool is_fused` — marks the node as the product of kernel fusion; set by the
-  API layer, reserved for a future fusion pass;
 - non-core concerns are grouped into cohesive sub-structs so each subsystem owns
   its own slice rather than editing one flat node: `RegionLink region` (the dynamic
   graph's cross-region boundary layer — `intra_in_degree`, `boundary_in_degree`,
@@ -985,11 +983,10 @@ per step, since a cancel aborts the whole multi-step run.
 A few cross-cutting rules the codebase follows consistently:
 
 - **Atomics over mutexes on hot paths.** Dependency edges, `in_degree`,
-  successor lists, the bitmask pool, EBR, and refcounts are all lock-free. The
+  successor lists, EBR, and refcounts are all lock-free. The
   only mutex on a critical path guards the global injector queue.
-- **Cache-line alignment to kill false sharing.** `ResourceState`, `MemoryPage`,
-  `ThreadLocalMagazine`, EBR `ThreadEpochSlot`, and per-worker counters are all
-  `alignas(64)`.
+- **Cache-line alignment to kill false sharing.** `ResourceState`, EBR `ThreadEpochSlot`,
+  and per-worker counters are all `alignas(64)`.
 - **Acquire/release discipline.** Successor release uses `fetch_sub(acq_rel)`;
   epoch publication uses release stores and acquire loads; the "drove in_degree to
   zero" check is the single synchronization point that makes a successor visible
@@ -1003,7 +1000,7 @@ A few cross-cutting rules the codebase follows consistently:
 
 Guarded entirely behind `SR_ENABLE_DISTRIBUTED` (CMake) / `SR_DISTRIBUTED`
 (macro). When off, none of it compiles — zero code, zero dependencies, zero ABI.
-Full operational detail is in [`DISTRIBUTED_GUIDE.md`](DISTRIBUTED_GUIDE.md); the
+Full operational detail is in [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md); the
 architectural essentials:
 
 - **The core constraint:** compiled code can't travel the wire. So nothing is
@@ -1278,8 +1275,8 @@ src/                       Implementations of the above
 tests/                     functional/ (unit, integration, regression) + benchmark/
 examples/                  fluent tutorials: quickstart + *_demo (always built);
                            distributed_demo (distributed builds only)
-docs/                      guides + these architecture/process docs
+docs/                      the manual, indexed by docs/README.md
 ```
 
-For how to run any of this, see the [CLI guide](CLI_GUIDE.md); for how to write
-against it, the [introduction](INTRODUCTION.md).
+For how to run any of this, see the [CLI guide](../guides/CLI_GUIDE.md); for how to write
+against it, the [introduction](../getting_started/INTRODUCTION.md).

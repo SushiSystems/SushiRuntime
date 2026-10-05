@@ -2,21 +2,68 @@
 
 ## Unreleased
 
-- 2026-10-05 — cli: Renamed `sr doxygen` to `sr docs` and `sr docker` to `sr container`, keeping the old words as hidden aliases until 2027-03-25 (`cli/sushiruntime/cli.py`, `cli/sushiruntime/aliases.py`).
+- 2026-10-05 — docs: Moved the manual into the documentation tree, merged the two changelogs, added the root README and the required documents, and copied the checkers (`README.md`, `docs/`, `tools/`).
+- 2026-10-05 — cli: Renamed `sr doxygen` to `sr docs`, keeping the old word as a hidden alias until 2027-03-25 (`cli/sushiruntime/cli.py`, `cli/sushiruntime/aliases.py`).
+- 2026-10-05 — cli: Renamed `sr docker` to `sr container`, keeping the old word as a hidden alias until 2027-03-25 (`cli/sushiruntime/cli.py`, `cli/sushiruntime/aliases.py`).
 - 2026-10-05 — cli: Made `sr package --prefix` refuse a protected or foreign non-empty directory without the new `--force` (`services/packaging.py`, `services/stage_tree.py`).
 - 2026-10-05 — cli: Took the project root from `sushi-module.toml`, so a directory holding only `CMakeLists.txt` is no longer a checkout (`cli/sushiruntime/config.py`).
 - 2026-10-05 — cli: Made `sr run --distributed` reject a role other than master or worker with exit code 2 (`cli/sushiruntime/cli.py`, `DistributedRole`).
-- 2026-10-05 — cli: Added `--version`, `--describe` and a `main()` entry point, and took `sr config` from sushicore (`cli/sushiruntime/cli.py`, `services/diag.py`).
+- 2026-10-05 — cli: Added `--version`, `--describe` and a `main()` entry point (`cli/sushiruntime/cli.py`).
+- 2026-10-05 — cli: Took `sr config` from sushicore (`cli/sushiruntime/cli.py`, `services/diag.py`).
 - 2026-10-05 — cli: Named `sr setup --toolchain` in every missing-toolchain message (`services/install_hint.py`, `services/project.py`, `services/select.py`).
-- 2026-10-05 — docs: Corrected the `hub install-cli`, `--no-cuda` and Windows ASan flag descriptions (`docs/CLI_GUIDE.md`, `docs/README.md`).
+- 2026-10-05 — docs: Corrected the `hub install-cli`, `--no-cuda` and Windows ASan flag descriptions (`docs/guides/CLI_GUIDE.md`, `README.md`).
 - 2026-10-05 — licence: Changed the licence from Apache-2.0 WITH LLVM-exception to PolyForm Noncommercial 1.0.0 and removed `docs/LICENSE` (`LICENSE`, `COMMERCIAL.md`, `NOTICE.md`, source headers).
-- 2026-09-21 — Fixed the late-bound `add_reduce` overload's and `add_prefix_scan`'s zero-capacity emits reporting `WIDTH_UNKNOWN` (`graph.hpp`).
-- 2026-09-21 — Fixed the scheduler path snapshotting dispatch widths with profiling off (`scheduler.cpp`).
-- 2026-09-21 — Documented `width_last_node`'s single-threaded-compilation precondition (`task_graph.hpp`).
-- 2026-09-22 — Described this module in its own `sushi-module.toml`, so `hub` knows it from the checkout (`sushi-module.toml`).
-- 2026-09-22 — Took `sushicore` from PyPI instead of a sibling checkout (`cli/pyproject.toml`).
-- 2026-09-22 — Drew `sr --help` as sushicore's grouped help page, with examples on every command (`cli/sushiruntime/cli.py`, `console.py`).
-- 2026-09-22 — Took the theme's style names for the CLI's colours in place of raw Rich colour names (`services/select.py`, `services/project.py`).
-- 2026-09-22 — Raised the `sushicore` lower bound to 0.4.0 (`cli/pyproject.toml`).
 - 2026-10-04 — cli: Named sr setup --toolchain as the way to install a missing toolchain (`cli/sushiruntime/services/select.py`).
 - 2026-10-04 — cli: Added setup, doctor, link and unlink from sushicore and stopped reading a repo-local dependencies folder (`cli/sushiruntime/cli.py`, `cli/sushiruntime/config.py`).
+- 2026-09-22 — cli: Described this module in its own `sushi-module.toml` (`sushi-module.toml`).
+- 2026-09-22 — cli: Took `sushicore` from PyPI instead of a sibling checkout (`cli/pyproject.toml`).
+- 2026-09-22 — cli: Drew `sr --help` as sushicore's grouped help page, with examples on every command (`cli/sushiruntime/cli.py`, `console.py`).
+- 2026-09-22 — cli: Took the theme's style names for the CLI's colours in place of raw Rich colour names (`services/select.py`, `services/project.py`).
+- 2026-09-22 — cli: Raised the `sushicore` lower bound to 0.4.0 (`cli/pyproject.toml`).
+- 2026-09-21 — graph: Fixed the late-bound `add_reduce` overload's and `add_prefix_scan`'s zero-capacity emits reporting `WIDTH_UNKNOWN` (`graph.hpp`).
+- 2026-09-21 — scheduler: Fixed the scheduler path snapshotting dispatch widths with profiling off (`scheduler.cpp`).
+- 2026-09-21 — graph: Documented `width_last_node`'s single-threaded-compilation precondition (`task_graph.hpp`).
+- 2026-09-20 — graph: Added `API::Graph::rule_registration`, which returns the registration index a recorded rule took, the identity `RunReport::node_events` numbers by (`api/graph/graph.hpp`, `graph/task_graph.hpp`).
+- 2026-09-20 — execution: Submitted the chain layer's unprofiled nodes through `ext::oneapi::experimental::submit`, which keeps no per-node event (`ChainRun::submit_node_discarding`, `src/execution/chain_run.cpp`).
+- 2026-09-20 — tests: Fixed the prefix scan chain test folding its digest over the whole capacity, so the stale tail held it constant (`tests/functional/integration/test_device_sized_primitives.cpp`).
+- 2026-09-19 — execution: Added the in-order chain that runs a chainable plan from the calling thread, with `RuntimeSettings::force_scheduler` and `RunReport::layer` (`execution/chain_plan.cpp`, `execution/chain_run.cpp`, `graph.hpp`).
+- 2026-09-19 — scheduler: Kept a worker holding in-flight events on yield instead of the 100 us sleep (`TaskScheduler::worker_loop`, `src/scheduler/scheduler.cpp`).
+- 2026-09-19 — graph: Changed the scan, counting sort, late-bound reductions and `sized_from_device` tasks to size themselves on the device, so their plans take the chain (`graph.hpp`, `chain_plan.cpp`, `device_fault.hpp`).
+- 2026-09-19 — tests: Restated the steady-state allocation tests' rule as a bare-SYCL baseline comparison, not an absolute per-tick count (`tests/functional/integration/test_steady_state_allocation.cpp`).
+- 2026-09-19 — scheduler: Removed the per-node dependency allocation in `TaskScheduler::execute_task` by iterating `SmallEventVector` inline (`scheduler/scheduler.cpp`, `graph/node.hpp`).
+- 2026-09-17 — memory: Changed `Memory::UsmRegistry::record` and `RuntimeContext::adopt_usm` to take the allocation's length beside its device index (`memory/usm_registry.hpp`, `execution/runtime_context.hpp`).
+- 2026-09-17 — memory: Added `UsmRegistry::containing_allocation` and `RuntimeContext::containing_usm_base`, which resolve an interior pointer to the allocation holding it (`memory/usm_registry.hpp`, `runtime_context.cpp`).
+- 2026-09-17 — graph: Added `add_prefix_scan` and `add_counting_sort` to `API::Region` (`api/graph/region.hpp`).
+- 2026-09-17 — graph: Added `DynamicGraph::set_profiling_requested`, stamped into its plan and mirrored by a `node_index` renumbered densely by region key then add() order at every recompose (`api/graph/dynamic_graph.hpp`).
+- 2026-09-17 — graph: Changed `Graph::add_counting_sort` to run only the digits its live key range needs, skipping the rest (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
+- 2026-09-17 — graph: Fixed `Graph::add` rejecting an interior pointer into a `Residency::Host` slot, and named the fault when a late-bound slot does not resolve (`api/graph/graph.hpp`).
+- 2026-09-17 — graph: Fixed `add_counting_sort` passing `sized_from_device` an interior pointer into its radix plan, which threw on a CUDA device (`api/graph/graph.hpp`).
+- 2026-09-16 — graph: Added `Graph::add_counting_sort`, a stable late-bound radix argsort writing indices, exclusive offsets and the total (`graph.hpp`).
+- 2026-09-16 — graph: Added `API::LateCount` and late-bound overloads of `add_reduce` and `add_segmented_reduce`, planned from a capacity and resolved per run (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
+- 2026-09-16 — graph: Added `Graph::add_prefix_scan`, a late-bound exclusive uint32 scan over `add_reduce`'s tile tree (`graph.hpp`).
+- 2026-09-16 — core: Added per-dispatch node event records with a run clock pairing, and derived `NodeTiming` from them (`core/profiling_ledger.hpp`, `event_polling.hpp`, `execution_engine.cpp`).
+- 2026-09-16 — graph: Added `Graph::set_profiling_requested`, which routes a graph's device nodes to the profiling queue and gates its timing per graph instead of runtime-wide (`graph.hpp`, `scheduler.cpp`).
+- 2026-09-15 — core: Added `Core::NodeEventRecord`, `Core::ClockPairing` and `RunReport::node_events`/`clock` for per-dispatch node timing (`core/run_report.hpp`).
+- 2026-09-15 — graph: Added a registration index on every node, shared by the tile levels of one `add_reduce`, and `TaskGraph::reserve_registration()` (`graph/node.hpp`, `graph/task_graph.hpp`).
+- 2026-09-15 — execution: Added a lazily built profiling queue per device on the plain queue's context (`RuntimeContext::profiling_queue`, `runtime_context.cpp`).
+
+## v0.3.0 — 2026-09-15
+
+- 2026-09-15 — cmake: Added the `sushiruntime_gpu_offload` interface target and its `SushiRuntime::gpu_offload` alias, publishing `-fsycl-targets` and backend options to consumers outside the runtime's tree (`cmake/gpu/GpuBackend.cmake`).
+- 2026-09-14 — graph: Made `Graph::add` reject a late-bound device counter that is not host USM, throwing `Errc::invalid_access` for Shared and Device counters that worked before (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
+- 2026-09-14 — interop: Added `API::Interop` for host memory export and device memory import (`interop/`, `Runtime::interop()`).
+- 2026-09-14 — memory: Added `Memory::Allocation`, `IAllocationOwner` and `UsmAllocationOwner` (`memory/allocation.hpp`, `memory/usm_allocation_owner.hpp`).
+- 2026-09-14 — api: Made `Buffer<T>` own its memory through a `Memory::Allocation` (`api/data/buffer.hpp`).
+- 2026-09-14 — cmake: Added a per-vendor GPU toolkit locator layer that `DetectGpu` and `Cuda` request vendors through (`cmake/gpu/locate/CudaToolkit.cmake`, `IntelToolkit.cmake`, `RocmToolkit.cmake`).
+- 2026-09-14 — cmake: Changed the Windows CUDA locator to fall back to the machine registry when the shell's `CUDA_PATH` predates the install (`cmake/gpu/locate/CudaToolkit.cmake`).
+- 2026-09-14 — memory: Added `Residency::Host` over pinned host USM and `RuntimeContext::malloc_host_on` (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
+- 2026-09-14 — cli: Fixed the TSan message of `sr build` to match the Windows exclusion in `cmake/Sanitizers.cmake` instead of naming icx-cl as the untested case (`cli/sushiruntime/services/project.py`, `docs/architecture/ARCHITECTURE.md`).
+- 2026-09-07 — docs: Renamed the hub's command from `ss` to `hub` in the manual (`docs/`).
+- 2026-08-30 — graph: Added `API::DynamicGraph::find_region(key)`, a const lookup returning the live region or `nullptr` without marking it for rebuild (`api/graph/dynamic_graph.hpp`).
+- 2026-08-25 — cli: Renamed the shared CLI layer's import from sushicli to sushicore across every import site (`cli/config.toml`, `cli/sushiruntime/config.py`, `cli/sushiruntime/console.py`, `cli/sushiruntime/services/diag.py`).
+- 2026-08-18 — memory: Removed the pooled USM allocation path with `BitmaskMemoryPool`, `ThreadLocalMagazine` and `USMAllocator` (`include/SushiRuntime/memory/`).
+- 2026-08-18 — memory: Removed `IAllocatorStrategy`, `create_allocator` and `RuntimeContext::get_allocator()` with the pool (`execution/runtime_context.hpp`).
+- 2026-08-18 — memory: Moved USM pointer ownership out of `RuntimeContext` into `Memory::UsmRegistry` and made `free_usm` resolve and forget in one locked step (`memory/usm_registry.hpp`, `Unit_UsmRegistry`).
+- 2026-08-18 — cli: Moved package verification into `sr test --suite package`, removed `sr package --no-verify` and changed its default prefix to `build/dist` (`tests/package/`).
+- 2026-08-18 — cmake: Included every CMake module by absolute path and prefixed `ProjectOptions.cmake` and `Vcpkg.cmake`, whose names collided with SushiEngine's (`cmake/`, `docs/CONTRIBUTING.md`).
+- 2026-08-18 — cmake: Fixed the determinism target needing CMake 3.30 by detecting the frontend at configure time where `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is missing (`cmake/Determinism.cmake`).

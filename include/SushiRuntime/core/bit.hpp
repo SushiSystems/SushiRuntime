@@ -10,7 +10,7 @@
 
 // Bit helpers standing in for C++20 <bit> (std::popcount / std::countr_zero) on
 // the C++17 baseline. Restore the std:: versions when the standard is raised —
-// see docs/slop/cpp_standard_migration.md.
+// see docs/design/REMAINING_WORK.md, "C++ standard migration".
 
 #include <cstdint>
 

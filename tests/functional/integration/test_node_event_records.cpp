@@ -8,7 +8,7 @@
 
 // G1 task 5 coverage: per-dispatch node event records, the clock pairing, and
 // steady-state capture (spec
-// docs/superpowers/specs/2026-09-15-g1-node-event-records-design.md §C, §E
+// docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md §C, §E
 // items 1, 2, 3, 4, 6; plan task 5).
 
 #include <algorithm>

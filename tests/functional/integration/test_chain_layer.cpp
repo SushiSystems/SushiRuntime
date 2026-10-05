@@ -7,7 +7,7 @@
 /****************************************************************/
 
 /**
- * @brief Covers layer 1 of docs/superpowers/specs/2026-09-19-graph-replay-design.md (§C, §G P1).
+ * @brief Covers layer 1 of docs/design/GRAPH_REPLAY.md (§C, §G P1).
  *
  * A chainable plan runs as an in-order chain, matches the scheduler bit for
  * bit, and names the path it took in RunReport::layer.
