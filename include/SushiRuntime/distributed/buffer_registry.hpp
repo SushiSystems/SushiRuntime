@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file buffer_registry.hpp
+ * @brief Declares BufferRegistry, the master-side map between USM pointers and buffer IDs.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <mutex>
@@ -28,13 +34,8 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Registers a USM pointer as a distributable buffer.
-                 * 
-                 * Re-registering an already known pointer returns its existing handle.
-                 * 
-                 * @param usm_ptr The local shared memory pointer to expose to the cluster.
-                 * @param size_bytes The size of the buffer in bytes.
-                 * @return The resulting handle containing the assigned ID, initial version, and size.
+                 * @brief Registers a USM pointer as a distributable buffer; a known pointer keeps
+                 *        its handle.
                  */
                 BufferHandle register_buffer(void* usm_ptr, uint64_t size_bytes);
 

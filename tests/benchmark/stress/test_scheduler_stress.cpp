@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_scheduler_stress.cpp
+ * @brief Tests the task scheduler under a task flood, producer contention and rapid restarts.
+ * @author Mustafa Garip
+ */
+
 #include <atomic>
 #include <vector>
 #include <thread>

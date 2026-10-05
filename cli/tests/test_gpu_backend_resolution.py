@@ -3,22 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""GPU backend selection resolves a set of vendors, and drops the ones with no hardware.
+"""Tests that GPU backend selection targets a set of vendors and drops those with no hardware.
 
-`cmake/gpu/DetectGpu.cmake` used to elect one vendor: an if/elseif chain that looked for nvcc
-and, having found it, never looked for ROCm. A machine holding both cards silently built for
-one of them -- the exact guess `gpu/Cuda.cmake` refuses to make between two NVIDIA cards, made
-one level up where nothing was watching. Selection is a set now, and these tests pin both
-halves of that: every requested vendor is targeted, and a vendor whose hardware never answers
-drops back out instead of poisoning the build with a triple it cannot fill.
-
-The probes are steered rather than mocked, and the host is cut out of the answer entirely.
-Every find_program in gpu/ is disarmed by turning off the system search paths, so a probe
-succeeds only where a test preset its cache variable -- otherwise the machine running the
-suite decides the result, and a developer with a CUDA toolkit installed sees different
-selections than CI does. Presetting SR_NVCC / SR_HIPCC is what find_program already honours,
-and presetting SR_CUDA_ARCH / SR_AMD_ARCH is the documented way to state an architecture
-rather than probe for one, so a test can put a vendor in either state without owning a card.
+See cli/README.md.
 """
 
 import shutil
@@ -46,9 +33,7 @@ def _configure(tmp_path: Path, **cache) -> subprocess.CompletedProcess:
         "cmake_minimum_required(VERSION 3.20)\n"
         "project(gpu NONE)\n"
         'set(SR_SYCL_TOOLCHAIN "intel-llvm")\n'
-        # Hermetic probes: without these, find_program(nvcc) and find_program(nvidia-smi)
-        # answer from whatever the host has installed, and the decline tests below would
-        # pass or fail depending on whose machine ran them.
+        # The two settings below keep find_program off the host's search paths; see cli/README.md.
         "set(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH FALSE)\n"
         "set(CMAKE_FIND_USE_CMAKE_SYSTEM_PATH FALSE)\n"
         f'include("{(GPU_DIR / "GpuBackend.cmake").as_posix()}")\n'

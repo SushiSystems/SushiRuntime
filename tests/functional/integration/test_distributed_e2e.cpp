@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// End-to-end offload on a real SYCL device: a master and one or more workers in
-// the same process exercise the full chain — compile() offload-stamping, the
-// dispatch branch, buffer pull, remote kernel, result writeback, successor
-// release, and graph completion. An atomic counter in the kernel proves the
-// work ran on the worker, not the local fallback.
+/**
+ * @file test_distributed_e2e.cpp
+ * @brief Tests end-to-end offload between a master and in-process workers on a real SYCL device.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <SushiRuntime/core/span.hpp>
 #include <atomic>
@@ -89,15 +90,7 @@ namespace
 
     constexpr auto STATE_STEP = "state.step"_op;
 
-    /**
-     * @brief Registers the State-step kernel: next[i] = cur[i] + (i % 7).
-     *
-     * The same rule is given as the fluent local fallback, so an offloaded run must
-     * match the closed form seed[i] + steps*(i % 7) regardless of which physical
-     * buffer the double-buffer swap leaves the result in. ins[0] is the step's
-     * current field, outs[0] its next field — the runtime re-points these per step.
-     * @param reg The kernel registry to register with.
-     */
+    /** @brief Registers the State-step kernel next[i] = cur[i] + (i % 7). */
     void register_state_step(KernelRegistry& reg)
     {
         reg.register_kernel(STATE_STEP,
@@ -121,19 +114,8 @@ namespace
     }
 
     /**
-     * @brief Evolves a distributed State<int> for @p steps on a 1-worker in-process
-     *        cluster and returns its final field.
-     *
-     * Builds the cluster through the fluent surface (Runtime::cluster, State::distributed,
-     * Graph::add(op, State, ...)). The per-step rule next[i] = cur[i] + (i % 7) is
-     * registered identically on the worker, so the offloaded result is checkable
-     * against a closed form by the caller. Throws if no SYCL device is present or the
-     * worker fails to register, so the caller can translate that into a clean skip.
-     *
-     * @param n        Element count of the State.
-     * @param steps    Number of steps to run.
-     * @param offloaded Out: tasks the cluster shipped to the worker.
-     * @return The final field values, length @p n.
+     * @brief Evolves a distributed State<int> on a one-worker in-process cluster and returns its
+     *        final field.
      */
     std::vector<int> evolve_distributed_state(std::size_t n, std::size_t steps,
                                               std::uint64_t& offloaded)
@@ -216,9 +198,7 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
         out[i] = -1.0f;
     }
 
-    // Wire up the in-process cluster (1 worker). Construct both endpoints up
-    // front so they register on the fabric, then bring the master up BEFORE the
-    // worker — otherwise the worker's HELLO reaches a master that isn't serving.
+    // The master serves before the worker starts, or the worker's HELLO is lost; see README.md.
     InProcessFabric fabric(1);
     auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
     auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
@@ -309,8 +289,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
         GTEST_SKIP() << "No SYCL device available: " << e.what();
     }
 
-    // Per-worker run counters prove which worker ran which task. A short sleep
-    // keeps both tasks in-flight so the least-loaded policy spreads them.
+    // The per-worker counters record which worker ran which task; see README.md.
     std::atomic<int> c0{0}, c1{0};
     auto make_kernel = [](std::atomic<int>* counter)
     {
@@ -404,10 +383,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     master_ctx->get_execution_engine().execute(std::move(compiled));
 
     EXPECT_EQ(master_ctx->distributed_offloaded_count(), 2u);
-    // Assert the total, not a specific per-worker split: both tasks must have run
-    // on workers, but which worker gets which is a scheduling race. Requiring
-    // exactly one each is flaky — under load the first task can finish before the
-    // second is dispatched, sending both to the same idle worker.
+    // Only the total is asserted, because which worker gets which task is a race; see README.md.
     EXPECT_EQ(c0.load() + c1.load(), 2) << "Both tasks should have run on workers.";
 
     bool ok0 = true, ok1 = true;
@@ -687,8 +663,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
     auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
 
-    // Fake worker: advertises VEC_ADD, heartbeats until it gets a dispatch, then
-    // goes silent forever (never sends TASK_RESULT) — i.e. crashes mid-task.
+    // The fake worker heartbeats until its first dispatch, then never answers; see README.md.
     std::atomic<bool> got_dispatch{false};
     std::atomic<bool> hb_running{true};
     worker_transport->on_message(
@@ -752,8 +727,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
             });
         });
 
-    // Key assertion is implicit: this call must RETURN (not deadlock) even
-    // though the worker the task went to never answered.
+    // This call must return although the worker the task went to never answered; see README.md.
     master_ctx->get_execution_engine().execute(graph.compile());
 
     EXPECT_TRUE(got_dispatch.load(std::memory_order_relaxed))
@@ -895,8 +869,7 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
     auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
     auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
 
-    // Drop every buffer the master tries to push to the worker, so the worker's
-    // input pull can never complete.
+    // With every buffer push dropped, the worker's input pull can never complete; see README.md.
     fabric.set_fault_policy([](int from, int to, MsgType type)
     {
         if (from == -1 && to == 0 && type == MsgType::BUFFER_PUSH)
@@ -942,8 +915,7 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
             });
         });
 
-    // Run on a side thread so a regression (permanent hang) fails the test by
-    // timeout instead of wedging the whole suite.
+    // A side thread runs the graph so that a hang fails the test by timeout; see README.md.
     auto compiled = std::make_shared<CompiledGraph>(graph.compile());
     std::promise<void> done;
     auto fut = done.get_future();
@@ -1029,17 +1001,7 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
     agent.stop();
 }
 
-/**
- * @brief Tests transparent offload of a double-buffered State across even and odd
- *        step counts.
- *
- * A State rotates its two allocations every step, so the compiled plan cannot bake
- * its offload handles — the runtime re-points live pointer lists per step and the
- * coordinator resolves handles at dispatch. This is the one place where an even vs
- * odd number of steps lands the logical result in a different physical buffer, so it
- * is the sharpest check that the live-IO indirection follows the swap. Both runs must
- * match the closed form seed[i] + steps*(i % 7) and must actually have offloaded.
- */
+/** @brief Tests offload of a double-buffered State across even and odd step counts. */
 TEST(Integration_DistributedE2ETest, FluentDistributedStateParity)
 {
     constexpr std::size_t N = 1024;

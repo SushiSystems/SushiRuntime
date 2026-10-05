@@ -6,20 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Gate benchmark for the deque-steal fast path (audit steal-1) and the global
-// quiescence counter (audit sched-1), profiled in the substrate's characteristic
-// shape: MANY SMALL steps rather than one long sustained stream. Each step submits a
-// modest batch of independent tasks and then drains to quiescence; the tail of every
-// step is exactly where workers idle-spin stealing from empty peers (steal-1 removes
-// a seq_cst fence from each empty attempt) and where inflight_ / the shared counters
-// are hammered (sched-1's contention target).
-//
-// We report per-step drain latency and per-task ns. This isolates the fixed
-// per-step overhead that dominates the substrate, complementing
-// test_scheduler_dispatch_perf's single sustained stream. Note: fully attributing
-// steal-1's fence removal and sched-1's line contention needs hardware counters
-// (perf stat / c2c); this benchmark is the portable throughput+latency guard and the
-// harness those counters attach to. Asserts correctness + forward progress only.
+/**
+ * @file test_wide_fanout_perf.cpp
+ * @brief Measures per-step drain latency and per-task cost over many small scheduler steps.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <algorithm>
 #include <atomic>
@@ -85,8 +77,7 @@ TEST(Performance_WideFanout, ManySmallStepDrainLatency)
         for (std::size_t k = 0; k < PER_STEP; ++k)
             sched.submit(new AtomicCounterTask(counter));
 
-        // Drain this step to quiescence before starting the next — the idle-steal
-        // tail is the point of interest.
+        // Each step drains to quiescence before the next starts; the idle-steal tail is measured.
         ASSERT_TRUE(wait_for(counter, target, std::chrono::seconds(60)))
             << "step " << s << " did not drain in time";
 

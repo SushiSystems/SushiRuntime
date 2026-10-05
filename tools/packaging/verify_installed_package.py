@@ -3,22 +3,13 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Packaging oracle: prove an installed SushiRuntime is usable from outside its tree.
-
-Two things can be wrong with a package and only one of them shows up in an
-ordinary build. `find_package` resolving and a consumer compiling says the export
-set and the headers are right. It says nothing about whether the installed tree
-carries the libraries the consumer loads at run time, because this machine's PATH
-already holds the SYCL toolchain and the vcpkg tree -- a check that inherits that
-environment passes whether or not the packaging works.
-
-So the consumer is built with the toolchain environment, which it genuinely needs,
-and then run with a scrubbed one that sees nothing but Windows and the install
-prefix. The run is the part that fails when a redistributable is missing.
+"""Verifies that an installed SushiRuntime is usable from outside its tree.
 
 Usage:
     python tools/packaging/verify_installed_package.py <install-prefix> \
         [--compiler <path>] [--cmake <path>] [--ninja <path>] [--work <dir>]
+
+See tools/packaging/README.md.
 """
 
 from __future__ import annotations
@@ -101,9 +92,7 @@ def main() -> int:
         print(f"[FAIL] no such install prefix: {prefix}")
         return 1
 
-    # A build tree is not an install tree, and pointing this at one would test
-    # nothing: the build tree's exported targets reference the source and the
-    # binaries sit next to every dependency that produced them.
+    # A build tree is not an install tree; see tools/packaging/README.md.
     if (prefix / "CMakeCache.txt").is_file():
         print(f"[FAIL] {prefix} is a build tree, not an install prefix.")
         return 1

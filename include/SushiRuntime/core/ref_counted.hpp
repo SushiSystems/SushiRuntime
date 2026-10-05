@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file ref_counted.hpp
+ * @brief Declares RefCounted, the intrusive reference-count base of sushi_ptr.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
+ */
+
 #pragma once
 
 #include <atomic>
@@ -17,13 +24,8 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief Intrusive reference-counted base for objects managed by sushi_ptr.
-         *
-         * The counter starts at 0; each sushi_ptr copy increments it with relaxed
-         * ordering (no synchronisation needed — ownership cannot change without an
-         * existing reference). The last release() issues a release fence before
-         * calling delete, ensuring all prior writes are visible to any thread that
-         * had access through an earlier reference.
+         * @brief Provides the intrusive reference count for objects managed by sushi_ptr.
+         * @see include/SushiRuntime/core/README.md
          */
         class SUSHIRUNTIME_API RefCounted
         {

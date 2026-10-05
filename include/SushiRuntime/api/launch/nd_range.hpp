@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file nd_range.hpp
+ * @brief Declares NdRange, a global iteration box tiled by a local size.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/launch/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -17,18 +24,10 @@ namespace SushiRuntime
     namespace API
     {
         /**
-         * @brief An nd_range launch: a global iteration box tiled by a local size.
-         *
-         * NdRange unlocks the work-group execution model — barriers, local (shared)
-         * memory, and sub-group operations — for callers who need tiled kernels
-         * (e.g. blocked matrix multiply, shared-memory stencils). The fluent
-         * overload that accepts one hands the kernel a sycl::nd_item<N>, exactly as
-         * a raw SYCL nd_range parallel_for would.
-         *
-         * Each global dimension must be a whole multiple of the matching local
-         * dimension, per the SYCL requirement; the runtime does not pad.
-         *
+         * @brief Describes an nd_range launch: a global iteration box tiled by a local size.
          * @tparam N Number of dimensions (1, 2, or 3).
+         * @pre Each global dimension is a whole multiple of the matching local dimension.
+         * @see include/SushiRuntime/api/launch/README.md
          */
         template <int N>
         struct NdRange

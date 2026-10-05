@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for the tiled level plan (detail::plan_tiled_levels / live_tile_levels,
-// api/detail/fixed_order_scan.hpp) and for LateCount's one resolution point
-// (detail::resolve_late_count, api/graph/graph.hpp). Both are pure host functions,
-// so this suite needs no device and no Runtime.
+/**
+ * @file test_late_count.cpp
+ * @brief Tests the tiled level plan and LateCount's resolution point, both pure host functions.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -28,8 +30,7 @@ using SushiRuntime::API::detail::fill_radix_plan;
 using SushiRuntime::API::detail::radix_digit_count;
 namespace detail = SushiRuntime::API::detail;
 
-// The level count for a capacity is the same tree add_reduce already plans,
-// exercised at the boundaries the tile size creates.
+/** @brief Tests the level count for a capacity at the tile-size boundaries. */
 TEST(Unit_LateCount, LevelCountsAtTileBoundaries)
 {
     EXPECT_EQ(plan_tiled_levels(1).size(), 1u);
@@ -41,9 +42,10 @@ TEST(Unit_LateCount, LevelCountsAtTileBoundaries)
     EXPECT_EQ(plan_tiled_levels(1000000).size(), 3u);
 }
 
-// A live count below capacity must fold into the same tile boundaries that count
-// would get if it were the capacity itself: the levels below the point where the
-// live chain reaches one value line up index for index with plan_reduction(n).
+/**
+ * @brief Tests that a live count below capacity folds into the tile boundaries plan_reduction gives
+ *        that count.
+ */
 TEST(Unit_LateCount, LiveCountBelowCapacityMatchesThatCountAtCapacity)
 {
     const std::size_t capacity = 1000000;
@@ -61,8 +63,7 @@ TEST(Unit_LateCount, LiveCountBelowCapacityMatchesThatCountAtCapacity)
             EXPECT_EQ(live[i].in_count, fixed[i].in_count) << "n=" << n << " level " << i;
             EXPECT_EQ(live[i].out_count, fixed[i].out_count) << "n=" << n << " level " << i;
         }
-        // Every level past what plan_reduction(n) needed degenerates to a
-        // single-element pass-through: folding it changes nothing.
+        // Every level past what plan_reduction(n) needs is a 1-element pass-through; see README.md.
         for (std::size_t i = fixed.size(); i < live.size(); ++i)
         {
             EXPECT_EQ(live[i].in_count, 1u) << "n=" << n << " level " << i;
@@ -83,8 +84,10 @@ TEST(Unit_LateCount, LiveCountZeroFoldsNothing)
     }
 }
 
-// resolve_late_count is the one resolution point: with neither a host provider
-// nor a device slot, the live count is the capacity, matching a fixed call.
+/**
+ * @brief Tests that a LateCount with neither a host provider nor a device slot resolves to its
+ *        capacity.
+ */
 TEST(Unit_LateCount, DefaultResolvesToCapacity)
 {
     LateCount lc;
@@ -101,8 +104,7 @@ TEST(Unit_LateCount, HostProviderBelowCapacity)
     EXPECT_EQ(resolve_late_count(lc), 700000u);
 }
 
-// A live count above capacity fails the run, the same way an out-of-window
-// based_at() does, rather than silently clamping or reading past the end.
+/** @brief Tests that a live count above capacity is rejected. */
 TEST(Unit_LateCount, AboveCapacityIsRejected)
 {
     LateCount lc;
@@ -111,8 +113,7 @@ TEST(Unit_LateCount, AboveCapacityIsRejected)
     EXPECT_THROW(resolve_late_count(lc), SushiException);
 }
 
-// A Residency::Host device slot resolves the value a predecessor wrote there,
-// exactly as sized_from_device() reads its own device_count slot.
+/** @brief Tests that a Residency::Host device slot resolves the value written there. */
 TEST(Unit_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
 {
     auto rt = Runtime::create();
@@ -125,9 +126,7 @@ TEST(Unit_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
     EXPECT_EQ(resolve_late_count(lc), 700000u);
 }
 
-// A device slot that is not Residency::Host is rejected at registration, the
-// way require_host_device_slots() rejects a non-host sized_from_device() slot,
-// rather than only failing the first time the graph runs.
+/** @brief Tests that a device slot that is not Residency::Host is rejected at registration. */
 TEST(Unit_LateCount, NonHostDeviceSlotIsRejectedAtRegistration)
 {
     auto rt = Runtime::create();
@@ -143,8 +142,7 @@ TEST(Unit_LateCount, NonHostDeviceSlotIsRejectedAtRegistration)
     EXPECT_THROW(g.add_reduce(in, out, lc, Sum<float>{}), SushiException);
 }
 
-// Digit counts at the 8-bit boundaries: a key range of 256 still fits one digit,
-// 257 needs two; zero and one take one digit.
+/** @brief Tests the radix digit count at the 8-bit boundaries. */
 TEST(Unit_LateCount, RadixDigitCountAtByteBoundaries)
 {
     EXPECT_EQ(radix_digit_count(0), 1u);
@@ -157,8 +155,7 @@ TEST(Unit_LateCount, RadixDigitCountAtByteBoundaries)
     EXPECT_EQ(radix_digit_count((1u << 24) + 1), 4u);
 }
 
-// A plan for three digits whose live key range needs fewer runs only the low
-// digits, and the last active digit always places into the indices.
+/** @brief Tests that a three-digit plan runs only the digits the live key range needs. */
 TEST(Unit_LateCount, RadixPlanSkipsDigitsAboveTheLiveKeyRange)
 {
     constexpr std::size_t DIGITS = 3;

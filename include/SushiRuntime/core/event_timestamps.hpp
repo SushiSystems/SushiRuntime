@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file event_timestamps.hpp
+ * @brief Declares EventTimestamps and the function that reads them from a SYCL event.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
+ */
+
 #pragma once
 
 #include <cstdint>
@@ -26,12 +33,10 @@ namespace SushiRuntime
 
         /**
          * @brief Reads an event's start, end and submit timestamps without throwing.
-         *
-         * A backend with no start/end reading leaves the dispatch unrecorded; one
-         * with no submit reading degrades to submit_ns == start_ns.
          * @param event A completed event from a queue built with enable_profiling.
-         * @param out   Filled only when the function returns true.
+         * @param out Filled only when the function returns true.
          * @return True when start and end were read.
+         * @see include/SushiRuntime/core/README.md
          */
         inline bool read_event_timestamps(const sycl::event& event, EventTimestamps& out) noexcept
         {

@@ -6,23 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// A tiny game-engine frame loop driven end to end on the runtime, with nothing but
-// the public fluent API. It shows that the task graph behaves like a game engine:
-//
-//   * Components are component-arrays (one Buffer per field: px, py, vx, vy, alive).
-//   * Systems are graph nodes that declare which components they read and write
-//     (In/Out/InOut). The dependency tracker — not any hand-written schedule —
-//     orders them: gravity writes velocity, integrate reads it, collision rewrites
-//     it, culling reads the new position. Non-conflicting work across the entities
-//     runs in parallel automatically.
-//   * The frame is compiled once and replayed every step (run(STEPS)); no per-frame
-//     rebuild.
-//   * Despawn is deferred: the cull system writes `alive` only after every physics
-//     system has read it that step (a write-after-read edge), so a kill takes effect
-//     on the next frame, never mid-frame — the command-buffer discipline an ECS needs.
-//
-// The result is checked against an independent scalar reference running the same
-// four systems in the same order.
+/**
+ * @file game_engine_demo.cpp
+ * @brief Runs an ECS-style frame loop of four systems and checks it against a scalar reference.
+ * @author Mustafa Garip
+ * @see examples/README.md
+ */
 
 #include <cmath>
 #include <cstddef>
@@ -40,13 +29,10 @@ namespace
     constexpr float DT    = 0.01f;        // seconds per frame
     constexpr float G     = -9.8f;        // gravity (down)
     constexpr float REST  = 0.5f;         // floor restitution
-    // An off-grid cull threshold: no entity's x ( = vx * 0.01 * step ) lands on it at
-    // an integer step, so the crossing frame is identical on host and device and the
-    // frozen-at-cull position never differs by a whole step's worth of motion.
+    // XMAX lies off every x an entity reaches at an integer step; see examples/README.md.
     constexpr float XMAX  = 30.37f;
 
-    // Horizontal speed per entity. Final x = vx * (STEPS * DT) = vx * 6 = one of
-    // {12,24,36,48,60,72}; the first two survive (< XMAX), the rest are culled.
+    // Final x is vx * 6, one of {12,24,36,48,60,72}; the first two stay under XMAX.
     float vx_of(std::size_t i) { return 2.0f + static_cast<float>(i % 6) * 2.0f; }
 }
 
@@ -97,8 +83,7 @@ int main()
             if (alive[i] && py[i] < 0.0f) { py[i] = 0.0f; vy[i] = -vy[i] * rest; }
         });
 
-    // cull: despawn entities that drifted out of bounds. It writes `alive` after the
-    // three systems above have read it, so the kill lands on the next frame.
+    // cull writes `alive` after the three systems above read it, so a kill lands next frame.
     world.add(Extent{N}, In(px), InOut(alive),
         [xmax = XMAX](sycl::id<1> id, const float* px, int* alive)
         {

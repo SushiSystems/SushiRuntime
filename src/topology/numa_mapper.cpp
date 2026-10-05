@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file numa_mapper.cpp
+ * @brief Maps each discovered device to its NUMA node through hwloc.
+ * @author Mustafa Garip
+ */
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -37,8 +43,7 @@ namespace SushiRuntime
                 SR_LOG_ERROR("Failed to initialize hwloc topology.");
                 return;
             }
-            // hwloc 2.x does not include PCI/IO devices by default.
-            // KEEP_ALL is required for hwloc_get_pcidev_by_busid() to find the GPU.
+            // KEEP_ALL lets hwloc_get_pcidev_by_busid() find the GPU (src/topology/README.md).
             hwloc_topology_set_io_types_filter(topology, HWLOC_TYPE_FILTER_KEEP_ALL);
             hwloc_topology_load(topology);
             hwloc_initialized = true;

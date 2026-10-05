@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Hardware-free tests for the distributed layer: wire-protocol serialization,
-// the in-process transport switchboard (single-machine cluster simulation), and
-// the master-side registries/policy. End-to-end kernel offload is covered by an
-// integration test.
+/**
+ * @file test_distributed.cpp
+ * @brief Tests the wire protocol, in-process transport, master-side registries and offload policy.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <future>
 #include <chrono>
@@ -161,8 +163,7 @@ TEST(Unit_DistributedTest, BufferRegistryVersioning)
     EXPECT_TRUE(h1.id.valid());
     EXPECT_EQ(h1.version, 1u);
 
-    // Re-registering the same pointer bumps the version (stale-handle detection
-    // for USM address reuse) but preserves the existing id.
+    // Registering the same pointer again bumps the version and keeps the id; see README.md.
     auto h1b = reg.register_buffer(p, sizeof(storage));
     EXPECT_EQ(h1b.id.value, h1.id.value);
     EXPECT_EQ(h1b.version, 2u);
@@ -180,20 +181,10 @@ TEST(Unit_DistributedTest, BufferRegistryVersioning)
     EXPECT_FALSE(reg.lookup(nullptr).has_value());
 }
 
-// Offload policy (LeastLoadedOffloadPolicy): drive pick_worker() with synthetic
-// WorkerStats so the cost model (rtt + transfer + queue backlog) and its gates
-// are validated without a live cluster.
+// The policy tests call pick_worker() with synthetic WorkerStats and no cluster; see README.md.
 namespace
 {
-    /**
-     * @brief Helper to create synthetic WorkerStats for testing.
-     *
-     * @param id The worker ID.
-     * @param inflight Number of in-flight tasks.
-     * @param free_mem Available free memory in bytes.
-     * @param rtt_us Round-trip time in microseconds.
-     * @return A WorkerStats object.
-     */
+    /** @brief Returns synthetic WorkerStats for a live worker. */
     WorkerStats live_worker(int id, uint32_t inflight, uint64_t free_mem, uint32_t rtt_us)
     {
         WorkerStats w;
@@ -312,19 +303,9 @@ TEST(Unit_DistributedTest, PolicyTreatsZeroFreeMemAsUnknown)
     EXPECT_EQ(*pick, 0);
 }
 
-// ---------------------------------------------------------------------------
-// Malformed / hostile wire input.
-//
-// The distributed layer sits on an unauthenticated trust boundary, so every
-// deserialize path must survive garbage without crashing, over-reading, or
-// allocating an attacker-chosen amount. These tests exercise the surfaces the
-// C1/C3/H7 bugs lived on: an oversized/overflowing blob length prefix, a
-// truncated stream, and an empty payload.
-// ---------------------------------------------------------------------------
+// The tests below feed malformed wire input to the deserialize paths; see README.md.
 
-// A blob length prefix so large that pos_ + bytes wraps around must be rejected
-// by the bounds check (bytes > size - pos, no addition) rather than yielding a
-// ~2^64-long span. This is the exact regression behind C3.
+/** @brief Tests that a blob length prefix that would wrap pos_ + bytes is rejected. */
 TEST(Unit_DistributedProtocolFuzz, GetBlobRejectsOverflowingLength)
 {
     ByteWriter w;
@@ -338,8 +319,7 @@ TEST(Unit_DistributedProtocolFuzz, GetBlobRejectsOverflowingLength)
     EXPECT_FALSE(r.ok());        // reader is poisoned, not advanced past the end
 }
 
-// A length prefix that is merely larger than what remains (not overflowing) is
-// still out of bounds and must fail cleanly.
+/** @brief Tests that a blob length prefix larger than what remains is rejected. */
 TEST(Unit_DistributedProtocolFuzz, GetBlobRejectsOversizedLength)
 {
     ByteWriter w;
@@ -353,8 +333,10 @@ TEST(Unit_DistributedProtocolFuzz, GetBlobRejectsOversizedLength)
     EXPECT_FALSE(r.ok());
 }
 
-// BufferPushMsg::deserialize on a hostile oversized length must not crash or
-// attempt a 2^64-byte allocation; it should surface an empty payload.
+/**
+ * @brief Tests that BufferPushMsg::deserialize yields an empty payload for an overflowing blob
+ *        length.
+ */
 TEST(Unit_DistributedProtocolFuzz, BufferPushSurvivesOverflowingBlobLength)
 {
     ByteWriter w;
@@ -366,8 +348,7 @@ TEST(Unit_DistributedProtocolFuzz, BufferPushSurvivesOverflowingBlobLength)
     EXPECT_TRUE(m.data.empty());
 }
 
-// A truncated stream (handle only, no blob) deserializes to an empty payload,
-// not an over-read.
+/** @brief Tests that a truncated stream deserializes to an empty payload. */
 TEST(Unit_DistributedProtocolFuzz, BufferPushSurvivesTruncatedStream)
 {
     ByteWriter w;
@@ -378,8 +359,10 @@ TEST(Unit_DistributedProtocolFuzz, BufferPushSurvivesTruncatedStream)
     EXPECT_TRUE(m.data.empty());
 }
 
-// A TaskResultMsg claiming more outputs than the buffer can hold must stop at
-// the first failed extraction rather than looping past the end.
+/**
+ * @brief Tests that a TaskResultMsg claiming more outputs than it holds stops at the first failed
+ *        extraction.
+ */
 TEST(Unit_DistributedProtocolFuzz, TaskResultSurvivesTruncatedOutputs)
 {
     ByteWriter w;
@@ -393,8 +376,7 @@ TEST(Unit_DistributedProtocolFuzz, TaskResultSurvivesTruncatedOutputs)
     EXPECT_EQ(m.outputs.size(), m.output_data.size());
 }
 
-// Deserializing an empty payload is a no-op that yields empty fields, never a
-// read out of bounds.
+/** @brief Tests that deserializing an empty payload yields empty fields. */
 TEST(Unit_DistributedProtocolFuzz, DeserializeEmptyPayloadIsSafe)
 {
     std::vector<std::byte> empty;

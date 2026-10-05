@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_barrier.hpp
+ * @brief Declares a reusable thread barrier for tests compiled as C++17.
+ * @author Mustafa Garip
+ * @see tests/common/README.md
+ */
+
 #pragma once
 
 #include <condition_variable>
@@ -17,21 +24,14 @@ namespace SushiRuntime
     namespace Test
     {
         /**
-         * @brief A reusable thread barrier for tests (C++17 std::barrier stand-in).
-         *
-         * std::barrier is C++20; the project compiles as C++17, so tests use this
-         * minimal equivalent. arrive_and_wait() blocks until the configured number
-         * of threads have arrived, then releases them all and resets for the next
-         * phase. A generation counter makes it reusable across waves without a lost
-         * wakeup: late arrivals of the previous phase cannot mistakenly pass the
-         * next one. Construction count must be >= 1.
+         * @brief Holds arriving threads until a set number have arrived, then releases them all.
          */
         class Barrier
         {
             public:
                 /**
                  * @brief Builds a barrier that releases every count-th arrival.
-                 * @param count Number of threads that must arrive before release.
+                 * @param count Number of threads that must arrive before release; at least 1.
                  */
                 explicit Barrier(std::size_t count)
                     : threshold_(count), remaining_(count), generation_(0)

@@ -6,21 +6,14 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-#pragma once
-
 /**
  * @file resource_liveness.hpp
- * @brief A liveness token a data handle owns and a graph weakly observes.
- *
- * A fluent graph records the base pointers of the Buffers and States its tasks
- * touch, but it does not own them — if a handle is destroyed before the graph runs,
- * those pointers dangle and a run is silent undefined behaviour. A handle holds one
- * shared LivenessToken; the graph keeps a weak observer of it per recorded
- * resource. When the handle dies the token expires, so the graph can detect a stale
- * resource at run time and fail cleanly instead of dispatching against freed memory.
- * The token carries no state: its existence is the signal, so observing it costs a
- * weak_ptr lock and never touches the dependency hot path.
+ * @brief Declares the liveness token a data handle owns and a graph weakly observes.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
  */
+
+#pragma once
 
 #include <memory>
 

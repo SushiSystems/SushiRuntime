@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file event_polling.hpp
+ * @brief Declares EventPolling, which polls SYCL events and releases completed tasks.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/scheduler/README.md
+ */
+
 #pragma once
 
 #include <algorithm>
@@ -43,25 +50,14 @@ namespace SushiRuntime
                     sycl::event event;
                     SushiRuntime::Scheduler::Task* task = nullptr;
                     /**
-                     * @brief Already-complete marker for synchronous host work.
-                     *
-                     * A host task whose execute_host() runs inline returns an empty
-                     * event — there is nothing to wait on. We still route it through
-                     * the poller (to trigger successors and release uniformly), but
-                     * flag it ready so completion is not gated on a SYCL event status
-                     * query. This also sidesteps toolchains (AdaptiveCpp) whose host
-                     * operations are not observable via command_execution_status.
+                     * @brief Marks synchronous host work as already complete.
+                     * @see include/SushiRuntime/scheduler/README.md
                      */
                     bool ready = false;
 
                     /**
-                     * @brief Whether `event` is a real SYCL event (vs. an empty
-                     *        default one for inline host work).
-                     *
-                     * Cached at push time so the poll loop can decide whether to
-                     * wait()/query without constructing a throwaway `sycl::event{}`
-                     * on every iteration — that default construction can heap-
-                     * allocate in DPC++, and the comparison runs per event per poll.
+                     * @brief Tells whether event is a real SYCL event, cached at push time.
+                     * @see include/SushiRuntime/scheduler/README.md
                      */
                     bool has_event = false;
 
@@ -73,14 +69,8 @@ namespace SushiRuntime
                 };
 
                 /**
-                 * @brief In-flight events for one worker; never drops an event.
-                 *
-                 * The common case (≤ INLINE_CAP outstanding events) stays in an
-                 * inline buffer with no allocation. Beyond that the list spills to a
-                 * heap vector — the same inline-then-spill shape as SmallEventVector.
-                 * Dropping an event would orphan its successors (their in_degree
-                 * never reaches zero) and deadlock the run, so push() must always
-                 * store, even if that means growing.
+                 * @brief Holds one worker's in-flight events and never drops one.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 struct ActiveEventList
                 {
@@ -91,13 +81,7 @@ namespace SushiRuntime
                     size_t inline_count = 0;                 /**< Entries held inline (≤ INLINE_CAP). */
                     std::vector<PolledEvent> spill;          /**< Overflow storage, used only past INLINE_CAP. */
 
-                    // Backoff/stall state is intrinsically per-worker: it tracks the
-                    // polling cadence of the one thread that owns this list. It lives
-                    // here (not on the shared EventPolling instance) so concurrent
-                    // pollers cannot race on it — an interleaved decrement could wrap
-                    // a counter to ~2^64 and wedge every future poll into the
-                    // early-return branch, stranding in-flight events and hanging the
-                    // run.
+                    // Backoff and stall state belong to the one worker that owns this list.
                     /** @brief Counter for adaptive backoff strategy. */
                     size_t backoff_counter = 0;
                     /** @brief Consecutive no-progress polls, used to drive lazy events. */
@@ -177,14 +161,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Turns per-node kernel timing capture on or off.
-                 *
-                 * Set once by the scheduler when it arms a run, from the context's
-                 * profiling choice. The re-arm at the end of a run happens on a
-                 * worker thread (the sentinel's host_work), concurrently with other
-                 * workers polling, so this is an atomic release/acquire rather than a
-                 * plain bool.
-                 *
-                 * @param on True to accumulate device time and invocation counts.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 void set_profiling(bool on) noexcept { profiling_.store(on, std::memory_order_release); }
 
@@ -199,17 +176,10 @@ namespace SushiRuntime
 
                 /**
                  * @brief Wires the scheduler's run-quiescence tracker into the poller.
-                 *
-                 * The poller is the single chokepoint where a task's scheduling life
-                 * ends (release on completion) and where new ready successors are
-                 * born (trigger_successors). It therefore owns the increment/decrement
-                 * of the in-flight counter the scheduler blocks on to know a run has
-                 * fully drained — see TaskScheduler::wait_quiescent(). Null tracker
-                 * (never wired) makes every hook a no-op.
-                 *
                  * @param counter In-flight task counter owned by the scheduler.
-                 * @param mutex   Guards the wait predicate against a lost wakeup.
-                 * @param cv      Signalled when the counter reaches zero.
+                 * @param mutex Guards the wait predicate against a lost wakeup.
+                 * @param cv Signalled when the counter reaches zero.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 void set_inflight_tracker(std::atomic<long long>* counter,
                                           std::mutex* mutex,
@@ -234,13 +204,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Accounts for one task leaving the run and wakes the waiter on
-                 *        the last one.
-                 *
-                 * The brief lock closes the classic lost-wakeup window: a waiter that
-                 * reads a non-zero count just before this store would otherwise sleep
-                 * past the notify. Locking the same mutex it waits under orders the
-                 * store ahead of its predicate re-check.
+                 * @brief Accounts for one task leaving the run and wakes the waiter on the last
+                 *        one.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 void drop_inflight() noexcept
                 {
@@ -287,8 +253,7 @@ namespace SushiRuntime
                 {
                     if (active_events.is_empty()) return;
 
-                    // Backoff/stall state is per-worker: read it from the caller's
-                    // own ActiveEventList, not from this shared instance.
+                    // Backoff and stall state are read from the caller's own ActiveEventList.
                     size_t& backoff_counter = active_events.backoff_counter;
                     size_t& stall_polls_ = active_events.stall_polls_;
 
@@ -315,26 +280,18 @@ namespace SushiRuntime
                         }
                         if (done)
                         {
-                            // In AdaptiveCpp (and some other SYCL implementations), get_info<complete>
-                            // might return true before implicit USM data migrations are fully visible.
-                            // Since we already know it's complete, calling wait() is instantaneous
-                            // but guarantees the SYCL runtime flushes memory visibility.
+                            // wait() on a complete event makes the runtime flush USM visibility.
                             if (active_events[i].has_event)
                             {
                                 active_events[i].event.wait();
                             }
 
-                            // The completion chokepoint every node passes through, so
-                            // the per-node invocation count and kernel device time are
-                            // accumulated here exactly once per dispatch. No-op unless
-                            // the run was armed for profiling.
+                            // Every node completes here, so profiling adds once per dispatch.
                             if (profiling)
                                 accumulate_profiling(active_events[i]);
 
 #ifdef SR_DISTRIBUTED
-                            // Observe completion before releasing successors, so a
-                            // write's version bump is visible to any dependent task
-                            // (e.g. an offloaded reader) by the time it is dispatched.
+                            // Observed before successors are released, so they see a version bump.
                             if (on_node_complete_)
                                 on_node_complete_(active_events[i].task);
 #endif
@@ -343,11 +300,7 @@ namespace SushiRuntime
                             if (active_events[i].task)
                                 active_events[i].task->release();
 
-                            // This task's scheduling life ends here: account for it
-                            // after its successors are born (add_inflight in
-                            // trigger_successors) so the count never dips to zero
-                            // mid-graph and only reaches zero once the terminal
-                            // sentinel is reaped.
+                            // Dropped after successors are counted; the count never dips to zero.
                             drop_inflight();
 
                             active_events.remove_at(i); // O(1): swaps with the last entry
@@ -368,15 +321,7 @@ namespace SushiRuntime
                     {
                         backoff_counter = std::min(backoff_counter + 2, MAX_BACKOFF);
 
-                        // Some SYCL runtimes (AdaptiveCpp) use a lazy event model:
-                        // command_execution_status never advances to complete via
-                        // non-blocking polling — only an explicit wait() drives the
-                        // DAG. After a few consecutive no-progress polls, block on the
-                        // oldest pending event to force it forward and mark it ready so
-                        // it is reaped on the next pass regardless of how the runtime
-                        // reports status. On runtimes whose status advances on its own
-                        // (Intel), polling completes before the threshold, so this
-                        // rarely fires and the hot path is unchanged.
+                        // After STALL_DRIVE_THRESHOLD idle polls the oldest event is waited on.
                         if (++stall_polls_ >= STALL_DRIVE_THRESHOLD && !active_events.is_empty())
                         {
                             auto& oldest = active_events[0];
@@ -395,13 +340,7 @@ namespace SushiRuntime
             private:
                 /**
                  * @brief Writes this dispatch's event record before the completion is published.
-                 *
-                 * Called from poll_events() before trigger_successors() and drop_inflight():
-                 * the latter's zero transition is what wakes a waiting complete() into
-                 * collect_profiling() (or a next reserve()), so every ledger read and
-                 * write must finish here first, not after either of those calls.
-                 *
-                 * @param pe The completed event/task pair being reaped.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 void accumulate_profiling(const PolledEvent& pe) noexcept
                 {
@@ -441,22 +380,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Activates next nodes in the graph when a task finishes.
-                 *
-                 * Asks the task which of its dependents this completion freed, then
-                 * makes each one runnable: take the scheduling reference the queue
-                 * will own, count it in flight, and land it. The task answers the
-                 * first question because only it knows how its dependents are stored;
-                 * the second half stays here because only the scheduler knows the
-                 * queue. Neither has to name the other's type.
-                 *
-                 * The buffer is thread-local and reused, so a steady-state step does
-                 * no allocation, and pushing stays inlined through the concrete queue
-                 * — a virtual call per freed successor measured 4.6x slower on the
-                 * wide fan-out benchmark.
-                 *
-                 * @param task Finished task pointer.
+                 * @brief Makes runnable every successor a finished task freed.
                  * @param queue Current thread's task queue to push new ready nodes.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 template<typename QueueType>
                 void trigger_successors(SushiRuntime::Scheduler::Task* task, QueueType& queue)

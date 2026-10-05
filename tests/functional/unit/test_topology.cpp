@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Unit + edge-case coverage for hardware discovery and NUMA mapping, including
-// the invalid-NUMA fallbacks — correctness checks that the runtime degrades
-// gracefully on bad input.
+/**
+ * @file test_topology.cpp
+ * @brief Tests hardware discovery, NUMA distances and the invalid-NUMA fallbacks.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <vector>
 #include <gtest/gtest.h>
@@ -22,7 +25,8 @@ using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Topology;
 
 /**
- * @brief Verifies that hardware discovery finds at least one compute device with sequential logical IDs.
+ * @brief Verifies that hardware discovery finds at least one compute device with sequential logical
+ *        IDs.
  *
  * Probes all devices and ensures the returned list is not empty, possesses sequential IDs, and has valid names.
  */
@@ -62,7 +66,8 @@ TEST(Unit_TopologyTest, NUMAMatrixDistances)
 }
 
 /**
- * @brief Verifies that requesting a queue for an invalid NUMA ID falls back safely instead of crashing.
+ * @brief Verifies that requesting a queue for an invalid NUMA ID falls back safely instead of
+ *        crashing.
  *
  * Requests a queue with a non-existent NUMA ID and validates that the returned fallback queue functions normally.
  */

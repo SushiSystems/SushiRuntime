@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Unit coverage for the divisible-workload primitive (RangeTask::split): the
-// grain threshold, that split() yields a distinct sub-task while work remains,
-// that repeated splitting shrinks the owner and terminates, and that it returns
-// nullopt below the grain. All deterministic and host-only.
+/**
+ * @file test_range_task.cpp
+ * @brief Tests RangeTask::split for its grain threshold and distinct chunks until exhaustion.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <optional>
@@ -69,8 +71,7 @@ TEST(Unit_RangeTaskTest, SplitHandsOffDistinctChunksUntilExhausted)
     sushi_ptr<Task> owner = make_sushi<RangeTask>(size_t{0}, size_t{1u << 16}, noop_kernel());
     ASSERT_TRUE(owner->is_splittable());
 
-    // Keep every chunk alive so a freed-then-reused address can't look like a
-    // duplicate; this lets us assert genuine distinctness.
+    // Every chunk stays alive, so a reused address cannot pass for a duplicate; see README.md.
     std::vector<sushi_ptr<Task>> chunks;
     std::unordered_set<void*> seen;
 

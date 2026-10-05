@@ -6,21 +6,14 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-#pragma once
-
 /**
  * @file delegate.hpp
- * @brief A move-only, allocation-free type-erased callable (a std::function
- *        replacement for the runtime's stored closures).
- *
- * The runtime stores user callables that are polled every step (late-binding
- * predicates, per-step updaters) and replay closures built once per add(). Using
- * std::function for these costs a heap allocation per stored closure and drags in
- * RTTI and target() machinery the runtime never uses. Delegate erases the callable
- * into a fixed inline buffer with a hand-written three-entry vtable: no heap, ever.
- * A capture that does not fit is a compile error, not a silent allocation — exactly
- * the guarantee a real-time, deterministic runtime wants at its API surface.
+ * @brief Declares Delegate, a move-only type-erased callable stored inline.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
  */
+
+#pragma once
 
 #include <cassert>
 #include <cstddef>
@@ -33,18 +26,10 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief A move-only callable stored inline, with no heap allocation.
-         *
-         * Holds any callable matching @c R(Args...) whose size and alignment fit the
-         * inline storage. The callable is relocated, not reference-counted, so the
-         * Delegate owns it outright and frees it on destruction. Unlike std::function
-         * it is move-only (a stored closure has one owner) and never allocates: a
-         * target too large for @p Capacity fails a static_assert rather than spilling
-         * to the heap. Default-constructed it is empty; calling an empty Delegate is a
-         * precondition violation (asserted in debug builds).
-         *
-         * @tparam Sig      The call signature, written as @c R(Args...).
+         * @brief Stores a move-only callable inline, with no heap allocation.
+         * @tparam Sig The call signature, written as R(Args...).
          * @tparam Capacity Inline storage in bytes for the erased callable.
+         * @see include/SushiRuntime/core/README.md
          */
         template <class Sig, std::size_t Capacity = 64>
         class Delegate;
@@ -60,15 +45,10 @@ namespace SushiRuntime
                 Delegate(std::nullptr_t) noexcept {}
 
                 /**
-                 * @brief Erases @p f into inline storage.
-                 *
-                 * Move-constructs the decayed callable into the inline buffer and binds
-                 * the static vtable for its type. The size/alignment fit is enforced at
-                 * compile time, so the constructor never allocates and never fails.
-                 *
-                 * @tparam F The callable type; must be invocable as @c R(Args...) and
-                 *           fit the inline storage.
-                 * @param f  The callable to take ownership of.
+                 * @brief Erases f into inline storage without allocating.
+                 * @tparam F The callable type; must be invocable as R(Args...) and fit the inline
+                 *        storage.
+                 * @see include/SushiRuntime/core/README.md
                  */
                 template <class F,
                           class DF = std::decay_t<F>,
@@ -130,13 +110,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Invokes the held callable.
-                 *
-                 * Forwards the arguments to the erased target through the vtable. Must
-                 * not be called on an empty Delegate; doing so is a precondition
-                 * violation, asserted in debug builds.
-                 *
-                 * @param args The call arguments forwarded to the target.
-                 * @return Whatever the target returns.
+                 * @pre The Delegate is not empty.
                  */
                 R operator()(Args... args) const
                 {
@@ -152,10 +126,9 @@ namespace SushiRuntime
                 using Storage =
                     std::aligned_storage_t<Capacity, alignof(std::max_align_t)>;
 
-                // The three operations type erasure needs: call the target, relocate it
-                // into fresh storage (placement-move then destroy the source), and
-                // destroy it. A single static instance per target type is shared by
-                // every Delegate holding that type.
+                /**
+                 * @brief Holds the three operations type erasure needs: call, relocate and destroy.
+                 */
                 struct VTable
                 {
                     R (*invoke)(Storage*, Args...);
@@ -182,9 +155,10 @@ namespace SushiRuntime
                     reinterpret_cast<F*>(s)->~F();
                 }
 
-                // One shared vtable instance per target type, reached through a
-                // function-local static so it needs no out-of-line definition and has
-                // a single address across translation units.
+                /**
+                 * @brief Returns the one shared vtable instance of a target type.
+                 * @see include/SushiRuntime/core/README.md
+                 */
                 template <class F>
                 static const VTable* vtable_for() noexcept
                 {

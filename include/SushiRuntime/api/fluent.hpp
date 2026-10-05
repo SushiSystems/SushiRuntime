@@ -6,23 +6,14 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-#pragma once
-
 /**
  * @file fluent.hpp
- * @brief Umbrella for the fluent v1 API — the surface most users program against.
- *
- * The fluent layer is split by concern into focused, symmetric folders; this is
- * the single public include that pulls them together:
- *   - data/        the data handles (Buffer, State)
- *   - launch/      the iteration geometry (Extent, NdRange)
- *   - vocabulary/  the data-flow DSL (Reads/Writes, In/Out/InOut, Dynamic) and
- *                  the reduction combiners (Sum, Minimum, Maximum)
- *   - graph/       the chainable builders (Graph, Region, DynamicGraph) and
- *                  RunHandle, the receipt for a step started asynchronously
- *   - runtime/     the Runtime entry point, RuntimeConfig, and the Cluster handle
- *   - detail/      callable traits, the per-step StepMachinery, report building
+ * @brief Includes every header of the fluent v1 API.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/README.md
  */
+
+#pragma once
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
@@ -43,11 +34,7 @@
 
 namespace SushiRuntime
 {
-    // Promote the entry points into the SushiRuntime namespace so users write
-    // `Runtime::create()` after `using namespace SushiRuntime;`. The graph type
-    // stays API::Graph (reached through auto) because the name Graph already
-    // denotes a namespace at this scope. The data and launch handles carry their
-    // own promotions in their leaf headers.
+    // Graph stays API::Graph because Graph already names a namespace at this scope.
     using API::Runtime;
     using API::RuntimeConfig;
     using API::RunHandle;

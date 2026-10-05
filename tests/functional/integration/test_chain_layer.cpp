@@ -7,10 +7,10 @@
 /****************************************************************/
 
 /**
- * @brief Covers layer 1 of docs/design/GRAPH_REPLAY.md (§C, §G P1).
- *
- * A chainable plan runs as an in-order chain, matches the scheduler bit for
- * bit, and names the path it took in RunReport::layer.
+ * @file test_chain_layer.cpp
+ * @brief Tests that a chainable plan runs as an in-order chain, bit-identical to the scheduler.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
  */
 
 #include <cstddef>
@@ -38,7 +38,8 @@ namespace
     };
 
     /**
-     * @brief Builds the workload on @p rt, runs it @p runs times for @p steps each, and copies the results out.
+     * @brief Builds the workload on @p rt, runs it @p runs times for @p steps each, and copies the
+     *        results out.
      *
      * Host values change every step: the sized() count and the when() gate
      * both come from counters their providers advance. @p native_tail adds

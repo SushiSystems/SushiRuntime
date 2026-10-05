@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// DC0's dispatch-width coverage for Graph::add_reduce() and
-// Graph::add_segmented_reduce(), in the style of test_prefix_scan.cpp's
-// InternalNodeWidthsMatchTheDispatchTable.
+/**
+ * @file test_reduce_dispatch_width.cpp
+ * @brief Tests the dispatch widths that add_reduce() and add_segmented_reduce() stamp.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -20,10 +23,10 @@
 
 using namespace SushiRuntime;
 
-// plan_reduction(600) at REDUCE_TILE = 256: level 0 folds 600 values into
-// ceil(600 / 256) = 3 partials, level 1 folds those 3 into ceil(3 / 256) = 1.
-// Each level is its own node, so the launch width per node is that level's
-// out_count, in level order.
+/**
+ * @brief Tests that each level node of an eager reduce over 600 values launches at that level's
+ *        out_count.
+ */
 TEST(Integration_ReduceDispatchWidth, EagerReduceLevelWidthsMatchTheDispatchTable)
 {
     constexpr std::size_t N = 600;
@@ -50,8 +53,7 @@ TEST(Integration_ReduceDispatchWidth, EagerReduceLevelWidthsMatchTheDispatchTabl
     EXPECT_FLOAT_EQ(total[0], static_cast<float>(N));
 }
 
-// n == 0 skips every level and emits one node that writes the identity; that
-// node still has a real launch width of one, not WIDTH_UNKNOWN.
+/** @brief Tests that a zero-count eager reduce stamps a width of one. */
 TEST(Integration_ReduceDispatchWidth, EagerReduceZeroCountStampsWidthOne)
 {
     auto rt     = Runtime::create();
@@ -71,19 +73,16 @@ TEST(Integration_ReduceDispatchWidth, EagerReduceZeroCountStampsWidthOne)
     EXPECT_FLOAT_EQ(total[0], 0.0f);
 }
 
-// A LateCount left at its default (no host, no device) behaves like a fixed
-// count equal to its capacity (detail::read_live_count()'s documented
-// fallback), so add_segmented_reduce()'s late-bound overload emits its
-// resolver (width one, a single_task) followed by its per-segment node
-// (width capacity).
+/**
+ * @brief Tests that a late-bound segmented reduce emits a resolver of width one and a node of width
+ *        capacity.
+ */
 TEST(Integration_ReduceDispatchWidth, LateBoundSegmentedReduceWidthsMatchResolverAndCapacity)
 {
     constexpr std::size_t SEGMENTS = 128;
     const std::vector<std::uint32_t> expected_widths = {1u, static_cast<std::uint32_t>(SEGMENTS)};
 
-    // segment_offsets and output are each oversized past segment_count by a
-    // distinct amount, so a width stamp that read either buffer's own size
-    // instead of the launch range would fail rather than pass by accident.
+    // segment_offsets and output are oversized differently to expose a buffer width; see README.md.
     auto rt      = Runtime::create();
     auto offsets = rt.buffer<std::uint32_t>(SEGMENTS + 9);
     for (std::size_t s = 0; s <= SEGMENTS; ++s)
@@ -112,15 +111,12 @@ TEST(Integration_ReduceDispatchWidth, LateBoundSegmentedReduceWidthsMatchResolve
         EXPECT_EQ(out[s], 1u) << "segment " << s;
 }
 
-// The fixed-count overload emits one node over exactly segment_count
-// elements, so its launch width is segment_count itself.
+/** @brief Tests that the fixed-count segmented reduce launches at segment_count. */
 TEST(Integration_ReduceDispatchWidth, EagerSegmentedReduceWidthMatchesSegmentCount)
 {
     constexpr std::size_t SEGMENTS = 64;
 
-    // Same oversizing as the late-bound case above: segment_offsets and
-    // output each carry a distinct amount of padding past segment_count, so
-    // the stamp can be pinned to the launch range rather than either size.
+    // segment_offsets and output carry distinct padding past segment_count; see README.md.
     auto rt      = Runtime::create();
     auto offsets = rt.buffer<std::uint32_t>(SEGMENTS + 9);
     for (std::size_t s = 0; s <= SEGMENTS; ++s)

@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file error.hpp
+ * @brief Declares Errc, Error and SushiException, the runtime's failure types.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <cstdint>
@@ -106,8 +112,7 @@ namespace SushiRuntime
                 Error err_; /**< The structured failure detail. */
         };
 
-        // RunReport lives in core/run_report.hpp (included above); it is the
-        // value carried by the success side of try_run()'s Result.
+        // RunReport, the success value of try_run()'s Result, lives in core/run_report.hpp.
 
     } // namespace Core
 } // namespace SushiRuntime

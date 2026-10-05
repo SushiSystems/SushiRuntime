@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file remapping_topology_provider.hpp
+ * @brief Declares RemappingTopologyProvider, which overlays a synthetic NUMA layout.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <memory>

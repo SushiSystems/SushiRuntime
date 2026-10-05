@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file run_handle.hpp
+ * @brief Declares RunHandle, the handle to a step started asynchronously.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/graph/README.md
+ */
+
 #pragma once
 
 #include <chrono>
@@ -25,14 +32,8 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief What an asynchronous step must remember from the moment it started.
-             *
-             * A synchronous run reads its "before" counters and its start time as
-             * locals, because the whole run happens inside one function. An
-             * asynchronous run does not: the step is submitted in one call and
-             * settled in another, so the same values have to travel in the handle.
-             * Everything here is a plain value — the handle owns no resources and
-             * stays cheap to move.
+             * @brief Holds what an asynchronous step must remember from the moment it started.
+             * @see include/SushiRuntime/api/graph/README.md
              */
             struct AsyncRunState
             {
@@ -46,35 +47,10 @@ namespace SushiRuntime
         } // namespace detail
 
         /**
-         * @brief A step that was started but not yet waited for.
-         *
-         * `run()` blocks for the whole step, which is correct for a fixed-step
-         * simulation thread but costs **overlap**: the next tick cannot begin while
-         * the previous one's state is being extracted for a renderer or an audio
-         * system, even though that extract needs no worker threads. `run_async()`
-         * returns one of these instead — the work is already proceeding on the
-         * worker pool — so the caller can do that extract and then settle up:
-         *
-         * ```cpp
-         * auto step = simulation.run_async();
-         * extract_previous_frame();          // overlaps with the step
-         * Core::RunReport report = step.wait();
-         * ```
-         *
-         * The handle is move-only and owns the obligation to finish the step: its
-         * destructor waits if `wait()` was not called, because the compiled plan
-         * must not be destroyed while workers are still touching its nodes. That
-         * makes the safe usage the natural one — declare the handle after the graph
-         * and ordinary scoping does the rest — but it also means a discarded handle
-         * discards the step's outcome, **including a task exception**. Call `wait()`
-         * (or `try_wait()`) whenever the result matters, which is nearly always.
-         *
-         * Exactly one step may be in flight per runtime; starting another while a
-         * handle is pending is rejected rather than silently interleaved.
-         *
-         * @tparam Owner The graph type that produced this handle (Graph or
-         *         DynamicGraph). A template rather than an interface so neither
-         *         graph type has to grow a vtable for a feature used per step.
+         * @brief Owns a step that was started but not yet waited for, and finishes it on
+         *        destruction.
+         * @tparam Owner The graph type that produced this handle: Graph or DynamicGraph.
+         * @see include/SushiRuntime/api/graph/README.md
          */
         template <class Owner>
         class RunHandle
@@ -94,13 +70,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Settles this handle's own step, then takes over @p other's.
-                 *
-                 * Assigning over a pending handle would otherwise abandon a running
-                 * step with nobody left to wait for it.
-                 *
-                 * @param other Handle to take the step from; owns nothing afterwards.
-                 * @return *this, now owning @p other's step.
+                 * @brief Settles this handle's own step, then takes over other's.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 RunHandle& operator=(RunHandle&& other) noexcept
                 {
@@ -127,14 +98,9 @@ namespace SushiRuntime
                 bool pending() const noexcept { return owner_ != nullptr; }
 
                 /**
-                 * @brief Whether waiting would return immediately.
-                 *
-                 * Answers "has the graph finished", so a frame loop can keep
-                 * overlapping work instead of blocking early. It is not a
-                 * substitute for wait(): the pool still has bookkeeping to drain
-                 * and the step's state advance has not happened yet.
-                 *
+                 * @brief Returns whether waiting would return immediately.
                  * @return True when the step is done, or the handle owns no step.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 bool ready() const
                 {
@@ -142,18 +108,11 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Blocks until the step finishes and returns its report.
-                 *
-                 * Completes the step's lifecycle — every State advances to the field
-                 * it just wrote — and consumes the handle, so a second call throws
-                 * rather than waiting on a step that is no longer running. A task
-                 * exception propagates here, and the state advance is skipped in
-                 * that case, exactly as a failed synchronous run leaves its states
-                 * untouched.
-                 *
-                 * @return The report for this step.
+                 * @brief Blocks until the step finishes, advances every State and returns the
+                 *        report.
                  * @throws Core::SushiException If the handle owns no step.
                  * @throws The first exception a task threw during the step.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 Core::RunReport wait()
                 {
@@ -163,18 +122,11 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Blocks until the step finishes, reporting into @p reuse.
-                 *
-                 * The allocation-free counterpart of wait(), for the same reason
-                 * Graph::run(RunReport&) exists: an overlapped frame loop settles a
-                 * step every tick, and a report it already owns costs nothing to
-                 * refill. The report is reset before it is written, so a stale field
-                 * from the previous step can never survive into this one.
-                 *
+                 * @brief Blocks until the step finishes and reports into reuse.
                  * @param reuse The report to overwrite; its previous contents are lost.
-                 * @return A reference to @p reuse.
                  * @throws Core::SushiException If the handle owns no step.
                  * @throws The first exception a task threw during the step.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 Core::RunReport& wait(Core::RunReport& reuse)
                 {
@@ -184,16 +136,11 @@ namespace SushiRuntime
                             "RunHandle::wait(): this handle owns no step — it was "
                             "already waited for, or moved from."});
 
-                    // Consume the handle BEFORE the blocking call: if a task threw,
-                    // the step is still over, and a destructor that tried to wait
-                    // again would block forever on a latch nobody will signal.
+                    // The handle is consumed before the blocking call, even when a task throws.
                     Owner* owner = owner_;
                     owner_ = nullptr;
 
-                    // Clear before the blocking call, so a step that ends in a task
-                    // exception cannot leave the previous step's numbers readable in
-                    // a report the caller reuses. finish_async_step sets the flag
-                    // back on success.
+                    // Cleared before the blocking call, so a failed step shows no old numbers.
                     reuse.reset();
                     reuse.is_successful = false;
 
@@ -203,10 +150,7 @@ namespace SushiRuntime
                     }
                     catch (...)
                     {
-                        // The step is over either way. Release the owner's in-flight
-                        // marker before propagating, or one throwing kernel would
-                        // leave the graph refusing every later run — the failure of
-                        // a step must not become the failure of the graph.
+                        // The owner's in-flight marker is released before the exception propagates.
                         owner->discard_async_step();
                         throw;
                     }
@@ -273,10 +217,10 @@ namespace SushiRuntime
                 {
                 }
 
-                // Finishes a step nobody waited for. A destructor may not throw, so
-                // the outcome — including a task exception — is dropped here; that
-                // is the documented cost of discarding a handle, and it is still far
-                // better than returning while workers hold pointers into the plan.
+                /**
+                 * @brief Finishes a step nobody waited for and drops its outcome without throwing.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void settle() noexcept
                 {
                     if (owner_ == nullptr)

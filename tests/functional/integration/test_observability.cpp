@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// §5.5 coverage: RunReport observability. Profiling is opt-in at construction; off,
-// the report carries no profiling breakdown; on, it carries per-node and per-worker
-// timing. Explicit host<->device transfers are accounted regardless of profiling.
+/**
+ * @file test_observability.cpp
+ * @brief Tests the profiling breakdown, node names and transfer accounting a RunReport carries.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <vector>
@@ -72,9 +75,7 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
 
     auto rep = g.run(STEPS);
 
-    // Both kernels appear as distinct plan nodes, each dispatched once per step. The
-    // exact device-time magnitudes are backend- and noise-dependent, so the stable
-    // claim is structural: the per-node breakdown is present and correctly counted.
+    // Each kernel is one plan node per step, and only the counts are asserted; see README.md.
     ASSERT_EQ(rep.node_timings.size(), 2u);
     for (const auto& nt : rep.node_timings)
     {
@@ -84,15 +85,7 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
     }
 }
 
-// §18 R8: any node can be given a diagnostic name that reaches
-// RunReport::NodeTiming. Before this, every node reported as "unnamed_task"
-// regardless of which add() produced it, so a profile of a real graph was a list
-// of identical labels.
-//
-// name_last() rather than a trailing argument: two of the add() shapes take a
-// trailing parameter pack whose last element is the callable, so a defaulted
-// trailing name is not expressible there. One spelling that works for every
-// shape beats a trailing argument on most of them and an exception for the rest.
+/** @brief Tests that a name given through name_last() reaches RunReport::NodeTiming. */
 TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
 {
     constexpr std::size_t N = 512;
@@ -114,9 +107,7 @@ TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
     EXPECT_STREQ(rep.node_timings[0].name.c_str(), "seed");
 }
 
-// Every launch shape, including the two variadic ones that cannot take a
-// trailing argument. This is the test that would have caught R8 shipping for the
-// Dynamic overloads only.
+/** @brief Tests that every add() shape can be named, the two variadic ones included. */
 TEST(Integration_Observability, EveryAddShapeCanBeNamed)
 {
     constexpr std::size_t N = 256;
@@ -162,8 +153,7 @@ TEST(Integration_Observability, EveryAddShapeCanBeNamed)
             << "no node reported as '" << expected << "'";
 }
 
-// A node added without a name keeps the documented default, so an unlabeled call
-// site is still visible in the report rather than silently absent.
+/** @brief Tests that an unnamed node reports the documented default label. */
 TEST(Integration_Observability, UnnamedNodeStillReportsTheDefaultLabel)
 {
     constexpr std::size_t N = 128;
@@ -231,8 +221,7 @@ TEST(Integration_Observability, TransferBytesAttributedToTheRunWindow)
     auto buf = rt.buffer<int>(N);
     std::vector<int> src(N, 3);
 
-    // A host node that pushes data during the run: the bytes land in this run's
-    // window, not before it.
+    // The bytes a host node pushes during the run land in this run's window; see README.md.
     auto g = rt.graph();
     g.add_host([&buf, &src]() { buf.write_range({0, N}, src.data()); });
     auto rep = g.run();

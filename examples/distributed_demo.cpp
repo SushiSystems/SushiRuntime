@@ -6,12 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Master/worker entry for the distributed layer. One binary plays either role,
-// selected by --distributed=master|worker. Workers connect over TCP and run a
-// registered "vec.add" kernel; the master offloads a vector-add and checks it.
-//
-//   sr run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555
-//   sr run sr_distributed_demo --distributed=master --port=5555 --workers=1
+/**
+ * @file distributed_demo.cpp
+ * @brief Runs the distributed layer's master or worker role over TCP with a vector-add kernel.
+ * @author Mustafa Garip
+ * @see examples/README.md
+ */
 
 #include <atomic>
 #include <chrono>

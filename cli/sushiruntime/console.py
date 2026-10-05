@@ -3,17 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""CLI output for the SushiRuntime CLI.
+"""Exposes the sushicore console this CLI prints through, built on first use.
 
-Thin wrapper around :mod:`sushicore` — the theme/icon/renderer logic and its
-``[cli]`` config schema live there, shared with every other Sushi* CLI. See
-sushicore's README to change colors.
-
-The console is built lazily, by :class:`sushicore.cli_console.LazyConsole`:
-constructing it needs this repo's ``cli/`` directory, and locating that fails
-outside a checkout, so building at import time would make every ``sr``
-invocation abort with "Not inside a SushiRuntime project" — including ``sr --help``,
-which Typer can serve with no project at all.
+See cli/README.md.
 """
 
 from __future__ import annotations
@@ -30,6 +22,5 @@ def current():
     return _lazy.get()
 
 
-# PEP 562: attributes resolve on first access, so importing this module never
-# touches the filesystem or the project layout.
+# PEP 562 resolves attributes on first access, so importing this module reads no files.
 __getattr__ = _lazy.attribute

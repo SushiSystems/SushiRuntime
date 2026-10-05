@@ -6,18 +6,14 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-#pragma once
-
 /**
  * @file strong_id.hpp
- * @brief A zero-overhead strong typedef for integer identifiers.
- *
- * A bare std::size_t parameter lets unrelated quantities be passed in each other's
- * place — a device index where an element count belongs — and the compiler stays
- * silent. StrongId wraps an integer in a distinct type keyed by a tag, so the
- * compiler rejects the mix while the value still occupies exactly one integer and
- * the explicit constructor keeps construction intentional.
+ * @brief Declares StrongId, a strong typedef for integer identifiers.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
  */
+
+#pragma once
 
 #include <cstddef>
 
@@ -26,16 +22,10 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief A distinct integer type identified by a phantom @p Tag.
-         *
-         * Two StrongId instantiations with different tags are unrelated types even
-         * when their underlying representation matches, so one cannot be passed where
-         * the other is expected. The constructor is explicit, so a raw integer never
-         * converts implicitly; the value is read through value(). Trivial and the size
-         * of @p Rep, so passing one costs nothing over passing the integer.
-         *
+         * @brief Wraps an integer in a distinct type identified by a phantom Tag.
          * @tparam Tag A phantom type that names the identifier's domain.
          * @tparam Rep The underlying integer representation.
+         * @see include/SushiRuntime/core/README.md
          */
         template <class Tag, class Rep = std::size_t>
         struct StrongId

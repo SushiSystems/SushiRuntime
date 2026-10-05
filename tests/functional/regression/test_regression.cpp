@@ -6,8 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Sentinels for previously fixed bugs — one fast, deterministic test per defect
-// so a future change cannot silently reintroduce it.
+/**
+ * @file test_regression.cpp
+ * @brief Tests one fast, deterministic sentinel per defect that was found and fixed.
+ * @see tests/functional/regression/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <condition_variable>
@@ -58,11 +62,7 @@ TEST(Regression_Sentinel, Scheduler_AbruptStopDrains)
  */
 TEST(Regression_Sentinel, Epoch_OrphanedNodesReclaimed)
 {
-    // The counter is a shared_ptr, not a raw pointer to a stack atomic: EBR
-    // reclamation is deferred, so a tail of retired objects outlives this test
-    // and is freed during a later test. A raw stack pointer would then be written
-    // after the frame is gone (a stack-use-after-return). shared_ptr keeps the
-    // counter alive as long as any Tracked refers to it.
+    // The counter is a shared_ptr, as reclamation frees Tracked after this frame; see README.md.
     using Counter = std::shared_ptr<std::atomic<int>>;
     struct Tracked
     {
@@ -95,15 +95,10 @@ TEST(Regression_Sentinel, Epoch_OrphanedNodesReclaimed)
 }
 
 
-// A thread that allocated through a Runtime, and is still alive when that
-// Runtime is destroyed, unwinds after it. That is the shape a long-running
-// simulation process hits: a worker outliving the context it allocated from.
-//
-// What is at stake is thread-local state that outlives what it points into —
-// epoch reclamation keeps a per-thread slot, and a thread reaching its exit-time
-// destructors after the Runtime is gone must not touch freed memory. Reaching
-// the join without a fault IS the assertion; under ASan it is a use-after-free
-// check, and a crash often enough without it.
+/**
+ * @brief Tests that a thread that outlives the Runtime it allocated from tears down without a
+ *        fault.
+ */
 TEST(Regression_Sentinel, AThreadOutlivingTheRuntimeTearsDownCleanly)
 {
     std::mutex gate_mutex;
@@ -118,8 +113,7 @@ TEST(Regression_Sentinel, AThreadOutlivingTheRuntimeTearsDownCleanly)
 
         outliver = std::thread([&]()
         {
-            // Allocate and free on this thread, so its exit-time destructors have
-            // touched the runtime's per-thread bookkeeping.
+            // The thread's exit-time destructors touch per-thread runtime state; see README.md.
             {
                 auto scratch = rt.buffer<int>(4096);
                 for (std::size_t i = 0; i < 64; ++i)
@@ -147,8 +141,7 @@ TEST(Regression_Sentinel, AThreadOutlivingTheRuntimeTearsDownCleanly)
     }
     gate.notify_one();
 
-    // The thread runs its exit-time destructors here. Reaching this line without
-    // a fault IS the assertion; SUCCEED documents that we got here on purpose.
+    // Reaching the line after this join without a fault is the assertion; see README.md.
     outliver.join();
     SUCCEED() << "a thread unwound after the Runtime it allocated from was gone";
 }

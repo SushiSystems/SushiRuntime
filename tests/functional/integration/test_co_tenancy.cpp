@@ -6,15 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for the co-tenancy contract: the runtime is a tenant of the machine,
-// not its owner.
-//
-// Inside a game the runtime shares the machine with a main thread, a render
-// thread, an audio callback and asset I/O. Taking every core and pinning worker 0
-// onto the same core as the host's main thread is what a batch runtime does; a
-// host has to be able to say "these cores are mine". These tests assert the
-// mechanism that makes that possible — a worker count, a core range, and the
-// option to not pin at all — and that a narrower pool still executes correctly.
+/**
+ * @file test_co_tenancy.cpp
+ * @brief Tests the worker count, core range and pinning policy a host sets to share its machine.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <thread>
@@ -28,8 +25,7 @@ using namespace SushiRuntime;
 
 namespace
 {
-    // Runs a small graph and checks every element, so a configuration is proven to
-    // execute rather than merely to construct.
+    /** @brief Runs a small graph and checks every element of its output. */
     void expect_runs_correctly(API::Runtime& rt)
     {
         constexpr std::size_t N = 512;
@@ -54,9 +50,7 @@ namespace
     }
 }
 
-// The default is the previous sole-tenant behaviour: one worker per logical core,
-// starting at core 0. Changing that silently would move every existing consumer's
-// performance profile.
+/** @brief Tests that the default pool is one worker per logical core, starting at core 0. */
 TEST(Integration_CoTenancy, DefaultsToOneWorkerPerCoreFromCoreZero)
 {
     auto rt = Runtime::create();
@@ -67,9 +61,9 @@ TEST(Integration_CoTenancy, DefaultsToOneWorkerPerCoreFromCoreZero)
     EXPECT_EQ(pool.pinning, API::PinPolicy::Pin);
 }
 
-// A host that wants cores 0..(reserved-1) for its own threads asks for a pool that
-// starts past them. Both the count and the placement must be exactly what was
-// requested — a runtime that quietly took more cores would defeat the point.
+/**
+ * @brief Tests that the pool takes exactly the worker count and core placement the host asked for.
+ */
 TEST(Integration_CoTenancy, ReservesTheCoresTheHostAskedFor)
 {
     const std::size_t cores = machine_cores();
@@ -91,8 +85,7 @@ TEST(Integration_CoTenancy, ReservesTheCoresTheHostAskedFor)
     expect_runs_correctly(rt);
 }
 
-// A pool much smaller than the machine still runs everything correctly: the graph
-// does not depend on there being a worker per core.
+/** @brief Tests that a single worker still executes the whole graph. */
 TEST(Integration_CoTenancy, ASingleWorkerStillExecutesTheWholeGraph)
 {
     API::RuntimeConfig config;
@@ -104,9 +97,7 @@ TEST(Integration_CoTenancy, ASingleWorkerStillExecutesTheWholeGraph)
     expect_runs_correctly(rt);
 }
 
-// Float leaves placement to the OS. The pool is still the requested size; what
-// changes is that no worker is bound, which is the right choice inside a container
-// whose CPU allowance is enforced by quota rather than by affinity.
+/** @brief Tests that the Float policy keeps the requested pool size and binds no worker. */
 TEST(Integration_CoTenancy, FloatPolicyRunsUnpinned)
 {
     API::RuntimeConfig config;
@@ -122,9 +113,7 @@ TEST(Integration_CoTenancy, FloatPolicyRunsUnpinned)
     expect_runs_correctly(rt);
 }
 
-// A core range that runs off the end of the machine is clamped, not obeyed. The
-// OS affinity calls accept an out-of-range mask and simply do not bind, so
-// without the clamp the runtime would report a reservation it never made.
+/** @brief Tests that a core range past the end of the machine is clamped. */
 TEST(Integration_CoTenancy, AnOutOfRangeCoreRangeIsClampedNotIgnored)
 {
     const std::size_t cores = machine_cores();

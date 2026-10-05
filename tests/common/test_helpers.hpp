@@ -6,8 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Shared test building blocks: an order-recording host task, an atomic-counter
-// host task, and an RAII USM guard so a failing assertion never leaks memory.
+/**
+ * @file test_helpers.hpp
+ * @brief Declares the host tasks and the USM guard that the test suites share.
+ * @author Mustafa Garip
+ * @see tests/common/README.md
+ */
 
 #pragma once
 
@@ -27,13 +31,9 @@ namespace SushiRuntime
     {
         /**
          * @brief Creates a host task that records its ID into a shared list.
-         *
-         * The optional delay widens the window for ordering bugs to surface.
-         * @param task_id The ID of the task to record.
-         * @param execution_order Reference to the shared list of executed task IDs.
-         * @param order_mutex Mutex protecting the shared execution order list.
-         * @param delay Optional artificial delay before recording the ID.
-         * @return A callable that matches the SYCL host task signature.
+         * @param execution_order List the task appends to; must outlive the task.
+         * @param order_mutex Mutex that guards @p execution_order; must outlive the task.
+         * @param delay Wait before recording, which widens the window for ordering bugs.
          */
         inline auto make_order_recorder(int task_id,
                                         std::vector<int>& execution_order,

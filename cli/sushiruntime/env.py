@@ -3,14 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Build-environment snapshotting.
+"""Snapshots the build environment that every cmake and ctest subprocess runs under.
 
-A parent process cannot ``source setvars.sh`` / ``call vcvars64.bat`` and inherit
-the result. Instead we run those scripts in a child shell, dump the resulting
-environment, and reuse that dictionary for every cmake/ctest subprocess we spawn.
-
-Sourcing oneAPI's setvars is slow, so the snapshot is cached on disk keyed by the
-configuration that produced it; an unchanged config skips the shell entirely.
+See cli/README.md.
 """
 
 from __future__ import annotations
@@ -41,14 +36,9 @@ def _cache_key(cfg: Config) -> str:
             "platform": cfg.platform,
             "vs_vcvars": cfg.vs_vcvars,
             "oneapi_root": cfg.oneapi_root,
-            # The toolchain gates whether oneAPI setvars is sourced, so it must
-            # key the cache: switching intel-llvm<->oneapi has to rebuild the snapshot.
+            # The toolchain decides whether setvars is sourced, so it keys the cache.
             "toolchain": cfg.toolchain,
-            # The intel-llvm/adaptivecpp toolchains inject their own bin dirs into
-            # the snapshot PATH, so a change to either invalidates the cache. The
-            # resolved root, not the raw setting: when the setting is empty the
-            # bundle is probed for, and swapping which one is present has to
-            # invalidate the snapshot just as re-pinning it would.
+            # The resolved root keys the cache, not the raw setting; see cli/README.md.
             "llvm_root": cfg.resolved_llvm_root(),
             "acpp_exe": cfg.acpp_exe,
         },
@@ -76,13 +66,7 @@ def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
             bins.append(str(Path(root) / "bin"))
             libs.append(str(Path(root) / "lib"))
             if cfg.is_windows:
-                # compiler-rt ships AddressSanitizer's runtime as a DLL beside its
-                # import library, so an instrumented binary cannot even start
-                # unless that directory is on PATH. Added for every intel-llvm
-                # environment: the directory holds nothing but compiler-rt, so it
-                # is inert for a non-sanitized build, and the alternative — adding
-                # it only for `--asan` — would leave `sr run` on an ASan binary
-                # failing with a bare "DLL not found".
+                # compiler-rt's ASan runtime directory goes on PATH; see cli/README.md.
                 bins.extend(str(p) for p in
                             sorted((Path(root) / "lib" / "clang").glob("*/lib/windows")))
     elif cfg.toolchain == "adaptivecpp":
@@ -91,12 +75,7 @@ def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
             acpp_root = Path(acpp).parent.parent
             bins.append(str(Path(acpp).parent))
             libs.append(str(acpp_root / "lib"))
-    # vcpkg's applocal deployment copies a target's DIRECT dependents next to it,
-    # so a library pulled in transitively (hwloc, reached through sushiruntime.dll
-    # rather than by the test executable) can be missing from a fresh build tree
-    # and the binary then fails to start with a bare "DLL not found". Putting the
-    # port bin dir on PATH makes any freshly built binary runnable regardless of
-    # what got copied where; it does not replace deployment for a shipped build.
+    # vcpkg's port bin directory goes on PATH for transitive DLLs; see cli/README.md.
     if cfg.is_windows and cfg.use_vcpkg and cfg.vcpkg_root:
         vcpkg_bin = (Path(cfg.expand(cfg.vcpkg_root)) / "installed"
                      / cfg.vcpkg_triplet / "bin")
@@ -111,13 +90,7 @@ def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
 
 
 def _snapshot_linux(cfg: Config) -> dict[str, str] | None:
-    # Source oneAPI's setvars ONLY for the oneapi toolchain. Sourcing it for the
-    # intel-llvm/adaptivecpp toolchains prepends oneAPI's lib dir to LD_LIBRARY_PATH,
-    # so at runtime the binary loads oneAPI's libsycl/libur_loader while the CUDA
-    # backend still resolves the llvm-sycl libur_adapter_cuda — a Unified Runtime
-    # version mismatch that segfaults during SYCL device discovery
-    # (urVirtualMemMap). The intel-llvm/adaptivecpp toolchains ship on PATH and
-    # need no setvars at all, so returning None keeps their environment clean.
+    # setvars is sourced only for the oneapi toolchain; see cli/README.md.
     if cfg.toolchain != "oneapi":
         return None
     oneapi = cfg.expand(cfg.oneapi_root)

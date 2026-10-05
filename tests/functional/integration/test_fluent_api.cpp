@@ -6,17 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for fluent API surface not exercised by test_fluent_lifecycle.cpp:
-//   - run_for(duration)
-//   - try_run() success path and RunReport field validation
-//   - add(fn) raw sycl::handler overload
-//   - add(n, fn) range kernel overload
-//   - add(reads, writes, n, fn) pointer-tracked overload
-//   - Reads/Writes over Buffer::region() sub-region tracking
-//   - Buffer<T> standalone allocation and graph use
-//   - Graph::size()
-//   - Runtime::advanced() / unsafe_context() accessors
-//   - run(0) edge case
+/**
+ * @file test_fluent_api.cpp
+ * @brief Tests the fluent API surface that test_fluent_lifecycle.cpp does not exercise.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <chrono>
@@ -27,9 +22,7 @@
 
 using namespace SushiRuntime;
 
-// try_run() on a non-empty graph must return a successful result with a
-// populated total_tasks_executed. This proves the non-throwing path returns
-// a valid RunReport rather than a default-constructed one.
+/** @brief Tests that try_run() on a non-empty graph returns a successful, populated RunReport. */
 TEST(Integration_FluentAPI, TryRunSuccessPath)
 {
     constexpr std::size_t N = 64;
@@ -55,8 +48,7 @@ TEST(Integration_FluentAPI, TryRunSuccessPath)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
 }
 
-// RunReport fields after a multi-step run: total_tasks_executed must equal
-// tasks-per-step * steps; total_duration_ms must be non-negative.
+/** @brief Tests the RunReport fields after a multi-step run. */
 TEST(Integration_FluentAPI, RunReportFieldsAfterMultiStep)
 {
     constexpr std::size_t N     = 32;
@@ -82,9 +74,7 @@ TEST(Integration_FluentAPI, RunReportFieldsAfterMultiStep)
     EXPECT_GE(report.total_duration_ms, 0.0);
 }
 
-// run_for(duration) must run at least one step and then stop. A very short
-// budget is used so the test does not wait; the one-step guarantee is what we
-// validate.
+/** @brief Tests that run_for() with a very short budget runs at least one step. */
 TEST(Integration_FluentAPI, RunForRunsAtLeastOneStep)
 {
     constexpr std::size_t N = 16;
@@ -105,8 +95,7 @@ TEST(Integration_FluentAPI, RunForRunsAtLeastOneStep)
     EXPECT_EQ(field[0], 1);
 }
 
-// run_for with a real budget: multiple steps should complete and the report
-// must reflect them. This measures steady-state throughput, not cold start.
+/** @brief Tests that run_for() with a 50 ms budget completes several steps. */
 TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
 {
     constexpr std::size_t N = 8;
@@ -119,11 +108,7 @@ TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
-    // Warm the kernel before timing. The first dispatch pays one-off JIT
-    // compilation and queue/device setup that can alone exceed the 50ms budget;
-    // run_for fixes the deadline before its first step, so an unwarmed kernel
-    // overshoots and stops after a single step. The steady-state cost of this
-    // trivial kernel is sub-millisecond, so a warmed run fits many steps.
+    // The kernel is warmed first, as run_for fixes its deadline before step one; see README.md.
     g.run();
 
     auto report = g.run_for(std::chrono::milliseconds(50));
@@ -133,8 +118,7 @@ TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
     EXPECT_GE(report.total_duration_ms, 0.0);
 }
 
-// add_untracked(fn) where fn takes sycl::handler& directly (the raw kernel
-// overload). The kernel must run and produce the expected values.
+/** @brief Tests the add_untracked(fn) overload whose callable takes a sycl::handler. */
 TEST(Integration_FluentAPI, RawHandlerKernelAdd)
 {
     constexpr std::size_t N = 128;
@@ -161,8 +145,7 @@ TEST(Integration_FluentAPI, RawHandlerKernelAdd)
         ASSERT_EQ(buf[i], static_cast<int>(i * 2)) << "at i=" << i;
 }
 
-// add_untracked(n, fn) where fn receives (begin, end, sycl::handler&) — the
-// range kernel overload. The fn must see begin=0 and end=N and launch its own work.
+/** @brief Tests the add_untracked(n, fn) range kernel overload. */
 TEST(Integration_FluentAPI, RangeKernelAdd)
 {
     constexpr std::size_t N = 64;
@@ -189,9 +172,10 @@ TEST(Integration_FluentAPI, RangeKernelAdd)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
 }
 
-// add(reads, writes, n, fn) — explicit dependency-vector overload. Two tasks
-// sharing one buffer: a writer followed by a reader that squares the values.
-// The dependency tracker must order them correctly without a State.
+/**
+ * @brief Tests that add(reads, writes, n, fn) orders a writer before the reader that squares its
+ *        values.
+ */
 TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
 {
     constexpr std::size_t N = 32;
@@ -218,10 +202,7 @@ TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
 }
 
-// The tracked range-kernel overload: the same writer/squarer pair as
-// PointerTrackedAddOrdering, but the second task drives the handler itself. It
-// must still be ordered after the writer by the declared Reads/Writes; an
-// untracked overload here would let the square race the write.
+/** @brief Tests that the tracked range-kernel overload is ordered after the writer. */
 TEST(Integration_FluentAPI, TrackedRangeKernelOrdering)
 {
     constexpr std::size_t N = 32;
@@ -251,8 +232,7 @@ TEST(Integration_FluentAPI, TrackedRangeKernelOrdering)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
 }
 
-// The tracked raw-kernel overload: the reader owns the whole command group and
-// is still ordered after the writer by its declared regions.
+/** @brief Tests that the tracked raw-kernel overload is ordered after the writer. */
 TEST(Integration_FluentAPI, TrackedRawKernelOrdering)
 {
     constexpr std::size_t N = 32;
@@ -280,9 +260,10 @@ TEST(Integration_FluentAPI, TrackedRawKernelOrdering)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
 }
 
-// The tracked NdRange overload: a tiled work-group kernel no longer has to give
-// up dependency tracking to get an nd_item. Ordered after the writer, and the
-// nd_item indexing must still cover the whole global range.
+/**
+ * @brief Tests that the tracked NdRange overload is ordered after the writer and covers the whole
+ *        global range.
+ */
 TEST(Integration_FluentAPI, TrackedNdRangeOrdering)
 {
     constexpr std::size_t N = 64;   // tiles by 16
@@ -310,12 +291,10 @@ TEST(Integration_FluentAPI, TrackedNdRangeOrdering)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
 }
 
-// Region-tracked add: two writers touch disjoint halves of one buffer, so the
-// tracker leaves them unordered, then a whole-buffer reader overlaps both and
-// must run after each. Proves sub-region identity end-to-end through the fluent
-// layer: disjoint slices are independent while an overlapping access still
-// orders. A broken (base-pointer) identity would either serialize the halves or
-// let the reader observe an unwritten half.
+/**
+ * @brief Tests that two writers of disjoint halves stay unordered and a whole-buffer reader runs
+ *        after both.
+ */
 TEST(Integration_FluentAPI, SubRegionDisjointWritesThenWholeRead)
 {
     constexpr std::size_t N = 64;
@@ -352,8 +331,9 @@ TEST(Integration_FluentAPI, SubRegionDisjointWritesThenWholeRead)
         ASSERT_EQ(out[i], 2) << "upper half at i=" << i;
 }
 
-// Buffer<T> standalone: allocate, seed host-side, use in a graph task via
-// dependency_key(), and read back. Verifies the owning-USM lifecycle.
+/**
+ * @brief Tests that a standalone Buffer is allocated, seeded, used in a graph task and read back.
+ */
 TEST(Integration_FluentAPI, BufferAllocateUseAndReadBack)
 {
     constexpr std::size_t N = 256;
@@ -395,8 +375,7 @@ TEST(Integration_FluentAPI, BufferMoveLeavesSenderEmpty)
     EXPECT_EQ(moved.size(), 16u);
 }
 
-// Graph::size() tracks the number of add() calls made so far, including after
-// a mutation that would trigger recompilation.
+/** @brief Tests that Graph::size() tracks the number of add() calls. */
 TEST(Integration_FluentAPI, GraphSizeTracksAdds)
 {
     auto rt = Runtime::create();
@@ -411,9 +390,7 @@ TEST(Integration_FluentAPI, GraphSizeTracksAdds)
     EXPECT_EQ(g.size(), 2u);
 }
 
-// Runtime::unsafe_context() must return a reference to the same RuntimeContext
-// the fluent Runtime wraps, and advanced() must read through to it. Verified by
-// comparing device counts.
+/** @brief Tests that unsafe_context() and advanced() reach the same RuntimeContext. */
 TEST(Integration_FluentAPI, ContextAccessorIsConsistent)
 {
     auto rt = Runtime::create();
@@ -424,8 +401,7 @@ TEST(Integration_FluentAPI, ContextAccessorIsConsistent)
     EXPECT_EQ(rt.advanced().device_count(), ctx.device_count());
 }
 
-// run(0) is documented as "zero steps" — it must return immediately and the
-// RunReport should reflect no work done.
+/** @brief Tests that run(0) returns immediately and reports no work. */
 TEST(Integration_FluentAPI, RunZeroStepsIsNoOp)
 {
     constexpr std::size_t N = 8;

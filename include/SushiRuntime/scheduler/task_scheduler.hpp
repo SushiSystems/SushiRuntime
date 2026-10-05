@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file task_scheduler.hpp
+ * @brief Declares TaskScheduler, the NUMA-aware work-stealing scheduler.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/scheduler/README.md
+ */
+
 #pragma once
 
 
@@ -64,13 +71,8 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief NUMA-aware work-stealing scheduler.
-         *
-         * Owns a fixed-size pool of worker threads started once (start()) and kept
-         * alive across graph runs. Each run is gated by arm_for_execution() +
-         * submit(root) pairs; the sentinel node's completion promise unblocks the
-         * caller. Workers steal from node-local victims first; cross-node steals are
-         * tracked separately so the RunReport can report intra/inter-NUMA balance.
+         * @brief Schedules tasks on a persistent, NUMA-aware work-stealing worker pool.
+         * @see include/SushiRuntime/scheduler/README.md
          */
         class SUSHIRUNTIME_API TaskScheduler : public ITelemetryProvider, public ITaskMigrator
         {
@@ -81,14 +83,9 @@ namespace SushiRuntime
                 size_t num_workers = 0;
 
                 /**
-                 * @brief First core of the range workers are bound into, as applied.
-                 *
-                 * The requested range is clamped into the machine's core count at
-                 * construction, so this reports what is in effect rather than what was
-                 * asked for. A caller verifying that it reserved cores should read this
-                 * together with num_workers.
-                 *
+                 * @brief Returns the first core of the range workers are bound into, as applied.
                  * @return The first bound core index; meaningless when pinning() is Float.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 std::size_t first_core() const noexcept { return first_core_; }
 
@@ -102,40 +99,13 @@ namespace SushiRuntime
                 /** @brief List of queues for each worker thread. */
                 std::array<sushi_ptr<Deque>, Core::MAX_WORKER_THREADS> worker_queues;
                 /**
-                 * @brief Per-worker scratch for drain_pending_submissions's batch.
-                 *
-                 * Owned by exactly one worker (indexed by its thread id) and only
-                 * touched inside its own drain, so it needs no synchronisation. It
-                 * exists so the drain stops allocating: a local vector meant one
-                 * heap allocation per worker per drain, which on a frame loop is a
-                 * per-tick allocation on the hot path and the thing that keeps a
-                 * steady-state tick from being allocation-free. Capacity is retained
-                 * between drains, so it settles at the high-water mark after the
-                 * first few steps and never allocates again.
+                 * @brief Holds each worker's scratch for the drain_pending_submissions batch.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 std::array<std::vector<Task*>, Core::MAX_WORKER_THREADS> drain_scratch_;
                 /**
-                 * @brief A task FIFO that does not allocate in the steady state.
-                 *
-                 * A std::deque here allocated a fresh block every 64 pushes: with
-                 * 8-byte elements libstdc++ fits exactly 64 pointers in its 512-byte
-                 * block, and an injector that is pushed at the back and popped at
-                 * the front walks forward through the block map forever, buying a
-                 * new block at every boundary and releasing the one behind it. On a
-                 * frame loop that is a heap allocation every 64 ticks on the thread
-                 * driving the run -- small, perfectly periodic, and enough to break
-                 * the zero-allocation contract run(RunReport&) makes. CI measured it
-                 * as exactly 1 allocation over 64 ticks and 4 over 256.
-                 *
-                 * A vector with a read cursor has no block boundaries to cross. The
-                 * steady state drains fully every tick, so pop_front() reaches the
-                 * end, clear()s, and reuses the same storage: capacity settles at
-                 * the high-water mark and nothing is allocated again. This is the
-                 * same trick drain_scratch_ above already uses, applied to the
-                 * container instead of to the batch copied out of it.
-                 *
-                 * The interface is the subset of std::deque the injector used, so
-                 * every call site reads unchanged.
+                 * @brief Implements a task FIFO that does not allocate in the steady state.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 class SubmissionQueue
                 {
@@ -150,19 +120,13 @@ namespace SushiRuntime
                             ++head_;
                             if (head_ >= items_.size())
                             {
-                                // Fully drained: rewind to the front of the same
-                                // buffer. clear() keeps capacity, so this is the
-                                // path that makes a steady-state tick free.
+                                // Drained: rewind into the same buffer; clear() keeps capacity.
                                 items_.clear();
                                 head_ = 0;
                             }
                             else if (head_ >= COMPACT_AFTER && head_ * 2 >= items_.size())
                             {
-                                // A queue that never empties would otherwise keep
-                                // the consumed prefix forever. Dropping it is a
-                                // memmove within the existing buffer, not a
-                                // reallocation, and the threshold keeps it off the
-                                // path a small queue takes.
+                                // The consumed prefix is dropped by a move inside the same buffer.
                                 items_.erase(items_.begin(),
                                              items_.begin() + static_cast<std::ptrdiff_t>(head_));
                                 head_ = 0;
@@ -183,18 +147,8 @@ namespace SushiRuntime
                 std::mutex pending_mutex;
                 std::condition_variable pending_cv;
                 /**
-                 * @brief Lock-free shadow sizes of the two injector queues.
-                 *
-                 * Every worker checks the injectors on every dispatch iteration, but
-                 * the common steady state is "both empty" — priority bypass is rare
-                 * and external submissions arrive in bursts. Taking pending_mutex
-                 * unconditionally turned that check into a single global cache line
-                 * ping-ponging across all cores, throttling submit throughput.
-                 * These counters shadow the container sizes and are mutated only
-                 * under pending_mutex, so the hot path can read them relaxed and skip
-                 * the lock entirely when they are zero. A stale zero is harmless: the
-                 * enqueuer always notify()s and the loop re-checks; a stale non-zero
-                 * just takes the lock and finds nothing (rare).
+                 * @brief Shadow the sizes of the two injector queues for lock-free reads.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 std::atomic<size_t> pending_count_{0};
                 std::atomic<size_t> priority_count_{0};
@@ -213,13 +167,8 @@ namespace SushiRuntime
                  *  and break the Chase-Lev single-owner-per-deque invariant. */
                 std::atomic<bool> threads_started_{false};
                 /**
-                 * @brief Set when a task throws during the current run.
-                 *
-                 * Aborts only the current run — remaining tasks drain without
-                 * executing so the DAG still reaches the sentinel — while leaving
-                 * the worker pool alive and re-armable. Distinct from
-                 * shutdown_requested, which permanently tears the pool down.
-                 * Cleared by arm_for_execution() at the start of each round.
+                 * @brief Tells whether a task threw during the current run.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 std::atomic<bool> run_failed_{false};
                 /** @brief Guards run_error_ on the cold failure path. */
@@ -227,14 +176,8 @@ namespace SushiRuntime
                 /** @brief First exception captured this run; delivered to the caller. */
                 std::exception_ptr run_error_;
                 /**
-                 * @brief Set when the active run is cancelled from another thread.
-                 *
-                 * Like run_failed_ it makes remaining tasks drain without executing
-                 * (the sentinel still runs), but the run completes normally rather
-                 * than throwing — the drive loop sees it and stops. Unlike
-                 * run_failed_ it is NOT cleared per step by arm_for_execution(): a
-                 * cancellation aborts the whole multi-step run, so it is cleared only
-                 * by reset_cancellation() at the start of a fresh run.
+                 * @brief Tells whether the active run was cancelled from another thread.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 std::atomic<bool> run_cancelled_{false};
                 /** @brief Poller to track SYCL events. */
@@ -243,13 +186,8 @@ namespace SushiRuntime
                 SushiRuntime::Execution::RuntimeContext& context;
 
                 /**
-                 * @brief Whether workers bind to cores, copied from RuntimeSettings.
-                 *
-                 * Read by dispatch_loop() on every worker and by
-                 * build_steal_topology(); both run after the constructor has written
-                 * it and it is never mutated afterwards, so no synchronisation is
-                 * needed. Cached here rather than re-read through the context so the
-                 * worker's first action does not chase a pointer into another layer.
+                 * @brief Holds whether workers bind to cores, copied from RuntimeSettings.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 SushiRuntime::Execution::PinPolicy pinning_ =
                     SushiRuntime::Execution::PinPolicy::Pin;
@@ -267,14 +205,8 @@ namespace SushiRuntime
                 /** @brief Worker threads. */
                 std::array<std::thread, Core::MAX_WORKER_THREADS> workers;
                 /**
-                 * @brief Per-worker completed-task counter, each on its own cache line.
-                 *
-                 * The previous `alignas(CACHE_LINE_SIZE) atomic<size_t>[]` aligned only
-                 * the array's start, so eight 8-byte counters shared one cache line and
-                 * false-shared under contention; the elements were also default-
-                 * constructed with an indeterminate value in C++17, feeding the thermal
-                 * strategy garbage rates. Wrapping each counter in a cache-line-aligned,
-                 * zero-initialised struct (mirroring WorkerTimeBuckets) fixes both.
+                 * @brief Holds one worker's completed-task counter on its own cache line.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 struct alignas(Core::CACHE_LINE_SIZE) WorkerCompletedCounter
                 {
@@ -311,17 +243,8 @@ namespace SushiRuntime
                 std::atomic<std::uint32_t> current_dispatch_step_{0};
 
                 /**
-                 * @brief Tasks submitted for the run but not yet reaped.
-                 *
-                 * The completion sentinel signals the caller from its host_work,
-                 * which runs on a worker thread *before* that worker (and its peers)
-                 * have finished the poll bookkeeping — trigger_successors + release —
-                 * for the run's final nodes. Returning from execute() then destroys
-                 * the CompiledGraph while those workers still touch its nodes: a
-                 * use-after-free the TSan lane catches in Node::~Node. This counter,
-                 * incremented at submit()/successor-push and decremented after each
-                 * poll release, reaches zero only once every node has been fully
-                 * finalized; wait_quiescent() blocks the caller on that.
+                 * @brief Counts tasks submitted for the run but not yet reaped.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 std::atomic<long long> inflight_{0};
                 /** @brief Guards the wait_quiescent() predicate against lost wakeups. */
@@ -370,12 +293,9 @@ namespace SushiRuntime
 
                 /**
                  * @brief Finds the device index behind an already-selected queue.
-                 *
-                 * Lets a locality fallback (get_queue_for_ptr, get_numa_local_queue)
-                 * that returns a queue rather than an index still route through
-                 * dispatch_queue().
                  * @param q A queue this scheduler's context vended.
                  * @return Its device index, or SIZE_MAX if none matches.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 std::size_t queue_device_index(sycl::queue& q) const;
 
@@ -398,27 +318,18 @@ namespace SushiRuntime
 
                 /**
                  * @brief Arms the scheduler for a new execution round.
-                 *
-                 * Resets the running flag so workers continue their dispatch loops
-                 * for the upcoming graph. Must be called before submitting the first
-                 * root node of each round. Avoids thread creation/destruction between
-                 * successive graph runs by reusing the persistent worker pool.
-                 *
-                 * @param profiling The round's plan flag; dispatch routes device
-                 *                  nodes to the profiling queue while it is set.
+                 * @pre Called before the first root node of each round is submitted.
+                 * @param profiling The round's plan flag; device nodes go to the profiling queue
+                 *        while set.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 void arm_for_execution(bool profiling = false);
 
                 /**
                  * @brief Wires the plan's event ledger for the round about to be armed.
-                 *
-                 * The pointer is only ever dereferenced between this call and the
-                 * matching disarm(), which clears it back to null; the caller must
-                 * not let the CompiledGraph that owns the ledger outlive that
-                 * window, and must call this again (or with null) before arming
-                 * a different plan.
-                 *
+                 * @pre The CompiledGraph that owns the ledger outlives the window up to disarm().
                  * @param ledger The plan's ledger, or null when it does not profile.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 void set_profiling_ledger(Core::ProfilingLedger* ledger) noexcept;
 
@@ -441,23 +352,9 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns the pool to its parked state after a run quiesces.
-                 *
-                 * The counterpart of arm_for_execution(), and the reason a worker
-                 * costs nothing between runs. Without it the armed flag stayed set
-                 * from the first run until the context was destroyed, so an idle
-                 * pool never reached the wait in the dispatch loop: every worker sat
-                 * in the steal backoff, yielding and sleeping in 100 microsecond
-                 * increments, sweeping every peer deque thousands of times a second
-                 * for work that was not coming. On a machine the runtime shares with
-                 * a host's render, audio and job threads that is not idling, it is
-                 * competing.
-                 *
-                 * @warning Only safe once the run has quiesced — the wait predicate
-                 * does not look at the per-worker deques, so disarming while a
-                 * worker still holds queued tasks would park its peers and leave it
-                 * to drain the graph alone. ExecutionEngine::complete() calls this
-                 * after wait_quiescent(), which is the point where that is
-                 * guaranteed.
+                 * @pre The run has quiesced; ExecutionEngine::complete() calls this after
+                 *        wait_quiescent().
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 void disarm() noexcept;
 
@@ -475,27 +372,13 @@ namespace SushiRuntime
 
                 /**
                  * @brief Submits a batch of root nodes in a single injector pass.
-                 *
-                 * Each step re-injects every root through submit(), paying one
-                 * pending_mutex acquire and one condition-variable notify per root.
-                 * This collapses a step's whole root set into one lock acquisition,
-                 * one inflight_ increment, and one wake burst — the injector cost then
-                 * no longer scales with root fan-out. Semantically identical to calling
-                 * submit() per root (same add_ref, same quiescence accounting, same
-                 * priority split). The single-task submit() remains for the coordinator
-                 * re-injection path, so there is still one injector seam per shape.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 void submit_batch(const std::vector<SushiRuntime::Graph::Node*>& roots);
 
                 /**
-                 * @brief Blocks until the current run has fully drained.
-                 *
-                 * Returns once every task submitted for the run has been reaped by
-                 * the poller, i.e. no worker still touches a graph node. The caller
-                 * (ExecutionEngine::execute) invokes this after the sentinel signals
-                 * completion and before it destroys the CompiledGraph, closing the
-                 * window in which a worker finalizing the run's last nodes races the
-                 * graph's destruction. See inflight_.
+                 * @brief Blocks until every task submitted for the current run has been reaped.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
                 void wait_quiescent();
 

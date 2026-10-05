@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file common.hpp
+ * @brief Declares the Backend enumeration and the runtime's size constants.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <cstddef>

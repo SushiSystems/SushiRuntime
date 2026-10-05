@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file sycl_compat.hpp
+ * @brief Declares helpers that hide host-task differences between SYCL toolchains.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
+ */
+
 #pragma once
 
 #include <type_traits>
@@ -16,15 +23,7 @@ namespace SushiRuntime
 {
     namespace detail
     {
-        /**
-         * @brief Detects whether a SYCL command group handler exposes host_task.
-         *
-         * Uses SFINAE to verify if the handler supports the standard host_task method at compile time.
-         * 
-         * @tparam Handler The type of the SYCL command group handler.
-         * @tparam Fn The type of the callable task.
-         * @tparam Unnamed SFINAE helper parameter.
-         */
+        /** @brief Detects whether a SYCL command group handler exposes host_task. */
         template <class Handler, class Fn, class = void>
         struct has_host_task : std::false_type {};
 
@@ -36,16 +35,7 @@ namespace SushiRuntime
         template <class Handler, class Fn>
         inline constexpr bool has_host_task_v = has_host_task<Handler, Fn>::value;
 
-        /**
-         * @brief Enqueues a host-side callable into a SYCL command group.
-         *
-         * Selects the appropriate host execution mechanism dynamically based on the toolchain capabilities.
-         *
-         * @tparam Handler The type of the SYCL command group handler.
-         * @tparam Fn The type of the callable host task.
-         * @param h The active command-group handler managing the execution queue.
-         * @param fn The host callable to execute asynchronously, expecting no arguments.
-         */
+        /** @brief Enqueues a host-side callable through whichever mechanism the toolchain has. */
         template <class Handler, class Fn>
         inline void enqueue_host_task(Handler& h, Fn&& fn)
         {
@@ -55,9 +45,7 @@ namespace SushiRuntime
             }
             else
             {
-                // AdaptiveCpp path: the custom operation runs on the host once its
-                // dependencies are satisfied. The interop_handle argument is
-                // unused; accept it generically so its type need not be named.
+                // AdaptiveCpp path: the interop_handle argument is unused and accepted generically.
                 h.AdaptiveCpp_enqueue_custom_operation(
                     [fn = std::forward<Fn>(fn)](auto&&) mutable { fn(); });
             }

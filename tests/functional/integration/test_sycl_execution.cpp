@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_sycl_execution.cpp
+ * @brief Tests an end-to-end vector addition and a multi-stage chain through the TaskGraph.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
+
 #include <vector>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -104,11 +111,7 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     constexpr size_t N     = 2048;
     constexpr float  SCALE = 3.0f;
 
-    // Pin both buffers to one device so they share a context: the Reduce task
-    // touches data and sum together, and the co-location guard requires a task's
-    // buffers to live on one device. malloc_shared(numa) round-robins across the
-    // devices on a NUMA node, which would scatter the two across contexts on a
-    // multi-device host; malloc_shared_on fixes the device.
+    // Both buffers are pinned to device 0, as a task's buffers live on one device; see README.md.
     float*  data = static_cast<float*>(ctx.malloc_shared_on(N * sizeof(float), 0));
     double* sum  = static_cast<double*>(ctx.malloc_shared_on(sizeof(double), 0));
     ASSERT_NE(data, nullptr);

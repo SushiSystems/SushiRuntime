@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file i_offload_policy.hpp
+ * @brief Declares IOffloadPolicy, WorkerStats and the least-loaded offload policy.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <SushiRuntime/core/span.hpp>

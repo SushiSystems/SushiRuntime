@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// High-churn stress for epoch-based reclamation: many threads enter/exit
-// critical sections and retire objects, with threads spawning and exiting to
-// exercise the orphan handoff. Every retired object must be destroyed once and
-// most reclaimed. Under ASan/TSan this also surfaces races and use-after-free.
+/**
+ * @file test_epoch_stress.cpp
+ * @brief Tests epoch-based reclamation under multi-thread churn and thread spawn and exit.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <atomic>
 #include <memory>

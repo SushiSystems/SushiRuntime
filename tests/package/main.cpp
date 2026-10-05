@@ -6,15 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// The smallest thing that proves the package works: one kernel, recorded and
-// run against an installed SushiRuntime, from a project that has no access to
-// the runtime's source tree.
-//
-// It is small on purpose. Anything more would be testing the runtime, which the
-// runtime's own suite does; what is under test here is the package — that the
-// headers are found, that the kernel template compiles in THIS project's
-// translation unit under the toolchain the consumer chose, that the library
-// links, and that the version the headers describe is the version that loaded.
+/**
+ * @file main.cpp
+ * @brief Runs one kernel against an installed SushiRuntime and checks the loaded version.
+ * @author Mustafa Garip
+ * @see tests/package/README.md
+ */
 
 #include <cstddef>
 #include <cstdio>
@@ -25,9 +22,7 @@ int main()
 {
     using namespace SushiRuntime;
 
-    // The check every consumer should make once at startup. Headers and binary
-    // coming from different releases is the classic packaging failure, and it
-    // otherwise surfaces as a crash somewhere unrelated and much later.
+    // Headers and library must come from one release; see tests/package/README.md.
     if (!version_matches())
     {
         std::printf("FAIL: headers are %s, loaded library is %s\n",

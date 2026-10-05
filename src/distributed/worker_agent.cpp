@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file worker_agent.cpp
+ * @brief Runs the tasks a master dispatches to this worker and returns their results.
+ * @author Mustafa Garip
+ */
+
 #include <SushiRuntime/distributed/worker_agent.hpp>
 
 #include <deque>
@@ -36,31 +42,23 @@ namespace SushiRuntime
             std::shared_ptr<ITransport>  transport;
             sushi_ptr<KernelRegistry>    kernels;
 
-            // --- buffer cache, keyed by id; pull-on-miss against the master ---
+            /// @brief Holds one cached buffer; a miss or a stale version is pulled from the master.
             struct CacheEntry { uint32_t version = 0; void* ptr = nullptr; uint64_t size = 0; };
             std::mutex                              cache_mtx;
             std::condition_variable                 cache_cv;
             std::unordered_map<uint64_t, CacheEntry> cache;
 
-            // --- dispatch jobs run on a dedicated thread (NOT the pump thread),
-            //     so a blocking buffer pull never starves message delivery ------
+            /// @brief Guards the job queue the exec thread drains (src/distributed/README.md).
             std::mutex                    job_mtx;
             std::condition_variable       job_cv;
             std::queue<TaskDispatchMsg>   jobs;
             std::thread                   exec_thread;
             std::atomic<bool>             running{false};
 
-            // Backpressure: cap the pending-job queue so a master that floods this
-            // worker faster than it drains cannot grow memory without bound. When
-            // full, a dispatch is fast-failed (TASK_RESULT{false}) so the master
-            // re-dispatches it elsewhere or runs it locally, rather than silently
-            // queueing unbounded work.
+            /// @brief Caps the pending-job queue; 0 means unbounded (src/distributed/README.md).
             std::atomic<size_t>           max_jobs{1024};
 
-            // --- idempotency: a bounded set of recently-seen task ids so a
-            //     duplicated TASK_DISPATCH (transport retransmit) never runs the
-            //     kernel twice. Re-dispatches after failure use a fresh task_id, so
-            //     they are correctly NOT deduplicated. -------------------------
+            /// @brief Caps the task ids kept to reject duplicates (src/distributed/README.md).
             static constexpr size_t       MAX_SEEN_IDS = 4096;
             std::mutex                    seen_mtx;
             std::unordered_set<uint64_t>  seen_ids;
@@ -86,13 +84,10 @@ namespace SushiRuntime
                 return true;
             }
 
-            // Bound on how long resolve_input() waits for a pulled buffer before
-            // giving up, so a lost BUFFER_PUSH fails the task instead of hanging it.
+            /// @brief Bounds the wait for a pulled buffer (src/distributed/README.md).
             std::chrono::milliseconds     pull_timeout{5000};
 
-            // Set once the master acknowledges our HELLO. Until then the heartbeat
-            // loop keeps re-sending HELLO, so a lost registration message (a real
-            // possibility under packet loss) does not strand the worker forever.
+            /// @brief Records that the master acknowledged HELLO (src/distributed/README.md).
             std::atomic<bool>             registered{false};
 
             /**
@@ -109,8 +104,7 @@ namespace SushiRuntime
                 transport->send(0, MsgType::REGISTER_HELLO, w.view());
             }
 
-            // --- liveness: a periodic HEARTBEAT so the master can detect a dead
-            //     or hung worker and re-dispatch its tasks ----------------------
+            /// @brief Holds the period of the worker's HEARTBEAT (src/distributed/README.md).
             std::chrono::milliseconds     heartbeat_interval{1000};
             std::thread                   heartbeat_thread;
             std::mutex                    heartbeat_mtx;
@@ -132,16 +126,9 @@ namespace SushiRuntime
             void on_message(int peer, MsgType type, SushiRuntime::span<const std::byte> payload);
 
             /**
-             * @brief Allocates a shared USM buffer for the cache after validating
-             *        the wire-supplied size.
-             *
-             * The size arrives from an untrusted peer. Reject anything above the
-             * frame cap and treat a failed allocation as an error rather than
-             * returning a null pointer that a later memcpy would dereference.
-             * Both throws are contained by the pump-thread guard in start().
-             *
-             * @param size_bytes Requested allocation size from the wire.
-             * @return A non-null pointer to shared USM memory.
+             * @brief Allocates a cache buffer of a wire-supplied size (src/distributed/README.md).
+             * @param size_bytes Requested size from the wire; above MAX_FRAME_BYTES it throws.
+             * @return A non-null pointer to shared USM memory, unless size_bytes is zero.
              */
             void* alloc_cache_buffer(uint64_t size_bytes);
 
@@ -206,16 +193,13 @@ namespace SushiRuntime
 
             if (void* p = fresh()) return p;
 
-            // Miss / stale -> request the bytes and wait for the BUFFER_PUSH the
-            // pump thread will deposit into the cache.
+            // A miss or stale entry pulls; the pump deposits the push (src/distributed/README.md).
             lk.unlock();
             BufferRequestMsg req{ h.id, h.version };
             transport->send(0, MsgType::BUFFER_REQUEST, req.serialize());
             lk.lock();
 
-            // Bounded wait: if the push never arrives (lost message, dead master),
-            // return nullptr so execute_dispatch fails the task cleanly instead of
-            // blocking the exec thread forever. A non-positive timeout waits forever.
+            // The wait is bounded unless the timeout is non-positive (src/distributed/README.md).
             auto ready = [&] { return fresh() != nullptr || !running.load(); };
             if (pull_timeout.count() > 0)
                 cache_cv.wait_for(lk, pull_timeout, ready);
@@ -225,10 +209,9 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Prepares a local USM buffer for output.
-         * Allocates a new buffer or reuses an appropriately sized existing one.
-         * @param h The BufferHandle describing the output buffer.
-         * @return A void pointer to the allocated memory.
+         * @brief Allocates a cache buffer of a wire-supplied size (src/distributed/README.md).
+         * @param size_bytes Requested size from the wire; above MAX_FRAME_BYTES it throws.
+         * @return A non-null pointer to shared USM memory, unless size_bytes is zero.
          */
         void* WorkerAgent::Impl::alloc_cache_buffer(uint64_t size_bytes)
         {
@@ -236,13 +219,18 @@ namespace SushiRuntime
                 throw std::runtime_error(
                     "BufferHandle size_bytes exceeds MAX_FRAME_BYTES");
             void* p = sycl::malloc_shared(size_bytes, ctx.get_queue(0));
-            // malloc_shared can legitimately return null on OOM; without this
-            // check a later memcpy into the cache entry would segfault.
+            // malloc_shared may return null on OOM (src/distributed/README.md).
             if (!p && size_bytes != 0)
                 throw std::runtime_error("USM allocation for cache buffer failed");
             return p;
         }
 
+        /**
+         * @brief Prepares a local USM buffer for output.
+         * Allocates a new buffer or reuses an appropriately sized existing one.
+         * @param h The BufferHandle describing the output buffer.
+         * @return A void pointer to the allocated memory.
+         */
         void* WorkerAgent::Impl::resolve_output(const BufferHandle& h)
         {
             std::lock_guard<std::mutex> lk(cache_mtx);
@@ -276,8 +264,7 @@ namespace SushiRuntime
                 case MsgType::TASK_DISPATCH:
                 {
                     auto msg = TaskDispatchMsg::deserialize(payload);
-                    // Drop a duplicate dispatch so the kernel runs at most once per
-                    // task id; the original is already queued or done.
+                    // A duplicate dispatch is dropped (src/distributed/README.md).
                     if (!mark_seen(msg.task_id))
                     {
                         SR_LOG_WARN("Worker ignoring duplicate dispatch of task {}.", msg.task_id);
@@ -311,8 +298,7 @@ namespace SushiRuntime
                 }
                 case MsgType::PING:
                 {
-                    // Echo the master's token back and piggyback our free-memory
-                    // headroom so the master can refresh both RTT and free_mem.
+                    // The pong echoes the token and carries free_mem (src/distributed/README.md).
                     auto ping = PingMsg::deserialize(payload);
                     PongMsg pong;
                     pong.token    = ping.token;
@@ -326,8 +312,7 @@ namespace SushiRuntime
                     {
                         std::lock_guard<std::mutex> lk(cache_mtx);
                         auto& e = cache[push.handle.id.value];
-                        // Ignore a stale/duplicate push that would downgrade a cache
-                        // entry we already hold at an equal-or-newer version.
+                        // A push older than the cache entry is ignored (src/distributed/README.md).
                         if (e.ptr && push.handle.version < e.version)
                             break;
                         if (!e.ptr || e.size != push.handle.size_bytes)
@@ -336,11 +321,7 @@ namespace SushiRuntime
                             e.ptr  = alloc_cache_buffer(push.handle.size_bytes);
                             e.size = push.handle.size_bytes;
                         }
-                        // Clamp the copy to the allocated size. handle.size_bytes
-                        // (which sized e.ptr) and data.size() are INDEPENDENT wire
-                        // fields; a hostile/buggy peer can send size_bytes=16 with a
-                        // 1 MiB blob, overflowing the USM allocation. Mirror the
-                        // master-side clamp in distributed_coordinator.cpp.
+                        // The copy is clamped to the allocated size (src/distributed/README.md).
                         uint64_t n = push.data.size();
                         if (n > e.size) n = e.size;
                         std::memcpy(e.ptr, push.data.data(), n);
@@ -378,9 +359,7 @@ namespace SushiRuntime
             in_ptrs.reserve(msg.inputs.size());
             out_ptrs.reserve(msg.outputs.size());
 
-            // Resolve inputs first; a pull that timed out yields nullptr. Running the
-            // kernel on a null buffer would crash the worker, so fail the task
-            // instead and let the master re-dispatch it to a healthy peer.
+            // A null input fails the task before the kernel runs (src/distributed/README.md).
             bool inputs_ok = true;
             for (const auto& h : msg.inputs)
             {
@@ -401,19 +380,11 @@ namespace SushiRuntime
 
             try
             {
-                // Run the kernel through the worker's OWN TaskGraph + scheduler
-                // rather than inline on queue(0): the node carries its input/output
-                // pointers, so the scheduler routes it to the queue that owns the USM
-                // (correct on a multi-device worker) and the work participates in the
-                // worker's normal NUMA-aware execution. The remote kernel is a host-
-                // work shape (queue + deps -> event), so it drops straight into a
-                // host-fallback task node.
+                // The kernel runs through the worker's own TaskGraph (src/distributed/README.md).
                 Graph::TaskGraph g(ctx);
                 const auto* k = kernel;
                 const auto  meta = msg.meta;
-                // The dependency tracker keys on regions; a remote kernel's buffers
-                // are whole allocations, so each pointer maps to its whole-buffer
-                // region. The void* lists stay for the kernel invocation below.
+                // Each pointer maps to its whole-buffer region (src/distributed/README.md).
                 g.add_task(msg.meta,
                     std::vector<SushiRuntime::Core::ResourceRegion>(in_ptrs.begin(), in_ptrs.end()),
                     std::vector<SushiRuntime::Core::ResourceRegion>(out_ptrs.begin(), out_ptrs.end()),
@@ -424,9 +395,7 @@ namespace SushiRuntime
                     });
                 ctx.get_execution_engine().execute(g.compile());
 
-                // Carry each output's bytes inline in the result, so completion and
-                // data reach the master atomically — a lost result re-dispatches the
-                // whole task rather than leaving the master "done" with no data.
+                // Output bytes travel inside the result (src/distributed/README.md).
                 result.outputs = msg.outputs; // new versions now live on this worker
                 result.output_data.resize(msg.outputs.size());
                 {
@@ -462,15 +431,12 @@ namespace SushiRuntime
             try
             {
                 auto dev = ctx.get_queue(0).get_device();
-                // free_memory landed at version 5 of the Intel device-info
-                // extension; guard on the exact feature-test value so the symbol
-                // is only referenced where it is guaranteed to exist.
+                // free_memory needs device-info extension version 5 (src/distributed/README.md).
 #if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
                 if (dev.has(sycl::aspect::ext_intel_free_memory))
                     return dev.get_info<sycl::ext::intel::info::device::free_memory>();
 #endif
-                // No free-memory query on this device: fall back to total capacity
-                // as a coarse headroom proxy (better than reporting "unknown").
+                // Total capacity stands in when no query exists (src/distributed/README.md).
                 return dev.get_info<sycl::info::device::global_mem_size>();
             }
             catch (...)
@@ -527,7 +493,6 @@ namespace SushiRuntime
             cache.clear();
         }
 
-        // --- public wrapper ---------------------------------------------------
         /**
          * @brief Constructs a WorkerAgent instance.
          * Initializes the worker with a runtime context, transport layer, and kernel registry.
@@ -595,11 +560,7 @@ namespace SushiRuntime
             impl_->transport->on_message(
                 [raw](int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
                 {
-                    // The message handler runs on the transport's pump thread. A
-                    // throw from here (malformed wire input → bad_alloc, a failed
-                    // SYCL allocation, a hostile blob) would escape the thread body
-                    // and call std::terminate, taking down the whole process on a
-                    // single bad message. Contain it: log and drop the message.
+                    // A throw on the pump thread is logged and dropped (src/distributed/README.md).
                     try
                     {
                         raw->on_message(peer, type, payload);
@@ -619,8 +580,7 @@ namespace SushiRuntime
                 });
             impl_->transport->start();
 
-            // Announce our protocol version + kernels. The heartbeat loop re-sends
-            // this until REGISTER_ACK, so a lost HELLO does not strand the worker.
+            // The heartbeat loop re-sends HELLO until REGISTER_ACK (src/distributed/README.md).
             impl_->send_hello();
 
             impl_->exec_thread = std::thread([raw] { raw->exec_loop(); });

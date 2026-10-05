@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file affinity.hpp
+ * @brief Defines pin_current_thread_to_core.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/topology/README.md
+ */
+
 #pragma once
 
 #include <thread>
@@ -27,14 +34,8 @@ namespace SushiRuntime
     {
         /**
          * @brief Pins the calling thread to a specific logical CPU core.
-         *
-         * Uses the OS affinity API (SetThreadAffinityMask on Windows,
-         * pthread_setaffinity_np on POSIX) to bind the thread so the
-         * scheduler never migrates it to a different core.
-         *
-         * @param core_id Logical core index (0-based). Must be a valid index
-         *                for the running system; out-of-range values are logged
-         *                as warnings and silently ignored by the OS.
+         * @param core_id Logical core index, 0-based; an out-of-range value is logged and ignored.
+         * @see include/SushiRuntime/topology/README.md
          */
         inline void pin_current_thread_to_core(int core_id)
         {

@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file numa_mapper.hpp
+ * @brief Declares NUMAMapper, which maps distances between hardware units.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <vector>

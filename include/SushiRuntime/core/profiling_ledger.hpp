@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file profiling_ledger.hpp
+ * @brief Declares ProfilingLedger, the per-plan store of node event records.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
+ */
+
 #pragma once
 
 #include <algorithm>
@@ -21,14 +28,8 @@ namespace SushiRuntime
     namespace Core
     {
         /**
-         * @brief Per-plan high-water-mark store for one run's node event records.
-         *
-         * Owned by CompiledGraph and reused across runs. Each row is sized to its
-         * own node's expected dispatch count times how many internal nodes share
-         * its registration_index (F5). reserve() grows it outside the poller,
-         * before a run's dispatch loop starts, so claim_slot()/write() never
-         * allocate. Also carries the run's clock pairing claim (design
-         * 2026-09-15-g1-node-event-records-design.md §C).
+         * @brief Stores one run's node event records per plan, at a high-water-mark size.
+         * @see include/SushiRuntime/core/README.md
          */
         class ProfilingLedger
         {
@@ -77,15 +78,9 @@ namespace SushiRuntime
 
             /**
              * @brief Grows the ledger for a new run and resets its per-run state.
-             *
-             * Row i is sized to expected_invocations * multiplicities[i], or its
-             * own last observed demand if that was larger, so an overflowing row
-             * grows on the very next call (item 4) and a shared registration_index
-             * (F5) gets a row big enough for every node behind it.
-             *
-             * @param multiplicities Per-registration-index count of internal
-             *        nodes sharing that index (F5); its size is the row count.
-             * @param expected_invocations Per-node dispatch count this run expects.
+             * @param multiplicities Count of internal nodes per registration index; its size is the
+             *        row count.
+             * @see include/SushiRuntime/core/README.md
              */
             void reserve(const std::vector<std::uint32_t>& multiplicities,
                         std::uint32_t expected_invocations) noexcept

@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Validates the injectable topology abstraction (ITopologyProvider /
-// INumaDistanceModel): multi-NUMA logic exercised deterministically on
-// single-node hardware, which the real hwloc path cannot do on a 1-socket box.
+/**
+ * @file test_topology_abstraction.cpp
+ * @brief Tests the injectable topology provider and NUMA distance model on single-node hardware.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <memory>
 #include <gtest/gtest.h>
@@ -40,7 +43,8 @@ TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelObeysAcpiConvention)
 }
 
 /**
- * @brief Verifies that the MatrixDistanceModel correctly supports asymmetric multi-hop fabric distances.
+ * @brief Verifies that the MatrixDistanceModel correctly supports asymmetric multi-hop fabric
+ *        distances.
  *
  * Constructs a 3-node matrix with non-uniform interconnect costs and verifies correct distance retrievals.
  */
@@ -57,7 +61,8 @@ TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
 }
 
 /**
- * @brief Verifies that RuntimeContext correctly utilizes an injected distance model over concrete hwloc.
+ * @brief Verifies that RuntimeContext correctly utilizes an injected distance model over concrete
+ *        hwloc.
  *
  * Injects a synthetic distance model into the RuntimeContext and ensures its reported NUMA distances match the injected values.
  */
@@ -75,7 +80,8 @@ TEST(Unit_TopologyAbstractionTest, InjectedDistanceModelDrivesRuntimeContext)
 }
 
 /**
- * @brief Verifies that the RemappingTopologyProvider distributes real devices across a synthetic NUMA layout.
+ * @brief Verifies that the RemappingTopologyProvider distributes real devices across a synthetic
+ *        NUMA layout.
  *
  * Wraps a real hwloc provider with a remapper and ensures all discovered devices are assigned to NUMA nodes within the synthetic range.
  */

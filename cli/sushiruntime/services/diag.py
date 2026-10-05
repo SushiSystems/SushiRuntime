@@ -3,16 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Diagnostic commands: inspect the resolved config and the build environment.
+"""Declares the diagnostics behind `sr config` and `sr env`.
 
-Read-only troubleshooting. When a build picks the "wrong" compiler or a path
-looks off, `sr config` answers *what* the CLI resolved and *where each value
-came from* (default / config.toml / env override), and `sr env` answers *which
-environment* cmake/ctest actually run under.
-
-Both are :class:`sushicore.diag.Diagnostics`. What this file supplies is what is
-actually SushiRuntime's: the sanitizer build tree, which no other module in the
-stack has, and which is why `sr env` takes a flag the others do not.
+See cli/README.md.
 """
 
 from __future__ import annotations

@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// The Chase-Lev deque must never drop a task on overflow: a dropped task leaves
-// its successors' in_degree above zero forever and deadlocks the run. These
-// checks drive the ring past its fixed capacity — single-threaded for exactness
-// and with concurrent stealers for the lock-free path — and assert every pushed
-// task comes back out exactly once.
+/**
+ * @file test_work_stealing_deque.cpp
+ * @brief Tests that the Chase-Lev deque returns every pushed task exactly once past its capacity.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <atomic>
 #include <cstdint>

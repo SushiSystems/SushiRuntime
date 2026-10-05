@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file callable_traits.hpp
+ * @brief Declares the callable traits and pointer-unpacking helpers behind the add() overloads.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/detail/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -22,12 +29,7 @@ namespace SushiRuntime
 {
     namespace API
     {
-        // The three callable shapes the fluent add() overloads accept, expressed
-        // as C++17 SFINAE traits over std::is_invocable_v (the C++20 concepts they
-        // replace read the same, only as `requires`-clauses). enable_if on each
-        // add() selects exactly one. A wrong signature removes every overload, so
-        // the compiler reports "no matching call" — less pointed than a concept
-        // diagnostic but still naming the offending callable.
+        // Exactly one of the traits below enables each add() overload.
 
         /**
          * @brief A function callable once per element index: void(size_t).
@@ -58,9 +60,10 @@ namespace SushiRuntime
 
         namespace detail
         {
-            // Calls fn(idx, ptr0, ptr1, ...) by unpacking the captured pointer
-            // tuple. Kept free so it is usable from inside a device lambda; all
-            // operations (std::get over a tuple of pointers) are device-safe.
+            /**
+             * @brief Calls fn(idx, ptr0, ptr1, ...) by unpacking the captured pointer tuple;
+             *        device-safe.
+             */
             template <class Fn, int N, class Tuple, std::size_t... Is>
             inline void invoke_with_pointers(const Fn& fn, sycl::id<N> idx,
                                              const Tuple& ptrs, std::index_sequence<Is...>)
@@ -68,18 +71,21 @@ namespace SushiRuntime
                 fn(idx, std::get<Is>(ptrs)...);
             }
 
-            // Reads each coupled-input view's current pointer into a plain tuple,
-            // host-side at submit time. A StateView holds the live current/next
-            // pointers for the step, so dereferencing here (not in the kernel) lets
-            // the device lambda capture raw pointers and still follow the swap.
+            /**
+             * @brief Reads each coupled-input view's current pointer into a tuple, host-side at
+             *        submit time.
+             * @see include/SushiRuntime/api/detail/README.md
+             */
             template <class Views, std::size_t... Is>
             inline auto views_current(const Views& views, std::index_sequence<Is...>)
             {
                 return std::make_tuple(std::get<Is>(views)->cur...);
             }
 
-            // Calls fn(i, cur, next, in0, in1, ...) by unpacking the read-input
-            // pointer tuple. Device-safe: every tuple element is a raw pointer.
+            /**
+             * @brief Calls fn(i, cur, next, in0, in1, ...) by unpacking the read-input pointer
+             *        tuple.
+             */
             template <class Fn, class T, class Tuple, std::size_t... Is>
             inline void invoke_state(const Fn& fn, std::size_t i,
                                      const T* cur, T* next,
@@ -88,9 +94,10 @@ namespace SushiRuntime
                 fn(i, cur, next, std::get<Is>(ins)...);
             }
 
-            // Gathers the read keys of a tuple of State pointers, in order. Called
-            // at compile time so the dependency tracker labels every coupled input
-            // consistently with the canonical single-State overload.
+            /**
+             * @brief Gathers the read keys of a tuple of State pointers, in order.
+             * @see include/SushiRuntime/api/detail/README.md
+             */
             template <class StatesTuple, std::size_t... Is>
             inline std::vector<Core::ResourceRegion> read_keys_of(const StatesTuple& states,
                                                                   std::index_sequence<Is...>)

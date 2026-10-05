@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file sushi_ptr.hpp
+ * @brief Declares sushi_ptr, the intrusive smart pointer for reference-counted objects.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -195,7 +201,7 @@ namespace SushiRuntime
              * 
              * Transfers manual ownership to the caller without modifying the object's reference count.
              * 
-             * @return The underlying raw pointer previously managed by this object.
+             * @return The underlying raw pointer this object managed.
              */
             T* leak() noexcept
             {
@@ -219,31 +225,14 @@ namespace SushiRuntime
             bool operator!=(const sushi_ptr& other) const noexcept { return ptr != other.ptr; }
     };
 
-    /**
-     * @brief Exchanges the managed objects of two smart pointers.
-     * 
-     * Uses the member swap method to efficiently trade ownership states.
-     * 
-     * @tparam T The type of the managed object.
-     * @param lhs The first smart pointer.
-     * @param rhs The second smart pointer.
-     */
+    /** @brief Exchanges the managed objects of two smart pointers. */
     template <typename T>
     void swap(sushi_ptr<T>& lhs, sushi_ptr<T>& rhs) noexcept 
     {
         lhs.swap(rhs);
     }
 
-    /**
-     * @brief Allocates and constructs a reference-counted object managed by a smart pointer.
-     * 
-     * Forwards the provided arguments directly to the target object's constructor.
-     * 
-     * @tparam T The type of the object to create.
-     * @tparam Args The types of the constructor arguments.
-     * @param args The arguments passed to the object's constructor.
-     * @return A new smart pointer managing the instantiated object.
-     */
+    /** @brief Allocates and constructs a reference-counted object managed by a sushi_ptr. */
     template <typename T, typename... Args>
     sushi_ptr<T> make_sushi(Args&&... args) 
     {

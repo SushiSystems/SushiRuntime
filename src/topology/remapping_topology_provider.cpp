@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file remapping_topology_provider.cpp
+ * @brief Remaps devices and CPU cores onto synthetic NUMA nodes.
+ * @author Mustafa Garip
+ */
+
 #include <stdexcept>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
@@ -41,8 +47,7 @@ namespace SushiRuntime
         {
             std::vector<HardwareNode> nodes = inner_->enumerate(config);
 
-            // Spread the real devices across the synthetic NUMA nodes round-robin.
-            // Devices stay real (queues/kernels still work); only numa_node_id is faked.
+            // Only numa_node_id is faked; the devices stay real (src/topology/README.md).
             for (size_t i = 0; i < nodes.size(); ++i)
             {
                 int fake_numa = static_cast<int>(i % static_cast<size_t>(fake_node_count_));
@@ -63,9 +68,7 @@ namespace SushiRuntime
          */
         std::vector<int> RemappingTopologyProvider::cpu_core_to_numa() const
         {
-            // Overlay the same synthetic round-robin layout on the real cores, so
-            // hierarchical work stealing sees multiple NUMA nodes on single-node
-            // hardware. Index = logical core id, kept aligned with thread pinning.
+            // The index is the logical core id thread pinning uses (src/topology/README.md).
             std::vector<int> map = inner_->cpu_core_to_numa();
             for (size_t i = 0; i < map.size(); ++i)
                 map[i] = static_cast<int>(i % static_cast<size_t>(fake_node_count_));

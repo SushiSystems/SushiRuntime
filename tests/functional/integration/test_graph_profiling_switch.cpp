@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// G1 task 4 coverage: the per-graph profiling switch (spec
-// docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md §B, plan
-// task 4). Covers set_profiling_requested()'s independence across graphs,
-// the plan's recompile-once contract, and every device-dispatch branch the
-// scheduler can route to a profiling queue.
+/**
+ * @file test_graph_profiling_switch.cpp
+ * @brief Tests the per-graph profiling switch and the profiling queue each dispatch branch uses.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -96,20 +97,10 @@ TEST(Integration_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
     EXPECT_EQ(g.compile_count(), compiles_after_first_run + 1);
 }
 
-// A node with no declared Reads/Writes leaves the scheduler's anchor unset,
-// forcing the NUMA-local fallback branch instead of the cached-index one the
-// two tests above exercise. Nothing public exposes which branch a node took
-// (Node::cached_queue_index_ is scheduler-private), so this asserts the
-// fallback's observable effect instead: a profiling queue gets built, and
-// timing is collected. Were the fallback still landing on the plain queue,
-// the poller's timestamp read on that event would throw, since the queue
-// was never built with enable_profiling — so this also fails loudly on a
-// regression rather than just missing timing silently.
-//
-// The remaining branch (get_queue_for_ptr for an anchor the USM registry
-// does not recognise) cannot be forced safely from a test: reaching it needs
-// a device kernel dereferencing a pointer the runtime never allocated,
-// which is an illegal access on a real GPU backend.
+/**
+ * @brief Tests that a node without declared Reads or Writes takes the NUMA fallback branch and
+ *        still uses a profiling queue.
+ */
 TEST(Integration_GraphProfilingSwitch, NumaFallbackBranchUsesProfilingQueue)
 {
     constexpr std::size_t N = 256;

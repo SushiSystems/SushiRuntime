@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// A task exception must abort only its own run, not kill the worker pool. The
-// run that threw surfaces the error to the caller; a fresh graph on the same
-// Runtime must still run and produce correct results afterward. Before the fix a
-// single throw latched shutdown_requested and left the pool permanently dead.
+/**
+ * @file test_error_isolation.cpp
+ * @brief Tests that a task exception aborts only its own run and leaves the Runtime reusable.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <stdexcept>
@@ -38,8 +40,7 @@ TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
     constexpr std::size_t N = 64;
     auto rt = Runtime::create();
 
-    // First graph: the command-group function throws, so execute() must report
-    // the error to the caller rather than hang.
+    // execute() must report the throw from the first graph's command group; see README.md.
     {
         auto g = rt.graph();
         g.add_untracked([](sycl::handler&) { throw std::runtime_error("boom"); });

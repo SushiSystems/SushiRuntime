@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Quantifies NUMA-aware vs NUMA-blind stealing on the SAME hardware: the same
-// workload runs once on the flat (real) topology and once on a synthetic 2-node
-// topology, reporting both throughputs and the aware-side steal split. On a UMA
-// box (single socket / WSL) there's no real speedup to claim, so it asserts only
-// correctness + that the aware path keeps steals node-local.
+/**
+ * @file test_steal_numa_effect_perf.cpp
+ * @brief Measures stealing throughput on the real topology against a synthetic two-node one.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <atomic>
 #include <chrono>
@@ -90,13 +91,8 @@ namespace
     };
 
     /**
-     * @brief Runs the workload through the scheduler.
-     * 
-     * Drains TOTAL counter tasks through ctx's scheduler, best-of-N for the time,
-     * keeping the steal split from the fastest round.
-     * 
-     * @param ctx The runtime context.
-     * @return The best result.
+     * @brief Drains TOTAL counter tasks through the scheduler of @p ctx, best of ROUNDS.
+     * @return The fastest round's time and its steal split.
      */
     Result run_workload(RuntimeContext& ctx)
     {
@@ -163,13 +159,7 @@ TEST(Performance_StealNumaEffectBench, NumaAwareVsBlindThroughput)
     EXPECT_GT(blind_thr, 0.0);
     EXPECT_GT(aware_thr, 0.0);
 
-    // The steal split is gathered while the workload is *timed*, so it only
-    // reflects locality when the cores genuinely sit on separate NUMA nodes. On a
-    // single-socket (UMA) box the two synthetic nodes share one set of cores, and
-    // OpenMP/runtime worker threads contending for them drag the local fraction
-    // below the strict bar regardless of toolchain (observed ~0.46–0.48 vs 0.5).
-    // The locality *ordering* is verified deterministically by Unit_NumaStealTest,
-    // so this timing-time assertion only fires on real multi-socket hardware.
+    // The split shows locality only across real NUMA nodes; see tests/benchmark/README.md.
     const auto& core_numa = blind_ctx.cpu_core_to_numa();
     const std::set<int> real_nodes(core_numa.begin(), core_numa.end());
     if (real_nodes.size() < 2)

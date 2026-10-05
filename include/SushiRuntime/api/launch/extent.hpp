@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file extent.hpp
+ * @brief Declares Extent, the N-D iteration box of a fluent kernel.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/launch/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -18,19 +25,9 @@ namespace SushiRuntime
     namespace API
     {
         /**
-         * @brief The iteration shape of a fluent kernel: an N-D box with an origin.
-         *
-         * Extent is the launch vocabulary the multidimensional add() overloads key
-         * on. It pairs a global @ref extent (how many work-items per dimension) with
-         * an @ref offset origin, so a kernel can iterate the whole field or just a
-         * sub-box of it — the latter is what makes interior-only stencils and
-         * halo/ghost-layer updates expressible without a hand-rolled handler.
-         *
-         * A 1-D Extent is implicitly constructible from a plain element count, so
-         * every existing add(std::size_t, fn) call site keeps compiling unchanged
-         * and 1-D stays the zero-ceremony default.
-         *
+         * @brief Describes the iteration shape of a fluent kernel: an N-D box with an origin.
          * @tparam N Number of dimensions (1, 2, or 3), matching SYCL's range rank.
+         * @see include/SushiRuntime/api/launch/README.md
          */
         template <int N>
         struct Extent
@@ -89,8 +86,7 @@ namespace SushiRuntime
             }
         };
 
-        // Deduction so `Extent{W, H}` yields Extent<2>, `Extent{W, H, D}` -> <3>,
-        // and `Extent{N}` -> <1>, without spelling the rank.
+        // The guide deduces the rank from the argument count: Extent{W, H} is Extent<2>.
         template <class... Sizes>
         Extent(Sizes...) -> Extent<static_cast<int>(sizeof...(Sizes))>;
 

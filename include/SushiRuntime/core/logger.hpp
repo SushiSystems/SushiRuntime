@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file logger.hpp
+ * @brief Declares the synchronous and asynchronous loggers and the SR_LOG macros.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
+ */
+
 #pragma once
 
 #include <cstdio>
@@ -57,22 +64,8 @@ namespace SushiRuntime
         namespace Detail 
         {
             /**
-             * @brief Asynchronous log writer with worker thread.
-             *
-             * Shutdown protocol (race-free):
-             *   1. Destructor acquires the mutex.
-             *   2. Sets running_ = false WHILE HOLDING the mutex.
-             *   3. Releases the mutex and notifies the condvar.
-             *   4. Joins the worker.
-             *
-             * Without holding the mutex during the store, the worker could
-             * evaluate its wait-predicate (queue empty AND running_ == true),
-             * decide to sleep, and then park on the condvar AFTER the
-             * destructor's notify_one fires. The notify is then lost and the
-             * worker sleeps forever, deadlocking the join. Holding the mutex
-             * during the store closes that window: the worker is either
-             * still inside the predicate (will re-check and exit), or
-             * already parked (will be woken by the post-unlock notify).
+             * @brief Writes log messages asynchronously on a worker thread.
+             * @see include/SushiRuntime/core/README.md
              */
             class AsyncLogger 
             {
@@ -81,10 +74,7 @@ namespace SushiRuntime
                     std::mutex mutex_;
                     std::condition_variable cv_;
                     std::thread worker_;
-                    bool running_;  // Guarded by mutex_. Was atomic; the atomic
-                                    // gave a false sense of safety because the
-                                    // store/notify pair was not synchronized
-                                    // with the worker's wait predicate.
+                    bool running_;  // Guarded by mutex_.
 
                     void process_logs() 
                     {
@@ -96,10 +86,7 @@ namespace SushiRuntime
                                 return !queue_.empty() || !running_; 
                             });
 
-                            // Drain the queue regardless of running_ state, so
-                            // that messages enqueued just before shutdown are
-                            // still flushed. Only exit once the queue is empty
-                            // AND shutdown has been requested.
+                            // The worker exits only with an empty queue and a shutdown request.
                             while (!queue_.empty()) 
                             {
                                 auto log_entry = std::move(queue_.front());
@@ -134,14 +121,7 @@ namespace SushiRuntime
 
                     ~AsyncLogger() 
                     {
-                        // Set the shutdown flag while holding the mutex. This
-                        // guarantees that when we notify below, any worker
-                        // currently inside cv_.wait is either already parked
-                        // (and the notify will wake it) or has not yet re-
-                        // evaluated the predicate (and will see running_ ==
-                        // false on the next check). Without the lock, the
-                        // store could land between the predicate check and
-                        // the park, and the notify would be lost.
+                        // running_ is cleared under mutex_, so the notify below cannot be lost.
                         {
                             std::lock_guard<std::mutex> lock(mutex_);
                             running_ = false;
@@ -207,14 +187,8 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Routes a log message to either the sync or async logger.
-             *
-             * The choice is governed by is_sync_logging_enabled(); switching modes
-             * mid-run is safe because the flag is atomic and each logger owns its
-             * own mutex / queue.
-             *
-             * @param level Severity of the message.
-             * @param msg   Fully formatted log line (including timestamp and context).
+             * @brief Routes a log message to either the sync or the async logger.
+             * @see include/SushiRuntime/core/README.md
              */
             inline void dispatch_log(LogType level, std::string&& msg)
             {
@@ -266,16 +240,7 @@ namespace SushiRuntime
 
             /**
              * @brief Substitutes each {} placeholder with the next argument.
-             *
-             * A small std::format stand-in for C++17: it replaces positional {}
-             * markers left to right by streaming each argument with operator<<,
-             * and treats {{ and }} as literal braces. It intentionally supports no
-             * format specs ({:...}) — call sites needing width/hex pre-format the
-             * value before logging. Extra arguments and extra placeholders are
-             * ignored rather than diagnosed, mirroring a logger's best-effort role.
-             *
-             * @param fmt The format string holding {} markers.
-             * @return The fully substituted string (no trailing arguments left).
+             * @see include/SushiRuntime/core/README.md
              */
             inline std::string sr_format(std::string_view fmt)
             {
@@ -334,10 +299,7 @@ namespace SushiRuntime
     /**
      * @brief Logs a message at error level.
      */
-    // The format string is folded into __VA_ARGS__ (so the macros take (...)
-    // rather than (fmt, ...)): this keeps a single, always-present variadic list
-    // and avoids __VA_OPT__/##__VA_ARGS__, neither of which is standard C++17.
-    // log_base's std::string_view fmt parameter then binds the first argument.
+    // The format string travels inside __VA_ARGS__, so the macros take (...) in standard C++17.
     #if SR_ENABLE_LOGGING
         #define SR_LOG_ERROR(...) \
             if constexpr (SushiRuntime::Core::ACTIVE_LOG_LEVEL >= SushiRuntime::Core::LogType::ERR) \

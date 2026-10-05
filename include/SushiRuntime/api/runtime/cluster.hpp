@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file cluster.hpp
+ * @brief Declares Cluster, the fluent handle to a Master-mode distributed cluster.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/runtime/README.md
+ */
+
 #pragma once
 
 #include <chrono>
@@ -23,13 +30,8 @@ namespace SushiRuntime
 
 #ifdef SR_DISTRIBUTED
         /**
-         * @brief Fluent handle to a Master-mode distributed cluster.
-         *
-         * Returned by Runtime::cluster(), which promotes the runtime to Master and
-         * wires the transport. This handle bundles the cluster's tuning knobs and
-         * telemetry so callers do not reach into RuntimeContext's distributed_*
-         * surface directly. Offloadable tasks are still added with op_id-bearing
-         * task metadata; this handle governs the cluster, not the graph.
+         * @brief Bundles the tuning knobs and telemetry of a Master-mode distributed cluster.
+         * @see include/SushiRuntime/api/runtime/README.md
          */
         class Cluster
         {

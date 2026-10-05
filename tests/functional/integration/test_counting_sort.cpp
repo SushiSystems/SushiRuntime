@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Wave 3 task 4 coverage: Graph::add_counting_sort() (spec
-// 2026-09-16-scan-and-counting-sort-design.md §A3, §B; plan task 4). Checks
-// stability against std::stable_sort, the digit-count boundaries a live key
-// range crosses, late-bound replay with one compile, and that every internal
-// pass of one call shares one node_index across steps.
+/**
+ * @file test_counting_sort.cpp
+ * @brief Tests add_counting_sort(): stability, digit boundaries, late-bound replay, node indexing.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <algorithm>
 #include <cstddef>
@@ -30,10 +31,10 @@ namespace
 {
     constexpr std::uint32_t CANARY = 0xDEADBEEFu;
 
-    // The host reference for every case below: a stable sort of (key, index)
-    // by key alone, plus the bucket offsets/counts that fall out of it. This
-    // is the ground truth add_counting_sort() is checked against, not a copy
-    // of its algorithm.
+    /**
+     * @brief Holds the host reference: a stable sort of (key, index) by key and the bucket offsets
+     *        and counts it implies.
+     */
     struct HostReference
     {
         std::vector<std::uint32_t> indices;
@@ -74,11 +75,7 @@ namespace
     }
 }
 
-// Stability against std::stable_sort on seeded duplicate keys, with a
-// std::sort-based comparison proving the case is not vacuous: a plain
-// unstable sort must be able to disagree with the stable reference on this
-// same input, or the test would pass whether or not add_counting_sort() were
-// stable at all.
+/** @brief Tests stability against std::stable_sort on seeded duplicate keys. */
 TEST(Integration_CountingSort, StableAgainstHostReferenceOnDuplicateKeys)
 {
     constexpr std::size_t N = 4000;
@@ -127,10 +124,7 @@ TEST(Integration_CountingSort, StableAgainstHostReferenceOnDuplicateKeys)
     EXPECT_EQ(counts[KEY_RANGE], CANARY);
 }
 
-// Multi-digit stability: every key shares the same low byte, so the first
-// (least significant) digit pass ties every element, and only the second
-// digit pass tells them apart. Same non-vacuous std::sort check as the
-// single-digit case, so the tie itself is proven to matter.
+/** @brief Tests stability across digits when every key shares the same low byte. */
 TEST(Integration_CountingSort, StableAcrossMultipleDigitsWhenTheLowDigitTies)
 {
     constexpr std::size_t N = 4000;
@@ -171,9 +165,10 @@ TEST(Integration_CountingSort, StableAcrossMultipleDigitsWhenTheLowDigitTies)
         ASSERT_EQ(offsets[k], ref.offsets[k]) << "k = " << k;
 }
 
-// Large case, seeded random: n = 10^6 with a 2^20 key range needs more than
-// 256 tiles (10^6 / 256 ~= 3907) and three digit passes, the first size and
-// range this suite exercises both boundaries at once.
+/**
+ * @brief Tests a seeded random case of 10^6 elements over a 2^20 key range against the host
+ *        reference.
+ */
 TEST(Integration_CountingSort, LargeRandomCaseAgainstHostReference)
 {
     constexpr std::size_t N = 1000000;
@@ -251,8 +246,10 @@ TEST(Integration_CountingSort, OneElement)
     EXPECT_EQ(total[0], 1u);
 }
 
-// Zero elements: every bucket starts and stays at the live count, which is
-// zero, and nothing beyond the declared window is touched.
+/**
+ * @brief Tests that zero elements leave every bucket at zero and touch nothing past the declared
+ *        window.
+ */
 TEST(Integration_CountingSort, ZeroElementsWritesZeroEverywhere)
 {
     constexpr std::size_t KEY_RANGE = 16;
@@ -279,8 +276,7 @@ TEST(Integration_CountingSort, ZeroElementsWritesZeroEverywhere)
     EXPECT_EQ(counts[KEY_RANGE], CANARY);
 }
 
-// The maximum key of a 2^20 range: catches a digit-count or mask error at
-// the top bit, since key_range.capacity - 1 sets bit 19 exactly.
+/** @brief Tests the maximum key of a 2^20 range, which sets bit 19. */
 TEST(Integration_CountingSort, MaximumKeyOfA20BitRange)
 {
     constexpr std::size_t KEY_RANGE = 1u << 20;
@@ -310,9 +306,9 @@ TEST(Integration_CountingSort, MaximumKeyOfA20BitRange)
     EXPECT_EQ(offsets[KEY_RANGE], 5u);
 }
 
-// A live key range at or below 2^16 must take two digit passes, one above it
-// three: each digit block is histogram + column scan + bin base + placement,
-// so the node count this call emits grows by exactly four per extra digit.
+/**
+ * @brief Tests that the emitted node count grows by four for each extra digit the key range needs.
+ */
 TEST(Integration_CountingSort, DigitCountFollowsKeyRangeCapacity)
 {
     auto passes_for = [](std::size_t key_range_capacity) -> std::size_t
@@ -339,9 +335,10 @@ TEST(Integration_CountingSort, DigitCountFollowsKeyRangeCapacity)
         << "2^20 needs three digit passes, 2^16 needs two";
 }
 
-// A late-bound element count and key range that both change between runs
-// must not force a recompile: capacity fixes the topology, only the live
-// values and the buffers they describe vary.
+/**
+ * @brief Tests that a late-bound element count and key range that change between runs keep one
+ *        compile.
+ */
 TEST(Integration_CountingSort, LateBoundChangingCountAndKeyRangeKeepsOneCompile)
 {
     constexpr std::size_t N_CAPACITY = 2000;
@@ -398,9 +395,10 @@ TEST(Integration_CountingSort, LateBoundChangingCountAndKeyRangeKeepsOneCompile)
         << "a live count or key range change between runs must not trigger a recompile";
 }
 
-// A key range capacity of 2^24 plans three digits; live key ranges needing
-// one, two and three digits must each leave the stable order in the indices,
-// whichever digit turns out to be the last one that runs.
+/**
+ * @brief Tests that live key ranges needing one, two and three digits each leave the stable order
+ *        in the indices.
+ */
 TEST(Integration_CountingSort, LiveKeyRangeBelowCapacityLandsInIndices)
 {
     constexpr std::size_t N = 3000;
@@ -444,10 +442,7 @@ TEST(Integration_CountingSort, LiveKeyRangeBelowCapacityLandsInIndices)
     EXPECT_EQ(g.compile_count(), 1u);
 }
 
-// The upper digits really are skipped: a key that breaks the live key range's
-// precondition but fits the capacity is sorted by its low byte alone, which it
-// could not be if the digit above still ran. White-box by design; a caller must
-// never pass such a key.
+/** @brief Tests that the digits above the live key range do not run. */
 TEST(Integration_CountingSort, DigitsAboveTheLiveKeyRangeDoNotRun)
 {
     constexpr std::size_t N = 4;
@@ -459,8 +454,7 @@ TEST(Integration_CountingSort, DigitsAboveTheLiveKeyRangeDoNotRun)
     auto offsets = rt.buffer<std::uint32_t>(KEY_CAPACITY + 1);
     auto total   = rt.buffer<std::uint32_t>(1);
 
-    // 0x0101 has low byte 1, so one digit puts it between 0 and 2; two digits
-    // would put it last.
+    // One digit puts 0x0101 between 0 and 2, two digits would put it last; see README.md.
     keys[0] = 0x0101;
     keys[1] = 2;
     keys[2] = 0;
@@ -479,8 +473,10 @@ TEST(Integration_CountingSort, DigitsAboveTheLiveKeyRangeDoNotRun)
         EXPECT_EQ(indices[i], one_digit_order[i]) << "i = " << i;
 }
 
-// A DynamicGraph region records the prefix scan and the counting sort exactly
-// as a Graph does, each in its own region, with live counts changing between runs.
+/**
+ * @brief Tests that DynamicGraph regions record the prefix scan and the counting sort as a Graph
+ *        does.
+ */
 TEST(Integration_CountingSort, RegionsRecordScanAndCountingSort)
 {
     constexpr std::size_t N_CAPACITY = 700;
@@ -539,8 +535,7 @@ TEST(Integration_CountingSort, RegionsRecordScanAndCountingSort)
     }
 }
 
-// Per-substep coverage: run(4) with keys that change every step, so each
-// step's sort must reflect the buffer as it stood when that step ran.
+/** @brief Tests that each step of run(4) sorts the keys as they stood when that step ran. */
 TEST(Integration_CountingSort, EachRunSortsItsOwnKeys)
 {
     constexpr std::size_t N = 500;
@@ -574,13 +569,10 @@ TEST(Integration_CountingSort, EachRunSortsItsOwnKeys)
     }
 }
 
-// G1 coverage: every internal pass one add_counting_sort() call emits shares
-// one node_index, and run(steps) records one invocation per step for each.
+/** @brief Tests that every internal pass of one add_counting_sort() call shares one node_index. */
 TEST(Integration_CountingSort, SharesOneNodeIndexAcrossStepsAndPasses)
 {
-    // key_range.capacity = 50 needs one digit (50 - 1 fits in 6 bits), so
-    // this call emits 1 (resolver, total and digit plan) + 1 * 4 (one digit
-    // block) + 1 (offsets) + 1 (counts) = 7 nodes.
+    // A key range capacity of 50 needs one digit, so this call emits 7 nodes; see README.md.
     constexpr std::size_t N_CAPACITY = 300;
     constexpr std::size_t KEY_CAPACITY = 50;
     constexpr std::size_t EXPECTED_PASSES = 7;
@@ -617,18 +609,10 @@ TEST(Integration_CountingSort, SharesOneNodeIndexAcrossStepsAndPasses)
         EXPECT_EQ(per_invocation[step], EXPECTED_PASSES) << "step " << step;
 }
 
-// Device-solver-instrument coverage: each internal pass's launched_width must
-// be its own row of the width table, not merely "some width was stamped".
-// Every pass here reads a region the one before it wrote (plan_region, then
-// hist_region, then col_total_region, then bin_base_region, then the shared
-// indices buffer, then offsets), so report.node_events lands in that same
-// dependency order regardless of which execution path ran it.
+/** @brief Tests that each internal pass's launched_width is its own row of the width table. */
 TEST(Integration_CountingSort, InternalNodeWidthsMatchTheDispatchTable)
 {
-    // Same shape as SharesOneNodeIndexAcrossStepsAndPasses: key_range.capacity
-    // = 50 needs one digit, T_cap = next_live_tile_count(300) = 2, DIGIT_BINS =
-    // 256; order is resolver, histogram, column scan, bin base, placement,
-    // offsets, counts.
+    // Nodes: resolver, histogram, column scan, bin base, placement, offsets, counts; see README.md.
     constexpr std::size_t N_CAPACITY = 300;
     constexpr std::size_t KEY_CAPACITY = 50;
     const std::vector<std::uint32_t> expected_widths = {1u, 2u, 256u, 1u, 2u, 51u, 50u};
@@ -657,8 +641,7 @@ TEST(Integration_CountingSort, InternalNodeWidthsMatchTheDispatchTable)
     }
 }
 
-// A live element count above its capacity fails the run rather than reading
-// or writing past the buffers it was planned for.
+/** @brief Tests that a live element count above its capacity fails the run. */
 TEST(Integration_CountingSort, LateBoundCountAboveCapacityFailsTheRun)
 {
     auto rt      = Runtime::create();
@@ -676,9 +659,7 @@ TEST(Integration_CountingSort, LateBoundCountAboveCapacityFailsTheRun)
     EXPECT_THROW(g.run(), SushiException);
 }
 
-// A live bucket count above its capacity fails the run too, even though the
-// offsets pass itself never reads the live key range (design doc §A3): the
-// key_range resolver still validates it every run.
+/** @brief Tests that a live key range above its capacity fails the run. */
 TEST(Integration_CountingSort, LateBoundKeyRangeAboveCapacityFailsTheRun)
 {
     auto rt      = Runtime::create();

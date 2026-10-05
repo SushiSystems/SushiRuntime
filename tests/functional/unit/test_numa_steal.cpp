@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Validates NUMA-aware hierarchical work stealing on single-node hardware by
-// injecting a synthetic topology: a RemappingTopologyProvider spreads cores
-// across N nodes (core i -> i % N) with a matching MatrixDistanceModel. We then
-// assert the locality invariant — node-local victims precede remote ones.
+/**
+ * @file test_numa_steal.cpp
+ * @brief Tests that node-local steal victims precede remote ones under a synthetic NUMA topology.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <vector>
 #include <gtest/gtest.h>

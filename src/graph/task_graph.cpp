@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file task_graph.cpp
+ * @brief Builds the task graph from added nodes and compiles it into an executable plan.
+ * @author Mustafa Garip
+ */
+
 #include <algorithm>
 #include <future>
 #include <memory>
@@ -118,13 +124,9 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Pushes a node into the lock-free tracking stacks in O(1) time.
-             *
-             * Eliminates the need for any std::mutex during graph construction.
-             *
+             * @brief Pushes a node onto the lock-free tracking stacks (src/graph/README.md).
              * @param node The node to insert.
-             * @param registration Registration index to stamp on the node; a fresh
-             *                     one is drawn from registration_counter_ when absent.
+             * @param registration Index to stamp on the node; absent draws a fresh one.
              */
             void push_node_lock_free(sushi_ptr<Node> node,
                                      std::optional<std::uint32_t> registration = std::nullopt)
@@ -173,15 +175,7 @@ namespace SushiRuntime
 
 #ifdef SR_DISTRIBUTED
         /**
-         * @brief Flags nodes that may run on a remote worker (Master mode only).
-         *
-         * A node is offloadable iff it carries a registered OpID the cluster can
-         * run AND every buffer it touches has a serializable handle. Anything
-         * else — and every node in Standalone/Worker mode — stays local, so the
-         * scheduler's offload branch is a no-op for it.
-         *
-         * @param graph The compiled graph to process.
-         * @param ctx The current runtime context.
+         * @brief Flags the nodes a remote worker may run; Master mode only (src/graph/README.md).
          */
         static void stamp_offloadable(SushiRuntime::Execution::CompiledGraph& graph, RuntimeContext& ctx)
         {
@@ -194,14 +188,10 @@ namespace SushiRuntime
                 if (!n || n->metadata.op_id.value == 0) continue;
                 if (!ctx.distributed_supports(n->metadata.op_id)) continue;
 
-                // The node carried op_id through a tracked add, so its offload state
-                // already exists; offload() returns it without a fresh allocation.
+                // offload() allocates nothing after a tracked add (src/graph/README.md).
                 OffloadState& off = n->offload();
 
-                // A double-buffered node resolves its handles from live pointers at
-                // dispatch, so do not bake them here. Mark it offloadable only when
-                // every buffer it currently touches is registered; otherwise leave it
-                // local (the host fallback still runs).
+                // A double-buffered node bakes no handles here (src/graph/README.md).
                 if (off.live_reads || off.live_writes)
                 {
                     bool live_ok = true;
@@ -281,13 +271,7 @@ namespace SushiRuntime
 
         /**
          * @brief Adds a device task and resolves USM data dependencies automatically.
-         *
-         * @param work The task payload to execute.
-         * @param read_access A list of USM pointers the task reads from.
-         * @param write_access A list of USM pointers the task writes to.
-         * @param dependencies An optional list of manual SYCL dependencies.
-         * @param registration Registration index to stamp on this node instead of
-         *                     drawing a fresh one.
+         * @param registration Index to stamp on this node; absent draws a fresh one.
          */
         void TaskGraph::add_node(TaskWork work,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
@@ -300,14 +284,8 @@ namespace SushiRuntime
 
         /**
          * @brief Adds a device task with automatic tracking and a late-binding block.
-         *
-         * @param work The task payload to execute.
-         * @param read_access A list of USM regions the task reads from.
-         * @param write_access A list of USM regions the task writes to.
          * @param bindings Shared per-step controls; null behaves like the plain overload.
-         * @param dependencies An optional list of manual SYCL dependencies.
-         * @param registration Registration index to stamp on this node instead of
-         *                     drawing a fresh one.
+         * @param registration Index to stamp on this node; absent draws a fresh one.
          */
         void TaskGraph::add_node(TaskWork work,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
@@ -328,18 +306,12 @@ namespace SushiRuntime
             for (const auto& w : write_access)
                 if (w.base) impl_->tracker.resolve(node.get(), w, true);
 
-            // Retain the access regions on the node, exactly as add_task does. The
-            // scheduler uses them to route a KERNEL submit to the queue that owns
-            // the USM; without them a kernel can run on a device whose context does
-            // not own the data — a cross-context illegal access on heterogeneous
-            // setups (e.g. a GPU kernel touching CPU-context USM).
+            // The regions stay on the node for queue routing (src/graph/README.md).
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
 #ifdef SR_DISTRIBUTED
-            // The distributed coherence model is whole-buffer, so offload resolves
-            // handles from the owning base of each region (sub-region offload is a
-            // later refinement).
+            // Offload resolves handles from each region's owning base (src/graph/README.md).
             for (const auto& r : read_access)  node->offload().reads.push_back(r.base);
             for (const auto& w : write_access) node->offload().writes.push_back(w.base);
 #endif
@@ -351,16 +323,9 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Adds a semantic task into the graph with explicit device and host fallback work.
-         *
-         * @param meta Metadata describing the task.
-         * @param read_access A list of USM pointers the task reads from.
-         * @param write_access A list of USM pointers the task writes to.
-         * @param device_work The preferred device-side execution workload.
-         * @param fallback_work A host-side alternative or fallback workload.
-         * @param dependencies An optional list of manual SYCL dependencies.
-         * @param registration Registration index to stamp on this node instead of
-         *                     drawing a fresh one.
+         * @brief Adds a semantic task with explicit device work and a host fallback.
+         * @param device_work The preferred device-side workload; empty selects host mode.
+         * @param registration Index to stamp on this node; absent draws a fresh one.
          */
         void TaskGraph::add_task(const TaskMetadata& meta,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
@@ -379,13 +344,7 @@ namespace SushiRuntime
             const bool has_device_work = static_cast<bool>(node->work);
             const bool has_host_work = static_cast<bool>(node->host_work);
 
-            // Execution mode is decided by capability + explicit intent:
-            //   * KERNEL — a device_work lambda is present and the task is not
-            //              explicitly marked host-only (CUSTOM_HOST).
-            //   * HOST   — otherwise. A host_work lambda is fully valid, intentional
-            //              work and may itself submit device kernels; the runtime
-            //              cannot introspect the std::function, so choosing host
-            //              mode here is NOT an error and must not warn.
+            // KERNEL needs device work and a type other than CUSTOM_HOST (src/graph/README.md).
             if (has_device_work && meta.task_type != TaskType::CUSTOM_HOST)
             {
                 node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::KERNEL;
@@ -395,8 +354,7 @@ namespace SushiRuntime
                 node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
             }
 
-            // The only genuine defect is a task that carries no executable work at
-            // all. Everything else is a deliberate, supported configuration.
+            // A task with no executable work is the only defect (src/graph/README.md).
             if (!has_device_work && !has_host_work)
             {
                 SR_LOG_WARN("Semantic task '{}' has neither device work nor host fallback — it will be a no-op.", meta.name);
@@ -413,16 +371,12 @@ namespace SushiRuntime
             for (const auto& w : write_access)
                 if (w.base) impl_->tracker.resolve(node.get(), w, true);
 
-            // Retain the access regions on the node (every build). The scheduler
-            // uses them to route a KERNEL submit to the queue that owns the USM
-            // (avoiding a cross-context illegal access on heterogeneous setups).
+            // The regions stay on the node for queue routing (src/graph/README.md).
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
 #ifdef SR_DISTRIBUTED
-            // The distributed layer resolves the owning base of each region to a
-            // serializable buffer handle for potential offload (whole-buffer
-            // coherence; sub-region offload is a later refinement).
+            // Offload resolves handles from each region's owning base (src/graph/README.md).
             for (const auto& r : read_access)  node->offload().reads.push_back(r.base);
             for (const auto& w : write_access) node->offload().writes.push_back(w.base);
 #endif
@@ -436,15 +390,8 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Adds a semantic task into the graph with host-side fallback only.
-         *
-         * @param meta Metadata describing the task.
-         * @param read_access A list of USM pointers the task reads from.
-         * @param write_access A list of USM pointers the task writes to.
-         * @param fallback_work A host-side workload to execute.
-         * @param dependencies An optional list of manual SYCL dependencies.
-         * @param registration Registration index to stamp on this node instead of
-         *                     drawing a fresh one.
+         * @brief Adds a semantic task that carries host-side work only.
+         * @param registration Index to stamp on this node; absent draws a fresh one.
          */
         void TaskGraph::add_task(const TaskMetadata& meta,
                                  const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
@@ -464,14 +411,8 @@ namespace SushiRuntime
 
         /**
          * @brief Adds an offloadable task whose touched buffers rotate every step.
-         *
          * @param meta Metadata carrying the offloadable op_id.
-         * @param live_reads Shared list of the buffers read this step.
-         * @param live_writes Shared list of the buffers written this step.
-         * @param fallback_work Host fallback run when the task is not offloaded.
-         * @param dependencies An optional list of manual SYCL dependencies.
-         * @param registration Registration index to stamp on this node instead of
-         *                     drawing a fresh one.
+         * @param registration Index to stamp on this node; absent draws a fresh one.
          */
         void TaskGraph::add_offload_dynamic(const TaskMetadata& meta,
                                             std::shared_ptr<std::vector<void*>> live_reads,
@@ -486,13 +427,11 @@ namespace SushiRuntime
             node->sycl_deps = dependencies;
             node->mode      = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
 
-            // Snapshot the current pointers for dependency ordering and queue routing
-            // (both reason about a single compiled graph, where the snapshot holds).
+            // The snapshot orders dependencies and routes the queue (src/graph/README.md).
             const std::vector<void*> reads  = live_reads  ? *live_reads  : std::vector<void*>{};
             const std::vector<void*> writes = live_writes ? *live_writes : std::vector<void*>{};
 
-            // A double-buffered offload node touches whole allocations that rotate
-            // each step, so each live pointer maps to a whole-buffer region.
+            // Each live pointer maps to a whole-buffer region (src/graph/README.md).
             for (void* ptr : reads)
                 if (ptr) impl_->tracker.resolve(node.get(), ptr, false);
             for (void* ptr : writes)
@@ -505,8 +444,7 @@ namespace SushiRuntime
             auto& off = node->offload();
             off.reads   = reads;
             off.writes  = writes;
-            // The live lists drive dispatch-time handle resolution so the node
-            // follows the double-buffer swap without recompiling.
+            // The live lists resolve handles at dispatch (src/graph/README.md).
             off.live_reads   = std::move(live_reads);
             off.live_writes  = std::move(live_writes);
 #endif
@@ -515,22 +453,8 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Adds a pure-CPU task run natively on a worker thread.
-         *
-         * @param read_access Regions this task reads from.
-         * @param write_access Regions this task writes to.
-         * @param work Callable run once on a worker thread; submits no SYCL work.
-         * @param dependencies An optional list of manual SYCL dependencies.
-         */
-        /**
-         * @brief Names the node most recently added to this graph.
-         *
-         * all_nodes is a LIFO stack, so its head is the last node pushed. Called
-         * during graph description on the thread that just added it, which is why a
-         * relaxed load is enough: there is no other writer to order against.
-         *
-         * @param name Persistent label, stored not copied. A null name, or a call
-         *             with no node yet added, is a no-op.
+         * @brief Names the node most recently added to this graph (src/graph/README.md).
+         * @param name Persistent label, stored not copied; null is a no-op.
          */
         void TaskGraph::name_last_node(const char* name) noexcept
         {
@@ -623,6 +547,10 @@ namespace SushiRuntime
             return head && head->node ? head->node->registration_index : NO_REGISTRATION;
         }
 
+        /**
+         * @brief Adds a pure-CPU task run natively on a worker thread.
+         * @param work Callable run once on a worker thread; submits no SYCL work.
+         */
         void TaskGraph::add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
                                    const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
                                    std::function<void()> work,
@@ -641,9 +569,7 @@ namespace SushiRuntime
             for (const auto& w : write_access)
                 if (w.base) impl_->tracker.resolve(node.get(), w, true);
 
-            // Retain regions for dependency identity. Queue routing is unused for a
-            // native task (it acquires no queue), but the lists stay consistent with
-            // every other node and keep the distributed handle resolution working.
+            // The regions stay on the node for dependency identity (src/graph/README.md).
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
@@ -659,13 +585,9 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Analyzes dependencies and compiles the graph for execution in O(1) logical time.
-         *
-         * Bypasses the heavy O(N) full graph traversal by exclusively processing 
-         * nodes that were incrementally tagged as potential roots and leaves during insertion.
-         *
-         * @return SushiRuntime::Execution::CompiledGraph The compiled graph ready to run.
-         * @throws std::runtime_error If the task graph contains no root nodes.
+         * @brief Compiles the graph from the candidates tagged at insertion (src/graph/README.md).
+         * @return The compiled graph ready to run; empty when no node was added.
+         * @throws std::runtime_error If the graph has no root node or contains a cycle.
          */
         SushiRuntime::Execution::CompiledGraph TaskGraph::compile() 
         {
@@ -720,25 +642,12 @@ namespace SushiRuntime
             if (graph.roots.empty())
             {
                 SR_LOG_ERROR("Task graph has no root nodes. The graph may contain a cycle or unresolved dependencies.");
-                // Drain the tracker BEFORE the throw. `graph` (and every Node it
-                // owns) is destroyed as this exception unwinds, but the tracker's
-                // AccessNodes still hold raw task pointers into those nodes. This
-                // TaskGraph survives a failed compile(), so a later add_node() ->
-                // resolve() would traverse the history and add_dependency() to
-                // freed pointers — a use-after-free write. reset() retires the
-                // AccessNodes and clears the shard tails, so the next resolve()
-                // starts from an empty (and valid) history.
+                // The tracker is drained before the throw (src/graph/README.md).
                 impl_->tracker.reset();
                 throw std::runtime_error("Task graph has no root nodes.");
             }
 
-            // Cycle guard. A non-empty root set is necessary but NOT sufficient: a
-            // graph can have a valid root AND a disjoint dependency cycle whose nodes
-            // never reach in_degree 0, so they are never dispatched and completion
-            // never fires — the run hangs forever on the sentinel. Simulate the
-            // runtime drain (Kahn's algorithm) over a shadow of the in-degrees; if
-            // any node is unreachable it sits in such a cycle. This is O(N+E) but
-            // paid once at compile, amortized over every replay of the plan.
+            // A root set does not rule out a disjoint cycle (src/graph/README.md).
             {
                 std::unordered_map<Node*, int32_t> shadow_indeg;
                 shadow_indeg.reserve(graph.all_nodes.size());
@@ -818,8 +727,7 @@ namespace SushiRuntime
                 head = next;
             }
 
-            // The root/leaf candidate stacks and the tracker history only matter for
-            // compile(); drop them so this graph is a clean, reusable builder.
+            // The candidate stacks and history matter only to compile() (src/graph/README.md).
             RawNodeEntry* pr = impl_->potential_roots.exchange(nullptr, std::memory_order_acquire);
             while (pr) { RawNodeEntry* n = pr->next; delete pr; pr = n; }
 
@@ -828,9 +736,7 @@ namespace SushiRuntime
 
             impl_->tracker.reset();
 
-            // push_node_lock_free is a LIFO stack, so the drain above is in reverse
-            // insertion order. The composer re-resolves dependencies in adoption
-            // order, so it must see nodes as the caller added them; restore that.
+            // The LIFO drain is reversed to restore insertion order (src/graph/README.md).
             std::reverse(out.begin(), out.end());
             return out;
         }

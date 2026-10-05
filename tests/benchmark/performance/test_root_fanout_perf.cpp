@@ -6,18 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Gate benchmark for the batched root injector (audit ds-1). Each replayed step
-// re-injects every root node; the old path took one pending_mutex acquire + one
-// condition-variable notify PER root, so per-step injection cost scaled with root
-// fan-out. submit_batch collapses a step's whole root set into one lock acquisition,
-// one inflight_ increment, and one wake burst.
-//
-// We build R independent roots (each writes its own buffer, so all are roots with no
-// dependencies) and replay a fixed number of steps, sweeping R. The reported number
-// is ms/step and the amortized per-root step cost. The injection component is now
-// O(1) per step regardless of R, so as R grows the per-root cost should trend down
-// toward the pure per-task execute+complete cost rather than staying pinned to a
-// per-root lock/notify. Correctness + forward progress are asserted; speed is not.
+/**
+ * @file test_root_fanout_perf.cpp
+ * @brief Measures the per-step and per-root cost of replaying a graph of independent roots.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <algorithm>
 #include <chrono>

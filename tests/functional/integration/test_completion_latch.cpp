@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// §5.1 coverage: the reusable completion latch. execute() no longer allocates a
-// promise/future per step; one latch on the engine is reset, armed, and waited on
-// each step. These tests pin the behaviour that change must preserve: a long
-// replayed run drives every step and reaches the right state, and the same plan
-// re-runs cleanly afterwards (the latch resets and the sentinel re-wires correctly).
+/**
+ * @file test_completion_latch.cpp
+ * @brief Tests that the reusable completion latch drives a replayed run and re-runs on one plan.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -50,8 +51,7 @@ TEST(Integration_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
-    // Three separate run() calls on one compiled plan: the latch must reset between
-    // them and the once-wired sentinel must keep signalling.
+    // The latch resets between the three run() calls and the sentinel still signals; see README.md.
     g.run(10);
     g.run(10);
     g.run(5);
@@ -71,8 +71,7 @@ TEST(Integration_CompletionLatch, SingleStepRunsRepeatedlyWithoutLeak)
     auto g = rt.graph();
     g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-    // Many independent single-step runs stress the reset/arm/wait cycle the most:
-    // each one allocates nothing on the completion path now.
+    // Each single-step run goes through one reset, arm and wait cycle of the latch; see README.md.
     for (int r = 0; r < 200; ++r)
     {
         auto rep = g.run();

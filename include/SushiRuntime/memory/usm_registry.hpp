@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file usm_registry.hpp
+ * @brief Declares UsmRegistry, which records the device each USM pointer was allocated on.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/memory/README.md
+ */
+
 #pragma once
 
 #include <cstddef>
@@ -21,20 +28,7 @@ namespace SushiRuntime
     {
         /**
          * @brief Remembers which device each USM pointer was allocated on.
-         *
-         * USM is bound to the context it was allocated from: a pointer must be freed
-         * against that device's queue, and a kernel touching it must run there. SYCL
-         * offers no way to ask a pointer where it came from that is reliable across
-         * backends, so the runtime records it at allocation and looks it up later.
-         *
-         * Separated from RuntimeContext because it is the one part of it with an
-         * invariant of its own — a pointer is known from allocation until it is
-         * freed, exactly once — and that invariant is testable without standing up a
-         * Runtime, which is not true of anything else RuntimeContext does.
-         *
-         * Every operation takes the same lock. That is not a bottleneck in practice:
-         * allocation happens when the caller constructs a Buffer or State, which is
-         * a setup-time act, and a measured run allocates nothing per step.
+         * @see include/SushiRuntime/memory/README.md
          */
         class SUSHIRUNTIME_API UsmRegistry
         {
@@ -56,20 +50,11 @@ namespace SushiRuntime
                 };
 
                 /**
-                 * @brief Records the device and extent a freshly allocated pointer has.
-                 *
-                 * Recording a pointer that is already known replaces its entry rather
-                 * than rejecting it, which matches an allocator handing back an
-                 * address whose free was never reported.
-                 *
-                 * @param ptr          The allocation. Null is ignored.
-                 * @param device_index Index of the owning device, as the caller
-                 *                     numbers its queues; never interpreted here.
-                 * @param bytes        Length of the allocation, or nothing when the
-                 *                     caller cannot know it — an imported address
-                 *                     whose producer named no size. An entry without
-                 *                     a length resolves at its base and contains
-                 *                     nothing, so a missing size never reads as zero.
+                 * @brief Records the device and extent of a fresh allocation, replacing a known
+                 *        entry.
+                 * @param ptr The allocation; null is ignored.
+                 * @param bytes Length of the allocation, or nothing when the caller cannot know it.
+                 * @see include/SushiRuntime/memory/README.md
                  */
                 void record(void* ptr, std::size_t device_index, std::optional<std::size_t> bytes)
                 {
@@ -98,19 +83,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Finds the recorded allocation a pointer falls inside.
-                 *
-                 * Scans every entry, because the table is keyed by base address and
-                 * an interior pointer hashes nowhere near its own allocation. That
-                 * cost is linear in live allocations and is why this is a separate
-                 * query rather than a widening of owner_of(): call it from
-                 * registration paths, never from dispatch, which resolves exact base
-                 * addresses through owner_of() in constant time.
-                 *
-                 * @param ptr Any address, interior or base. Null resolves to nothing.
-                 * @return The allocation covering @p ptr, or nothing when no recorded
-                 *         allocation covers it — including a pointer inside an entry
-                 *         recorded without a length, which only its base resolves.
+                 * @brief Finds the recorded allocation a pointer falls inside, by a linear scan.
+                 * @param ptr Any address, interior or base; null resolves to nothing.
+                 * @return The allocation covering ptr, or nothing when none does.
+                 * @see include/SushiRuntime/memory/README.md
                  */
                 std::optional<Containment> containing_allocation(void* ptr) const
                 {
@@ -132,16 +108,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Resolves a pointer's device and forgets it, in one step.
-                 *
-                 * The free path needs both halves and must not be interruptible
-                 * between them: looking up and then erasing under two separate locks
-                 * would let a second free of the same pointer read an owner the first
-                 * is already acting on.
-                 *
-                 * @param ptr The allocation being freed. Null resolves to nothing.
-                 * @return The device index the pointer was recorded under, or nothing
-                 *         if it was unknown — which tells a double free from a first.
+                 * @brief Resolves a pointer's device and forgets it under one lock.
+                 * @return The device index the pointer was recorded under, or nothing if it was
+                 *        unknown.
+                 * @see include/SushiRuntime/memory/README.md
                  */
                 std::optional<std::size_t> take(void* ptr)
                 {

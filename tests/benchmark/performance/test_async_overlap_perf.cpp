@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Quantifies CPU/GPU concurrency: dispatched without an intervening wait, the
-// two devices run together so wall-clock approaches max(T_cpu, T_gpu) instead of
-// the serial sum. Overlap only shows when runtimes are comparable, so the GPU
-// iteration count is auto-calibrated to the CPU first. This measures DEVICE
-// QUEUE overlap only — not the scheduler, not H2D/D2H transfer.
+/**
+ * @file test_async_overlap_perf.cpp
+ * @brief Measures the wall time saved when a CPU and a GPU queue run their kernels together.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -33,13 +34,7 @@ namespace
     using Clock = std::chrono::steady_clock;
 
     /**
-     * @brief Check if running on a WSL2 host.
-     * 
-     * Its CUDA backend adds dispatch latency and exposes no PCI topology, inflating the
-     * overlap wall-clock enough to miss the strict bar even when the devices demonstrably
-     * overlap — used to relax, not delete.
-     * 
-     * @return True if running under WSL, false otherwise.
+     * @brief Reports whether the process runs on a WSL2 host.
      */
     bool running_under_wsl()
     {
@@ -68,14 +63,7 @@ namespace
     }
 
     /**
-     * @brief Run a function multiple times and keep the fastest time.
-     * 
-     * This strips scheduling/OS noise.
-     * 
-     * @tparam Fn The function type.
-     * @param reps Number of repetitions.
-     * @param fn The function to run.
-     * @return The best execution time in milliseconds.
+     * @brief Runs a function @p reps times and returns the fastest wall time in milliseconds.
      */
     template <typename Fn>
     double best_of(int reps, Fn&& fn)
@@ -119,17 +107,9 @@ namespace
     }
 
     /**
-     * @brief Launch a heavy, optimizer-resistant element kernel.
-     * 
-     * Runtime scales with `iters`. The body must be a genuinely non-linear recurrence
-     * to prevent compiler optimizations from collapsing the loop.
-     * 
-     * @param q The SYCL queue.
-     * @param in The input buffer.
-     * @param out The output buffer.
-     * @param n The number of elements.
-     * @param iters Number of iterations per element.
-     * @return The SYCL event for the kernel.
+     * @brief Launches a kernel whose run time scales with @p iters.
+     * @param in Input of at least @p n elements.
+     * @param out Output of at least @p n elements.
      */
     sycl::event launch_heavy(sycl::queue& q, float* in, float* out, size_t n, int iters)
     {
@@ -235,22 +215,18 @@ TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
     std::printf("  Ideal max(G,C): %8.2f ms\n", ideal);
     std::printf("  Speedup       : %8.2fx\n", speedup);
 
-    // 0.75 leaves slack for dispatch overhead and contention while still failing
-    // if work serializes (~1.0x).
+    // A serialized run sits near 1.0x and fails the 0.75 bar; see tests/benchmark/README.md.
     const double overlap_bar       = t_serial * 0.75;  // healthy concurrency
     const double serialization_top = t_serial * 0.95;  // essentially no overlap
 
-    // A genuine serialization bug is a hard failure everywhere (also catches
-    // CUDA_LAUNCH_BLOCKING=1, where every launch runs synchronously).
+    // A run with no overlap fails on every host, CUDA_LAUNCH_BLOCKING=1 included.
     EXPECT_LT(t_overlap, serialization_top)
         << "CPU and GPU are not overlapping at all — work is serializing "
            "(check that CUDA_LAUNCH_BLOCKING is not set to 1).";
 
     if (t_overlap >= overlap_bar && t_overlap < serialization_top && running_under_wsl())
     {
-        // Overlap is clearly happening but doesn't clear the strict bar; on
-        // WSL2 + Pascal the dispatch overhead inflates it. Inconclusive here;
-        // bare-metal CI still enforces the bar.
+        // WSL2 overlaps yet misses the strict bar; see tests/benchmark/README.md.
         GTEST_SKIP() << "Overlap present (" << speedup << "x) but below the 0.75 bar; "
                         "async overlap is not reliably measurable on WSL2/Pascal.";
     }

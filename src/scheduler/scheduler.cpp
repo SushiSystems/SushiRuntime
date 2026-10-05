@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file scheduler.cpp
+ * @brief Runs the worker pool that dispatches, steals and completes graph tasks.
+ * @author Mustafa Garip
+ */
+
 #include <new>
 #include <thread>
 #include <optional>
@@ -39,14 +45,7 @@ namespace SushiRuntime
         using namespace SushiRuntime::Core;
 
         /**
-         * @brief Constructs a new TaskScheduler.
-         *
-         * Sizes and places the worker pool from the context's RuntimeSettings: how
-         * many workers to run, which core range to bind them into, and whether to
-         * bind at all. The defaults reproduce the sole-tenant behaviour (one worker
-         * per logical core, worker i on core i); a host that shares the machine
-         * names a narrower range so its own threads keep their cores.
-         *
+         * @brief Constructs a TaskScheduler from the context's settings (src/scheduler/README.md).
          * @param ctx The RuntimeContext to associate with this scheduler.
          */
         TaskScheduler::TaskScheduler(RuntimeContext& ctx) : context(ctx)
@@ -64,11 +63,7 @@ namespace SushiRuntime
             pinning_ = settings.pinning;
             first_core_ = settings.first_core;
 
-            // A range that runs past the last core is worth saying out loud. The OS
-            // affinity calls accept an out-of-range mask and simply do not bind, so
-            // the failure mode without this is a config that looks like it reserves
-            // cores and silently does not — exactly the isolation the caller asked
-            // for, quietly absent.
+            // A core range past the last core is clamped and logged (src/scheduler/README.md).
             if (pinning_ == Execution::PinPolicy::Pin && first_core_ + num_workers > machine_cores)
             {
                 const size_t last = first_core_ + num_workers;
@@ -88,8 +83,7 @@ namespace SushiRuntime
 
             build_steal_topology();
 
-            // The poller owns the increment/decrement of the run-quiescence counter
-            // (it is where tasks are born as successors and reaped on completion).
+            // The poller owns the run-quiescence counter's updates (src/scheduler/README.md).
             event_poller.set_inflight_tracker(&inflight_, &quiesce_mutex_, &quiesce_cv_);
 
             if (pinning_ == Execution::PinPolicy::Pin)
@@ -104,21 +98,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Builds the NUMA-aware steal victim table once, at construction.
-         *
-         * For each worker, all other workers are ordered by ascending NUMA
-         * distance from that worker's node (ties broken randomly to spread
-         * contention). Node-local victims therefore lead every list, and
-         * local_tier_len_ records how many of them there are. find_task_to_steal()
-         * then walks the list in order, exhausting the local tier before touching
-         * any remote node. If the provider exposes no CPU topology, every worker
-         * maps to node 0 → a single flat tier == the original NUMA-blind behaviour.
-         *
-         * Under PinPolicy::Float a worker has no fixed core and therefore no fixed
-         * node, so the same flat single tier is the only honest answer: ordering
-         * victims by a distance that does not hold would make stealing worse, not
-         * better, by sending a worker to a "local" victim it does not share a node
-         * with.
+         * @brief Builds the NUMA-aware steal victim table once (src/scheduler/README.md).
          */
         void TaskScheduler::build_steal_topology()
         {
@@ -129,9 +109,7 @@ namespace SushiRuntime
             {
                 for (size_t i = 0; i < num_workers; ++i)
                 {
-                    // Worker i is pinned to core (first_core_ + i) — see
-                    // dispatch_loop — so its node is that core's node. Unknown or
-                    // out-of-range cores fall back to 0.
+                    // Worker i is pinned to core first_core_ + i; an unknown core maps to node 0.
                     const size_t core = first_core_ + i;
                     if (core < core_to_numa.size())
                         worker_numa_[i] = core_to_numa[core];
@@ -180,10 +158,7 @@ namespace SushiRuntime
          */
         void TaskScheduler::start()
         {
-            // Spawn workers exactly once. A second start() would assign over live,
-            // joinable std::thread handles (std::terminate) and spin up a second set
-            // of owners for the per-worker Chase-Lev deques, silently violating their
-            // single-producer invariant.
+            // Workers are spawned exactly once (src/scheduler/README.md).
             bool expected = false;
             if (!threads_started_.compare_exchange_strong(expected, true))
             {
@@ -191,8 +166,7 @@ namespace SushiRuntime
                 return;
             }
 
-            // Workers begin in a waiting state. arm_for_execution() must be called
-            // before any work is submitted to signal the pool to begin processing.
+            // Workers wait; arm_for_execution() precedes submitted work (src/scheduler/README.md).
             for(size_t i=0; i<num_workers; ++i)
             {
                 workers[i] = std::thread([this, i] { dispatch_loop(static_cast<int>(i)); });
@@ -243,9 +217,7 @@ namespace SushiRuntime
             }
             run_failed_.store(false, std::memory_order_release);
 
-            // Publish this round's plan flag to the poller before workers run, so
-            // completion accumulates per-node timing under profiling and stays
-            // free of timestamp reads otherwise.
+            // The poller gets the profiling flag before any worker runs (src/scheduler/README.md).
             event_poller.set_profiling(profiling);
             profiling_active_.store(profiling, std::memory_order_release);
 
@@ -279,11 +251,7 @@ namespace SushiRuntime
          */
         void TaskScheduler::stop()
         {
-            // Signal workers to drain and exit. Under pending_mutex for the same
-            // reason arm_for_execution() is — and here a lost wakeup is worse than
-            // a late start: with no timeout in the idle wait, a worker that missed
-            // the shutdown flag would never be woken again and the join below would
-            // never return.
+            // The flags change under pending_mutex (src/scheduler/README.md).
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);
                 shutdown_requested.store(true, std::memory_order_release);
@@ -330,8 +298,7 @@ namespace SushiRuntime
          */
         TaskScheduler::~TaskScheduler()
         {
-            // stop() is idempotent; calling it here ensures cleanup even if
-            // the owner (ExecutionEngine) failed to call shutdown() explicitly.
+            // stop() is idempotent, so the destructor may call it too (src/scheduler/README.md).
             stop();
         }
 
@@ -341,10 +308,7 @@ namespace SushiRuntime
          */
         bool TaskScheduler::has_pending_submissions()
         {
-            // Lock-free: the shadow counters are the source of truth for emptiness
-            // and are only mutated under pending_mutex. This keeps the idle/shutdown
-            // liveness checks off the global lock, which the armed-idle pool polls
-            // frequently between runs.
+            // The shadow counters are read without the lock (src/scheduler/README.md).
             return pending_count_.load(std::memory_order_relaxed) != 0
                 || priority_count_.load(std::memory_order_relaxed) != 0;
         }
@@ -361,23 +325,15 @@ namespace SushiRuntime
 
             auto& my_queue = worker_queues[thread_id];
             
-            // Prevent Chase-Lev Deque overflow by refusing to pull more tasks 
-            // from the global queue if the local queue is already heavily loaded.
+            // A half-full local deque pulls nothing from the injector (src/scheduler/README.md).
             if (my_queue->size() >= Deque::CAPACITY / 2)
                 return;
 
-            // Lock-free fast path: skip the global mutex entirely when the injector
-            // is empty (the steady-state case). See pending_count_ for why a stale
-            // read is safe.
+            // An empty injector skips the mutex; a stale read is safe (src/scheduler/README.md).
             if (pending_count_.load(std::memory_order_relaxed) == 0)
                 return;
 
-            // Grab a reasonable batch to prevent local deque overflow
-            // and ensure fair load distribution among all workers.
-            // The batch buffer belongs to this worker and keeps its capacity across
-            // drains, so the steady state does not allocate. A local vector here
-            // meant one heap allocation per worker per drain — invisible in a batch
-            // benchmark, a per-tick allocation on a frame loop.
+            // The batch buffer is per worker and keeps its capacity (src/scheduler/README.md).
             constexpr size_t BATCH_SIZE = 4096;
             std::vector<Task*>& batch = drain_scratch_[thread_id];
             batch.clear();
@@ -406,17 +362,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Main dispatch loop for worker threads.
-         *
-         * Lifecycle:
-         * 1. IDLE phase   - running == false, no work. Yield until armed.
-         * 2. ACTIVE phase - running == true. Process tasks and poll events.
-         * 3. DRAIN phase  - running == false again (stop() called).
-         * Continue until inflight events and pending
-         * submissions are fully drained, then exit.
-         *
-         * This design allows the pool to be reused across multiple graph
-         * execution rounds without recreating threads. 
+         * @brief Runs a worker's idle, active and drain phases (src/scheduler/README.md).
          * @param thread_id The ID of the worker executing this loop.
          */
         void TaskScheduler::dispatch_loop(int thread_id) 
@@ -430,17 +376,14 @@ namespace SushiRuntime
             auto& my_queue = worker_queues[thread_id];
             EventPolling::ActiveEventList active_events;
 
-            // Placement is the co-tenancy guarantee: bound to (first_core_ + id), a
-            // worker cannot drift onto a core the host reserved for its main, render
-            // or audio thread. Float leaves that to the OS.
+            // A pinned worker stays on core first_core_ + id (src/scheduler/README.md).
             if (pinning_ == Execution::PinPolicy::Pin)
                 SushiRuntime::Topology::pin_current_thread_to_core(
                     static_cast<int>(first_core_) + thread_id);
 
             int spin_count = 0;
 
-            // Stall-attribution timing. All reads are gated on profiling_active_, so
-            // a non-profiled run takes no clock samples in this hot loop.
+            // Clock reads are gated on profiling_active_ (src/scheduler/README.md).
             using sclock = std::chrono::steady_clock;
             auto& wt = worker_time_[thread_id];
             auto add_ns = [](std::atomic<std::uint64_t>& bucket,
@@ -457,33 +400,12 @@ namespace SushiRuntime
                 const bool is_shutdown = shutdown_requested.load(std::memory_order_acquire);
                 const bool prof = profiling_active_.load(std::memory_order_acquire);
 
-                // IDLE / waiting-for-arm phase: no work, not yet signalled.
-                // The owner's own deque is part of the condition, not an
-                // afterthought. Nothing in the wait predicate below looks at it —
-                // it cannot, the deques are lock-free and no notify accompanies a
-                // push — so a worker that parked holding queued tasks would strand
-                // them until something unrelated woke it. This branch used to be
-                // unreachable after the first run (the armed flag was never
-                // cleared), which is why the omission never showed; disarm() makes
-                // it reachable, so the check has to be here.
+                // A worker parks only with an empty deque of its own (src/scheduler/README.md).
                 if (!is_running && !is_shutdown && active_events.is_empty()
                     && my_queue->size() == 0 && my_queue->overflow_size() == 0
                     && !has_pending_submissions())
                 {
-                    // Full idle: park until armed, stopped, or given work. No
-                    // timeout — every term of this predicate is mutated under
-                    // pending_mutex (arm_for_execution, stop, submit,
-                    // submit_batch, drain_pending_submissions, the rebalancer's
-                    // rescue path), so a state change cannot be missed and a
-                    // periodic re-check would find nothing.
-                    //
-                    // This is the co-tenancy guarantee for a pool that is not
-                    // running: a 10 ms poll cost every worker a wakeup and a
-                    // pending_mutex acquisition a hundred times a second while the
-                    // runtime did nothing at all — cache and lock traffic against
-                    // the host's own threads on a machine the runtime is only a
-                    // guest on, and enough to keep a laptop out of its deep idle
-                    // states. A parked worker now costs exactly nothing.
+                    // The park has no timeout (src/scheduler/README.md).
                     const auto idle0 = prof ? sclock::now() : sclock::time_point{};
                     std::unique_lock<std::mutex> lock(pending_mutex);
                     pending_cv.wait(lock, [this]()
@@ -504,11 +426,7 @@ namespace SushiRuntime
                 {
                     SushiRuntime::Memory::EpochGuard epoch_guard;
 
-                    // poll_events touches SYCL events (get_info/wait), which can
-                    // surface an async or device error. Uncaught, it would escape
-                    // this std::thread body and call std::terminate. Route it
-                    // through record_run_error like execute_task does: fail the
-                    // current run, keep the pool re-armable.
+                    // A poll_events throw fails the run, not the thread (src/scheduler/README.md).
                     try
                     {
                         if (prof)
@@ -526,10 +444,7 @@ namespace SushiRuntime
                         record_run_error(std::current_exception());
                     }
 
-                    // Lock-free fast path: only contend for the global mutex when a
-                    // priority submission actually exists (the rare case). Priority
-                    // bypass is uncommon, so this keeps the per-iteration cost at one
-                    // relaxed atomic load instead of a global lock acquisition.
+                    // Only a priority submission takes the global mutex (src/scheduler/README.md).
                     if (priority_count_.load(std::memory_order_relaxed) > 0)
                     {
                         std::lock_guard<std::mutex> lock(pending_mutex);
@@ -566,13 +481,7 @@ namespace SushiRuntime
                         }
 
 #ifdef SR_DISTRIBUTED
-                        // Offload branch: a single bool load for the overwhelming
-                        // majority of (local) tasks. Only nodes that compile()
-                        // stamped offloadable, in Master mode, ever reach the
-                        // coordinator. On a successful offload the scheduling ref
-                        // is transferred to the coordinator (released when the
-                        // remote result fires complete_offloaded_node), so we must
-                        // neither execute nor release it here.
+                        // An offloaded task is owned by the coordinator (src/scheduler/README.md).
                         bool offloaded = false;
                         if (coordinator_ && task->is_graph_node())
                         {
@@ -589,13 +498,7 @@ namespace SushiRuntime
                         }
                         else
                         {
-                            // The node left the local poll path — it will not be
-                            // reaped here — so retire its quiescence count now. Its
-                            // remote-completion re-triggers successors through the
-                            // ordinary submit()/poll cycle, which counts them afresh.
-                            // Any transient dip to zero this causes is harmless: the
-                            // sentinel cannot fire (and so nobody waits on the counter)
-                            // until every offloaded node's result has landed.
+                            // Its quiescence count retires here (src/scheduler/README.md).
                             if (inflight_.fetch_sub(1, std::memory_order_acq_rel) == 1)
                             {
                                 std::lock_guard<std::mutex> lock(quiesce_mutex_);
@@ -615,8 +518,7 @@ namespace SushiRuntime
                     if (is_shutdown && active_events.is_empty() && !has_pending_submissions())
                         break;
 
-                    // It is extremely important for the thread to be outside the Epoch while in the Backoff (Yield/Sleep) phase,
-                    // so that a sleeping thread does not stall the global memory reclamation process.
+                    // Backoff runs outside the epoch (src/scheduler/README.md).
                     spin_count++;
                     const auto bk0 = prof ? sclock::now() : sclock::time_point{};
                     // A worker holding in-flight events never sleeps: its successors wait on its poll.
@@ -640,12 +542,7 @@ namespace SushiRuntime
         {
             if (!task) return;
 
-            // The current run is aborting (a task threw, or it was cancelled): do
-            // not execute more kernels. Route the task through the poller flagged
-            // ready so its successors still fire and the DAG drains to the sentinel
-            // instead of deadlocking on an un-triggered successor. The sentinel
-            // itself is exempt — it must run to deliver the outcome and unblock
-            // execute().
+            // An aborting run executes no more kernels (src/scheduler/README.md).
             if (run_failed_.load(std::memory_order_acquire) ||
                 run_cancelled_.load(std::memory_order_acquire))
             {
@@ -658,13 +555,7 @@ namespace SushiRuntime
                 }
             }
 
-            // A late-bound node that is disabled this step (a sleeping island, an
-            // LOD-off system) runs no kernel: route it through the poller flagged
-            // ready so its successors fire and the DAG drains exactly as a completed
-            // node would. Toggling a subsystem costs no recompile. The relaxed load
-            // is safe — the step boundary's completion barrier and the acquire/release
-            // submit path supply the happens-before. The sentinel carries no
-            // bindings, so it is never skipped here.
+            // A disabled late-bound node runs no kernel (src/scheduler/README.md).
             if (task->is_graph_node())
             {
                 auto* gnode = static_cast<SushiRuntime::Graph::Node*>(task);
@@ -676,12 +567,7 @@ namespace SushiRuntime
                 }
             }
 
-            // Count the completion against the EXECUTING WORKER's id, not the EBR
-            // slot id. EBR ids are handed out in order of first epoch touch across
-            // all threads (a non-worker thread that compiles the graph takes slot 0
-            // and shifts every worker), so keying by EBR id credited the wrong
-            // worker and fed the thermal strategy bogus per-worker rates. The read
-            // side (completed_tasks_for) already uses the worker id.
+            // Completions are keyed by worker id, not EBR slot id (src/scheduler/README.md).
             if (worker_id >= 0 && static_cast<size_t>(worker_id) < Core::MAX_WORKER_THREADS)
                 worker_completed_tasks[worker_id].value.fetch_add(1, std::memory_order_relaxed);
 
@@ -692,10 +578,7 @@ namespace SushiRuntime
                 int target_numa_id = 0;
                 SushiRuntime::Graph::Node* node = nullptr;
 
-                // Downcast through the virtual is_graph_node() type tag, not RTTI:
-                // this runs for every dispatched task, and dynamic_cast here was the
-                // one hot-path RTTI query left. EventPolling already uses the same
-                // tag, so the two downcast sites now share one strategy.
+                // The downcast uses the is_graph_node() tag, not RTTI (src/scheduler/README.md).
                 if (task->is_graph_node())
                 {
                     node = static_cast<SushiRuntime::Graph::Node*>(task);
@@ -748,14 +631,7 @@ namespace SushiRuntime
                     return;
                 }
 
-                // Both paths must run on the queue whose context owns the node's
-                // USM. A HOST task is just as dangerous as a KERNEL one here: its
-                // host_work lambda commonly does its own queue.submit() of a device
-                // kernel using exactly the queue we hand it, so giving it a sibling
-                // device's queue (round-robin) causes a cross-context illegal
-                // access (e.g. CPU-allocated USM dispatched onto a CUDA queue).
-                // Route by the data pointer; fall back to NUMA-local round-robin
-                // only when the node carries no USM to anchor on.
+                // The queue is the one whose context owns the node's USM (src/scheduler/README.md).
                 void* anchor = nullptr;
                 if (node)
                 {
@@ -763,14 +639,7 @@ namespace SushiRuntime
                     else if (!node->io_reads_.empty()) anchor = node->io_reads_.front().base;
                 }
 
-                // One-time co-location check: a single kernel cannot dereference USM
-                // from two non-peer device contexts, so a node whose regions straddle
-                // a device boundary would hit an illegal cross-context access. Fail
-                // the run with a precise error instead. The result is cached on the
-                // node (dispatched serially across steps, so a plain flag is safe), so
-                // steady-state replay pays nothing. Cross-device execution itself is a
-                // WP-5 concern (region ownership + halo exchange); until then this
-                // enforces the co-location contract the layer above must honour.
+                // A node's regions must share one device context (src/scheduler/README.md).
                 if (node && !node->locality_checked_)
                 {
                     const int anchor_ctx = context.context_index_for_ptr(anchor);
@@ -790,20 +659,14 @@ namespace SushiRuntime
                         spans = off_anchor(node->io_reads_) || off_anchor(node->io_writes_);
                     }
                     if (spans)
-                        // Not cached: a still-misconfigured graph must fail again on a
-                        // later run, not slip through once the flag is set.
+                        // A failure is not cached, so it recurs each run (src/scheduler/README.md).
                         throw Core::SushiException(Core::Error{
                             Core::Errc::invalid_graph,
                             "A task's buffers span multiple device contexts; co-locate "
                             "them on one device (cross-device execution is not yet "
                             "supported)."});
 
-                    // Cache the owning-queue index resolved from the same lookup, so
-                    // steady-state replay routes via get_queue(index) (a bare
-                    // all_queues[] read) instead of get_queue_for_ptr(), which takes a
-                    // process-global mutex on every device dispatch. Only the
-                    // authoritative map hit (anchor_ctx >= 0) is cached; a map miss
-                    // keeps the introspection / round-robin fallback below.
+                    // Only a registry hit is cached as the queue index (src/scheduler/README.md).
                     node->cached_queue_index_ = anchor_ctx;
                     node->locality_checked_ = true; // co-located; never re-check
                 }
@@ -829,8 +692,7 @@ namespace SushiRuntime
                 sycl::event e;
                 if (task->get_execution_mode() == Task::ExecutionMode::HOST)
                 {
-                    // execute_host() takes a vector, so this rarer path (a HOST
-                    // node that submits its own device work) still allocates one.
+                    // execute_host() needs a vector; this path allocates (src/scheduler/README.md).
                     std::vector<sycl::event> deps;
                     if (node)
                     {
@@ -857,8 +719,7 @@ namespace SushiRuntime
 
                     e = q.submit([&](sycl::handler& h)
                     {
-                        // Per-event depends_on() over the inline storage avoids the
-                        // heap vector SmallEventVector::to_vector() used to build here.
+                        // depends_on() per event builds no heap vector (src/scheduler/README.md).
                         if (node)
                             for (const auto& ev : node->sycl_deps)
                                 h.depends_on(ev);
@@ -878,17 +739,7 @@ namespace SushiRuntime
                     }
                 }
                 
-                // An empty event means the host work already ran inline (synchronous
-                // execute_host) — there is nothing to wait on. Route it through the
-                // poller flagged ready, so successors fire and the task is released
-                // uniformly, without fabricating a barrier event. The old barrier
-                // relied on host-op status polling, which AdaptiveCpp does not report.
-                //
-                // push() never drops: the list spills to the heap past its inline
-                // capacity. Dropping an event here would leave the task's successors
-                // permanently un-triggered and deadlock the run.
-                // ready == "no real event" (inline host work); has_event is its
-                // inverse, cached so the poll loop never reconstructs sycl::event{}.
+                // An empty event is pushed as ready, never dropped (src/scheduler/README.md).
                 const bool ready = (e == sycl::event{});
                 const SushiRuntime::Graph::NodeWidths widths =
                     (node && profiling_active_.load(std::memory_order_acquire))
@@ -901,26 +752,17 @@ namespace SushiRuntime
             {
                 SR_LOG_ERROR("Task '{}' threw; aborting the current run.", task->get_name());
 
-                // Fail only this run — record the first exception and flip
-                // run_failed_ — without latching shutdown_requested, so the pool
-                // survives and stays re-armable for the next graph.
+                // Only this run fails; the pool stays re-armable (src/scheduler/README.md).
                 record_run_error(std::current_exception());
 
-                // Route the failed task through the poller as ready so its
-                // successors still fire; combined with the run_failed_ skip path
-                // above, the whole DAG drains to the sentinel rather than hanging.
+                // The failed task is pushed as ready so successors fire (src/scheduler/README.md).
                 events.push({sycl::event{}, task, true});
             }
         }
 
         /**
-         * @brief Records the first exception of the current run and flips run_failed_.
-         *
-         * Only the first failing task wins; later exceptions are dropped. The mutex
-         * makes the exception write and the flag publish atomic relative to other
-         * workers, and its release pairs with the acquire in run_failed()/run_error()
-         * so the sentinel sees a fully-written exception.
-         * @param ep The exception thrown by the task.
+         * @brief Records the run's first exception and flips run_failed_ (src/scheduler/README.md).
+         * @param ep The exception thrown by the task; later ones are dropped.
          */
         void TaskScheduler::record_run_error(std::exception_ptr ep)
         {
@@ -974,15 +816,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Attempts to steal a task, preferring NUMA-local victims.
-         *
-         * Walks the precomputed, distance-ordered victim list for this worker:
-         *   1. Node-local tier first, with a rotating start so idle workers don't
-         *      all hammer the same victim (intra-tier load spreading).
-         *   2. Remote tiers next, in ascending NUMA-distance order, only reached
-         *      once the local tier is exhausted (strict locality policy).
-         * This keeps a task on the node where its data lives, avoiding the remote
-         * memory hop that NUMA-blind stealing would incur.
+         * @brief Steals a task, node-local victims first (src/scheduler/README.md).
          * @param th_id The ID of the worker attempting to steal.
          * @return Pointer to a stolen task, or nullptr if none found.
          */
@@ -1046,13 +880,10 @@ namespace SushiRuntime
 
             task->add_ref();
 
-            // Count the task into the run before it becomes reachable to workers, so
-            // the quiescence counter can never miss it. Balanced by the poller's
-            // release on completion (or the offload decrement in Master mode).
+            // The task is counted before workers can reach it (src/scheduler/README.md).
             inflight_.fetch_add(1, std::memory_order_relaxed);
 
-            // External submissions go into a dedicated injector queue so we do not
-            // violate the single-producer constraint of the per-worker Chase-Lev deques.
+            // External submissions use the injector, not a worker deque (src/scheduler/README.md).
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);
                 if (task->get_priority() > 0)
@@ -1072,14 +903,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Submits a batch of root nodes under one injector pass.
-         *
-         * Mirrors submit() exactly per node — add_ref, priority split, quiescence
-         * count — but amortizes the fixed cost across the whole root set: one
-         * pending_mutex acquisition, a single inflight_ increment, and one wake
-         * burst instead of (roots) of each. The inflight_ increment stays inside the
-         * locked region, so tasks are counted before any worker can drain them —
-         * the same happens-before submit() relies on.
+         * @brief Submits a batch of root nodes under one injector pass (src/scheduler/README.md).
          */
         void TaskScheduler::submit_batch(const std::vector<Graph::Node*>& roots)
         {
@@ -1113,9 +937,7 @@ namespace SushiRuntime
                     priority_count_.store(priority_submissions.size(), std::memory_order_relaxed);
             }
 
-            // One wake for the whole batch: roots are independent and there are
-            // num_workers threads, so a single notify_all replaces the per-root
-            // notify_one storm. Idle workers that find no work simply re-sleep.
+            // One notify_all wakes the pool for the whole batch (src/scheduler/README.md).
             pending_cv.notify_all();
         }
 
@@ -1178,7 +1000,7 @@ namespace SushiRuntime
             if (from_worker_id < 0 || from_worker_id >= static_cast<int>(num_workers)) return;
             if (!worker_queues[from_worker_id]) return;
 
-            // 1. Darboğazdaki (ısınmış) worker'dan lock-free olarak görevleri çal
+            // 1. Steal tasks lock-free from the congested (hot) worker.
             std::vector<Task*> rescued_tasks;
             rescued_tasks.reserve(count);
 
@@ -1186,10 +1008,10 @@ namespace SushiRuntime
             {
                 Task* t = worker_queues[from_worker_id]->steal();
                 if (t) rescued_tasks.push_back(t);
-                else break; // Kuyruk boşalmışsa dur
+                else break; // Stop once the queue is empty.
             }
 
-            // 2. Çalınan görevleri soğuk worker'ların kapması için Global Öncelikli Kuyruğa at
+            // 2. Put the stolen tasks on the global priority queue for cooler workers.
             if (!rescued_tasks.empty()) 
             {
                 {
@@ -1200,7 +1022,7 @@ namespace SushiRuntime
                     }
                     priority_count_.store(priority_submissions.size(), std::memory_order_relaxed);
                 }
-                // Uyuyan / boşta bekleyen tüm soğuk worker'ları uyandır
+                // Wake every sleeping or idle cool worker.
                 pending_cv.notify_all(); 
             }
         }
@@ -1214,13 +1036,7 @@ namespace SushiRuntime
         {
             coordinator_ = c;
 
-            // In Master mode, bump the version of every registered buffer a
-            // locally-completed node wrote. Combined with the DAG ordering, this
-            // means any dependent task (notably an offloaded reader) is dispatched
-            // only after the version reflects the write — so a stale worker cache
-            // is forced to re-pull. Offloaded writers are handled symmetrically in
-            // complete_offloaded_node(). This is the automatic counterpart to the
-            // manual bump_distributed_buffer() API.
+            // A locally completed node bumps the buffers it wrote (src/scheduler/README.md).
             if (c)
             {
                 event_poller.set_completion_observer(
@@ -1233,16 +1049,7 @@ namespace SushiRuntime
                                 context.bump_distributed_buffer(p);
                     });
 
-                // Lets the coordinator re-inject a node orphaned by a dead worker
-                // (or a failed remote result). submit() is the thread-safe injector,
-                // so this is safe from the coordinator's transport/monitor thread.
-                //
-                // Ref accounting: the orphaned node still carries the scheduling ref
-                // that was transferred to the coordinator at offload time. submit()
-                // takes its own ref (add_ref), so we drop the transferred one right
-                // after — mirroring complete_offloaded_node()'s release. Net effect:
-                // exactly one scheduling ref lives on, owned by the ready queue, and
-                // event polling releases it when the node finally completes.
+                // The hook resubmits an orphan and drops one ref (src/scheduler/README.md).
                 c->set_resubmit_hook([this](Graph::Node* n) { submit(n); n->release(); });
             }
         }
@@ -1256,30 +1063,22 @@ namespace SushiRuntime
         {
             if (!node) return;
 
-            // A failed remote result is treated like a lost worker: re-inject the
-            // node so it runs on a survivor or, once the retry cap is hit, locally.
-            // We must NOT bump versions or release successors on failure — the
-            // authoritative buffers were not validly produced.
+            // A failed remote result re-injects the node (src/scheduler/README.md).
             if (!success)
             {
                 SR_LOG_WARN("Offloaded node '{}' failed remotely; re-dispatching.", node->metadata.name);
-                // submit() takes its own scheduling ref; drop the transferred one
-                // (same release the success path performs at the end of this fn).
+                // The transferred ref is dropped; submit() took its own (src/scheduler/README.md).
                 submit(node);
                 node->release();
                 return;
             }
 
-            // The offloaded write landed back in the master's authoritative buffer
-            // (eager writeback) before this fired; advance its version so later
-            // dependents re-pull, mirroring the local-completion observer.
+            // The write is on the master already; its version advances (src/scheduler/README.md).
             if (auto* off = node->offload_state())
                 for (void* p : off->writes)
                     context.bump_distributed_buffer(p);
 
-            // Mirror EventPolling::trigger_successors, but route ready successors
-            // through submit() (thread-safe injector) since this runs on the
-            // coordinator's transport thread, not a worker thread.
+            // Ready successors use submit() on this transport thread (src/scheduler/README.md).
             int32_t count   = node->inline_successor_count.load(std::memory_order_acquire);
             int32_t max_idx = std::min(count, SushiRuntime::Graph::Node::MAX_INLINE_SUCCESSORS);
             for (int32_t i = 0; i < max_idx; ++i)
@@ -1298,16 +1097,14 @@ namespace SushiRuntime
                 curr = curr->next;
             }
 
-            // Cross-region boundary successors (dynamic region graph), released the
-            // same way; empty for ordinary offloaded nodes.
+            // Cross-region boundary successors are released the same way (src/scheduler/README.md).
             for (auto* succ : node->region.boundary_successors)
             {
                 if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
                     submit(succ);
             }
 
-            // Drop the scheduling reference that was transferred to the
-            // coordinator when the node was offloaded.
+            // The ref the coordinator took at offload is dropped (src/scheduler/README.md).
             node->release();
         }
 #endif

@@ -6,18 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for the caller-owned RunReport overloads: run(RunReport&),
-// try_run(RunReport&) and RunHandle::wait(RunReport&).
-//
-// Two properties are being pinned down, and they pull against each other. The
-// point of the overloads is that a frame loop keeps one report alive and the
-// per-run vectors stop being reallocated — so the report must NOT be rebuilt
-// from scratch. But a report carried across ticks must also never let the
-// previous run's numbers survive into this one, which is exactly what "do not
-// rebuild" invites. The resolution is reset-then-refill: capacity stays, values
-// do not. Both halves are asserted here, including on the failure paths, where
-// stale numbers would be most misleading — a caller that ignored the returned
-// error would otherwise read a successful-looking report.
+/**
+ * @file test_run_report_reuse.cpp
+ * @brief Tests the caller-owned RunReport overloads of run(), try_run() and RunHandle::wait().
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 
@@ -31,10 +25,10 @@ namespace
 {
     constexpr std::size_t N = 64;
 
-    // Zeroes @p buf and records the one task every test here runs: element i
-    // gets i+1. Takes both handles by reference rather than returning them,
-    // because a Buffer must not be moved once a graph has recorded it — the
-    // graph would keep pointing at the old address.
+    /**
+     * @brief Zeroes the buffer and records the one task every test here runs, which writes i+1 to
+     *        element i.
+     */
     void record_write(API::Graph& g, API::Buffer<int>& buf)
     {
         for (std::size_t i = 0; i < N; ++i)
@@ -46,9 +40,7 @@ namespace
     }
 }
 
-// The reuse overload must report what the value-returning one reports. If the
-// two drivers ever diverge, every number a consumer reads from the cheap path
-// silently becomes a different measurement from the documented one.
+/** @brief Tests that the reuse overload reports what the value-returning one reports. */
 TEST(Integration_RunReportReuse, ReuseReportsWhatTheValueFormReports)
 {
     auto rt  = Runtime::create();
@@ -71,10 +63,7 @@ TEST(Integration_RunReportReuse, ReuseReportsWhatTheValueFormReports)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "at i=" << i;
 }
 
-// The whole reason the overload exists: the per-run vectors are refilled in
-// place. Comparing the row's address before and after is what actually proves
-// no reallocation happened — a capacity check alone would pass even if the
-// vector were rebuilt into an identically sized new block.
+/** @brief Tests that steady-state runs refill the report's vectors in place. */
 TEST(Integration_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
 {
     auto rt  = Runtime::create();
@@ -101,8 +90,7 @@ TEST(Integration_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
     EXPECT_EQ(report.numa_statistics.size(), 1u);
 }
 
-// Reuse must not accumulate. A short run following a long one has to read as
-// the short run — the count belongs to this run, not to the report.
+/** @brief Tests that a short run after a long one reports the short run's count. */
 TEST(Integration_RunReportReuse, EachRunOverwritesTheLastOne)
 {
     auto rt  = Runtime::create();
@@ -121,10 +109,7 @@ TEST(Integration_RunReportReuse, EachRunOverwritesTheLastOne)
     EXPECT_EQ(report.numa_statistics.size(), 1u);
 }
 
-// A rejected run must clear the report it was handed. The dangerous case is a
-// caller that checks the returned error only sometimes: reading a stale
-// is_successful of true off a run that never happened is worse than reading
-// zeroes, so the failure path resets and marks the report unsuccessful.
+/** @brief Tests that a rejected run clears the report and marks it unsuccessful. */
 TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
 {
     auto rt  = Runtime::create();
@@ -148,8 +133,7 @@ TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     EXPECT_TRUE(report.numa_statistics.empty());
 }
 
-// The non-throwing form hands back the very report it was given, so a caller
-// can keep using the result of the call without holding both.
+/** @brief Tests that try_run(RunReport&) returns the report it was given. */
 TEST(Integration_RunReportReuse, TryRunReturnsTheCallersReport)
 {
     auto rt  = Runtime::create();
@@ -165,8 +149,7 @@ TEST(Integration_RunReportReuse, TryRunReturnsTheCallersReport)
     EXPECT_TRUE(report.is_successful);
 }
 
-// The asynchronous path settles into a caller-owned report too — the frame loop
-// that most wants the overload is the overlapped one.
+/** @brief Tests that RunHandle::wait(RunReport&) fills the caller's report. */
 TEST(Integration_RunReportReuse, AsyncWaitFillsTheCallersReport)
 {
     auto rt  = Runtime::create();

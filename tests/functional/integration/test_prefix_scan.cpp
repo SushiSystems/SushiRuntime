@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Wave 2 task 3 coverage: Graph::add_prefix_scan() (spec
-// 2026-09-16-scan-and-counting-sort-design.md §A1, §B; plan task 3). Checks
-// exact agreement with a host reference at the tile edges, the exclusive
-// contract (offsets[n] == total), late-bound replay with one compile, and
-// that every internal pass of one call shares one node_index across steps.
+/**
+ * @file test_prefix_scan.cpp
+ * @brief Tests add_prefix_scan() against a host reference, with late-bound replay and indexing.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -24,9 +25,9 @@ using namespace SushiRuntime;
 
 namespace
 {
-    // Exclusive prefix sum over uint32, mod 2^32, the scan's own contract:
-    // offsets[i] is the sum of counts[0..i), offsets[n] and the return value
-    // both carry the grand sum.
+    /**
+     * @brief Computes the exclusive prefix sum over uint32, mod 2^32, and returns the grand sum.
+     */
     std::uint32_t host_exclusive_scan(const std::vector<std::uint32_t>& counts,
                                        std::size_t n, std::vector<std::uint32_t>& offsets)
     {
@@ -51,18 +52,11 @@ namespace
 
 namespace
 {
-    // Sentinel that would never arise from a real scan, so a slot that keeps
-    // it was not written and a slot that loses it was written when it must
-    // not have been.
+    /** @brief Holds a sentinel that no real scan produces. */
     constexpr std::uint32_t CANARY = 0xDEADBEEFu;
 }
 
-// The tile edges (0, 1, one below/at/above a tile, one below/at/above the
-// second level, and 10^6) are where an off-by-one in the level plan or the
-// down-sweep's base would show up. offsets and total are filled with a
-// canary before the run, and offsets carries one extra slot past
-// capacity + 1 that must survive untouched, so neither a stale zero nor an
-// out-of-bounds write past the declared window can pass by accident.
+/** @brief Tests exact agreement with the host reference at the tile edges. */
 TEST(Integration_PrefixScan, ExactAgreementWithHostReferenceAtTileEdges)
 {
     const std::vector<std::size_t> sizes = {0, 1, 255, 256, 257, 65536, 65537, 1000000};
@@ -99,8 +93,7 @@ TEST(Integration_PrefixScan, ExactAgreementWithHostReferenceAtTileEdges)
     }
 }
 
-// The exclusive contract's second half: offsets[n] is not merely close to the
-// sum, it IS the sum add_prefix_scan() also publishes through total.
+/** @brief Tests that offsets[n] equals the total add_prefix_scan() publishes. */
 TEST(Integration_PrefixScan, OffsetsAtLiveCountEqualsTotal)
 {
     constexpr std::size_t N = 257;
@@ -122,9 +115,7 @@ TEST(Integration_PrefixScan, OffsetsAtLiveCountEqualsTotal)
     EXPECT_EQ(offsets[N], total[0]);
 }
 
-// A live count that changes between runs must not force a recompile: the
-// topology (levels, scratch) is fixed at the capacity, only the live count
-// and the counts it scans vary per run.
+/** @brief Tests that a live count that changes between runs keeps one compile. */
 TEST(Integration_PrefixScan, LateBoundChangingCountKeepsOneCompile)
 {
     constexpr std::size_t CAPACITY = 1000003;
@@ -162,8 +153,7 @@ TEST(Integration_PrefixScan, LateBoundChangingCountKeepsOneCompile)
         << "a live count change between runs must not trigger a recompile";
 }
 
-// A run whose counts genuinely change (not just the live count) between calls
-// must scan whatever is in the buffer at the time it runs, not a stale copy.
+/** @brief Tests that each run scans the counts in the buffer at the time it runs. */
 TEST(Integration_PrefixScan, EachRunScansItsOwnCounts)
 {
     constexpr std::size_t CAPACITY = 300;
@@ -201,15 +191,10 @@ TEST(Integration_PrefixScan, EachRunScansItsOwnCounts)
     EXPECT_EQ(g.compile_count(), 1u);
 }
 
-// G1 coverage: every internal pass one add_prefix_scan() call emits (the
-// late-count resolver, the up-sweep levels, the down-sweep levels and the
-// closing write) shares one node_index, and run(steps) records one
-// invocation per step for each of them.
+/** @brief Tests that every internal pass of one add_prefix_scan() call shares one node_index. */
 TEST(Integration_PrefixScan, SharesOneNodeIndexAcrossStepsAndPasses)
 {
-    // plan_tiled_levels(600): level0 600 -> 3, level1 3 -> 1; two levels, so
-    // this call emits 1 (resolver) + 1 (up, all but the top level) +
-    // 2 (down, every level) + 1 (closing) = 5 nodes.
+    // A capacity of 600 gives two levels, so this call emits 5 nodes; see README.md.
     constexpr std::size_t CAPACITY = 600;
     constexpr std::size_t EXPECTED_PASSES = 5;
     constexpr std::size_t STEPS = 4;
@@ -245,17 +230,10 @@ TEST(Integration_PrefixScan, SharesOneNodeIndexAcrossStepsAndPasses)
         EXPECT_EQ(per_invocation[step], EXPECTED_PASSES) << "step " << step;
 }
 
-// Device-solver-instrument coverage: each internal pass's launched_width must
-// be its own row of the width table, not merely "some width was stamped".
-// Every pass here reads a region the one before it wrote (state_region, then
-// up_scratch, then down_scratch, then the whole-buffer WAW on offsets), so
-// report.node_events lands in that same dependency order regardless of which
-// execution path ran it.
+/** @brief Tests that each internal pass's launched_width is its own row of the width table. */
 TEST(Integration_PrefixScan, InternalNodeWidthsMatchTheDispatchTable)
 {
-    // Same shape as SharesOneNodeIndexAcrossStepsAndPasses: plan_tiled_levels(600)
-    // gives level0 600 -> 3, level1 3 -> 1; order is resolver, up0, down-top,
-    // down0, closing.
+    // The node order is resolver, up0, down-top, down0, closing; see README.md.
     constexpr std::size_t CAPACITY = 600;
     const std::vector<std::uint32_t> expected_widths = {1u, 3u, 1u, 3u, 1u};
 
@@ -283,8 +261,9 @@ TEST(Integration_PrefixScan, InternalNodeWidthsMatchTheDispatchTable)
     }
 }
 
-// Capacity zero: the live count is always zero, so total and offsets[0] are
-// always zero, and the buffers start from a canary rather than a lucky zero.
+/**
+ * @brief Tests that a capacity of zero writes a zero total and a zero offsets[0] over the canary.
+ */
 TEST(Integration_PrefixScan, ZeroCapacityWritesZeroTotal)
 {
     auto rt      = Runtime::create();
@@ -302,8 +281,7 @@ TEST(Integration_PrefixScan, ZeroCapacityWritesZeroTotal)
     EXPECT_EQ(total[0], 0u);
 }
 
-// A live count above its capacity fails the run rather than reading or
-// writing past the buffers it was planned for.
+/** @brief Tests that a live count above its capacity fails the run. */
 TEST(Integration_PrefixScan, LateBoundAboveCapacityFailsTheRun)
 {
     auto rt      = Runtime::create();

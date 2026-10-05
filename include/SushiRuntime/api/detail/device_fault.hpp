@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file device_fault.hpp
+ * @brief Declares the device fault record and the functions that write and check it.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <cstddef>

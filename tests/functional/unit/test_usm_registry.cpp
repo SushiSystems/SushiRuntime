@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_usm_registry.cpp
+ * @brief Tests UsmRegistry's record, take, owner and containing-allocation lookups.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
+
 #include <gtest/gtest.h>
 #include <SushiRuntime/memory/usm_registry.hpp>
 
@@ -20,12 +27,12 @@ using SushiRuntime::Memory::UsmRegistry;
 
 namespace
 {
-    // Registry keys are opaque; nothing is dereferenced, so distinct fake
-    // addresses are enough and keep the test free of a Runtime.
+    /** @brief Returns a distinct fake address for each n, 64 bytes apart. */
     void* fake(std::uintptr_t n) { return reinterpret_cast<void*>(n * 64u + 64u); }
 
-    // Fake addresses sit 64 bytes apart, so a 64-byte extent covers one of them
-    // exactly and never reaches its neighbour.
+    /**
+     * @brief Holds the 64-byte extent that covers one fake address and never reaches its neighbour.
+     */
     constexpr std::size_t EXTENT = 64;
 
     // An address inside fake(n)'s extent, for the interior-pointer cases.
@@ -63,19 +70,14 @@ TEST(Unit_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
     ASSERT_TRUE(taken.has_value());
     EXPECT_EQ(*taken, 2u);
 
-    // The free path erases and reads the owner in one step, so a second free of
-    // the same pointer must be distinguishable from the first rather than
-    // reporting a stale device.
+    // A second take of the same pointer must report no owner; see README.md.
     EXPECT_FALSE(registry.take(fake(1)).has_value());
     EXPECT_FALSE(registry.owner_of(fake(1)).has_value());
 }
 
 TEST(Unit_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
 {
-    // Only reachable if an allocator handed back an address it had not been told
-    // was freed. Last writer wins, which matches the map assignment the runtime
-    // has always done, and is asserted so a future change to the container does
-    // not quietly turn it into first-writer-wins.
+    // Recording a pointer twice keeps the last writer; see README.md.
     UsmRegistry registry;
     registry.record(fake(1), 1, EXTENT);
     registry.record(fake(1), 4, EXTENT);
@@ -100,9 +102,7 @@ TEST(Unit_UsmRegistry, SizeCountsLiveEntries)
 
 TEST(Unit_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
 {
-    // Buffers are constructed and destroyed from whichever thread owns them, so
-    // the registry is written from several at once. Every pointer recorded here
-    // is taken exactly once, by exactly one thread.
+    // Every pointer recorded here is taken exactly once, by exactly one thread; see README.md.
     constexpr int THREADS = 8;
     constexpr int PER_THREAD = 500;
 
@@ -136,8 +136,7 @@ TEST(Unit_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
 
 TEST(Unit_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
 {
-    // The case the graph builder needs: a caller offsets into a plan array and
-    // hands over an address the base-keyed table cannot find.
+    // The caller passes an interior address the base-keyed table cannot find; see README.md.
     UsmRegistry registry;
     registry.record(fake(1), 5, EXTENT);
 
@@ -163,8 +162,7 @@ TEST(Unit_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
 
 TEST(Unit_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
 {
-    // An adopted address whose importer knew no size must not read as zero-length
-    // nor swallow offsets it cannot vouch for.
+    // An entry without a length resolves only at its base; see README.md.
     UsmRegistry registry;
     registry.record(fake(1), 7, std::nullopt);
 

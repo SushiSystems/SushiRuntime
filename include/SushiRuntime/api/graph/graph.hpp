@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file graph.hpp
+ * @brief Declares Graph, the fluent builder that records tasks and runs them.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/api/graph/README.md
+ */
+
 #pragma once
 
 #include <array>
@@ -55,14 +62,10 @@ namespace SushiRuntime
 {
     namespace API
     {
-        // The lower-level graph builder this layer wraps. Spelled out fully to
-        // avoid clashing with the API::Graph class name below.
+        /** @brief Names the lower-level graph builder this layer wraps. */
         using BackingGraph = ::SushiRuntime::Graph::TaskGraph;
 
-        // The dynamic (region-based) graph and its mutation unit. Forward-declared
-        // so the static Graph can befriend them: a Region reuses Graph add()
-        // surface by deriving from it, and the DynamicGraph composer reads a
-        // recorded specs and per-step updaters to stitch one plan.
+        // Forward-declared so that Graph can befriend the region type and its composer.
         class Region;
         class DynamicGraph;
 
@@ -75,23 +78,8 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief A run count resolved once per run from exactly one live source.
-         *
-         * Plans a tiled pass for @c capacity at registration; the live count read
-         * each run must not exceed it. Leaving @c host empty and @c device null
-         * makes the live count @c capacity itself, matching a fixed-count call.
-         * Setting @c host takes precedence over @c device when both are set,
-         * which callers should not do; set exactly one.
-         *
-         * A fixed-count call spells its plain capacity as
-         * `LateCount lc; lc.capacity = n;`. Plain brace init (`LateCount{n}`)
-         * trips `-Wmissing-field-initializers`, and this type stays an
-         * aggregate, so it takes no constructor; the designator form
-         * (`LateCount{.capacity = n}`) reads better but is a C++20 feature;
-         * on the non-MSVC compiler path this tree builds with (clang++,
-         * `-pedantic -Werror`, `cmake/CompilerWarnings.cmake`), it fails as
-         * `-Wc++20-designator`, confirmed against that compiler, so it is
-         * not offered as the idiom here.
+         * @brief Holds a run count resolved once per run from exactly one live source.
+         * @see include/SushiRuntime/api/graph/README.md
          */
         struct LateCount
         {
@@ -116,18 +104,11 @@ namespace SushiRuntime
         {
             /**
              * @brief Reads a LateCount's live value and checks it against its capacity.
-             *
-             * The one resolution point every verb built on LateCount shares: a host
-             * provider wins when set, then a device slot, and with neither the live
-             * count is the capacity, so a LateCount left at its default behaves like
-             * a fixed count.
-             *
-             * @param lc The count to resolve.
-             * @return The live count, no larger than @c lc.capacity.
              * @throws Core::SushiException With invalid_access if @c lc.device is set
-             *         but is not Residency::Host, or invalid_graph if the live count
-             *         exceeds @c lc.capacity, the same way an out-of-window based_at()
-             *         fails the run.
+             *        but is not Residency::Host, or invalid_graph if the live count
+             *        exceeds @c lc.capacity, the same way an out-of-window based_at()
+             *        fails the run.
+             * @see include/SushiRuntime/api/graph/README.md
              */
             inline std::size_t resolve_late_count(const LateCount& lc)
             {
@@ -161,17 +142,11 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Rejects an ill-formed LateCount at registration, not first run.
-             *
-             * Mirrors require_host_device_slots(): a device slot must be
-             * Residency::Host, checked before add() mutates the graph rather than
-             * inside the run loop. Also rejects a capacity too wide for the
-             * uint32 live-count slots the late-bound verbs resolve into.
-             *
-             * @param lc   The count to validate.
-             * @param what Name of the calling verb, for the error message.
+             * @brief Rejects an ill-formed LateCount at registration, before add() changes the
+             *        graph.
              * @throws Core::SushiException With invalid_access for a non-host
-             *         device slot, or invalid_graph for an oversized capacity.
+             *        device slot, or invalid_graph for an oversized capacity.
+             * @see include/SushiRuntime/api/graph/README.md
              */
             inline void validate_late_count(const LateCount& lc, const char* what)
             {
@@ -273,21 +248,10 @@ namespace SushiRuntime
                 Graph& operator=(const Graph&) = delete;
 
                 /**
-                 * @brief Adds a per-element task that participates in no ordering.
-                 *
-                 * The dependency-blind form of add(Reads, Writes, n, fn): a
-                 * per-element callable is void(std::size_t) capturing raw USM
-                 * pointers, so nothing in its type says what it touches and the
-                 * runtime cannot infer it. This overload therefore records no read or
-                 * write regions — the task is both a root and a leaf, ordered against
-                 * nothing. Correct for self-contained work (seeding a buffer no other
-                 * task in this graph reads, a benchmark kernel); wrong the moment
-                 * another task shares data with it. Name the data with
-                 * Reads(...)/Writes(...) and use add() whenever ordering matters.
-                 *
-                 * @param n  Number of elements (the iteration range).
+                 * @brief Adds a per-element task that records no regions and is ordered against
+                 *        nothing.
                  * @param fn Callable invoked as fn(i) for each index i.
-                 * @return *this, for chaining.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add_untracked(std::size_t n, F&& fn)
@@ -306,15 +270,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds an unordered range task; fn receives bounds and handler.
-                 *
-                 * The dependency-blind counterpart of
-                 * add(Reads, Writes, n, range_kernel); see add_untracked(n, fn) for
-                 * why the regions cannot be inferred and when this is the right choice.
-                 *
-                 * @param n  Upper bound; fn is called as fn(0, n, handler).
-                 * @param fn Callable invoked as fn(begin, end, sycl::handler&).
-                 * @return *this, for chaining.
+                 * @brief Adds a range task that records no regions; fn receives bounds and handler.
+                 * @param n Upper bound; fn is called as fn(0, n, handler).
                  */
                 template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
                 Graph& add_untracked(std::size_t n, F&& fn)
@@ -332,14 +289,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds an unordered raw kernel that drives the handler itself.
-                 *
-                 * The dependency-blind counterpart of add(Reads, Writes, raw_kernel);
-                 * see add_untracked(n, fn) for why the regions cannot be inferred and
-                 * when this is the right choice.
-                 *
+                 * @brief Adds a raw kernel that records no regions and drives the handler itself.
                  * @param fn Callable invoked as fn(sycl::handler&).
-                 * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
                 Graph& add_untracked(F&& fn)
@@ -354,21 +305,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds an unordered multidimensional task over an Extent.
-                 *
-                 * The 2-D/3-D counterpart of add_untracked(std::size_t, fn): the
-                 * runtime submits a parallel_for over the Extent's box and invokes
-                 * @p fn with the global sycl::id of each work-item. When the Extent
-                 * carries an origin offset the iteration covers only that sub-box, so
-                 * a kernel can skip a halo or touch just a ghost layer. Plain 1-D
-                 * counts keep using the std::size_t overloads; pass a 1-D Extent only
-                 * when you want an origin offset. Records no regions — use
-                 * add(Reads, Writes, Extent, fn) when the task must be ordered.
-                 *
-                 * @tparam N  Iteration rank (1, 2, or 3).
-                 * @param e   The iteration box (extent and origin offset).
-                 * @param fn  Callable invoked as fn(sycl::id<N>) per work-item.
-                 * @return *this, for chaining.
+                 * @brief Adds a multidimensional task over an Extent that records no regions.
+                 * @tparam N Iteration rank (1, 2, or 3).
+                 * @param fn Callable invoked as fn(sycl::id<N>) per work-item.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <int N, class F,
                           std::enable_if_t<std::is_invocable_v<F, sycl::id<N>>, int> = 0>
@@ -389,19 +329,11 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds an unordered tiled task over an NdRange.
-                 *
-                 * Submits a parallel_for over the NdRange and hands @p fn a
-                 * sycl::nd_item<N>, exposing the work-group model — barriers, local
-                 * (shared) memory, sub-groups — that a flat parallel_for cannot. Use
-                 * it for blocked algorithms (tiled GEMM, shared-memory stencils)
-                 * where neighbouring work-items must cooperate. Records no regions —
-                 * use add(Reads, Writes, NdRange, fn) when the task must be ordered.
-                 *
-                 * @tparam N  Iteration rank (1, 2, or 3).
-                 * @param r   Global and local ranges; global must tile by local.
-                 * @param fn  Callable invoked as fn(sycl::nd_item<N>) per work-item.
-                 * @return *this, for chaining.
+                 * @brief Adds a tiled task over an NdRange that records no regions.
+                 * @tparam N Iteration rank (1, 2, or 3).
+                 * @param r Global and local ranges; global must tile by local.
+                 * @param fn Callable invoked as fn(sycl::nd_item<N>) per work-item.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <int N, class F,
                           std::enable_if_t<std::is_invocable_v<F, sycl::nd_item<N>>, int> = 0>
@@ -421,19 +353,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a 1-D per-element task with handle-based read/write
-                 *        tracking.
-                 *
-                 * The ergonomic form of the explicit-tracking overload: pass the
-                 * Buffers/States the task reads and writes as Reads(...)/Writes(...)
-                 * instead of building a std::vector<void*> by hand. The dependency
-                 * tracker still orders the task by the keys those wrappers gathered.
-                 *
-                 * @param reads  Handles this task reads (their read keys).
-                 * @param writes Handles this task writes (their write keys).
-                 * @param n      Iteration range; fn is called for each i in [0, n).
-                 * @param fn     Callable invoked as fn(i) for each index i.
-                 * @return *this, for chaining.
+                 * @brief Adds a 1-D per-element task ordered by the handles in Reads and Writes.
+                 * @param n Iteration range; fn is called for each i in [0, n).
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(const Reads& reads, const Writes& writes,
@@ -446,17 +368,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds an N-D per-element task with handle-based tracking.
-                 *
-                 * As the 1-D Reads/Writes overload, over an Extent box so the same
-                 * ergonomic dependency wrappers serve multidimensional kernels.
-                 *
-                 * @tparam N  Iteration rank (1, 2, or 3).
-                 * @param reads  Handles this task reads.
-                 * @param writes Handles this task writes.
-                 * @param e   The iteration box (extent and origin offset).
-                 * @param fn  Callable invoked as fn(sycl::id<N>) per work-item.
-                 * @return *this, for chaining.
+                 * @brief Adds an N-D per-element task over an Extent, ordered by Reads and Writes.
+                 * @tparam N Iteration rank (1, 2, or 3).
+                 * @param fn Callable invoked as fn(sycl::id<N>) per work-item.
                  */
                 template <int N, class F,
                           std::enable_if_t<std::is_invocable_v<F, sycl::id<N>>, int> = 0>
@@ -482,20 +396,11 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a tiled NdRange task with handle-based tracking.
-                 *
-                 * The ordered counterpart of add_untracked(NdRange, fn): the same
-                 * work-group execution model — barriers, local memory, sub-groups —
-                 * but the task is ordered against the rest of the graph by the
-                 * regions it declares, so a tiled kernel is no longer forced to give
-                 * up dependency tracking to get an nd_item.
-                 *
-                 * @tparam N  Iteration rank (1, 2, or 3).
-                 * @param reads  Handles this task reads (their read keys).
-                 * @param writes Handles this task writes (their write keys).
-                 * @param r   Global and local ranges; global must tile by local.
-                 * @param fn  Callable invoked as fn(sycl::nd_item<N>) per work-item.
-                 * @return *this, for chaining.
+                 * @brief Adds a tiled NdRange task ordered by the regions it declares.
+                 * @tparam N Iteration rank (1, 2, or 3).
+                 * @param r Global and local ranges; global must tile by local.
+                 * @param fn Callable invoked as fn(sycl::nd_item<N>) per work-item.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <int N, class F,
                           std::enable_if_t<std::is_invocable_v<F, sycl::nd_item<N>>, int> = 0>
@@ -520,18 +425,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a range task with handle-based tracking.
-                 *
-                 * The ordered counterpart of add_untracked(n, range_kernel): @p fn
-                 * still drives the sycl::handler over [0, n) itself — the escape
-                 * hatch for a kernel the per-element form cannot express — but the
-                 * regions it declares order it against the rest of the graph.
-                 *
-                 * @param reads  Handles this task reads (their read keys).
-                 * @param writes Handles this task writes (their write keys).
-                 * @param n      Upper bound; fn is called as fn(0, n, handler).
-                 * @param fn     Callable invoked as fn(begin, end, sycl::handler&).
-                 * @return *this, for chaining.
+                 * @brief Adds a range task ordered by its declared regions; fn drives the handler
+                 *        over [0, n).
+                 * @param fn Callable invoked as fn(begin, end, sycl::handler&).
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
                 Graph& add(const Reads& reads, const Writes& writes,
@@ -554,19 +451,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a raw kernel with handle-based tracking.
-                 *
-                 * The ordered counterpart of add_untracked(raw_kernel): @p fn owns
-                 * the whole command group — its own parallel_for, local accessors,
-                 * a memcpy — while the declared regions still order it. Reach for it
-                 * when no other overload's launch shape fits; prefer the shaped
-                 * overloads otherwise, since they cannot get the launch geometry and
-                 * the declared data out of step.
-                 *
-                 * @param reads  Handles this task reads (their read keys).
-                 * @param writes Handles this task writes (their write keys).
-                 * @param fn     Callable invoked as fn(sycl::handler&).
-                 * @return *this, for chaining.
+                 * @brief Adds a raw kernel ordered by its declared regions; fn owns the whole
+                 *        command group.
+                 * @param fn Callable invoked as fn(sycl::handler&).
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
                 Graph& add(const Reads& reads, const Writes& writes, F&& fn)
@@ -585,30 +473,18 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds an N-D per-element task capturing its buffer arguments.
-                 *
-                 * The most direct form: pass the buffers a kernel touches as
-                 * In(buf)/Out(buf)/InOut(buf) and the runtime both registers the
-                 * reads/writes and hands @p fn the raw element pointers, in argument
-                 * order, after the index. The caller writes the data flow once and
-                 * gets pointer capture and dependency ordering together.
-                 *
-                 * @tparam N    Iteration rank (1, 2, or 3).
-                 * @tparam Cap0 First capture wrapper (guarantees at least one).
-                 * @tparam Args Remaining capture wrappers, then the trailing callable.
-                 * @param e     The iteration box (extent and origin offset).
-                 * @param c0    First captured argument.
-                 * @param args  Remaining captured arguments and the callable last.
-                 * @return *this, for chaining.
+                 * @brief Adds an N-D per-element task that registers its captures and passes their
+                 *        pointers.
+                 * @tparam N Iteration rank (1, 2, or 3).
+                 * @param args Remaining captured arguments, with the callable last.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <int N, class Cap0, class... Args,
                           std::enable_if_t<detail::is_capture_v<Cap0> &&
                                            (sizeof...(Args) >= 1), int> = 0>
                 Graph& add(Extent<N> e, Cap0 c0, Args&&... args)
                 {
-                    // Args is one trailing pack so it deduces; the last element is the
-                    // callable and the rest are further captures. Splitting here keeps
-                    // the call site reading In(a), Out(c), fn with fn last.
+                    // The last element of Args is the callable; the others are captures.
                     auto tup = std::forward_as_tuple(std::forward<Args>(args)...);
                     constexpr std::size_t M = sizeof...(Args);
                     return emit_captured(e, c0, tup, std::make_index_sequence<M - 1>{},
@@ -616,21 +492,11 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds the per-step update rule for a time-evolving State.
-                 *
-                 * This is the canonical stepped task: it reads the state's current
-                 * field and writes its next field, with the dependency tracker
-                 * keying on those two buffers automatically. The runtime supplies
-                 * the current/next pointers to @p fn at execution time, so under
-                 * run(n) the same compiled node follows the double-buffer swap with
-                 * no recompilation. Provide exactly one update rule per State per
-                 * step.
-                 *
-                 * @tparam T  Element type of the State.
-                 * @param s   The state this rule evolves; must outlive the graph.
-                 * @param fn  Callable invoked as fn(i, const T* cur, T* next) for
-                 *            each index i in [0, s.size()).
-                 * @return *this, for chaining.
+                 * @brief Adds the per-step update rule of a State: reads current, writes next.
+                 * @param s The state this rule evolves; must outlive the graph.
+                 * @param fn Callable invoked as fn(i, const T* cur, T* next) for each i in [0,
+                 *        s.size()).
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class F,
                           std::enable_if_t<std::is_invocable_v<F, std::size_t,
@@ -661,19 +527,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a multidimensional per-step update rule for a State.
-                 *
-                 * The 2-D/3-D form of add(State, fn): the runtime iterates the Extent
-                 * box (whole field, or a sub-box for boundary/halo handling) and
-                 * hands @p fn the global index alongside the current/next pointers.
-                 * The double-buffer swap is followed exactly as in the 1-D form.
-                 *
-                 * @tparam T  Element type of the State.
-                 * @tparam N  Iteration rank (1, 2, or 3).
-                 * @param s   The state this rule evolves; must outlive the graph.
-                 * @param e   The iteration box (extent and origin offset).
-                 * @param fn  Callable invoked as fn(sycl::id<N>, const T* cur, T* next).
-                 * @return *this, for chaining.
+                 * @brief Adds a multidimensional per-step update rule for a State over an Extent.
+                 * @param s The state this rule evolves; must outlive the graph.
+                 * @param fn Callable invoked as fn(sycl::id<N>, const T* cur, T* next).
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, int N, class F,
                           std::enable_if_t<std::is_invocable_v<F,
@@ -705,33 +562,18 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a coupled update rule reading any number of fields.
-                 *
-                 * Writes @p out's next field from @p out's current field and the
-                 * current field of one or more other States — the building block for
-                 * coupled systems (e.g. reaction-diffusion with several species). All
-                 * reads see the previous step's data (a Jacobi update): every State
-                 * advances only after all of a step's kernels have run, so writing one
-                 * field never changes what another reads in the same step. Each field
-                 * must have exactly one update rule per step.
-                 *
-                 * @tparam T    Element type of the written field.
-                 * @tparam A    Element type of the first read field.
-                 * @tparam Rest Further read States, then the update callable last.
-                 * @param out  The field this rule writes; must outlive the graph.
-                 * @param in0  First read field; must outlive the graph.
-                 * @param rest Further read fields and the callable last. The callable
-                 *             is invoked as fn(i, const T* cur, T* next, const A* a,
-                 *             ...); one read pointer per input, in order.
-                 * @return *this, for chaining.
+                 * @brief Adds a coupled update rule that writes out's next field from several
+                 *        current fields.
+                 * @param out The field this rule writes; must outlive the graph.
+                 * @param in0 First read field; must outlive the graph.
+                 * @param rest Further read fields, then the callable fn(i, cur, next, a, ...) last.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, typename A, class... Rest,
                           std::enable_if_t<(sizeof...(Rest) >= 1), int> = 0>
                 Graph& add(State<T>& out, State<A>& in0, Rest&&... rest)
                 {
-                    // Rest is one trailing pack (so it deduces); its last element is
-                    // the callable and the rest are further read States. Splitting
-                    // here keeps the call site reading add(out, a, b, c, fn).
+                    // The last element of Rest is the callable; the others are read States.
                     auto tup = std::forward_as_tuple(std::forward<Rest>(rest)...);
                     constexpr std::size_t M = sizeof...(Rest);
                     return emit_coupled(out, in0, tup,
@@ -740,26 +582,17 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a per-element task with explicit read/write tracking.
-                 *
-                 * The advanced escape hatch for callers who manage their own data
-                 * and want the dependency tracker to order this task against others
-                 * by the pointers it touches. Prefer the State/Buffer overloads;
-                 * reach for this only when handle-based tracking does not fit.
-                 *
-                 * @param reads  Base pointers this task reads (e.g. buffer keys).
-                 * @param writes Base pointers this task writes.
-                 * @param n      Iteration range; fn is called for each i in [0, n).
-                 * @param fn     Callable invoked as fn(i) for each index i.
-                 * @return *this, for chaining.
+                 * @brief Adds a per-element task ordered by the raw base pointers it reads and
+                 *        writes.
+                 * @param n Iteration range; fn is called for each i in [0, n).
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(const std::vector<void*>& reads,
                            const std::vector<void*>& writes,
                            std::size_t n, F&& fn)
                 {
-                    // A bare base pointer is the whole-buffer region; convert and
-                    // funnel through the one tracked-task emitter.
+                    // A bare base pointer names the whole-buffer region.
                     return emit_per_element_tracked(
                         std::vector<Core::ResourceRegion>(reads.begin(), reads.end()),
                         std::vector<Core::ResourceRegion>(writes.begin(), writes.end()),
@@ -767,34 +600,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a late-bound per-element task with explicit tracking.
-                 *
-                 * The dynamic counterpart of the Reads/Writes per-element add: the
-                 * task is compiled once, but @p dyn lets its iteration size and
-                 * whether it runs vary every step with no recompile. Allocate the
-                 * touched buffers for the maximum (@p capacity) elements; sized()
-                 * then iterates only the live count each step, and when() can skip
-                 * the task entirely.
-                 *
-                 * sized_from_device() takes the count from a slot a predecessor
-                 * kernel wrote instead of from the host, which is what lets a
-                 * produce-then-consume chain (broadphase to narrowphase to solver)
-                 * run in one composition with no worst-case launch width. The counter
-                 * is registered as one of this task's reads, so the producer is
-                 * necessarily ordered before it.
-                 *
-                 * based_at() / based_at_device() move where the node starts, for a
-                 * slice whose offset shifts between steps — a graph colour, say. The
-                 * callable still receives absolute indices, and the window must fit
-                 * the capacity: one that does not fails the run rather than reading
-                 * past the end.
-                 *
-                 * @param dyn      Late-binding controls from when()/sized().
-                 * @param reads    Handles this task reads (their read keys).
-                 * @param writes   Handles this task writes (their write keys).
+                 * @brief Adds a late-bound per-element task whose size and enablement vary per
+                 *        step.
                  * @param capacity Pre-sized upper bound; the live size must not exceed it.
-                 * @param fn       Callable invoked as fn(i) for each live index i.
-                 * @return *this, for chaining.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(Dynamic dyn, const Reads& reads, const Writes& writes,
@@ -807,17 +616,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a late-bound per-element task naming data by raw pointer.
-                 *
-                 * The raw-pointer form of the dynamic per-element add; see the
-                 * Reads/Writes overload for the late-binding semantics.
-                 *
-                 * @param dyn      Late-binding controls from when()/sized().
-                 * @param reads    Base pointers this task reads.
-                 * @param writes   Base pointers this task writes.
+                 * @brief Adds a late-bound per-element task that names its data by raw base
+                 *        pointer.
                  * @param capacity Pre-sized upper bound; the live size must not exceed it.
-                 * @param fn       Callable invoked as fn(i) for each live index i.
-                 * @return *this, for chaining.
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(Dynamic dyn, const std::vector<void*>& reads,
@@ -831,25 +632,9 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a late-bound per-step update rule for a State.
-                 *
-                 * The dynamic counterpart of add(State, fn): the same read-current /
-                 * write-next stepped task, but @p dyn lets its active-element count
-                 * and whether it runs vary every step with no recompile. The State's
-                 * full allocation is the capacity; sized() iterates a prefix of it
-                 * (e.g. a changing number of active cells), and when() can skip the
-                 * step's kernel. The double-buffer swap is followed as in the static
-                 * form. Provide exactly one update rule per State per step.
-                 *
-                 * Note: the State still advances (swaps current/next) on a step its
-                 * when() disabled, so a skipped step leaves the un-written next field
-                 * current. This overload suits size variation; truly sleeping a field
-                 * across steps belongs to the streaming layer, not when().
-                 *
-                 * @tparam T  Element type of the State.
-                 * @param dyn Late-binding controls from when()/sized().
-                 * @param s   The state this rule evolves; must outlive the graph.
-                 * @param fn  Callable invoked as fn(i, const T* cur, T* next).
-                 * @return *this, for chaining.
+                 * @param s The state this rule evolves; must outlive the graph.
+                 * @param fn Callable invoked as fn(i, const T* cur, T* next).
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class F,
                           std::enable_if_t<std::is_invocable_v<F, std::size_t,
@@ -862,20 +647,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a pure-CPU task ordered by the data it touches.
-                 *
-                 * For arbitrary host C++ that submits no device work — gameplay
-                 * logic, AI, navigation, the CPU half of a broadphase. Name the data
-                 * it touches with Reads(...)/Writes(...) so the tracker orders it
-                 * against the rest of the graph; the runtime then runs @p fn natively
-                 * on a worker thread, with no SYCL queue submission, and releases its
-                 * successors through the same path as any kernel task. The shared USM
-                 * it reads is visible because the task runs only after its
-                 * predecessors complete.
-                 *
-                 * @param reads  Handles this task reads (their read keys).
-                 * @param writes Handles this task writes (their write keys).
-                 * @param fn     Nullary callable run once; must not submit SYCL work.
-                 * @return *this, for chaining.
+                 * @param fn Nullary callable run once; must not submit SYCL work.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<std::is_invocable_v<F>, int> = 0>
                 Graph& add_host(const Reads& reads, const Writes& writes, F&& fn)
@@ -895,14 +668,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds an untracked pure-CPU task that runs every step.
-                 *
-                 * The dependency-free form of add_host: with no Reads/Writes the task
-                 * is both a root and a leaf, so use it for self-contained host work
-                 * (telemetry, a per-step callback) that needs no ordering against
-                 * other tasks. Runs natively, with no SYCL submission.
-                 *
-                 * @param fn   Nullary callable run once per step; must not submit SYCL work.
-                 * @return *this, for chaining.
+                 * @param fn Nullary callable run once per step; must not submit SYCL work.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<std::is_invocable_v<F>, int> = 0>
                 Graph& add_host(F&& fn)
@@ -918,28 +685,9 @@ namespace SushiRuntime
 
                 /**
                  * @brief Names the task most recently added to this graph.
-                 *
-                 * Without a name a node reports as "unnamed_task" in
-                 * RunReport::NodeTiming, which makes a profile of a real graph a list
-                 * of identical labels. Chain this onto any add() to fix that:
-                 *
-                 * @code
-                 * sim.add(API::Reads(a), API::Writes(b), n, integrate).name_last("integrate");
-                 * @endcode
-                 *
-                 * A trailing name argument would have been shorter, but two launch
-                 * shapes end in a parameter pack whose last element is the callable —
-                 * add(Extent, captures..., fn) and add(State, States..., fn) — so a
-                 * defaulted trailing name cannot be expressed there. One spelling that
-                 * works for every shape, including any added later, beats a trailing
-                 * argument on most of them and an exception for the rest.
-                 *
-                 * For a task that expands to several nodes, such as a reduction, this
-                 * names the last one — the final fold.
-                 *
-                 * @param name Persistent label, stored not copied; a string literal is
-                 *             the intended use. Ignored when no task has been added.
-                 * @return *this, for chaining.
+                 * @param name Persistent label, stored not copied; ignored when no task has been
+                 *        added.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 Graph& name_last(const char* name) noexcept
                 {
@@ -950,33 +698,11 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a reduction whose combination order never varies.
-                 *
-                 * Reduces the first @p n elements of @p input into @p output[0] with
-                 * a result that is bit-identical across runs, worker counts, devices
-                 * and steal patterns — the property a replayable simulation needs
-                 * from every accumulation that feeds its state, and the one a
-                 * schedule-driven parallel reduce cannot give.
-                 *
-                 * It works by folding fixed-size tiles: each work-item combines a
-                 * contiguous run of at most 256 values left to right, the partials
-                 * are folded the same way, and that repeats until one value remains.
-                 * Which values meet which therefore depends only on @p n and that
-                 * tile size — never on how the work was scheduled. The intermediate
-                 * levels use scratch this graph allocates and owns, on the same
-                 * device and with the same residency as @p input.
-                 *
-                 * @tparam T       Element type.
-                 * @tparam Combine Binary functor; must be trivially copyable so it can
-                 *                 be captured into a device kernel.
-                 * @param input    Values to reduce; must hold at least @p n elements.
-                 * @param output   Destination; element 0 receives the result.
-                 * @param n        Number of leading elements of @p input to reduce.
-                 * @param op       The combiner, e.g. Sum<float>{}.
-                 * @param identity Result when @p n is zero; never enters the
-                 *                 arithmetic otherwise.
-                 * @return *this, for chaining.
+                 * @tparam Combine Binary functor; must be trivially copyable.
+                 * @param input Values to reduce; must hold at least n elements.
                  * @throws Core::SushiException If @p n exceeds @p input's size, if
-                 *         @p output is empty, or if scratch cannot be allocated.
+                 *        @p output is empty, or if scratch cannot be allocated.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class Combine>
                 Graph& add_reduce(const Buffer<T>& input, const Buffer<T>& output,
@@ -994,8 +720,7 @@ namespace SushiRuntime
                     T* out_base = output.data();
                     if (n == 0)
                     {
-                        // Nothing to fold: the identity is the whole answer. Still a
-                        // real node, so downstream readers order after it as usual.
+                        // An empty reduction still emits a node, so readers order after it.
                         const Reads reads;
                         const Writes writes(output);
                         // Replicates add()'s liveness-observe step; see emit_per_element_tracked().
@@ -1067,21 +792,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a fixed-order reduction using the combiner's identity.
-                 *
-                 * The shorthand for the built-in combiners (Sum, Minimum, Maximum),
-                 * which each declare the value their reduction produces over no
-                 * elements. A combiner without a static identity() — a lambda, say —
-                 * must use the overload that takes the identity explicitly.
-                 *
-                 * @tparam T       Element type.
-                 * @tparam Combine Binary functor exposing a static identity().
-                 * @param input  Values to reduce; must hold at least @p n elements.
-                 * @param output Destination; element 0 receives the result.
-                 * @param n      Number of leading elements of @p input to reduce.
-                 * @param op     The combiner, e.g. Sum<float>{}.
-                 * @return *this, for chaining.
+                 * @brief Adds a fixed-order reduction using the combiner's static identity().
                  * @throws Core::SushiException As the five-argument overload.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class Combine>
                 Graph& add_reduce(const Buffer<T>& input, const Buffer<T>& output,
@@ -1092,27 +805,11 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a reduction whose live element count is late-bound.
-                 *
-                 * Plans the same fixed-tile tree as the @p std::size_t overload, but
-                 * for @p n.capacity, and resolves the live count once per run instead
-                 * of once at registration. The fold order for a live count that ever
-                 * arrives is exactly the order the fixed-count overload would produce
-                 * for that same count (spec 2026-09-16-scan-and-counting-sort-design.md
-                 * A1): every level beyond the one where the live chain reaches one
-                 * value degenerates to a single-element pass-through, so results stay
-                 * byte-identical whichever way the count was bound.
-                 *
-                 * @tparam T       Element type.
-                 * @tparam Combine Binary functor; must be trivially copyable.
-                 * @param input    Values to reduce; must hold at least @p n.capacity elements.
-                 * @param output   Destination; element 0 receives the result.
-                 * @param n        Capacity plus the live count's source.
-                 * @param op       The combiner, e.g. Sum<float>{}.
-                 * @param identity Result when the live count is zero.
-                 * @return *this, for chaining.
+                 * @param input Values to reduce; must hold at least n.capacity elements.
                  * @throws Core::SushiException If @p n.capacity exceeds @p input's
-                 *         size, if @p output is empty, or at run if the live count
-                 *         exceeds @p n.capacity.
+                 *        size, if @p output is empty, or at run if the live count
+                 *        exceeds @p n.capacity.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class Combine>
                 Graph& add_reduce(const Buffer<T>& input, const Buffer<T>& output,
@@ -1134,8 +831,7 @@ namespace SushiRuntime
 
                     if (levels.empty())
                     {
-                        // Capacity zero: every run's live count is zero too, so the
-                        // identity is the whole answer, always.
+                        // With capacity zero the identity is the answer on every run.
                         return add(Reads(), Writes(output), std::size_t{1},
                                    [out_base, identity](std::size_t)
                                    {
@@ -1160,9 +856,7 @@ namespace SushiRuntime
                     reduce_scratch_.push_back(std::static_pointer_cast<void>(state));
                     std::uint32_t* state_ptr = state.get();
 
-                    // One token shared by every node this call emits (resolver, every
-                    // level, the trailing zero-count write), as the fixed-count
-                    // overload shares one across its levels (G1 spec §F5).
+                    // One token is shared by every node this call emits.
                     auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
                     reduce_registration_tokens_.push_back(registration_token);
 
@@ -1233,14 +927,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a late-bound reduction using the combiner's identity.
-                 * @tparam T       Element type.
-                 * @tparam Combine Binary functor exposing a static identity().
-                 * @param input  Values to reduce; must hold at least @p n.capacity elements.
-                 * @param output Destination; element 0 receives the result.
-                 * @param n      Capacity plus the live count's source.
-                 * @param op     The combiner, e.g. Sum<float>{}.
-                 * @return *this, for chaining.
+                 * @brief Adds a late-bound reduction using the combiner's static identity().
+                 * @param input Values to reduce; must hold at least n.capacity elements.
                  * @throws Core::SushiException As the five-argument overload.
                  */
                 template <typename T, class Combine>
@@ -1251,36 +939,12 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Reduces each segment of a ragged array, in a fixed order.
-                 *
-                 * The scatter-accumulate shape a simulation actually needs: per-body
-                 * contact impulses, per-vertex contributions from the elements
-                 * sharing that vertex. @p segment_offsets is the usual CSR-style
-                 * boundary array of @p segment_count + 1 entries, so segment s covers
-                 * values [offsets[s], offsets[s+1]) and @p output[s] receives its
-                 * fold.
-                 *
-                 * One work-item per segment folds that segment left to right, so
-                 * there are no atomics and no cross-work-item combining and the
-                 * result is reproducible by construction. The trade-off is load
-                 * balance: a segment of ten thousand values and a segment of one cost
-                 * one work-item each. The caller owns the layout, and determinism is
-                 * the contract, so the imbalance is left visible rather than traded
-                 * away for a split that would break the ordering guarantee.
-                 *
-                 * @tparam T       Element type of the values and the result.
-                 * @tparam Combine Binary functor; must be trivially copyable.
-                 * @param values          The concatenated segment contents.
-                 * @param segment_offsets Boundaries; must hold @p segment_count + 1
-                 *                        entries, non-decreasing, the last no larger
-                 *                        than @p values' size.
-                 * @param output          Destination; must hold @p segment_count entries.
-                 * @param segment_count   Number of segments to reduce.
-                 * @param op              The combiner, e.g. Sum<float>{}.
-                 * @param identity        Result for an empty segment.
-                 * @return *this, for chaining.
-                 * @throws Core::SushiException If @p segment_offsets or @p output is
-                 *         too small for @p segment_count.
+                 * @brief Reduces each segment of a ragged array in a fixed order.
+                 * @param segment_offsets segment_count + 1 non-decreasing entries, the last within
+                 *        values.
+                 * @throws Core::SushiException If segment_offsets or output is too small for
+                 *         segment_count.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class Combine>
                 Graph& add_segmented_reduce(const Buffer<T>& values,
@@ -1322,19 +986,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Reduces each segment using the combiner's identity.
-                 *
-                 * The shorthand form; see the overload taking an explicit identity for
-                 * the layout contract and the load-balance trade-off.
-                 *
-                 * @tparam T       Element type of the values and the result.
-                 * @tparam Combine Binary functor exposing a static identity().
-                 * @param values          The concatenated segment contents.
-                 * @param segment_offsets Boundaries; @p segment_count + 1 entries.
-                 * @param output          Destination; @p segment_count entries.
-                 * @param segment_count   Number of segments to reduce.
-                 * @param op              The combiner, e.g. Sum<float>{}.
-                 * @return *this, for chaining.
+                 * @brief Reduces each segment using the combiner's static identity().
+                 * @param segment_offsets segment_count + 1 non-decreasing entries.
+                 * @param output Holds segment_count entries.
                  * @throws Core::SushiException As the six-argument overload.
                  */
                 template <typename T, class Combine>
@@ -1349,25 +1003,11 @@ namespace SushiRuntime
 
                 /**
                  * @brief Reduces each segment with a late-bound segment count.
-                 *
-                 * One work-item per segment, planned for @p segment_count.capacity and
-                 * resolved once per run; a live segment count below capacity simply
-                 * launches fewer work-items, so the fold order per segment is
-                 * unaffected and byte-identical to the fixed-count overload for that
-                 * same live count.
-                 *
-                 * @tparam T       Element type of the values and the result.
-                 * @tparam Combine Binary functor; must be trivially copyable.
-                 * @param values          The concatenated segment contents.
-                 * @param segment_offsets Boundaries; @p segment_count.capacity + 1 entries.
-                 * @param output          Destination; @p segment_count.capacity entries.
-                 * @param segment_count   Capacity plus the live segment count's source.
-                 * @param op              The combiner, e.g. Sum<float>{}.
-                 * @param identity        Result for an empty segment.
-                 * @return *this, for chaining.
-                 * @throws Core::SushiException If @p segment_offsets or @p output is
-                 *         too small for @p segment_count.capacity, or at run if the
-                 *         live count exceeds it.
+                 * @param segment_offsets segment_count.capacity + 1 non-decreasing entries.
+                 * @param output Holds segment_count.capacity entries.
+                 * @throws Core::SushiException If segment_offsets or output is too small for
+                 *        segment_count.capacity, or at run if the live count exceeds it.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class Combine>
                 Graph& add_segmented_reduce(const Buffer<T>& values,
@@ -1432,16 +1072,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Reduces each segment, late-bound, using the combiner's identity.
-                 * @tparam T       Element type of the values and the result.
-                 * @tparam Combine Binary functor exposing a static identity().
-                 * @param values          The concatenated segment contents.
-                 * @param segment_offsets Boundaries; @p segment_count.capacity + 1 entries.
-                 * @param output          Destination; @p segment_count.capacity entries.
-                 * @param segment_count   Capacity plus the live segment count's source.
-                 * @param op              The combiner, e.g. Sum<float>{}.
-                 * @return *this, for chaining.
-                 * @throws Core::SushiException As the six-argument overload.
+                 * @brief Reduces each segment, late-bound, using the combiner's static identity().
+                 * @param segment_offsets segment_count.capacity + 1 non-decreasing entries.
+                 * @param output Holds segment_count.capacity entries.
+                 * @throws Core::SushiException As the late-bound six-argument overload.
                  */
                 template <typename T, class Combine>
                 Graph& add_segmented_reduce(const Buffer<T>& values,
@@ -1455,24 +1089,11 @@ namespace SushiRuntime
 
                 /**
                  * @brief Scans uint32 counts into exclusive running offsets, late-bound.
-                 *
-                 * Plans add_reduce()'s 256-tile tree over @p n.capacity, up-sweeps it
-                 * exactly as add_reduce() does but keeps every level's tile sums
-                 * instead of discarding them, then down-sweeps from the top: each
-                 * level's tile hands its running base to the level below, which walks
-                 * its own tile left to right emitting the exclusive running sum. Level
-                 * 0's down-sweep writes @p offsets directly, and the top pass's sum is
-                 * copied into both @p total and `offsets[n]`, so a CSR consumer never
-                 * needs a second read. No host step runs between the two sweeps.
-                 *
-                 * @param counts  Values to scan; must hold at least @p n.capacity elements.
-                 * @param offsets Destination; must hold at least @p n.capacity + 1 elements.
-                 * @param total   Destination for the grand sum; must hold at least 1 element.
-                 * @param n       Capacity plus the live count's source.
-                 * @return *this, for chaining.
+                 * @param offsets Destination; must hold at least n.capacity + 1 elements.
                  * @throws Core::SushiException If a buffer is too small, if @p counts
-                 *         and @p offsets sit on different devices, or at run if the
-                 *         live count exceeds @p n.capacity.
+                 *        and @p offsets sit on different devices, or at run if the
+                 *        live count exceeds @p n.capacity.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 Graph& add_prefix_scan(const Buffer<std::uint32_t>& counts,
                                        const Buffer<std::uint32_t>& offsets,
@@ -1523,11 +1144,7 @@ namespace SushiRuntime
                     const std::size_t up_scratch_count = detail::reduce_scratch_count(levels);
                     const std::size_t down_scratch_count = detail::reduce_scratch_count(levels);
 
-                    // A single level (capacity 1..256) needs neither scratch: the
-                    // one down-sweep pass reads counts and writes offsets directly.
-                    // Guarded exactly as add_reduce() guards its own scratch, since
-                    // sycl::malloc_host(0, q) returns null and the allocator treats
-                    // a null result as a failure.
+                    // A single level needs no scratch; a zero-size allocation would fail.
                     std::uint32_t* up_scratch = nullptr;
                     if (up_scratch_count != 0)
                     {
@@ -1550,8 +1167,7 @@ namespace SushiRuntime
                         reduce_scratch_.push_back(std::static_pointer_cast<void>(down));
                     }
 
-                    // state[i] is level i's live in_count, state[level_count+i] its
-                    // live out_count, as add_reduce()'s resolver fills them.
+                    // state[i] is level i's live in_count; state[level_count+i] its out_count.
                     const std::size_t state_words = 2 * level_count;
                     std::shared_ptr<std::uint32_t> state =
                         detail::make_reduce_scratch<std::uint32_t>(
@@ -1561,8 +1177,7 @@ namespace SushiRuntime
                     const Core::ResourceRegion state_region{
                         state_ptr, 0, state_words * sizeof(std::uint32_t)};
 
-                    // One token shared by every node this call emits: the resolver,
-                    // every up level, every down level and the closing write.
+                    // One token is shared by every node this call emits.
                     auto registration_token = std::make_shared<std::optional<std::uint32_t>>();
                     reduce_registration_tokens_.push_back(registration_token);
 
@@ -1578,11 +1193,7 @@ namespace SushiRuntime
                     void* down_key = static_cast<void*>(down_scratch);
                     constexpr std::size_t tile = detail::REDUCE_TILE;
 
-                    // Up-sweep: the same tile fold add_reduce() runs over every level
-                    // but the top, writing each level's tile sums into scratch for
-                    // the down-sweep to read as its bases; the top level's own sum is
-                    // never folded here, because the down-sweep's top pass walks it
-                    // directly and computes that sum as a side effect of doing so.
+                    // The up-sweep folds every level but the top into scratch for the down-sweep.
                     for (std::size_t i = 0; i + 1 < level_count; ++i)
                     {
                         const detail::ReduceLevel& level = levels[i];
@@ -1618,10 +1229,7 @@ namespace SushiRuntime
                             registration_token, level.out_count);
                     }
 
-                    // Down-sweep, top to bottom: the top level has no level above it,
-                    // so it scans its own (<= 256-value) tile sequentially from a base
-                    // of zero, which is also the grand sum, so it always runs (an
-                    // empty live count still has to publish total = 0).
+                    // The top level scans from a base of zero and always runs, to publish total.
                     for (std::size_t i = level_count; i-- > 0;)
                     {
                         const detail::ReduceLevel& level = levels[i];
@@ -1668,8 +1276,7 @@ namespace SushiRuntime
                             continue;
                         }
 
-                        // General level: each tile's base is the down-swept exclusive
-                        // prefix the level above already produced for it.
+                        // Each tile's base is the exclusive prefix the level above produced for it.
                         const std::uint32_t* base_arr = down_scratch + level.out_offset;
 
                         Reads reads = first
@@ -1711,9 +1318,7 @@ namespace SushiRuntime
                     if (level_count == 1)
                         return *this;
 
-                    // Closing write: level 0's down-sweep only reaches offsets[live n
-                    // - 1]; the top pass already settled total, so this copies it into
-                    // offsets[live n] without re-deriving it.
+                    // The closing write copies the settled total into offsets[live n].
                     Reads closing_reads = Reads(total, state_region);
                     Writes closing_writes = Writes(offsets);
                     observe(closing_reads);
@@ -1729,27 +1334,12 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Stably argsorts @p keys by 8-bit digits into bucket offsets.
-                 *
-                 * See docs/archive/superpowers/specs/2026-09-16-scan-and-counting-sort-design.md
-                 * §A3 for the algorithm, the digit count and the offsets/counts derivation.
-                 *
-                 * @param keys     Values to sort by; must hold at least @p n.capacity elements.
-                 * @param indices  Destination for the stable sort order; must hold at
-                 *                 least @p n.capacity elements.
-                 * @param offsets  Destination exclusive bucket starts; must hold at
-                 *                 least @p key_range.capacity + 1 elements.
-                 * @param total    Destination for the live element count; must hold at
-                 *                 least 1 element.
-                 * @param n        Capacity plus the live element count's source.
-                 * @param key_range Capacity plus the live bucket count's source.
-                 * @param counts   Optional per-bucket counts; must hold at least
-                 *                 @p key_range.capacity elements when not null.
-                 * @return *this, for chaining.
+                 * @brief Stably argsorts keys by 8-bit digits into bucket offsets.
                  * @throws Core::SushiException If a buffer is too small, if @p keys,
-                 *         @p indices, @p offsets or @p counts sit on different
-                 *         devices, if @p key_range.capacity is zero, or at run if
-                 *         either live count exceeds its capacity.
+                 *        @p indices, @p offsets or @p counts sit on different
+                 *        devices, if @p key_range.capacity is zero, or at run if
+                 *        either live count exceeds its capacity.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 Graph& add_counting_sort(const Buffer<std::uint32_t>& keys,
                                          const Buffer<std::uint32_t>& indices,
@@ -1807,8 +1397,7 @@ namespace SushiRuntime
                     std::uint32_t* n_state_ptr = n_state.get();
                     const Core::ResourceRegion n_state_region{n_state_ptr, 0, 2 * sizeof(std::uint32_t)};
 
-                    // The digit plan: per digit, its live work counts (zero past the
-                    // live key range's digits) and whether it places into the indices.
+                    // Per digit, the plan holds live work counts and where it places.
                     std::uint32_t* plan_ptr = nullptr;
                     if (n.capacity != 0)
                     {
@@ -1913,15 +1502,13 @@ namespace SushiRuntime
                         std::uint32_t* digit_plan = plan_ptr + d * detail::RADIX_PLAN_WORDS;
                         const std::uint32_t* snapshot = digit_plan + detail::RADIX_PLAN_LIVE_N;
 
-                        // Every digit after the first reads whichever of indices and
-                        // scratch the previous one filled, chosen at run from the plan.
+                        // A later digit reads whichever buffer the previous digit filled.
                         Reads sources = first ? Reads()
                                               : (scratch_base != nullptr
                                                     ? Reads(indices_region, scratch_region)
                                                     : Reads(indices_region));
 
-                        // Histogram: one work-item per tile, writing (not
-                        // accumulating) its own row, so no run needs to clear it.
+                        // Histogram: each tile overwrites its own row, so no run clears it.
                         {
                             Reads reads = Reads(keys, plan_region);
                             for (const Core::ResourceRegion& r : sources.keys)
@@ -1953,9 +1540,7 @@ namespace SushiRuntime
                                 registration_token, T_cap);
                         }
 
-                        // Column scan: one work-item per bin, sequential over its
-                        // tiles, so bins stay independent and every column is a plain
-                        // left-to-right exclusive scan.
+                        // Column scan: one work-item per bin scans its tiles left to right.
                         {
                             // In place over hist: each bin's column is touched by exactly one work-item, sequentially.
                             Reads reads = Reads(hist_region, n_state_region, plan_region);
@@ -1979,8 +1564,7 @@ namespace SushiRuntime
                                 registration_token, DIGIT_BINS);
                         }
 
-                        // Bin base: one work-item, sequential over the (always full)
-                        // 256 bin totals, since the digit range never shrinks with n.
+                        // Bin base: one work-item walks the 256 bin totals, whatever n is.
                         {
                             Reads reads = Reads(col_total_region, plan_region);
                             Writes writes = Writes(bin_base_region);
@@ -2000,10 +1584,7 @@ namespace SushiRuntime
                                 registration_token, std::size_t{1});
                         }
 
-                        // Placement: one work-item per tile, walking its elements in
-                        // ascending index order and writing them into the base each
-                        // bin already owns for this tile, which is what keeps the
-                        // scatter stable.
+                        // Placement: tiles write in ascending index order, so it is stable.
                         {
                             Reads reads = Reads(keys, hist_region, bin_base_region, plan_region);
                             for (const Core::ResourceRegion& r : sources.keys)
@@ -2042,10 +1623,7 @@ namespace SushiRuntime
                         }
                     }
 
-                    // Offsets: one work-item per bucket (plus the sentinel), a plain
-                    // lower_bound over the sorted keys; no live bucket count is read
-                    // here, since a search past it still lands on the live element
-                    // count and the sentinel falls out for free (design doc §A3).
+                    // Offsets: one lower_bound per bucket; no live bucket count is read.
                     {
                         std::uint32_t* offsets_base = offsets.data();
                         Reads reads = Reads(keys, indices, n_state_region);
@@ -2075,10 +1653,7 @@ namespace SushiRuntime
                     if (counts == nullptr)
                         return *this;
 
-                    // Counts: the difference of two already-settled offsets, so it
-                    // needs no live scalar of its own, key range included: past the
-                    // live range both neighbours are the live element count and the
-                    // difference is zero, which is the correct bucket count there too.
+                    // Counts are differences of two settled offsets and need no live scalar.
                     std::uint32_t* offsets_base = offsets.data();
                     std::uint32_t* counts_base = counts->data();
                     Reads reads = Reads(offsets);
@@ -2096,30 +1671,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds an offloadable task: a named remote kernel with a
-                 *        local fallback.
-                 *
-                 * This is the fluent counterpart to a distributed dispatch. @p op
-                 * names a kernel registered (by the same OpID) in this binary's
-                 * KernelRegistry on every node; when the runtime is a Master with a
-                 * live worker that supports @p op, the scheduler may ship this task
-                 * over the wire. Otherwise — standalone build, no worker, or the
-                 * policy declining — @p local runs it here, so the same graph is
-                 * correct with or without a cluster (transparent fallback).
-                 *
-                 * @p reads / @p writes are the buffers the task touches, given as
-                 * dependency keys (Buffer/State::dependency_key() or read_/write_key()).
-                 * The dependency tracker orders the task by them, and the distributed
-                 * layer resolves them to network buffer handles. @p params are scalar
-                 * arguments carried in TaskMetadata (e.g. element counts).
-                 *
-                 * @param op     OpID of the kernel, e.g. "vec.add"_op.
-                 * @param n      Iteration range for the local fallback parallel_for.
-                 * @param reads  Dependency keys this task reads.
-                 * @param writes Dependency keys this task writes.
-                 * @param local  Local fallback invoked as local(i) for i in [0, n).
-                 * @param params Scalar params copied into TaskMetadata (index order).
-                 * @return *this, for chaining.
+                 * @brief Adds an offloadable task: a named remote kernel with a local fallback.
+                 * @param op OpID of the kernel, e.g. "vec.add"_op.
+                 * @param local Local fallback invoked as local(i) for i in [0, n).
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(::SushiRuntime::Graph::OpID op, std::size_t n,
@@ -2135,20 +1690,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds an offloadable task naming its data with Reads/Writes.
-                 *
-                 * The ergonomic form of the offload overload: pass the touched
-                 * Buffers/States as Reads(...)/Writes(...) instead of building the
-                 * dependency-key vectors by hand. Behaviour is otherwise identical —
-                 * remote when a willing worker exists, the local fallback otherwise.
-                 *
-                 * @param op     OpID of the kernel, e.g. "vec.add"_op.
-                 * @param n      Iteration range for the local fallback parallel_for.
-                 * @param reads  Handles this task reads.
-                 * @param writes Handles this task writes.
-                 * @param local  Local fallback invoked as local(i) for i in [0, n).
-                 * @param params Scalar params copied into TaskMetadata (index order).
-                 * @return *this, for chaining.
+                 * @brief Adds an offloadable task that names its data with Reads and Writes.
+                 * @param local Local fallback invoked as local(i) for i in [0, n).
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 Graph& add(::SushiRuntime::Graph::OpID op, std::size_t n,
@@ -2165,23 +1708,10 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds an offloadable per-step update rule for a State.
-                 *
-                 * The distributed counterpart of add(State, fn): the State's step may
-                 * ship to a worker (when @p op is registered cluster-wide and a worker
-                 * is willing) or run its local fallback, with the same graph correct
-                 * either way. Because a State rotates its allocations each step, the
-                 * node tracks the step's read/write buffers through live pointer lists
-                 * the runtime re-points before every step, so the compiled plan stays
-                 * replayable while the offload follows the double-buffer swap. Register
-                 * the State with State::distributed() first so both allocations can
-                 * cross to a worker.
-                 *
-                 * @tparam T  Element type of the State.
-                 * @param op  OpID of the kernel, e.g. "heat.step"_op.
-                 * @param s   The state this rule evolves; must outlive the graph.
+                 * @pre s was registered with State::distributed().
+                 * @param s The state this rule evolves; must outlive the graph.
                  * @param local Local fallback invoked as local(i, const T* cur, T* next).
-                 * @param params Scalar params copied into TaskMetadata (index order).
-                 * @return *this, for chaining.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class F,
                           std::enable_if_t<std::is_invocable_v<F, std::size_t,
@@ -2213,8 +1743,7 @@ namespace SushiRuntime
                             [fn, view, n](sycl::queue& q,
                                           const std::vector<sycl::event>&) -> sycl::event
                             {
-                                // Read the live pointers each submit so the local
-                                // fallback follows the swap exactly as the offload does.
+                                // Read at each submit so the fallback follows the swap.
                                 const T* cur = view->cur;
                                 T* next = view->next;
                                 return q.submit([&](sycl::handler& h)
@@ -2230,8 +1759,7 @@ namespace SushiRuntime
 
                     steps_.register_advance(s, view);
 
-                    // Re-point the live IO at the step's current/next allocations
-                    // before each step so the coordinator resolves the right handles.
+                    // Live IO is re-pointed before each step for the coordinator.
                     steps_.add_dist_io_updater([view, live_reads, live_writes]()
                     {
                         (*live_reads)[0]  = view->cur;
@@ -2253,18 +1781,11 @@ namespace SushiRuntime
                 static constexpr std::uint32_t no_registration = BackingGraph::NO_REGISTRATION;
 
                 /**
-                 * @brief Returns the registration index the rule at @p rule took.
-                 *
-                 * RunReport numbers a node event by registration index, and the
-                 * several nodes one add() lowers to share one index, so this is how
-                 * a caller maps a record back to the call that recorded it. The
-                 * indices are drawn when the graph compiles, so every rule reports
-                 * @ref no_registration until the first run, and a recompile may
-                 * renumber them.
-                 *
-                 * @param rule Position in add() order, below @ref size().
-                 * @return The index, or @ref no_registration when @p rule is out of
-                 *         range or the graph has not compiled yet.
+                 * @brief Returns the registration index the rule at position rule took.
+                 * @param rule Position in add() order, below size().
+                 * @return The index, or no_registration when rule is out of range or nothing
+                 *        compiled yet.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 std::uint32_t rule_registration(std::size_t rule) const noexcept
                 {
@@ -2282,13 +1803,8 @@ namespace SushiRuntime
                 std::size_t compile_count() const noexcept { return compiles_; }
 
                 /**
-                 * @brief Requests or withdraws per-node device timing for this graph.
-                 *
-                 * Marks the plan dirty so the next run recompiles with the new
-                 * `CompiledGraph::profiling` flag stamped in. Independent of every
-                 * other graph on the same runtime.
-                 * @param requested True to dispatch this graph's device nodes on the
-                 *                  runtime's profiling queue and collect NodeTiming.
+                 * @brief Requests or withdraws per-node device timing and marks the plan dirty.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 void set_profiling_requested(bool requested) noexcept
                 {
@@ -2311,16 +1827,10 @@ namespace SushiRuntime
                 Core::RunReport run() { return run(std::size_t{1}); }
 
                 /**
-                 * @brief Runs @p steps successive steps, blocking until done.
-                 *
-                 * The graph is compiled on the first run (and after any mutation),
-                 * then the compiled plan is replayed for each step: node dependency
-                 * state is reset, the plan re-executed, and every State advanced to
-                 * its next field. Compilation happens at most once per call.
-                 *
-                 * @param steps Number of steps to run.
+                 * @brief Runs the given number of successive steps and blocks until they finish.
                  * @return A RunReport aggregating the whole run.
                  * @throws Core::SushiException on any synchronous or device error.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 Core::RunReport run(std::size_t steps)
                 {
@@ -2329,26 +1839,9 @@ namespace SushiRuntime
 
                 /**
                  * @brief Runs the graph once into a report the caller owns.
-                 *
-                 * The allocation-free form of run(). A fixed-step loop keeps one
-                 * report alive and passes it every tick; the report is reset and
-                 * refilled in place, so after the first run the per-run vectors are
-                 * reused rather than reallocated:
-                 *
-                 * ```cpp
-                 * Core::RunReport report;
-                 * while (running)
-                 *     simulation.run(report);
-                 * ```
-                 *
-                 * Identical to run() in every other respect. The steady state is
-                 * allocation-free only with profiling off — a profiling run rebuilds
-                 * its per-node labels by design.
-                 *
                  * @param reuse The report to overwrite; its previous contents are lost.
-                 * @return A reference to @p reuse, so the call still reads as a run
-                 *         that produced a report.
                  * @throws Core::SushiException on any synchronous or device error.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 Core::RunReport& run(Core::RunReport& reuse)
                 {
@@ -2401,34 +1894,12 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Starts one step and returns without waiting for it.
-                 *
-                 * The asynchronous counterpart of run(). The step is handed to the
-                 * worker pool and this returns immediately, so the caller can do
-                 * work that needs no workers — extracting the previous step's state
-                 * for a renderer or an audio system — while this one runs, then
-                 * settle up through the returned handle:
-                 *
-                 * ```cpp
-                 * auto step = simulation.run_async();
-                 * extract_previous_frame();
-                 * Core::RunReport report = step.wait();
-                 * ```
-                 *
-                 * One step only: the multi-step drivers (run(n), run_for, run_until)
-                 * stay synchronous, because their per-step host work has to happen
-                 * between steps and there is nothing for the caller to overlap with
-                 * in the middle of a batch. A step is one tick, which is the
-                 * granularity a frame actually wants.
-                 *
-                 * The handle must not outlive this graph, and its destructor waits
-                 * for the step rather than letting the plan be destroyed underneath
-                 * the workers — see RunHandle.
-                 *
-                 * @return A handle for the step now in flight.
+                 * @brief Starts one step on the worker pool and returns without waiting for it.
+                 * @pre The returned handle does not outlive this graph.
                  * @throws Core::SushiException If the graph has no tasks, references
-                 *         a freed Buffer/State, the engine does not support
-                 *         asynchronous runs, or a run is already in progress.
+                 *        a freed Buffer/State, the engine does not support
+                 *        asynchronous runs, or a run is already in progress.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 RunHandle<Graph> run_async()
                 {
@@ -2459,11 +1930,7 @@ namespace SushiRuntime
                             clock::now() - compile_started).count();
                     }
 
-                    // Same pre-step order as the synchronous driver: point the State
-                    // views at their buffers, clear a previous run's cancellation,
-                    // zero the profiling accumulators, then refresh the late-bound
-                    // controls. Diverging here would make an asynchronous step mean
-                    // something subtly different from a synchronous one.
+                    // The pre-step order here matches the synchronous driver's.
                     steps_.resync();
                     engine.reset_cancellation();
                     if (plan_.profiling)
@@ -2484,14 +1951,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Requests cancellation of an in-progress run, from any thread.
-                 *
-                 * Safe to call concurrently with a blocking run()/run_for()/run_until()
-                 * executing on another thread: the active step drains its remaining
-                 * tasks without launching new kernels and returns, the driver stops
-                 * before the next step, and the resulting RunReport has cancelled set.
-                 * A no-op when no run is active; the flag is cleared when the next run
-                 * starts. Cancellation is a clean stop, not an error — it does not throw.
+                 * @brief Requests cancellation of an in-progress run, from any thread, without
+                 *        throwing.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 void cancel() { ctx_->get_execution_engine().cancel(); }
 
@@ -2549,14 +2011,10 @@ namespace SushiRuntime
                 };
 
                 friend class Runtime;
-                // A Region IS a recorder: it derives from Graph to inherit every
-                // add() overload, so it needs the protected-by-friendship ctor and
-                // access to the recorded specs/updaters. The DynamicGraph composer
-                // reads those same members to build one combined plan.
+                // Region derives from Graph, and DynamicGraph composes its recorded specs.
                 friend class Region;
                 friend class DynamicGraph;
-                // The handle run_async() returns settles the step through the two
-                // private members below, which is the whole of its access.
+                // RunHandle settles a step through the two private members below and nothing else.
                 template <class Owner> friend class RunHandle;
                 friend struct detail::RegistrationIndexTestAccess;
                 friend struct detail::NodeEventRecordsTestAccess;
@@ -2577,17 +2035,9 @@ namespace SushiRuntime
                 void discard_async_step() noexcept { async_step_pending_ = false; }
 
                 /**
-                 * @brief Closes out an asynchronous step once the engine reports done.
-                 *
-                 * The tail of drive_impl's loop body plus its report building, split
-                 * out because those happen in a different call from the submission.
-                 * Advancing every State here — not at submit — is what makes an
-                 * asynchronous step observationally identical to a synchronous one:
-                 * the just-written field becomes current only after the step has
-                 * genuinely finished.
-                 *
-                 * @param state  What run_async() recorded when it submitted the step.
+                 * @brief Closes out an asynchronous step once the engine reports it done.
                  * @param report The report to fill; reset before it is written.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 void finish_async_step(const detail::AsyncRunState& state,
                                        Core::RunReport& report)
@@ -2648,16 +2098,12 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief The same driver, writing into a caller-owned report.
-                 *
-                 * Every run entry funnels through here — the value-returning drive()
-                 * above is a thin adapter over it — so the reuse overloads cannot
-                 * drift from the allocating ones.
-                 *
-                 * @param keep_going Called with the count of completed steps before
-                 *                   each step; the loop continues while it is true.
-                 * @param report     The report to fill; reset before the run starts.
-                 * @return A pointer to @p report on success, or a mapped Error.
+                 * @brief Drives the run loop into a caller-owned report; every run entry goes
+                 *        through here.
+                 * @param keep_going Called with the completed step count before each step; true
+                 *        continues.
+                 * @param report The report to fill; reset before the run starts.
+                 * @return A pointer to report on success, or a mapped Error.
                  */
                 template <class KeepGoing>
                 Core::Result<Core::RunReport*, Core::Error>
@@ -2665,21 +2111,14 @@ namespace SushiRuntime
                      std::size_t expected_invocations = 1,
                      StepSync sync = StepSync::EveryStep) noexcept
                 {
-                    // Before any early return. A caller reusing one report across
-                    // ticks must never read the previous run's numbers back out of a
-                    // run that failed; fill_run_report sets the flag back on success.
+                    // Reset before any early return, so a failed run shows no old numbers.
                     report.reset();
                     report.is_successful = false;
 
                     if (task_count_ == 0)
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                                                             "Graph has no tasks to run."});
-                    // Before anything touches the plan. A synchronous run re-arms
-                    // every node's in-degree, so letting one start while an
-                    // asynchronous step is still executing would rewrite the
-                    // scheduling state of the DAG the workers are walking — a much
-                    // worse failure than the engine's own reentrancy rejection,
-                    // which only fires later, after the damage.
+                    // A synchronous run must not re-arm nodes during an asynchronous step.
                     if (async_step_pending_)
                         return Core::make_error(Core::Error{Core::Errc::invalid_graph,
                             "A step started with run_async() is still in flight; wait "
@@ -2730,19 +2169,15 @@ namespace SushiRuntime
                         compile_ms = ms(c0, clock::now());
                     }
 
-                    // Point every State view at its current/next buffers before the
-                    // first step. Covers both a fresh build and a replay continuing
-                    // from a previous run.
+                    // State views point at their current and next buffers before the first step.
                     steps_.resync();
 
                     auto& engine = ctx_->get_execution_engine();
 
-                    // Start each run with a clean cancellation flag so a cancel that
-                    // ended a previous run does not abort this one.
+                    // A cancel that ended an earlier run must not abort this one.
                     engine.reset_cancellation();
 
-                    // Clear the profiling accumulators so the report covers only this
-                    // run; only when the plan requests profiling.
+                    // Profiling accumulators are cleared only when the plan requests profiling.
                     const bool profiling = plan_.profiling;
                     if (profiling)
                         engine.reset_profiling(plan_, expected_invocations);
@@ -2767,8 +2202,7 @@ namespace SushiRuntime
                     report.layer = chained ? Core::ExecutionLayer::Chain
                                            : Core::ExecutionLayer::Scheduler;
 
-                    // Explicit host<->device transfers issued during this run window
-                    // (selective readback). Implicit USM migration is not counted.
+                    // Only explicit transfers are counted; implicit USM migration is not.
                     report.device_to_host_bytes = ctx_->device_to_host_bytes() - d2h_before;
                     report.host_to_device_bytes = ctx_->host_to_device_bytes() - h2d_before;
 
@@ -2789,18 +2223,14 @@ namespace SushiRuntime
                     std::size_t executed = 0;
                     while (keep_going(executed) && !engine.is_cancelled())
                     {
-                        // Re-point any double-buffered offload node's live IO and
-                        // refresh late-bound node controls (size, enablement) for this
-                        // step before replaying the compiled plan (no-op otherwise).
+                        // Live IO and late-bound controls are refreshed before the plan replays.
                         steps_.before_step();
 
                         reset_plan_state();
                         engine.execute(plan_); // lvalue -> non-consuming replay
                         steps_.check_faults();
 
-                        // Advance every State after the step so its just-written
-                        // next field becomes current — both for the following step
-                        // and for the caller reading current() once the run ends.
+                        // States advance after the step so the written next field becomes current.
                         steps_.after_step();
                         ++executed;
                     }
@@ -2809,14 +2239,10 @@ namespace SushiRuntime
 
                 /**
                  * @brief Runs the steps as an in-order chain from this thread.
-                 *
-                 * The per-step host work runs between submissions exactly as on the
-                 * scheduler; it only moves host pointers and host-set controls, so
-                 * it never needs the device to have finished (spec §C, layer 1).
-                 * @param keep_going Called with the count of submitted steps before each step.
-                 * @param engine     Consulted only for cancellation.
-                 * @param sync       AtEnd for a fixed step count, EveryStep when the stop test may read results.
+                 * @param sync AtEnd for a fixed step count, EveryStep when the stop test may read
+                 *        results.
                  * @return The number of steps run.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 template <class KeepGoing>
                 std::size_t run_chained(KeepGoing& keep_going, Execution::IExecutionEngine& engine,
@@ -2842,9 +2268,10 @@ namespace SushiRuntime
                     return executed;
                 }
 
-                // Appends a capture wrapper's dependency key to the read and/or
-                // write list according to the access it declares. An InOut counts
-                // toward both, so a read-modify-write task orders correctly.
+                /**
+                 * @brief Appends a capture wrapper's key to the read list, the write list, or both
+                 *        for InOut.
+                 */
                 template <class Cap>
                 static void collect_keys(std::vector<Core::ResourceRegion>& reads,
                                          std::vector<Core::ResourceRegion>& writes, const Cap& c)
@@ -2855,10 +2282,10 @@ namespace SushiRuntime
                         writes.push_back(c.key);
                 }
 
-                // Records the liveness observers of the typed handles a task touches,
-                // so a run can detect a handle freed before it ran. Raw-pointer and
-                // bare-region overloads contribute none — naming data by raw pointer
-                // opts out of lifetime tracking, by design.
+                /**
+                 * @brief Records the liveness observers of the typed handles a task touches.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void observe(const Reads& r)
                 {
                     observers_.insert(observers_.end(), r.lives.begin(), r.lives.end());
@@ -2881,9 +2308,7 @@ namespace SushiRuntime
                         observers_.push_back(c.life);
                 }
 
-                // True when any recorded handle's allocation has been freed. Checked
-                // once per run so a graph outliving its data fails cleanly instead of
-                // dispatching against released memory.
+                /** @brief Returns whether any recorded handle's allocation has been freed. */
                 bool has_dangling_resource() const
                 {
                     for (const auto& o : observers_)
@@ -2892,9 +2317,10 @@ namespace SushiRuntime
                     return false;
                 }
 
-                // Emits the node for the variadic coupled-State overload once the
-                // trailing callable has been split from the read States. @p ins
-                // selects the further read States out of @p tup; @p in0 is the first.
+                /**
+                 * @brief Emits the coupled-State node once the callable is split from the read
+                 *        States.
+                 */
                 template <typename T, typename A, class Tuple, std::size_t... Is, class F>
                 Graph& emit_coupled(State<T>& out, State<A>& in0, Tuple& tup,
                                     std::index_sequence<Is...>, F&& fn)
@@ -2921,8 +2347,7 @@ namespace SushiRuntime
                         {
                             const T* cur = ov->cur;
                             T* next = ov->next;
-                            // Resolve the input current pointers host-side at submit
-                            // so the device lambda captures raw pointers, not views.
+                            // Resolved host-side at submit, so the kernel captures raw pointers.
                             auto ins_ptrs = detail::views_current(views, Seq{});
                             h.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i)
                             {
@@ -2937,9 +2362,10 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                // Emits the node for the In/Out/InOut capture overload once the
-                // trailing callable has been split from the capture wrappers. @p caps
-                // selects the further captures out of @p tup; @p c0 is the first.
+                /**
+                 * @brief Emits the capture-overload node once the callable is split from the
+                 *        captures.
+                 */
                 template <int N, class Cap0, class Tuple, std::size_t... Is, class F>
                 Graph& emit_captured(Extent<N> e, Cap0 c0, Tuple& tup,
                                      std::index_sequence<Is...>, F&& fn)
@@ -2974,13 +2400,11 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Emits a 1-D per-element tracked task, the single funnel
-                 *        for the raw-pointer and Reads/Writes tracking overloads.
-                 *
-                 * @param registration_token Shared slot grouping this node's index
-                 *        with others from one public add() call; null draws a plain
-                 *        fresh index.
-                 * @param width This node's own launch width; stamped where it is added.
+                 * @brief Emits a 1-D per-element tracked task for both tracking overloads.
+                 * @param registration_token Shared slot grouping this node's index with the others
+                 *        of one
+                 *        add() call; null draws a fresh index.
+                 * @param width This node's own launch width.
                  */
                 template <class F>
                 Graph& emit_per_element_tracked(std::vector<Core::ResourceRegion> reads,
@@ -3014,10 +2438,10 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                // The half-open element window a late-bound node iterates this step:
-                // where it starts and how many elements it covers. The two are
-                // resolved and validated together, because only their combination
-                // says whether the node stays inside the buffers it was compiled for.
+                /**
+                 * @brief Holds the half-open element window a late-bound node iterates this step.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 struct LiveRange
                 {
                     std::size_t base = 0;
@@ -3056,11 +2480,11 @@ namespace SushiRuntime
                     return range;
                 }
 
-                // Submits a late-bound node's kernel over its live size. A step with
-                // nothing to do is ordinary (a tick with no contacts), and a
-                // zero-width parallel_for is not portable across SYCL backends, so an
-                // empty count submits an empty kernel instead: the node still
-                // completes and still releases its successors.
+                /**
+                 * @brief Submits a late-bound node's kernel over its live range, or an empty kernel
+                 *        for none.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 template <class F>
                 static void submit_live_range(sycl::handler& h, LiveRange range, const F& fn)
                 {
@@ -3069,9 +2493,7 @@ namespace SushiRuntime
                         h.single_task([]() {});
                         return;
                     }
-                    // The offset is applied here rather than by the caller, so a
-                    // kernel written against absolute indices stays correct whether
-                    // or not its node happens to carry a base.
+                    // The base offset is applied here, so kernels always receive absolute indices.
                     const std::size_t base = range.base;
                     h.parallel_for(sycl::range<1>(range.count),
                                    [fn, base](sycl::id<1> i) { fn(base + i[0]); });
@@ -3346,17 +2768,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Throws unless @p slot is null or lands in host USM.
-                 *
-                 * Asks the slot's own address first, then, when that answers anything
-                 * but host, resolves it to the allocation containing it and asks
-                 * again: a caller offsetting into a plan array hands over an interior
-                 * pointer, which SYCL reports as unknown. Runs while add() builds a
-                 * node, so the containment search never meets a dispatch.
-                 * @param slot The slot pointer to check; null passes.
-                 * @param what Name of the control that set it, for the message.
+                 * @brief Throws unless slot is null or lands in host USM.
                  * @throws Core::SushiException With invalid_access for a slot that is
-                 *         not host USM and for one this context never allocated.
+                 *        not host USM and for one this context never allocated.
+                 * @see include/SushiRuntime/api/graph/README.md
                  */
                 void require_host_slot(const std::uint32_t* slot, const char* what) const
                 {
@@ -3397,11 +2812,11 @@ namespace SushiRuntime
                     }
                 }
 
-                // Copies a Dynamic's device count source onto the node's bindings and
-                // registers that slot as a read. Doing the registration here rather
-                // than asking the caller for it is what makes "the producer runs
-                // first" a property of the graph instead of a documented convention:
-                // the read region orders this node behind whoever writes the count.
+                /**
+                 * @brief Copies a Dynamic's device count source onto the bindings and registers it
+                 *        as a read.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 static void adopt_device_bindings(::SushiRuntime::Graph::LateBindings& lb,
                                                   const Dynamic& dyn,
                                                   std::vector<Core::ResourceRegion>& reads)
@@ -3420,9 +2835,10 @@ namespace SushiRuntime
                     }
                 }
 
-                // Names one four-byte slot as a read of the node that will consume it.
-                // Just the one element, not the whole buffer, so two nodes reading
-                // different slots out of one buffer stay unordered against each other.
+                /**
+                 * @brief Registers one four-byte slot as a read of the node that consumes it.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 static void register_device_slot(const std::uint32_t* slot, std::size_t index,
                                                  std::vector<Core::ResourceRegion>& reads)
                 {
@@ -3432,11 +2848,10 @@ namespace SushiRuntime
                         sizeof(std::uint32_t)});
                 }
 
-                // Emits a 1-D State update rule with late-bound size and enablement.
-                // Mirrors emit_dynamic_per_element but reads the State's current/next
-                // pointers fresh each submit (following the swap) and registers the
-                // once-per-step advance, so a stepped field can vary its active count
-                // or sleep entirely with no recompile.
+                /**
+                 * @brief Emits a 1-D State update rule with late-bound size and enablement.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 template <typename T, class F>
                 Graph& emit_dynamic_state(Dynamic dyn, State<T>& s, F&& fn)
                 {
@@ -3470,10 +2885,10 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                // Emits a 1-D offloadable per-element task with a local fallback. The
-                // single funnel for both the raw-pointer and the Reads/Writes offload
-                // overloads. Setting op_id is what makes compile() consider the node
-                // offloadable; otherwise the local parallel_for runs.
+                /**
+                 * @brief Emits a 1-D offloadable per-element task with a local fallback.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 template <class F>
                 Graph& emit_offload_per_element(::SushiRuntime::Graph::OpID op, std::size_t n,
                                                 std::vector<Core::ResourceRegion> reads,
@@ -3507,11 +2922,11 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                // Builds a fresh backing graph from the recorded specs, compiles it,
-                // and caches the plan. The compiled plan snapshots its own replay
-                // baseline (in-degrees) so the fluent layer never touches Node's
-                // scheduler-internal state. compile() drains its builder, so a fresh
-                // BackingGraph is built whenever the topology changes.
+                /**
+                 * @brief Builds a fresh backing graph from the recorded specs, compiles it and
+                 *        caches the plan.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void build_plan()
                 {
                     // Each rebuild starts a fresh BackingGraph counter at 0.
@@ -3533,9 +2948,10 @@ namespace SushiRuntime
                     ++compiles_;
                 }
 
-                // Restores the cached plan's per-run state so it can run again. The
-                // scheduler re-arms itself; this resets the DAG-side state a previous
-                // run consumed, owned by CompiledGraph next to the Node definition.
+                /**
+                 * @brief Restores the cached plan's per-run state so it can run again.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 void reset_plan_state() noexcept
                 {
                     plan_.rearm();
@@ -3543,19 +2959,13 @@ namespace SushiRuntime
 
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
 
-                // Recorded task specifications: each replays one add() onto a fresh
-                // backing graph. The fluent Graph is the source of truth so it can
-                // rebuild and recompile when mutated.
-                // Recorded as {emitter, name} rather than a bare callable: the name is
-                // handed to the emitter when the plan is built, not captured when the
-                // task is recorded, which is what lets name_last() attach one after the
-                // add() call has already returned.
+                /**
+                 * @brief Holds one recorded add() as an emitter and the name handed to it at build.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 struct NodeSpec
                 {
-                    // A template rather than a std::function parameter: taking the
-                    // function type directly would make lambda -> std::function ->
-                    // NodeSpec two user-defined conversions, and only one is allowed
-                    // implicitly, so every push_back below would need spelling out.
+                    // A template parameter keeps lambda to NodeSpec a single implicit conversion.
                     template <class F,
                               std::enable_if_t<!std::is_same<std::decay_t<F>, NodeSpec>::value, int> = 0>
                     NodeSpec(F&& f) : emit(std::forward<F>(f)) {}
@@ -3566,40 +2976,39 @@ namespace SushiRuntime
                 };
                 std::vector<NodeSpec> specs_;
 
-                // USM scratch owned by the reduction tasks recorded on this graph.
-                // Allocated when the task is recorded, not when the plan compiles, so
-                // the pointer its kernels captured stays valid across a recompile and
-                // across the DynamicGraph composer rebuilding a region from its specs.
+                /**
+                 * @brief Owns the USM scratch of the reduction tasks recorded on this graph.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 std::vector<std::shared_ptr<void>> reduce_scratch_;
 
                 // Registration tokens add_reduce() shares across levels; build_plan() resets them.
                 std::vector<std::shared_ptr<std::optional<std::uint32_t>>> reduce_registration_tokens_;
 
-                // Liveness observers of every typed handle the recorded tasks touch.
-                // Checked once per run to catch a Buffer/State freed before the graph
-                // ran. Empty for a graph built only from raw-pointer overloads.
+                /**
+                 * @brief Holds the liveness observers of every typed handle the recorded tasks
+                 *        touch.
+                 */
                 std::vector<Core::LivenessObserver> observers_;
 
-                // The per-step lifecycle: State double-buffer views, advancers,
-                // late-binding refreshers, and distributed live-IO re-pointers. Owns
-                // the ordering invariant run around each replayed step, shared with
-                // the DynamicGraph composer so both drive the loop identically.
+                /** @brief Owns the per-step lifecycle shared with the DynamicGraph composer. */
                 detail::StepMachinery steps_;
 
                 std::size_t task_count_ = 0;
 
-                // True between run_async() and the settling of its handle. Guards
-                // the plan against a second run re-arming nodes the workers are
-                // still walking; see drive().
+                /**
+                 * @brief Tells whether a run_async() step has not been settled yet.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 bool async_step_pending_ = false;
 
-                // Number of times the backing graph has been compiled. A late-bound
-                // graph proves its value by holding this at 1 across a multi-step run
-                // whose sizes and enable flags change every step.
+                /**
+                 * @brief Counts how many times the backing graph has been compiled.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
                 std::size_t compiles_ = 0;
 
-                // Cached compiled plan, valid while !dirty_; replayed across steps.
-                // It owns its own replay baseline (see capture_base_state/rearm).
+                /** @brief Caches the compiled plan, valid while dirty_ is false. */
                 Execution::CompiledGraph plan_;
                 bool dirty_ = true;
 

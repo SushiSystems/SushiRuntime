@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file hwloc_topology_provider.hpp
+ * @brief Declares HwlocTopologyProvider and HwlocDistanceModel.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <map>

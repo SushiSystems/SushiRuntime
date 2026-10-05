@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_allocation.cpp
+ * @brief Tests that Allocation and an adopting Buffer release their address exactly once.
+ * @author Mustafa Garip
+ */
+
 #include <gtest/gtest.h>
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/memory/allocation.hpp>

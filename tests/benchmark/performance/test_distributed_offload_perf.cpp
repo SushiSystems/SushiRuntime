@@ -6,12 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Throughput / per-task latency of the master->worker offload path, plus the
-// policy's load split across two workers. Built only with SR_ENABLE_DISTRIBUTED.
-// Uses InProcessTransport so the software round trip (encode -> pull -> remote
-// kernel -> writeback -> release) is measured deterministically. Every task does
-// verified vector-add work, and each worker bumps its own counter so the load
-// split is what actually ran where.
+/**
+ * @file test_distributed_offload_perf.cpp
+ * @brief Measures the offload path's throughput, per-task latency and two-worker load split.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <atomic>
 #include <chrono>

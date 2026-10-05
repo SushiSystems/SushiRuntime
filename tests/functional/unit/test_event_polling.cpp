@@ -6,12 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// ActiveEventList must never drop an in-flight event: a dropped event leaves a
-// task's successors un-triggered and deadlocks the run. These checks pin the
-// inline-then-spill contract directly on the data structure, independent of a
-// live scheduler — push far past the inline capacity, remove in every order,
-// and assert nothing is lost and swap-with-last identity holds across the
-// inline/spill boundary.
+/**
+ * @file test_event_polling.cpp
+ * @brief Tests that ActiveEventList keeps every event across its inline and spill storage.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstdint>
 #include <set>
@@ -26,7 +26,7 @@ namespace
     /** @brief Encodes an integer id into the task pointer slot as an opaque tag. */
     Task* tag(std::uintptr_t id) { return reinterpret_cast<Task*>(id); }
 
-    /** @brief Recovers the id previously encoded by tag(). */
+    /** @brief Recovers the id that tag() encoded. */
     std::uintptr_t untag(Task* t) { return reinterpret_cast<std::uintptr_t>(t); }
 }
 
@@ -66,8 +66,7 @@ TEST(Unit_EventPolling, RemoveAtDrainsEveryEventExactlyOnce)
         list.push({sycl::event{}, tag(i), false});
 
     std::set<std::uintptr_t> seen;
-    // Always removing index 0 forces the tail to be relocated into the front
-    // every step, exercising the inline/spill boundary repeatedly.
+    // Removing index 0 relocates the tail into the front on every step; see README.md.
     while (!list.is_empty())
     {
         seen.insert(untag(list[0].task));
@@ -94,8 +93,7 @@ TEST(Unit_EventPolling, RemoveAcrossInlineSpillBoundary)
 
     ASSERT_EQ(list.size(), N);
 
-    // The only spilled entry is the last one (tag N). Removing an inline slot
-    // must move that tail into the freed slot and shrink the spill to empty.
+    // Removing an inline slot moves the one spilled entry into the freed slot; see README.md.
     list.remove_at(0);
 
     EXPECT_EQ(list.size(), N - 1);

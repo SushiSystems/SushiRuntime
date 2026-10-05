@@ -6,9 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// A node's width is stamped after the node is added, the same way its name is,
-// because add_node returns void and the emitters build the node before they
-// know which of several internal widths it took.
+/**
+ * @file test_node_dispatch_width.cpp
+ * @brief Tests how a node's dispatch width is stamped and reported.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <string>
@@ -32,7 +35,7 @@ static_assert(std::is_same<decltype(Node::baked_width), std::size_t>::value,
 static_assert(noexcept(std::declval<TaskGraph&>().width_last_node(std::size_t{0})),
               "width_last_node must stay noexcept, like its name_last_node sibling.");
 
-// Node{} cannot be a static_assert operand: "non-literal type 'Node' cannot be used in a constant expression".
+// Node is a non-literal type, so Node{} cannot be a static_assert operand.
 
 namespace
 {
@@ -119,8 +122,9 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeOnAnEmptyGraphLeavesTheWidthUnknown)
     EXPECT_EQ(graph.last_node_added(), nullptr);
 }
 
-// A node with no late bindings reports its baked width as both launched and
-// live, because nothing narrows it at run time.
+/**
+ * @brief Tests that a node without late bindings reports its baked width as both launched and live.
+ */
 TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
 {
     RuntimeContext ctx;
@@ -133,8 +137,7 @@ TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
     EXPECT_EQ(widths.live, 1024u);
 }
 
-// A dynamic node launches over its capacity and does work over its live count,
-// and the instrument has to show both or the narrow kernels look wide.
+/** @brief Tests that a dynamic node reports its capacity as launched and its live count as live. */
 TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
 {
     auto bindings = std::make_shared<Graph::LateBindings>();
@@ -150,8 +153,7 @@ TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
     EXPECT_EQ(widths.live, 129u);
 }
 
-// USE_BAKED means "the rest of capacity", not a count, so it must not be
-// reported as a measured live width.
+/** @brief Tests that USE_BAKED falls back to the baked width. */
 TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
 {
     auto bindings = std::make_shared<Graph::LateBindings>();
@@ -165,9 +167,7 @@ TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
     EXPECT_EQ(Graph::snapshot_widths(*graph.last_node_added()).live, 1024u);
 }
 
-// A width that does not fit in uint32_t is reported unknown, not truncated:
-// launched_width is 32 bits wide, and a wraparound would read as a real,
-// wrong measurement instead of "not representable".
+/** @brief Tests that a width that does not fit in uint32_t is reported as unknown. */
 TEST(Unit_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
 {
     RuntimeContext ctx;

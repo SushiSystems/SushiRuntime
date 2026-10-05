@@ -212,8 +212,7 @@ namespace SushiRuntime
 
                 const std::size_t rounded = round_up(bytes, alignment);
 
-                // The owner is built before the allocation it will free, so a throw between the
-                // two (e.g. bad_alloc from make_unique) never leaves an unrecorded allocation.
+                // The owner exists before the allocation it will free (src/interop/README.md).
                 auto owner = std::make_unique<Memory::UsmAllocationOwner>(context);
                 void* address = context->aligned_malloc_host_on(alignment, rounded, device_index);
                 if (address == nullptr)

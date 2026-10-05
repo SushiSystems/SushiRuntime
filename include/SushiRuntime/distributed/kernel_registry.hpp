@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file kernel_registry.hpp
+ * @brief Declares KernelRegistry, which resolves an OpID to a pre-compiled kernel.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <vector>
@@ -31,15 +37,10 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Defines a kernel signature that executes using network-resolved local buffers.
-                 *
-                 * Executes the underlying operation by consuming resolved Unified Shared Memory (USM) pointers and serialized metadata.
-                 *
-                 * @param queue The SYCL queue on which the kernel executes.
-                 * @param inputs Array of local USM pointers providing read-only input data.
-                 * @param outputs Array of local USM pointers providing writeable output data.
-                 * @param meta Serialized metadata containing scalar parameters for the task.
-                 * @return A SYCL event representing the asynchronous execution of the kernel.
+                 * @brief Defines the kernel signature that runs on network-resolved local buffers.
+                 * @param inputs Local USM pointers providing read-only input data.
+                 * @param outputs Local USM pointers providing writeable output data.
+                 * @param meta Serialized scalar parameters of the task.
                  */
                 using RemoteKernel = std::function<sycl::event(
                     sycl::queue&            queue,

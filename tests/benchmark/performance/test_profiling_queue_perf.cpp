@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// The benchmark behind spec §E item 7
-// (docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md), which
-// decided F2: a second, lazily built profiling queue per device, rather than
-// always profiling and filtering afterwards.
+/**
+ * @file test_profiling_queue_perf.cpp
+ * @brief Measures the per-submission cost a profiling queue adds over the plain queue.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <algorithm>
 #include <chrono>
@@ -71,8 +73,7 @@ TEST(Performance_ProfilingQueueBench, ProfilingQueueDeltaOverPlainQueue)
     ASSERT_NE(plain_data, nullptr);
     ASSERT_NE(profiling_data, nullptr);
 
-    // Untimed warm-up: first-submission driver and JIT costs must not leak
-    // into either queue's timed rounds.
+    // The warm-up is untimed, so first-submission driver and JIT costs reach neither queue.
     time_round(plain, plain_data);
     time_round(profiling, profiling_data);
 
@@ -80,8 +81,7 @@ TEST(Performance_ProfilingQueueBench, ProfilingQueueDeltaOverPlainQueue)
     double best_profiling_ms = 1e300;
     for (int r = 0; r < ROUNDS; ++r)
     {
-        // Alternates which queue goes first each round, so a systematic drift
-        // (thermal, driver warm-up) does not always favour the same queue.
+        // The first queue alternates each round, so thermal or driver drift favours neither.
         const bool plain_first = (r % 2) == 0;
         double plain_ms, profiling_ms;
         if (plain_first)

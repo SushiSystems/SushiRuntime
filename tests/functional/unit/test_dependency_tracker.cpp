@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Unit coverage for the lock-free DependencyTracker hazard resolution. Pins the
-// edge semantics on raw nodes: RAW/WAR/WAW edges, two readers stay parallel
-// (RAR), shared buffers dedup to one edge, and no self-dependency. in_degree is
-// the observable — the count of incoming edges the scheduler decrements.
+/**
+ * @file test_dependency_tracker.cpp
+ * @brief Tests the edges the lock-free DependencyTracker creates between raw nodes.
+ * @see tests/functional/unit/README.md
+ * @author Mustafa Garip
+ */
 
 #include <gtest/gtest.h>
 #include <SushiRuntime/graph/node.hpp>
@@ -136,7 +138,8 @@ TEST(Unit_DependencyTrackerTest, SharedBuffersCreateSingleEdge)
 }
 
 /**
- * @brief Tests that writing the same buffer twice by the same node does not create a self-dependency.
+ * @brief Tests that writing the same buffer twice by the same node does not create a
+ *        self-dependency.
  *
  * Resolving a write operation multiple times on the same node should never increment
  * its own dependency degree.

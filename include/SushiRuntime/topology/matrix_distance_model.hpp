@@ -6,6 +6,13 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file matrix_distance_model.hpp
+ * @brief Declares MatrixDistanceModel, a NUMA distance model held in memory.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/topology/README.md
+ */
+
 #pragma once
 
 #include <vector>
@@ -17,16 +24,8 @@ namespace SushiRuntime
     namespace Topology
     {
         /**
-         * @brief In-memory, hardware-free NUMA distance model for testing.
-         *
-         * Holds an explicit N x N SLIT-style matrix to validate multi-node distance
-         * and placement logic deterministically on any machine.
-         *
-         * Example (2 sockets, 21-cost remote hop):
-         * @code
-         *   MatrixDistanceModel model{{{10, 21},
-         *                              {21, 10}}};
-         * @endcode
+         * @brief Models NUMA distances from an explicit in-memory matrix, for tests.
+         * @see include/SushiRuntime/topology/README.md
          */
         class MatrixDistanceModel : public INumaDistanceModel
         {

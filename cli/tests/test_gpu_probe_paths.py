@@ -3,16 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Two ways the GPU probes read the machine wrongly, both silent.
+"""Tests the GPU probes' capability regex, versioned prefixes and published architecture.
 
-Neither of these announced itself. A bad regex accepted a malformed line and produced a
-plausible-looking architecture; an unexpanded glob found no toolkit and reported the machine
-as CPU-only. Both then flowed into a build that compiled and ran, which is why they needed a
-test rather than a fix alone.
-
-`sushiruntime_gpu_versioned_prefixes` is exercised directly against fabricated install trees.
-The regex is exercised against the same construct `gpu/Cuda.cmake` uses, rather than by driving
-nvidia-smi, because the inputs that matter are the ones no real driver on this machine emits.
+See cli/README.md.
 """
 
 import re
@@ -53,9 +46,6 @@ def _reported(output: str, key: str) -> list[str]:
             listed = line.split(f"{key}=", 1)[1].strip()
             return [entry for entry in listed.split(";") if entry]
     raise AssertionError(f"script never reported {key}:\n{output}")
-
-
-# --- The compute-capability regex ---------------------------------------------
 
 
 def _capability_pattern() -> str:
@@ -104,9 +94,6 @@ def test_a_separator_that_is_not_a_dot_is_rejected(tmp_path):
     assert _matches(tmp_path, "8,9") == ""
 
 
-# --- Versioned toolkit prefixes -----------------------------------------------
-
-
 def _prefixes(tmp_path: Path, pattern: str) -> list[str]:
     output = _script(
         tmp_path,
@@ -145,9 +132,6 @@ def test_the_newest_toolkit_comes_first(tmp_path):
     assert found == ["cuda-12.6", "cuda-11.8", "cuda-9.0"]
 
 
-# --- Publishing the resolved architecture -------------------------------------
-
-
 def _publish(tmp_path: Path, candidates: str, preset: str | None) -> list[str]:
     """Resolve an arch from a fabricated probe result and report what survived to the cache.
 
@@ -168,9 +152,7 @@ def _publish(tmp_path: Path, candidates: str, preset: str | None) -> list[str]:
         "endif()\n"
         'sushiruntime_gpu_publish_arch(SR_CUDA_ARCH "a compute capability" "^[0-9]+$"\n'
         '    "Digits only." "CUDA compute capabilities (61;86).")\n'
-        # Not "ARCH=", which resolve_arch's own diagnostic ends with ("-> SR_CUDA_ARCH=89"):
-        # reading the first matching line found that message instead of the published value,
-        # and reported the number that had just been thrown away.
+        # The key is not "ARCH=", which resolve_arch's own diagnostic ends with; see cli/README.md.
         'message(STATUS "PUBLISHED=${SR_CUDA_ARCH}")\n',
         encoding="utf-8",
     )

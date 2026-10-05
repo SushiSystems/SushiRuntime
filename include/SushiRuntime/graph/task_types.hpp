@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file task_types.hpp
+ * @brief Declares TaskType, OpID and TaskMetadata.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <cstdint>
@@ -56,15 +62,7 @@ namespace SushiRuntime
              */
             constexpr explicit OpID(uint32_t val) : value(val) {}
 
-            /**
-             * @brief Computes a compile-time 32-bit FNV-1a hash for string inputs.
-             *
-             * Performs a purely deterministic character-by-character transformation to derive a unique numeric identifier.
-             *
-             * @param str A pointer to the character array to process.
-             * @param length The total number of characters within the target string.
-             * @return The resulting 32-bit numerical hash.
-             */
+            /** @brief Computes a compile-time 32-bit FNV-1a hash of a string. */
             static constexpr uint32_t hash_str(const char* str, std::size_t length) 
             {
                 uint32_t hash = 2166136261u;
@@ -84,13 +82,8 @@ namespace SushiRuntime
         namespace Literals 
         {
             /**
-             * @brief Generates a typed operation identifier using a user-defined string literal.
-             *
-             * Invokes the compile-time FNV-1a hashing algorithm to convert a readable string directly into an OpID.
-             *
-             * @param str A pointer to the character sequence defining the operation name.
-             * @param len The length of the provided character sequence.
-             * @return The strongly typed, compile-time evaluated operation identifier.
+             * @brief Builds a typed operation identifier from a string literal with the FNV-1a
+             *        hash.
              */
             constexpr OpID operator""_op(const char* str, std::size_t len) 
             {

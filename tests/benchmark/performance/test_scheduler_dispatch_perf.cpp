@@ -6,11 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Measures per-task dispatch overhead. Both sides do the identical work — one
-// relaxed atomic increment — so the only difference is the path it travels:
-// inline in a tight loop (the floor) vs wrapped in a task and run through the
-// work-stealing scheduler. The delta is the amortized submit+steal+dispatch
-// cost. We report it and assert only correctness + forward progress, not speed.
+/**
+ * @file test_scheduler_dispatch_perf.cpp
+ * @brief Measures the per-task cost of the work-stealing scheduler against an inline loop.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <algorithm>
 #include <atomic>

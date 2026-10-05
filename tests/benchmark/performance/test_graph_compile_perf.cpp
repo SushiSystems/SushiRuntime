@@ -6,10 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Two gaps: (1) how TaskGraph::compile() scales with graph size, and (2) whether
-// overlapping H2D/D2H transfers with compute helps. Both do identical work on
-// each side and verify correctness; they print figures but assert only that the
-// run made progress, since real overlap needs a discrete GPU with copy engines.
+/**
+ * @file test_graph_compile_perf.cpp
+ * @brief Measures how TaskGraph::compile() scales and what overlapping transfers with compute saves.
+ * @author Mustafa Garip
+ * @see tests/benchmark/README.md
+ */
 
 #include <algorithm>
 #include <chrono>
@@ -43,8 +45,7 @@ namespace
      */
     double min_compile_us(RuntimeContext& ctx, size_t nodes)
     {
-        // A small rolling buffer set so consecutive tasks form real dependencies
-        // (task t reads buf[t%M], writes buf[(t+1)%M]) — exercises the tracker.
+        // Task t reads buf[t % M] and writes buf[(t + 1) % M], so consecutive tasks depend.
         constexpr size_t M = 16;
         std::vector<int> bufs(M, 0);
 

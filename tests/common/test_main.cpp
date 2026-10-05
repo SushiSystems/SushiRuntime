@@ -6,13 +6,19 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file test_main.cpp
+ * @brief Runs every GoogleTest case with the logger in synchronous mode.
+ * @author Mustafa Garip
+ * @see tests/common/README.md
+ */
+
 #include <cstdio>
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/logger.hpp>
 
-// Detect a ThreadSanitizer build across compilers (Clang/IntelLLVM feature test
-// and the GCC-style predefined macro).
+// SR_TSAN_BUILD is set under ThreadSanitizer by Clang's feature test or GCC's macro.
 #if defined(__has_feature)
 #  if __has_feature(thread_sanitizer)
 #    define SR_TSAN_BUILD 1
@@ -41,16 +47,7 @@ int main(int argc, char** argv)
     SR_LOG_INFO("All tests finished with result: {}", res);
 
 #if defined(SR_TSAN_BUILD)
-    // Under the TSan CI lane the Intel oneAPI SYCL runtime's DeviceSanitizer layer
-    // crashes deterministically in its own global/atexit teardown — after every
-    // test has already passed and the worker pool has joined — turning green runs
-    // into a SEGV and failing the job. The crash is entirely inside the
-    // uninstrumented Intel runtime's shutdown, not our code (workers are joined and
-    // all RuntimeContexts destroyed by this point). Data races are reported live
-    // during the run (halt_on_error=1 aborts immediately), so nothing of value is
-    // lost by skipping the C++ teardown: flush our output and _Exit with the real
-    // gtest result, bypassing the third-party destructors that fault. Scoped to TSan
-    // so ASan's leak check and normal builds keep a full, ordered shutdown.
+    // A TSan run exits without C++ teardown; see tests/common/README.md.
     std::fflush(nullptr);
     std::_Exit(res);
 #endif

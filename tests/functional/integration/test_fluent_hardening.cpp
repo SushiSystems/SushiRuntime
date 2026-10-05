@@ -6,14 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for the hardened fluent surface:
-//   - add_untracked(Extent<2>, fn) multidimensional per-element map
-//   - add_untracked(NdRange<2>, fn) tiled work-group kernel
-//   - add(State, Extent<2>, fn) multidimensional stepped stencil
-//   - add(out, in0, in1, fn) variadic coupled update (3 read fields)
-//   - add(Reads, Writes, n, fn) handle-based dependency wrappers
-//   - add(Extent, In/Out, fn) auto-captured buffer arguments
-//   - add(State, Extent with offset, fn) interior-only (halo) update
+/**
+ * @file test_fluent_hardening.cpp
+ * @brief Tests the multidimensional, variadic, wrapper and captured-argument forms of fluent add().
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -22,8 +20,10 @@
 
 using namespace SushiRuntime;
 
-// add_untracked(Extent<2>, fn): the kernel sees a sycl::id<2> covering the whole box and
-// writes a row-major linear index, proving 2-D iteration and indexing.
+/**
+ * @brief Tests that add_untracked(Extent<2>, fn) iterates the whole box and writes a row-major
+ *        index.
+ */
 TEST(Integration_FluentHardening, Extent2DPerElementMap)
 {
     constexpr std::size_t W = 8, H = 6;
@@ -48,8 +48,10 @@ TEST(Integration_FluentHardening, Extent2DPerElementMap)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
 }
 
-// add_untracked(NdRange<2>, fn): a tiled kernel using the work-group model. Each item
-// writes its global linear index; correctness proves nd_item indexing works.
+/**
+ * @brief Tests that add_untracked(NdRange<2>, fn) runs a tiled kernel that writes its global linear
+ *        index.
+ */
 TEST(Integration_FluentHardening, NdRange2DTiledKernel)
 {
     constexpr std::size_t W = 8, H = 8;   // tiles by 4x4
@@ -75,8 +77,7 @@ TEST(Integration_FluentHardening, NdRange2DTiledKernel)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
 }
 
-// add(State, Extent<2>, fn): a multidimensional stepped update. Each step adds
-// the row index to every cell; after S steps a cell at row y holds S*y.
+/** @brief Tests that add(State, Extent<2>, fn) leaves S*y in row y after S steps. */
 TEST(Integration_FluentHardening, State2DSteppedUpdate)
 {
     constexpr std::size_t W = 4, H = 4, S = 3;
@@ -101,8 +102,7 @@ TEST(Integration_FluentHardening, State2DSteppedUpdate)
                 << "at (" << x << "," << y << ")";
 }
 
-// add(out, in0, in1, fn): a coupled update reading three fields (out + two
-// others). next = cur + a + b. All reads are previous-step (Jacobi) data.
+/** @brief Tests that add(out, in0, in1, fn) computes next = cur + a + b from previous-step data. */
 TEST(Integration_FluentHardening, VariadicCoupledThreeInputs)
 {
     constexpr std::size_t N = 32;
@@ -133,8 +133,7 @@ TEST(Integration_FluentHardening, VariadicCoupledThreeInputs)
         ASSERT_EQ(u[i], 4 * (2 + 3)) << "at i=" << i;
 }
 
-// add(Reads, Writes, n, fn): the ergonomic dependency wrappers must order a
-// writer before a dependent reader exactly like the raw void* vectors do.
+/** @brief Tests that the Reads and Writes wrappers order a writer before a dependent reader. */
 TEST(Integration_FluentHardening, ReadsWritesWrappersOrdering)
 {
     constexpr std::size_t N = 32;
@@ -155,8 +154,10 @@ TEST(Integration_FluentHardening, ReadsWritesWrappersOrdering)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
 }
 
-// add(Extent, In/Out, fn): captured buffer arguments give the kernel raw
-// pointers and register the dependency in one step. dst = src * 2.
+/**
+ * @brief Tests that In and Out captured arguments hand the kernel raw pointers and register the
+ *        dependency.
+ */
 TEST(Integration_FluentHardening, InOutCapturedArguments)
 {
     constexpr std::size_t N = 64;
@@ -179,9 +180,7 @@ TEST(Integration_FluentHardening, InOutCapturedArguments)
         ASSERT_EQ(dst[i], static_cast<int>(i) * 2) << "at i=" << i;
 }
 
-// add(Reads, Writes, Extent-with-offset, fn): an interior-only update must leave
-// the one-cell border untouched (the halo), proving sub-range iteration. An
-// in-place Buffer is used so the border keeps its initial value deterministically.
+/** @brief Tests that an interior-only update leaves the one-cell border untouched. */
 TEST(Integration_FluentHardening, InteriorOnlyHaloUpdate)
 {
     constexpr std::size_t W = 6, H = 6;

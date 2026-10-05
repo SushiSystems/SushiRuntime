@@ -6,11 +6,14 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-#pragma once
+/**
+ * @file bit.hpp
+ * @brief Defines popcount_u64 and countr_zero_u64 for the C++17 baseline.
+ * @author Mustafa Garip
+ * @see include/SushiRuntime/core/README.md
+ */
 
-// Bit helpers standing in for C++20 <bit> (std::popcount / std::countr_zero) on
-// the C++17 baseline. Restore the std:: versions when the standard is raised —
-// see docs/design/REMAINING_WORK.md, "C++ standard migration".
+#pragma once
 
 #include <cstdint>
 

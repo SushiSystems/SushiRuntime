@@ -3,13 +3,9 @@
 # Copyright (c) 2026 Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Layered configuration loading for the SushiRuntime CLI.
+"""Loads the layered configuration of the SushiRuntime CLI.
 
-Precedence (lowest to highest):
-    built-in defaults -> config.toml -> config.local.toml -> SR_* env vars
-
-The active platform's ``[tool.<platform>]`` table is merged over the common
-``[tool]`` table, so a single file describes both Linux and Windows.
+See cli/README.md.
 """
 
 from __future__ import annotations
@@ -17,9 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-# Domain-agnostic config plumbing shared by every Sushi* CLI. The generic build-
-# tool schema (cmake/ninja/vcpkg paths) and the layered-load / [tool]-write
-# skeleton live in sushicore; this repo adds only the SYCL-specific fields below.
+# sushicore owns the generic build-tool schema and loader; this file adds the SYCL fields.
 from sushicore.config_base import write_tool_section
 from sushicore.module_config import ModuleConfig
 from sushicore.profile import ModuleProfile
@@ -27,10 +21,7 @@ from sushicore.provision import probe
 from sushicore.provision.config import ProvisionSettings
 
 
-#: How SushiRuntime describes itself to the shared machinery. Unlike the heads
-#: of the stack it names no siblings -- it is the bottom, and the owner of the
-#: toolchain bundle they borrow -- and it carries six overrides of its own, for
-#: the toolchain selection no other module makes.
+# PROFILE names no siblings, because SushiRuntime is the bottom of the stack; see cli/README.md.
 PROFILE = ModuleProfile(
     name="SushiRuntime",
     program="sr",
@@ -45,8 +36,7 @@ PROFILE = ModuleProfile(
         "llvm_root": "SR_LLVM_ROOT",
         "acpp_exe": "SR_ACPP",
     },
-    # SushiRuntime is the module that actually selects a SYCL toolchain, so it
-    # is the one that cares about the oneAPI, Intel and CUDA variables.
+    # SushiRuntime selects the SYCL toolchain, so these variable families matter to it.
     env_of_interest=("CMPLR", "ONEAPI", "SYCL", "CUDA", "INTEL"),
 )
 
@@ -74,22 +64,15 @@ find_project_root = _MODULE.find_project_root
 config_dir = _MODULE.config_dir
 
 
-# The SYCL toolchains a user can select. Must match SR_SYCL_TOOLCHAIN in
-# CMakeLists.txt: intel-llvm (primary), adaptivecpp (secondary), oneapi (supported).
+# TOOLCHAINS must match SR_SYCL_TOOLCHAIN in CMakeLists.txt.
 TOOLCHAINS = ("intel-llvm", "adaptivecpp", "oneapi")
 
-# Directory names an intel/llvm bundle may sit under, in preference order. `hub install`
-# writes `llvm-sycl`, the bundle SushiEngine configures with and the one SushiStack builds
-# the GPU adapters for (SushiStack's docs/design/GPU_BACKEND_PROVISIONING.md §4), so it
-# comes first; `llvm-sycl-nightly` is an older manual install. A `llvm_root` written into
-# config.local.toml still wins over both.
+# Bundle directory names are listed in preference order; see cli/README.md.
 INTEL_LLVM_BUNDLE_DIRS = ("llvm-sycl", "llvm-sycl-nightly")
 
-# Default compiler pair (cc, cxx) per toolchain. Used when the config does not
-# pin an explicit compiler, so `sr toolchain <name>` is enough to switch.
+# Holds the default (cc, cxx) pair per toolchain, used when the config pins no compiler.
 TOOLCHAIN_COMPILERS = {
-    # (cc, cxx). acpp is C++-only, so the C slot uses a plain C compiler; the
-    # project builds CXX only, so cc is effectively unused but kept valid.
+    # acpp is C++-only, so the C slot holds a plain C compiler the CXX-only project never runs.
     "adaptivecpp": ("gcc", "acpp"),
     "intel-llvm": ("clang", "clang++"),
     "oneapi": ("icx", "icpx"),
@@ -108,17 +91,12 @@ class Config(ProvisionSettings):
     and adds the SYCL toolchain selection.
     """
 
-    # llvm_root is the intel/llvm bundle root (holds bin/clang++) for the intel-llvm
-    # toolchain, and acpp_exe the AdaptiveCpp compiler for the adaptivecpp toolchain.
-    # On Windows these are how the non-oneAPI toolchains provide a SYCL compiler;
-    # `sr setup` and `hub install` discover them and write them to config.local.toml.
+    # llvm_root and acpp_exe locate the non-oneAPI SYCL compilers; see cli/README.md.
 
-    # SYCL toolchain selection (intel-llvm | adaptivecpp | oneapi). Persisted by
-    # `sr toolchain` and consumed as -DSR_SYCL_TOOLCHAIN at configure time.
+    # `sr toolchain` persists this value and configure passes it as -DSR_SYCL_TOOLCHAIN.
     toolchain: str = "intel-llvm"
 
-    # The C compiler. Empty cc/cxx (cxx from ToolConfig) means "derive from the
-    # toolchain" via TOOLCHAIN_COMPILERS.
+    # An empty cc or cxx is derived from the toolchain through TOOLCHAIN_COMPILERS.
     cc: str = ""
 
     # Run defaults

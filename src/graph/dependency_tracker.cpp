@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file dependency_tracker.cpp
+ * @brief Resolves read and write hazards between graph nodes from a lock-free access history.
+ * @author Mustafa Garip
+ */
+
 #include <thread>
 #include <algorithm>
 #include <SushiRuntime/core/logger.hpp>
@@ -24,8 +30,7 @@ namespace SushiRuntime
          */
         void DependencyTracker::reset()
         {
-            // Clean up the lock-free access history for all shards
-            // Safe to run because reset() is called when the graph compilation is completely done.
+            // reset() runs only after graph compilation has finished (src/graph/README.md).
             for (auto& state : registry)
             {
                 AccessNode* curr = state.tail.exchange(nullptr, std::memory_order_acquire);
@@ -39,18 +44,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Resolves memory dependencies for a task node.
-         *
-         * Inserts the access into the lock-free history and traverses backwards,
-         * ordering this node after every earlier access whose region overlaps,
-         * to resolve RAW, WAR, and WAW hazards. The walk stops early only once a
-         * prior writer is found that fully covers the accessed region: every
-         * earlier access to that range is then already ordered behind that writer
-         * transitively, so it needs no direct edge. A partially-overlapping writer
-         * does not end the walk, because an earlier access could touch the part of
-         * the region it leaves uncovered — stopping there would drop a real edge
-         * and silently race on sub-regions.
-         *
+         * @brief Orders a node after every earlier overlapping access (src/graph/README.md).
          * @param node The graph node introducing the access.
          * @param region The byte interval being accessed (whole buffer by default).
          * @param is_write True if the access is a write, false if it is a read.
@@ -79,8 +73,7 @@ namespace SushiRuntime
 
             if (is_write)
             {
-                // WAW and WAR: order after every overlapping prior access (read or
-                // write), stopping at the first prior writer that fully covers us.
+                // WAW and WAR: every overlapping prior access orders us (src/graph/README.md).
                 while (cursor)
                 {
                     if (cursor->region.overlaps(region))
@@ -96,8 +89,7 @@ namespace SushiRuntime
             }
             else
             {
-                // RAW: order after every overlapping prior write (readers stay
-                // parallel), stopping once a covering writer is found.
+                // RAW: every overlapping prior write orders us (src/graph/README.md).
                 while (cursor)
                 {
                     if (cursor->is_write && cursor->region.overlaps(region))
@@ -114,11 +106,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Explicitly adds a dependency between two nodes.
-         *
-         * Registers a successor relationship and updates the target node's
-         * in-degree using atomic operations.
-         *
+         * @brief Adds a successor edge between two nodes unless it exists (src/graph/README.md).
          * @param from The source node.
          * @param to The target node that depends on the source node.
          */

@@ -6,15 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Two fields that evolve together, one reading the other. v counts up by one each
-// step; u accumulates v. The coupled add(out, in, fn) overload reads the *previous*
-// step's data for every input (a Jacobi update): each State advances only after the
-// whole step's kernels have run, so writing one field never changes what another
-// reads in the same step. That is what makes the result independent of the order
-// the two rules were added.
-//
-// With v starting at 0 and incrementing each step, after STEPS steps:
-//   v == STEPS,  u == 0 + 1 + ... + (STEPS-1) == STEPS*(STEPS-1)/2.
+/**
+ * @file coupled_fields_demo.cpp
+ * @brief Runs two coupled fields where one rule reads the previous step of the other.
+ * @author Mustafa Garip
+ * @see examples/README.md
+ */
 
 #include <cstdio>
 
@@ -40,8 +37,7 @@ int main()
         vn[i] = vc[i] + 1;
     });
 
-    // u_next = u_cur + v_cur. v_cur is the previous step's v, not the v_next the
-    // rule above produces this step — the Jacobi guarantee.
+    // v_cur is the previous step's v, not the v_next of the rule above; see examples/README.md.
     sim.add(u, v, [](std::size_t i, const int* uc, int* un, const int* vc)
     {
         un[i] = uc[i] + vc[i];

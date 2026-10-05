@@ -6,14 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for API::sized_from_device: a task whose iteration size comes from a
-// count a PREDECESSOR KERNEL produced, within the same step.
-//
-// This is the shape a collision pipeline is: broadphase writes a pair count,
-// narrowphase iterates exactly that many pairs and writes a manifold count, the
-// solver iterates exactly that many manifolds. None of those numbers exists when
-// the step boundary polls the host-side sized() providers, so without this the
-// options are a mid-step readback or dispatching at the worst case every tick.
+/**
+ * @file test_device_count.cpp
+ * @brief Tests API::sized_from_device, which sizes a task from a count written earlier in the step.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -25,9 +23,7 @@
 
 using namespace SushiRuntime;
 
-// A producer kernel writes a count; a consumer sized_from_device that count
-// iterates exactly that many elements, in one run(). The consumer must see the
-// count this step wrote, not the previous step's and not the capacity.
+/** @brief Tests that a consumer iterates exactly the count the producer wrote in the same run(). */
 TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
 {
     constexpr std::size_t CAPACITY = 4096;
@@ -39,8 +35,7 @@ TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
     std::uint32_t* c = counter.data();
     int* m = marks.data();
 
-    // The count the producer computes on the device. Read through a pointer so
-    // the host cannot be accused of having supplied it.
+    // The producer reads the count through a pointer, so the device computes it; see README.md.
     auto wanted = rt.buffer<std::uint32_t>(1);
     std::uint32_t* w = wanted.data();
 
@@ -82,11 +77,7 @@ TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
         << "a device-driven count must not force a recompile";
 }
 
-// The producer/consumer edge is not something the caller has to remember: the
-// counter is registered as a read of the consuming task, so the consumer is
-// ordered after the producer even though the caller named neither in Reads().
-// Without that edge the consumer could read the count before it was written and
-// would iterate a stale value (0 on the first step).
+/** @brief Tests that the counter is registered as a read of the consuming task. */
 TEST(Integration_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
 {
     constexpr std::size_t CAPACITY = 512;
@@ -118,8 +109,7 @@ TEST(Integration_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
         << "the consumer did not observe the count written this step";
 }
 
-// A three-stage chain, which is the real shape: each stage's output count feeds
-// the next stage's iteration size, all in one run() with one compilation.
+/** @brief Tests a three-stage chain where each stage's output count sizes the next stage. */
 TEST(Integration_DeviceCount, ChainedProducerCountsInOneComposition)
 {
     constexpr std::size_t CAPACITY = 1024;
@@ -164,8 +154,7 @@ TEST(Integration_DeviceCount, ChainedProducerCountsInOneComposition)
     EXPECT_EQ(g.compile_count(), 1u);
 }
 
-// when() still composes with a device-driven size: a disabled step runs nothing
-// regardless of what the counter says.
+/** @brief Tests that a disabled when() step runs nothing whatever the counter says. */
 TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
 {
     constexpr std::size_t CAPACITY = 256;
@@ -201,9 +190,10 @@ TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
     EXPECT_EQ(out[0], 2);
 }
 
-// A count larger than the compiled capacity fails the run with a message naming
-// both numbers. Truncating instead would silently drop work, which is the exact
-// failure mode this seam exists to remove.
+/**
+ * @brief Tests that a count above the compiled capacity fails the run with a message naming both
+ *        numbers.
+ */
 TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
 {
     constexpr std::size_t CAPACITY = 64;
@@ -230,9 +220,7 @@ TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
     EXPECT_EQ(out[0], 7);
 }
 
-// A counter the host cannot read at any moment of a run is rejected where it is
-// written, not mid-run: Device is never host-addressable, and Shared is managed
-// memory the host may not touch while a kernel runs on some backends.
+/** @brief Tests that a counter the host cannot read is rejected where it is written. */
 TEST(Integration_DeviceCount, RejectsACounterThatIsNotHostResident)
 {
     auto rt = Runtime::create();
@@ -258,9 +246,7 @@ TEST(Integration_DeviceCount, RejectsACounterThatIsNotHostResident)
     EXPECT_NO_THROW(API::sized_from_device(host, 1));
 }
 
-// A caller with one plan array per device offsets into it and hands over the
-// interior address. Nothing resolves an interior pointer to its allocation kind,
-// so add() must resolve it to the allocation it lies in before judging it.
+/** @brief Tests that add() resolves an interior pointer to the host allocation it lies in. */
 TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostSlot)
 {
     constexpr std::size_t CAPACITY = 16;
@@ -289,8 +275,7 @@ TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostSlot)
         ASSERT_EQ(out[i], -1) << "element " << i << " ran past the live count";
 }
 
-// based_at_device reads its slot on the host exactly as sized_from_device does,
-// through the same check, so an offset base slot resolves the same way.
+/** @brief Tests that an offset base slot for based_at_device resolves the same way. */
 TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostBaseSlot)
 {
     constexpr std::size_t CAPACITY = 16;
@@ -309,9 +294,7 @@ TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostBaseSlot)
                           [](std::size_t) {}));
 }
 
-// The raw-pointer setters take a bare address, so the residency check at add()
-// is the only thing between a device slot and a host read of it mid-run. The
-// refusal has to say which of the two things is wrong.
+/** @brief Tests that a raw slot that is not host-resident is refused at add(). */
 TEST(Integration_DeviceCount, RefusesARawSlotThatIsNotHostResident)
 {
     auto rt       = Runtime::create();
@@ -337,9 +320,7 @@ TEST(Integration_DeviceCount, RefusesARawSlotThatIsNotHostResident)
     }
 }
 
-// A pointer from somewhere else entirely — another runtime, or the stack — has no
-// residency this context can read, which is a different fault from a device slot
-// and gets a different sentence.
+/** @brief Tests that a slot this runtime never allocated is refused with its own message. */
 TEST(Integration_DeviceCount, RefusesASlotThisRuntimeNeverAllocated)
 {
     auto rt  = Runtime::create();

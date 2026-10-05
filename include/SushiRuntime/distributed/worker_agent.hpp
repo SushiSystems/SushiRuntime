@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file worker_agent.hpp
+ * @brief Declares WorkerAgent, which executes distributed tasks on a worker machine.
+ * @author Mustafa Garip
+ */
+
 #pragma once
 
 #include <chrono>
@@ -30,13 +36,8 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Constructs a worker agent bounded to a local runtime context.
-                 *
-                 * Initializes the background state and attaches the transport to receive network messages.
-                 *
-                 * @param ctx The local runtime context that executes the computational tasks.
-                 * @param transport The underlying network transport for master-worker communication.
-                 * @param kernels The registry mapping operation IDs to executable local kernels.
+                 * @brief Constructs a worker agent bound to a local runtime context and attaches
+                 *        the transport.
                  */
                 WorkerAgent(Execution::RuntimeContext& ctx,
                             std::shared_ptr<ITransport> transport,

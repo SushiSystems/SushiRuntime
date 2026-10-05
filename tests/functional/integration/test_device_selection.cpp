@@ -6,14 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Coverage for what the hardware filter selects and how it fails.
-//
-// Two properties, both about moving a failure earlier. A double-precision
-// kernel on a device without sycl::aspect::fp64 fails inside the driver, at
-// launch, with a message naming neither the device nor the aspect; require_fp64
-// moves that to discovery. And a filter that matches nothing used to surface as
-// "Queue index out of bounds" from the first allocator call, which is the first
-// thing a player on a machine with no SYCL device would see.
+/**
+ * @file test_device_selection.cpp
+ * @brief Tests what the hardware filter selects and how an empty selection fails.
+ * @see tests/functional/integration/README.md
+ * @author Mustafa Garip
+ */
 
 #include <algorithm>
 #include <vector>
@@ -26,8 +24,7 @@ using namespace SushiRuntime;
 
 namespace
 {
-    // True when at least one SYCL device on this lane reports fp64, which decides
-    // whether a require_fp64 runtime is expected to construct or to fail here.
+    /** @brief Returns whether at least one SYCL device on this lane reports fp64. */
     bool any_device_has_fp64()
     {
         for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::all))
@@ -37,9 +34,7 @@ namespace
     }
 }
 
-// Every device the filter admits reports fp64. Asserted against the discovery
-// layer directly so the property is checked on the list itself, not inferred
-// from a count that a deduplication step could also explain.
+/** @brief Tests that every device the require_fp64 filter admits reports fp64. */
 TEST(Integration_DeviceSelection, RequireFp64AdmitsOnlyFp64Devices)
 {
     Topology::HardwareFilterConfig config;
@@ -53,10 +48,9 @@ TEST(Integration_DeviceSelection, RequireFp64AdmitsOnlyFp64Devices)
             << "device [" << node.name << "] was admitted without fp64 support";
 }
 
-// The filter is a filter, not a rejection of the whole machine: a lane that has
-// an fp64 device still builds a runtime with require_fp64 set. The CPU lanes
-// this suite runs on (POCL, the Intel OpenCL CPU runtime) all report fp64, so
-// this is the branch normally taken.
+/**
+ * @brief Tests that a runtime with require_fp64 still constructs on a lane that has an fp64 device.
+ */
 TEST(Integration_DeviceSelection, RequireFp64StillConstructsOnAConformingLane)
 {
     Topology::HardwareFilterConfig config;
@@ -69,16 +63,12 @@ TEST(Integration_DeviceSelection, RequireFp64StillConstructsOnAConformingLane)
     }
     else
     {
-        // No conforming device: the failure must still be the precise one below,
-        // not a driver error from inside a kernel launch.
+        // With no conforming device the failure is still the SushiException below; see README.md.
         EXPECT_THROW(Runtime::create(config), SushiException);
     }
 }
 
-// A filter that admits nothing fails at construction with a code a caller can
-// branch on. This is the same shape as a machine with no SYCL device at all,
-// which is why the error carries Errc::unsupported rather than a bare
-// out-of-bounds message from the first queue lookup.
+/** @brief Tests that a filter that admits nothing fails at construction with Errc::unsupported. */
 TEST(Integration_DeviceSelection, AnEmptyFilterFailsWithUnsupported)
 {
     Topology::HardwareFilterConfig config;
@@ -94,16 +84,14 @@ TEST(Integration_DeviceSelection, AnEmptyFilterFailsWithUnsupported)
     catch (const SushiException& e)
     {
         EXPECT_EQ(e.error().code, Core::Errc::unsupported);
-        // The message must name the filter, so the reader can tell "this machine
-        // has nothing" from "you excluded everything".
+        // The message names the filter; see README.md.
         const std::string message = e.what();
         EXPECT_NE(message.find("cpu=no"), std::string::npos) << message;
         EXPECT_NE(message.find("gpu=no"), std::string::npos) << message;
     }
 }
 
-// The default filter admits everything, so the common path is unaffected by the
-// check above — a plain Runtime::create() still finds this lane's devices.
+/** @brief Tests that the default filter still finds this lane's devices. */
 TEST(Integration_DeviceSelection, DefaultFilterIsUnaffected)
 {
     auto rt = Runtime::create();

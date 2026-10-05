@@ -6,6 +6,12 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
+/**
+ * @file hw_discovery.cpp
+ * @brief Enumerates SYCL devices and resolves each one's NUMA node or PCI address.
+ * @author Mustafa Garip
+ */
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -53,11 +59,7 @@ namespace SushiRuntime
             {
                 size_t logical_id_counter = 0;
 
-                // Some backends expose the same physical CPU twice — e.g. under
-                // AdaptiveCpp the host CPU appears both via the OpenCL backend and
-                // as the native "OpenMP host device" (which also reports a bogus
-                // global_mem_size). Keep at most one CPU per NUMA node so the
-                // scheduler does not build duplicate queues for one processor.
+                // At most one CPU is kept per NUMA node (src/topology/README.md).
                 std::unordered_set<int> seen_cpu_numa;
 
                 for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::all))
@@ -66,10 +68,7 @@ namespace SushiRuntime
                     if (dev.is_gpu() && !config.include_gpu) continue;
                     if (dev.is_accelerator() && !config.include_accelerator) continue;
 
-                    // Checked here rather than at kernel launch: a double-precision
-                    // kernel on an fp64-less device fails inside the driver with a
-                    // message that names neither the device nor the aspect. Naming
-                    // the device we dropped, and why, is the whole point.
+                    // fp64 is checked at discovery, not at kernel launch (src/topology/README.md).
                     if (config.require_fp64 && !dev.has(sycl::aspect::fp64))
                     {
                         SR_LOG_INFO("Skipping device [{}]: no fp64 support and require_fp64 is set.",
@@ -97,9 +96,7 @@ namespace SushiRuntime
                             if (numa) node.numa_node_id = numa->os_index;
                         }
 
-                        // Drop a second CPU on the same NUMA node (duplicate backend
-                        // view of one physical processor, e.g. AdaptiveCpp's OpenMP
-                        // host device alongside the OpenCL CPU).
+                        // A second CPU on one NUMA node is dropped (src/topology/README.md).
                         if (!seen_cpu_numa.insert(node.numa_node_id).second)
                         {
                             SR_LOG_INFO("Skipping duplicate CPU device [{}] on NUMA {} (already mapped).",
@@ -114,10 +111,7 @@ namespace SushiRuntime
                         {
                             std::string pci_str = "";
 
-                            // Primary: Intel device-info extension (Intel GPUs and the
-                            // Codeplay NVIDIA backend). Guarded because AdaptiveCpp and
-                            // other SYCL implementations do not expose this aspect; there
-                            // we fall straight through to the regex / hwloc fallbacks.
+                            // Primary source: Intel device-info extension (src/topology/README.md).
 #if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
                             const bool has_intel_pci = dev.has(sycl::aspect::ext_intel_pci_address);
 #else
@@ -141,8 +135,7 @@ namespace SushiRuntime
                                         pci_str = match.str();
                                 } catch (...) {}
 
-                                // Fallback 2: hwloc OS device scan — matches GPU name against hwloc's PCI tree.
-                                // Works for NVIDIA GPUs exposed via CUDA backend (GTX 1060 = "GeForce GTX 1060")
+                                // Fallback 2: hwloc PCI tree, by GPU name (src/topology/README.md).
                                 if (pci_str.empty())
                                 {
                                     std::string dev_name = node.name;
