@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 2026-10-05 — cli: Renamed `sr doxygen` to `sr docs` and `sr docker` to `sr container`, keeping the old words as hidden aliases until 2027-03-25 (`cli/sushiruntime/cli.py`, `cli/sushiruntime/aliases.py`).
+- 2026-10-05 — cli: Made `sr package --prefix` refuse a protected or foreign non-empty directory without the new `--force` (`services/packaging.py`, `services/stage_tree.py`).
+- 2026-10-05 — cli: Took the project root from `sushi-module.toml`, so a directory holding only `CMakeLists.txt` is no longer a checkout (`cli/sushiruntime/config.py`).
+- 2026-10-05 — cli: Made `sr run --distributed` reject a role other than master or worker with exit code 2 (`cli/sushiruntime/cli.py`, `DistributedRole`).
+- 2026-10-05 — cli: Added `--version`, `--describe` and a `main()` entry point, and took `sr config` from sushicore (`cli/sushiruntime/cli.py`, `services/diag.py`).
+- 2026-10-05 — cli: Named `sr setup --toolchain` in every missing-toolchain message (`services/install_hint.py`, `services/project.py`, `services/select.py`).
+- 2026-10-05 — docs: Corrected the `hub install-cli`, `--no-cuda` and Windows ASan flag descriptions (`docs/CLI_GUIDE.md`, `docs/README.md`).
 - 2026-10-05 — licence: Changed the licence from Apache-2.0 WITH LLVM-exception to PolyForm Noncommercial 1.0.0 and removed `docs/LICENSE` (`LICENSE`, `COMMERCIAL.md`, `NOTICE.md`, source headers).
 - 2026-09-21 — Fixed the late-bound `add_reduce` overload's and `add_prefix_scan`'s zero-capacity emits reporting `WIDTH_UNKNOWN` (`graph.hpp`).
 - 2026-09-21 — Fixed the scheduler path snapshotting dispatch widths with profiling off (`scheduler.cpp`).

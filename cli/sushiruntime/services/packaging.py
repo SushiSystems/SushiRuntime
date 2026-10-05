@@ -14,13 +14,13 @@ it with nothing else on PATH.
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from .. import console
 from ..config import Config, find_project_root, load_config
 from ..env import load_build_env
 from .project import _build_dir, _DRIVER, _RUNNER
+from .stage_tree import StageRules, StageTree, StageTreeError
 
 
 def _cpack(cfg: Config) -> str:
@@ -39,12 +39,12 @@ def _cpack(cfg: Config) -> str:
     return str(candidate) if candidate.is_file() else "cpack"
 
 
-
-def package(prefix: str | None = None, archive: bool = True) -> int:
+def package(prefix: str | None = None, archive: bool = True, force: bool = False) -> int:
     """Install the built tree to a prefix and archive it.
 
     :param prefix: Where to install. Defaults to build/dist under the project root.
     :param archive: Whether to run CPack over the configured generators.
+    :param force: Whether a prefix holding files this command did not stage is cleared.
     :return: 0 when every requested step succeeded, non-zero on the first failure.
     """
     console.header("Project Package")
@@ -56,15 +56,20 @@ def package(prefix: str | None = None, archive: bool = True) -> int:
         console.error(f"No configured build tree at {build_dir}. Run `sr build` first.")
         return 1
 
-    stage = Path(cfg.expand(prefix)).resolve() if prefix else root / "build" / "dist"
-    env = load_build_env(cfg, build_dir)
-
-    # A stale prefix hides a rule that stopped installing something: the file is
-    # still there from last time, so the archive ships a file the current build
-    # would no longer produce.
-    if stage.is_dir():
-        console.info(f"Clearing previous stage tree at {stage}")
-        shutil.rmtree(stage, ignore_errors=True)
+    default_stage = root / "build" / "dist"
+    stage = Path(cfg.expand(prefix)).resolve() if prefix else default_stage
+    tree = StageTree(stage)
+    rules = StageRules(project_root=root, home=Path.home(), build_dir=build_dir,
+                       default_stage=default_stage)
+    try:
+        tree.check(rules, force=force)
+        env = load_build_env(cfg, build_dir)
+        if stage.is_dir():
+            console.info(f"Clearing previous stage tree at {stage}")
+        tree.reset()
+    except StageTreeError as error:
+        console.error(str(error))
+        return 1
 
     console.info(f"Installing to {stage}")
     rc = _RUNNER.run([_DRIVER.cmake(cfg), "--install", str(build_dir), "--prefix", str(stage)],

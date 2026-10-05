@@ -37,14 +37,12 @@ def _build_env(cfg, build_dir: Path):
     return load_build_env(cfg, build_dir)
 
 
-_DIAG = Diagnostics(
+DIAGNOSTICS = Diagnostics(
     profile=PROFILE,
     console=console,
     config=config_module,
     build_env=_build_env,
 )
-
-config_show = _DIAG.config_show
 
 
 def env_dump(show_all: bool = False, asan: bool = False) -> int:
@@ -56,4 +54,4 @@ def env_dump(show_all: bool = False, asan: bool = False) -> int:
     """
     root = config_module.find_project_root()
     build_dir = root / ("build-asan" if asan else "build")
-    return _DIAG.env_dump(show_all=show_all, build_dir=build_dir)
+    return DIAGNOSTICS.env_dump(show_all=show_all, build_dir=build_dir)

@@ -17,8 +17,8 @@ dependencies = [
 ]
 
 [project.scripts]
-sr = "sushiruntime.cli:app"
-sushiruntime = "sushiruntime.cli:app"
+sr = "sushiruntime.cli:main"
+sushiruntime = "sushiruntime.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

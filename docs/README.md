@@ -75,7 +75,7 @@ has to be shaped, and it is the one thing that is not obvious from the API.
 The fastest path is the bundled CLI, which loads your compiler/toolchain paths from config and then drives CMake. Install it through the umbrella — the single install seam for the whole stack (it sets up an isolated pipx venv and wires in the shared `sushicore` presentation layer):
 
 ```bash
-hub install-cli sushiruntime           # add --no-editable for a non-dev install
+hub install-cli sushiruntime           # always an editable install
 ```
 
 This gives you two equivalent commands on your PATH: **`sr`** (short) and **`sushiruntime`** (long). Toolchain paths are read from `cli/config.toml` (committed, shared defaults). Machine-specific absolute paths (oneAPI/VS roots, vcpkg, compiler locations) go in a gitignored `cli/config.local.toml` using the same `[tool.<platform>]` section layout — copy the commented Windows block from `config.toml` as a starting point.
@@ -98,7 +98,7 @@ sr build --type debug         # debug build
 sr build --type relwithdebinfo
 sr build --type asan          # isolated build-asan tree, CUDA off
 sr build --distributed        # enable the master-worker layer
-sr build --no-cuda            # disable CUDA backend (Linux)
+sr build --no-cuda            # build the portable CPU/OpenCL path
 sr build --no-test            # skip compiling the test suite
 sr build --force              # fall back to clang++/clang when the
                                       # selected toolchain compiler is missing
@@ -162,11 +162,11 @@ result faults on older CPUs. See
 A `Dockerfile` based on `nvidia/cuda` (Ubuntu 22.04) with a pre-built **intel/llvm** nightly SYCL bundle is provided, so you can build and run — including the CUDA backend — without installing a toolchain locally. The image ships the `intel-llvm` (primary) and `adaptivecpp` toolchains; the `intel-llvm` path is the tested default (`sr toolchain intel-llvm`). It also installs the Intel OpenCL CPU runtime so the host CPU shows up as a SYCL device. For GPU passthrough you need the NVIDIA Container Toolkit.
 
 ```bash
-sr docker build
-sr docker build --oneapi    # also install the Intel oneAPI DPC++ compiler (icpx; several GB)
-sr docker build --no-cache  # rebuild every layer from scratch
-sr docker run               # add --admin for --privileged (profiling)
-sr docker run --no-gpu      # omit --gpus all (headless / CI environments)
+sr container build
+sr container build --oneapi    # also install the Intel oneAPI DPC++ compiler (icpx; several GB)
+sr container build --no-cache  # rebuild every layer from scratch
+sr container run               # add --admin for --privileged (profiling)
+sr container run --no-gpu      # omit --gpus all (headless / CI environments)
 ```
 
 The `oneapi` toolchain is opt-in because `icpx` is large: build with `--oneapi`, then `sr toolchain oneapi && sr build` works inside the container (the CLI sources oneAPI's `setvars.sh` automatically).
@@ -177,9 +177,11 @@ The `oneapi` toolchain is opt-in because `icpx` is large: build with `--oneapi`,
 sr config         # print resolved config with per-field source annotation
 sr env            # print the environment cmake/ctest/run subprocesses see
 sr env --asan     # same for the build-asan/ tree
-sr doxygen     # build the fluent API reference site into docs/api-site/html
+sr docs           # build the fluent API reference site into docs/api-site/html
 sr package        # install the built tree to a prefix (default build/dist) and
                   # archive it with CPack; --no-archive installs only
+sr --version      # print the CLI's distribution name and version
+sr --describe     # print every command and its options as JSON
 ```
 
 `sr test --suite package` checks the result: it installs to a prefix, then builds

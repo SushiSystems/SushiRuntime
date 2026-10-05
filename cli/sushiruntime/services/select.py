@@ -19,6 +19,7 @@ from sushicore.provision import probe
 
 from .. import console
 from ..config import TOOLCHAINS, load_config, set_toolchain
+from .install_hint import toolchain_install_command
 
 # Short, user-facing description for each toolchain shown by `sr toolchain`.
 _DESCRIPTIONS = {
@@ -49,11 +50,6 @@ def _toolchain_installed(name: str, cfg) -> bool:
     return False
 
 
-def _install_hint(name: str) -> str:
-    """The command that installs toolchain *name*."""
-    return f"sr setup --toolchain {name}"
-
-
 def show() -> int:
     """Print a table of toolchains: which is active, which are installed, how to get the rest."""
     cfg = load_config()
@@ -70,7 +66,7 @@ def show() -> int:
         active = name == cfg.toolchain
         installed = _toolchain_installed(name, cfg)
         status = "[success]installed[/success]" if installed else "[warn]not installed[/warn]"
-        get_it = "" if installed else _install_hint(name)
+        get_it = "" if installed else toolchain_install_command(name)
         table.add_row(
             "[success]→[/success]" if active else "",
             name,
@@ -84,7 +80,7 @@ def show() -> int:
                  f"(switch with [cmd]sr toolchain <name>[/cmd])")
     if not _toolchain_installed(cfg.toolchain, cfg):
         console.warn(f"The active toolchain '{cfg.toolchain}' is not installed yet — "
-                     f"run [cmd]{_install_hint(cfg.toolchain)}[/cmd] to install it.")
+                     f"run [cmd]{toolchain_install_command(cfg.toolchain)}[/cmd] to install it.")
     return 0
 
 
@@ -104,14 +100,13 @@ def select(toolchain: str) -> int:
     if not _toolchain_installed(toolchain, cfg):
         # The whole point of the message the user asked for: tell them exactly
         # which profile to install when the chosen toolchain isn't present.
-        hint = _install_hint(toolchain)
+        hint = toolchain_install_command(toolchain)
         console.warn(
             f"'{toolchain}' is not installed yet. Builds will fail until you install it:\n"
             f"    [cmd]{hint}[/cmd]"
         )
         if toolchain == "oneapi":
-            console.info("oneAPI is several GB; use [cmd]hub install --customize[/cmd] "
-                         "to install it on its own instead of everything.")
+            console.info("oneAPI is a download of several GB.")
     else:
         console.info("Run [cmd]sr build --clean[/cmd] to reconfigure with the new toolchain.")
     return 0

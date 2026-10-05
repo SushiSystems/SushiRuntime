@@ -977,4 +977,4 @@ you express an in-place update, and it keeps the task correctly ordered between
   feature in this guide. `test_fluent_lifecycle.cpp` covers the fluent API
   (handles, stepping, coupling); `test_sycl_execution.cpp` and `test_graph.cpp`
   are the best starting points for the lower-level API.
-- **`sr doxygen`** — generate the full API reference from the headers.
+- **`sr docs`** — generate the full API reference from the headers.
