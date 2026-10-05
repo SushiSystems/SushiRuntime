@@ -178,3 +178,24 @@ jobs:
           # Benchmarks self-gate via sanity_gate(); they assert no deadlock /
           # forward progress, not a latency threshold.
           ctest --test-dir build -L "stress|performance" --output-on-failure
+
+  checkers:
+    name: Checkers (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: python tools/documentation/check_source_comments.py .
+        run: python tools/documentation/check_source_comments.py .
+      - name: python tools/documentation/check_changelog.py .
+        run: python tools/documentation/check_changelog.py .
+      - name: python tools/layering/check_layering.py .
+        run: python tools/layering/check_layering.py .
+      - name: python -m unittest discover -s tools/tests
+        run: python -m unittest discover -s tools/tests
