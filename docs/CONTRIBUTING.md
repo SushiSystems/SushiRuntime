@@ -4,8 +4,9 @@ Thanks for your interest in improving SushiRuntime. This document explains how t
 get a working build, the conventions we expect in a change, and how to get a pull
 request merged.
 
-By contributing you agree that your contributions are licensed under the
-project's **Apache License, Version 2.0** (see [`LICENSE`](LICENSE)).
+Contributions from outside Sushi Systems are not accepted yet. SushiRuntime is
+source-available under the PolyForm Noncommercial License 1.0.0; see
+[`LICENSE`](../LICENSE) and [`COMMERCIAL.md`](../COMMERCIAL.md).
 
 > New to the codebase? Read [`ARCHITECTURE.md`](ARCHITECTURE.md)
 > first — it explains the layers, the lock-free data structures, the work-stealing
@@ -148,8 +149,9 @@ The codebase has a deliberate, consistent style. Match the file you're editing.
   `include("${SR_CMAKE_DIR}/X.cmake")` from the top level and
   `include("${CMAKE_CURRENT_LIST_DIR}/X.cmake")` from inside another module.
   Prefixing the filename helps a reader; only the absolute path is a fix.
-- **Every source file carries the Apache 2.0 license header** used across the
-  tree. Copy it verbatim into new files.
+- **Every source file opens with the license block** of the `source-comments`
+  skill. `tools/licensing/write_license_block.py` in SushiSkills writes it; do
+  not edit one by hand.
 
 When in doubt, run [`/simplify`] mentally: prefer reuse and the smaller change.
 

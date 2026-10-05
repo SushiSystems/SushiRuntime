@@ -1,3 +1,8 @@
+# test_gpu_probe_paths.py
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
 """Two ways the GPU probes read the machine wrongly, both silent.
 
 Neither of these announced itself. A bad regex accepted a malformed line and produced a

@@ -1,3 +1,8 @@
+# test_gpu_backend_delegation.py
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
 """Detection is one question, asked in one place, on every platform.
 
 Windows was frozen to `-DSR_GPU_BACKEND=cpu` here, on the grounds that the host has no nvptx

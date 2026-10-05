@@ -1,3 +1,9 @@
+# CudaToolkit.cmake
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
+
 # gpu/locate/CudaToolkit.cmake: where the NVIDIA CUDA toolkit is installed.
 #
 # One function per vendor, one branch per operating system, so a platform is added

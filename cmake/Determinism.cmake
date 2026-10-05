@@ -1,3 +1,9 @@
+# Determinism.cmake
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
+
 # Determinism.cmake — the floating-point contract as an exported target.
 #
 # Single responsibility: define an INTERFACE target `sushiruntime_deterministic_fp`

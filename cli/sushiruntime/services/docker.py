@@ -1,3 +1,8 @@
+# docker.py
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
 """Docker environment management (replaces docker/build.* and docker/run.*)."""
 
 from __future__ import annotations

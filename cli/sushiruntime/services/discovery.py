@@ -1,3 +1,8 @@
+# discovery.py
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
 """Locate built executables under SushiRuntime's build tree.
 
 The walk itself is shared -- see :class:`sushicore.discovery.ExecutableIndex`.

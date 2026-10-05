@@ -1,3 +1,9 @@
+# Rocm.cmake
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026 Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
+
 # gpu/Rocm.cmake — AMD ROCm (amdgcn) SYCL backend strategy.
 #
 # Owns all knowledge of how to target AMD GPUs, including resolving which ISAs to

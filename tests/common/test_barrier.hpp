@@ -1,18 +1,10 @@
-/**************************************************************************/
-/* test_barrier.hpp                                                       */
-/**************************************************************************/
-/*                          This file is part of:                         */
-/*                              SushiRuntime                              */
-/*              https://github.com/SushiSystems/SushiRuntime              */
-/*                        https://sushisystems.io                         */
-/**************************************************************************/
-/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
-/*                                                                        */
-/* Licensed under the Apache License, Version 2.0 (the "License");        */
-/* you may not use this file except in compliance with the License.       */
-/*                                                                        */
-/*     http://www.apache.org/licenses/LICENSE-2.0                         */
-/**************************************************************************/
+/****************************************************************/
+/* test_barrier.hpp                                             */
+/* SushiRuntime - https://github.com/SushiSystems/SushiRuntime  */
+/* Copyright (c) 2026 Sushi Systems                             */
+/* Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.    */
+/* Commercial use requires a licence from Sushi Systems.        */
+/****************************************************************/
 
 #pragma once
 
