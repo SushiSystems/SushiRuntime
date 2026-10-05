@@ -14,8 +14,8 @@ This guide takes you from an empty machine to a working first program, then
 gives you a tour of the core API. Every code sample here uses the real, current
 API and mirrors what the project's own integration tests do.
 
-> For the full command reference, see [CLI_GUIDE.md](CLI_GUIDE.md). For the
-> architecture and design, see the top-level [README](README.md).
+> For the full command reference, see [CLI_GUIDE.md](../guides/CLI_GUIDE.md). For the
+> architecture and design, see the top-level [README](../../README.md).
 
 ---
 
@@ -57,7 +57,7 @@ AdaptiveCpp (`acpp`), or Intel oneAPI DPC++ — plus CMake 3.20+, hwloc, and
 GoogleTest. Pick the toolchain with `sr toolchain`. The CLI reads your toolchain
 paths from `cli/config.local.toml`; `sr setup` generates that file for you, and
 `hub install` does the same for every checkout in a workspace.
-See the [README](README.md) for the full requirements list and the CMake
+See the [README](../../README.md) for the full requirements list and the CMake
 options if you want to skip the CLI.
 
 Verify everything works:
@@ -400,7 +400,7 @@ compiles with contraction and fast-math off and exports that setting to you
 through the `sushiruntime_deterministic_fp` target. If your own translation units
 build with `-ffast-math` or `/fp:fast`, kernels you write are outside the
 guarantee even though the runtime's scheduling is inside it. See
-[INTEGRATION.md](INTEGRATION.md) for the exact flags.
+[INTEGRATION.md](../guides/INTEGRATION.md) for the exact flags.
 
 The fluent API is enough for most programs. The rest of this guide documents the
 lower-level task-graph API it is built on, for when you need full control over
@@ -962,15 +962,15 @@ you express an in-place update, and it keeps the task correctly ordered between
 
 ## 7. Where to go next
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — what is underneath all of this: the
+- **[ARCHITECTURE.md](../architecture/ARCHITECTURE.md)** — what is underneath all of this: the
   layers, the work-stealing scheduler, the dependency tracker, the memory model,
   and the determinism contract. Read it before changing anything.
-- **[INTEGRATION.md](INTEGRATION.md)** — consuming the runtime from your own
+- **[INTEGRATION.md](../guides/INTEGRATION.md)** — consuming the runtime from your own
   project with `find_package(SushiRuntime)`, and which compiler flags you must
   match for the determinism guarantee to hold.
-- **[CLI_GUIDE.md](CLI_GUIDE.md)** — every `sr` command: build types, test
+- **[CLI_GUIDE.md](../guides/CLI_GUIDE.md)** — every `sr` command: build types, test
   suites, running binaries, Docker, and diagnostics.
-- **[README](README.md)** — requirements, the full architecture (memory
+- **[README](../../README.md)** — requirements, the full architecture (memory
   pool, work-stealing scheduler, topology mapping), CMake options, and the
   optional distributed master-worker layer.
 - **`tests/functional/integration/`** — runnable, real-world usage of every

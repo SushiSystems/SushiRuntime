@@ -201,7 +201,7 @@ n.host = [&] { return live_cell_count; };
 simulation.add_prefix_scan(counts, offsets, total, n);
 ```
 
-See `ARCHITECTURE.md` §9.1 for what the pool guarantees and §3 for the run API.
+See [`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) §9.1 for what the pool guarantees and §3 for the run API.
 
 Per-node device timing (`RunReport::node_events`) is opt-in per graph, not
 runtime-wide: call `graph.set_profiling_requested(true)` (or its

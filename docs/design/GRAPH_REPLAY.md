@@ -1,9 +1,10 @@
 # SushiRuntime: replaying a graph's device work as one submission
 
-**Status:** designed 2026-09-19; every decision in §F taken by the owner the same day. P0, P1
-and P3 are built, not measured. P2 is not started. Consumer: SushiEngine's matter device solver, whose device arm is launch-bound (§0).
+**Status:** Open — P0, P1 and P3 are built and not measured; P2 is not started.
+
+Designed 2026-09-19; every decision in §F taken by the owner the same day. Consumer: SushiEngine's matter device solver, whose device arm is launch-bound (§0).
 Evidence: the feasibility spike under sushiengine-30's scratchpad (`graph_spike/`, run 2026-09-19)
-and the engine's measurement report in `docs/design/MATTER_DEVICE_SOLVER.md` R28 and R29.
+and the engine's measurement report in SushiEngine's `docs/design/MATTER_DEVICE_SOLVER.md`, R28 and R29.
 
 ## 0. The problem, measured
 
@@ -122,7 +123,7 @@ must not read device results, which is today's rule for a host-provided count.
 ## E. Profiling, events and ordering
 
 A replayed step yields one event, not one per node, so G1's per-dispatch `NodeEventRecord`s
-(`docs/superpowers/specs/2026-09-15-g1-node-event-records-design.md`) cannot come from layer 2. A
+(`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`) cannot come from layer 2. A
 graph with profiling requested runs on layer 1, whose per-node events on an in-order queue are
 real. `RunReport` states which layer ran, so a measurement never mixes them silently.
 Determinism does not change: layers 1 and 2 submit in the compiled topological order, which is one

@@ -1731,7 +1731,7 @@ namespace SushiRuntime
                 /**
                  * @brief Stably argsorts @p keys by 8-bit digits into bucket offsets.
                  *
-                 * See docs/superpowers/specs/2026-09-16-scan-and-counting-sort-design.md
+                 * See docs/archive/superpowers/specs/2026-09-16-scan-and-counting-sort-design.md
                  * §A3 for the algorithm, the digit count and the offsets/counts derivation.
                  *
                  * @param keys     Values to sort by; must hold at least @p n.capacity elements.
@@ -3097,7 +3097,7 @@ namespace SushiRuntime
                  * A node with no device slot keeps its host-resolved range. One with a
                  * slot runs at @p capacity, each work-item past the live count returns,
                  * and a window that does not fit is recorded in @p fault for the step to
-                 * throw (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D).
+                 * throw (docs/design/GRAPH_REPLAY.md §D).
                  */
                 template <class F>
                 static void submit_late_window(sycl::handler& h,
@@ -3183,7 +3183,7 @@ namespace SushiRuntime
                  * @brief Emits the kernel that resolves a call's LateCounts for a run.
                  *
                  * A host count bakes in; a device count is read here, zeroed and faulted
-                 * past capacity (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D.2).
+                 * past capacity (docs/design/GRAPH_REPLAY.md §D.2).
                  * @param fill Device callable run once as fill(live), in @p counts' order.
                  * @param width This node's own launch width; stamped where it is added.
                  */
@@ -3242,7 +3242,7 @@ namespace SushiRuntime
                  * @brief Emits an internal node run at its capacity that reads its live width on the device.
                  *
                  * Work-items at or past *@p live_count return at once; @p live_scalar feeds @p fn
-                 * one or two words by its arity (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D.2).
+                 * one or two words by its arity (docs/design/GRAPH_REPLAY.md §D.2).
                  * @pre The caller's reads name the regions @p live_count and @p live_scalar lie in.
                  * @param width This node's own launch width; stamped where it is added.
                  */
@@ -3335,7 +3335,7 @@ namespace SushiRuntime
                  * @brief Rejects a Dynamic whose device count or base slot is not host USM.
                  *
                  * Resolves each slot's owning queue through the context's registry and
-                 * requires sycl::usm::alloc::host there (docs/ARCHITECTURE.md,
+                 * requires sycl::usm::alloc::host there (docs/architecture/ARCHITECTURE.md,
                  * "Late-bound device values"). Runs before add() mutates the graph.
                  * @throws Core::SushiException With invalid_access for a non-host slot.
                  */

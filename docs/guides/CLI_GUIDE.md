@@ -8,7 +8,7 @@ file so you don't have to retype long compiler flags.
 
 This guide explains every command in plain English. If you just want to get the
 project compiling and running for the first time, start with
-[INTRODUCTION.md](INTRODUCTION.md) instead — it walks you through setup and your
+[INTRODUCTION.md](../getting_started/INTRODUCTION.md) instead — it walks you through setup and your
 first program.
 
 ## Installing the CLI
@@ -362,4 +362,4 @@ To provision several checkouts at once, use `hub install` from SushiStack.
 
 The CLI is a convenience, not a requirement — it only runs CMake and CTest for
 you. If you'd rather drive CMake yourself, see the **Building with CMake
-directly** section of the [README](README.md).
+directly** section of the [README](../../README.md).

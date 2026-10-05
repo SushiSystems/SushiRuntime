@@ -7,7 +7,7 @@
 /****************************************************************/
 
 // G1 task 4 coverage: the per-graph profiling switch (spec
-// docs/superpowers/specs/2026-09-15-g1-node-event-records-design.md §B, plan
+// docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md §B, plan
 // task 4). Covers set_profiling_requested()'s independence across graphs,
 // the plan's recompile-once contract, and every device-dispatch branch the
 // scheduler can route to a profiling queue.

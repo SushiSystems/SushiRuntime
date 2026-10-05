@@ -26,9 +26,9 @@ FULL_SIDEBAR           = NO
 # inside the site. The link is right for GitHub, which is where the guide is read,
 # so the warning is accepted rather than fixed. Any other warning is real.
 INPUT                  = docs/api/mainpage.md \
-                         docs/INTRODUCTION.md \
-                         docs/INTEGRATION.md \
-                         docs/CLI_GUIDE.md \
+                         docs/getting_started/INTRODUCTION.md \
+                         docs/guides/INTEGRATION.md \
+                         docs/guides/CLI_GUIDE.md \
                          include/SushiRuntime/api
 FILE_PATTERNS          = *.hpp *.h *.md
 RECURSIVE              = YES

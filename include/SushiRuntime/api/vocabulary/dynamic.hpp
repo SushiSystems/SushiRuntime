@@ -26,7 +26,7 @@ namespace SushiRuntime
             /**
              * @brief Validates a buffer slot a late-bound control will read at dispatch.
              *
-             * The rule is written in docs/ARCHITECTURE.md, "Late-bound device values".
+             * The rule is written in docs/architecture/ARCHITECTURE.md, "Late-bound device values".
              *
              * @param slot  Buffer holding the value; must be Residency::Host.
              * @param index Element index within @p slot.

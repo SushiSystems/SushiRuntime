@@ -1,7 +1,10 @@
 # SushiRuntime — Engine Backbone Refactor Plan (BB)
 
-**Status:** engineering plan, authored 2026-07-30. Branch context: `feature/physics-substrate-seams`
-(12 commits ahead of `main`, pushed to origin, unmerged).
+**Status:** Open — BB-0's runtime side, BB-1a, BB-2, BB-3, BB-4 and BB-6 item 4 landed; BB-1b is unbuilt; BB-5, BB-7, BB-8 and the rest of BB-6 were not re-checked against the tree on 2026-10-05.
+
+Engineering plan, authored 2026-07-30 on the branch `feature/physics-substrate-seams`, which has
+since merged. What landed in the first wave is recorded in
+`docs/archive/slop/BACKBONE_WAVE_STATUS.md`.
 
 **Evidence base.** Four full surveys taken on 2026-07-30: (1) the runtime's public API and
 execution model, (2) the runtime's build/packaging/deployment posture, (3) every SushiRuntime
@@ -14,7 +17,7 @@ runtime refactor that makes that relationship the fastest, strongest, most opera
 shaped by what the engine *actually does and actually needs*, not by what a general compute
 runtime might want to become. It extends, and does not replace,
 [`SIMULATION_ENGINE_SUBSTRATE_PLAN.md`](SIMULATION_ENGINE_SUBSTRATE_PLAN.md) (WP-0…WP-7) and
-[`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](PHYSICS_SUBSTRATE_IMPLEMENTATION.md) (R1–R7). New work
+[`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](../archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md) (R1–R7). New work
 packages are numbered **BB-0…BB-8** to avoid colliding with the WP series.
 
 ---
@@ -153,8 +156,8 @@ later.
    `include/SushiRuntime/version.hpp` both read 0.2.0.
 2. TODO #33 (EventPolling `Task*`→`Node*` downcast) is closed — `Task::on_complete(ReadySink&)` +
    `record_completion()`, called from `include/SushiRuntime/scheduler/event_polling.hpp:426,457`.
-3. The doc truth pass ran. `TODO.md` and this file were reconciled against the tree on 2026-08-17;
-   `CODE_AND_ARCHITECTURE_REVIEW.md` now carries per-finding status.
+3. The doc truth pass ran. `TODO.md` (now `docs/archive/slop/TODO.md`) and this file were reconciled against the tree on 2026-08-17;
+   `docs/archive/slop/CODE_AND_ARCHITECTURE_REVIEW.md` now carries per-finding status.
 
 **Engine side (filed here because the backbone-head relationship is one program).**
 4. **Essentially done; the instruction as written was wrong.** The two-node reduction and
@@ -343,7 +346,7 @@ inherits the whole source tree.
    templates instantiated in the consumer's TUs, therefore **the consumer's SYCL-touching TUs
    must be compiled by the SYCL toolchain**. Not a defect to fix — it is what makes one-source
    kernels work — but it is the single most important fact an integrator needs and it appears
-   nowhere. A `docs/INTEGRATION.md` owns it, plus the two-lane pattern the engine already proves
+   nowhere. A `docs/guides/INTEGRATION.md` owns it, plus the two-lane pattern the engine already proves
    (SYCL-free subtrees like `atmosphere/` and `sushi_render` link nothing).
 4. ~~`SR_DISTRIBUTED` stops being a PUBLIC define.~~ **Resolved as "keep PUBLIC" — the premise
    was wrong.** `NodeExtensions` did fix the layout coupling this item was written about, but two
@@ -457,7 +460,7 @@ by leverage.
    buffers the runtime actually allocates, so routing through it was never viable. Deleted rather
    than demoted, since demoting hides dead code instead of removing it. `Memory::UsmRegistry` now
    owns pointer ownership, which is the part that had a real invariant. Design in
-   `docs/superpowers/specs/2026-08-18-usm-allocation-seam-design.md`.
+   `docs/archive/superpowers/specs/2026-08-18-usm-allocation-seam-design.md`.
 5. **Deterministic device sort.** The engine's contact ordering rule ("sorted by
    `(body_a, body_b, feature_id)` before solving; broadphase order must never reach the solver")
    currently runs as a host sort and will otherwise be hand-built in the graph like the
@@ -555,7 +558,7 @@ BB-6  continuous behind BB-0 (item 5 sort after adoption; item 4 decision before
 BB-7  after BB-1 + BB-2 (overlap needs both halves)
 BB-8  decision + docs now; spikes whenever a desktop lull allows
 v1.0.0 freeze: after BB-4 + BB-3 land and BB-6 items 4/6 are decided — the freeze list in
-TODO.md gains exactly those entries.
+docs/design/REMAINING_WORK.md gains exactly those entries.
 ```
 
 The dependency worth stating twice: **v1.0.0 must not be tagged before BB-3 and BB-4.** A frozen
@@ -589,7 +592,8 @@ Every package lands with the test that would fail without it, per house rule.
 
 *Companion documents: the request register lives in the engine
 (`sushiengine/docs/slop/physics_system.md` §18 — to be corrected under BB-0); the runtime-side
-histories are `PHYSICS_SUBSTRATE_REQUIREMENTS.md` / `PHYSICS_SUBSTRATE_IMPLEMENTATION.md`; the
+histories are `PHYSICS_SUBSTRATE_REQUIREMENTS.md` and
+`docs/archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md`; the
 long-horizon substrate program is `SIMULATION_ENGINE_SUBSTRATE_PLAN.md`, whose WP-4 (reduction —
 delivered), WP-5 (multi-device — unchanged, long horizon) and WP-7 (native CPU path — referenced
 by BB-5b) this plan slots around.*

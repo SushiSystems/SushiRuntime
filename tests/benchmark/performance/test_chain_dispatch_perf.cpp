@@ -6,8 +6,8 @@
 /* Commercial use requires a licence from Sushi Systems.        */
 /****************************************************************/
 
-// Baseline for the graph-replay design (docs/superpowers/specs/2026-09-19-graph-
-// replay-design.md), §0 and §G's P0. Each node in the chain depends on the one
+// Baseline for the graph-replay design (docs/design/GRAPH_REPLAY.md),
+// §0 and §G's P0. Each node in the chain depends on the one
 // before it, so the run pays the scheduler's full per-node dispatch path — deps
 // resolution, submit, poll, successor hand-off — with no fan-out to hide it
 // behind. We sweep the chain length K and report ms/node, which is the number

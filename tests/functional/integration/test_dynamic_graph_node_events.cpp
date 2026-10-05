@@ -9,7 +9,7 @@
 // G1 task 6 coverage: DynamicGraph's per-graph profiling switch and its
 // registration index, dense and ordered by ascending region key then add()
 // order at every recompose (spec
-// docs/superpowers/specs/2026-09-15-g1-node-event-records-design.md §D, §F.6;
+// docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md §D, §F.6;
 // plan wave 4 task 6, spec §E item 8).
 
 #include <cstddef>

@@ -8,7 +8,7 @@ Contributions from outside Sushi Systems are not accepted yet. SushiRuntime is
 source-available under the PolyForm Noncommercial License 1.0.0; see
 [`LICENSE`](../LICENSE) and [`COMMERCIAL.md`](../COMMERCIAL.md).
 
-> New to the codebase? Read [`ARCHITECTURE.md`](ARCHITECTURE.md)
+> New to the codebase? Read [`ARCHITECTURE.md`](architecture/ARCHITECTURE.md)
 > first — it explains the layers, the lock-free data structures, the work-stealing
 > scheduler, and the memory model that a non-trivial change will touch.
 
@@ -41,7 +41,7 @@ sr build             # Release (default)
 sr test              # fast functional suite
 ```
 
-See [`CLI_GUIDE.md`](CLI_GUIDE.md) for the full command
+See [`CLI_GUIDE.md`](guides/CLI_GUIDE.md) for the full command
 reference and how machine-specific toolchain paths are resolved
 (`cli/config.local.toml`).
 
@@ -77,7 +77,7 @@ Expectations for a mergeable change:
 1. **The functional suite passes** (`sr test --suite functional`). It runs
    in CI on every push/PR.
 2. **Concurrency changes are checked under sanitizers.** Anything touching the
-   scheduler, memory pool, EBR, dependency tracker, or refcounting must pass an
+   scheduler, the USM registry, EBR, dependency tracker, or refcounting must pass an
    ASan build (`sr build --type asan && sr test --asan`). TSan
    (`--type debug`) is strongly encouraged for lock-free changes. Use
    `sr test --repeat N` to hunt flakiness.
@@ -150,8 +150,8 @@ The codebase has a deliberate, consistent style. Match the file you're editing.
   `include("${CMAKE_CURRENT_LIST_DIR}/X.cmake")` from inside another module.
   Prefixing the filename helps a reader; only the absolute path is a fix.
 - **Every source file opens with the license block** of the `source-comments`
-  skill. `tools/licensing/write_license_block.py` in SushiSkills writes it; do
-  not edit one by hand.
+  skill. `tools/licensing/write_license_block.py` writes it; do not edit one by
+  hand.
 
 When in doubt, run [`/simplify`] mentally: prefer reuse and the smaller change.
 
@@ -227,31 +227,44 @@ existing sentence false, fixing that sentence is part of the change.
 
 Treat the following as hard requirements, not suggestions:
 
-- **Changelog entries start at v1.0.0.** The project has not yet been assigned a
-  semantic version — we are in prototype stage. Do not add entries to
-  [`CHANGELOG.md`](CHANGELOG.md) until the project cuts its v1.0.0
-  release. Once versioned, every change updates the changelog with an entry
-  under `## [Unreleased]` in the right group (`Added` / `Changed` / `Fixed` /
-  `Removed` / `Deprecated`). This will be the one file *no* user-visible change
-  may skip.
+- **Every change adds one line to the changelog.**
+  [`CHANGELOG.md`](reference/CHANGELOG.md) is the only changelog. The entry goes
+  under `## Unreleased`, newest first, in the same commit as the change:
+  `- <YYYY-MM-DD> — <scope>: <Past-tense verb> <what changed> (<where>).` It is
+  one sentence of at most 240 characters, cites at most five places in
+  backticks, and gives no reason; the reason belongs in a design document.
+- **A document goes where the tree says.** A manual page goes in
+  `getting_started/`, `architecture/`, `guides/` or `reference/`; intent with an
+  open phase goes in `design/` with a status line and a row in
+  [`design/README.md`](design/README.md); open work goes in
+  [`design/REMAINING_WORK.md`](design/REMAINING_WORK.md), the only backlog; what
+  an agent writes while working goes in its own folder under `agent/`; finished
+  material moves to `archive/` and is not edited there.
+  [`DOCUMENTATION_STYLE_GUIDE.md`](DOCUMENTATION_STYLE_GUIDE.md) says how a page
+  is written.
+- **The checkers pass before a commit that touches `docs/`.** Run
+  `python tools/documentation/check_docs_layout.py .` and
+  `python tools/documentation/check_changelog.py .`; both print nothing when the
+  tree is in shape. [`KNOWN_ISSUES.md`](reference/KNOWN_ISSUES.md) lists the
+  findings that stay open today.
 - **A new or changed feature updates the user-facing guides.** When you add,
   rename, or change the behavior of public API, you must update
-  [`INTRODUCTION.md`](INTRODUCTION.md) (the getting-started
+  [`INTRODUCTION.md`](getting_started/INTRODUCTION.md) (the getting-started
   tour and its code samples must compile against the current API) and
-  [`ARCHITECTURE.md`](ARCHITECTURE.md) (every class,
+  [`ARCHITECTURE.md`](architecture/ARCHITECTURE.md) (every class,
   constant, and algorithm it names must still exist). Update the top-level
-  [`README.md`](README.md) when the change touches what the project *is* or how a
+  [`README.md`](../README.md) when the change touches what the project *is* or how a
   first-time reader gets started.
 - **Any CLI change updates the CLI docs.** If you add, rename, or change a
   `sr` / `sushiruntime` command, flag, or its output, update
-  [`CLI_GUIDE.md`](CLI_GUIDE.md) — the full command
+  [`CLI_GUIDE.md`](guides/CLI_GUIDE.md) — the full command
   reference — *and* the build/test snippets in this file and the README that
   invoke it. Command help text (Typer `--help`) and the guide must agree.
 - **Distributed changes update the distributed guide.** A change to the
   master-worker layer, its protocol, its build switch (the CMake option
   `SR_ENABLE_DISTRIBUTED`, exposed as `sr build --distributed`), or its runtime
   knobs (deadlines, version fencing) updates
-  [`DISTRIBUTED_GUIDE.md`](DISTRIBUTED_GUIDE.md).
+  [`DISTRIBUTED_GUIDE.md`](guides/DISTRIBUTED_GUIDE.md).
 - **A new dependency updates the dependency surface.** See §7 — the entry in
   `../cli/sushistack.deps.toml`, the `CMakeLists.txt` find call, and the `Dockerfile`
   apt line must move together.
@@ -362,6 +375,7 @@ check_cmd     = ["pkg-config", "--exists", "mylib"]  # optional — exit 0 means
 | `gpu_only` | bool | `false` | `true` → entry is only relevant when GPU support is requested. |
 | `linux_apt` | string list | `[]` | apt package names. Empty list means the dep is not needed on Linux. |
 | `windows_vcpkg` | string list | `[]` | vcpkg port names. Empty list means the dep is not needed on Windows. |
+| `provides` | string | — | Capability tag. Entries that share one are interchangeable: any one of them satisfies the need. The three SYCL toolchains carry `sycl-toolchain`. |
 | `check_cmd` | string list | `[]` | Argv to run; exit 0 is treated as "already installed" and skips the package manager. Omit when there is no reliable command-line check. |
 
 **Platform-only entries.** Leave the other platform's list empty to install a
@@ -409,14 +423,14 @@ sr setup             # install it (skipped automatically if check_cmd passes)
 Use the GitHub issue templates. A good bug report includes the platform and
 toolchain, the build type, the exact command, and the smallest reproducer you can
 manage. For anything that looks like a **security** issue, do **not** open a public
-issue — follow [`SECURITY.md`](SECURITY.md).
+issue — follow [`SECURITY.md`](reference/SECURITY.md).
 
 ---
 
 ## 9. Questions
 
-Open a GitHub Discussion, join the community Discord (see [`SECURITY.md`](SECURITY.md)
+Open a GitHub Discussion, join the community Discord (see [`SECURITY.md`](reference/SECURITY.md)
 for the current invite), or email **mustafagarip@sushisystems.io**.
 
 Please be respectful in all project spaces — see
-[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+[`CODE_OF_CONDUCT.md`](reference/CODE_OF_CONDUCT.md).

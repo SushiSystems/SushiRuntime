@@ -7,7 +7,7 @@
 /****************************************************************/
 
 // The benchmark behind spec §E item 7
-// (docs/superpowers/specs/2026-09-15-g1-node-event-records-design.md), which
+// (docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md), which
 // decided F2: a second, lazily built profiling queue per device, rather than
 // always profiling and filtering afterwards.
 

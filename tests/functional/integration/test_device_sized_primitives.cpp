@@ -7,7 +7,7 @@
 /****************************************************************/
 
 /**
- * @brief Covers P3 of docs/superpowers/specs/2026-09-19-graph-replay-design.md (§D.2, §G).
+ * @brief Covers P3 of docs/design/GRAPH_REPLAY.md (§D.2, §G).
  *
  * Every step a producer kernel writes a new live count, 0 and the capacity
  * included; the scan, counting sort, reductions and a sized_from_device task

@@ -1,8 +1,10 @@
 # SushiRuntime as a Simulation/Game-Engine Substrate — Engineering Plan
 
-**Status:** research + engineering specification. No code has been changed by this
-document. Every claim below is anchored to a concrete location in the current tree
-(`file:line`) so it can be verified independently.
+**Status:** Open — WP-4 is delivered, WP-5 and WP-7 are not built; the other work packages were not re-checked against the tree on 2026-10-05.
+
+Research and engineering specification. No code was changed by this
+document. Every claim below is anchored to a location (`file:line`) in the tree as it stood
+when the claim was written; the anchors have not been refreshed since.
 
 **Goal of the host project (stated by the owner):** make SushiRuntime the *brain*
 of a large simulation engine whose task graph behaves like a game engine. The

@@ -57,7 +57,7 @@ namespace SushiRuntime
              *
              * The node's kernel reads it on the device, runs at its capacity and
              * returns past the live count, so no host read happens between nodes
-             * (docs/superpowers/specs/2026-09-19-graph-replay-design.md §D). Null on
+             * (docs/design/GRAPH_REPLAY.md §D). Null on
              * every ordinary node, in which case the atomic count above is used.
              *
              * Written once when the task is recorded — before any run — and only read
