@@ -1,6 +1,6 @@
 # aliases.py
 # SushiRuntime - https://github.com/SushiSystems/SushiRuntime
-# Copyright (c) 2026 Sushi Systems
+# Copyright (c) 2026-present Mustafa Garip & Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
 """The old spellings `sr` still answers to, each dated, in one alias table."""
