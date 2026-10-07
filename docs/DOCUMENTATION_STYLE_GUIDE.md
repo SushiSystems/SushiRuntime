@@ -28,9 +28,9 @@ to SushiRuntime.
 
 ## Doxygen input
 
-`Doxyfile` at the repository root names `docs/api/mainpage.md` and three manual pages in its
+`Doxyfile` at the repository root names `docs/reference/API_MAINPAGE.md` and three manual pages in its
 `INPUT`. A page that moves or is renamed changes `INPUT` in the same commit. Doxygen writes its
-site to `docs/api-site/html/`, which git ignores.
+site to `build/docs/api-site/html/`, inside the build tree.
 
 ## Words
 

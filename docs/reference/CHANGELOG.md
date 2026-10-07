@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-07 — docs: Moved the Doxygen main page into the manual and the generated site into the build tree (`docs/reference/API_MAINPAGE.md`, `Doxyfile`, `services/project.py`, `ci.yml`).
 - 2026-10-07 — licence: Named Mustafa Garip and Sushi Systems as the copyright holders in the licence and notice files (`LICENSE`, `NOTICE.md`).
 - 2026-10-06 — licence: Restored the three-section license box and named both holders in the copyright line of every source file (`tools/licensing/write_license_block.py`, `tools/documentation/check_source_comments.py`).
 - 2026-10-05 — execution: Added `RuntimeContext::live_usm_count`, the number of USM allocations recorded and not yet freed (`runtime_context.hpp`, `runtime_context.cpp`, `test_topology.cpp`).

@@ -91,11 +91,6 @@ The v1 limits a user must know are in
   `docs/INTEGRATION.md` and `docs/CLI_GUIDE.md`; they are now under `docs/getting_started/` and
   `docs/guides/`. Its comments cite `docs/ARCHITECTURE.md`. Until it is edited, `sr docs` builds
   the site without those pages.
-- **`docs/api/` and `docs/api-site/` are outside the tree.** `Doxyfile` reads its main page from
-  `docs/api/mainpage.md` and writes to `docs/api-site/`. Moving the main page under
-  `docs/reference/` and the output under the build tree needs `Doxyfile`, `.gitignore`, the CI
-  docs job and `cli/sushiruntime/services/project.py` changed together. `Doxyfile` itself is
-  forbidden in the root by the `repository-layout` skill.
 - **`AGENTS.md` routes builds through `sr`**, which the owner's delegation rule forbids a
   subagent to run; the two need reconciling.
 - **CMake comments cite moved documents.** `cmake/SushiRuntimeInstall.cmake` cites

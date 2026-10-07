@@ -32,7 +32,7 @@ What SushiRuntime is, its requirements and its build line are in the root
 | [Known issues](reference/KNOWN_ISSUES.md) | Defects that are recorded and not yet fixed |
 | [Security policy](reference/SECURITY.md) | How to report a vulnerability, and what is in scope |
 | [Code of conduct](reference/CODE_OF_CONDUCT.md) | The conduct expected of contributors |
-| [API main page](api/mainpage.md) | The front page of the Doxygen site that `sr docs` builds |
+| [API main page](reference/API_MAINPAGE.md) | The front page of the Doxygen site that `sr docs` builds |
 
 ## Process
 
@@ -40,7 +40,7 @@ What SushiRuntime is, its requirements and its build line are in the root
 | --- | --- |
 | [Contributing](CONTRIBUTING.md) | Setup, coding style, what a change must document, commits and dependencies |
 | [Documentation style guide](DOCUMENTATION_STYLE_GUIDE.md) | How a page here is written and where it goes |
-| [Agent instructions](CLAUDE.md) | How an agent is asked to work in this repository |
+| [Agent instructions](../CLAUDE.md) | How an agent is asked to work in this repository |
 
 ## Design
 

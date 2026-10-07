@@ -114,6 +114,7 @@ def _build_dir(root: Path, asan: bool) -> Path:
 _RUNNER = Runner(console, PROFILE.program)
 _DRIVER = CMakeDriver(console, _RUNNER)
 
+_API_SITE_DIR = Path("build") / "docs" / "api-site"
 _DOXYGEN_HINT = (
     "  - Windows: winget install DimitriVanHeesch.Doxygen"
     "  (or: choco install doxygen.install)\n"
@@ -535,5 +536,5 @@ def docs() -> int:
     cfg = load_config()
     env = load_build_env(cfg, _build_dir(root, False))
     doxyfile = root / "Doxyfile"
-    (root / "docs").mkdir(exist_ok=True)
+    (root / _API_SITE_DIR).mkdir(parents=True, exist_ok=True)
     return _DRIVER.doxygen(cfg, doxyfile, root, env, install_hint=_DOXYGEN_HINT)
