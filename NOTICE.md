@@ -1,6 +1,6 @@
 # Notices
 
-SushiRuntime is Copyright (c) 2026 Sushi Systems and licensed under the PolyForm Noncommercial
+SushiRuntime is Copyright (c) 2026-present Mustafa Garip & Sushi Systems and licensed under the PolyForm Noncommercial
 License 1.0.0; see `LICENSE`. The material below keeps its own licence.
 
 No third-party source is vendored in this repository and no file is ported from third-party
