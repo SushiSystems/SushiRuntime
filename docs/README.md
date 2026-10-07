@@ -22,6 +22,7 @@ What SushiRuntime is, its requirements and its build line are in the root
 | [CLI guide](guides/CLI_GUIDE.md) | Every `sr` command, its flags and the configuration it reads |
 | [Integration](guides/INTEGRATION.md) | Consuming an installed runtime through `find_package(SushiRuntime)` |
 | [Distributed guide](guides/DISTRIBUTED_GUIDE.md) | Building and running the optional master-worker layer, and its v1 limits |
+| [FAQ](guides/FAQ.md) | The questions a newcomer asks, each answered from this manual |
 
 ## Reference
 
