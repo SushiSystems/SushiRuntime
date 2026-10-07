@@ -235,6 +235,28 @@ the task is both a root and a leaf, ordered against nothing. That is correct for
 another task shares data with it. Whenever ordering matters, name the data with
 Reads(...)/Writes(...) and use add().
 
+### add_emitter
+
+add_emitter(emit) records work the fluent verbs do not shape: `emit` receives the backing
+TaskGraph and adds its own nodes with add_node(), add_task() or add_native(). It is for a library
+above the runtime that already records through the lower-level graph and wants that work inside a
+Graph or a Region without restating each task as an add() overload. The runtime learns nothing
+about that library; it calls `emit` and takes the nodes.
+
+`emit` is called at every build of the plan, so in a DynamicGraph it runs again each time its
+region is rebuilt and never while the region is left alone. It must therefore be repeatable, and it
+only adds nodes: compiling the graph, taking its nodes or keeping a reference to it breaks the
+build that called it.
+
+An emitter is one rule, so size() counts it once however many nodes it adds. Ordering comes from
+the regions each node declares, exactly as for nodes the fluent verbs emit; the call takes no
+Reads or Writes of its own. The nodes keep the names and registration indices they were recorded
+with, one index per node, so a profile shows each kernel. name_last() and rule_registration()
+address the last node only.
+
+Device work an emitter records must wait on the dependency events it is handed
+(`h.depends_on(deps)`); a chained plan relies on that for its order.
+
 ### add_untracked(Extent, fn)
 
 add_untracked(Extent, fn) is the 2-D and 3-D counterpart of add_untracked(std::size_t, fn): the
@@ -790,8 +812,8 @@ owns it.
 ### Inherited surface
 
 Region inherits the whole fluent task-building surface unchanged from Graph. Every add() overload
-(per-element, N-D, State, capture, tracked, dynamic, offload), the untracked and host forms, the
-reductions, the prefix scan, the counting sort and size() come through verbatim, so a region records
+(per-element, N-D, State, capture, tracked, dynamic, offload), the untracked, emitter and host forms,
+the reductions, the prefix scan, the counting sort and size() come through verbatim, so a region records
 work exactly as a static graph does. Only the run() family is hidden, because a region is stepped by
 the DynamicGraph that owns it.
 

@@ -1364,6 +1364,40 @@ The buffers are oversized as in `LateBoundSegmentedReduceWidthsMatchResolverAndC
 `segment_offsets` and `output` each carry a different amount of padding past `segment_count`, which
 pins the stamp to the launch range and not to either size.
 
+## test_region_emitter.cpp
+
+The file covers `add_emitter()`, the recording form that hands the caller the backing TaskGraph.
+The emitters record device kernels, the way a library above the runtime does, and each kernel waits
+on the dependency events it is handed.
+
+### `record_device_task`
+
+`record_device_task` records one `add_task` node whose work is a `parallel_for` on the queue it is
+given. The tasks are device kernels, not host tasks, because a host access to a
+`Residency::Shared` buffer while a kernel runs on the same GPU faults on Windows with CUDA; see
+`docs/reference/KNOWN_ISSUES.md`.
+
+### `EmittedNodesOrderAgainstANeighbourRegion`
+
+One emitter records two kernels on a buffer, a fill and a tripling, and a higher-keyed region reads
+that buffer through an ordinary `add()`. The consumer sees the tripled values, so the two emitted
+nodes ran in their recorded order and the boundary edge ordered the consumer behind them.
+
+### `AnEmitterIsOneRule`
+
+An emitter that records two nodes reports a region size of one and a graph size of one. `size()`
+counts rules, as it does for a reduction that lowers to several nodes.
+
+### `AnEmitterReplaysOnlyWhenItsRegionIsRebuilt`
+
+The emitter counts its own calls. Three replayed steps call it once, rebuilding the neighbouring
+region leaves the count at one, and dropping and recording its own region again raises it to two.
+
+### `AStaticGraphTakesAnEmitter`
+
+A static `Graph` records an emitter beside an ordinary `add()` that reads the emitter's buffer.
+Four steps advance both, so the form is not specific to regions and survives a chained replay.
+
 ## test_rule_registration.cpp
 
 `Graph::rule_registration` is the only way a caller can read the node events of a `RunReport`. The
