@@ -1,6 +1,6 @@
 name = "sushiruntime"
 title = "SushiRuntime"
-summary = "The task runtime the SushiStack applications schedule their work on."
+summary = "SushiRuntime is a C++17 runtime library for task-based parallel computing on heterogeneous hardware."
 sections = ["getting_started", "guides", "architecture", "reference"]
 exclude = [
     "reference/API_MAINPAGE.md",
