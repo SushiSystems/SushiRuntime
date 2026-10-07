@@ -250,6 +250,18 @@ device-resident buffers that must share one context, such as a State's two field
 Kernels on `device_index` read and write the allocation, and the host reads it at any time. The
 owner is recorded as for malloc_shared_on.
 
+### aligned_malloc_shared_on
+
+aligned_malloc_shared_on() is malloc_shared_on() with a stated alignment: the allocation starts on a
+multiple of `alignment` bytes, the owner is recorded the same way, and free_usm() releases it. It is
+for buffers a consumer reads in vector-width or cache-line steps, such as tensor storage.
+
+### aligned_malloc_device_on
+
+aligned_malloc_device_on() is the device-resident counterpart, as malloc_device_on() is of
+malloc_shared_on(). Whether a backend honours an alignment above its own default for device USM is
+the backend's to answer; the call returns nullptr when it cannot.
+
 ### containing_usm_base
 
 containing_usm_base() lets a caller holding an interior pointer name the allocation it belongs to,
