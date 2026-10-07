@@ -245,6 +245,26 @@ namespace SushiRuntime
                                              std::size_t device_index);
 
                 /**
+                 * @brief Allocates shared USM aligned to @p alignment on one device queue.
+                 * @param alignment    Byte alignment of the returned address; a power of two.
+                 * @param bytes        Allocation size in bytes.
+                 * @param device_index Target device queue index, in [0, device_count()).
+                 * @return Shared USM pointer, or nullptr on failure.
+                 */
+                void* aligned_malloc_shared_on(std::size_t alignment, std::size_t bytes,
+                                               std::size_t device_index);
+
+                /**
+                 * @brief Allocates device-only USM aligned to @p alignment on one device queue.
+                 * @param alignment    Byte alignment of the returned address; a power of two.
+                 * @param bytes        Allocation size in bytes.
+                 * @param device_index Target device queue index, in [0, device_count()).
+                 * @return Device USM pointer, or nullptr on failure.
+                 */
+                void* aligned_malloc_device_on(std::size_t alignment, std::size_t bytes,
+                                               std::size_t device_index);
+
+                /**
                  * @brief Records an externally-allocated address as owned by one device queue.
                  * @param address      The address to record; not allocated by this call.
                  * @param device_index Target device queue that owns @p address.

@@ -26,6 +26,10 @@
  * @author Mustafa Garip
  */
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
 #include <vector>
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/sycl_compat.hpp>
@@ -36,6 +40,22 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Topology;
+
+namespace
+{
+    /** @brief Names one aligned allocation entry point of RuntimeContext. */
+    using AlignedAllocation = void* (RuntimeContext::*)(std::size_t, std::size_t, std::size_t);
+
+    /** @brief Holds the number of aligned allocation entry points of RuntimeContext. */
+    constexpr std::size_t K_ALIGNED_ALLOCATION_COUNT = 3;
+
+    /** @brief Lists the aligned allocation entry points: shared, device, host. */
+    const std::array<AlignedAllocation, K_ALIGNED_ALLOCATION_COUNT> K_ALIGNED_ALLOCATIONS = {
+        &RuntimeContext::aligned_malloc_shared_on,
+        &RuntimeContext::aligned_malloc_device_on,
+        &RuntimeContext::aligned_malloc_host_on,
+    };
+} // namespace
 
 /**
  * @brief Verifies that hardware discovery finds at least one compute device with sequential logical
@@ -157,4 +177,54 @@ TEST(Unit_TopologyTest, LiveUsmCountFollowsAllocateFreeAndForget)
     EXPECT_EQ(ctx.live_usm_count(), baseline + 1);
     ctx.forget_usm(&external);
     EXPECT_EQ(ctx.live_usm_count(), baseline);
+}
+
+/** @brief Tests that every aligned allocation returns an address on the requested alignment. */
+TEST(Unit_TopologyTest, AlignedAllocationsStartOnTheAlignment)
+{
+    RuntimeContext ctx;
+
+    for (const AlignedAllocation allocate : K_ALIGNED_ALLOCATIONS)
+    {
+        for (const std::size_t alignment : {std::size_t{64}, std::size_t{128}})
+        {
+            for (const std::size_t bytes : {std::size_t{1}, std::size_t{100}, std::size_t{4096}})
+            {
+                void* ptr = (ctx.*allocate)(alignment, bytes, 0);
+                ASSERT_NE(ptr, nullptr) << bytes << " bytes at alignment " << alignment;
+                EXPECT_EQ(reinterpret_cast<std::uintptr_t>(ptr) % alignment, 0u)
+                    << bytes << " bytes at alignment " << alignment;
+                ctx.free_usm(ptr);
+            }
+        }
+    }
+}
+
+/** @brief Tests that an aligned allocation is recorded once and dropped by free_usm. */
+TEST(Unit_TopologyTest, AlignedAllocationsAreRecordedAndFreed)
+{
+    RuntimeContext ctx;
+    const std::size_t baseline = ctx.live_usm_count();
+
+    std::array<void*, K_ALIGNED_ALLOCATION_COUNT> pointers = {};
+    for (std::size_t i = 0; i < K_ALIGNED_ALLOCATIONS.size(); ++i)
+    {
+        pointers[i] = (ctx.*K_ALIGNED_ALLOCATIONS[i])(128, 256, 0);
+        EXPECT_NE(pointers[i], nullptr);
+        EXPECT_EQ(ctx.live_usm_count(), baseline + i + 1);
+    }
+
+    for (void* ptr : pointers)
+        ctx.free_usm(ptr);
+    EXPECT_EQ(ctx.live_usm_count(), baseline);
+}
+
+/** @brief Tests that an aligned allocation on a device index past the last one throws. */
+TEST(Unit_TopologyTest, AnAlignedAllocationOnAMissingDeviceThrows)
+{
+    RuntimeContext ctx;
+    const std::size_t missing_device = ctx.device_count();
+
+    EXPECT_THROW((void)ctx.aligned_malloc_shared_on(128, 64, missing_device), std::runtime_error);
+    EXPECT_THROW((void)ctx.aligned_malloc_device_on(128, 64, missing_device), std::runtime_error);
 }
