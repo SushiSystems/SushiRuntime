@@ -16,6 +16,7 @@ from typing import Callable, NamedTuple, Optional
 import typer
 from sushicore import entry
 from sushicore.diag_commands import register_diagnostic_commands
+from sushicore.docs_bundle import ApiSource, register_docs_commands
 from sushicore.provision.commands import ModuleProvision, register_provision_commands
 from sushicore.root_options import register_root_options
 from sushicore.typer_help import help_group
@@ -35,6 +36,7 @@ K_TOOLCHAIN = "Toolchain"
 K_PROJECT = "Project"
 K_DIAGNOSTICS = "Diagnostics"
 K_CONTAINER = "Container"
+K_API_XML = "build/docs/api-site/xml"
 
 _help_group = help_group(console.current)
 
@@ -213,14 +215,25 @@ def clean():
     raise typer.Exit(project_svc.clean())
 
 
-@app.command(
-    "docs",
-    rich_help_panel=K_PROJECT,
-    epilog="sr docs",
-)
-def docs():
-    """Build the API documentation with Doxygen."""
+def _api_source() -> ApiSource:
+    """Returns how `sr` builds the API reference and where Doxygen leaves its XML."""
+    return ApiSource(build=project_svc.docs, xml_dir=find_project_root() / K_API_XML)
+
+
+def _docs_alias() -> None:
+    """Builds the API reference; the callback behind the old spelling `sr doxygen`."""
     raise typer.Exit(project_svc.docs())
+
+
+register_docs_commands(
+    app,
+    program=PROFILE.program,
+    panel=K_PROJECT,
+    project_root=find_project_root,
+    api=_api_source,
+    report=lambda line: console.success(line),
+    group_cls=_help_group,
+)
 
 
 @container_app.command(
@@ -269,7 +282,7 @@ class _AliasRow(NamedTuple):
 
 
 _ALIAS_ROWS: tuple[_AliasRow, ...] = (
-    _AliasRow(app, "doxygen", docs, "sr doxygen"),
+    _AliasRow(app, "doxygen", _docs_alias, "sr doxygen"),
     _AliasRow(docker_alias_app, "build", container_build, "sr docker build"),
     _AliasRow(docker_alias_app, "run", container_run, "sr docker run"),
 )

@@ -246,6 +246,7 @@ exit code 2 before the program starts. Add `--asan` to run binaries from the
 ```bash
 sr clean       # remove the build/ and build-asan/ trees
 sr docs        # build the fluent API reference into build/docs/api-site/html
+sr docs bundle --release 1.0.0   # pack the manual and the reference for docs.sushisystems.io
 ```
 
 `sr docs` runs Doxygen against the repo-root `Doxyfile` (scoped to the
@@ -253,7 +254,16 @@ public `include/SushiRuntime/api` surface). Doxygen is an external tool, not
 vendored: install it (`winget install DimitriVanHeesch.Doxygen` on Windows,
 `apt-get install doxygen graphviz` on Linux, `brew install doxygen graphviz` on
 macOS) or point `doxygen_exe` in `cli/config.local.toml` at an existing binary.
-The command prints the right install line if it cannot find one.
+The command prints the right install line if it cannot find one. It writes the HTML site and,
+beside it in `build/docs/api-site/xml`, the XML the bundle carries.
+
+`sr docs bundle --release X.Y.Z` runs the same Doxygen build, then packs the pages
+`docs/publish.toml` lists, the files they link to and that XML into
+`build/docs/bundle/docs-bundle-X.Y.Z.tar.gz`, with the archive's SHA-256 in a `.sha256` file
+beside it. `--out` names another folder. The release is three integers, without the `v` of the
+tag. The command stops with the page and the line when a published page links to a file that
+does not exist. The archive's layout and the keys of `docs/publish.toml` are in
+`docs/reference/DOCS_BUNDLE.md` of the SushiCore repository.
 
 ## `sr package` — produce a redistributable package
 

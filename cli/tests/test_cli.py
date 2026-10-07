@@ -19,9 +19,21 @@ from sushiruntime.cli import app
 from sushiruntime.services import diag, project
 
 K_VISIBLE = [
-    "build", "clean", "config", "container build", "container run", "docs", "doctor",
-    "env", "link", "package", "run", "setup", "test", "toolchain", "unlink",
+    "build", "clean", "config", "container build", "container run", "docs", "docs bundle",
+    "doctor", "env", "link", "package", "run", "setup", "test", "toolchain", "unlink",
 ]
+
+
+def test_docs_runs_the_api_build_and_bundle_is_its_subcommand(monkeypatch, tmp_path):
+    """`sr docs` still builds the reference, and `sr docs bundle` asks for a release."""
+    monkeypatch.setattr(project, "docs", lambda: 6)
+    monkeypatch.setattr(cli, "find_project_root", lambda: tmp_path)
+    runner = CliRunner()
+    assert runner.invoke(app, ["docs"]).exit_code == 6
+    assert runner.invoke(app, ["doxygen"]).exit_code == 6
+    missing = runner.invoke(app, ["docs", "bundle"])
+    assert missing.exit_code == 2
+    assert "--release" in missing.output
 
 
 def _described() -> dict:
