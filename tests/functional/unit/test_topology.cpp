@@ -133,3 +133,28 @@ TEST(Unit_TopologyTest, InvalidNUMAFallsBackToAUsableNode)
     EXPECT_EQ(ctx.context_index_for_ptr(ptr), -1)
         << "Freeing left the pointer's owner recorded.";
 }
+
+/** @brief Tests that the live count follows each allocation, free and forgotten record. */
+TEST(Unit_TopologyTest, LiveUsmCountFollowsAllocateFreeAndForget)
+{
+    RuntimeContext ctx;
+    const std::size_t baseline = ctx.live_usm_count();
+
+    void* shared = ctx.malloc_shared(128);
+    void* device = ctx.malloc_device(128);
+    ASSERT_NE(shared, nullptr);
+    ASSERT_NE(device, nullptr);
+    EXPECT_EQ(ctx.live_usm_count(), baseline + 2);
+
+    ctx.free_usm(shared);
+    EXPECT_EQ(ctx.live_usm_count(), baseline + 1);
+
+    ctx.free_usm(device);
+    EXPECT_EQ(ctx.live_usm_count(), baseline);
+
+    int external = 0;
+    ctx.adopt_usm(&external, 0, sizeof(external));
+    EXPECT_EQ(ctx.live_usm_count(), baseline + 1);
+    ctx.forget_usm(&external);
+    EXPECT_EQ(ctx.live_usm_count(), baseline);
+}
