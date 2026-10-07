@@ -1,0 +1,11 @@
+name = "sushiruntime"
+title = "SushiRuntime"
+summary = "The task runtime the SushiStack applications schedule their work on."
+sections = ["getting_started", "guides", "architecture", "reference"]
+exclude = [
+    "reference/API_MAINPAGE.md",
+    "reference/CODE_OF_CONDUCT.md",
+    "reference/SECURITY.md",
+]
+api = true
+source_url = "https://github.com/SushiSystems/SushiRuntime"
