@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-07 — execution: Added `RuntimeContext::aligned_malloc_shared_on` and `aligned_malloc_device_on`, the aligned siblings of the host entry point (`runtime_context.hpp`, `runtime_context.cpp`, `test_topology.cpp`).
 - 2026-10-07 — docs: Took the publish list's summary from the README, passed secrets to the called CI and pinned `docs bundle` with tests (`docs/publish.toml`, `release.yml`, `cli/tests/test_cli.py`).
 - 2026-10-07 — ci: Added the release job that builds the documentation bundle after CI and attaches it to the tag's release (`.github/workflows/release.yml`, `ci.yml`).
 - 2026-10-07 — docs: Added the frequently asked questions page (`docs/guides/FAQ.md`).

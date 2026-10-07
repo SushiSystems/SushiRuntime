@@ -647,6 +647,40 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Allocates shared USM aligned to @p alignment on a specific device queue.
+         *
+         * @param alignment    Byte alignment of the returned address.
+         * @param bytes        The size in bytes to allocate.
+         * @param device_index The index of the device to allocate on.
+         * @return void* Shared USM pointer, or nullptr on failure.
+         */
+        void* RuntimeContext::aligned_malloc_shared_on(size_t alignment, size_t bytes, size_t device_index)
+        {
+            sycl::queue& q = get_queue(device_index); // throws if out of bounds
+            void* p = sycl::aligned_alloc_shared(alignment, bytes, q);
+            if (p)
+                impl_->usm_registry.record(p, device_index, bytes);
+            return p;
+        }
+
+        /**
+         * @brief Allocates device-only USM aligned to @p alignment on a specific device queue.
+         *
+         * @param alignment    Byte alignment of the returned address.
+         * @param bytes        The size in bytes to allocate.
+         * @param device_index The index of the device to allocate on.
+         * @return void* Device USM pointer, or nullptr on failure.
+         */
+        void* RuntimeContext::aligned_malloc_device_on(size_t alignment, size_t bytes, size_t device_index)
+        {
+            sycl::queue& q = get_queue(device_index); // throws if out of bounds
+            void* p = sycl::aligned_alloc_device(alignment, bytes, q);
+            if (p)
+                impl_->usm_registry.record(p, device_index, bytes);
+            return p;
+        }
+
+        /**
          * @brief Records an externally-allocated address as owned by a device queue.
          *
          * @param address      The address to record; not allocated by this call.
