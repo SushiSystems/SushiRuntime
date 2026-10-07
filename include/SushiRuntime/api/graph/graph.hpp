@@ -78,6 +78,10 @@ namespace SushiRuntime
         /** @brief Names the lower-level graph builder this layer wraps. */
         using BackingGraph = ::SushiRuntime::Graph::TaskGraph;
 
+        /** @brief A graph emitter that records nodes on a backing graph: void(BackingGraph&). */
+        template <class F>
+        inline constexpr bool is_graph_emitter_v = std::is_invocable_v<F, BackingGraph&>;
+
         // Forward-declared so that Graph can befriend the region type and its composer.
         class Region;
         class DynamicGraph;
@@ -312,6 +316,21 @@ namespace SushiRuntime
                     {
                         bg.add_node(fn);
                     });
+                    ++task_count_;
+                    dirty_ = true;
+                    return *this;
+                }
+
+                /**
+                 * @brief Adds an emitter that records its own nodes on the backing graph.
+                 * @param emit Callable invoked as emit(BackingGraph&) at every build of the plan.
+                 * @pre emit only adds nodes: it does not compile, drain or keep the graph.
+                 * @see include/SushiRuntime/api/graph/README.md
+                 */
+                template <class F, std::enable_if_t<is_graph_emitter_v<F>, int> = 0>
+                Graph& add_emitter(F&& emit)
+                {
+                    specs_.push_back(NodeSpec(std::forward<F>(emit)));
                     ++task_count_;
                     dirty_ = true;
                     return *this;

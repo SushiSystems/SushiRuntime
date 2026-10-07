@@ -155,6 +155,7 @@ add_executable(sr_functional_tests
     functional/integration/test_cross_context_guard.cpp
     functional/integration/test_dynamic_graph.cpp
     functional/integration/test_dynamic_graph_node_events.cpp
+    functional/integration/test_region_emitter.cpp
 )
 # Distributed layer tests only exist when the layer is built. They are
 # hardware-free (protocol / in-process transport / registries), so they stay in

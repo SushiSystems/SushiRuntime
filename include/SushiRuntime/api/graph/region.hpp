@@ -45,6 +45,7 @@ namespace SushiRuntime
                 // Only Graph's task-building surface is re-exposed; the run() family stays hidden.
                 using Graph::add;
                 using Graph::add_untracked;
+                using Graph::add_emitter;
                 using Graph::add_host;
                 using Graph::add_reduce;
                 using Graph::add_segmented_reduce;
