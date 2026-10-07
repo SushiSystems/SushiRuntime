@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 2026-10-07 — docs: Took the publish list's summary from the README, passed secrets to the called CI and pinned `docs bundle` with tests (`docs/publish.toml`, `release.yml`, `cli/tests/test_cli.py`).
+- 2026-10-07 — ci: Added the release job that builds the documentation bundle after CI and attaches it to the tag's release (`.github/workflows/release.yml`, `ci.yml`).
+- 2026-10-07 — docs: Added the frequently asked questions page (`docs/guides/FAQ.md`).
+- 2026-10-07 — cli: Added `sr docs bundle` and made `docs` a command group registered from SushiCore (`cli/sushiruntime/cli.py`, `register_docs_commands`).
+- 2026-10-07 — docs: Added the publish list and turned on Doxygen's XML output for the documentation bundle (`docs/publish.toml`, `Doxyfile`).
 - 2026-10-07 — graph: Added `add_emitter`, a recording form that hands the caller the backing graph, to Graph and Region (`graph.hpp`, `region.hpp`, `test_region_emitter.cpp`).
 - 2026-10-07 — docs: Moved the Doxygen main page into the manual and the generated site into the build tree (`docs/reference/API_MAINPAGE.md`, `Doxyfile`, `services/project.py`, `ci.yml`).
 - 2026-10-07 — licence: Named Mustafa Garip and Sushi Systems as the copyright holders in the licence and notice files (`LICENSE`, `NOTICE.md`).

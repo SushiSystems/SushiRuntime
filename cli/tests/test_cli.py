@@ -8,7 +8,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sushicore.root_options import version_line
@@ -22,6 +25,19 @@ K_VISIBLE = [
     "build", "clean", "config", "container build", "container run", "docs", "docs bundle",
     "doctor", "env", "link", "package", "run", "setup", "test", "toolchain", "unlink",
 ]
+K_GIT = (
+    "git", "-c", "user.name=tests", "-c", "user.email=tests@example.invalid",
+    "-c", "commit.gpgsign=false",
+)
+K_PUBLISH_LIST = (
+    'name = "sample"\n'
+    'title = "Sample"\n'
+    'summary = "A sample repository."\n'
+    'sections = ["guides"]\n'
+    'api = false\n'
+)
+K_ARCHIVE = "docs-bundle-1.2.3.tar.gz"
+K_DOXYFILE = Path(__file__).resolve().parents[2] / "Doxyfile"
 
 
 def test_docs_runs_the_api_build_and_bundle_is_its_subcommand(monkeypatch, tmp_path):
@@ -119,3 +135,49 @@ def test_run_rejects_an_unknown_role(monkeypatch):
     monkeypatch.setattr(project, "run", lambda **options: started.append(options) or 0)
     assert CliRunner().invoke(app, ["run", "demo", "--distributed", "wroker"]).exit_code == 2
     assert started == []
+
+
+def _published_checkout(root: Path) -> None:
+    """Writes the CLI's root marker, a one-page docs/ tree and a git commit that holds them."""
+    guides = root / "docs" / "guides"
+    guides.mkdir(parents=True)
+    (root / cli.PROFILE.root_marker).write_text("", encoding="utf-8")
+    (root / "docs" / "publish.toml").write_text(K_PUBLISH_LIST, encoding="utf-8")
+    (root / "docs" / "README.md").write_text(
+        "# Sample\n\n- [Using](guides/USING.md)\n", encoding="utf-8")
+    (guides / "USING.md").write_text("# Using\n\nRun it.\n", encoding="utf-8")
+    for arguments in (("init", "--quiet"), ("add", "--all"),
+                      ("commit", "--quiet", "--message", "docs")):
+        subprocess.run([*K_GIT, *arguments], cwd=root, check=True, capture_output=True)
+
+
+def _doxyfile_value(key: str, default: str) -> str:
+    """Returns the value the repository's Doxyfile gives *key*, or *default* when it gives none."""
+    for line in K_DOXYFILE.read_text(encoding="utf-8").splitlines():
+        name, separator, value = line.partition("=")
+        if separator and name.strip() == key:
+            return value.strip().strip('"')
+    return default
+
+
+def test_docs_bundle_writes_the_archive_of_the_checkout_it_runs_in(tmp_path, monkeypatch):
+    """Writes the archive and its digest file at the checkout's root and reports both lines."""
+    _published_checkout(tmp_path)
+    monkeypatch.chdir(tmp_path / "docs" / "guides")
+    said: list[str] = []
+    monkeypatch.setattr(cli, "console", SimpleNamespace(success=said.append))
+    result = CliRunner().invoke(cli.app, ["docs", "bundle", "--release", "1.2.3"])
+    assert result.exit_code == 0, result.output
+    bundle = tmp_path / "build" / "docs" / "bundle"
+    assert (bundle / K_ARCHIVE).is_file()
+    assert (bundle / (K_ARCHIVE + ".sha256")).is_file()
+    assert len(said) == 2, said
+    assert said[0].endswith(f"{K_ARCHIVE} (1 pages)")
+    assert said[1].startswith("sha256 ")
+
+
+def test_the_api_source_reads_the_xml_doxygen_writes_under_the_site_folder(monkeypatch, tmp_path):
+    """Names `<OUTPUT_DIRECTORY>/<XML_OUTPUT>` of the Doxyfile, below the repository root."""
+    monkeypatch.setattr(cli, "find_project_root", lambda: tmp_path)
+    written = Path(_doxyfile_value("OUTPUT_DIRECTORY", "")) / _doxyfile_value("XML_OUTPUT", "xml")
+    assert cli._api_source().xml_dir == tmp_path / written
