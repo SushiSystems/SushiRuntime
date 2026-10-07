@@ -33,7 +33,6 @@ Defects that are recorded and not yet fixed. The work each one needs is in
 
 | Issue | Where |
 | --- | --- |
-| `check_docs_layout.py` reports `docs/api` and `docs/api-site` as outside the tree and `mainpage.md` as misnamed | `docs/api/`, `docs/api-site/` |
 | `check_docs_layout.py` reports five links in the estate audit report that quote a link from the old README | `docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md` |
 | Three CMake comments and one issue template cite documents by their paths before 2026-10-05 | `cmake/SushiRuntimeInstall.cmake`, `cmake/SushiRuntimeConfig.cmake.in`, `tests/package/CMakeLists.txt`, `.github/ISSUE_TEMPLATE/bug_report.yml` |
 | The changelog has no entry for the dispatch-width fields added on 2026-09-21 or for the `sushicore` lower bound of 0.7.0 | `docs/reference/CHANGELOG.md` |

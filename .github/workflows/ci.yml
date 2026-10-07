@@ -109,11 +109,12 @@ jobs:
         shell: bash
         run: |
           set -e
+          mkdir -p build/docs/api-site
           doxygen Doxyfile
           # Surface any undocumented public symbol or missing @param. Reported,
           # not yet fatal: once the log is clean across the public api/ surface,
           # flip this to `exit 1` so the reference can never regress.
-          log=docs/api-site/doxygen-warnings.log
+          log=build/docs/api-site/doxygen-warnings.log
           if [ -s "$log" ]; then
             echo "::warning::Doxygen reported documentation gaps in the public API:"
             cat "$log"
@@ -123,7 +124,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: api-site
-          path: docs/api-site/html
+          path: build/docs/api-site/html
           retention-days: 3
 
   benchmark:
@@ -166,6 +167,8 @@ jobs:
           python-version: "3.11"
       - name: python tools/documentation/check_source_comments.py .
         run: python tools/documentation/check_source_comments.py .
+      - name: python tools/documentation/check_docs_layout.py .
+        run: python tools/documentation/check_docs_layout.py .
       - name: python tools/documentation/check_changelog.py .
         run: python tools/documentation/check_changelog.py .
       - name: python tools/layering/check_layering.py .

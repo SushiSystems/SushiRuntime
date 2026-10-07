@@ -9,7 +9,7 @@ PROJECT_NAME           = "SushiRuntime"
 PROJECT_BRIEF          = "Orchestration runtime — fluent C++ API reference"
 PROJECT_NUMBER         = "v1 (unreleased)"
 
-OUTPUT_DIRECTORY       = docs/api-site
+OUTPUT_DIRECTORY       = build/docs/api-site
 HTML_OUTPUT            = html
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
@@ -25,14 +25,14 @@ FULL_SIDEBAR           = NO
 # expected warning — INTRODUCTION.md links to it, and that link cannot resolve
 # inside the site. The link is right for GitHub, which is where the guide is read,
 # so the warning is accepted rather than fixed. Any other warning is real.
-INPUT                  = docs/api/mainpage.md \
+INPUT                  = docs/reference/API_MAINPAGE.md \
                          docs/getting_started/INTRODUCTION.md \
                          docs/guides/INTEGRATION.md \
                          docs/guides/CLI_GUIDE.md \
                          include/SushiRuntime/api
 FILE_PATTERNS          = *.hpp *.h *.md
 RECURSIVE              = YES
-USE_MDFILE_AS_MAINPAGE = docs/api/mainpage.md
+USE_MDFILE_AS_MAINPAGE = docs/reference/API_MAINPAGE.md
 
 # Keep internal plumbing out of the scripting reference.
 EXCLUDE_PATTERNS       = */detail/*
@@ -48,7 +48,7 @@ HIDE_UNDOC_CLASSES     = NO
 WARN_IF_UNDOCUMENTED   = YES
 WARN_NO_PARAMDOC       = YES
 WARN_AS_ERROR          = NO
-WARN_LOGFILE           = docs/api-site/doxygen-warnings.log
+WARN_LOGFILE           = build/docs/api-site/doxygen-warnings.log
 
 JAVADOC_AUTOBRIEF      = YES
 MARKDOWN_SUPPORT       = YES

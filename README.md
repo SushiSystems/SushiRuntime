@@ -183,7 +183,7 @@ The `oneapi` toolchain is opt-in because `icpx` is large: build with `--oneapi`,
 sr config         # print resolved config with per-field source annotation
 sr env            # print the environment cmake/ctest/run subprocesses see
 sr env --asan     # same for the build-asan/ tree
-sr docs           # build the fluent API reference site into docs/api-site/html
+sr docs           # build the fluent API reference site into build/docs/api-site/html
 sr package        # install the built tree to a prefix (default build/dist) and
                   # archive it with CPack; --no-archive installs only
 sr --version      # print the CLI's distribution name and version

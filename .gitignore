@@ -10,8 +10,7 @@ out/
 # portable cmake/ninja, vcpkg). One self-contained, deletable folder.
 dependencies/
 docs/html
-docs/api-site/html/
-docs/api-site/doxygen-warnings.log
+docs/api-site/
 venv/
 
 # IDEs

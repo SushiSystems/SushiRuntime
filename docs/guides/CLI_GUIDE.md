@@ -245,7 +245,7 @@ exit code 2 before the program starts. Add `--asan` to run binaries from the
 
 ```bash
 sr clean       # remove the build/ and build-asan/ trees
-sr docs        # build the fluent API reference into docs/api-site/html
+sr docs        # build the fluent API reference into build/docs/api-site/html
 ```
 
 `sr docs` runs Doxygen against the repo-root `Doxyfile` (scoped to the
