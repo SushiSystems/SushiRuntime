@@ -54,3 +54,28 @@ This example has two sockets and a remote hop that costs 21:
 MatrixDistanceModel model{{{10, 21},
                            {21, 10}}};
 ```
+
+## topology_view.hpp
+
+### TopologyView
+
+A TopologyView holds two things: the core-to-NUMA map, copied from the provider in the constructor,
+and a shared pointer to the distance model. It does not keep the provider, so the map is the one the
+provider reported at construction and later changes in the provider do not reach it. The constructor
+throws `std::invalid_argument` for a null distance model.
+
+RuntimeContext builds the view from the provider and the distance model it was given, or from the
+hwloc defaults. The scheduler reads it once, when it builds the steal victim order of each worker:
+`core_to_numa()` gives the node of the core a worker is pinned to, and `numa_distance()` sorts the
+other workers by distance from that node.
+
+`numa_distance()` forwards both ids to the model without checking them, so an id the model does not
+know gets the model's own answer. MatrixDistanceModel and HwlocDistanceModel both answer 10 when the
+two ids are equal and 21 otherwise.
+
+The view has no mutating member. Any thread may read it without a lock, provided the distance model
+is itself safe to read concurrently; both models in this module are, because they only read state
+set in their constructors.
+
+The header forward-declares ITopologyProvider and INumaDistanceModel. A reader of the view therefore
+does not include `i_topology_provider.hpp`, and through it the device discovery types.

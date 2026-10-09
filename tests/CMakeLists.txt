@@ -101,6 +101,7 @@ add_executable(sr_functional_tests
     functional/unit/test_usm_allocator.cpp
     functional/unit/test_device_queue_set.cpp
     functional/unit/test_transfer_counters.cpp
+    functional/unit/test_topology_view.cpp
     functional/unit/test_allocation.cpp
     functional/unit/test_interop_vocabulary.cpp
     functional/unit/test_affinity.cpp
