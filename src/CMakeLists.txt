@@ -117,7 +117,6 @@ endif()
 # --- Apply SYCL to specific source files ---
 # Only files that use SYCL need special compilation flags
 set(SR_SYCL_SOURCES
-    memory/usm_allocator.cpp
     graph/task_graph.cpp
     execution/runtime_context.cpp
     interop/interop.cpp
