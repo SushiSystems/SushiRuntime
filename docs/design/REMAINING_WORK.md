@@ -26,7 +26,7 @@ reasoning in `docs/archive/slop/TODO.md`.
   machine has one NUMA node.
 - **A `Buffer` or `State` moved after `Graph::add` dangles silently.** The graph records the
   handle by address and the liveness token travels with the value, so the guard does not see the
-  move (`include/SushiRuntime/api/data/buffer.hpp`, the `@warning` on the move constructor).
+  move (`modules/surface/api/include/SushiRuntime/api/data/buffer.hpp`, the `@warning` on the move constructor).
   Finding H4 of `docs/archive/slop/CODE_AND_ARCHITECTURE_REVIEW.md`: documented, not detected.
 
 ## Design phases that are open
@@ -61,7 +61,7 @@ reasoning in `docs/archive/slop/TODO.md`.
 - **C++ standard migration.** The project targets C++17. When the SYCL toolchain baseline allows
   it, concepts, `std::span`, `std::barrier`, `std::format` and `std::source_location` return at
   C++20, and `std::println` at C++23. The shims standing in today are
-  `include/SushiRuntime/core/bit.hpp` and `core/span.hpp`. `Core::Result<T, E>` is permanent by
+  `modules/foundation/core/include/SushiRuntime/core/bit.hpp` and `core/span.hpp`. `Core::Result<T, E>` is permanent by
   decision BB-4.5 and is not a migration target.
 
 ## Distributed layer
@@ -72,19 +72,19 @@ The v1 limits a user must know are in
 - **Reconnect.** A worker that drops mid-run cannot rejoin; nothing in `src/distributed/`
   re-establishes the connection.
 - **Pipelining.** The worker has one job queue, so task N+1 is not received while N runs
-  (`src/distributed/worker_agent.cpp`).
+  (`modules/extension/distributed/source/worker_agent.cpp`).
 - **Worker scheduler bypass.** The worker uses `ctx.get_queue(0)` for allocation, free and
   device introspection at five sites, bypassing its NUMA-aware scheduler
-  (`src/distributed/worker_agent.cpp`).
+  (`modules/extension/distributed/source/worker_agent.cpp`).
 - **Frame header byte order.** The length field is a native-endian `uint32_t`, so the protocol
-  assumes one endianness across the cluster (`src/distributed/tcp_transport.cpp`).
+  assumes one endianness across the cluster (`modules/extension/distributed/source/tcp_transport.cpp`).
 - **Unsynchronised `peers` vector.** `accept_loop()` writes a slot that `send()` and `stop()`
-  read from other threads without a lock (`src/distributed/tcp_transport.cpp`).
+  read from other threads without a lock (`modules/extension/distributed/source/tcp_transport.cpp`).
 - **Endpoint configuration.** Cluster addresses are CLI flags only (`--master`, `--port`,
   `--workers`); there is no nodes file.
 - **Dynamic-graph offload.** The dynamic composer bypasses `TaskGraph::compile`, where
   `stamp_offloadable` runs, so an offloadable op recorded on a region runs its local fallback
-  (`src/graph/task_graph.cpp`).
+  (`modules/engine/graph/source/task_graph.cpp`).
 
 ## Structural debt
 
@@ -131,7 +131,7 @@ The v1 limits a user must know are in
 ## Repository hygiene
 
 - **Version sources disagree.** The library is 0.3.0 (`CMakeLists.txt`,
-  `include/SushiRuntime/version.hpp`); the CLI package is 1.0.0 (`cli/pyproject.toml`,
+  `modules/foundation/core/include/SushiRuntime/core/version.hpp`); the CLI package is 1.0.0 (`cli/pyproject.toml`,
   `cli/sushiruntime/__init__.py`); `Doxyfile` says `v1 (unreleased)`. The owner decides whether
   the CLI shares the product version.
 - **A release is due.** 49 commits have landed since v0.3.0, three of them marked breaking, and
@@ -142,7 +142,7 @@ The v1 limits a user must know are in
   from a path SushiStack no longer carries.
 - **Names the sibling layout does not use.** `src/` for `source/`, `examples/` for
   `applications/`, `tests/functional/` and `tests/benchmark/` as an extra level, and the
-  umbrella header `include/SushiRuntime/SushiRuntime.h`. A rename of the header is a public
+  umbrella header `modules/surface/api/include/SushiRuntime/SushiRuntime.h`. A rename of the header is a public
   interface change.
 - **No `.clang-format` or `.editorconfig`** in the root.
 - **Ignore rules.** `docs/api-site/.gitignore` repeats two root rules; the root `.gitignore`

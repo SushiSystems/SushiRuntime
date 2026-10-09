@@ -1,0 +1,92 @@
+/**************************************************************************/
+/* i_offload_policy.cpp                                                   */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file i_offload_policy.cpp
+ * @brief Picks the worker with the lowest estimated completion cost for an offloaded task.
+ * @author Mustafa Garip
+ */
+
+#include <SushiRuntime/distributed/i_offload_policy.hpp>
+
+#include <limits>
+
+namespace SushiRuntime
+{
+    namespace Distributed
+    {
+        namespace
+        {
+            /// @brief Holds the assumed wire bandwidth in B/us (modules/extension/distributed/README.md).
+            constexpr double BYTES_PER_MICROSECOND = 1000.0;
+
+            /// @brief Holds the microseconds one inflight task adds (modules/extension/distributed/README.md).
+            constexpr double QUEUE_PENALTY_US_PER_TASK = 1000.0;
+        }
+
+        /**
+         * @brief Selects the optimal worker for offloading a task based on least-loaded heuristics.
+         * Evaluates workers considering round-trip time, data transfer cost, and queue backlog to pick the best candidate.
+         * @param node The Graph::Node to be offloaded.
+         * @param workers A span containing statistics for all available workers.
+         * @param est_bytes The estimated bytes of data to transfer for the task.
+         * @return An std::optional containing the selected worker ID, or std::nullopt if no worker is suitable.
+         */
+        std::optional<int> LeastLoadedOffloadPolicy::pick_worker(const Graph::Node& /*node*/,
+                                                                 SushiRuntime::span<const WorkerStats> workers,
+                                                                 uint64_t est_bytes)
+        {
+            // Tiny payloads: the network would only add latency. Keep local.
+            if (est_bytes < min_offload_bytes_)
+                return std::nullopt;
+
+            const double transfer_us =
+                static_cast<double>(est_bytes) / BYTES_PER_MICROSECOND;
+
+            int    best      = -1;
+            double best_cost = std::numeric_limits<double>::max();
+            for (const auto& w : workers)
+            {
+                if (!w.alive)
+                    continue;
+                if (w.free_mem != 0 && w.free_mem < est_bytes)
+                    continue; // not enough headroom on that worker
+
+                // Cost is round trip plus transfer plus queue backlog (modules/extension/distributed/README.md).
+                const double cost = static_cast<double>(w.rtt_micros)
+                                  + transfer_us
+                                  + static_cast<double>(w.inflight) * QUEUE_PENALTY_US_PER_TASK;
+
+                if (best < 0 || cost < best_cost)
+                {
+                    best      = w.worker_id;
+                    best_cost = cost;
+                }
+            }
+
+            if (best < 0)
+                return std::nullopt; // no eligible worker -> transparent local fallback
+
+            return best;
+        }
+
+    } // namespace Distributed
+} // namespace SushiRuntime

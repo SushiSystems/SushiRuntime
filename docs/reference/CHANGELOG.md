@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-10 — build: Moved every header and source to a folder per module under a tier, compiled with the include roots of its declared dependencies (`cmake/SushiRuntimeTiers.cmake`, `SushiRuntimeModule.cmake`, `modules/CMakeLists.txt`).
+- 2026-10-10 — build: Generated the forwarding headers of 15 moved include paths from one table; nine headers left the core folder for logging, sycl, memory and observability (`SushiRuntimeMovedHeaders.cmake`, `SushiRuntimeLibrary.cmake`).
+- 2026-10-10 — tests: Moved each module's tests beside it as its own program and kept the tests that cross modules at the root; benchmark sources are named `benchmark_*.cpp` (`SushiRuntimeTests.cmake`, `tests/CMakeLists.txt`).
+- 2026-10-10 — build: Removed `CMakePresets.json` and moved the examples to an applications folder (`applications/examples/CMakeLists.txt`, `README.md`).
 - 2026-10-10 — execution: Deprecated the 31 members of `RuntimeContext` that forward to a part, each naming its replacement, and the context constructor of `TaskGraph` (`runtime_context.hpp`, `task_graph.hpp`).
 - 2026-10-10 — tests: Moved every in-repository caller to the device set, the allocator, the transfer counters and the topology view, and to the task include paths (`test_topology.cpp`, `test_profiling_queue.cpp`, `graph.hpp`).
 - 2026-10-10 — api: Made `distributed()` on buffers and states and the offload figures of the run report unconditional; without a cluster they do nothing (`buffer.hpp`, `state.hpp`, `run_report_builder.hpp`).

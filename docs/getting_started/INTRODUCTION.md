@@ -521,7 +521,7 @@ int main()
 
 The project links example programs against the `sushiruntime` library and
 applies the SYCL flags for you. Drop your `.cpp` into `examples/` and add it to
-`examples/CMakeLists.txt`, following the same pattern the project already uses:
+`applications/examples/CMakeLists.txt`, following the same pattern the project already uses:
 
 ```cmake
 add_executable(my_first_program my_first_program.cpp)

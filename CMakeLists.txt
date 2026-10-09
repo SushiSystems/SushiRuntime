@@ -67,31 +67,35 @@ set(SR_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SushiRuntime"
     CACHE STRING "Where the SushiRuntime CMake package files are installed")
 include("${SR_CMAKE_DIR}/SushiRuntimeInstall.cmake")
 
-# The version literals in include/SushiRuntime/version.hpp are hand-written, so
-# they are greppable and need no generated header on the include path. That trade
-# is only safe if they cannot silently disagree with the version the build and
-# the package advertise — so the disagreement is a configure-time error, here,
-# rather than a consumer discovering it from a version check that lies.
-file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/include/SushiRuntime/version.hpp"
-     SR_VERSION_STRING_LINE
+# The version literals in core/version.hpp are hand-written, so they are greppable and
+# need no generated header on the include path. That is only safe if they cannot disagree
+# with the version the build and the package advertise, so a disagreement stops the
+# configure here.
+set(SR_VERSION_HEADER
+    "${CMAKE_CURRENT_SOURCE_DIR}/modules/foundation/core/include/SushiRuntime/core/version.hpp")
+file(STRINGS "${SR_VERSION_HEADER}" SR_VERSION_STRING_LINE
      REGEX "^#define SUSHIRUNTIME_VERSION_STRING ")
 string(REGEX MATCH "\"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _sr_unused "${SR_VERSION_STRING_LINE}")
 if(NOT CMAKE_MATCH_1 STREQUAL PROJECT_VERSION)
     message(FATAL_ERROR
         "Version mismatch: project() says ${PROJECT_VERSION}, "
-        "include/SushiRuntime/version.hpp says ${CMAKE_MATCH_1}. "
-        "Update both — they are the same fact stated twice.")
+        "${SR_VERSION_HEADER} says ${CMAKE_MATCH_1}. "
+        "Update both; they are the same fact stated twice.")
 endif()
 
-# --- Subdirectories -----------------------------------------------------------
-add_subdirectory(src)
+# --- Modules, the library and the programs --------------------------------------
+# The test function is declared before the modules, because a module declares its own
+# test program. Each module is compiled with the include roots it declared; the tier
+# table in cmake/SushiRuntimeTiers.cmake decides which dependencies are legal.
+include("${SR_CMAKE_DIR}/SushiRuntimeTests.cmake")
+include("${SR_CMAKE_DIR}/SushiRuntimeModule.cmake")
+include("${SR_CMAKE_DIR}/SushiRuntimeLibrary.cmake")
+add_subdirectory(modules)
 
-# Example apps (currently the distributed master/worker demo). The subdir only
-# adds targets when SR_ENABLE_DISTRIBUTED is on, so standalone is unaffected.
-add_subdirectory(examples)
+add_subdirectory(applications/examples)
 
 # --- Package files --------------------------------------------------------------
-# Written after add_subdirectory(src) because the Config template interpolates
+# Written after add_subdirectory(modules) because the Config template interpolates
 # options that the subdirectories may still be resolving when this file starts.
 include(CMakePackageConfigHelpers)
 
@@ -139,8 +143,7 @@ endif()
 include(CPack)
 
 # --- Testing ------------------------------------------------------------------
+# Tests that cross module boundaries; a module's own tests are declared in its folder.
 if(SR_BUILD_TESTS)
-    enable_testing()
-    find_package(GTest CONFIG REQUIRED)
     add_subdirectory(tests)
 endif()

@@ -29,7 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <gtest/gtest.h>
-#include <SushiRuntime/core/logger.hpp>
+#include <SushiRuntime/logging/logger.hpp>
 
 // SR_TSAN_BUILD is set under ThreadSanitizer by Clang's feature test or GCC's macro.
 #if defined(__has_feature)

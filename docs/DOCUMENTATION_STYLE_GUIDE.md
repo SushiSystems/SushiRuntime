@@ -23,7 +23,7 @@ to SushiRuntime.
   every sample that uses it in the same commit.
 - A command is written as the `sr` CLI spells it, with the flag names `sr --help` prints.
 - A cited file is a path from the repository root in backticks, such as
-  `include/SushiRuntime/api/graph/graph.hpp`. Section numbers of another page are cited as
+  `modules/surface/api/include/SushiRuntime/api/graph/graph.hpp`. Section numbers of another page are cited as
   `§9.1` beside a link to that page.
 
 ## Doxygen input

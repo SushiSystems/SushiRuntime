@@ -1,0 +1,358 @@
+/**************************************************************************/
+/* test_late_bindings.cpp                                                 */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file test_late_bindings.cpp
+ * @brief Tests that a graph whose live size, base or participation changes per step compiles once.
+ * @see tests/integration/README.md
+ * @author Mustafa Garip
+ */
+
+#include <cstddef>
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <SushiRuntime/SushiRuntime.h>
+
+using namespace SushiRuntime;
+
+/** @brief Tests that sized() shrinks the iteration range to a live prefix each step. */
+TEST(Integration_LateBindings, DynamicSizePerElement)
+{
+    constexpr std::size_t CAP = 8;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(CAP);
+    for (std::size_t i = 0; i < CAP; ++i)
+        buf[i] = 0;
+
+    int* p = buf.data();
+
+    std::size_t live = 0;
+    auto g = rt.graph();
+    g.add(API::sized([&] { return live; }),
+          API::Reads{}, API::Writes(buf), CAP,
+          [p](std::size_t i) { p[i] += 1; });
+
+    for (std::size_t k = 1; k <= CAP; ++k)
+    {
+        live = k;
+        g.run();
+    }
+
+    EXPECT_EQ(g.compile_count(), 1u) << "size changes must not recompile.";
+    for (std::size_t i = 0; i < CAP; ++i)
+        ASSERT_EQ(buf[i], static_cast<int>(CAP - i)) << "at i=" << i;
+}
+
+/** @brief Tests that when() runs the node only on the enabled steps. */
+TEST(Integration_LateBindings, EnableTogglePerElement)
+{
+    constexpr std::size_t N     = 16;
+    constexpr std::size_t STEPS = 10;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i)
+        buf[i] = 0;
+
+    int* p = buf.data();
+
+    bool on = true;
+    auto g = rt.graph();
+    g.add(API::when([&] { return on; }),
+          API::Reads{}, API::Writes(buf), N,
+          [p](std::size_t i) { p[i] += 1; });
+
+    std::size_t enabled_steps = 0;
+    for (std::size_t k = 0; k < STEPS; ++k)
+    {
+        on = (k % 2 == 0);          // enabled on even steps only
+        if (on) ++enabled_steps;
+        g.run();
+    }
+
+    EXPECT_EQ(g.compile_count(), 1u) << "enable toggles must not recompile.";
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(buf[i], static_cast<int>(enabled_steps)) << "at i=" << i;
+}
+
+/** @brief Tests that a disabled node still releases its successors. */
+TEST(Integration_LateBindings, DisabledNodeStillReleasesSuccessors)
+{
+    constexpr std::size_t N     = 8;
+    constexpr std::size_t STEPS = 6;
+
+    auto rt   = Runtime::create();
+    auto gate = rt.buffer<int>(N);   // written by the toggled upstream node
+    auto sink = rt.buffer<int>(N);   // written by the always-on downstream node
+    for (std::size_t i = 0; i < N; ++i) { gate[i] = 0; sink[i] = 0; }
+
+    int* gp = gate.data();
+    int* sp = sink.data();
+
+    bool on = false;
+    auto g = rt.graph();
+    // Downstream reads the gate buffer upstream writes, so it is ordered after; see README.md.
+    g.add(API::when([&] { return on; }),
+          API::Reads{}, API::Writes(gate), N,
+          [gp](std::size_t i) { gp[i] += 1; });
+    g.add(API::Reads(gate), API::Writes(sink), N,
+          [sp](std::size_t i) { sp[i] += 1; });
+
+    for (std::size_t k = 0; k < STEPS; ++k)
+        g.run();                     // upstream stays disabled the whole run
+
+    EXPECT_EQ(g.compile_count(), 1u);
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        ASSERT_EQ(gate[i], 0) << "disabled upstream must not run, at i=" << i;
+        ASSERT_EQ(sink[i], static_cast<int>(STEPS))
+            << "downstream must run every step, at i=" << i;
+    }
+}
+
+/** @brief Tests that sized() on a stepped State follows a live prefix that grows each step. */
+TEST(Integration_LateBindings, DynamicSizeState)
+{
+    constexpr std::size_t CAP   = 8;
+    constexpr std::size_t STEPS = 4;
+
+    auto rt    = Runtime::create();
+    auto field = rt.state<int>(CAP);
+    for (std::size_t i = 0; i < CAP; ++i)
+        field[i] = 0;
+
+    std::size_t live = 0;
+    auto g = rt.graph();
+    g.add(API::sized([&] { return live; }), field,
+          [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+
+    // Grow the active prefix 2,4,6,8; the first two cells are active every step.
+    for (std::size_t k = 0; k < STEPS; ++k)
+    {
+        live = 2 * (k + 1);
+        g.run();
+    }
+
+    EXPECT_EQ(g.compile_count(), 1u) << "state size changes must not recompile.";
+    EXPECT_EQ(field[0], static_cast<int>(STEPS));
+    EXPECT_EQ(field[1], static_cast<int>(STEPS));
+}
+
+/** @brief Tests that when() and sized() compose on one node. */
+TEST(Integration_LateBindings, ComposedWhenAndSized)
+{
+    constexpr std::size_t CAP   = 4;
+    constexpr std::size_t STEPS = 8;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(CAP);
+    for (std::size_t i = 0; i < CAP; ++i)
+        buf[i] = 0;
+
+    int* p = buf.data();
+
+    bool on = true;
+    std::size_t live = CAP;
+    auto g = rt.graph();
+    g.add(API::when([&] { return on; }).and_sized([&] { return live; }),
+          API::Reads{}, API::Writes(buf), CAP,
+          [p](std::size_t i) { p[i] += 1; });
+
+    int expected0 = 0;               // increments seen by element 0
+    for (std::size_t k = 0; k < STEPS; ++k)
+    {
+        on   = (k % 3 != 0);         // disabled every third step
+        live = (k % 2 == 0) ? CAP : 2;
+        if (on && live > 0) ++expected0;   // element 0 is in range whenever live > 0
+        g.run();
+    }
+
+    EXPECT_EQ(g.compile_count(), 1u);
+    EXPECT_EQ(buf[0], expected0);
+}
+
+
+/** @brief Tests that based_at() moves where a late-bound node starts without recompiling. */
+TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
+{
+    constexpr std::size_t CAPACITY = 64;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(CAPACITY);
+    int* p = buf.data();
+
+    std::size_t base = 0;
+    std::size_t count = 0;
+
+    auto g = rt.graph();
+    g.add(API::based_at([&base] { return base; })
+              .and_sized([&count] { return count; }),
+          API::Reads{}, API::Writes(buf), CAPACITY,
+          [p](std::size_t i) { p[i] = static_cast<int>(i) + 1000; });
+
+    const std::size_t starts[] = { 0, 8, 40, 63 };
+    const std::size_t lengths[] = { 4, 16, 20, 1 };
+
+    for (std::size_t round = 0; round < 4; ++round)
+    {
+        for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = -1;
+        base = starts[round];
+        count = lengths[round];
+
+        g.run();
+
+        for (std::size_t i = 0; i < CAPACITY; ++i)
+        {
+            const bool inside = (i >= base && i < base + count);
+            if (inside)
+                ASSERT_EQ(buf[i], static_cast<int>(i) + 1000)
+                    << "round " << round << ", element " << i
+                    << " should have run with its absolute index";
+            else
+                ASSERT_EQ(buf[i], -1)
+                    << "round " << round << ", element " << i
+                    << " is outside the window but ran";
+        }
+    }
+
+    EXPECT_EQ(g.compile_count(), 1u) << "moving the window must not recompile";
+}
+
+/** @brief Tests that a base without a size runs from the base to the end of the capacity. */
+TEST(Integration_LateBindings, BaseWithoutASizeRunsToTheEnd)
+{
+    constexpr std::size_t CAPACITY = 32;
+    constexpr std::size_t BASE = 12;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(CAPACITY);
+    int* p = buf.data();
+    for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = 0;
+
+    auto g = rt.graph();
+    g.add(API::based_at([] { return BASE; }),
+          API::Reads{}, API::Writes(buf), CAPACITY,
+          [p](std::size_t i) { p[i] = 1; });
+    g.run();
+
+    for (std::size_t i = 0; i < BASE; ++i)
+        ASSERT_EQ(buf[i], 0) << "at i=" << i;
+    for (std::size_t i = BASE; i < CAPACITY; ++i)
+        ASSERT_EQ(buf[i], 1) << "at i=" << i;
+}
+
+/**
+ * @brief Tests that based_at_device() and sized_from_device() take both values from slots a
+ *        predecessor wrote.
+ */
+TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
+{
+    constexpr std::size_t CAPACITY = 128;
+
+    auto rt     = Runtime::create();
+    auto slice  = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);   // [0] = base, [1] = count
+    auto buf    = rt.buffer<int>(CAPACITY);
+
+    std::uint32_t* s = slice.data();
+    int* p = buf.data();
+    for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = -1;
+
+    auto g = rt.graph();
+    g.add(API::Reads{}, API::Writes(slice), std::size_t{1},
+          [s](std::size_t) { s[0] = 30u; s[1] = 25u; });
+    g.add(API::based_at_device(slice, 0).and_sized_from_device(slice.data(), 1),
+          API::Reads{}, API::Writes(buf), CAPACITY,
+          [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.run();
+
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+    {
+        const bool inside = (i >= 30 && i < 55);
+        if (inside)
+            ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
+        else
+            ASSERT_EQ(buf[i], -1) << "at i=" << i;
+    }
+}
+
+/** @brief Tests that a window past the capacity fails the run and names what it asked for. */
+TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
+{
+    constexpr std::size_t CAPACITY = 16;
+
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(CAPACITY);
+    int* p = buf.data();
+
+    std::size_t base = 10;
+
+    auto g = rt.graph();
+    g.add(API::based_at([&base] { return base; }).and_sized([] { return std::size_t{10}; }),
+          API::Reads{}, API::Writes(buf), CAPACITY,
+          [p](std::size_t i) { p[i] = 1; });
+
+    EXPECT_THROW(g.run(), SushiException) << "10 elements from index 10 does not fit 16";
+
+    // A window that does fit runs normally: the rejection wedged nothing.
+    base = 6;
+    EXPECT_NO_THROW(g.run());
+}
+
+/** @brief Tests that based_at_device rejects an unreadable slot at the call site. */
+TEST(Integration_LateBindings, BasedAtDeviceRejectsAnUnreadableSlot)
+{
+    auto rt = Runtime::create();
+    auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device);
+    auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
+    auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);
+
+    EXPECT_THROW(API::based_at_device(resident), SushiException);
+    EXPECT_THROW(API::based_at_device(shared), SushiException);
+    EXPECT_THROW(API::based_at_device(host, 7), SushiException);
+    EXPECT_NO_THROW(API::based_at_device(host, 1));
+}
+
+/** @brief Tests that add() rejects a raw slot inside Shared memory. */
+TEST(Integration_LateBindings, RawSharedSlotIsRejectedAtAdd)
+{
+    constexpr std::size_t CAPACITY = 8;
+
+    auto rt     = Runtime::create();
+    auto shared = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Shared);
+    auto buf    = rt.buffer<int>(CAPACITY);
+    int* p = buf.data();
+
+    auto g = rt.graph();
+    API::Dynamic dyn;
+    dyn.and_sized_from_device(shared.data(), 1);
+    try
+    {
+        g.add(std::move(dyn), API::Reads{}, API::Writes(buf), CAPACITY,
+              [p](std::size_t i) { p[i] = 1; });
+        ADD_FAILURE() << "a raw Shared slot was accepted";
+    }
+    catch (const SushiException& e)
+    {
+        EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+    }
+    EXPECT_EQ(g.size(), 0u) << "the rejected add() must not record a task";
+}

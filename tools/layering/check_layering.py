@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from common.checker import Checker, Issue, run  # noqa: E402
 
-K_TIER_ORDER: tuple[str, ...] = ()
+K_TIER_ORDER: tuple[str, ...] = ("foundation", "platform", "engine", "surface", "extension")
 K_SOURCE_SUFFIXES = frozenset({".h", ".hpp", ".cpp", ".glsl", ".comp", ".vert", ".frag"})
 K_ANGLE_INCLUDE = re.compile(r'^\s*#\s*include\s*<[^/>]+/([^/>]+)/[^>]+>')
 K_QUOTED_INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')

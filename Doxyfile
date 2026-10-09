@@ -1,6 +1,6 @@
 # Doxygen configuration for the SushiRuntime public fluent API reference.
 #
-# Scope is deliberately the public surface only (include/SushiRuntime/api), the
+# Scope is deliberately the public surface only (modules/surface/api/include/SushiRuntime/api), the
 # product's documented face. Lower layers are described in docs/ARCHITECTURE.md
 # and are intentionally not part of this scripting-style reference. Build it with
 # `sr doxygen` (or `doxygen Doxyfile`); output lands in docs/api-site/html.
@@ -30,7 +30,7 @@ INPUT                  = docs/reference/API_MAINPAGE.md \
                          docs/getting_started/INTRODUCTION.md \
                          docs/guides/INTEGRATION.md \
                          docs/guides/CLI_GUIDE.md \
-                         include/SushiRuntime/api
+                         modules/surface/api/include/SushiRuntime/api
 FILE_PATTERNS          = *.hpp *.h *.md
 RECURSIVE              = YES
 USE_MDFILE_AS_MAINPAGE = docs/reference/API_MAINPAGE.md

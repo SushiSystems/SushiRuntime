@@ -28,16 +28,16 @@ graph would take the 1,484-dispatch tick from about 18 ms of launch overhead to 
 
 - `run(steps, reuse)` goes `try_run` → `drive` → `drive_impl` (`api/graph/graph.hpp:2377-2787`).
   Each step calls `before_step()`, `plan_.rearm()`, then `engine.execute(plan_)`, which is
-  `submit(); complete();` (`src/execution/execution_engine.cpp:430-438`). `complete()` blocks the
+  `submit(); complete();` (`modules/engine/execution/source/execution_engine.cpp:430-438`). `complete()` blocks the
   caller until the step's DAG drains (`execution_engine.cpp:565`). **A multi-step run therefore
   waits on the host after every step.**
 - `submit` hands the roots to the persistent work-stealing `TaskScheduler`
-  (`execution_engine.cpp:551`, `src/scheduler/scheduler.cpp:1083`). Each node is popped by
+  (`execution_engine.cpp:551`, `modules/engine/scheduler/source/task_scheduler.cpp:1083`). Each node is popped by
   whichever worker reaches it and submitted in `TaskScheduler::execute_task` with
   `q.submit([&](sycl::handler& h) { h.depends_on(deps); task->execute(h); })`
   (`scheduler.cpp:865-869`), the only device submit site for graph nodes.
 - GPU and CPU queues are out of order; `in_order` is added only for other device types
-  (`src/execution/runtime_context.cpp:332-339`). Order comes from explicit events, `depends_on`,
+  (`modules/engine/execution/source/runtime_context.cpp:332-339`). Order comes from explicit events, `depends_on`,
   plus a host-side atomic `in_degree` DAG that decides readiness (`graph/node.hpp:316, 556-590`).
 - Completion is discovered by worker threads polling
   `event.get_info<command_execution_status>()` in a spin and backoff loop, then `wait()`

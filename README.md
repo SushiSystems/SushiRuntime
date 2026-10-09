@@ -131,9 +131,9 @@ cmake --build build --config Release
 > binaries and `ctest` finds nothing to run. (`sr build` enables it for you;
 > `sr build --no-test` opts out.)
 
-Use a CMake preset to switch toolchains: `cmake --preset intel-llvm` (`clang++
--fsycl`), `--preset adaptivecpp`, or `--preset oneapi` (run the oneAPI `setvars`
-first).
+Switch toolchains with `sr toolchain <intel-llvm|adaptivecpp|oneapi>`, which the next
+`sr build` reads; a direct `cmake` invocation takes `-DSR_SYCL_TOOLCHAIN=<name>` (run the
+oneAPI `setvars` first for `oneapi`).
 On Windows, vcpkg is discovered from the `VCPKG_ROOT` environment variable
 (falling back to `C:/vcpkg` only if it exists); the oneAPI compiler is resolved
 from `CMPLR_ROOT` — no paths are hardcoded.
@@ -371,7 +371,7 @@ g.add(Reads(src), Writes(dst),
       [p](sycl::nd_item<2> it) { /* it.get_global_id(0), it.get_local_id(1), ... */ });
 
 // Interior-only (halo) stencil over a State: iterate the (W-2)x(H-2) box at (1,1);
-// the one-cell border stays fixed. See examples/stencil_demo.cpp.
+// the one-cell border stays fixed. See applications/examples/stencil_demo.cpp.
 Extent<2> interior{ sycl::range<2>(W - 2, H - 2), sycl::id<2>(1, 1) };
 g.add(field, interior, [](sycl::id<2> idx, const float* cur, float* next) { /* ... */ });
 ```
@@ -558,7 +558,7 @@ Dockerfile              CUDA + Clang/LLVM SYCL build environment
 
 A master-worker offload layer lets the master ship individual tasks to remote workers, without MPI. It is **off by default** (`-DSR_ENABLE_DISTRIBUTED=ON` / `sr build --distributed` turns it on) and uses a raw-socket TCP transport — no extra third-party dependency. See the distributed subsection under [Architecture](#architecture) for the design.
 
-The same binary runs in either role; the `sr` CLI forwards `--distributed=master|worker` to your application's `main()`, which constructs the `RuntimeContext` accordingly. A runnable demo (`examples/distributed_demo.cpp` → `sr_distributed_demo`) offloads a vector-add across one or more workers:
+The same binary runs in either role; the `sr` CLI forwards `--distributed=master|worker` to your application's `main()`, which constructs the `RuntimeContext` accordingly. A runnable demo (`applications/examples/distributed_demo.cpp` → `sr_distributed_demo`) offloads a vector-add across one or more workers:
 
 ```bash
 sr build --distributed
@@ -579,7 +579,7 @@ swaps buffers every step, the offload handles are resolved at dispatch time
 rather than baked at compile time, so the same `add(op, state, fallback)` step
 runs remotely when a worker is available and falls back to local execution when
 none is. `cluster.offloaded()` / `declined()` report what actually happened; see
-`tests/functional/integration/test_distributed_e2e.cpp`
+`modules/extension/distributed/tests/test_distributed_e2e.cpp`
 (`FluentDistributedStateParity`) for a worked end-to-end example.
 
 The distributed tests (protocol, transports, buffer coherence, and SYCL end-to-end offload including multi-worker fan-out and TCP loopback) are part of the functional suite when the layer is enabled:

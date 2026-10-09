@@ -114,7 +114,7 @@ point. The mechanical pipeline underneath it is:
 
 3. **Compile once.** On first run (or after any mutation), `build_plan()`
    (`runtime.hpp:1124`) constructs a fresh `TaskGraph`, replays every spec into it,
-   and calls `compile()`. `compile()` (`src/graph/task_graph.cpp:471`) drains the
+   and calls `compile()`. `compile()` (`modules/engine/graph/source/task_graph.cpp:471`) drains the
    builder's lock-free node stacks into a `CompiledGraph`, resolves roots and
    leaves, links a sentinel, and **resets the dependency tracker**
    (`task_graph.cpp:528`). The compiled plan then snapshots its in-degrees
@@ -125,13 +125,13 @@ point. The mechanical pipeline underneath it is:
    `engine.execute(plan_)`, then `advance()` every `State` (`runtime.hpp:965-982`).
    The graph is **not** recompiled between steps as long as no `add()` happened.
 
-5. **Execute.** `ExecutionEngine::execute` (`src/execution/execution_engine.cpp:174`)
+5. **Execute.** `ExecutionEngine::execute` (`modules/engine/execution/source/execution_engine.cpp:174`)
    wires the sentinel's completion promise, arms the persistent
    `TaskScheduler`, submits root nodes, and **blocks the caller on a
    `std::future`** until the sentinel fires. The scheduler is a NUMA-aware
-   work-stealing pool (`src/scheduler/scheduler.cpp`) with per-worker Chase-Lev
+   work-stealing pool (`modules/engine/scheduler/source/task_scheduler.cpp`) with per-worker Chase-Lev
    deques and a global injector. Completion is detected by `EventPolling`
-   (`include/SushiRuntime/scheduler/event_polling.hpp`) polling SYCL events and
+   (`modules/engine/scheduler/include/SushiRuntime/scheduler/event_polling.hpp`) polling SYCL events and
    decrementing successors' in-degrees.
 
 The single most important property of this pipeline for everything below:
@@ -151,7 +151,7 @@ about resolving that violation without throwing away what the runtime does well.
 These are genuine strengths and the reason the goal is realistic at all:
 
 - **Automatic data-driven ordering is the hard part of an ECS scheduler, and it
-  exists.** `DependencyTracker::resolve` (`src/graph/dependency_tracker.cpp:66`)
+  exists.** `DependencyTracker::resolve` (`modules/engine/graph/source/dependency_tracker.cpp:66`)
   derives RAW/WAR/WAW edges from declared read/write sets. An ECS "system schedule"
   — run systems in parallel unless their component access conflicts — is exactly
   this mechanism with components as the tracked resources.
