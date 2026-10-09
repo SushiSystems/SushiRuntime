@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-09 — topology: Added `TopologyView`, the core-to-NUMA map and the NUMA distance a scheduler reads (`topology_view.hpp`).
 - 2026-10-09 — observability: Added `TransferCounters`, the two byte counters of host and device transfers (`transfer_counters.hpp`).
 - 2026-10-09 — memory: Added `UsmAllocator` with one `allocate(UsmRequest)` entry point; releasing adopted memory no longer calls `sycl::free` on it (`usm_allocator.hpp`, `usm_request.hpp`, `usm_release_observer.hpp`).
 - 2026-10-09 — device: Added `DeviceQueueSet`, the device inventory and queue families of a runtime, with NUMA routing resolved once at construction (`device_queue_set.hpp`, `device_info.hpp`, `queue_flavour.hpp`).
