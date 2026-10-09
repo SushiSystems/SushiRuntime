@@ -471,6 +471,9 @@ namespace SushiRuntime
             }
 #endif
 
+            /** @brief Returns metadata.name, the node's only label. */
+            const char* get_name() const noexcept override      { return metadata.name; }
+
             /** @brief Returns the execution mode for this node. */
             ExecutionMode get_execution_mode() const override   { return mode; }
 

@@ -52,21 +52,13 @@ namespace SushiRuntime
 
             /** @brief Default constructor. */
             Task() = default;
-            
-            /** @brief Constructor with name. */
-            Task(const char* name) : name_(name) {}
 
             /**
-             * @brief Returns the name of the task.
-             * @return const char* Pointer to the task name.
+             * @brief Returns the label a failure report names this task by.
+             * @return A string that outlives the task; "unnamed_task" unless a derived type
+             *         holds a label of its own.
              */
-            virtual const char* get_name() const { return name_; }
-
-            /**
-             * @brief Sets the name of the task.
-             * @param name Pointer to the task name (should be persistent, e.g., string literal).
-             */
-            virtual void set_name(const char* name) { name_ = name; }
+            virtual const char* get_name() const noexcept { return "unnamed_task"; }
 
             /**
              * @brief Returns the execution mode of this task.
@@ -139,10 +131,6 @@ namespace SushiRuntime
             virtual int get_priority() const noexcept { return 0; }
             
             virtual ~Task() = default;
-
-        protected:
-            /** @brief Task name (0-allocation). */
-            const char* name_ = "unnamed_task";
         };
 
         /**
@@ -158,12 +146,20 @@ namespace SushiRuntime
                 size_t end_;
                 /** @brief The function to execute for each sub-range. */
                 std::function<void(size_t, size_t, sycl::handler&)> kernel_func_;
+                /** @brief Label this range and every range split from it reports under. */
+                const char* name_;
 
             public:
-                /** @brief Creates a new range task. */
+                /**
+                 * @brief Creates a new range task.
+                 * @param name Persistent label, stored not copied.
+                 */
                 template <typename Func>
                 RangeTask(size_t start, size_t end, Func func, const char* name = "range_task")
-                    : Task(name), start_(start), end_(end), kernel_func_(std::move(func)) {}
+                    : start_(start), end_(end), kernel_func_(std::move(func)), name_(name) {}
+
+                /** @brief Returns the label given at construction. */
+                const char* get_name() const noexcept override { return name_; }
 
                 /** @brief Executes the task for the current valid range. */
                 void execute(sycl::handler& h) override 
@@ -188,7 +184,7 @@ namespace SushiRuntime
                     if (mid <= s || (end_ - mid) < 1024) return std::nullopt;
 
                     if (start_.compare_exchange_strong(s, mid, std::memory_order_acq_rel)) 
-                        return make_sushi<RangeTask>(s, mid, kernel_func_);
+                        return make_sushi<RangeTask>(s, mid, kernel_func_, name_);
                     
                     return std::nullopt;
                 }

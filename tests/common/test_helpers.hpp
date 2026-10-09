@@ -21,7 +21,7 @@
 
 /**
  * @file test_helpers.hpp
- * @brief Declares the host tasks and the USM guard that the test suites share.
+ * @brief Declares the device probe, the host tasks and the USM guard that the test suites share.
  * @author Mustafa Garip
  * @see tests/common/README.md
  */
@@ -42,6 +42,17 @@ namespace SushiRuntime
 {
     namespace Test
     {
+        /**
+         * @brief Returns whether SYCL reports at least one device of any type.
+         *
+         * Constructs no SushiRuntime object. An exception from SYCL device discovery
+         * propagates to the caller, so a broken installation fails the test.
+         */
+        [[nodiscard]] inline bool has_any_sycl_device()
+        {
+            return !sycl::device::get_devices().empty();
+        }
+
         /**
          * @brief Creates a host task that records its ID into a shared list.
          * @param execution_order List the task appends to; must outlive the task.
@@ -78,7 +89,9 @@ namespace SushiRuntime
              * @param c Reference to the atomic counter to increment.
              */
             explicit AtomicCounterTask(std::atomic<size_t>& c)
-                : Task("AtomicCounterTask"), counter_(c) {}
+                : counter_(c) {}
+
+            const char* get_name() const noexcept override { return "AtomicCounterTask"; }
 
             ExecutionMode get_execution_mode() const override { return ExecutionMode::HOST; }
 
@@ -110,7 +123,9 @@ namespace SushiRuntime
              * @param mtx Mutex protecting the shared execution order list.
              */
             PriorityTrackingTask(int p, std::vector<int>& order, std::mutex& mtx)
-                : Task("PriorityTask"), priority_(p), execution_order_(order), order_mutex_(mtx) {}
+                : priority_(p), execution_order_(order), order_mutex_(mtx) {}
+
+            const char* get_name() const noexcept override    { return "PriorityTask"; }
 
             int get_priority() const noexcept override        { return priority_; }
             ExecutionMode get_execution_mode() const override { return ExecutionMode::HOST; }
