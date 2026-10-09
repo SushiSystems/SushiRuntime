@@ -21,7 +21,7 @@
 
 /**
  * @file runtime_settings.hpp
- * @brief Declares PinPolicy, RuntimeSettings and WorkerPoolInfo.
+ * @brief Declares RuntimeSettings and the Execution names of the scheduler's pool types.
  * @author Mustafa Garip
  * @see include/SushiRuntime/execution/README.md
  */
@@ -30,19 +30,18 @@
 
 #include <cstddef>
 
+#include <SushiRuntime/scheduler/pin_policy.hpp>
+#include <SushiRuntime/scheduler/worker_pool_info.hpp>
+
 namespace SushiRuntime
 {
     namespace Execution
     {
-        /**
-         * @brief Selects whether workers are bound to specific cores or left to the OS.
-         * @see include/SushiRuntime/execution/README.md
-         */
-        enum class PinPolicy
-        {
-            Pin,   /**< Bind worker i to core (first_core + i). */
-            Float  /**< Leave placement to the OS scheduler. */
-        };
+        /** @brief Names Scheduler::PinPolicy in the Execution namespace. */
+        using PinPolicy = Scheduler::PinPolicy;
+
+        /** @brief Names Scheduler::WorkerPoolInfo in the Execution namespace. */
+        using WorkerPoolInfo = Scheduler::WorkerPoolInfo;
 
         /**
          * @brief Holds the runtime-wide settings chosen once, when the runtime is created.
@@ -90,17 +89,6 @@ namespace SushiRuntime
              * path a run took either way.
              */
             bool force_scheduler = false;
-        };
-
-        /**
-         * @brief Reports the worker pool as built, which may differ from the request.
-         * @see include/SushiRuntime/execution/README.md
-         */
-        struct WorkerPoolInfo
-        {
-            std::size_t count      = 0;   /**< Worker threads running. */
-            std::size_t first_core = 0;   /**< First bound core; meaningless when floating. */
-            PinPolicy   pinning    = PinPolicy::Pin;  /**< Whether workers are bound at all. */
         };
 
     } // namespace Execution
