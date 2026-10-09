@@ -99,8 +99,8 @@ namespace SushiRuntime
                  * @brief Hears that the pool finished a node itself.
                  *
                  * Called on a pool worker for every node the poller reaps, before its
-                 * successors are released. The implementer returns at once for a node with
-                 * no OffloadState; otherwise it may take a short lock and never allocates.
+                 * successors are released, whether or not it carries an OffloadState. The
+                 * implementer may take a short lock and never allocates.
                  * @param node Borrowed for the call; no reference changes hands.
                  */
                 virtual void on_local_completion(Node& node) noexcept = 0;

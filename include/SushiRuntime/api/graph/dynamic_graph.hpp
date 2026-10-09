@@ -924,12 +924,6 @@ namespace SushiRuntime
                         for (auto& np : kv.second.nodes)
                             np->arm_in_degree();
                     sentinel_->arm_in_degree();
-#ifdef SR_DISTRIBUTED
-                    for (auto& kv : states_)
-                        for (auto& np : kv.second.nodes)
-                            if (auto* off = np->offload_state())
-                                off->attempts.store(0, std::memory_order_relaxed);
-#endif
                 }
 
                 template <class KeepGoing>

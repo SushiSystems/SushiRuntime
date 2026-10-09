@@ -42,15 +42,13 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node_profiling.hpp>
+#include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
 #include <SushiRuntime/task/region_link.hpp>
 #include <SushiRuntime/task/small_event_vector.hpp>
 #include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
-#ifdef SR_DISTRIBUTED
-#include <SushiRuntime/distributed/protocol.hpp>
-#endif
 
 namespace SushiRuntime
 {
@@ -68,59 +66,6 @@ namespace SushiRuntime
         {
             Node* target;           /**< Successor graph node to release when this node completes. */
             SuccessorNode* next;    /**< Next element in the linked list; null for the list tail. */
-        };
-
-#ifdef SR_DISTRIBUTED
-        /**
-         * @brief Distributed offload state, stamped by TaskGraph::compile().
-         *
-         * Only meaningful in Master mode. offloadable stays false for the vast
-         * majority of (small, local) tasks, so the scheduler's hot path pays just a
-         * single bool load before falling through to local execution.
-         */
-        struct OffloadState
-        {
-            /** @brief Whether this node may ship to a worker (else it runs locally). */
-            bool offloadable = false;
-            /** @brief Remote kernel id used when offloading (valid iff offloadable). */
-            OpID remote_op;
-            /** @brief Serializable handles for the buffers this node reads / writes. */
-            std::vector<SushiRuntime::Distributed::BufferHandle> in_handles;
-            std::vector<SushiRuntime::Distributed::BufferHandle> out_handles;
-            /** @brief Raw read/write USM pointers retained so compile() can resolve handles. */
-            std::vector<void*> reads;
-            std::vector<void*> writes;
-
-            /**
-             * @brief Hold the live read and write pointers of a double-buffered offload node.
-             * @see include/SushiRuntime/graph/README.md
-             */
-            std::shared_ptr<std::vector<void*>> live_reads;
-            std::shared_ptr<std::vector<void*>> live_writes;
-
-            /**
-             * @brief How many times this node has been (re)dispatched to a worker.
-             *
-             * After a worker death or a failed remote result the node is
-             * re-dispatched; once attempts exceed a cap the coordinator pins it
-             * local (offloadable cleared) so a kernel that consistently fails
-             * remotely cannot loop forever.
-             */
-            std::atomic<uint32_t> attempts{0};
-        };
-#endif
-
-        /**
-         * @brief Holds optional, lazily allocated per-node state kept off the node body.
-         * @warning The library and its consumers must agree on SR_DISTRIBUTED; this type's size
-         *          depends on it.
-         * @see include/SushiRuntime/graph/README.md
-         */
-        struct NodeExtensions
-        {
-#ifdef SR_DISTRIBUTED
-            OffloadState offload;
-#endif
         };
 
         /**
@@ -228,14 +173,10 @@ namespace SushiRuntime
             NodeProfiling profiling;
 
             /**
-             * @brief Lazily-allocated optional state (see NodeExtensions).
-             *
-             * Null on most nodes and on every node in a standalone build. Present
-             * unconditionally so Node's layout never depends on a build flag; the
-             * distributed offload state lives here, reached through offload() /
-             * offload_state().
+             * @brief Holds what an offload coordinator keeps on this node; null on most nodes.
+             * @see include/SushiRuntime/task/README.md
              */
-            std::unique_ptr<NodeExtensions> ext_;
+            std::unique_ptr<OffloadState> offload_state_;
 
             /**
              * @brief Registers target as a successor of this node.
@@ -277,33 +218,28 @@ namespace SushiRuntime
                                 std::memory_order_relaxed);
             }
 
-#ifdef SR_DISTRIBUTED
             /**
-             * @brief Returns the offload state, allocating the extensions on first use.
-             * @see include/SushiRuntime/graph/README.md
+             * @brief Returns the offload state, allocating it on first use.
+             * @see include/SushiRuntime/task/README.md
              */
             OffloadState& offload()
             {
-                if (!ext_)
-                    ext_ = std::make_unique<NodeExtensions>();
-                return ext_->offload;
+                if (!offload_state_)
+                    offload_state_ = std::make_unique<OffloadState>();
+                return *offload_state_;
             }
 
-            /**
-             * @brief Returns the offload state if present, else nullptr, without allocating.
-             * @see include/SushiRuntime/graph/README.md
-             */
+            /** @brief Returns the offload state if present, else nullptr, without allocating. */
             OffloadState* offload_state() noexcept
             {
-                return ext_ ? &ext_->offload : nullptr;
+                return offload_state_.get();
             }
 
             /** @brief Const overload of offload_state(). */
             const OffloadState* offload_state() const noexcept
             {
-                return ext_ ? &ext_->offload : nullptr;
+                return offload_state_.get();
             }
-#endif
 
             /** @brief Returns metadata.name, the node's only label. */
             const char* get_name() const noexcept override      { return metadata.name; }

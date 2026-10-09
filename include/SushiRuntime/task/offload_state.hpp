@@ -52,8 +52,6 @@ namespace SushiRuntime
                 OffloadPayload() = default;
         };
 
-// Graph::OffloadState of task/node.hpp holds this name while SR_DISTRIBUTED is defined.
-#ifndef SR_DISTRIBUTED
         /**
          * @brief Holds what a node carries for an offload coordinator; absent on most nodes.
          * @see include/SushiRuntime/task/README.md
@@ -84,7 +82,6 @@ namespace SushiRuntime
             /** @brief Holds the coordinator's own record; OffloadCoordinator::prepare() sets it. */
             std::unique_ptr<OffloadPayload> payload;
         };
-#endif
 
     } // namespace Graph
 } // namespace SushiRuntime

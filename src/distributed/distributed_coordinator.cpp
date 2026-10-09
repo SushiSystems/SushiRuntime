@@ -38,7 +38,10 @@
 #include <unordered_set>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/core/resource_region.hpp>
+#include <SushiRuntime/task/node.hpp>
+
+#include "offload_handles.hpp"
 
 namespace SushiRuntime
 {
@@ -49,6 +52,37 @@ namespace SushiRuntime
             using Clock = std::chrono::steady_clock;
             /// @brief Caps failed remote dispatches per node (src/distributed/README.md).
             constexpr uint32_t MAX_OFFLOAD_ATTEMPTS = 2;
+
+            /**
+             * @brief Appends the handle of each region's owning buffer to @p handles.
+             * @return False as soon as one region's base is not registered.
+             */
+            bool resolve_handles(const BufferRegistry& buffers,
+                                 const std::vector<Core::ResourceRegion>& regions,
+                                 std::vector<BufferHandle>& handles)
+            {
+                handles.reserve(regions.size());
+                for (const auto& region : regions)
+                {
+                    auto handle = buffers.lookup(region.base);
+                    if (!handle)
+                        return false;
+                    handles.push_back(*handle);
+                }
+                return true;
+            }
+
+            /** @brief Tells whether every address of a live list is registered; null is true. */
+            bool all_registered(const BufferRegistry& buffers,
+                                const std::shared_ptr<std::vector<void*>>& addresses)
+            {
+                if (!addresses)
+                    return true;
+                for (void* address : *addresses)
+                    if (!buffers.lookup(address))
+                        return false;
+                return true;
+            }
         }
 
         struct DistributedCoordinator::Impl : public Core::RefCounted
@@ -129,7 +163,26 @@ namespace SushiRuntime
              * @return A vector of Graph::Node pointers for timed-out tasks.
              */
             std::vector<Graph::Node*> reap_timed_out_tasks();
+
+            /**
+             * @brief Closes a node's run: bumps the buffers it wrote and clears its attempts.
+             * @param node Finished on the pool, or remotely with its outputs written back.
+             */
+            void settle(Graph::Node& node) noexcept;
         };
+
+        /**
+         * @brief Closes a node's run: bumps the buffers it wrote and clears its attempts.
+         * @param node Finished on the pool, or remotely with its outputs written back.
+         */
+        void DistributedCoordinator::Impl::settle(Graph::Node& node) noexcept
+        {
+            for (const auto& region : node.io_writes_)
+                buffers->bump_version(region.base);
+
+            if (Graph::OffloadState* off = node.offload_state())
+                off->attempts.store(0, std::memory_order_relaxed);
+        }
 
         /**
          * @brief Handles an incoming message from a worker.
@@ -254,6 +307,10 @@ namespace SushiRuntime
                             std::memcpy(e->ptr, res.output_data[i].data(), n);
                         }
                     }
+
+                    // The versions advance before the hook releases successors.
+                    if (res.success)
+                        settle(*node);
 
                     if (on_complete)
                         on_complete(node, res.success);
@@ -424,12 +481,48 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Advances the version of the buffer registered at an address.
-         * @param usm_ptr An address with no registered buffer is ignored.
+         * @brief Marks the nodes of a compiled graph that a worker may run.
+         * @param nodes Borrowed for the call; a slot may be null.
          */
-        void DistributedCoordinator::bump_buffer_version(void* usm_ptr)
+        void DistributedCoordinator::prepare(span<const sushi_ptr<Graph::Node>> nodes)
         {
-            impl_->buffers->bump_version(usm_ptr);
+            const BufferRegistry& buffers = *impl_->buffers;
+
+            for (const auto& slot : nodes)
+            {
+                Graph::Node* node = slot.get();
+                if (!node || node->metadata.op_id.value == 0)
+                    continue;
+                if (!supports(node->metadata.op_id))
+                    continue;
+
+                // A double-buffered node bakes no handles here (src/distributed/README.md).
+                Graph::OffloadState* live = node->offload_state();
+                if (live && (live->live_reads || live->live_writes))
+                {
+                    live->offloadable = all_registered(buffers, live->live_reads) &&
+                                        all_registered(buffers, live->live_writes);
+                    continue;
+                }
+
+                auto handles = std::make_unique<OffloadHandles>();
+                if (!resolve_handles(buffers, node->io_reads_, handles->in_handles) ||
+                    !resolve_handles(buffers, node->io_writes_, handles->out_handles))
+                    continue;
+
+                Graph::OffloadState& off = node->offload();
+                off.payload     = std::move(handles);
+                off.offloadable = true;
+            }
+        }
+
+        /**
+         * @brief Advances the versions of the buffers a locally finished node wrote.
+         * @param node Borrowed for the call; called before its successors are released.
+         */
+        void DistributedCoordinator::on_local_completion(Graph::Node& node) noexcept
+        {
+            impl_->settle(node);
         }
 
         /**
@@ -642,7 +735,7 @@ namespace SushiRuntime
 
             // Input versions come from the master registry (src/distributed/README.md).
             TaskDispatchMsg msg;
-            msg.op_id = off.remote_op;
+            msg.op_id = node->metadata.op_id;
             msg.meta  = node->metadata;
 
             // A double-buffered node takes handles from live pointers (src/distributed/README.md).
@@ -669,8 +762,10 @@ namespace SushiRuntime
             }
             else
             {
-                in_handles  = off.in_handles;
-                out_handles = off.out_handles;
+                // prepare() gave every offloadable fixed-buffer node its handles.
+                const auto& baked = static_cast<const OffloadHandles&>(*off.payload);
+                in_handles  = baked.in_handles;
+                out_handles = baked.out_handles;
             }
 
             uint64_t est_bytes = 0;

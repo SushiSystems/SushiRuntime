@@ -88,21 +88,13 @@ be reaped by different workers, so the adds are atomic.
 A State node rotates which allocation it reads and writes every step, so the fluent layer re-points
 these lists before each step and the coordinator resolves handles from them at dispatch. The
 compiled plan stays replayable while it follows the swap. Both are null for every ordinary node,
-whose fixed handles are baked into in_handles and out_handles.
+whose fixed handles the coordinator keeps in the payload of the node's OffloadState.
 
-### NodeExtensions
+### OffloadState
 
-NodeExtensions holds concerns that most nodes lack, and the distributed offload state is absent
-entirely in a standalone build. Keeping them behind one pointer fixes Node's layout independent of
-build flags: SR_DISTRIBUTED changes what a NodeExtensions contains, never sizeof(Node). In a
-standalone build it is empty and never allocated.
-
-That stabilises Node, not NodeExtensions. The size of NodeExtensions still depends on the flag, and
-the unique_ptr's deleter is instantiated in whichever translation unit destroys the Node. That
-includes consumer code, since the API layer creates and destroys nodes from header-inline templates.
-The library and its consumers must therefore still agree on the flag, which is why SR_DISTRIBUTED is
-a PUBLIC define in src/CMakeLists.txt. Making it private would require NodeExtensions to become
-opaque: declared in node.hpp, defined and deleted only inside the library.
+A node that a coordinator may run elsewhere carries a Graph::OffloadState behind one pointer;
+`include/SushiRuntime/task/README.md` describes it. The type and sizeof(Node) are the same with and
+without SR_DISTRIBUTED, and a node that never offloads never allocates one.
 
 ### Node
 
@@ -194,15 +186,14 @@ maintained incrementally and not snapshotted.
 
 ### offload
 
-offload() is the mutable entry point for the distributed build paths that populate or update offload
-metadata. The first call allocates this node's NodeExtensions; later calls reuse it.
+offload() is the mutable entry point for the paths that populate or update offload state. The first
+call allocates this node's OffloadState; later calls reuse it.
 
 ### offload_state
 
 offload_state() returns a pointer to the offload state, or nullptr if the node has none. A node that
-never offloads never allocates its extensions, so the read paths (the scheduler's offloadable check,
-the completion observer) read a null return as "not offloadable, nothing to bump" without forcing an
-allocation.
+never offloads never allocates one, so the scheduler's offloadable check reads a null return as "not
+offloadable" without forcing an allocation.
 
 ### on_complete
 
