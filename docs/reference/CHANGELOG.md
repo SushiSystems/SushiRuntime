@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-09 — observability: Added `TransferCounters`, the two byte counters of host and device transfers (`transfer_counters.hpp`).
 - 2026-10-09 — memory: Added `UsmAllocator` with one `allocate(UsmRequest)` entry point; releasing adopted memory no longer calls `sycl::free` on it (`usm_allocator.hpp`, `usm_request.hpp`, `usm_release_observer.hpp`).
 - 2026-10-09 — device: Added `DeviceQueueSet`, the device inventory and queue families of a runtime, with NUMA routing resolved once at construction (`device_queue_set.hpp`, `device_info.hpp`, `queue_flavour.hpp`).
 - 2026-10-09 — api: Moved the `Interop` facade and `HostExport` to `api/interop/`; `Interop::HostExport` stays as an alias and `interop/` no longer includes `api/` (`api/interop/interop.hpp`, `api/interop/host_export.hpp`).
