@@ -41,6 +41,8 @@
 #include <SushiRuntime/graph/task_types.hpp>
 #include <SushiRuntime/graph/node.hpp> // CompiledGraph holds sushi_ptr<Node>; dtor needs full type
 
+#include "../../common/test_helpers.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
@@ -148,15 +150,10 @@ namespace
  */
 TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
 {
-    std::unique_ptr<RuntimeContext> ctx;
-    try
-    {
-        ctx = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto ctx = std::make_unique<RuntimeContext>();
 
     sycl::queue& base = ctx->get_queue(0);
     sycl::device dev  = base.get_device();

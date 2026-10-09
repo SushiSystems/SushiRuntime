@@ -47,6 +47,8 @@
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
 
+#include "../../common/test_helpers.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
@@ -93,17 +95,9 @@ namespace
         constexpr int    K = 4;     // independent offloadable tasks
         constexpr size_t N = 128;   // elements per buffer
 
-        std::unique_ptr<RuntimeContext> master_ctx, w0_ctx, w1_ctx;
-        try
-        {
-            master_ctx = std::make_unique<RuntimeContext>();
-            w0_ctx     = std::make_unique<RuntimeContext>();
-            w1_ctx     = std::make_unique<RuntimeContext>();
-        }
-        catch (const std::exception& e)
-        {
-            return std::string("SKIP:") + e.what();
-        }
+        auto master_ctx = std::make_unique<RuntimeContext>();
+        auto w0_ctx = std::make_unique<RuntimeContext>();
+        auto w1_ctx = std::make_unique<RuntimeContext>();
 
         sycl::queue& mq = master_ctx->get_queue(0);
         float* in = sycl::malloc_shared<float>(N, mq);
@@ -259,19 +253,12 @@ namespace
  */
 TEST(Integration_DistributedJepsenTest, DeterminismUnderRandomFaults)
 {
-    // Skip cleanly if there is no SYCL device (first scenario reports it).
-    {
-        std::string probe = run_one_scenario(1);
-        if (probe.rfind("SKIP:", 0) == 0)
-            GTEST_SKIP() << "No SYCL device available: " << probe.substr(5);
-        EXPECT_TRUE(probe.empty()) << "seed 1: " << probe;
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
 
-    for (uint64_t seed = 2; seed <= 8; ++seed)
+    for (uint64_t seed = 1; seed <= 8; ++seed)
     {
         std::string r = run_one_scenario(seed);
-        if (r.rfind("SKIP:", 0) == 0)
-            GTEST_SKIP() << "No SYCL device available.";
         EXPECT_TRUE(r.empty()) << "seed " << seed << ": " << r;
     }
 }
@@ -283,16 +270,11 @@ TEST(Integration_DistributedJepsenTest, DeterminismUnderRandomFaults)
  */
 TEST(Integration_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
 {
-    std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
-    try
-    {
-        master_ctx = std::make_unique<RuntimeContext>();
-        worker_ctx = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
+    auto worker_ctx = std::make_unique<RuntimeContext>();
 
     constexpr size_t N = 128;
     sycl::queue& mq = master_ctx->get_queue(0);

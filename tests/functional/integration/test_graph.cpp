@@ -130,7 +130,7 @@ TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
     void* ptr = &shared_resource;
 
     std::atomic<int> current_phase{0};
-    bool fan_out_success = true;
+    std::atomic<bool> fan_out_success{true};
 
     TaskMetadata metaA{"Node_A"};
     graph.add_task(metaA, {}, {ptr}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
