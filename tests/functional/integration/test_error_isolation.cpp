@@ -28,6 +28,7 @@
 
 #include <cstddef>
 #include <stdexcept>
+#include <string>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/SushiRuntime.h>
@@ -68,6 +69,25 @@ TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
     EXPECT_NO_THROW(run_good_graph(rt, p, N));
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], 42) << "at i=" << i;
+}
+
+/**
+ * @brief A throwing node is named, with its registration index, in the error try_run() returns.
+ */
+TEST(Integration_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
+{
+    auto rt = Runtime::create();
+    auto g  = rt.graph();
+    g.add_host([] {}).name_last("healthy");
+    g.add_host([] { throw std::runtime_error("boom"); }).name_last("faulty");
+
+    const auto result = g.try_run();
+    ASSERT_FALSE(result);
+
+    const std::string& message = result.error().message;
+    EXPECT_NE(message.find("node 'faulty' (registration index 1)"), std::string::npos) << message;
+    EXPECT_NE(message.find("boom"), std::string::npos) << message;
+    EXPECT_EQ(message.find("healthy"), std::string::npos) << message;
 }
 
 /**

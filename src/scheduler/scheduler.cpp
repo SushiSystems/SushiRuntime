@@ -35,6 +35,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <exception>
+#include <stdexcept>
+#include <string>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/logger.hpp>
@@ -56,6 +59,88 @@ namespace SushiRuntime
     {
         using namespace SushiRuntime::Execution;
         using namespace SushiRuntime::Core;
+
+        namespace
+        {
+            /** @brief Pairs a failure's one-line description with the exception that carries it. */
+            struct NamedFailure
+            {
+                std::string message;      /**< The failing task, then the original message. */
+                std::exception_ptr error; /**< An exception of the original's family carrying message. */
+            };
+
+            /**
+             * @brief Names @p task for a failure report.
+             * @return The task's label, with the registration index when it is a graph node.
+             */
+            std::string describe_task(const Task& task)
+            {
+                if (!task.is_graph_node())
+                    return Core::Detail::sr_format("task '{}'", task.get_name());
+
+                const auto& node = static_cast<const SushiRuntime::Graph::Node&>(task);
+                return Core::Detail::sr_format("node '{}' (registration index {})",
+                                               node.get_name(), node.registration_index);
+            }
+
+            /**
+             * @brief Builds the failure of @p task from a SushiException, keeping its code.
+             * @param task The task that threw.
+             * @param cause The exception it threw.
+             */
+            NamedFailure name_failure(const Task& task, const Core::SushiException& cause)
+            {
+                NamedFailure failure;
+                failure.message = Core::Detail::sr_format("{} failed: {}", describe_task(task),
+                                                          cause.what());
+                failure.error = std::make_exception_ptr(
+                    Core::SushiException(Core::Error{cause.error().code, failure.message}));
+                return failure;
+            }
+
+            /**
+             * @brief Builds the failure of @p task from a sycl::exception, keeping its code.
+             * @param task The task that threw.
+             * @param cause The exception it threw.
+             */
+            NamedFailure name_failure(const Task& task, const sycl::exception& cause)
+            {
+                NamedFailure failure;
+                failure.message = Core::Detail::sr_format("{} failed: {}", describe_task(task),
+                                                          cause.what());
+                failure.error = std::make_exception_ptr(
+                    sycl::exception(cause.code(), failure.message));
+                return failure;
+            }
+
+            /**
+             * @brief Builds the failure of @p task from any other standard exception.
+             * @param task The task that threw.
+             * @param cause The exception it threw.
+             */
+            NamedFailure name_failure(const Task& task, const std::exception& cause)
+            {
+                NamedFailure failure;
+                failure.message = Core::Detail::sr_format("{} failed: {}", describe_task(task),
+                                                          cause.what());
+                failure.error = std::make_exception_ptr(std::runtime_error(failure.message));
+                return failure;
+            }
+
+            /**
+             * @brief Builds the failure of @p task from a throw that is not a std::exception.
+             * @param task The task that threw.
+             */
+            NamedFailure name_failure(const Task& task)
+            {
+                NamedFailure failure;
+                failure.message = Core::Detail::sr_format(
+                    "{} failed with an exception that is not a std::exception",
+                    describe_task(task));
+                failure.error = std::make_exception_ptr(std::runtime_error(failure.message));
+                return failure;
+            }
+        } // namespace
 
         /**
          * @brief Constructs a TaskScheduler from the context's settings (src/scheduler/README.md).
@@ -584,6 +669,18 @@ namespace SushiRuntime
             if (worker_id >= 0 && static_cast<size_t>(worker_id) < Core::MAX_WORKER_THREADS)
                 worker_completed_tasks[worker_id].value.fetch_add(1, std::memory_order_relaxed);
 
+            const auto abort_run = [this, task, &events](const NamedFailure& failure)
+            {
+                SR_LOG_ERROR("{}; the run is aborted and its remaining tasks are skipped.",
+                             failure.message);
+
+                // Only this run fails; the pool stays re-armable (src/scheduler/README.md).
+                record_run_error(failure.error);
+
+                // The failed task is pushed as ready so successors fire (src/scheduler/README.md).
+                events.push({sycl::event{}, task, true});
+            };
+
             try 
             {
                 SR_LOG_DEBUG("Executing task: {}", task->get_name());
@@ -675,9 +772,8 @@ namespace SushiRuntime
                         // A failure is not cached, so it recurs each run (src/scheduler/README.md).
                         throw Core::SushiException(Core::Error{
                             Core::Errc::invalid_graph,
-                            "A task's buffers span multiple device contexts; co-locate "
-                            "them on one device (cross-device execution is not yet "
-                            "supported)."});
+                            "its buffers span multiple device contexts; co-locate them on "
+                            "one device (cross-device execution is not yet supported)."});
 
                     // Only a registry hit is cached as the queue index (src/scheduler/README.md).
                     node->cached_queue_index_ = anchor_ctx;
@@ -761,15 +857,21 @@ namespace SushiRuntime
                 events.push({e, task, ready, /*has_event=*/!ready,
                             current_dispatch_step_.load(std::memory_order_acquire), widths});
             } 
+            catch (const Core::SushiException& cause)
+            {
+                abort_run(name_failure(*task, cause));
+            }
+            catch (const sycl::exception& cause)
+            {
+                abort_run(name_failure(*task, cause));
+            }
+            catch (const std::exception& cause)
+            {
+                abort_run(name_failure(*task, cause));
+            }
             catch (...)
             {
-                SR_LOG_ERROR("Task '{}' threw; aborting the current run.", task->get_name());
-
-                // Only this run fails; the pool stays re-armable (src/scheduler/README.md).
-                record_run_error(std::current_exception());
-
-                // The failed task is pushed as ready so successors fire (src/scheduler/README.md).
-                events.push({sycl::event{}, task, true});
+                abort_run(name_failure(*task));
             }
         }
 
