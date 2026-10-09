@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-10 — task: Added the offload seam a distributed layer implements: the state a node carries, the sink a scheduler offers and the coordinator (`offload_state.hpp`, `offload_sink.hpp`, `offload_coordinator.hpp`).
 - 2026-10-10 — graph: Moved `CompiledGraph` and the chain plan to the graph folder; the execution spellings stay as aliases (`graph/compiled_graph.hpp`, `graph/chain_plan.hpp`, `compiled_graph.cpp`).
 
 - 2026-10-09 — topology: Added `TopologyView`, the core-to-NUMA map and the NUMA distance a scheduler reads (`topology_view.hpp`).
