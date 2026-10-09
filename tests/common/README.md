@@ -1,7 +1,21 @@
 # tests/common
 
-Building blocks the test suites share: a thread barrier, host tasks, a USM guard and the
-entry point of every test binary.
+Building blocks the test suites share: a thread barrier, host tasks, a USM guard, a device
+probe, a measurement helper and the entry point of every test binary.
+
+## measurement.hpp
+
+`measure` calls a callable that times its own region and returns one figure, five times by
+default, and returns the median, the minimum and the maximum. `print_measurement` writes one
+line per case that starts with `SR_MEASUREMENT` and holds `key=value` pairs: benchmark, case,
+unit, median, min, max, runs, build, workers and size. A before-and-after comparison greps
+those lines out of the benchmark output.
+
+`CompletionSignal` closes a timed region: the task that finishes the work raises it and the
+test waits on it with a budget, so no polling sleep sits inside a measurement. A region that
+ends on the signal includes one thread wake-up.
+
+The header includes nothing from SushiRuntime.
 
 ## test_barrier.hpp
 
@@ -15,6 +29,11 @@ the next one by mistake. The count given at construction must be at least 1.
 
 The header holds an order-recording host task, an atomic-counter host task, and `UsmShared`,
 an RAII guard for USM memory, so a failing assertion never leaks an allocation.
+
+`has_any_sycl_device` asks SYCL whether it reports a device and constructs nothing of the
+runtime. A test that needs a device skips on its answer and builds its contexts outside any
+catch, so a constructor that throws fails the test. An exception from SYCL itself also fails
+it.
 
 `make_order_recorder` takes an optional delay. Sleeping before the task records its ID widens
 the window in which an ordering bug can surface.

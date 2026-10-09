@@ -79,7 +79,7 @@ TEST(Performance_DynamicGraph, ManyRegionsStreamingMutations)
     const double initial_ms =
         std::chrono::duration<double, std::milli>(t1 - t0).count();
     RecordProperty("regions", static_cast<int>(REGIONS));
-    RecordProperty("initial_compose_run_ms", static_cast<int>(initial_ms));
+    RecordProperty("initial_compose_run_ms", initial_ms);
 
     // A region counts every run, plus one per run after its second task streamed in.
     const std::size_t total_runs = 1 + MUTATES;
