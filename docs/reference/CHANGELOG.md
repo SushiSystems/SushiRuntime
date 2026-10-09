@@ -4,11 +4,11 @@
 
 - 2026-10-09 — topology: Added `TopologyView`, the core-to-NUMA map and the NUMA distance a scheduler reads (`topology_view.hpp`).
 - 2026-10-09 — observability: Added `TransferCounters`, the two byte counters of host and device transfers (`transfer_counters.hpp`).
-- 2026-10-09 — memory: Added `UsmAllocator` with one `allocate(UsmRequest)` entry point; releasing adopted memory no longer calls `sycl::free` on it (`usm_allocator.hpp`, `usm_request.hpp`, `usm_release_observer.hpp`).
+- 2026-10-09 — memory: Added `UsmAllocator` with one allocation entry point; releasing adopted memory no longer passes it to SYCL's free (`usm_allocator.hpp`, `usm_request.hpp`, `usm_release_observer.hpp`).
 - 2026-10-09 — device: Added `DeviceQueueSet`, the device inventory and queue families of a runtime, with NUMA routing resolved once at construction (`device_queue_set.hpp`, `device_info.hpp`, `queue_flavour.hpp`).
-- 2026-10-09 — api: Moved the `Interop` facade and `HostExport` to `api/interop/`; `Interop::HostExport` stays as an alias and `interop/` no longer includes `api/` (`api/interop/interop.hpp`, `api/interop/host_export.hpp`).
-- 2026-10-09 — scheduler: Moved `PinPolicy` and `WorkerPoolInfo` to the scheduler, kept as aliases under `Execution`, and added `WorkerPoolSettings` (`pin_policy.hpp`, `worker_pool_info.hpp`, `worker_pool_settings.hpp`).
-- 2026-10-09 — task: Moved `Task`, `Node`, the task types and the late bindings to `task/` headers; the old `scheduler/` and `graph/` paths forward (`task/task.hpp`, `task/node.hpp`, `task/task_types.hpp`).
+- 2026-10-09 — api: Moved the interop facade and `HostExport` into the api folder; the old `Interop::HostExport` spelling stays as an alias and interop no longer includes api (`api/interop/interop.hpp`, `api/interop/host_export.hpp`).
+- 2026-10-09 — scheduler: Moved `PinPolicy` and `WorkerPoolInfo` to the scheduler, kept as aliases in the execution namespace, and added the worker pool settings struct (`pin_policy.hpp`, `worker_pool_info.hpp`, `worker_pool_settings.hpp`).
+- 2026-10-09 — task: Moved `Task`, `Node`, the task types and the late bindings to headers of a task folder; the old scheduler and graph paths forward (`task/task.hpp`, `task/node.hpp`, `task/task_types.hpp`).
 - 2026-10-09 — core: Removed two unused includes, of the run report and of the logger; a file that relied on either includes it itself (`error.hpp`, `ref_counted.hpp`).
 - 2026-10-09 — scheduler: Named the failing node and its registration index in the failure log and in the run's error; a non-SushiException, non-SYCL throw now reaches the caller as `std::runtime_error` (`scheduler.cpp`, `node.hpp`).
 - 2026-10-09 — scheduler: Removed `Task::set_name` and the `Task(const char*)` constructor; a task type answers `get_name()` itself (`task.hpp`, `node.hpp`).
