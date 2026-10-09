@@ -32,6 +32,9 @@ The declarations keep the namespaces they had before the module was split out.
 | `region_link.hpp` | `Graph::RegionLink` |
 | `node_profiling.hpp` | `Graph::NodeProfiling` |
 | `node.hpp` | `Graph::SuccessorNode`, `Graph::Node`, and `Graph::OffloadState` and `Graph::NodeExtensions` |
+| `offload_state.hpp` | `Graph::OffloadPayload`, `Graph::OffloadState` (the latter only while `SR_DISTRIBUTED` is undefined, until `node.hpp` drops its own) |
+| `offload_sink.hpp` | `Graph::OffloadSink`, through which a coordinator returns nodes to the scheduler |
+| `offload_coordinator.hpp` | `Graph::OffloadStatistics`, `Graph::OffloadCoordinator`, the seam an offload layer implements |
 | `node_widths.hpp` | `Graph::NodeWidths`, `Graph::snapshot_widths` (defined in `src/task/node_widths.cpp`) |
 
 The notes on why each symbol is the way it is are in `include/SushiRuntime/graph/README.md` and
