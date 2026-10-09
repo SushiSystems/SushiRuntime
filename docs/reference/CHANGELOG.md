@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-10 — execution: Removed `RuntimeContext::probe_hardware`; `malloc_shared(bytes, numa_id)` now picks the lowest-indexed device of the node instead of rotating (`runtime_context.hpp`, `runtime_context.cpp`).
+- 2026-10-10 — execution: Rebuilt `RuntimeContext` on the device, memory, observability and topology bricks and added an accessor for each; `UsmAllocationOwner` holds the allocator (`runtime_context.hpp`, `usm_allocation_owner.hpp`).
 - 2026-10-10 — task: Added the offload seam a distributed layer implements: the state a node carries, the sink a scheduler offers and the coordinator (`offload_state.hpp`, `offload_sink.hpp`, `offload_coordinator.hpp`).
 - 2026-10-10 — graph: Moved `CompiledGraph` and the chain plan to the graph folder; the execution spellings stay as aliases (`graph/compiled_graph.hpp`, `graph/chain_plan.hpp`, `compiled_graph.cpp`).
 

@@ -209,32 +209,38 @@ already walks every node once after compile.
 ### Settings are immutable
 
 The settings are set once at construction and never changed. The scheduler sizes and places
-its worker pool from them, the execution engine reads the rebalancer choice, and
-`probe_hardware()` reads the profiling choice while the queues are being built. A SYCL queue
-carries the profiling property from creation and is not rebuilt to toggle it. Immutability
-is what makes the settings safe to read from worker threads without a lock.
+its worker pool from them, the execution engine reads the rebalancer choice, and the device
+set is built with the profiling choice. A SYCL queue carries the profiling property from
+creation and is not rebuilt to toggle it. Immutability is what makes the settings safe to
+read from worker threads without a lock.
 
-The constructor stores them before `probe_hardware()` builds the queues and before the
-`ExecutionEngine` reads the worker-pool and rebalancer choices.
+`settings` is the first member of `Impl`, so it is stored before `probe_devices()` builds the
+queues and before the `ExecutionEngine` reads the worker-pool and rebalancer choices.
 
 ### Construction order
 
-The `ExecutionEngine` is constructed after the hardware is probed, so it receives a context
+`Impl` builds its members in declaration order: the settings, the `Topology::TopologyView`,
+the `Device::DeviceQueueSet`, the `Memory::UsmAllocator` (from the set's plain queues) and the
+`Observability::TransferCounters`. The topology provider is asked for the core map and the
+hardware nodes during that construction and is not kept.
+
+The `ExecutionEngine` is constructed after all of them, so it receives a context
 with every queue available. The scheduler it starts lives as long as the `RuntimeContext`.
 
 ### Destruction order
 
 The order in `~Impl` is load-bearing. With the distributed layer compiled in, the
 coordinator stops first, so no late remote completion can touch the scheduler while or after
-it is torn down. The `ExecutionEngine` goes next; that joins every worker thread and removes
-any dangling reference to a queue or to another `Impl` member. Only then is it safe to drain
-outstanding GPU work with `wait_and_throw()`, so every hardware operation has completed
-before the SYCL objects it used go out of scope.
+it is torn down. The allocator's release observer is cleared next: a `Buffer` holds the
+allocator through `shared_memory()` and can release its memory after the context is gone,
+and the observer it would call lives in `Impl`. The `ExecutionEngine` goes after that; its
+shutdown joins every worker thread and removes any dangling reference to a queue or to
+another `Impl` member. Only then is it safe to drain outstanding GPU work, which the
+`Device::DeviceQueueSet` does in its own destructor when `Impl`'s members are destroyed, so
+every hardware operation has completed before the SYCL objects it used go out of scope.
 
-The drain swallows a late asynchronous device error. It runs in the runtime's destructor,
-which is implicitly `noexcept`, so a throwing `wait_and_throw()` would call
-`std::terminate`. During teardown the error cannot be surfaced to a caller, so it is logged
-and the remaining queues still drain and resources are still freed.
+The set's destructor logs a late asynchronous device error and continues;
+`include/SushiRuntime/device/README.md` says why.
 
 ### Queues
 
@@ -244,39 +250,29 @@ Profiling is added on top when the context was built for it, so `RunReport` can 
 kernel's device start and end timestamps. The two properties compose, and the FPGA case
 keeps its in-order guarantee.
 
-`profiling_queues` is sized to `nodes.size()` once in `probe_hardware()` and never resized,
-so a reference handed out by `profiling_queue()` stays valid for the context's lifetime. An
-entry is empty until the device's `profiling_once` fires, eagerly when `settings.profiling`
-is set, or on the first `profiling_queue()` call for that device. The eager build exists
-because a profiled run must not pay first-touch latency. `chain_queues` and
-`chain_profiling_queues` follow the same sizing rule for `chain_queue()`.
+The queues themselves, their lazy build and the NUMA rotation live in
+`Device::DeviceQueueSet`; `include/SushiRuntime/device/README.md` describes them. The context
+keeps no queue of its own. `profiling_queue(i)` asks the set for the flavour
+`{in_order = false, profiling = true}` and `chain_queue(i, profiling)` for
+`{in_order = true, profiling}`.
 
-`build_profiling_queue()` shares the plain queue's context and device, adds
-`enable_profiling`, and keeps `in_order` when the plain queue carries it. When
-`settings.profiling` is true the plain queue already carries `enable_profiling`, which is
-`probe_hardware()`'s behaviour and is kept for existing consumers, so the plain queue itself
-is stored and no duplicate is built. `profiling_built` is stored last, because
-`has_profiling_queue()` reads only that flag and never the optional, whose `emplace()` a
-concurrent `call_once` may still be running.
-
-`device_is_gpu()` reads the flag `probe_hardware()` recorded, which is what makes it cheap
-and allocation-free on every platform. `all_queues` is filled by walking the node list in
-order, one queue per node with no skips, so the two share an index.
-
-`get_numa_local_queue()` keeps its round-robin cursors in `thread_local` storage. That gives
-an even rotation per thread with no atomic contention.
+`describe_device()` turns each `Topology::HardwareNode` into a `Device::DeviceDescriptor`, so
+the device module includes no topology header. A node whose `is_gpu` flag is set becomes
+`DeviceKind::Gpu` whatever SYCL reports, which keeps `device_is_gpu()` answering from the flag
+discovery recorded. Descriptors are built by walking the node list in order, one per node
+with no skips, so a node and its queue share an index.
 
 ### No device at all
 
-An empty device list is reported in `probe_hardware()`, where the filter that caused it is
-still in hand. Anything later asks for queue 0 and fails with "Queue index out of bounds".
+An empty device list is reported in `probe_devices()`, where the filter that caused it is
+still in hand. Anything later asks for queue 0 and fails with a bad-index error.
 That message is true, but it names neither the machine's state nor the filter, and it is the
 first thing a player on a machine without a GPU would see. The comment this page replaces
 adds that "BB-5b's try_create() turns this into a returned Error rather than a throw".
 
 ### Transfer counters
 
-`device_to_host_bytes` and `host_to_device_bytes` count only the explicit transfers the
+`transfers`, an `Observability::TransferCounters`, counts only the explicit transfers the
 runtime starts itself: the selective readback in `Buffer::read_range` and `write_range`, and
 the distributed path. `RunReport` uses them to say how much the host pulled from and pushed
 to the device during a run. Implicit shared-USM page migration by the driver is invisible to
@@ -285,10 +281,10 @@ monotonic counters read at a run boundary, with no ordering dependency on other 
 
 ### USM ownership
 
-`usm_registry` maps a USM pointer to the index of its owning queue. `RuntimeContext::malloc_*`
-fills it, so the scheduler can run a task on the exact queue and context its data was
-allocated on. The registry is the source of truth; pointer introspection stays only as a
-best-effort fallback.
+`Memory::UsmAllocator` maps a USM pointer to the index of its owning queue. Every
+`RuntimeContext::malloc_*` forwards to its `allocate()`, so the scheduler can run a task on
+the exact queue and context its data was allocated on. The record is the source of truth;
+pointer introspection stays only as a best-effort fallback.
 
 Introspection is unreliable for picking an owner. On a single platform, CUDA for example, a
 `malloc_shared` or `malloc_device` pointer is valid in sibling contexts too, but only the
@@ -302,10 +298,15 @@ it prefers a queue that both reports device-or-shared and whose own device equal
 settles it at once. Host USM, a null pointer, or anything that cannot be pinned takes the
 NUMA-local round-robin queue.
 
-`free_usm()` resolves and forgets the owner in one `take()`. Two separate locks would let a
-second free of the same pointer read an owner the first is already acting on. The free goes
-against the owning queue's context, which correctness requires; without a record it falls
-back to queue 0 as a best effort.
+`free_usm()` forwards to the allocator's `release()`, which resolves and forgets the owner
+in one `take()`. Two separate locks would let a second free of the same pointer read an
+owner the first is already acting on. The free goes against the owning queue's context,
+which correctness requires; without a record it falls back to queue 0 as a best effort and
+logs a WARN. An address recorded through `adopt_usm()` is forgotten and not freed.
+
+With the distributed layer compiled in, a `Memory::UsmReleaseObserver` on the allocator
+unregisters the address from the buffer registry before the record is dropped and the memory
+freed. It is installed as soon as `enable_distributed_master()` has created the registry.
 
 `containing_usm_base()` resolves an interior pointer to the base `owner_of()` knows, for
 callers validating a pointer a user handed them. It is linear in live allocations, which

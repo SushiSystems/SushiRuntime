@@ -21,7 +21,7 @@
 
 /**
  * @file usm_allocation_owner.hpp
- * @brief Declares UsmAllocationOwner, which frees an address through its runtime context.
+ * @brief Declares UsmAllocationOwner, which releases an address through its USM allocator.
  * @author Mustafa Garip
  */
 
@@ -30,41 +30,42 @@
 #include <memory>
 #include <utility>
 
-#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/allocation.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 
 namespace SushiRuntime
 {
     namespace Memory
     {
         /**
-         * @brief Frees an address through the runtime context that allocated it.
+         * @brief Releases an address through the allocator that allocated it.
          * @see docs/design/SYCL_VULKAN_INTEROP.md §3.1 in the SushiEngine repository.
          */
         class UsmAllocationOwner final : public IAllocationOwner
         {
             public:
                 /**
-                 * @brief Binds the owner to the context that allocated the address.
-                 * @param context The context whose free_usm releases the address.
+                 * @brief Binds the owner to the allocator that allocated the address.
+                 * @param allocator Kept alive by this owner; null makes release() do nothing.
                  */
-                explicit UsmAllocationOwner(std::shared_ptr<Execution::RuntimeContext> context) noexcept
-                    : context_(std::move(context))
+                explicit UsmAllocationOwner(std::shared_ptr<UsmAllocator> allocator) noexcept
+                    : allocator_(std::move(allocator))
                 {
                 }
 
                 /**
-                 * @brief Frees @p address through the bound context.
-                 * @param address The allocation to free.
+                 * @brief Releases @p address through the bound allocator.
+                 * @param address The allocation to release.
                  */
                 void release(void* address) noexcept override
                 {
-                    if (context_)
-                        context_->free_usm(address);
+                    if (allocator_)
+                        allocator_->release(address);
                 }
 
             private:
-                std::shared_ptr<Execution::RuntimeContext> context_;
+                /// @brief Allocator whose release() frees the address.
+                std::shared_ptr<UsmAllocator> allocator_;
         };
 
     } // namespace Memory

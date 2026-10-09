@@ -21,26 +21,36 @@
 
 /**
  * @file runtime_context.cpp
- * @brief Probes the hardware, builds the SYCL queues and owns the execution engine.
+ * @brief Probes the hardware, builds the context's parts in order and tears them down.
  * @author Mustafa Garip
+ * @see src/execution/README.md
  */
 
-#include <map>
-#include <array>
-#include <mutex>
-#include <atomic>
+#include <SushiRuntime/execution/runtime_context.hpp>
+
+#include <cstddef>
+#include <exception>
 #include <memory>
 #include <optional>
-#include <unordered_map>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/logger.hpp>
-#include <SushiRuntime/topology/numa_mapper.hpp>
+#include <SushiRuntime/device/device_info.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/device/queue_flavour.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
+#include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
-#include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
+#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
 #ifdef SR_DISTRIBUTED
+#include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #endif
 
@@ -48,108 +58,138 @@ namespace SushiRuntime
 {
     namespace Execution
     {
-        using namespace SushiRuntime::Topology;
-        using namespace SushiRuntime::Core;
+        namespace
+        {
+            /** @brief Converts a discovered hardware node to the descriptor a device set takes. */
+            Device::DeviceDescriptor describe_device(const Topology::HardwareNode& node)
+            {
+                Device::DeviceDescriptor descriptor;
+                descriptor.device = node.sycl_dev;
+                descriptor.info.name = node.name;
+                descriptor.info.backend = node.sycl_dev.get_backend();
+                descriptor.info.numa_node = node.numa_node_id;
+                descriptor.info.memory_bytes = node.global_mem_size;
+                descriptor.info.compute_units = node.max_compute_units;
+
+                // The node's own flag names a GPU, so device_is_gpu() answers as discovery did.
+                if (node.is_gpu)
+                    descriptor.info.kind = Device::DeviceKind::Gpu;
+                else if (node.sycl_dev.is_cpu())
+                    descriptor.info.kind = Device::DeviceKind::Cpu;
+                else if (node.sycl_dev.is_accelerator())
+                    descriptor.info.kind = Device::DeviceKind::Accelerator;
+                else
+                    descriptor.info.kind = Device::DeviceKind::Other;
+
+                return descriptor;
+            }
+
+            /** @brief Builds the exception for a filter that no SYCL device passed. */
+            Core::SushiException no_device_error(const Topology::HardwareFilterConfig& config)
+            {
+                std::string detail = "No SYCL device satisfied the hardware filter. Active filter: ";
+                detail += "cpu=";
+                detail += config.include_cpu ? "yes" : "no";
+                detail += ", gpu=";
+                detail += config.include_gpu ? "yes" : "no";
+                detail += ", accelerator=";
+                detail += config.include_accelerator ? "yes" : "no";
+                detail += ", require_fp64=";
+                detail += config.require_fp64 ? "yes" : "no";
+                detail += ". Either the machine exposes no SYCL device (no GPU driver and no "
+                          "OpenCL CPU runtime installed) or every device it exposes was excluded.";
+
+                return Core::SushiException(Core::Error{Core::Errc::unsupported, std::move(detail)});
+            }
+
+            /**
+             * @brief Discovers the devices that pass a filter and builds their queues.
+             * @param provider Asked once for the hardware nodes.
+             * @throws Core::SushiException With Errc::unsupported when no device passes.
+             * @see src/execution/README.md
+             */
+            Device::DeviceQueueSet probe_devices(Topology::ITopologyProvider& provider,
+                                                 const Topology::HardwareFilterConfig& config,
+                                                 bool profiling)
+            {
+                try
+                {
+                    const std::vector<Topology::HardwareNode> nodes = provider.enumerate(config);
+                    if (nodes.empty())
+                        throw no_device_error(config);
+
+                    std::vector<Device::DeviceDescriptor> descriptors;
+                    descriptors.reserve(nodes.size());
+                    for (const Topology::HardwareNode& node : nodes)
+                        descriptors.push_back(describe_device(node));
+
+                    return Device::DeviceQueueSet(std::move(descriptors), profiling);
+                }
+                catch (const std::exception& error)
+                {
+                    // The device set leaves a failed queue build unlogged; this is its one line.
+                    SR_LOG_ERROR("Critical initialization failure: {}", error.what());
+                    throw;
+                }
+            }
+
+#ifdef SR_DISTRIBUTED
+            /** @brief Drops a released address's row from the distributed buffer table. */
+            class DistributedBufferReleaseObserver final : public Memory::UsmReleaseObserver
+            {
+                public:
+                    /**
+                     * @brief Binds the observer to the table it drops rows from.
+                     * @param buffers Must outlive the observer.
+                     */
+                    explicit DistributedBufferReleaseObserver(
+                        Distributed::BufferRegistry& buffers) noexcept
+                        : buffers_(buffers)
+                    {
+                    }
+
+                    DistributedBufferReleaseObserver(const DistributedBufferReleaseObserver&) = delete;
+                    DistributedBufferReleaseObserver&
+                    operator=(const DistributedBufferReleaseObserver&) = delete;
+
+                    /** @brief Unregisters the buffer at an address; an unknown address is ignored. */
+                    void on_release(void* address) noexcept override
+                    {
+                        buffers_.unregister_buffer(address);
+                    }
+
+                private:
+                    /// @brief Table of distributable buffers, keyed by USM address.
+                    Distributed::BufferRegistry& buffers_;
+            };
+#endif
+        } // namespace
 
         /**
-         * @brief Private implementation of RuntimeContext (Pimpl).
-         * 
-         * Handles hardware topology, queues, and allocators.
+         * @brief Holds the parts of a RuntimeContext in the order they are built.
+         * @see src/execution/README.md
          */
         struct RuntimeContext::Impl : public Core::RefCounted
         {
-            /** @brief Injected topology source (discovery + NUMA mapping). [DIP] */
-            std::shared_ptr<Topology::ITopologyProvider> provider;
-
-            /** @brief Injected NUMA distance (SLIT) model. [DIP] */
-            std::shared_ptr<Topology::INumaDistanceModel> distance_model;
-
-            /** @brief Hardware inventory. */
-            std::vector<HardwareNode> nodes;
-
-            /** @brief Cached logical-core -> NUMA node map (from the provider). */
-            std::vector<int> core_to_numa;
-            
-            /** @brief Device discovery units: NUMA ID -> queue list. */
-            std::map<int, std::vector<sycl::queue>> numa_aware_queues;
-            
-            /** @brief Flat list for fast access to all queues. */
-            std::vector<sycl::queue> all_queues;
-
             /**
-             * @brief Holds each device's profiling queue, built lazily (src/execution/README.md).
+             * @brief Builds every part but the engine, which needs the finished context.
+             * @param provider Queried during construction only; not stored.
+             * @param distance_model Must not be null.
              */
-            std::vector<std::optional<sycl::queue>> profiling_queues;
-
-            /** @brief One-shot guard per device for building its profiling_queues entry. */
-            std::vector<std::once_flag> profiling_once;
-
-            /**
-             * @brief Publishes that profiling_queues[i] is fully constructed.
-             * has_profiling_queue() reads this instead of profiling_queues[i]'s
-             * optional, whose emplace() a concurrent call_once may still be running.
-             */
-            std::vector<std::atomic<bool>> profiling_built;
-
-            /** @brief Set once a device's profiling chain queue exists; read like profiling_built. */
-            std::vector<std::atomic<bool>> chain_profiling_built;
-
-            /** @brief Holds one lazily built queue and the guard that builds it once. */
-            struct LazyQueue
+            Impl(const RuntimeSettings& runtime_settings,
+                 const Topology::HardwareFilterConfig& config,
+                 Topology::ITopologyProvider& provider,
+                 std::shared_ptr<const Topology::INumaDistanceModel> distance_model)
+                : settings(runtime_settings),
+                  topology(provider, std::move(distance_model)),
+                  devices(probe_devices(provider, config, settings.profiling)),
+                  memory(std::make_shared<Memory::UsmAllocator>(devices.plain_queues()))
             {
-                std::optional<sycl::queue> queue; /**< Empty until once fires. */
-                std::once_flag once;              /**< Guards the single build of queue. */
-            };
+            }
 
-            /**
-             * @brief Per-device in-order queues a chainable plan submits to, plain then profiling.
-             *
-             * Sized to nodes.size() once in probe_hardware() and never resized, so
-             * a reference chain_queue() hands out stays valid for the context's
-             * lifetime.
-             */
-            std::vector<LazyQueue> chain_queues;
-            std::vector<LazyQueue> chain_profiling_queues;
-
-            /**
-             * @brief Holds the runtime settings, fixed at construction (src/execution/README.md).
-             */
-            RuntimeSettings settings;
-
-            /**
-             * @brief Counts bytes the runtime copied over PCIe (src/execution/README.md).
-             */
-            std::atomic<std::size_t> device_to_host_bytes{0};
-            std::atomic<std::size_t> host_to_device_bytes{0};
-
-            /**
-             * @brief Maps each USM pointer to its owning queue index (src/execution/README.md).
-             */
-            SushiRuntime::Memory::UsmRegistry usm_registry;
-
-            /**
-             * @brief Execution engine (owns persistent TaskScheduler).
-             *
-             * Stored as a raw pointer and initialised lazily after probe_hardware()
-             * so that the engine can receive a fully-initialised queue list.
-             * Lifetime is always shorter than the Impl itself — shutdown() is called
-             * in ~Impl before any other resource is released.
-             */
-            std::unique_ptr<ExecutionEngine> engine;
-
-#ifdef SR_DISTRIBUTED
-            /** @brief Deployment role; Standalone unless explicitly promoted. */
-            RuntimeContext::RuntimeRole role = RuntimeContext::RuntimeRole::Standalone;
-            /** @brief Master-side buffer id registry (created in Master mode). */
-            std::unique_ptr<Distributed::BufferRegistry> buffers;
-            /** @brief Master-side offload coordinator (created in Master mode). */
-            std::unique_ptr<Distributed::DistributedCoordinator> coordinator;
-#endif
-
-            ~Impl() 
+            /** @brief Stops everything that submits work, then lets the device set drain. */
+            ~Impl()
             {
-                // The engine is destroyed before the queues drain (src/execution/README.md).
-
 #ifdef SR_DISTRIBUTED
                 // The network stops first, before the scheduler (src/execution/README.md).
                 if (coordinator)
@@ -157,721 +197,292 @@ namespace SushiRuntime
                     coordinator->stop();
                     coordinator.reset();
                 }
+
+                // The allocator can outlive this object; it must not keep a pointer into it.
+                memory->set_release_observer(nullptr);
 #endif
 
+                // The engine is destroyed before devices drains (src/execution/README.md).
                 if (engine)
                 {
                     engine->shutdown();
                     engine.reset();
                 }
-
-                auto drain = [](sycl::queue& q)
-                {
-                    // A late async device error is logged, never thrown (src/execution/README.md).
-                    try
-                    {
-                        q.wait_and_throw();
-                    }
-                    catch (const std::exception& ex)
-                    {
-                        SR_LOG_WARN("Async device error during shutdown drain: {}", ex.what());
-                    }
-                    catch (...)
-                    {
-                        SR_LOG_WARN("Unknown async device error during shutdown drain.");
-                    }
-                };
-
-                for (auto& q : all_queues) drain(q);
-                for (auto& q : profiling_queues) if (q) drain(*q);
-                for (auto& q : chain_queues) if (q.queue) drain(*q.queue);
-                for (auto& q : chain_profiling_queues) if (q.queue) drain(*q.queue);
             }
+
+            Impl(const Impl&) = delete;
+            Impl& operator=(const Impl&) = delete;
+
+            /**
+             * @brief Resolves the default provider and distance model, then builds an Impl.
+             * @param provider Null selects HwlocTopologyProvider.
+             * @param distance_model Null selects HwlocDistanceModel.
+             */
+            static sushi_ptr<Impl> create(const Topology::HardwareFilterConfig& config,
+                                          std::shared_ptr<Topology::ITopologyProvider> provider,
+                                          std::shared_ptr<Topology::INumaDistanceModel> distance_model,
+                                          const RuntimeSettings& runtime_settings)
+            {
+                SR_LOG_INFO("Initializing compute stack...");
+
+                if (!provider)
+                    provider = std::make_shared<Topology::HwlocTopologyProvider>();
+                if (!distance_model)
+                    distance_model = std::make_shared<Topology::HwlocDistanceModel>();
+
+                return make_sushi<Impl>(runtime_settings, config, *provider,
+                                        std::move(distance_model));
+            }
+
+            /** @brief Runtime settings, fixed at construction (src/execution/README.md). */
+            RuntimeSettings settings;
+
+            /** @brief Core-to-NUMA map and NUMA distances. */
+            Topology::TopologyView topology;
+
+            /** @brief Device inventory and every SYCL queue. */
+            Device::DeviceQueueSet devices;
+
+            /** @brief USM allocator; shared because an allocation's owner may outlive the context. */
+            std::shared_ptr<Memory::UsmAllocator> memory;
+
+            /** @brief Byte counters of explicit transfers (src/execution/README.md). */
+            Observability::TransferCounters transfers;
+
+#ifdef SR_DISTRIBUTED
+            /** @brief Deployment role; Standalone unless explicitly promoted. */
+            RuntimeContext::RuntimeRole role = RuntimeContext::RuntimeRole::Standalone;
+
+            /** @brief Master-side buffer id registry (created in Master mode). */
+            std::unique_ptr<Distributed::BufferRegistry> buffers;
+
+            /** @brief Tells buffers about every released address (created in Master mode). */
+            std::optional<DistributedBufferReleaseObserver> release_observer;
+
+            /** @brief Master-side offload coordinator (created in Master mode). */
+            std::unique_ptr<Distributed::DistributedCoordinator> coordinator;
+#endif
+
+            /** @brief Execution engine; built last, by RuntimeContext's constructor. */
+            std::unique_ptr<ExecutionEngine> engine;
         };
 
-        /**
-         * @brief Constructs a RuntimeContext: hardware probe then engine (src/execution/README.md).
-         * @param config The hardware filtering configuration.
-         * @param provider Optional custom topology provider.
-         * @param distance_model Optional custom NUMA distance model.
-         */
         RuntimeContext::RuntimeContext(const Topology::HardwareFilterConfig& config,
                                        std::shared_ptr<Topology::ITopologyProvider> provider,
                                        std::shared_ptr<Topology::INumaDistanceModel> distance_model,
                                        const RuntimeSettings& settings)
-            : impl_(make_sushi<Impl>())
+            : impl_(Impl::create(config, std::move(provider), std::move(distance_model), settings))
         {
-            SR_LOG_INFO("Initializing compute stack...");
-
-            // Settings land before queues and engine read them (src/execution/README.md).
-            impl_->settings = settings;
-
-            // Fall back to the real hwloc-backed defaults when nothing is injected.
-            impl_->provider = provider ? std::move(provider)
-                                       : std::make_shared<Topology::HwlocTopologyProvider>();
-            impl_->distance_model = distance_model ? std::move(distance_model)
-                                                   : std::make_shared<Topology::HwlocDistanceModel>();
-
-            // The scheduler reads this cached map to build steal victim orders.
-            impl_->core_to_numa = impl_->provider->cpu_core_to_numa();
-
-            probe_hardware(config);
-
-            // The engine is built after the probe, so every queue exists (src/execution/README.md).
+            // The engine reads this context while it is built, so impl_ is complete first.
             impl_->engine = std::make_unique<ExecutionEngine>(*this);
         }
 
-        /**
-         * @brief Destroys the RuntimeContext.
-         *
-         * Cleans up all managed hardware, allocators, and execution resources.
-         */
         RuntimeContext::~RuntimeContext() = default;
 
-        /**
-         * @brief Reports whether the queues were built with profiling enabled.
-         */
-        bool RuntimeContext::profiling_enabled() const noexcept
-        {
-            return impl_->settings.profiling;
-        }
-
-        /**
-         * @brief Returns the runtime-wide settings fixed at construction.
-         */
         const RuntimeSettings& RuntimeContext::settings() const noexcept
         {
             return impl_->settings;
         }
 
-        /**
-         * @brief Adds to the device->host explicit-transfer byte counter.
-         */
-        void RuntimeContext::add_device_to_host_bytes(std::size_t bytes) noexcept
+        const Topology::TopologyView& RuntimeContext::topology() const noexcept
         {
-            impl_->device_to_host_bytes.fetch_add(bytes, std::memory_order_relaxed);
+            return impl_->topology;
         }
 
-        /**
-         * @brief Adds to the host->device explicit-transfer byte counter.
-         */
-        void RuntimeContext::add_host_to_device_bytes(std::size_t bytes) noexcept
+        Device::DeviceQueueSet& RuntimeContext::devices() noexcept
         {
-            impl_->host_to_device_bytes.fetch_add(bytes, std::memory_order_relaxed);
+            return impl_->devices;
         }
 
-        /**
-         * @brief Returns cumulative device->host explicit-transfer bytes.
-         */
-        std::size_t RuntimeContext::device_to_host_bytes() const noexcept
+        Memory::UsmAllocator& RuntimeContext::memory() noexcept
         {
-            return impl_->device_to_host_bytes.load(std::memory_order_relaxed);
+            return *impl_->memory;
         }
 
-        /**
-         * @brief Returns cumulative host->device explicit-transfer bytes.
-         */
-        std::size_t RuntimeContext::host_to_device_bytes() const noexcept
+        const std::shared_ptr<Memory::UsmAllocator>& RuntimeContext::shared_memory() const noexcept
         {
-            return impl_->host_to_device_bytes.load(std::memory_order_relaxed);
+            return impl_->memory;
         }
 
-        /**
-         * @brief Executes the hardware discovery and topology mapping process.
-         *
-         * Initializes the device inventory and configures SYCL queues based on NUMA nodes.
-         *
-         * @param config The configuration containing hardware filtering preferences.
-         * @throws std::exception If a critical initialization failure occurs.
-         */
-        void RuntimeContext::probe_hardware(const Topology::HardwareFilterConfig& config) 
+        Observability::TransferCounters& RuntimeContext::transfers() noexcept
         {
-            try 
-            {
-                /** @brief Step 1+2: discovery + NUMA mapping via the injected provider. */
-                impl_->nodes = impl_->provider->enumerate(config);
-
-                /** @brief Step 3: queue configuration - create SYCL queues. */
-                impl_->all_queues.clear();
-                impl_->numa_aware_queues.clear();
-
-                // Move-assigned, not resized: once_flag and atomic elements are not movable.
-                impl_->profiling_queues = std::vector<std::optional<sycl::queue>>(impl_->nodes.size());
-                impl_->profiling_once = std::vector<std::once_flag>(impl_->nodes.size());
-                impl_->profiling_built = std::vector<std::atomic<bool>>(impl_->nodes.size());
-                impl_->chain_profiling_built = std::vector<std::atomic<bool>>(impl_->nodes.size());
-                impl_->chain_queues = std::vector<Impl::LazyQueue>(impl_->nodes.size());
-                impl_->chain_profiling_queues = std::vector<Impl::LazyQueue>(impl_->nodes.size());
-
-                for (const auto& node : impl_->nodes) 
-                {
-                    // A non-CPU, non-GPU device gets an in-order queue (src/execution/README.md).
-                    const bool needs_in_order =
-                        !node.sycl_dev.is_cpu() && !node.sycl_dev.is_gpu();
-                    sycl::property_list props;
-                    if (needs_in_order && impl_->settings.profiling)
-                        props = { sycl::property::queue::in_order(),
-                                  sycl::property::queue::enable_profiling() };
-                    else if (needs_in_order)
-                        props = { sycl::property::queue::in_order() };
-                    else if (impl_->settings.profiling)
-                        props = { sycl::property::queue::enable_profiling() };
-                    
-                    sycl::queue q(node.sycl_dev, [](sycl::exception_list elist) 
-                    {
-                        for (auto e : elist) std::rethrow_exception(e);
-                    }, props);
-
-                    impl_->all_queues.push_back(q);
-
-                    int effective_numa = node.numa_node_id;
-                    if (effective_numa < 0 || static_cast<size_t>(effective_numa) >= Core::MAX_NUMA_NODES)
-                    {
-                        SR_LOG_WARN("Device {} reported invalid NUMA {}. Falling back to NUMA 0 for queue mapping.",
-                                    node.name,
-                                    node.numa_node_id);
-                        effective_numa = 0;
-                    }
-
-                    impl_->numa_aware_queues[effective_numa].push_back(q);
-
-                    SR_LOG_INFO("Device: {} | NUMA: {} | Memory: {} MB | Compute units: {}",
-                               node.name,
-                               effective_numa,
-                               node.global_mem_size / (1024 * 1024),
-                               node.max_compute_units);
-                }
-
-                // An empty device list is reported here, with the filter (src/execution/README.md).
-                if (impl_->all_queues.empty())
-                {
-                    std::string detail = "No SYCL device satisfied the hardware filter. Active filter: ";
-                    detail += "cpu=";           detail += config.include_cpu ? "yes" : "no";
-                    detail += ", gpu=";         detail += config.include_gpu ? "yes" : "no";
-                    detail += ", accelerator="; detail += config.include_accelerator ? "yes" : "no";
-                    detail += ", require_fp64="; detail += config.require_fp64 ? "yes" : "no";
-                    detail += ". Either the machine exposes no SYCL device (no GPU driver and no "
-                              "OpenCL CPU runtime installed) or every device it exposes was excluded.";
-
-                    // The enclosing catch logs it; throwing unlogged avoids a duplicate line.
-                    throw Core::SushiException(Core::Error{Core::Errc::unsupported, std::move(detail)});
-                }
-
-                SR_LOG_INFO("Infrastructure ready. Total devices: {}, NUMA domains: {}",
-                            impl_->all_queues.size(),
-                            impl_->numa_aware_queues.size());
-
-                // Eager build: a profiled run must not pay first-touch latency.
-                if (impl_->settings.profiling)
-                {
-                    for (std::size_t i = 0; i < impl_->all_queues.size(); ++i)
-                        build_profiling_queue(i);
-                }
-            }
-            catch (const std::exception& e) 
-            {
-                SR_LOG_ERROR("Critical initialization failure: {}", e.what());
-                throw;
-            }
+            return impl_->transfers;
         }
 
-        /**
-         * @brief Retrieves a SYCL queue by its global index.
-         *
-         * @param index The global index of the queue.
-         * @return sycl::queue& Reference to the requested queue.
-         * @throws std::runtime_error If the queue index is out of bounds.
-         */
-        sycl::queue& RuntimeContext::get_queue(size_t index) 
-        {
-            SR_THROW_IF(index >= impl_->all_queues.size(), "Queue index out of bounds.");
-            return impl_->all_queues[index];
-        }
-
-        /**
-         * @brief Builds device @p index's profiling queue exactly once (src/execution/README.md).
-         */
-        void RuntimeContext::build_profiling_queue(size_t index)
-        {
-            std::call_once(impl_->profiling_once[index], [this, index]()
-            {
-                sycl::queue& plain = impl_->all_queues[index];
-                if (plain.has_property<sycl::property::queue::enable_profiling>())
-                {
-                    impl_->profiling_queues[index].emplace(plain);
-                }
-                else
-                {
-                    const sycl::property_list props = plain.has_property<sycl::property::queue::in_order>()
-                        ? sycl::property_list{ sycl::property::queue::in_order(),
-                                                sycl::property::queue::enable_profiling() }
-                        : sycl::property_list{ sycl::property::queue::enable_profiling() };
-
-                    impl_->profiling_queues[index].emplace(plain.get_context(), plain.get_device(),
-                        [](sycl::exception_list elist)
-                        {
-                            for (auto e : elist) std::rethrow_exception(e);
-                        },
-                        props);
-                }
-
-                // Stored last: has_profiling_queue() reads only this flag, never the optional.
-                impl_->profiling_built[index].store(true, std::memory_order_release);
-            });
-        }
-
-        /**
-         * @brief Returns device @p index's profiling-enabled queue, building it on first use.
-         */
-        sycl::queue& RuntimeContext::profiling_queue(size_t index)
-        {
-            SR_THROW_IF(index >= impl_->all_queues.size(), "Queue index out of bounds.");
-            build_profiling_queue(index);
-            return *impl_->profiling_queues[index];
-        }
-
-        /**
-         * @brief Reports whether device @p index's profiling queue has been built.
-         */
-        bool RuntimeContext::has_profiling_queue(size_t index) const noexcept
-        {
-            return index < impl_->profiling_built.size()
-                && (impl_->profiling_built[index].load(std::memory_order_acquire)
-                    || impl_->chain_profiling_built[index].load(std::memory_order_acquire));
-        }
-
-        /**
-         * @brief Builds device @p index's in-order chain queue of one flavour exactly once.
-         *
-         * Shares the plain queue's context and device and always carries in_order;
-         * the profiling flavour adds enable_profiling on top.
-         */
-        void RuntimeContext::build_chain_queue(size_t index, bool profiling)
-        {
-            auto& slot = profiling ? impl_->chain_profiling_queues[index] : impl_->chain_queues[index];
-            std::call_once(slot.once, [this, index, profiling, &slot]()
-            {
-                sycl::queue& plain = impl_->all_queues[index];
-                const sycl::property_list props = profiling
-                    ? sycl::property_list{ sycl::property::queue::in_order(),
-                                           sycl::property::queue::enable_profiling() }
-                    : sycl::property_list{ sycl::property::queue::in_order() };
-
-                slot.queue.emplace(plain.get_context(), plain.get_device(),
-                    [](sycl::exception_list elist)
-                    {
-                        for (auto e : elist) std::rethrow_exception(e);
-                    },
-                    props);
-                if (profiling)
-                    impl_->chain_profiling_built[index].store(true, std::memory_order_release);
-            });
-        }
-
-        /**
-         * @brief Returns device @p index's in-order chain queue, building it on first use.
-         */
-        sycl::queue& RuntimeContext::chain_queue(size_t index, bool profiling)
-        {
-            SR_THROW_IF(index >= impl_->all_queues.size(), "Queue index out of bounds.");
-            build_chain_queue(index, profiling);
-            return profiling ? *impl_->chain_profiling_queues[index].queue
-                             : *impl_->chain_queues[index].queue;
-        }
-
-        /**
-         * @brief Reports whether the device behind a queue is a GPU (src/execution/README.md).
-         * @param index The global index of the queue; the device list shares it.
-         * @throws Core::SushiException If the queue index is out of bounds.
-         */
-        bool RuntimeContext::device_is_gpu(size_t index) const
-        {
-            SR_THROW_IF(index >= impl_->nodes.size(), "Queue index out of bounds.");
-            return impl_->nodes[index].is_gpu;
-        }
-
-        /**
-         * @brief Gets the total number of available devices (queues).
-         *
-         * @return size_t The count of devices.
-         */
-        size_t RuntimeContext::device_count() const
-        {
-            return impl_->all_queues.size();
-        }
-
-        /**
-         * @brief Returns a NUMA node's queue, round-robin per thread (src/execution/README.md).
-         * @param numa_id Target NUMA node ID.
-         * @throws std::runtime_error If no SYCL queues are available.
-         */
-        sycl::queue& RuntimeContext::get_numa_local_queue(int numa_id)
-        {
-            static thread_local size_t local_numa_cursor[Core::MAX_NUMA_NODES] = {0};
-            static thread_local size_t local_global_cursor = 0;
-
-            auto it = impl_->numa_aware_queues.find(numa_id);
-            if (it != impl_->numa_aware_queues.end() && !it->second.empty())
-            {
-                auto& queues = it->second;
-                const size_t cursor = local_numa_cursor[static_cast<size_t>(numa_id)]++;
-                return queues[cursor % queues.size()];
-            }
-
-            if (!impl_->all_queues.empty())
-            {
-                const size_t cursor = local_global_cursor++;
-                SR_LOG_WARN("No queue found for NUMA {}, falling back to round-robin global queue selection.", numa_id);
-                return impl_->all_queues[cursor % impl_->all_queues.size()];
-            }
-
-            SR_THROW_IF(true, "No SYCL queues are available in the runtime context.");
-            return impl_->all_queues[0]; // Fallback dummy return
-        }
-
-        /**
-         * @brief Allocates shared USM memory on a specific device.
-         *
-         * @param bytes The size in bytes to allocate.
-         * @param device_index The index of the device to allocate on.
-         * @return void* Pointer to the allocated memory.
-         * @throws std::runtime_error If the device index is out of bounds.
-         */
-        void* RuntimeContext::malloc_shared_on(size_t bytes, size_t device_index)
-        {
-            sycl::queue& q = get_queue(device_index); // throws if out of bounds
-            void* p = sycl::malloc_shared(bytes, q);
-            if (p)
-            {
-                impl_->usm_registry.record(p, device_index, bytes);
-            }
-            return p;
-        }
-
-        /**
-         * @brief Allocates device-only USM on a specific device queue.
-         *
-         * @param bytes The size in bytes to allocate.
-         * @param device_index The index of the device to allocate on.
-         * @return void* Pointer to the allocated device memory.
-         * @throws std::runtime_error If the device index is out of bounds.
-         */
-        void* RuntimeContext::malloc_device_on(size_t bytes, size_t device_index)
-        {
-            sycl::queue& q = get_queue(device_index); // throws if out of bounds
-            void* p = sycl::malloc_device(bytes, q);
-            if (p)
-            {
-                impl_->usm_registry.record(p, device_index, bytes);
-            }
-            return p;
-        }
-
-        /**
-         * @brief Allocates pinned host USM in a specific device queue's context.
-         *
-         * @param bytes The size in bytes to allocate.
-         * @param device_index The index of the device whose context owns the memory.
-         * @return void* Pointer to the allocated host memory.
-         * @throws std::runtime_error If the device index is out of bounds.
-         */
-        void* RuntimeContext::malloc_host_on(size_t bytes, size_t device_index)
-        {
-            sycl::queue& q = get_queue(device_index); // throws if out of bounds
-            void* p = sycl::malloc_host(bytes, q);
-            if (p)
-            {
-                impl_->usm_registry.record(p, device_index, bytes);
-            }
-            return p;
-        }
-
-        /**
-         * @brief Allocates shared USM memory on a specific NUMA node.
-         *
-         * @param bytes The size in bytes to allocate.
-         * @param numa_id The NUMA node ID specifying the locality.
-         * @return void* Pointer to the allocated memory.
-         */
-        void* RuntimeContext::malloc_shared(size_t bytes, int numa_id)
-        {
-            sycl::queue& q = get_numa_local_queue(numa_id);
-            void* p = sycl::malloc_shared(bytes, q);
-            if (p)
-            {
-                // The owning queue's index is recorded for dispatch (src/execution/README.md).
-                for (size_t i = 0; i < impl_->all_queues.size(); ++i)
-                {
-                    if (impl_->all_queues[i] == q) { impl_->usm_registry.record(p, i, bytes); break; }
-                }
-            }
-            return p;
-        }
-
-        /**
-         * @brief Allocates device-only USM memory on a specific NUMA node.
-         *
-         * @param bytes The size in bytes to allocate.
-         * @param numa_id The NUMA node ID specifying the locality.
-         * @return void* Pointer to the allocated memory.
-         */
-        void* RuntimeContext::malloc_device(size_t bytes, int numa_id)
-        {
-            sycl::queue& q = get_numa_local_queue(numa_id);
-            void* p = sycl::malloc_device(bytes, q);
-            if (p)
-            {
-                for (size_t i = 0; i < impl_->all_queues.size(); ++i)
-                {
-                    if (impl_->all_queues[i] == q) { impl_->usm_registry.record(p, i, bytes); break; }
-                }
-            }
-            return p;
-        }
-
-        /**
-         * @brief Allocates host USM aligned to @p alignment on a specific device queue.
-         *
-         * @param alignment    Byte alignment of the returned address.
-         * @param bytes        The size in bytes to allocate.
-         * @param device_index The index of the device to allocate on.
-         * @return void* Host-addressable pointer, or nullptr on failure.
-         */
-        void* RuntimeContext::aligned_malloc_host_on(size_t alignment, size_t bytes, size_t device_index)
-        {
-            sycl::queue& q = get_queue(device_index); // throws if out of bounds
-            void* p = sycl::aligned_alloc_host(alignment, bytes, q);
-            if (p)
-                impl_->usm_registry.record(p, device_index, bytes);
-            return p;
-        }
-
-        /**
-         * @brief Allocates shared USM aligned to @p alignment on a specific device queue.
-         *
-         * @param alignment    Byte alignment of the returned address.
-         * @param bytes        The size in bytes to allocate.
-         * @param device_index The index of the device to allocate on.
-         * @return void* Shared USM pointer, or nullptr on failure.
-         */
-        void* RuntimeContext::aligned_malloc_shared_on(size_t alignment, size_t bytes, size_t device_index)
-        {
-            sycl::queue& q = get_queue(device_index); // throws if out of bounds
-            void* p = sycl::aligned_alloc_shared(alignment, bytes, q);
-            if (p)
-                impl_->usm_registry.record(p, device_index, bytes);
-            return p;
-        }
-
-        /**
-         * @brief Allocates device-only USM aligned to @p alignment on a specific device queue.
-         *
-         * @param alignment    Byte alignment of the returned address.
-         * @param bytes        The size in bytes to allocate.
-         * @param device_index The index of the device to allocate on.
-         * @return void* Device USM pointer, or nullptr on failure.
-         */
-        void* RuntimeContext::aligned_malloc_device_on(size_t alignment, size_t bytes, size_t device_index)
-        {
-            sycl::queue& q = get_queue(device_index); // throws if out of bounds
-            void* p = sycl::aligned_alloc_device(alignment, bytes, q);
-            if (p)
-                impl_->usm_registry.record(p, device_index, bytes);
-            return p;
-        }
-
-        /**
-         * @brief Records an externally-allocated address as owned by a device queue.
-         *
-         * @param address      The address to record; not allocated by this call.
-         * @param device_index The device queue that owns @p address.
-         * @param bytes        Length of the mapping, or nothing when it is unknown.
-         */
-        void RuntimeContext::adopt_usm(void* address, size_t device_index,
-                                       std::optional<std::size_t> bytes)
-        {
-            get_queue(device_index); // throws if out of bounds
-            impl_->usm_registry.record(address, device_index, bytes);
-        }
-
-        /**
-         * @brief Finds the base of the allocation an address falls in (src/execution/README.md).
-         * @param ptr Any address, interior or base. Null resolves to nothing.
-         * @return The allocation's first address, or nothing when none covers @p ptr.
-         */
-        std::optional<void*> RuntimeContext::containing_usm_base(void* ptr) const
-        {
-            const auto found = impl_->usm_registry.containing_allocation(ptr);
-            return found ? std::optional<void*>(found->base) : std::nullopt;
-        }
-
-        /**
-         * @brief Drops an address's owner record without freeing it.
-         * @param address The address to forget; safe to call with nullptr.
-         */
-        void RuntimeContext::forget_usm(void* address) noexcept
-        {
-            impl_->usm_registry.take(address);
-        }
-
-        /**
-         * @brief Counts the USM allocations this context has recorded and not yet freed.
-         * @return Live records in the registry.
-         */
-        std::size_t RuntimeContext::live_usm_count() const
-        {
-            return impl_->usm_registry.size();
-        }
-
-        /**
-         * @brief Returns the owning device-queue index for a USM pointer, or -1.
-         */
-        int RuntimeContext::context_index_for_ptr(void* ptr) noexcept
-        {
-            if (!ptr) return -1;
-            const auto owner = impl_->usm_registry.owner_of(ptr);
-            if (owner && *owner < impl_->all_queues.size())
-                return static_cast<int>(*owner);
-            return -1;
-        }
-
-        /**
-         * @brief Frees memory that was allocated via USM.
-         *
-         * Releases the memory using the appropriate context queue that owns it.
-         *
-         * @param ptr Pointer to the allocated memory.
-         */
-        void RuntimeContext::free_usm(void* ptr)
-        {
-            if (!ptr) return;
-
-#ifdef SR_DISTRIBUTED
-            unregister_distributed_buffer(ptr);
-#endif
-
-            // take() resolves and forgets under one lock (src/execution/README.md).
-            const size_t idx = impl_->usm_registry.take(ptr).value_or(SIZE_MAX);
-            // Free against the owning queue's context (required for correctness).
-            if (idx < impl_->all_queues.size())
-                sycl::free(ptr, impl_->all_queues[idx]);
-            else if (!impl_->all_queues.empty())
-                sycl::free(ptr, impl_->all_queues[0]); // best effort
-        }
-
-        /**
-         * @brief Returns the queue whose context allocated a USM pointer (src/execution/README.md).
-         * @param ptr The USM pointer to inspect.
-         * @param fallback_numa The NUMA node used when the owner cannot be determined.
-         */
-        sycl::queue& RuntimeContext::get_queue_for_ptr(void* ptr, int fallback_numa)
-        {
-            if (ptr)
-            {
-                // The registry record is authoritative (src/execution/README.md).
-                const auto owner = impl_->usm_registry.owner_of(ptr);
-                if (owner && *owner < impl_->all_queues.size())
-                    return impl_->all_queues[*owner];
-            }
-            if (ptr)
-            {
-                // Introspection is the fallback for foreign USM (src/execution/README.md).
-                sycl::queue* best = nullptr;
-                for (auto& q : impl_->all_queues)
-                {
-                    try
-                    {
-                        const sycl::context ctx = q.get_context();
-                        const auto t = sycl::get_pointer_type(ptr, ctx);
-                        if (t == sycl::usm::alloc::unknown || t == sycl::usm::alloc::host)
-                            continue;
-                        if (sycl::get_pointer_device(ptr, ctx) == q.get_device())
-                        {
-                            best = &q;
-                            if (t == sycl::usm::alloc::shared)
-                                return q;
-                        }
-                    }
-                    catch (const sycl::exception&)
-                    {
-                        // Not owned by / not resolvable in this context; skip.
-                    }
-                }
-                if (best)
-                    return *best;
-            }
-            // A null or host pointer takes the NUMA-local queue (src/execution/README.md).
-            return get_numa_local_queue(fallback_numa);
-        }
-
-        /**
-         * @brief Computes the distance between two NUMA nodes from the injected distance model.
-         * @param numa_a The first NUMA node ID.
-         * @param numa_b The second NUMA node ID.
-         */
-        int RuntimeContext::numa_distance(int numa_a, int numa_b) const
-        {
-            return impl_->distance_model->distance(numa_a, numa_b);
-        }
-
-        /**
-         * @brief Retrieves the mapping from logical CPU cores to NUMA nodes.
-         *
-         * @return const std::vector<int>& A vector mapping core index to NUMA node ID.
-         */
-        const std::vector<int>& RuntimeContext::cpu_core_to_numa() const
-        {
-            return impl_->core_to_numa;
-        }
-
-        /**
-         * @brief Waits for all queues in the runtime context to finish execution.
-         *
-         * This function acts as a global synchronization point.
-         *
-         * @throws sycl::exception If an error occurs during queue execution.
-         */
-        void RuntimeContext::wait_all()
-        {
-            for (auto& q : impl_->all_queues) 
-            {
-                q.wait_and_throw();
-            }
-        }
-
-        /**
-         * @brief Gets a reference to the active execution engine.
-         *
-         * @return IExecutionEngine& A reference to the execution engine instance.
-         * @throws std::runtime_error If the execution engine is not initialized.
-         */
         IExecutionEngine& RuntimeContext::get_execution_engine()
         {
-            SR_THROW_IF(!impl_->engine, "ExecutionEngine is not initialized. Was probe_hardware() called?");
+            SR_THROW_IF(!impl_->engine,
+                        "ExecutionEngine is not initialized: the context is still being built.");
             return *impl_->engine;
         }
 
-        /**
-         * @brief Shuts down the runtime context and its execution engine.
-         *
-         * Safely stops internal components before full destruction.
-         */
         void RuntimeContext::shutdown()
         {
             if (impl_->engine)
-            {
                 impl_->engine->shutdown();
-            }
+        }
+
+        bool RuntimeContext::profiling_enabled() const noexcept
+        {
+            return impl_->settings.profiling;
+        }
+
+        void RuntimeContext::add_device_to_host_bytes(std::size_t bytes) noexcept
+        {
+            impl_->transfers.add_device_to_host(bytes);
+        }
+
+        void RuntimeContext::add_host_to_device_bytes(std::size_t bytes) noexcept
+        {
+            impl_->transfers.add_host_to_device(bytes);
+        }
+
+        std::size_t RuntimeContext::device_to_host_bytes() const noexcept
+        {
+            return impl_->transfers.device_to_host();
+        }
+
+        std::size_t RuntimeContext::host_to_device_bytes() const noexcept
+        {
+            return impl_->transfers.host_to_device();
+        }
+
+        sycl::queue& RuntimeContext::get_queue(size_t index)
+        {
+            return impl_->devices.queue(index);
+        }
+
+        sycl::queue& RuntimeContext::profiling_queue(size_t index)
+        {
+            return impl_->devices.queue(index, Device::QueueFlavour{false, true});
+        }
+
+        bool RuntimeContext::has_profiling_queue(size_t index) const noexcept
+        {
+            return impl_->devices.has_profiling_queue(index);
+        }
+
+        sycl::queue& RuntimeContext::chain_queue(size_t index, bool profiling)
+        {
+            return impl_->devices.queue(index, Device::QueueFlavour{true, profiling});
+        }
+
+        size_t RuntimeContext::device_count() const
+        {
+            return impl_->devices.count();
+        }
+
+        bool RuntimeContext::device_is_gpu(size_t index) const
+        {
+            return impl_->devices.is_gpu(index);
+        }
+
+        sycl::queue& RuntimeContext::get_numa_local_queue(int numa_id)
+        {
+            return impl_->devices.queue_or_numa_local(std::nullopt, numa_id);
+        }
+
+        sycl::queue& RuntimeContext::get_queue_for_ptr(void* ptr, int fallback_numa)
+        {
+            return impl_->devices.queue_or_numa_local(impl_->memory->owning_device(ptr),
+                                                      fallback_numa);
+        }
+
+        int RuntimeContext::context_index_for_ptr(void* ptr) noexcept
+        {
+            const std::optional<std::size_t> device = impl_->memory->device_of(ptr);
+            return device ? static_cast<int>(*device) : -1;
+        }
+
+        void* RuntimeContext::malloc_shared(size_t bytes, int numa_id)
+        {
+            return impl_->memory->allocate(
+                {Memory::UsmKind::Shared, bytes, 0, impl_->devices.device_for_numa(numa_id)});
+        }
+
+        void* RuntimeContext::malloc_device(size_t bytes, int numa_id)
+        {
+            return impl_->memory->allocate(
+                {Memory::UsmKind::Device, bytes, 0, impl_->devices.device_for_numa(numa_id)});
+        }
+
+        void* RuntimeContext::malloc_shared_on(size_t bytes, size_t device_index)
+        {
+            return impl_->memory->allocate({Memory::UsmKind::Shared, bytes, 0, device_index});
+        }
+
+        void* RuntimeContext::malloc_device_on(size_t bytes, size_t device_index)
+        {
+            return impl_->memory->allocate({Memory::UsmKind::Device, bytes, 0, device_index});
+        }
+
+        void* RuntimeContext::malloc_host_on(size_t bytes, size_t device_index)
+        {
+            return impl_->memory->allocate({Memory::UsmKind::Host, bytes, 0, device_index});
+        }
+
+        void RuntimeContext::free_usm(void* ptr)
+        {
+            impl_->memory->release(ptr);
+        }
+
+        void* RuntimeContext::aligned_malloc_host_on(size_t alignment, size_t bytes,
+                                                     size_t device_index)
+        {
+            return impl_->memory->allocate({Memory::UsmKind::Host, bytes, alignment, device_index});
+        }
+
+        void* RuntimeContext::aligned_malloc_shared_on(size_t alignment, size_t bytes,
+                                                       size_t device_index)
+        {
+            return impl_->memory->allocate(
+                {Memory::UsmKind::Shared, bytes, alignment, device_index});
+        }
+
+        void* RuntimeContext::aligned_malloc_device_on(size_t alignment, size_t bytes,
+                                                       size_t device_index)
+        {
+            return impl_->memory->allocate(
+                {Memory::UsmKind::Device, bytes, alignment, device_index});
+        }
+
+        void RuntimeContext::adopt_usm(void* address, size_t device_index,
+                                       std::optional<std::size_t> bytes)
+        {
+            impl_->memory->adopt(address, device_index, bytes);
+        }
+
+        std::optional<void*> RuntimeContext::containing_usm_base(void* ptr) const
+        {
+            return impl_->memory->containing_base(ptr);
+        }
+
+        void RuntimeContext::forget_usm(void* address) noexcept
+        {
+            impl_->memory->forget(address);
+        }
+
+        std::size_t RuntimeContext::live_usm_count() const
+        {
+            return impl_->memory->live_count();
+        }
+
+        int RuntimeContext::numa_distance(int numa_a, int numa_b) const
+        {
+            return impl_->topology.numa_distance(numa_a, numa_b);
+        }
+
+        const std::vector<int>& RuntimeContext::cpu_core_to_numa() const
+        {
+            return impl_->topology.core_to_numa();
+        }
+
+        void RuntimeContext::wait_all()
+        {
+            impl_->devices.wait_all();
         }
 
 #ifdef SR_DISTRIBUTED
-        /**
-         * @brief Promotes the context to distributed Master mode and starts its coordinator.
-         * @param transport The transport layer for communication; must not be null.
-         * @param kernels The kernel registry to be used across nodes.
-         * @param policy The offload strategy; null selects LeastLoadedOffloadPolicy.
-         * @throws std::runtime_error If the transport is null or execution engine is unavailable.
-         */
         void RuntimeContext::enable_distributed_master(
             std::shared_ptr<Distributed::ITransport> transport,
             sushi_ptr<Distributed::KernelRegistry>   kernels,
@@ -883,7 +494,12 @@ namespace SushiRuntime
             if (!policy)
                 policy = std::make_shared<Distributed::LeastLoadedOffloadPolicy>();
 
+            // The allocator lets go of the table being replaced before that table is destroyed.
+            impl_->memory->set_release_observer(nullptr);
             impl_->buffers = std::make_unique<Distributed::BufferRegistry>();
+            impl_->release_observer.emplace(*impl_->buffers);
+            impl_->memory->set_release_observer(&*impl_->release_observer);
+
             impl_->coordinator = std::make_unique<Distributed::DistributedCoordinator>(
                 std::move(kernels), *impl_->buffers, std::move(transport), std::move(policy));
 
@@ -903,144 +519,75 @@ namespace SushiRuntime
             SR_LOG_INFO("RuntimeContext promoted to distributed Master mode.");
         }
 
-        /**
-         * @brief Registers a USM buffer for distributed tracking.
-         *
-         * @param usm_ptr The raw pointer to the buffer.
-         * @param size_bytes The size of the buffer in bytes.
-         * @return Distributed::BufferHandle A handle representing the registered buffer.
-         * @throws std::runtime_error If the context is not in Master mode.
-         */
-        Distributed::BufferHandle RuntimeContext::register_distributed_buffer(void* usm_ptr, uint64_t size_bytes)
+        Distributed::BufferHandle RuntimeContext::register_distributed_buffer(void* usm_ptr,
+                                                                              uint64_t size_bytes)
         {
             SR_THROW_IF(!impl_->buffers, "register_distributed_buffer requires Master mode.");
             return impl_->buffers->register_buffer(usm_ptr, size_bytes);
         }
 
-        /**
-         * @brief Bumps the version of a registered distributed buffer.
-         *
-         * @param usm_ptr The raw pointer to the buffer.
-         */
         void RuntimeContext::bump_distributed_buffer(void* usm_ptr)
         {
             if (impl_->buffers)
                 impl_->buffers->bump_version(usm_ptr);
         }
 
-        /**
-         * @brief Unregisters a distributed buffer from tracking.
-         *
-         * @param usm_ptr The raw pointer to the buffer.
-         */
         void RuntimeContext::unregister_distributed_buffer(void* usm_ptr)
         {
             if (impl_->buffers)
                 impl_->buffers->unregister_buffer(usm_ptr);
         }
 
-        /**
-         * @brief Looks up the distributed buffer handle for a given pointer.
-         *
-         * @param usm_ptr The raw pointer to query.
-         * @return std::optional<Distributed::BufferHandle> The buffer handle if found, otherwise std::nullopt.
-         */
-        std::optional<Distributed::BufferHandle> RuntimeContext::distributed_buffer(void* usm_ptr) const
+        std::optional<Distributed::BufferHandle>
+        RuntimeContext::distributed_buffer(void* usm_ptr) const
         {
             if (!impl_->buffers)
                 return std::nullopt;
             return impl_->buffers->lookup(usm_ptr);
         }
 
-        /**
-         * @brief Checks if a specific distributed operation is supported.
-         *
-         * @param op The operation identifier.
-         * @return true If the operation is supported.
-         * @return false Otherwise.
-         */
         bool RuntimeContext::distributed_supports(Graph::OpID op) const
         {
             return impl_->coordinator && impl_->coordinator->supports(op);
         }
 
-        /**
-         * @brief Gets the current distributed role of the context.
-         *
-         * @return RuntimeContext::RuntimeRole The role (e.g., Standalone, Master).
-         */
         RuntimeContext::RuntimeRole RuntimeContext::distributed_role() const
         {
             return impl_->role;
         }
 
-        /**
-         * @brief Gets the total count of distributed tasks offloaded.
-         *
-         * @return uint64_t The number of offloaded tasks.
-         */
         uint64_t RuntimeContext::distributed_offloaded_count() const
         {
             return impl_->coordinator ? impl_->coordinator->offloaded_count() : 0;
         }
 
-        /**
-         * @brief Gets the total count of distributed tasks declined by workers.
-         *
-         * @return uint64_t The number of declined tasks.
-         */
         uint64_t RuntimeContext::distributed_declined_count() const
         {
             return impl_->coordinator ? impl_->coordinator->declined_count() : 0;
         }
 
-        /**
-         * @brief Gets the total count of distributed tasks that were redispatched.
-         *
-         * @return uint64_t The number of redispatched tasks.
-         */
         uint64_t RuntimeContext::distributed_redispatched_count() const
         {
             return impl_->coordinator ? impl_->coordinator->redispatched_count() : 0;
         }
 
-        /**
-         * @brief Gets the total count of stale writebacks in distributed executions.
-         *
-         * @return uint64_t The number of stale writeback operations.
-         */
         uint64_t RuntimeContext::distributed_stale_writeback_count() const
         {
             return impl_->coordinator ? impl_->coordinator->stale_writeback_count() : 0;
         }
 
-        /**
-         * @brief Sets the liveness timeout for distributed worker nodes.
-         *
-         * @param timeout The duration before a worker is considered unresponsive.
-         */
         void RuntimeContext::distributed_set_liveness_timeout(std::chrono::milliseconds timeout)
         {
             if (impl_->coordinator)
                 impl_->coordinator->set_liveness_timeout(timeout);
         }
 
-        /**
-         * @brief Sets the deadline for a distributed task to complete.
-         *
-         * @param deadline The maximum duration allowed for a task.
-         */
         void RuntimeContext::distributed_set_task_deadline(std::chrono::milliseconds deadline)
         {
             if (impl_->coordinator)
                 impl_->coordinator->set_task_deadline(deadline);
         }
 
-        /**
-         * @brief Gets the current count of alive workers in the cluster.
-         *
-         * @return int The number of active remote workers.
-         */
         int RuntimeContext::distributed_alive_workers() const
         {
             return impl_->coordinator ? impl_->coordinator->alive_worker_count() : 0;

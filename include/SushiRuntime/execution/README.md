@@ -175,10 +175,11 @@ USM migration.
 The profiling queue shares the plain queue's sycl::context (and its in-order property, when the
 device needs one) but carries enable_profiling, so events it submits expose command_submit,
 command_start and command_end. It is built on the first call for that device, under a per-device
-once_flag, unless RuntimeSettings::profiling asked probe_hardware() to build it already. The plain
-queue returned by get_queue() is unchanged by this call. When RuntimeSettings::profiling is true the
-plain queue already carries enable_profiling, so profiling_queue() returns that same queue instead
-of a second one.
+once_flag, unless RuntimeSettings::profiling built it at construction. The plain queue returned by
+get_queue() is unchanged by this call. When RuntimeSettings::profiling is true the plain queue
+already carries enable_profiling, so profiling_queue() returns that same queue instead of a second
+one. The queues live in Device::DeviceQueueSet; `include/SushiRuntime/device/README.md` has the
+slot each call maps to.
 
 ### has_profiling_queue
 
@@ -191,7 +192,9 @@ triggering the build itself by calling profiling_queue().
 
 The chain queue shares the plain queue's sycl::context, so USM allocated through this context is
 valid on it. It is built on the first call for that device and flavour, under a per-device
-once_flag, and owned for the context's lifetime beside the plain and profiling queues.
+once_flag, and owned for the context's lifetime beside the plain and profiling queues. On a device
+whose plain queue is already in-order, a device that is neither a CPU nor a GPU, chain_queue()
+returns the plain queue or the profiling queue itself and builds no second one.
 
 ### device_count
 
@@ -200,7 +203,7 @@ GPUs once each), which can differ from sycl::device::get_devices(). Valid indice
 
 ### device_is_gpu
 
-device_is_gpu() answers from the inventory probe_hardware() already built, not by asking SYCL again.
+device_is_gpu() answers from the inventory built at construction, not by asking SYCL again.
 The device class of a queue cannot change while the context is alive, so re-deriving it per call is
 redundant work. It is not free work either: `queue::get_device()` returns a device by value, and the
 SYCL runtime, not SushiRuntime, defines what that costs. A caller on a steady-state tick path cannot
@@ -227,11 +230,12 @@ use, so the scheduler can re-allocate a staging copy on the owning device.
 malloc_shared() is the better choice over a bare sycl::malloc_shared when graph tasks will touch the
 data: the runtime remembers which queue (device and context) the allocation belongs to, so the
 scheduler can dispatch the task to that exact queue and never trigger a cross-context illegal
-access. The allocation is pinned to the NUMA-local compute queue for `numa_id`.
+access. The allocation goes to the lowest-indexed device on `numa_id`, or to device 0 when that
+node has no device, so the same `numa_id` always names the same device.
 
 ### malloc_shared_on
 
-Unlike malloc_shared(bytes, numa_id), which round-robins across the queues on a NUMA node,
+Unlike malloc_shared(bytes, numa_id), which resolves a NUMA node to a device,
 malloc_shared_on() allocates on exactly `device_index` and records that owner. It is for buffers
 that must share one context, because a kernel touching USM from two different device contexts is an
 illegal cross-context access. The fluent Buffer and State handles allocate through it so a graph's

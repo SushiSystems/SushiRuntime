@@ -1327,12 +1327,12 @@ profiling queue.
 ### `NoProfilingQueueExistsBeforeTheFirstRequest`
 
 Nothing is built before the first request. `RuntimeSettings::profiling` is off, so
-`probe_hardware()` must not have built the profiling queue of any device.
+the `RuntimeContext` constructor must not have built the profiling queue of any device.
 
 ### `SettingsProfilingBuildsEveryDeviceEagerly`
 
-`RuntimeSettings::profiling` asks `probe_hardware()` to build the profiling queue of every device
-eagerly, before any `run()` could have requested one.
+`RuntimeSettings::profiling` asks the `RuntimeContext` constructor to build the profiling queue of
+every device eagerly, before any `run()` could have requested one.
 
 ### `SettingsProfilingReturnsThePlainQueueItself`
 

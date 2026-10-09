@@ -226,7 +226,7 @@ namespace SushiRuntime
                 const std::size_t rounded = round_up(bytes, alignment);
 
                 // The owner exists before the allocation it will free (src/interop/README.md).
-                auto owner = std::make_unique<Memory::UsmAllocationOwner>(context);
+                auto owner = std::make_unique<Memory::UsmAllocationOwner>(context->shared_memory());
                 void* address = context->aligned_malloc_host_on(alignment, rounded, device_index);
                 if (address == nullptr)
                     throw Core::SushiException(Core::Error{

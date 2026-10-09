@@ -576,7 +576,7 @@ and memory close.
   narrows discovery, and `require_fp64` drops devices without
   `sycl::aspect::fp64` so a double-precision workload fails at selection with a
   named device rather than inside a driver at kernel launch. When the filter
-  leaves no device at all, `probe_hardware()` throws a `SushiException` carrying
+  leaves no device at all, the `RuntimeContext` constructor throws a `SushiException` carrying
   `Errc::unsupported` and the active filter — the machine-has-no-SYCL-device
   case, stated plainly.
 - **`NUMAMapper`** uses **hwloc** to map each device to its nearest NUMA node by

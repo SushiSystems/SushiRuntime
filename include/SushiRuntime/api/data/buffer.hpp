@@ -154,7 +154,7 @@ namespace SushiRuntime
                       liveness_(Core::make_liveness())
                 {
                     const std::size_t bytes = count * sizeof(T);
-                    auto owner = std::make_unique<Memory::UsmAllocationOwner>(ctx_);
+                    auto owner = std::make_unique<Memory::UsmAllocationOwner>(ctx_->shared_memory());
                     void* address = detail::malloc_residency_on(*ctx_, bytes, device_index, residency);
                     // A null address here would make dependency_key() null and skip tracking.
                     if (count > 0 && address == nullptr)
