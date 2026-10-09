@@ -34,9 +34,12 @@
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 
+#include "../../common/scheduler_fixture.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Scheduler;
+using SushiRuntime::Test::make_scheduler;
 using namespace SushiRuntime::Topology;
 
 namespace
@@ -74,7 +77,7 @@ TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
     constexpr int NODES = 2;
     auto ctx = make_synthetic_ctx(NODES);
 
-    TaskScheduler sched(*ctx); // construction only — workers are not started.
+    TaskScheduler sched = make_scheduler(*ctx); // construction only — workers are not started.
 
     const int workers = static_cast<int>(sched.get_worker_count());
     if (workers < 2)
@@ -113,7 +116,7 @@ TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
 TEST(Unit_NumaStealTest, FlatTopologyKeepsAllVictims)
 {
     RuntimeContext ctx; // default Hwloc provider/model.
-    TaskScheduler sched(ctx);
+    TaskScheduler sched = make_scheduler(ctx);
 
     const int workers = static_cast<int>(sched.get_worker_count());
     if (workers < 2)

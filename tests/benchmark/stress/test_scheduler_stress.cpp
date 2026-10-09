@@ -35,10 +35,12 @@
 #include <SushiRuntime/scheduler/task.hpp>
 
 #include "../../common/test_helpers.hpp"
+#include "../../common/scheduler_fixture.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Scheduler;
+using SushiRuntime::Test::make_scheduler;
 using SushiRuntime::Test::AtomicCounterTask;
 using SushiRuntime::Test::PriorityTrackingTask;
 
@@ -50,7 +52,7 @@ using SushiRuntime::Test::PriorityTrackingTask;
 TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
 {
     RuntimeContext ctx;
-    TaskScheduler scheduler(ctx);
+    TaskScheduler scheduler = make_scheduler(ctx);
 
     std::atomic<size_t> executed_count{0};
     constexpr size_t TOTAL_TASKS = 1'000'000;
@@ -82,7 +84,7 @@ TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
 TEST(Stress_TaskSchedulerStress, MultiProducerContention)
 {
     RuntimeContext ctx;
-    TaskScheduler scheduler(ctx);
+    TaskScheduler scheduler = make_scheduler(ctx);
 
     std::atomic<size_t> executed_count{0};
     constexpr int    NUM_PRODUCERS      = 8;
@@ -129,7 +131,7 @@ TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
 
     for (int i = 0; i < 500; ++i)
     {
-        TaskScheduler scheduler(ctx);
+        TaskScheduler scheduler = make_scheduler(ctx);
         std::atomic<size_t> executed_count{0};
 
         scheduler.start();
@@ -153,7 +155,7 @@ TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
 TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
 {
     RuntimeContext ctx;
-    TaskScheduler scheduler(ctx);
+    TaskScheduler scheduler = make_scheduler(ctx);
 
     std::vector<int> execution_order;
     std::mutex order_mutex;

@@ -239,6 +239,10 @@ another `Impl` member. Only then is it safe to drain outstanding GPU work, which
 `Device::DeviceQueueSet` does in its own destructor when `Impl`'s members are destroyed, so
 every hardware operation has completed before the SYCL objects it used go out of scope.
 
+The stopped coordinator is destroyed after the engine, not when it stops. The scheduler keeps
+its address for the offload branch and for the completion observer, and a worker can read it
+until the engine's shutdown has joined the pool.
+
 The set's destructor logs a late asynchronous device error and continues;
 `include/SushiRuntime/device/README.md` says why.
 

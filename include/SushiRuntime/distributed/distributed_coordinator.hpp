@@ -155,6 +155,12 @@ namespace SushiRuntime
                 bool try_offload(Graph::Node* node);
 
                 /**
+                 * @brief Advances the version of the buffer registered at an address.
+                 * @param usm_ptr An address with no registered buffer is ignored.
+                 */
+                void bump_buffer_version(void* usm_ptr);
+
+                /**
                  * @brief Retrieves the total number of tasks successfully offloaded.
                  *
                  * Used for cluster telemetry and performance monitoring.

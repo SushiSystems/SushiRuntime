@@ -21,7 +21,7 @@
 
 /**
  * @file runtime_settings.hpp
- * @brief Declares RuntimeSettings and the Execution names of the scheduler's pool types.
+ * @brief Declares RuntimeSettings, its worker pool mapping and the pool type names.
  * @author Mustafa Garip
  * @see include/SushiRuntime/execution/README.md
  */
@@ -32,6 +32,7 @@
 
 #include <SushiRuntime/scheduler/pin_policy.hpp>
 #include <SushiRuntime/scheduler/worker_pool_info.hpp>
+#include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 
 namespace SushiRuntime
 {
@@ -90,6 +91,17 @@ namespace SushiRuntime
              */
             bool force_scheduler = false;
         };
+
+        /** @brief Returns the worker pool a RuntimeSettings asks the scheduler for. */
+        [[nodiscard]] inline Scheduler::WorkerPoolSettings
+        worker_pool_settings(const RuntimeSettings& settings) noexcept
+        {
+            Scheduler::WorkerPoolSettings pool;
+            pool.worker_count = settings.worker_count;
+            pool.first_core = settings.first_core;
+            pool.pinning = settings.pinning;
+            return pool;
+        }
 
     } // namespace Execution
 } // namespace SushiRuntime

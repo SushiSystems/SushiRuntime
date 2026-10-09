@@ -36,9 +36,11 @@
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 
 #include "../../common/test_helpers.hpp"
+#include "../../common/scheduler_fixture.hpp"
 
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Scheduler;
+using SushiRuntime::Test::make_scheduler;
 using SushiRuntime::Test::AtomicCounterTask;
 using SushiRuntime::Test::PriorityTrackingTask;
 
@@ -73,7 +75,7 @@ namespace
 TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
 {
     RuntimeContext ctx;
-    TaskScheduler scheduler(ctx);
+    TaskScheduler scheduler = make_scheduler(ctx);
 
     std::atomic<size_t> executed{0};
     constexpr size_t TOTAL = 2000;
@@ -99,7 +101,7 @@ TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
 TEST(Integration_SchedulerIntegration, PriorityBypass)
 {
     RuntimeContext ctx;
-    TaskScheduler scheduler(ctx);
+    TaskScheduler scheduler = make_scheduler(ctx);
 
     std::vector<int> order;
     std::mutex order_mutex;
@@ -154,7 +156,7 @@ TEST(Integration_SchedulerIntegration, PriorityBypass)
 TEST(Integration_SchedulerIntegration, CleanLifecycleRound)
 {
     RuntimeContext ctx;
-    TaskScheduler scheduler(ctx);
+    TaskScheduler scheduler = make_scheduler(ctx);
 
     std::atomic<size_t> executed{0};
 

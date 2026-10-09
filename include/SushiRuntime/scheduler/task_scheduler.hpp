@@ -45,8 +45,8 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/execution/runtime_settings.hpp>
+#include <SushiRuntime/scheduler/pin_policy.hpp>
+#include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 
 namespace SushiRuntime
 {
@@ -56,6 +56,10 @@ namespace SushiRuntime
         class TaskGraph;
         struct Node;
     }
+
+    namespace Topology { class TopologyView; }
+    namespace Device { class DeviceQueueSet; }
+    namespace Memory { class UsmAllocator; }
 
 #ifdef SR_DISTRIBUTED
     namespace Distributed { class DistributedCoordinator; }
@@ -104,7 +108,7 @@ namespace SushiRuntime
                  * @brief Whether workers are bound to cores or left to the OS.
                  * @return The pin policy in effect for this scheduler's workers.
                  */
-                SushiRuntime::Execution::PinPolicy pinning() const noexcept { return pinning_; }
+                PinPolicy pinning() const noexcept { return pinning_; }
 
             private:
                 /** @brief List of queues for each worker thread. */
@@ -193,21 +197,24 @@ namespace SushiRuntime
                 std::atomic<bool> run_cancelled_{false};
                 /** @brief Poller to track SYCL events. */
                 EventPolling event_poller;
-                /** @brief Reference to the runtime context. */
-                SushiRuntime::Execution::RuntimeContext& context;
+                /** @brief Core-to-NUMA map and NUMA distances the steal order is built from. */
+                const Topology::TopologyView& topology_;
+                /** @brief Device queues every dispatch is submitted to. */
+                Device::DeviceQueueSet& devices_;
+                /** @brief Allocator asked which device owns a node's USM. */
+                const Memory::UsmAllocator& memory_;
 
                 /**
-                 * @brief Holds whether workers bind to cores, copied from RuntimeSettings.
+                 * @brief Holds whether workers bind to cores, copied from WorkerPoolSettings.
                  * @see include/SushiRuntime/scheduler/README.md
                  */
-                SushiRuntime::Execution::PinPolicy pinning_ =
-                    SushiRuntime::Execution::PinPolicy::Pin;
+                PinPolicy pinning_ = PinPolicy::Pin;
 
                 /**
                  * @brief First core of the range workers bind into, worker i on
                  *        (first_core_ + i).
                  *
-                 * Copied from RuntimeSettings and then clamped into the machine's
+                 * Copied from WorkerPoolSettings and then clamped into the machine's
                  * core count, so this is the range actually in effect rather than the
                  * one requested. Meaningless under PinPolicy::Float.
                  */
@@ -295,8 +302,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Picks which of a device's two queues a dispatch uses.
-                 * @param index Device queue index, as returned by get_queue()/
-                 *              profiling_queue().
+                 * @param index Device index in the queue set.
                  * @return The profiling queue when the round's plan requested
                  *         profiling, the plain queue otherwise.
                  */
@@ -304,15 +310,24 @@ namespace SushiRuntime
 
                 /**
                  * @brief Finds the device index behind an already-selected queue.
-                 * @param q A queue this scheduler's context vended.
+                 * @param q A plain queue of this scheduler's queue set.
                  * @return Its device index, or SIZE_MAX if none matches.
                  * @see include/SushiRuntime/scheduler/README.md
                  */
                 std::size_t queue_device_index(sycl::queue& q) const;
 
             public:
-                /** @brief Creates a new task scheduler. */
-                TaskScheduler(SushiRuntime::Execution::RuntimeContext& ctx);
+                /**
+                 * @brief Sizes the worker pool and builds its steal order; starts no thread.
+                 * @param pool Copied; the range it asks for is clamped to the machine's cores.
+                 * @param topology Must outlive the scheduler.
+                 * @param devices Must outlive the scheduler.
+                 * @param memory Must outlive the scheduler.
+                 */
+                TaskScheduler(const WorkerPoolSettings& pool,
+                              const Topology::TopologyView& topology,
+                              Device::DeviceQueueSet& devices,
+                              const Memory::UsmAllocator& memory);
                 /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();
 
@@ -372,9 +387,9 @@ namespace SushiRuntime
                 /**
                  * @brief Signals workers to stop and waits for all threads to join.
                  *
-                 * Called once when the RuntimeContext (and thus the ExecutionEngine)
-                 * is being destroyed. After this returns, no worker thread holds a
-                 * reference to the context, so queues and allocators can be freed safely.
+                 * Called once when the owning engine is being destroyed. After this
+                 * returns, no worker thread touches the queue set or the allocator,
+                 * so both can be freed safely.
                  */
                 void stop();
 

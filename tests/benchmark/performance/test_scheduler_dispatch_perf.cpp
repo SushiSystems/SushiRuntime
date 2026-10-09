@@ -41,9 +41,11 @@
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 
 #include "../../common/measurement.hpp"
+#include "../../common/scheduler_fixture.hpp"
 
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Scheduler;
+using SushiRuntime::Test::make_scheduler;
 using SushiRuntime::sushi_ptr;
 using SushiRuntime::Test::CompletionSignal;
 using SushiRuntime::Test::MeasurementLabel;
@@ -158,7 +160,7 @@ TEST(Performance_SchedulerDispatchBench, DispatchOverheadVsInlineBaseline)
         if (!every_run_drained)
             return 0.0;
 
-        TaskScheduler sched(ctx);
+        TaskScheduler sched = make_scheduler(ctx);
         workers = sched.get_worker_count();
         counter.store(0, std::memory_order_relaxed);
         drained.reset();

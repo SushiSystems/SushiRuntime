@@ -38,9 +38,11 @@
 #include <SushiRuntime/SushiRuntime.h>
 
 #include "../../common/test_helpers.hpp"
+#include "../../common/scheduler_fixture.hpp"
 
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Scheduler;
+using SushiRuntime::Test::make_scheduler;
 using namespace SushiRuntime::Memory;
 using SushiRuntime::Test::AtomicCounterTask;
 
@@ -53,7 +55,7 @@ using SushiRuntime::Test::AtomicCounterTask;
 TEST(Regression_Sentinel, Scheduler_AbruptStopDrains)
 {
     RuntimeContext ctx;
-    TaskScheduler scheduler(ctx);
+    TaskScheduler scheduler = make_scheduler(ctx);
     std::atomic<size_t> executed{0};
 
     scheduler.start();

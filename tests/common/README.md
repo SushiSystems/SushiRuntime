@@ -17,6 +17,14 @@ ends on the signal includes one thread wake-up.
 
 The header includes nothing from SushiRuntime.
 
+## scheduler_fixture.hpp
+
+`make_scheduler(context)` builds a `TaskScheduler` on a context's settings, topology, device
+set and allocator, the four arguments the constructor takes. A test that drives the scheduler
+without the execution engine writes `TaskScheduler scheduler = make_scheduler(ctx);`. The
+scheduler is not movable; the function returns it by guaranteed elision, so it is built in the
+caller's variable. The context must outlive it, and no worker thread starts until `start()`.
+
 ## test_barrier.hpp
 
 `std::barrier` is C++20 and the project compiles as C++17, so tests use `Barrier`, a minimal
