@@ -26,62 +26,104 @@
  * @see tests/benchmark/README.md
  */
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
-#include <thread>
+#include <optional>
 #include <vector>
 #include <gtest/gtest.h>
 
+#include <sycl/sycl.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 
-#include "../../common/test_helpers.hpp"
+#include "../../common/measurement.hpp"
 
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Scheduler;
-using SushiRuntime::Test::AtomicCounterTask;
+using SushiRuntime::sushi_ptr;
+using SushiRuntime::Test::CompletionSignal;
+using SushiRuntime::Test::MeasurementLabel;
+using SushiRuntime::Test::RunStatistics;
 
 namespace
 {
-    constexpr size_t TOTAL  = 500000; // tasks per timed run
-    constexpr int    ROUNDS = 3;      // best-of-N to strip jitter
+    /** @brief Holds the number of tasks one timed run dispatches. */
+    constexpr std::size_t K_TASK_COUNT = 500000;
+
+    /** @brief Holds the time one timed run may take to drain before the test fails. */
+    constexpr std::chrono::seconds K_DRAIN_BUDGET{60};
 
     /**
-     * @brief Wait for an atomic value to reach a target within a budget.
-     * 
-     * @param value The atomic value to watch.
-     * @param target The target value.
-     * @param budget The time budget.
-     * @return True if the target was reached, false on timeout.
+     * @brief Bumps a shared counter and raises a signal when the counter reaches its target.
      */
-    bool wait_for(const std::atomic<size_t>& value, size_t target,
-                  std::chrono::seconds budget)
+    class CountingTask final : public Task
     {
-        auto deadline = std::chrono::steady_clock::now() + budget;
-        while (value.load(std::memory_order_acquire) < target)
-        {
-            if (std::chrono::steady_clock::now() > deadline)
+        public:
+            /**
+             * @brief Builds a task that counts into @p counter.
+             * @param counter Counter the task increments; must outlive the task.
+             * @param target Count at which the task raises @p drained.
+             * @param drained Signal raised by the task that reaches @p target; must outlive it.
+             */
+            CountingTask(std::atomic<std::size_t>& counter, std::size_t target,
+                         CompletionSignal& drained)
+                : counter_(counter), target_(target), drained_(drained)
+            {
+            }
+
+            const char* get_name() const noexcept override
+            {
+                return "CountingTask";
+            }
+
+            ExecutionMode get_execution_mode() const override
+            {
+                return ExecutionMode::HOST;
+            }
+
+            sycl::event execute_host(sycl::queue&, const std::vector<sycl::event>&) override
+            {
+                if (counter_.fetch_add(1, std::memory_order_relaxed) + 1 == target_)
+                    drained_.raise();
+                return {};
+            }
+
+            std::optional<sushi_ptr<Task>> split() override
+            {
+                return std::nullopt;
+            }
+
+            bool is_splittable() const override
+            {
                 return false;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        return true;
-    }
+            }
+
+        private:
+            /// @brief Counter shared by every task of the run.
+            std::atomic<std::size_t>& counter_;
+            /// @brief Count that marks the run as drained.
+            std::size_t target_;
+            /// @brief Signal the measuring thread waits on.
+            CompletionSignal& drained_;
+    };
 
     /**
-     * @brief Measures nanoseconds spent on TOTAL inline increments.
-     * 
+     * @brief Measures nanoseconds spent on K_TASK_COUNT inline increments.
+     *
      * This represents the cost of the raw work.
-     * 
+     *
      * @param counter The atomic counter to increment.
      * @return The time in nanoseconds.
      */
-    double baseline_ns(std::atomic<size_t>& counter)
+    double baseline_ns(std::atomic<std::size_t>& counter)
     {
         counter.store(0, std::memory_order_relaxed);
         const auto t0 = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < TOTAL; ++i)
+        for (std::size_t i = 0; i < K_TASK_COUNT; ++i)
             counter.fetch_add(1, std::memory_order_relaxed);
         const auto t1 = std::chrono::steady_clock::now();
         return std::chrono::duration<double, std::nano>(t1 - t0).count();
@@ -90,60 +132,82 @@ namespace
 
 /**
  * @brief Tests per-task scheduler dispatch overhead against an inline baseline.
- * 
+ *
  * Both sides do the identical work, and the delta is the amortized submit+steal+dispatch cost.
  */
 TEST(Performance_SchedulerDispatchBench, DispatchOverheadVsInlineBaseline)
 {
     RuntimeContext ctx;
-    std::atomic<size_t> counter{0};
+    std::atomic<std::size_t> counter{0};
 
-    // Baseline: inline work, best-of-N.
-    double best_base_ns = 1e300;
-    for (int r = 0; r < ROUNDS; ++r)
-        best_base_ns = std::min(best_base_ns, baseline_ns(counter));
-    ASSERT_EQ(counter.load(), TOTAL); // consume: defeats dead-code elimination
-    const double base_per_task_ns = best_base_ns / double(TOTAL);
+    const RunStatistics baseline = SushiRuntime::Test::measure(
+        [&counter] { return baseline_ns(counter) / double(K_TASK_COUNT); });
+    ASSERT_EQ(counter.load(), K_TASK_COUNT); // consume: defeats dead-code elimination
 
-    // Scheduler: same work through the dispatch path, best-of-N.
-    double best_sched_ms = 1e300;
-    int    workers       = 0;
-    for (int r = 0; r < ROUNDS; ++r)
+    // The signal and the tasks are declared before any scheduler, so they outlive its workers.
+    CompletionSignal drained;
+    std::vector<sushi_ptr<CountingTask>> tasks;
+    tasks.reserve(K_TASK_COUNT);
+    for (std::size_t i = 0; i < K_TASK_COUNT; ++i)
+        tasks.push_back(SushiRuntime::make_sushi<CountingTask>(counter, K_TASK_COUNT, drained));
+
+    std::size_t workers = 0;
+    bool every_run_drained = true;
+    const RunStatistics scheduled = SushiRuntime::Test::measure([&]() -> double
     {
+        if (!every_run_drained)
+            return 0.0;
+
         TaskScheduler sched(ctx);
-        workers = static_cast<int>(sched.get_worker_count());
+        workers = sched.get_worker_count();
         counter.store(0, std::memory_order_relaxed);
+        drained.reset();
 
         sched.start();
         sched.arm_for_execution();
 
+        // The vector keeps one reference per task, so the scheduler's release never deletes one.
         const auto t0 = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < TOTAL; ++i)
-            sched.submit(new AtomicCounterTask(counter));
-
-        ASSERT_TRUE(wait_for(counter, TOTAL, std::chrono::seconds(60)))
-            << "Scheduler did not drain " << TOTAL << " tasks in time.";
-        const double ms = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - t0).count();
-        best_sched_ms = std::min(best_sched_ms, ms);
+        for (const sushi_ptr<CountingTask>& task : tasks)
+            sched.submit(task.get());
+        const bool in_time = drained.wait_for(K_DRAIN_BUDGET);
+        const auto t1 = std::chrono::steady_clock::now();
 
         sched.stop();
-        ASSERT_EQ(counter.load(), TOTAL); // consume
-    }
 
-    const double sched_per_task_ns = (best_sched_ms * 1e6) / double(TOTAL);
-    const double overhead_ns       = sched_per_task_ns - base_per_task_ns;
-    const double thr               = double(TOTAL) / (best_sched_ms / 1000.0);
+        EXPECT_TRUE(in_time) << "Scheduler did not drain " << K_TASK_COUNT << " tasks in time.";
+        EXPECT_EQ(counter.load(), K_TASK_COUNT); // consume
+        every_run_drained = in_time && counter.load() == K_TASK_COUNT;
 
-    std::printf("\n=== Scheduler dispatch overhead (%zu tasks, %d workers) ===\n",
-                TOTAL, workers);
-    std::printf("  Inline baseline : %8.2f ns/task\n", base_per_task_ns);
-    std::printf("  Scheduler path  : %8.2f ns/task  (wall %.0f ns amortized)\n",
-                sched_per_task_ns, sched_per_task_ns);
+        return std::chrono::duration<double, std::nano>(t1 - t0).count() / double(K_TASK_COUNT);
+    });
+    ASSERT_TRUE(every_run_drained);
+
+    const double overhead_ns = scheduled.median - baseline.median;
+    const double run_wall_ms = scheduled.median * double(K_TASK_COUNT) / 1e6;
+    const double thr         = double(K_TASK_COUNT) / (run_wall_ms / 1000.0);
+
+    std::printf("\n=== Scheduler dispatch overhead "
+                "(%zu tasks, %zu workers, median of %zu runs) ===\n",
+                K_TASK_COUNT, workers, scheduled.run_count);
+    std::printf("  Inline baseline : %8.2f ns/task\n", baseline.median);
+    std::printf("  Scheduler path  : %8.2f ns/task  (%.2f ms wall per run)\n",
+                scheduled.median, run_wall_ms);
     std::printf("  Dispatch overhead: %7.2f ns/task (submit+steal+dispatch)\n",
                 overhead_ns);
     std::printf("  Throughput      : %10.0f tasks/s\n", thr);
 
-    EXPECT_EQ(counter.load(), TOTAL);
+    MeasurementLabel label;
+    label.benchmark    = "scheduler_dispatch";
+    label.unit         = "ns_per_task";
+    label.worker_count = workers;
+    label.problem_size = K_TASK_COUNT;
+
+    label.case_name = "inline_baseline";
+    SushiRuntime::Test::print_measurement(label, baseline);
+    label.case_name = "scheduler";
+    SushiRuntime::Test::print_measurement(label, scheduled);
+
+    EXPECT_EQ(counter.load(), K_TASK_COUNT);
     EXPECT_GT(thr, 0.0);
 }

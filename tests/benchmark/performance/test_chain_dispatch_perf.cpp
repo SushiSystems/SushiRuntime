@@ -26,25 +26,39 @@
  * @see tests/benchmark/README.md
  */
 
-#include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdio>
+#include <thread>
+#include <utility>
 #include <vector>
 #include <gtest/gtest.h>
 #include <SushiRuntime/SushiRuntime.h>
 
+#include "../../common/measurement.hpp"
+
 using namespace SushiRuntime;
+using SushiRuntime::Test::MeasurementLabel;
+using SushiRuntime::Test::RunStatistics;
 
 namespace
 {
-    struct Point { double ms_per_step; double ns_per_node_step; Core::ExecutionLayer layer; };
+    /**
+     * @brief Holds what one chain case measured across its timed runs.
+     */
+    struct ChainMeasurement
+    {
+        RunStatistics wall_ns_per_node_step;     /**< Timed by this test around Graph::run(). */
+        RunStatistics reported_ns_per_node_step; /**< Derived from RunReport::total_duration_ms. */
+        Core::ExecutionLayer layer;              /**< Layer the plan ran on. */
+    };
 
     /**
-     * @brief Runs a chain of @p length trivial kernel nodes for @p steps replays.
+     * @brief Replays a chain of @p length trivial kernel nodes @p steps times per timed run.
      * @param force_scheduler True to keep the plan on the scheduler (layer 0).
-     * @return The per-step and per-node wall cost, and the layer that ran.
+     * @return The per-node cost by both clocks, and the layer that ran.
      */
-    Point run_chain(std::size_t length, std::size_t steps, bool force_scheduler)
+    ChainMeasurement measure_chain(std::size_t length, std::size_t steps, bool force_scheduler)
     {
         API::RuntimeConfig config;
         config.force_scheduler = force_scheduler;
@@ -67,15 +81,33 @@ namespace
                   [in, out](std::size_t) { out[0] = in[0] + 1; });
         }
 
-        const auto report = g.run(steps); // compile once, replay `steps` times
+        // The first run compiles the plan; every timed run below is a replay.
+        Core::ExecutionLayer layer = g.run(std::size_t{1}).layer;
+
+        const double node_steps = double(steps) * double(length);
+        std::vector<double> reported_samples;
+        reported_samples.reserve(SushiRuntime::Test::K_DEFAULT_RUN_COUNT);
+
+        ChainMeasurement measurement;
+        measurement.wall_ns_per_node_step = SushiRuntime::Test::measure([&]() -> double
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            const auto report = g.run(steps);
+            const auto t1 = std::chrono::steady_clock::now();
+
+            layer = report.layer;
+            reported_samples.push_back((report.total_duration_ms * 1e6) / node_steps);
+            return std::chrono::duration<double, std::nano>(t1 - t0).count() / node_steps;
+        });
+        measurement.reported_ns_per_node_step =
+            SushiRuntime::Test::summarize(std::move(reported_samples));
+        measurement.layer = layer;
+
         EXPECT_EQ(g.compile_count(), 1u);
         EXPECT_EQ(bufs[length][0], static_cast<int>(length))
             << "chain of length " << length << " did not settle to the expected value";
 
-        const double ms_per_step = report.total_duration_ms / double(steps);
-        const double ns_per_node_step =
-            (report.total_duration_ms * 1e6) / double(steps) / double(length);
-        return { ms_per_step, ns_per_node_step, report.layer };
+        return measurement;
     }
 }
 
@@ -96,17 +128,34 @@ TEST(Performance_ChainDispatch, PerNodeCostVsChainLength)
         {1024, 100},
     };
 
-    std::printf("\n=== Chain dispatch cost (dependent-node chain) ===\n");
-    std::printf("  %8s | %9s | %12s | %14s\n", "length", "layer", "ms/step", "ns/(node*step)");
+    // A default-configured runtime starts one worker per hardware thread.
+    const std::size_t workers = std::thread::hardware_concurrency();
+
+    std::printf("\n=== Chain dispatch cost (dependent-node chain, median of %zu runs) ===\n",
+                SushiRuntime::Test::K_DEFAULT_RUN_COUNT);
+    std::printf("  %8s | %9s | %12s | %14s | %14s\n",
+                "length", "layer", "ms/step", "ns/(node*step)", "runtime clock");
     for (const auto& c : cases)
     {
         for (const bool force_scheduler : { true, false })
         {
-            const Point pt = run_chain(c.length, c.steps, force_scheduler);
-            const char* layer = pt.layer == Core::ExecutionLayer::Chain ? "chain" : "scheduler";
-            std::printf("  %8zu | %9s | %12.5f | %14.1f\n",
-                        c.length, layer, pt.ms_per_step, pt.ns_per_node_step);
-            EXPECT_GT(pt.ms_per_step, 0.0);
+            const ChainMeasurement m = measure_chain(c.length, c.steps, force_scheduler);
+            const bool on_chain = m.layer == Core::ExecutionLayer::Chain;
+            const double ms_per_step =
+                m.wall_ns_per_node_step.median * double(c.length) / 1e6;
+            std::printf("  %8zu | %9s | %12.5f | %14.1f | %14.1f\n",
+                        c.length, on_chain ? "chain" : "scheduler", ms_per_step,
+                        m.wall_ns_per_node_step.median, m.reported_ns_per_node_step.median);
+
+            MeasurementLabel label;
+            label.benchmark    = "chain_dispatch";
+            label.case_name    = force_scheduler ? "scheduler" : (on_chain ? "chain" : "unforced");
+            label.unit         = "ns_per_node_step";
+            label.worker_count = workers;
+            label.problem_size = c.length;
+            SushiRuntime::Test::print_measurement(label, m.wall_ns_per_node_step);
+
+            EXPECT_GT(ms_per_step, 0.0);
         }
     }
     std::printf("  -> scheduler rows are layer 0, chain rows layer 1 (design spec §C);\n"
