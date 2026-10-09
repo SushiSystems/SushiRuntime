@@ -89,8 +89,6 @@ namespace SushiRuntime
          */
         class SUSHIRUNTIME_API TaskScheduler : public ITelemetryProvider, public ITaskMigrator
         {
-            friend class SushiRuntime::Graph::TaskGraph;
-
             public:
                 /** @brief Actual number of active workers. Read-only externally. */
                 size_t num_workers = 0;

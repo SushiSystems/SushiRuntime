@@ -30,7 +30,6 @@
 
 #include <atomic>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/core/logger.hpp>
 
 namespace SushiRuntime 
 {
