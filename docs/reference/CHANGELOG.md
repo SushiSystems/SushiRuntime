@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-09 — core: Removed two unused includes, of the run report and of the logger; a file that relied on either includes it itself (`error.hpp`, `ref_counted.hpp`).
 - 2026-10-09 — scheduler: Named the failing node and its registration index in the failure log and in the run's error; a non-SushiException, non-SYCL throw now reaches the caller as `std::runtime_error` (`scheduler.cpp`, `node.hpp`).
 - 2026-10-09 — scheduler: Removed `Task::set_name` and the `Task(const char*)` constructor; a task type answers `get_name()` itself (`task.hpp`, `node.hpp`).
 - 2026-10-09 — topology: Changed `HardwareNode::pci_address` to `std::optional` and gave every field a default; a GPU without an address skips the bus lookup and logs one line (`hw_discovery.hpp`, `hw_discovery.cpp`, `numa_mapper.cpp`).

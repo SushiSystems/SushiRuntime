@@ -32,8 +32,6 @@
 #include <string>
 #include <utility>
 
-#include <SushiRuntime/core/run_report.hpp>
-
 namespace SushiRuntime
 {
     namespace Core

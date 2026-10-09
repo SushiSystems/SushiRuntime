@@ -26,7 +26,6 @@
  */
 
 #include <algorithm>
-#include <future>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -38,7 +37,6 @@
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/graph/dependency_tracker.hpp>
-#include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime 
