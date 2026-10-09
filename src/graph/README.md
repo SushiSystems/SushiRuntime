@@ -68,20 +68,15 @@ all; everything else is a deliberate, supported configuration.
 
 ### Distributed offload
 
-The distributed coherence model is whole-buffer, so offload resolves handles from the owning
-base of each region. Sub-region offload is a later refinement.
+The graph decides nothing about offload. `compile()` hands `all_nodes` to
+`DistributedCoordinator::prepare()` when the context has a coordinator, after the tracker is
+reset and before the graph is returned; `src/distributed/README.md` says which nodes it
+marks. With no coordinator no node gets an offload state from `compile()`, so the
+scheduler's offload branch does nothing for it.
 
-`stamp_offloadable()` runs in Master mode only. A node is offloadable only if it carries a
-registered OpID the cluster can run and every buffer it touches has a serializable handle.
-Anything else, and every node in Standalone or Worker mode, stays local, so the scheduler's
-offload branch does nothing for it. A node that reached this point with an op id went
-through a tracked add, so its offload state already exists and `offload()` returns it
-without a fresh allocation.
-
-A double-buffered node resolves its handles from live pointers at dispatch, so
-`stamp_offloadable()` does not bake them. It marks the node offloadable only when every
-buffer the node currently touches is registered; otherwise the node stays local and the host
-fallback still runs.
+The add functions keep nothing for offload beyond `io_reads_` and `io_writes_`, which
+`prepare()` reads. `add_offload_dynamic()` is the exception: it stores the two live lists
+in the node's `OffloadState`, in every build.
 
 `add_offload_dynamic()` snapshots the current pointers for dependency ordering and queue
 routing. Both reason about a single compiled graph, where the snapshot holds. The node

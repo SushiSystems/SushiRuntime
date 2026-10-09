@@ -89,7 +89,7 @@ namespace SushiRuntime
          * @brief Restores the captured dependency state to allow re-execution.
          *
          * Resets the in-degree of all nodes (including the sentinel) to their
-         * base states and clears any distributed offload attempts.
+         * base states.
          */
         void CompiledGraph::rearm() noexcept
         {
@@ -100,11 +100,6 @@ namespace SushiRuntime
             if (sentinel)
                 sentinel->in_degree.store(sentinel_in_degree,
                                           std::memory_order_relaxed);
-#ifdef SR_DISTRIBUTED
-            for (auto& n : all_nodes)
-                if (auto* off = n->offload_state())
-                    off->attempts.store(0, std::memory_order_relaxed);
-#endif
         }
 
     } // namespace Graph

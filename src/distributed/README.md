@@ -52,6 +52,12 @@ a kernel error, `try_offload()` clears the node's offload flag and the node runs
 machine from then on. Without the cap a kernel that always fails on workers would bounce
 between master and workers forever.
 
+The attempt count lives in the node's `OffloadState` and counts per run. `settle()` clears
+it when the node finishes, on the pool through `on_local_completion()` or on a worker
+through a successful TASK_RESULT. A failed remote result does not clear it, since the node
+is re-injected and has not finished. Every run ends with its sentinel, and the sentinel
+waits for every node, so each node passes `settle()` once per run.
+
 The counters `offloaded_count`, `declined_count` and `redispatched_count` exist so that a
 silent local fallback can be observed. `stale_writebacks` counts writebacks the version
 fence rejected.
@@ -120,6 +126,31 @@ registered, makes the task fall back to local execution.
 
 The scheduler calls `try_offload()` only for a node flagged offloadable, so the node's
 offload state already exists and `offload()` returns it without allocating.
+
+### prepare
+
+`prepare()` runs once per `compile()`. A node is offloadable only if it carries an op id a
+live worker runs and every buffer it touches is registered. The coherence model is
+whole-buffer, so the handles come from the owning base of each region in `io_reads_` and
+`io_writes_`; sub-region offload is a later refinement. The handles are stored as an
+`OffloadHandles` (`offload_handles.hpp`, private to this folder) in `OffloadState::payload`,
+and the remote kernel id is the node's `metadata.op_id`. A node that fails either test gets
+no offload state and stays local.
+
+A double-buffered node resolves its handles from live pointers at dispatch, so `prepare()`
+bakes none. It marks the node offloadable only when every buffer the node currently touches
+is registered; otherwise the node stays local and the host fallback still runs.
+
+### Version bumps at completion
+
+`settle()` bumps the version of every registered buffer in the node's `io_writes_`. For a
+node the pool finished, the scheduler's completion observer calls `on_local_completion()`
+before the poller releases successors. For a node a worker finished, the TASK_RESULT handler
+copies the outputs, calls `settle()`, then invokes the completion hook, which releases
+successors. Either way a dependent, notably an offloaded reader, is dispatched only after
+the version reflects the write, so a stale worker cache pulls again. `on_local_completion()`
+bumps for every node, with or without an offload state: a node with no op id carries none,
+and when it writes a shared buffer the workers' copies still have to be invalidated.
 
 ## in_process_transport.cpp
 

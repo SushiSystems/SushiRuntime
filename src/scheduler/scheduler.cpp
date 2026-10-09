@@ -1173,10 +1173,7 @@ namespace SushiRuntime
                     [c](Task* t)
                     {
                         if (!t || !t->is_graph_node()) return;
-                        auto* n = static_cast<SushiRuntime::Graph::Node*>(t);
-                        if (auto* off = n->offload_state())
-                            for (void* p : off->writes)
-                                c->bump_buffer_version(p);
+                        c->on_local_completion(*static_cast<SushiRuntime::Graph::Node*>(t));
                     });
 
                 // The hook resubmits an orphan and drops one ref (src/scheduler/README.md).
@@ -1202,12 +1199,6 @@ namespace SushiRuntime
                 node->release();
                 return;
             }
-
-            // The write is on the master already; its version advances (src/scheduler/README.md).
-            if (coordinator_)
-                if (auto* off = node->offload_state())
-                    for (void* p : off->writes)
-                        coordinator_->bump_buffer_version(p);
 
             // Ready successors use submit() on this transport thread (src/scheduler/README.md).
             int32_t count   = node->inline_successor_count.load(std::memory_order_acquire);

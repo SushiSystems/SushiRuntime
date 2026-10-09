@@ -15,9 +15,10 @@ The declarations keep the namespaces they had before the module was split out.
 | `observability` | `core/dispatch_width.hpp` | `Core::WIDTH_UNKNOWN` |
 | `sycl` | `sycl/sycl.hpp` | `sycl::event`, `sycl::handler`, `sycl::queue` |
 
-`node.hpp` also includes `distributed/protocol.hpp` when `SR_DISTRIBUTED` is defined, for
-`OffloadState`. That include points up the tier order; section 4 of
-`docs/agent/2026_10_09_USABILITY_AUDIT/SPEC.md` replaces it.
+No header here changes shape with a build flag. A node carries one `Graph::OffloadState`
+pointer, null until `TaskGraph::add_offload_dynamic()` or a coordinator's `prepare()` fills it,
+and what a coordinator needs beyond the seam's fields it stores behind
+`OffloadState::payload`.
 
 ## Public headers
 
@@ -31,8 +32,8 @@ The declarations keep the namespaces they had before the module was split out.
 | `small_event_vector.hpp` | `Graph::SmallEventVector` |
 | `region_link.hpp` | `Graph::RegionLink` |
 | `node_profiling.hpp` | `Graph::NodeProfiling` |
-| `node.hpp` | `Graph::SuccessorNode`, `Graph::Node`, and `Graph::OffloadState` and `Graph::NodeExtensions` |
-| `offload_state.hpp` | `Graph::OffloadPayload`, `Graph::OffloadState` (the latter only while `SR_DISTRIBUTED` is undefined, until `node.hpp` drops its own) |
+| `node.hpp` | `Graph::SuccessorNode`, `Graph::Node` |
+| `offload_state.hpp` | `Graph::OffloadPayload`, `Graph::OffloadState`, the per-node record `Node::offload_state_` points to |
 | `offload_sink.hpp` | `Graph::OffloadSink`, through which a coordinator returns nodes to the scheduler |
 | `offload_coordinator.hpp` | `Graph::OffloadStatistics`, `Graph::OffloadCoordinator`, the seam an offload layer implements |
 | `node_widths.hpp` | `Graph::NodeWidths`, `Graph::snapshot_widths` (defined in `src/task/node_widths.cpp`) |

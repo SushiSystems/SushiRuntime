@@ -304,6 +304,9 @@ namespace SushiRuntime
                 /** @brief Bumps a buffer's version after a local write (invalidates remote caches). */
                 void bump_distributed_buffer(void* usm_ptr);
 
+                /** @brief Returns the coordinator of a Master context, or nullptr in any other role. */
+                [[nodiscard]] Distributed::DistributedCoordinator* distributed_coordinator() const noexcept;
+
                 /** @brief Unregisters a buffer; memory().release() does it for a released address. */
                 void unregister_distributed_buffer(void* usm_ptr);
 

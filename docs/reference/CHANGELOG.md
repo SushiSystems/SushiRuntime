@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-10 — task: Gave `Node` one offload state type in every build and removed its handle lists and base copies; the coordinator marks nodes and bumps buffer versions itself (`node.hpp`, `offload_state.hpp`, `distributed_coordinator.cpp`).
 - 2026-10-10 — scheduler: Changed the `TaskScheduler` constructor to take the pool settings, the topology view, the device set and the allocator instead of a `RuntimeContext` (`task_scheduler.hpp`, `scheduler.cpp`, `runtime_settings.hpp`).
 - 2026-10-10 — execution: Removed `RuntimeContext::probe_hardware`; `malloc_shared(bytes, numa_id)` now picks the lowest-indexed device of the node instead of rotating (`runtime_context.hpp`, `runtime_context.cpp`).
 - 2026-10-10 — execution: Rebuilt `RuntimeContext` on the device, memory, observability and topology bricks and added an accessor for each; `UsmAllocationOwner` holds the allocator (`runtime_context.hpp`, `usm_allocation_owner.hpp`).

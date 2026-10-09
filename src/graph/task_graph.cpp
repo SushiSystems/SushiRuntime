@@ -38,6 +38,9 @@
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/graph/dependency_tracker.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#ifdef SR_DISTRIBUTED
+#include <SushiRuntime/distributed/distributed_coordinator.hpp>
+#endif
 
 namespace SushiRuntime 
 {
@@ -184,66 +187,6 @@ namespace SushiRuntime
             }
         };
 
-#ifdef SR_DISTRIBUTED
-        /**
-         * @brief Flags the nodes a remote worker may run; Master mode only (src/graph/README.md).
-         */
-        static void stamp_offloadable(CompiledGraph& graph, RuntimeContext& ctx)
-        {
-            if (ctx.distributed_role() != RuntimeContext::RuntimeRole::Master)
-                return;
-
-            for (auto& np : graph.all_nodes)
-            {
-                Node* n = np.get();
-                if (!n || n->metadata.op_id.value == 0) continue;
-                if (!ctx.distributed_supports(n->metadata.op_id)) continue;
-
-                // offload() allocates nothing after a tracked add (src/graph/README.md).
-                OffloadState& off = n->offload();
-
-                // A double-buffered node bakes no handles here (src/graph/README.md).
-                if (off.live_reads || off.live_writes)
-                {
-                    bool live_ok = true;
-                    if (off.live_reads)
-                        for (void* p : *off.live_reads)
-                            if (!ctx.distributed_buffer(p)) { live_ok = false; break; }
-                    if (live_ok && off.live_writes)
-                        for (void* p : *off.live_writes)
-                            if (!ctx.distributed_buffer(p)) { live_ok = false; break; }
-                    if (!live_ok) continue;
-
-                    off.offloadable = true;
-                    off.remote_op   = n->metadata.op_id;
-                    continue;
-                }
-
-                std::vector<SushiRuntime::Distributed::BufferHandle> ins, outs;
-                bool ok = true;
-
-                for (void* p : off.reads)
-                {
-                    auto h = ctx.distributed_buffer(p);
-                    if (!h) { ok = false; break; }
-                    ins.push_back(*h);
-                }
-                if (ok) for (void* p : off.writes)
-                {
-                    auto h = ctx.distributed_buffer(p);
-                    if (!h) { ok = false; break; }
-                    outs.push_back(*h);
-                }
-                if (!ok) continue;
-
-                off.offloadable = true;
-                off.remote_op   = n->metadata.op_id;
-                off.in_handles  = std::move(ins);
-                off.out_handles = std::move(outs);
-            }
-        }
-#endif
-
         /**
          * @brief Constructs a new TaskGraph.
          *
@@ -321,12 +264,6 @@ namespace SushiRuntime
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
-#ifdef SR_DISTRIBUTED
-            // Offload resolves handles from each region's owning base (src/graph/README.md).
-            for (const auto& r : read_access)  node->offload().reads.push_back(r.base);
-            for (const auto& w : write_access) node->offload().writes.push_back(w.base);
-#endif
-
             SR_LOG_DEBUG("Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
 
             // O(1) Lock-Free insertion
@@ -385,12 +322,6 @@ namespace SushiRuntime
             // The regions stay on the node for queue routing (src/graph/README.md).
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
-
-#ifdef SR_DISTRIBUTED
-            // Offload resolves handles from each region's owning base (src/graph/README.md).
-            for (const auto& r : read_access)  node->offload().reads.push_back(r.base);
-            for (const auto& w : write_access) node->offload().writes.push_back(w.base);
-#endif
 
             SR_LOG_DEBUG("Semantic Node '{}' (Type: {}) added (R: {}, W: {}).",
                          meta.name, static_cast<int>(meta.task_type), 
@@ -451,14 +382,10 @@ namespace SushiRuntime
             node->io_reads_.assign(reads.begin(), reads.end());
             node->io_writes_.assign(writes.begin(), writes.end());
 
-#ifdef SR_DISTRIBUTED
-            auto& off = node->offload();
-            off.reads   = reads;
-            off.writes  = writes;
             // The live lists resolve handles at dispatch (src/graph/README.md).
-            off.live_reads   = std::move(live_reads);
-            off.live_writes  = std::move(live_writes);
-#endif
+            OffloadState& off = node->offload();
+            off.live_reads  = std::move(live_reads);
+            off.live_writes = std::move(live_writes);
 
             impl_->push_node_lock_free(std::move(node), registration);
         }
@@ -551,11 +478,6 @@ namespace SushiRuntime
             // The regions stay on the node for dependency identity (src/graph/README.md).
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
-
-#ifdef SR_DISTRIBUTED
-            for (const auto& r : read_access)  node->offload().reads.push_back(r.base);
-            for (const auto& w : write_access) node->offload().writes.push_back(w.base);
-#endif
 
             SR_LOG_DEBUG("Native CPU node added (R: {}, W: {}).",
                          read_access.size(), write_access.size());
@@ -681,7 +603,8 @@ namespace SushiRuntime
             impl_->tracker.reset(); // Safely clear the lock-free history
 
 #ifdef SR_DISTRIBUTED
-            stamp_offloadable(graph, impl_->context);
+            if (auto* coordinator = impl_->context.distributed_coordinator())
+                coordinator->prepare(graph.all_nodes);
 #endif
 
             SR_LOG_INFO("DAG compilation completed successfully.");

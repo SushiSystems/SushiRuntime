@@ -139,7 +139,7 @@ no clock samples in this loop.
 #### The offload branch
 
 For the overwhelming majority of tasks, the local ones, the offload branch is a single bool
-load. Only nodes that `compile()` stamped offloadable, in Master mode, reach the
+load. Only nodes the coordinator's `prepare()` marked offloadable at `compile()` reach the
 coordinator. On a successful offload the scheduling reference passes to the coordinator and
 is released when the remote result fires `complete_offloaded_node`, so the loop neither
 executes nor releases the task.
@@ -267,13 +267,12 @@ independent and there are `num_workers` threads, so one `notify_all` replaces a 
 
 ### Distributed master
 
-`set_coordinator()` installs a completion observer: in Master mode every registered buffer a
-locally completed node wrote has its version bumped. Combined with the DAG ordering, any
-dependent task, notably an offloaded reader, is dispatched only after the version reflects
-the write, so a stale worker cache is forced to pull again. Offloaded writers are handled
-the same way in `complete_offloaded_node()`. Both call
-`DistributedCoordinator::bump_buffer_version()`, which bumps the registry the coordinator was
-built on, the one `RuntimeContext::bump_distributed_buffer()` bumps by hand.
+`set_coordinator()` installs a completion observer that passes every locally completed graph
+node to `DistributedCoordinator::on_local_completion()`. The coordinator bumps the versions
+of the buffers the node wrote and owns that rule; the scheduler only guarantees the call
+comes before the node's successors are released. An offloaded writer never reaches the
+observer: the coordinator bumps its buffers itself before it calls
+`complete_offloaded_node()`. See `src/distributed/README.md`.
 
 The resubmit hook lets the coordinator re-inject a node orphaned by a dead worker or by a
 failed remote result. `submit()` is the thread-safe injector, so calling it from the
@@ -289,8 +288,8 @@ Versions are not bumped and successors are not released on failure, because the
 authoritative buffers were not validly produced.
 
 On success the offloaded write has already landed in the master's authoritative buffer
-through the eager writeback, so the version is advanced and later dependents pull again.
-Successors are released as `EventPolling::trigger_successors` releases them, but ready ones
+through the eager writeback and the coordinator has advanced its version, so later
+dependents pull again. Successors are released as `EventPolling::trigger_successors` releases them, but ready ones
 go through `submit()`, because this code runs on the coordinator's transport thread and not
 on a worker. Cross-region boundary successors of the dynamic region graph are released the
 same way; the list is empty for ordinary offloaded nodes. Last, the scheduling reference

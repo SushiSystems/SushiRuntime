@@ -182,7 +182,8 @@ Each row is closed by `sr build --distributed` and `sr test` on the machine of p
 | B0, dead includes | `94cb591` | 377 of 377 | not run |
 | B1, pure moves and the four bricks | `0774396` to `414c051` | 414 of 414 passed, 3 skipped | not run |
 | B2, `CompiledGraph` to graph, seam headers, `RuntimeContext` on the bricks | `f53630b`, `d305f03`, `23719da` | 414 of 414 passed, 3 skipped | 19 of 19 passed |
-| Step 5, scheduler off the context | this commit | 414 of 414 passed, 3 skipped | 19 of 19 passed; scheduler 141 ns per task (130 to 156), root fan-out 5 394 to 6 202 ns, chain layer 5 856 to 6 557 ns, wide fan-out 898 ns (442 to 1 321) |
+| Step 5, scheduler off the context | `159d09b` | 414 of 414 passed, 3 skipped | 19 of 19 passed; scheduler 141 ns per task (130 to 156), root fan-out 5 394 to 6 202 ns, chain layer 5 856 to 6 557 ns, wide fan-out 898 ns (442 to 1 321) |
+| Step 6, offload state on the seam type | `refactor(task)!` after `159d09b` | 414 of 414 passed, 3 skipped | not run; the step adds nothing to a node without a coordinator |
 
 Benchmarks after B2, median of five, two invocations of the suite a few minutes apart:
 
@@ -204,3 +205,15 @@ machine and more than one invocation per figure before it claims a gain.
 
 The first closing run of B2 was stopped for lack of memory at 12 parallel compiles; the run
 that passed set `CMAKE_BUILD_PARALLEL_LEVEL=4`. `sr build` has no flag for the job count (phase F).
+
+## Defects found on the way, for phase D
+
+Found by workers while reading the coordinator and the scheduler; none is fixed yet.
+
+- The coordinator leaks the `Node*` entries still pending when it stops.
+- `try_offload` does not check for a stopped coordinator, and touches the node after publishing it to the pending map, where the transport thread can already complete it.
+- A dynamic `State` node bumps the version of the write list snapshotted when it was added, not of the live list, so after a swap the bump lands on the other buffer.
+- A node skipped in an aborted run still bumps the versions of the buffers it would have written, and can be sent to a worker once more before it is skipped.
+- `try_offload` copies the two baked handle vectors on every dispatch.
+- A run hangs when the task deadline is 0 and a live worker never answers.
+- The flag-off build of steps 5 and 6 passed a syntax check only; it is built and tested once step 8 has removed the flag below `distributed`.

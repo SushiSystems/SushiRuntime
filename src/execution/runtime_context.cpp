@@ -534,6 +534,11 @@ namespace SushiRuntime
                 impl_->buffers->bump_version(usm_ptr);
         }
 
+        Distributed::DistributedCoordinator* RuntimeContext::distributed_coordinator() const noexcept
+        {
+            return impl_->coordinator.get();
+        }
+
         void RuntimeContext::unregister_distributed_buffer(void* usm_ptr)
         {
             if (impl_->buffers)

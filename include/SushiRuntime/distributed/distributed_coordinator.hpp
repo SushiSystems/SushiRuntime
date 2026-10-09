@@ -31,6 +31,7 @@
 #include <memory>
 #include <functional>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
@@ -155,10 +156,19 @@ namespace SushiRuntime
                 bool try_offload(Graph::Node* node);
 
                 /**
-                 * @brief Advances the version of the buffer registered at an address.
-                 * @param usm_ptr An address with no registered buffer is ignored.
+                 * @brief Marks the nodes of a compiled graph that a worker may run.
+                 *
+                 * A node qualifies when a live worker runs its op id and every buffer it
+                 * touches is registered.
+                 * @param nodes Borrowed for the call; a slot may be null.
                  */
-                void bump_buffer_version(void* usm_ptr);
+                void prepare(span<const sushi_ptr<Graph::Node>> nodes);
+
+                /**
+                 * @brief Advances the versions of the buffers a locally finished node wrote.
+                 * @param node Borrowed for the call; called before its successors are released.
+                 */
+                void on_local_completion(Graph::Node& node) noexcept;
 
                 /**
                  * @brief Retrieves the total number of tasks successfully offloaded.
