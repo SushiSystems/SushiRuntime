@@ -41,7 +41,7 @@
 #include <SushiRuntime/graph/late_bindings.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
-#include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
 
 namespace SushiRuntime 
 {
@@ -219,7 +219,7 @@ namespace SushiRuntime
                  *        add_task().
                  * @see include/SushiRuntime/graph/README.md
                  */
-                SushiRuntime::Execution::CompiledGraph compile();
+                CompiledGraph compile();
 
                 /**
                  * @brief Hands off the built nodes without finalising a plan.

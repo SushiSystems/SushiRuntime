@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-10 — graph: Moved `CompiledGraph` and the chain plan to the graph folder; the execution spellings stay as aliases (`graph/compiled_graph.hpp`, `graph/chain_plan.hpp`, `compiled_graph.cpp`).
+
 - 2026-10-09 — topology: Added `TopologyView`, the core-to-NUMA map and the NUMA distance a scheduler reads (`topology_view.hpp`).
 - 2026-10-09 — observability: Added `TransferCounters`, the two byte counters of host and device transfers (`transfer_counters.hpp`).
 - 2026-10-09 — memory: Added `UsmAllocator` with one allocation entry point; releasing adopted memory no longer passes it to SYCL's free (`usm_allocator.hpp`, `usm_request.hpp`, `usm_release_observer.hpp`).
