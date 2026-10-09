@@ -66,9 +66,12 @@
 #include <SushiRuntime/execution/chain_run.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/graph/task_types.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 
 namespace SushiRuntime
@@ -1969,8 +1972,9 @@ namespace SushiRuntime
                         engine.reset_profiling(plan_);
 
                     state.before = engine.metrics();
-                    state.device_to_host_before = ctx_->device_to_host_bytes();
-                    state.host_to_device_before = ctx_->host_to_device_bytes();
+                    const Observability::TransferCounters& transfers = ctx_->transfers();
+                    state.device_to_host_before = transfers.device_to_host();
+                    state.host_to_device_before = transfers.host_to_device();
                     state.task_count = task_count_;
 
                     steps_.before_step();
@@ -2088,10 +2092,11 @@ namespace SushiRuntime
                             finished - state.started).count());
 
                     report.cancelled = engine.is_cancelled();
+                    const Observability::TransferCounters& transfers = ctx_->transfers();
                     report.device_to_host_bytes =
-                        ctx_->device_to_host_bytes() - state.device_to_host_before;
+                        transfers.device_to_host() - state.device_to_host_before;
                     report.host_to_device_bytes =
-                        ctx_->host_to_device_bytes() - state.host_to_device_before;
+                        transfers.host_to_device() - state.host_to_device_before;
 
                     if (plan_.profiling)
                         engine.collect_profiling(plan_, report);
@@ -2215,8 +2220,9 @@ namespace SushiRuntime
                         engine.reset_profiling(plan_, expected_invocations);
 
                     const auto before = engine.metrics();
-                    const std::size_t d2h_before = ctx_->device_to_host_bytes();
-                    const std::size_t h2d_before = ctx_->host_to_device_bytes();
+                    const Observability::TransferCounters& transfers = ctx_->transfers();
+                    const std::size_t d2h_before = transfers.device_to_host();
+                    const std::size_t h2d_before = transfers.host_to_device();
                     const auto t0 = clock::now();
 
                     const bool chained = plan_.chain.chainable && !ctx_->settings().force_scheduler;
@@ -2235,8 +2241,8 @@ namespace SushiRuntime
                                            : Core::ExecutionLayer::Scheduler;
 
                     // Only explicit transfers are counted; implicit USM migration is not.
-                    report.device_to_host_bytes = ctx_->device_to_host_bytes() - d2h_before;
-                    report.host_to_device_bytes = ctx_->host_to_device_bytes() - h2d_before;
+                    report.device_to_host_bytes = transfers.device_to_host() - d2h_before;
+                    report.host_to_device_bytes = transfers.host_to_device() - h2d_before;
 
                     // Per-node and per-worker timing, only when profiling is on.
                     if (profiling)
@@ -2627,10 +2633,11 @@ namespace SushiRuntime
                     if (slot == nullptr)
                         return nullptr;
                     void* address = const_cast<void*>(static_cast<const void*>(slot));
-                    const std::optional<void*> base = ctx_->containing_usm_base(address);
-                    const int queue = ctx_->context_index_for_ptr(base ? *base : address);
-                    return allocate_fault_record(
-                        DeviceIndex{static_cast<std::size_t>(queue < 0 ? 0 : queue)});
+                    Memory::UsmAllocator& memory = ctx_->memory();
+                    const std::optional<void*> base = memory.containing_base(address);
+                    const std::optional<std::size_t> device =
+                        memory.device_of(base ? *base : address);
+                    return allocate_fault_record(DeviceIndex{device.value_or(0)});
                 }
 
                 /**
@@ -2812,7 +2819,7 @@ namespace SushiRuntime
                     void* address = const_cast<void*>(static_cast<const void*>(slot));
                     if (usm_kind_of(address) == sycl::usm::alloc::host)
                         return;
-                    const std::optional<void*> base = ctx_->containing_usm_base(address);
+                    const std::optional<void*> base = ctx_->memory().containing_base(address);
                     if (!base)
                         throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
                             std::string(what) + ": this runtime never allocated the slot, so "
@@ -2836,7 +2843,7 @@ namespace SushiRuntime
                     try
                     {
                         return sycl::get_pointer_type(
-                            address, ctx_->get_queue_for_ptr(address).get_context());
+                            address, detail::owning_queue(*ctx_, address).get_context());
                     }
                     catch (const sycl::exception&)
                     {
@@ -3041,7 +3048,7 @@ namespace SushiRuntime
                 std::size_t compiles_ = 0;
 
                 /** @brief Caches the compiled plan, valid while dirty_ is false. */
-                Execution::CompiledGraph plan_;
+                ::SushiRuntime::Graph::CompiledGraph plan_;
                 bool dirty_ = true;
 
                 // Defaults from RuntimeSettings::profiling; stamped into plan_.profiling at build_plan().

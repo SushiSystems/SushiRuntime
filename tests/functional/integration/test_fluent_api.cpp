@@ -409,9 +409,9 @@ TEST(Integration_FluentAPI, ContextAccessorIsConsistent)
     auto rt = Runtime::create();
     Execution::RuntimeContext& ctx = rt.unsafe_context();
 
-    // device_count() should be > 0 (at least a CPU device is always present).
-    EXPECT_GE(ctx.device_count(), 1u);
-    EXPECT_EQ(rt.advanced().device_count(), ctx.device_count());
+    // At least a CPU device is always present.
+    EXPECT_GE(ctx.devices().count(), 1u);
+    EXPECT_EQ(rt.advanced().device_count(), ctx.devices().count());
 }
 
 /** @brief Tests that run(0) returns immediately and reports no work. */

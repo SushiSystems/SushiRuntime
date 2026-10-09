@@ -138,27 +138,33 @@ namespace SushiRuntime
                 /** @brief Returns the installed offload coordinator, or nullptr for none. */
                 [[nodiscard]] Graph::OffloadCoordinator* offload() const noexcept;
 
-                // Every member from here to the template malloc_shared forwards to a part above.
+                // Every member from here to the template malloc_shared forwards to a part above and is deprecated.
 
                 /** @brief Returns settings().profiling. */
+                [[deprecated("use settings().profiling")]]
                 bool profiling_enabled() const noexcept;
 
                 /** @brief Forwards to transfers().add_device_to_host(bytes). */
+                [[deprecated("use transfers().add_device_to_host()")]]
                 void add_device_to_host_bytes(std::size_t bytes) noexcept;
 
                 /** @brief Forwards to transfers().add_host_to_device(bytes). */
+                [[deprecated("use transfers().add_host_to_device()")]]
                 void add_host_to_device_bytes(std::size_t bytes) noexcept;
 
                 /** @brief Forwards to transfers().device_to_host(). */
+                [[deprecated("use transfers().device_to_host()")]]
                 std::size_t device_to_host_bytes() const noexcept;
 
                 /** @brief Forwards to transfers().host_to_device(). */
+                [[deprecated("use transfers().host_to_device()")]]
                 std::size_t host_to_device_bytes() const noexcept;
 
                 /**
                  * @brief Forwards to devices().queue(xpu_index).
                  * @throws Core::SushiException With Errc::invalid_access on a bad index.
                  */
+                [[deprecated("use devices().queue()")]]
                 sycl::queue& get_queue(size_t xpu_index = 0);
 
                 /**
@@ -166,9 +172,11 @@ namespace SushiRuntime
                  * @throws Core::SushiException With Errc::invalid_access on a bad index.
                  * @see include/SushiRuntime/execution/README.md
                  */
+                [[deprecated("use devices().queue() with a profiling QueueFlavour")]]
                 sycl::queue& profiling_queue(size_t xpu_index = 0);
 
                 /** @brief Forwards to devices().has_profiling_queue(xpu_index). */
+                [[deprecated("use devices().has_profiling_queue()")]]
                 bool has_profiling_queue(size_t xpu_index) const noexcept;
 
                 /**
@@ -176,18 +184,22 @@ namespace SushiRuntime
                  * @throws Core::SushiException With Errc::invalid_access on a bad index.
                  * @see include/SushiRuntime/execution/README.md
                  */
+                [[deprecated("use devices().queue() with an in-order QueueFlavour")]]
                 sycl::queue& chain_queue(size_t xpu_index, bool profiling);
 
                 /** @brief Forwards to devices().count(). */
+                [[deprecated("use devices().count()")]]
                 size_t device_count() const;
 
                 /**
                  * @brief Forwards to devices().is_gpu(xpu_index).
                  * @throws Core::SushiException With Errc::invalid_access on a bad index.
                  */
+                [[deprecated("use devices().is_gpu()")]]
                 bool device_is_gpu(size_t xpu_index) const;
 
                 /** @brief Forwards to devices().queue_or_numa_local(std::nullopt, numa_id). */
+                [[deprecated("use devices().queue_or_numa_local()")]]
                 sycl::queue& get_numa_local_queue(int numa_id);
 
                 /**
@@ -195,12 +207,14 @@ namespace SushiRuntime
                  *        fallback_numa).
                  * @see include/SushiRuntime/execution/README.md
                  */
+                [[deprecated("use devices().queue_or_numa_local() with memory().owning_device()")]]
                 sycl::queue& get_queue_for_ptr(void* ptr, int fallback_numa = 0);
 
                 /**
                  * @brief Forwards to memory().device_of(ptr).
                  * @return The device index, or -1 where device_of() returns nothing.
                  */
+                [[deprecated("use memory().device_of()")]]
                 int context_index_for_ptr(void* ptr) noexcept;
 
                 /**
@@ -208,30 +222,37 @@ namespace SushiRuntime
                  *        devices().device_for_numa(numa_id).
                  * @see include/SushiRuntime/execution/README.md
                  */
+                [[deprecated("use memory().allocate() with devices().device_for_numa()")]]
                 void* malloc_shared(size_t bytes, int numa_id = 0);
 
                 /**
                  * @brief Forwards to memory().allocate() with UsmKind::Device on
                  *        devices().device_for_numa(numa_id).
                  */
+                [[deprecated("use memory().allocate() with devices().device_for_numa()")]]
                 void* malloc_device(size_t bytes, int numa_id = 0);
 
                 /** @brief Forwards to memory().allocate({UsmKind::Shared, bytes, 0, device_index}). */
+                [[deprecated("use memory().allocate()")]]
                 void* malloc_shared_on(size_t bytes, size_t device_index);
 
                 /** @brief Forwards to memory().allocate({UsmKind::Device, bytes, 0, device_index}). */
+                [[deprecated("use memory().allocate()")]]
                 void* malloc_device_on(size_t bytes, size_t device_index);
 
                 /** @brief Forwards to memory().allocate({UsmKind::Host, bytes, 0, device_index}). */
+                [[deprecated("use memory().allocate()")]]
                 void* malloc_host_on(size_t bytes, size_t device_index);
 
                 /** @brief Forwards to memory().release(ptr). */
+                [[deprecated("use memory().release()")]]
                 void free_usm(void* ptr);
 
                 /**
                  * @brief Forwards to memory().allocate({UsmKind::Host, bytes, alignment,
                  *        device_index}).
                  */
+                [[deprecated("use memory().allocate()")]]
                 void* aligned_malloc_host_on(std::size_t alignment, std::size_t bytes,
                                              std::size_t device_index);
 
@@ -239,6 +260,7 @@ namespace SushiRuntime
                  * @brief Forwards to memory().allocate({UsmKind::Shared, bytes, alignment,
                  *        device_index}).
                  */
+                [[deprecated("use memory().allocate()")]]
                 void* aligned_malloc_shared_on(std::size_t alignment, std::size_t bytes,
                                                std::size_t device_index);
 
@@ -246,29 +268,37 @@ namespace SushiRuntime
                  * @brief Forwards to memory().allocate({UsmKind::Device, bytes, alignment,
                  *        device_index}).
                  */
+                [[deprecated("use memory().allocate()")]]
                 void* aligned_malloc_device_on(std::size_t alignment, std::size_t bytes,
                                                std::size_t device_index);
 
                 /** @brief Forwards to memory().adopt(address, device_index, bytes). */
+                [[deprecated("use memory().adopt()")]]
                 void adopt_usm(void* address, std::size_t device_index,
                                std::optional<std::size_t> bytes);
 
                 /** @brief Forwards to memory().containing_base(ptr). */
+                [[deprecated("use memory().containing_base()")]]
                 std::optional<void*> containing_usm_base(void* ptr) const;
 
                 /** @brief Forwards to memory().forget(address). */
+                [[deprecated("use memory().forget()")]]
                 void forget_usm(void* address) noexcept;
 
                 /** @brief Forwards to memory().live_count(). */
+                [[deprecated("use memory().live_count()")]]
                 std::size_t live_usm_count() const;
 
                 /** @brief Forwards to topology().numa_distance(numa_a, numa_b). */
+                [[deprecated("use topology().numa_distance()")]]
                 int numa_distance(int numa_a, int numa_b) const;
 
                 /** @brief Forwards to topology().core_to_numa(). */
+                [[deprecated("use topology().core_to_numa()")]]
                 const std::vector<int>& cpu_core_to_numa() const;
 
                 /** @brief Forwards to devices().wait_all(). */
+                [[deprecated("use devices().wait_all()")]]
                 void wait_all();
 
                 /**
@@ -278,6 +308,7 @@ namespace SushiRuntime
                  * @param numa_id Target NUMA node.
                  */
                 template <typename T>
+                [[deprecated("use memory().allocate() with devices().device_for_numa()")]]
                 T* malloc_shared(size_t count, int numa_id = 0)
                 {
                     return static_cast<T*>(malloc_shared(count * sizeof(T), numa_id));

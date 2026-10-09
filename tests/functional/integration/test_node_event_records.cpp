@@ -46,7 +46,7 @@ namespace SushiRuntime
             /** @brief Declares the test-only friend access to Graph::plan_. */
             struct NodeEventRecordsTestAccess
             {
-                static const Execution::CompiledGraph& plan(const Graph& g) noexcept
+                static const SushiRuntime::Graph::CompiledGraph& plan(const Graph& g) noexcept
                 {
                     return g.plan_;
                 }
@@ -60,7 +60,7 @@ using namespace SushiRuntime;
 namespace
 {
     // Registration index of the one compiled node named @p name.
-    std::uint32_t registration_index_of(const Execution::CompiledGraph& plan, const char* name)
+    std::uint32_t registration_index_of(const Graph::CompiledGraph& plan, const char* name)
     {
         const Graph::Node* found = nullptr;
         for (const auto& n : plan.all_nodes)

@@ -35,7 +35,10 @@
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/execution/runtime_settings.hpp>
+#include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 
 namespace SushiRuntime
@@ -73,13 +76,13 @@ namespace SushiRuntime
                  * @return Number of device queues selected at construction; valid
                  *         device indices are [0, this).
                  */
-                std::size_t device_count() const { return ctx_.device_count(); }
+                std::size_t device_count() const { return ctx_.devices().count(); }
 
                 /**
                  * @brief Tells whether per-kernel timings are being collected.
                  * @return True when the queues were built with profiling enabled.
                  */
-                bool profiling_enabled() const noexcept { return ctx_.profiling_enabled(); }
+                bool profiling_enabled() const noexcept { return ctx_.settings().profiling; }
 
                 /**
                  * @brief Tells whether work is being redistributed by device load.
@@ -107,7 +110,7 @@ namespace SushiRuntime
                  */
                 std::size_t host_to_device_bytes() const noexcept
                 {
-                    return ctx_.host_to_device_bytes();
+                    return ctx_.transfers().host_to_device();
                 }
 
                 /**
@@ -117,7 +120,7 @@ namespace SushiRuntime
                  */
                 std::size_t device_to_host_bytes() const noexcept
                 {
-                    return ctx_.device_to_host_bytes();
+                    return ctx_.transfers().device_to_host();
                 }
 
             private:

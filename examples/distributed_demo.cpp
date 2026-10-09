@@ -39,8 +39,9 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/sycl_compat.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
@@ -142,7 +143,7 @@ namespace
         }
         std::cout << "[master] " << cluster.alive_workers() << " worker(s) ready\n";
 
-        sycl::queue& q = ctx.get_queue(0);
+        sycl::queue& q = ctx.devices().queue(0);
         float* a   = sycl::malloc_shared<float>(n, q);
         float* b   = sycl::malloc_shared<float>(n, q);
         float* out = sycl::malloc_shared<float>(n, q);

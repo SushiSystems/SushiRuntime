@@ -33,8 +33,8 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/graph/task_types.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 #include "../../common/test_helpers.hpp"
 
@@ -51,7 +51,7 @@ using SushiRuntime::Test::make_order_recorder;
 TEST(Integration_TaskGraphTest, SequentialUSMDependency)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     int dummy_data = 0;
     void* usm_ptr = &dummy_data;
@@ -90,7 +90,7 @@ TEST(Integration_TaskGraphTest, SequentialUSMDependency)
 TEST(Integration_TaskGraphTest, IndependentRootsExecution)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     constexpr int NUM_TASKS = 10;
     std::atomic<int> completed_tasks{0};
@@ -124,7 +124,7 @@ TEST(Integration_TaskGraphTest, IndependentRootsExecution)
 TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     int shared_resource = 0;
     void* ptr = &shared_resource;

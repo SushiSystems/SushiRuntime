@@ -41,7 +41,8 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -231,7 +232,7 @@ namespace SushiRuntime
             if (size_bytes > MAX_FRAME_BYTES)
                 throw std::runtime_error(
                     "BufferHandle size_bytes exceeds MAX_FRAME_BYTES");
-            void* p = sycl::malloc_shared(size_bytes, ctx.get_queue(0));
+            void* p = sycl::malloc_shared(size_bytes, ctx.devices().queue(0));
             // malloc_shared may return null on OOM (src/distributed/README.md).
             if (!p && size_bytes != 0)
                 throw std::runtime_error("USM allocation for cache buffer failed");
@@ -250,7 +251,7 @@ namespace SushiRuntime
             auto& e = cache[h.id.value];
             if (!e.ptr || e.size != h.size_bytes)
             {
-                if (e.ptr) sycl::free(e.ptr, ctx.get_queue(0));
+                if (e.ptr) sycl::free(e.ptr, ctx.devices().queue(0));
                 e.ptr  = alloc_cache_buffer(h.size_bytes);
                 e.size = h.size_bytes;
             }
@@ -330,7 +331,7 @@ namespace SushiRuntime
                             break;
                         if (!e.ptr || e.size != push.handle.size_bytes)
                         {
-                            if (e.ptr) sycl::free(e.ptr, ctx.get_queue(0));
+                            if (e.ptr) sycl::free(e.ptr, ctx.devices().queue(0));
                             e.ptr  = alloc_cache_buffer(push.handle.size_bytes);
                             e.size = push.handle.size_bytes;
                         }
@@ -443,7 +444,7 @@ namespace SushiRuntime
         {
             try
             {
-                auto dev = ctx.get_queue(0).get_device();
+                auto dev = ctx.devices().queue(0).get_device();
                 // free_memory needs device-info extension version 5 (src/distributed/README.md).
 #if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
                 if (dev.has(sycl::aspect::ext_intel_free_memory))
@@ -502,7 +503,7 @@ namespace SushiRuntime
         {
             std::lock_guard<std::mutex> lk(cache_mtx);
             for (auto& [id, e] : cache)
-                if (e.ptr) sycl::free(e.ptr, ctx.get_queue(0));
+                if (e.ptr) sycl::free(e.ptr, ctx.devices().queue(0));
             cache.clear();
         }
 

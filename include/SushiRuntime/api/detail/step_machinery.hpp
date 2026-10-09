@@ -38,7 +38,7 @@
 #include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/core/delegate.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
 {

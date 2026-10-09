@@ -40,7 +40,7 @@
 #include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/api/fluent.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
@@ -195,7 +195,7 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
     g_worker_runs.store(0, std::memory_order_relaxed);
 
     constexpr size_t N = 1024;
-    sycl::queue& mq = master_ctx->get_queue(0);
+    sycl::queue& mq = master_ctx->devices().queue(0);
 
     float* a   = sycl::malloc_shared<float>(N, mq);
     float* b   = sycl::malloc_shared<float>(N, mq);
@@ -321,7 +321,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     };
 
     constexpr size_t N = 256;
-    sycl::queue& mq = master_ctx->get_queue(0);
+    sycl::queue& mq = master_ctx->devices().queue(0);
     float* in = sycl::malloc_shared<float>(N, mq);
     float* y0 = sycl::malloc_shared<float>(N, mq);
     float* y1 = sycl::malloc_shared<float>(N, mq);
@@ -429,7 +429,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     g_worker_runs.store(0, std::memory_order_relaxed);
 
     constexpr size_t N = 512;
-    sycl::queue& mq = master_ctx->get_queue(0);
+    sycl::queue& mq = master_ctx->devices().queue(0);
     float* x = sycl::malloc_shared<float>(N, mq);
     float* y = sycl::malloc_shared<float>(N, mq);
     ASSERT_NE(x, nullptr);
@@ -546,7 +546,7 @@ TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
     g_worker_runs.store(0, std::memory_order_relaxed);
 
     constexpr size_t N = 1024;
-    sycl::queue& mq = master_ctx->get_queue(0);
+    sycl::queue& mq = master_ctx->devices().queue(0);
     float* a   = sycl::malloc_shared<float>(N, mq);
     float* b   = sycl::malloc_shared<float>(N, mq);
     float* out = sycl::malloc_shared<float>(N, mq);
@@ -641,7 +641,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     auto master_ctx = std::make_unique<RuntimeContext>();
 
     constexpr size_t N = 1024;
-    sycl::queue& mq = master_ctx->get_queue(0);
+    sycl::queue& mq = master_ctx->devices().queue(0);
     float* a   = sycl::malloc_shared<float>(N, mq);
     float* b   = sycl::malloc_shared<float>(N, mq);
     float* out = sycl::malloc_shared<float>(N, mq);
@@ -765,7 +765,7 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
     auto master_ctx = std::make_unique<RuntimeContext>();
 
     constexpr size_t N = 16;
-    sycl::queue& mq = master_ctx->get_queue(0);
+    sycl::queue& mq = master_ctx->devices().queue(0);
     float* out = sycl::malloc_shared<float>(N, mq);
     ASSERT_NE(out, nullptr);
     for (size_t i = 0; i < N; ++i) out[i] = 7.0f; // authoritative good value
@@ -844,7 +844,7 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
     auto worker_ctx = std::make_unique<RuntimeContext>();
 
     constexpr size_t N = 64;
-    sycl::queue& mq = master_ctx->get_queue(0);
+    sycl::queue& mq = master_ctx->devices().queue(0);
     float* a   = sycl::malloc_shared<float>(N, mq);
     float* b   = sycl::malloc_shared<float>(N, mq);
     float* out = sycl::malloc_shared<float>(N, mq);

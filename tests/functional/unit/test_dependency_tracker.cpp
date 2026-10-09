@@ -27,7 +27,7 @@
  */
 
 #include <gtest/gtest.h>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/graph/dependency_tracker.hpp>
 
 using namespace SushiRuntime;

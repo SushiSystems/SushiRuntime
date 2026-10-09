@@ -36,10 +36,11 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/graph/task_types.hpp>
-#include <SushiRuntime/graph/node.hpp> // CompiledGraph holds sushi_ptr<Node>; dtor needs full type
+#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/task/node.hpp> // CompiledGraph holds sushi_ptr<Node>; dtor needs full type
 
 #include "../../common/test_helpers.hpp"
 
@@ -54,11 +55,10 @@ namespace
     /**
      * @brief Measures the minimum compilation time for a task graph.
      * 
-     * @param ctx The runtime context.
      * @param nodes The number of nodes in the graph.
      * @return The minimum compilation time in microseconds.
      */
-    double min_compile_us(RuntimeContext& ctx, size_t nodes)
+    double min_compile_us(size_t nodes)
     {
         // Task t reads buf[t % M] and writes buf[(t + 1) % M], so consecutive tasks depend.
         constexpr size_t M = 16;
@@ -67,7 +67,7 @@ namespace
         double best = 1e300;
         for (int r = 0; r < ROUNDS; ++r)
         {
-            TaskGraph graph(ctx);
+            TaskGraph graph;
             for (size_t t = 0; t < nodes; ++t)
             {
                 void* in  = &bufs[t % M];
@@ -95,14 +95,13 @@ namespace
  */
 TEST(Performance_GraphCompileBench, CompileScaling)
 {
-    RuntimeContext ctx;
     const size_t sizes[] = { 64, 256, 1024, 4096, 16384 };
 
     std::printf("\n=== TaskGraph::compile() scaling ===\n");
     std::printf("  %8s | %12s | %10s\n", "nodes", "compile (us)", "us/node");
     for (size_t n : sizes)
     {
-        const double us = min_compile_us(ctx, n);
+        const double us = min_compile_us(n);
         std::printf("  %8zu | %12.1f | %10.3f\n", n, us, us / double(n));
         EXPECT_GT(us, 0.0);
     }
@@ -155,7 +154,7 @@ TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
 
     auto ctx = std::make_unique<RuntimeContext>();
 
-    sycl::queue& base = ctx->get_queue(0);
+    sycl::queue& base = ctx->devices().queue(0);
     sycl::device dev  = base.get_device();
     sycl::context cxt = base.get_context();
     sycl::queue qa(cxt, dev, sycl::property::queue::in_order{});

@@ -33,7 +33,7 @@
 #include <vector>
 #include <unordered_map>
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/graph/dependency_tracker.hpp>

@@ -29,11 +29,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 
@@ -43,17 +45,14 @@ using namespace SushiRuntime::Topology;
 
 namespace
 {
-    /** @brief Names one aligned allocation entry point of RuntimeContext. */
-    using AlignedAllocation = void* (RuntimeContext::*)(std::size_t, std::size_t, std::size_t);
+    /** @brief Holds the number of USM kinds the aligned allocation tests cover. */
+    constexpr std::size_t K_ALIGNED_KIND_COUNT = 3;
 
-    /** @brief Holds the number of aligned allocation entry points of RuntimeContext. */
-    constexpr std::size_t K_ALIGNED_ALLOCATION_COUNT = 3;
-
-    /** @brief Lists the aligned allocation entry points: shared, device, host. */
-    const std::array<AlignedAllocation, K_ALIGNED_ALLOCATION_COUNT> K_ALIGNED_ALLOCATIONS = {
-        &RuntimeContext::aligned_malloc_shared_on,
-        &RuntimeContext::aligned_malloc_device_on,
-        &RuntimeContext::aligned_malloc_host_on,
+    /** @brief Lists the USM kinds the aligned allocation tests cover: shared, device, host. */
+    const std::array<Memory::UsmKind, K_ALIGNED_KIND_COUNT> K_ALIGNED_KINDS = {
+        Memory::UsmKind::Shared,
+        Memory::UsmKind::Device,
+        Memory::UsmKind::Host,
     };
 } // namespace
 
@@ -111,7 +110,8 @@ TEST(Unit_TopologyTest, InvalidNUMAFallbackQueue)
     constexpr int INVALID_NUMA_ID = 999;
 
     EXPECT_NO_THROW({
-        sycl::queue& fallback_queue = ctx.get_numa_local_queue(INVALID_NUMA_ID);
+        sycl::queue& fallback_queue =
+            ctx.devices().queue_or_numa_local(std::nullopt, INVALID_NUMA_ID);
 
         // Confirm the returned queue is usable with a dummy host task.
         auto event = fallback_queue.submit([](sycl::handler& h)
@@ -137,20 +137,21 @@ TEST(Unit_TopologyTest, InvalidNUMAFallsBackToAUsableNode)
     constexpr int INVALID_NUMA_ID = -5; // negative edge case
 
     EXPECT_NO_THROW({
-        (void)ctx.get_numa_local_queue(INVALID_NUMA_ID);
+        (void)ctx.devices().queue_or_numa_local(std::nullopt, INVALID_NUMA_ID);
     }) << "Context crashed when asked for a queue on a negative NUMA ID.";
 
     void* ptr = nullptr;
     EXPECT_NO_THROW({
-        ptr = ctx.malloc_shared(128, INVALID_NUMA_ID);
+        ptr = ctx.memory().allocate({Memory::UsmKind::Shared, 128, 0,
+                                     ctx.devices().device_for_numa(INVALID_NUMA_ID)});
     }) << "Allocation on a negative NUMA ID threw instead of falling back.";
 
     ASSERT_NE(ptr, nullptr) << "Fallback allocation returned null.";
-    EXPECT_GE(ctx.context_index_for_ptr(ptr), 0)
+    EXPECT_TRUE(ctx.memory().device_of(ptr).has_value())
         << "The fallback allocation was not recorded against any device.";
 
-    ctx.free_usm(ptr);
-    EXPECT_EQ(ctx.context_index_for_ptr(ptr), -1)
+    ctx.memory().release(ptr);
+    EXPECT_FALSE(ctx.memory().device_of(ptr).has_value())
         << "Freeing left the pointer's owner recorded.";
 }
 
@@ -158,25 +159,27 @@ TEST(Unit_TopologyTest, InvalidNUMAFallsBackToAUsableNode)
 TEST(Unit_TopologyTest, LiveUsmCountFollowsAllocateFreeAndForget)
 {
     RuntimeContext ctx;
-    const std::size_t baseline = ctx.live_usm_count();
+    const std::size_t baseline = ctx.memory().live_count();
 
-    void* shared = ctx.malloc_shared(128);
-    void* device = ctx.malloc_device(128);
+    void* shared = ctx.memory().allocate(
+        {Memory::UsmKind::Shared, 128, 0, ctx.devices().device_for_numa(0)});
+    void* device = ctx.memory().allocate(
+        {Memory::UsmKind::Device, 128, 0, ctx.devices().device_for_numa(0)});
     ASSERT_NE(shared, nullptr);
     ASSERT_NE(device, nullptr);
-    EXPECT_EQ(ctx.live_usm_count(), baseline + 2);
+    EXPECT_EQ(ctx.memory().live_count(), baseline + 2);
 
-    ctx.free_usm(shared);
-    EXPECT_EQ(ctx.live_usm_count(), baseline + 1);
+    ctx.memory().release(shared);
+    EXPECT_EQ(ctx.memory().live_count(), baseline + 1);
 
-    ctx.free_usm(device);
-    EXPECT_EQ(ctx.live_usm_count(), baseline);
+    ctx.memory().release(device);
+    EXPECT_EQ(ctx.memory().live_count(), baseline);
 
     int external = 0;
-    ctx.adopt_usm(&external, 0, sizeof(external));
-    EXPECT_EQ(ctx.live_usm_count(), baseline + 1);
-    ctx.forget_usm(&external);
-    EXPECT_EQ(ctx.live_usm_count(), baseline);
+    ctx.memory().adopt(&external, 0, sizeof(external));
+    EXPECT_EQ(ctx.memory().live_count(), baseline + 1);
+    ctx.memory().forget(&external);
+    EXPECT_EQ(ctx.memory().live_count(), baseline);
 }
 
 /** @brief Tests that every aligned allocation returns an address on the requested alignment. */
@@ -184,47 +187,49 @@ TEST(Unit_TopologyTest, AlignedAllocationsStartOnTheAlignment)
 {
     RuntimeContext ctx;
 
-    for (const AlignedAllocation allocate : K_ALIGNED_ALLOCATIONS)
+    for (const Memory::UsmKind kind : K_ALIGNED_KINDS)
     {
         for (const std::size_t alignment : {std::size_t{64}, std::size_t{128}})
         {
             for (const std::size_t bytes : {std::size_t{1}, std::size_t{100}, std::size_t{4096}})
             {
-                void* ptr = (ctx.*allocate)(alignment, bytes, 0);
+                void* ptr = ctx.memory().allocate({kind, bytes, alignment, 0});
                 ASSERT_NE(ptr, nullptr) << bytes << " bytes at alignment " << alignment;
                 EXPECT_EQ(reinterpret_cast<std::uintptr_t>(ptr) % alignment, 0u)
                     << bytes << " bytes at alignment " << alignment;
-                ctx.free_usm(ptr);
+                ctx.memory().release(ptr);
             }
         }
     }
 }
 
-/** @brief Tests that an aligned allocation is recorded once and dropped by free_usm. */
+/** @brief Tests that an aligned allocation is recorded once and dropped by release(). */
 TEST(Unit_TopologyTest, AlignedAllocationsAreRecordedAndFreed)
 {
     RuntimeContext ctx;
-    const std::size_t baseline = ctx.live_usm_count();
+    const std::size_t baseline = ctx.memory().live_count();
 
-    std::array<void*, K_ALIGNED_ALLOCATION_COUNT> pointers = {};
-    for (std::size_t i = 0; i < K_ALIGNED_ALLOCATIONS.size(); ++i)
+    std::array<void*, K_ALIGNED_KIND_COUNT> pointers = {};
+    for (std::size_t i = 0; i < K_ALIGNED_KINDS.size(); ++i)
     {
-        pointers[i] = (ctx.*K_ALIGNED_ALLOCATIONS[i])(128, 256, 0);
+        pointers[i] = ctx.memory().allocate({K_ALIGNED_KINDS[i], 256, 128, 0});
         EXPECT_NE(pointers[i], nullptr);
-        EXPECT_EQ(ctx.live_usm_count(), baseline + i + 1);
+        EXPECT_EQ(ctx.memory().live_count(), baseline + i + 1);
     }
 
     for (void* ptr : pointers)
-        ctx.free_usm(ptr);
-    EXPECT_EQ(ctx.live_usm_count(), baseline);
+        ctx.memory().release(ptr);
+    EXPECT_EQ(ctx.memory().live_count(), baseline);
 }
 
 /** @brief Tests that an aligned allocation on a device index past the last one throws. */
 TEST(Unit_TopologyTest, AnAlignedAllocationOnAMissingDeviceThrows)
 {
     RuntimeContext ctx;
-    const std::size_t missing_device = ctx.device_count();
+    const std::size_t missing_device = ctx.devices().count();
 
-    EXPECT_THROW((void)ctx.aligned_malloc_shared_on(128, 64, missing_device), std::runtime_error);
-    EXPECT_THROW((void)ctx.aligned_malloc_device_on(128, 64, missing_device), std::runtime_error);
+    EXPECT_THROW((void)ctx.memory().allocate({Memory::UsmKind::Shared, 64, 128, missing_device}),
+                 std::runtime_error);
+    EXPECT_THROW((void)ctx.memory().allocate({Memory::UsmKind::Device, 64, 128, missing_device}),
+                 std::runtime_error);
 }

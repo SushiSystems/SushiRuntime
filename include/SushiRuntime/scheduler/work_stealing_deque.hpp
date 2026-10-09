@@ -32,7 +32,7 @@
 #include <cstdint>
 #include <vector>
 #include <SushiRuntime/core/common.hpp>
-#include <SushiRuntime/scheduler/task.hpp>
+#include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
 
 namespace SushiRuntime

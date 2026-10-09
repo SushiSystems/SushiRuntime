@@ -32,7 +32,7 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
-#include <SushiRuntime/scheduler/task.hpp>
+#include <SushiRuntime/task/task.hpp>
 
 #include "../../common/test_helpers.hpp"
 #include "../../common/scheduler_fixture.hpp"

@@ -35,7 +35,9 @@
 #include <vector>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/sycl_compat.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/scheduler/worker_pool_info.hpp>
 #include <SushiRuntime/scheduler/workload_coordinator.hpp>
 #include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
@@ -270,7 +272,7 @@ namespace SushiRuntime
          */
         WorkerPoolInfo ExecutionEngine::worker_pool() const
         {
-            WorkerPoolInfo info;
+            Scheduler::WorkerPoolInfo info;
             info.count      = impl_->scheduler.num_workers;
             info.first_core = impl_->scheduler.first_core();
             info.pinning    = impl_->scheduler.pinning();
@@ -526,7 +528,7 @@ namespace SushiRuntime
          */
         void IExecutionEngine::execute(CompiledGraph&& graph)
         {
-            CompiledGraph local = std::move(graph);
+            Graph::CompiledGraph local = std::move(graph);
             execute(local);
         }
 

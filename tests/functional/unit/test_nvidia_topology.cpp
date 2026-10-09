@@ -163,7 +163,7 @@ TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
             continue;
 
         found_cuda_queue = true;
-        sycl::queue& q = ctx.get_queue(i);
+        sycl::queue& q = ctx.devices().queue(i);
 
         EXPECT_NO_THROW({
             auto ev = q.submit([](sycl::handler& h)
@@ -198,7 +198,7 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuVectorAdd)
         std::string pname = all_devs[i].get_platform().get_info<sycl::info::platform::name>();
         if (pname.find("CUDA") != std::string::npos || pname.find("cuda") != std::string::npos)
         {
-            cuda_q = &ctx.get_queue(i);
+            cuda_q = &ctx.devices().queue(i);
             break;
         }
     }

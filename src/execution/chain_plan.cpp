@@ -25,10 +25,14 @@
  * @author Mustafa Garip
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <optional>
 #include <vector>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -65,13 +69,15 @@ namespace SushiRuntime
             int owning_queue_index(const Graph::Node& node, RuntimeContext& ctx) noexcept
             {
                 int owner = -1;
+                Memory::UsmAllocator& memory = ctx.memory();
                 auto visit = [&](const std::vector<Core::ResourceRegion>& regions)
                 {
                     for (const auto& r : regions)
                     {
                         if (!r.base)
                             continue;
-                        const int index = ctx.context_index_for_ptr(r.base);
+                        const std::optional<std::size_t> device = memory.device_of(r.base);
+                        const int index = device ? static_cast<int>(*device) : -1;
                         if (index < 0 || (owner >= 0 && index != owner))
                             return false;
                         owner = index;
@@ -91,7 +97,7 @@ namespace SushiRuntime
              * @param graph A plan after capture_base_state().
              * @return The order; shorter than the node count only if the plan has a cycle.
              */
-            std::vector<Graph::Node*> topological_order(const CompiledGraph& graph)
+            std::vector<Graph::Node*> topological_order(const Graph::CompiledGraph& graph)
             {
                 const Graph::Node* sentinel = graph.sentinel.get();
                 const std::size_t count = graph.all_nodes.size();

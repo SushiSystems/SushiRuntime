@@ -35,8 +35,10 @@
 
 #include <SushiRuntime/core/run_report.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/node_widths.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
@@ -59,7 +61,7 @@ namespace
     }
 
     /** @brief Finds the one compiled node named @p name, failing if missing or duplicated. */
-    const Node& find_named(const Execution::CompiledGraph& plan, const char* name)
+    const Node& find_named(const Graph::CompiledGraph& plan, const char* name)
     {
         const Node* found = nullptr;
         for (const auto& n : plan.all_nodes)
@@ -84,7 +86,7 @@ TEST(Unit_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
 TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     graph.add_node(noop_work());
 
@@ -94,7 +96,7 @@ TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsTheNodeNameLastNodeNames)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     graph.add_node(noop_work());
     graph.width_last_node(4096);
@@ -109,7 +111,7 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsTheNodeNameLastNodeNames)
 TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsOnlyTheMostRecentNode)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     graph.add_node(noop_work());
     graph.name_last_node("first");
@@ -117,7 +119,7 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsOnlyTheMostRecentNode)
     graph.name_last_node("second");
     graph.width_last_node(4096);
 
-    Execution::CompiledGraph plan = graph.compile();
+    Graph::CompiledGraph plan = graph.compile();
     ASSERT_EQ(plan.all_nodes.size(), 2u);
 
     EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Core::WIDTH_UNKNOWN});
@@ -127,7 +129,7 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsOnlyTheMostRecentNode)
 TEST(Unit_NodeDispatchWidth, WidthLastNodeOnAnEmptyGraphLeavesTheWidthUnknown)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     graph.width_last_node(4096);
 
@@ -141,7 +143,7 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeOnAnEmptyGraphLeavesTheWidthUnknown)
 TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
 {
     RuntimeContext ctx;
-    Graph::TaskGraph graph(ctx);
+    Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {});
     graph.width_last_node(1024);
 
@@ -157,7 +159,7 @@ TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
     bindings->count.store(129, std::memory_order_relaxed);
 
     RuntimeContext ctx;
-    Graph::TaskGraph graph(ctx);
+    Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}, {}, {}, bindings);
     graph.width_last_node(1024);
 
@@ -173,7 +175,7 @@ TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
     bindings->count.store(Graph::LateBindings::USE_BAKED, std::memory_order_relaxed);
 
     RuntimeContext ctx;
-    Graph::TaskGraph graph(ctx);
+    Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}, {}, {}, bindings);
     graph.width_last_node(1024);
 
@@ -184,7 +186,7 @@ TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
 TEST(Unit_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
 {
     RuntimeContext ctx;
-    Graph::TaskGraph graph(ctx);
+    Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {});
     graph.width_last_node(std::size_t{0xFFFFFFFFu} + 1);
 

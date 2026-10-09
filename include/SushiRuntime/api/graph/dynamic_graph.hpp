@@ -46,7 +46,9 @@
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
 {
@@ -344,8 +346,9 @@ namespace SushiRuntime
                         engine.reset_profiling(plan_);
 
                     state.before = engine.metrics();
-                    state.device_to_host_before = ctx_->device_to_host_bytes();
-                    state.host_to_device_before = ctx_->host_to_device_bytes();
+                    const Observability::TransferCounters& transfers = ctx_->transfers();
+                    state.device_to_host_before = transfers.device_to_host();
+                    state.host_to_device_before = transfers.host_to_device();
                     state.task_count = size();
 
                     steps_.before_step();
@@ -399,10 +402,11 @@ namespace SushiRuntime
                             finished - state.started).count());
 
                     report.cancelled = engine.is_cancelled();
+                    const Observability::TransferCounters& transfers = ctx_->transfers();
                     report.device_to_host_bytes =
-                        ctx_->device_to_host_bytes() - state.device_to_host_before;
+                        transfers.device_to_host() - state.device_to_host_before;
                     report.host_to_device_bytes =
-                        ctx_->host_to_device_bytes() - state.host_to_device_before;
+                        transfers.host_to_device() - state.host_to_device_before;
 
                     if (plan_.profiling)
                         engine.collect_profiling(plan_, report);
@@ -1024,8 +1028,9 @@ namespace SushiRuntime
                         engine.reset_profiling(plan_, expected_invocations);
 
                     const auto before = engine.metrics();
-                    const std::size_t d2h_before = ctx_->device_to_host_bytes();
-                    const std::size_t h2d_before = ctx_->host_to_device_bytes();
+                    const Observability::TransferCounters& transfers = ctx_->transfers();
+                    const std::size_t d2h_before = transfers.device_to_host();
+                    const std::size_t h2d_before = transfers.host_to_device();
                     const auto t0 = clock::now();
 
                     std::size_t task_count = size();
@@ -1049,8 +1054,8 @@ namespace SushiRuntime
                                             task_count * executed,
                                             compile_ms, ms(t0, t1));
                     report.cancelled = engine.is_cancelled();
-                    report.device_to_host_bytes = ctx_->device_to_host_bytes() - d2h_before;
-                    report.host_to_device_bytes = ctx_->host_to_device_bytes() - h2d_before;
+                    report.device_to_host_bytes = transfers.device_to_host() - d2h_before;
+                    report.host_to_device_bytes = transfers.host_to_device() - h2d_before;
 
                     if (profiling)
                         engine.collect_profiling(plan_, report);
@@ -1105,7 +1110,7 @@ namespace SushiRuntime
                 /** @brief Aggregates every live region's per-step lifecycle before each run. */
                 detail::StepMachinery steps_;
 
-                Execution::CompiledGraph plan_;
+                ::SushiRuntime::Graph::CompiledGraph plan_;
 
                 /** @brief Tells whether a run_async() step has not been settled yet. */
                 bool async_step_pending_ = false;

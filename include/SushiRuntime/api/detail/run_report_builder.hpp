@@ -31,6 +31,7 @@
 #include <cstddef>
 
 #include <SushiRuntime/core/run_report.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -63,7 +64,8 @@ namespace SushiRuntime
 
                 // The device class comes from the runtime's own inventory, which does not allocate.
                 Core::NumaNodeStatistics node;
-                if (ctx.device_count() > 0 && ctx.device_is_gpu(0))
+                const Device::DeviceQueueSet& devices = ctx.devices();
+                if (devices.count() > 0 && devices.is_gpu(0))
                     node.gpu_tasks_executed = total_tasks;
                 else
                     node.cpu_tasks_executed = total_tasks;
