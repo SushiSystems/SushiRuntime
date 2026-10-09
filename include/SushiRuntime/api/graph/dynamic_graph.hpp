@@ -423,7 +423,7 @@ namespace SushiRuntime
                 {
                     if (!r)
                         throw Core::SushiException(std::move(r.error()));
-                    return *r;
+                    return std::move(*r);
                 }
 
                 /**

@@ -8,6 +8,7 @@
 - 2026-10-09 — tests: Added byte-equality tests for dynamic against static graphs, host tasks among kernels, asynchronous against blocking steps and offset launches (`test_layer_equivalence.cpp`).
 - 2026-10-09 — tests: Gated the cancellation tests on the run's progress, limited device skips to "SYCL reports no device", and set a per-test timeout (`test_cancellation.cpp`, `test_helpers.hpp`, `tests/CMakeLists.txt`).
 - 2026-10-09 — tests: Added a five-run measurement helper with one parseable line per case and took allocation and polling out of the timed regions (`measurement.hpp`, `test_scheduler_dispatch_perf.cpp`).
+- 2026-10-09 — api: Moved the report out of the result in `unwrap` instead of copying it (`graph.hpp`, `dynamic_graph.hpp`).
 - 2026-10-07 — execution: Added `RuntimeContext::aligned_malloc_shared_on` and `aligned_malloc_device_on`, the aligned siblings of the host entry point (`runtime_context.hpp`, `runtime_context.cpp`, `test_topology.cpp`).
 - 2026-10-07 — docs: Took the publish list's summary from the README, passed secrets to the called CI and pinned `docs bundle` with tests (`docs/publish.toml`, `release.yml`, `cli/tests/test_cli.py`).
 - 2026-10-07 — ci: Added the release job that builds the documentation bundle after CI and attaches it to the tag's release (`.github/workflows/release.yml`, `ci.yml`).
