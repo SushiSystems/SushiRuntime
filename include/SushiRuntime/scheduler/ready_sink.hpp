@@ -21,26 +21,10 @@
 
 /**
  * @file ready_sink.hpp
- * @brief Declares ReadySink, the buffer a finishing task reports unblocked work into.
+ * @brief Forwards to task/ready_sink.hpp.
  * @author Mustafa Garip
- * @see include/SushiRuntime/scheduler/README.md
  */
 
 #pragma once
 
-#include <vector>
-
-namespace SushiRuntime
-{
-    namespace Scheduler
-    {
-        class Task;
-
-        /**
-         * @brief Names the buffer where a finishing task reports the work it unblocked.
-         * @see include/SushiRuntime/scheduler/README.md
-         */
-        using ReadySink = std::vector<Task*>;
-
-    } // namespace Scheduler
-} // namespace SushiRuntime
+#include <SushiRuntime/task/ready_sink.hpp>

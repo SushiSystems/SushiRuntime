@@ -40,6 +40,7 @@
 #include <SushiRuntime/core/resource_region.hpp>
 #include <SushiRuntime/graph/late_bindings.hpp>
 #include <SushiRuntime/graph/task_types.hpp>
+#include <SushiRuntime/task/task_work.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 
 namespace SushiRuntime 
@@ -52,16 +53,6 @@ namespace SushiRuntime
     namespace Graph
     {
         struct Node;
-
-        /**
-         * @brief Task work type defined as a SYCL kernel or transfer.
-         */
-        using TaskWork = std::function<void(sycl::handler&)>;
-
-        /**
-         * @brief Task work type for host-side (library) execution. 
-         */
-        using HostWork = std::function<sycl::event(sycl::queue&, const std::vector<sycl::event>&)>;
 
         /**
          * @brief Manages and optimizes dependencies between async tasks.
