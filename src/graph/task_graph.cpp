@@ -188,7 +188,7 @@ namespace SushiRuntime
         /**
          * @brief Flags the nodes a remote worker may run; Master mode only (src/graph/README.md).
          */
-        static void stamp_offloadable(SushiRuntime::Execution::CompiledGraph& graph, RuntimeContext& ctx)
+        static void stamp_offloadable(CompiledGraph& graph, RuntimeContext& ctx)
         {
             if (ctx.distributed_role() != RuntimeContext::RuntimeRole::Master)
                 return;
@@ -568,9 +568,9 @@ namespace SushiRuntime
          * @return The compiled graph ready to run; empty when no node was added.
          * @throws std::runtime_error If the graph has no root node or contains a cycle.
          */
-        SushiRuntime::Execution::CompiledGraph TaskGraph::compile() 
+        CompiledGraph TaskGraph::compile()
         {
-            SushiRuntime::Execution::CompiledGraph graph;
+            CompiledGraph graph;
             
             // Acquire the entire lifetime stack atomically
             NodeEntry* head = impl_->all_nodes.exchange(nullptr, std::memory_order_acquire);
