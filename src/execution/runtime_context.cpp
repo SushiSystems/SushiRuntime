@@ -193,10 +193,7 @@ namespace SushiRuntime
 #ifdef SR_DISTRIBUTED
                 // The network stops first, before the scheduler (src/execution/README.md).
                 if (coordinator)
-                {
                     coordinator->stop();
-                    coordinator.reset();
-                }
 
                 // The allocator can outlive this object; it must not keep a pointer into it.
                 memory->set_release_observer(nullptr);
@@ -208,6 +205,11 @@ namespace SushiRuntime
                     engine->shutdown();
                     engine.reset();
                 }
+
+#ifdef SR_DISTRIBUTED
+                // The scheduler holds the coordinator's address until its workers have joined.
+                coordinator.reset();
+#endif
             }
 
             Impl(const Impl&) = delete;

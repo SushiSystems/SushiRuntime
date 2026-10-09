@@ -9,7 +9,10 @@ point here.
 
 ### Sizing and placing the pool
 
-The constructor sizes and places the worker pool from the context's `RuntimeSettings`: how
+The constructor takes a `WorkerPoolSettings`, a `Topology::TopologyView`, a
+`Device::DeviceQueueSet` and a `Memory::UsmAllocator`. It includes no header of `execution`;
+`Execution::worker_pool_settings()` maps a `RuntimeSettings` onto the first argument. The
+settings size and place the worker pool: how
 many workers to run, which core range to bind them into, and whether to bind at all. The
 defaults reproduce the sole-tenant behaviour, one worker per logical core with worker i on
 core i. A host that shares the machine names a narrower range, so its own threads keep
@@ -202,16 +205,18 @@ whose regions straddle a device boundary would hit an illegal cross-context acce
 first dispatch of a node checks co-location and fails the run with a precise error. The
 result is cached on the node; nodes are dispatched serially across steps, so a plain flag is
 safe and steady-state replay pays nothing. A failure is not cached, so a graph that is still
-misconfigured fails again on a later run. Cross-device execution itself is assigned to
-"WP-5" (region ownership and halo exchange) in the comment this page replaces; until then
-the check enforces the co-location contract the layer above must honour.
+misconfigured fails again on a later run. Cross-device execution itself needs region
+ownership and halo exchange, which the runtime does not have; the check enforces the
+co-location contract the layer above must honour.
 
 The same lookup yields the owning queue index, which is cached on the node. Steady-state
-replay then routes through `get_queue(index)`, a bare array read, and not through
-`get_queue_for_ptr()`, which takes a process-global mutex on every device dispatch. Only a
-hit in the authoritative map is cached; a miss keeps the introspection and round-robin
-fallback. Every branch resolves an index and goes through `dispatch_queue()`, except that
-the default path without profiling skips the index lookup.
+replay then routes through `DeviceQueueSet::queue(index)`, an indexed read, and not through
+`UsmAllocator::owning_device()`. Only a hit in the allocator's record, `device_of()`, is
+cached. On a miss `owning_device()` asks SYCL which device owns the anchor, and that device
+is routed by index too. A node with no anchor, or an anchor no device owns, takes
+`DeviceQueueSet::queue_or_numa_local()`, which rotates over the devices of the NUMA node and
+returns a queue. Every branch goes through `dispatch_queue()`, except that the rotation
+without profiling uses the returned queue and skips the index lookup.
 
 `execute_host()` takes a vector of dependencies, so the rarer path of a HOST node that
 submits its own device work still allocates one. The kernel path calls `depends_on()` per
@@ -266,8 +271,9 @@ independent and there are `num_workers` threads, so one `notify_all` replaces a 
 locally completed node wrote has its version bumped. Combined with the DAG ordering, any
 dependent task, notably an offloaded reader, is dispatched only after the version reflects
 the write, so a stale worker cache is forced to pull again. Offloaded writers are handled
-the same way in `complete_offloaded_node()`. This is the automatic counterpart of the manual
-`bump_distributed_buffer()` API.
+the same way in `complete_offloaded_node()`. Both call
+`DistributedCoordinator::bump_buffer_version()`, which bumps the registry the coordinator was
+built on, the one `RuntimeContext::bump_distributed_buffer()` bumps by hand.
 
 The resubmit hook lets the coordinator re-inject a node orphaned by a dead worker or by a
 failed remote result. `submit()` is the thread-safe injector, so calling it from the

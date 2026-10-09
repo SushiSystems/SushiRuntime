@@ -36,9 +36,11 @@
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 
 #include "../../common/test_helpers.hpp"
+#include "../../common/scheduler_fixture.hpp"
 
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Scheduler;
+using SushiRuntime::Test::make_scheduler;
 using SushiRuntime::Test::AtomicCounterTask;
 
 namespace
@@ -91,7 +93,7 @@ TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
         GTEST_SKIP() << "Single NUMA node (" << nodes << ") — steal locality is "
                         "unmeasurable here; runs only on bare-metal multi-socket.";
 
-    TaskScheduler sched(ctx);
+    TaskScheduler sched = make_scheduler(ctx);
 
     std::atomic<size_t> executed{0};
     constexpr size_t TOTAL = 300000;

@@ -160,6 +160,10 @@ steal-friendly units.
 
 ### TaskScheduler
 
+TaskScheduler is built from a WorkerPoolSettings, a Topology::TopologyView, a Device::DeviceQueueSet
+and a Memory::UsmAllocator, and holds the last three by reference; all three must outlive it. It
+names no type of the execution module.
+
 TaskScheduler owns a fixed-size pool of worker threads started once (start()) and kept alive across
 graph runs. Each run is gated by a pair of arm_for_execution() and submit(root); the sentinel node's
 completion promise unblocks the caller. Workers steal from node-local victims first; cross-node
@@ -236,8 +240,8 @@ whole multi-step run, so only reset_cancellation() clears it, at the start of a 
 
 pinning_ is read by dispatch_loop() on every worker and by build_steal_topology(). Both run after
 the constructor has written it and it is never mutated afterwards, so no synchronisation is needed.
-It is cached in the scheduler and not re-read through the context so the worker's first action does
-not chase a pointer into another layer.
+It is copied from the WorkerPoolSettings the constructor receives, so the worker's first action
+reads a member of the scheduler.
 
 ### WorkerCompletedCounter
 
@@ -258,8 +262,9 @@ zero only once every node has been fully finalized. wait_quiescent() blocks the 
 
 ### queue_device_index
 
-queue_device_index() lets a locality fallback (get_queue_for_ptr, get_numa_local_queue) that returns
-a queue and not an index still route through dispatch_queue().
+queue_device_index() serves one caller: the NUMA rotation, DeviceQueueSet::queue_or_numa_local(),
+returns a queue and not an index. On a profiled round the scan finds that queue's device so the
+dispatch still goes through dispatch_queue().
 
 ### arm_for_execution
 

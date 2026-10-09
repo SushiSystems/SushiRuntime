@@ -42,10 +42,12 @@
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 
 #include "../../common/test_helpers.hpp"
+#include "../../common/scheduler_fixture.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Scheduler;
+using SushiRuntime::Test::make_scheduler;
 using namespace SushiRuntime::Topology;
 using SushiRuntime::Test::AtomicCounterTask;
 
@@ -113,7 +115,7 @@ namespace
         std::atomic<size_t> executed{0};
         for (int r = 0; r < ROUNDS; ++r)
         {
-            TaskScheduler sched(ctx);
+            TaskScheduler sched = make_scheduler(ctx);
             executed.store(0, std::memory_order_relaxed);
             sched.start();
             sched.arm_for_execution();
@@ -145,7 +147,7 @@ namespace
 TEST(Performance_StealNumaEffectBench, NumaAwareVsBlindThroughput)
 {
     RuntimeContext blind_ctx; // real (flat on single-socket) topology
-    const int workers = static_cast<int>(TaskScheduler(blind_ctx).get_worker_count());
+    const int workers = static_cast<int>(make_scheduler(blind_ctx).get_worker_count());
     if (workers < 2)
         GTEST_SKIP() << "Need >= 2 worker threads to exercise stealing.";
 

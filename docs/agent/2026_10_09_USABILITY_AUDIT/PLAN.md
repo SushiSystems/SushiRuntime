@@ -20,6 +20,15 @@ Given by the owner on 2026-10-09.
 | Numeric primitives | Leave the runtime for SushiBLAS; see below |
 | Run mode | The orchestrator's choice: waves where file sets are disjoint, inline otherwise |
 
+Given on 2026-10-10.
+
+| Question | Ruling |
+| --- | --- |
+| `CMakePresets.json` | Deleted |
+| `set(SR_INSTALL ON)` in SushiBLAS, SushiAI and SushiEngine | Added, the same line in each `cmake/Runtime.cmake`, with the CMake groundwork (B6) |
+| Other sessions during the physical move | Nobody builds against this tree while the move runs; no worktree |
+| Order | The physical move stays where the spec puts it, after the cycles are closed |
+
 ## Numeric primitives
 
 Ruled on 2026-10-09: the runtime keeps no mathematics; all of it goes to SushiBLAS, and the
@@ -163,3 +172,35 @@ They are the "before" of phase E.
 A dependent node costs 26 to 105 microseconds through the scheduler layer of `Graph::run` and
 about 6 through the chain layer, while a bare task through the scheduler costs 148 nanoseconds.
 The scheduler-layer figure also moves by a factor of two to three between runs.
+
+## Phase B progress
+
+Each row is closed by `sr build --distributed` and `sr test` on the machine of phase A.
+
+| Step | Commits | Functional suite | Benchmark suite |
+| --- | --- | --- | --- |
+| B0, dead includes | `94cb591` | 377 of 377 | not run |
+| B1, pure moves and the four bricks | `0774396` to `414c051` | 414 of 414 passed, 3 skipped | not run |
+| B2, `CompiledGraph` to graph, seam headers, `RuntimeContext` on the bricks | `f53630b`, `d305f03`, `23719da` | 414 of 414 passed, 3 skipped | 19 of 19 passed |
+| Step 5, scheduler off the context | this commit | 414 of 414 passed, 3 skipped | 19 of 19 passed; scheduler 141 ns per task (130 to 156), root fan-out 5 394 to 6 202 ns, chain layer 5 856 to 6 557 ns, wide fan-out 898 ns (442 to 1 321) |
+
+Benchmarks after B2, median of five, two invocations of the suite a few minutes apart:
+
+| Benchmark | Case | Phase A | B2, first run | B2, second run |
+| --- | --- | --- | --- | --- |
+| `scheduler_dispatch` | scheduler, 500 000 tasks | 148 ns | 153 ns | not rerun |
+| `wide_fanout` | 1 280 000 tasks | 547 ns | 366 ns | not rerun |
+| `root_fanout` | 1 root | 5 718 ns | 7 920 ns | 5 841 ns |
+| `root_fanout` | 1 024 roots | 6 053 ns | 7 385 ns | 6 303 ns |
+| `chain_dispatch` | chain layer, 1 node | about 5 900 ns | 8 532 ns | 7 113 ns |
+| `chain_dispatch` | chain layer, 1 024 nodes | about 5 900 ns | 7 111 ns | 6 098 ns |
+| `chain_dispatch` | scheduler layer, 1 node | 105 136 ns | 447 562 ns | 66 853 ns |
+| `chain_dispatch` | scheduler layer, 1 024 nodes | 25 973 ns | 18 888 ns | 17 589 ns |
+
+The two B2 runs differ from each other by up to 35 percent on the kernel-submitting cases, more
+than either differs from phase A, so they show no regression and cannot rule out one of a few
+percent. The machine had 3 GB of 15 free and other sessions running. Phase E needs a quiet
+machine and more than one invocation per figure before it claims a gain.
+
+The first closing run of B2 was stopped for lack of memory at 12 parallel compiles; the run
+that passed set `CMAKE_BUILD_PARALLEL_LEVEL=4`. `sr build` has no flag for the job count (phase F).

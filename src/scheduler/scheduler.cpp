@@ -44,10 +44,14 @@
 #include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/topology/affinity.hpp>
+#include <SushiRuntime/topology/topology_view.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/device/queue_flavour.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/scheduler/work_stealing_deque.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #ifdef SR_DISTRIBUTED
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/distributed/distributed_coordinator.hpp>
@@ -57,7 +61,6 @@ namespace SushiRuntime
 {
     namespace Scheduler
     {
-        using namespace SushiRuntime::Execution;
         using namespace SushiRuntime::Core;
 
         namespace
@@ -140,29 +143,37 @@ namespace SushiRuntime
                 failure.error = std::make_exception_ptr(std::runtime_error(failure.message));
                 return failure;
             }
+
+            /** @brief Returns the device an address is recorded on, or -1 when it has no record. */
+            int recorded_device_index(const Memory::UsmAllocator& memory, void* address)
+            {
+                const std::optional<std::size_t> device = memory.device_of(address);
+                return device ? static_cast<int>(*device) : -1;
+            }
         } // namespace
 
         /**
-         * @brief Constructs a TaskScheduler from the context's settings (src/scheduler/README.md).
-         * @param ctx The RuntimeContext to associate with this scheduler.
+         * @brief Sizes the worker pool from the requested settings (src/scheduler/README.md).
          */
-        TaskScheduler::TaskScheduler(RuntimeContext& ctx) : context(ctx)
+        TaskScheduler::TaskScheduler(const WorkerPoolSettings& pool,
+                                     const Topology::TopologyView& topology,
+                                     Device::DeviceQueueSet& devices,
+                                     const Memory::UsmAllocator& memory)
+            : topology_(topology), devices_(devices), memory_(memory)
         {
-            const Execution::RuntimeSettings& settings = context.settings();
-
             size_t machine_cores = std::thread::hardware_concurrency();
             if (machine_cores == 0) machine_cores = 1;
 
-            size_t threads = settings.worker_count != 0 ? settings.worker_count : machine_cores;
+            size_t threads = pool.worker_count != 0 ? pool.worker_count : machine_cores;
             if (threads > Core::MAX_WORKER_THREADS) threads = Core::MAX_WORKER_THREADS;
             if (threads == 0) threads = 1;
 
             num_workers = threads;
-            pinning_ = settings.pinning;
-            first_core_ = settings.first_core;
+            pinning_ = pool.pinning;
+            first_core_ = pool.first_core;
 
             // A core range past the last core is clamped and logged (src/scheduler/README.md).
-            if (pinning_ == Execution::PinPolicy::Pin && first_core_ + num_workers > machine_cores)
+            if (pinning_ == PinPolicy::Pin && first_core_ + num_workers > machine_cores)
             {
                 const size_t last = first_core_ + num_workers;
                 first_core_ = first_core_ < machine_cores ? first_core_ : 0;
@@ -171,7 +182,7 @@ namespace SushiRuntime
 
                 SR_LOG_WARN("Worker core range [{}, {}) exceeds the machine's {} cores; "
                             "clamped to {} workers starting at core {}.",
-                            settings.first_core, last, machine_cores, num_workers, first_core_);
+                            pool.first_core, last, machine_cores, num_workers, first_core_);
             }
 
             for(size_t i=0; i<num_workers; ++i)
@@ -184,7 +195,7 @@ namespace SushiRuntime
             // The poller owns the run-quiescence counter's updates (src/scheduler/README.md).
             event_poller.set_inflight_tracker(&inflight_, &quiesce_mutex_, &quiesce_cv_);
 
-            if (pinning_ == Execution::PinPolicy::Pin)
+            if (pinning_ == PinPolicy::Pin)
             {
                 SR_LOG_INFO("Task scheduler initialized with {} workers pinned to cores [{}, {}).",
                             num_workers, first_core_, first_core_ + num_workers);
@@ -200,10 +211,10 @@ namespace SushiRuntime
          */
         void TaskScheduler::build_steal_topology()
         {
-            const std::vector<int>& core_to_numa = context.cpu_core_to_numa();
+            const std::vector<int>& core_to_numa = topology_.core_to_numa();
 
             worker_numa_.assign(num_workers, 0);
-            if (pinning_ == Execution::PinPolicy::Pin)
+            if (pinning_ == PinPolicy::Pin)
             {
                 for (size_t i = 0; i < num_workers; ++i)
                 {
@@ -230,7 +241,7 @@ namespace SushiRuntime
                 for (size_t j = 0; j < num_workers; ++j)
                 {
                     if (j == th) continue;
-                    const int dist = context.numa_distance(my_node, worker_numa_[j]);
+                    const int dist = topology_.numa_distance(my_node, worker_numa_[j]);
                     victims.push_back({ static_cast<int>(j), dist, rng() });
                     if (worker_numa_[j] == my_node) ++local;
                 }
@@ -277,8 +288,8 @@ namespace SushiRuntime
         sycl::queue& TaskScheduler::dispatch_queue(std::size_t index)
         {
             return profiling_active_.load(std::memory_order_acquire)
-                       ? context.profiling_queue(index)
-                       : context.get_queue(index);
+                       ? devices_.queue(index, Device::QueueFlavour{false, true})
+                       : devices_.queue(index);
         }
 
         /**
@@ -286,9 +297,9 @@ namespace SushiRuntime
          */
         std::size_t TaskScheduler::queue_device_index(sycl::queue& q) const
         {
-            const std::size_t n = context.device_count();
+            const std::size_t n = devices_.count();
             for (std::size_t i = 0; i < n; ++i)
-                if (context.get_queue(i) == q)
+                if (devices_.queue(i) == q)
                     return i;
             return static_cast<std::size_t>(-1);
         }
@@ -475,7 +486,7 @@ namespace SushiRuntime
             EventPolling::ActiveEventList active_events;
 
             // A pinned worker stays on core first_core_ + id (src/scheduler/README.md).
-            if (pinning_ == Execution::PinPolicy::Pin)
+            if (pinning_ == PinPolicy::Pin)
                 SushiRuntime::Topology::pin_current_thread_to_core(
                     static_cast<int>(first_core_) + thread_id);
 
@@ -752,7 +763,7 @@ namespace SushiRuntime
                 // A node's regions must share one device context (src/scheduler/README.md).
                 if (node && !node->locality_checked_)
                 {
-                    const int anchor_ctx = context.context_index_for_ptr(anchor);
+                    const int anchor_ctx = recorded_device_index(memory_, anchor);
                     bool spans = false;
                     if (anchor_ctx >= 0)
                     {
@@ -761,7 +772,7 @@ namespace SushiRuntime
                             for (const auto& r : regs)
                             {
                                 if (!r.base) continue;
-                                const int c = context.context_index_for_ptr(r.base);
+                                const int c = recorded_device_index(memory_, r.base);
                                 if (c >= 0 && c != anchor_ctx) return true;
                             }
                             return false;
@@ -786,9 +797,13 @@ namespace SushiRuntime
                     if (node && node->cached_queue_index_ >= 0)
                         return dispatch_queue(static_cast<std::size_t>(node->cached_queue_index_));
 
-                    sycl::queue& picked = anchor
-                        ? context.get_queue_for_ptr(anchor, target_numa_id)
-                        : context.get_numa_local_queue(target_numa_id);
+                    // The device that owns the anchor's USM is routed by index.
+                    if (anchor)
+                        if (const std::optional<std::size_t> owner = memory_.owning_device(anchor))
+                            return dispatch_queue(*owner);
+
+                    sycl::queue& picked =
+                        devices_.queue_or_numa_local(std::nullopt, target_numa_id);
 
                     // Skips the index lookup entirely on the default (non-profiled) path.
                     if (!profiling_active_.load(std::memory_order_acquire))
@@ -1155,13 +1170,13 @@ namespace SushiRuntime
             if (c)
             {
                 event_poller.set_completion_observer(
-                    [this](Task* t)
+                    [c](Task* t)
                     {
                         if (!t || !t->is_graph_node()) return;
                         auto* n = static_cast<SushiRuntime::Graph::Node*>(t);
                         if (auto* off = n->offload_state())
                             for (void* p : off->writes)
-                                context.bump_distributed_buffer(p);
+                                c->bump_buffer_version(p);
                     });
 
                 // The hook resubmits an orphan and drops one ref (src/scheduler/README.md).
@@ -1189,9 +1204,10 @@ namespace SushiRuntime
             }
 
             // The write is on the master already; its version advances (src/scheduler/README.md).
-            if (auto* off = node->offload_state())
-                for (void* p : off->writes)
-                    context.bump_distributed_buffer(p);
+            if (coordinator_)
+                if (auto* off = node->offload_state())
+                    for (void* p : off->writes)
+                        coordinator_->bump_buffer_version(p);
 
             // Ready successors use submit() on this transport thread (src/scheduler/README.md).
             int32_t count   = node->inline_successor_count.load(std::memory_order_acquire);

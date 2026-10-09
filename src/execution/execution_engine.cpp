@@ -40,6 +40,7 @@
 #include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 
 namespace SushiRuntime
@@ -137,7 +138,9 @@ namespace SushiRuntime
              *
              * @param ctx The runtime context to attach to.
              */
-            Impl(RuntimeContext& ctx) : scheduler(ctx)
+            Impl(RuntimeContext& ctx)
+                : scheduler(worker_pool_settings(ctx.settings()), ctx.topology(), ctx.devices(),
+                            ctx.memory())
             {
                 scheduler.start();
 

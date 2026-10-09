@@ -424,6 +424,15 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Advances the version of the buffer registered at an address.
+         * @param usm_ptr An address with no registered buffer is ignored.
+         */
+        void DistributedCoordinator::bump_buffer_version(void* usm_ptr)
+        {
+            impl_->buffers->bump_version(usm_ptr);
+        }
+
+        /**
          * @brief Starts the coordinator and its monitor thread.
          * Begins listening for transport messages and sets up liveness monitoring.
          */
