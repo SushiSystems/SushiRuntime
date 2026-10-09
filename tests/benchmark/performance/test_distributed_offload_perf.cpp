@@ -45,6 +45,8 @@
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
 
+#include "../../common/test_helpers.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
@@ -182,17 +184,12 @@ namespace
  */
 TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
 {
-    std::unique_ptr<RuntimeContext> master_ctx, w0_ctx, w1_ctx;
-    try
-    {
-        master_ctx = std::make_unique<RuntimeContext>();
-        w0_ctx     = std::make_unique<RuntimeContext>();
-        w1_ctx     = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
+    auto w0_ctx = std::make_unique<RuntimeContext>();
+    auto w1_ctx = std::make_unique<RuntimeContext>();
 
     g_worker_runs[0].store(0);
     g_worker_runs[1].store(0);

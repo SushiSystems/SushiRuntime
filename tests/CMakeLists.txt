@@ -127,6 +127,7 @@ add_executable(sr_functional_tests
     functional/integration/test_graph_profiling_switch.cpp
     functional/integration/test_node_event_records.cpp
     functional/integration/test_chain_layer.cpp
+    functional/integration/test_layer_equivalence.cpp
     functional/integration/test_device_sized_primitives.cpp
     functional/integration/test_rule_registration.cpp
     functional/integration/test_async_execution.cpp
@@ -185,17 +186,17 @@ sushiruntime_configure_test_target(sr_functional_tests)
 gtest_discover_tests(sr_functional_tests
     DISCOVERY_MODE PRE_TEST
     TEST_FILTER "Unit_*"
-    PROPERTIES LABELS "unit"
+    PROPERTIES LABELS "unit" TIMEOUT 120
 )
 gtest_discover_tests(sr_functional_tests
     DISCOVERY_MODE PRE_TEST
     TEST_FILTER "Integration_*"
-    PROPERTIES LABELS "integration"
+    PROPERTIES LABELS "integration" TIMEOUT 120
 )
 gtest_discover_tests(sr_functional_tests
     DISCOVERY_MODE PRE_TEST
     TEST_FILTER "Regression_*"
-    PROPERTIES LABELS "regression"
+    PROPERTIES LABELS "regression" TIMEOUT 120
 )
 
 # ----------------------------------------------------------------------------
@@ -217,7 +218,7 @@ sushiruntime_configure_test_target(sr_allocation_tests)
 gtest_discover_tests(sr_allocation_tests
     DISCOVERY_MODE PRE_TEST
     TEST_FILTER "Integration_*"
-    PROPERTIES LABELS "integration"
+    PROPERTIES LABELS "integration" TIMEOUT 120
 )
 
 # ----------------------------------------------------------------------------
@@ -255,12 +256,12 @@ if(SR_BUILD_BENCHMARKS)
     gtest_discover_tests(sr_benchmark_tests
         DISCOVERY_MODE PRE_TEST
         TEST_FILTER "Stress_*"
-        PROPERTIES LABELS "stress"
+        PROPERTIES LABELS "stress" TIMEOUT 900
     )
     gtest_discover_tests(sr_benchmark_tests
         DISCOVERY_MODE PRE_TEST
         TEST_FILTER "Performance_*"
-        PROPERTIES LABELS "performance"
+        PROPERTIES LABELS "performance" TIMEOUT 900
     )
 endif()
 

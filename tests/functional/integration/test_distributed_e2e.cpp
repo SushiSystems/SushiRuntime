@@ -48,6 +48,8 @@
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
 
+#include "../../common/test_helpers.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
@@ -181,17 +183,11 @@ namespace
  */
 TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
 {
-    // The runtime needs at least one SYCL device; skip cleanly if none is present.
-    std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
-    try
-    {
-        master_ctx = std::make_unique<RuntimeContext>();
-        worker_ctx = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
+    auto worker_ctx = std::make_unique<RuntimeContext>();
 
     g_worker_runs.store(0, std::memory_order_relaxed);
 
@@ -290,17 +286,12 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
  */
 TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
 {
-    std::unique_ptr<RuntimeContext> master_ctx, w0_ctx, w1_ctx;
-    try
-    {
-        master_ctx = std::make_unique<RuntimeContext>();
-        w0_ctx     = std::make_unique<RuntimeContext>();
-        w1_ctx     = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
+    auto w0_ctx = std::make_unique<RuntimeContext>();
+    auto w1_ctx = std::make_unique<RuntimeContext>();
 
     // The per-worker counters record which worker ran which task; see README.md.
     std::atomic<int> c0{0}, c1{0};
@@ -424,16 +415,11 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
  */
 TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloadedRead)
 {
-    std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
-    try
-    {
-        master_ctx = std::make_unique<RuntimeContext>();
-        worker_ctx = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
+    auto worker_ctx = std::make_unique<RuntimeContext>();
 
     g_worker_runs.store(0, std::memory_order_relaxed);
 
@@ -545,16 +531,11 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
  */
 TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
 {
-    std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
-    try
-    {
-        master_ctx = std::make_unique<RuntimeContext>();
-        worker_ctx = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
+    auto worker_ctx = std::make_unique<RuntimeContext>();
 
     g_worker_runs.store(0, std::memory_order_relaxed);
 
@@ -647,15 +628,10 @@ TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
  */
 TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
 {
-    std::unique_ptr<RuntimeContext> master_ctx;
-    try
-    {
-        master_ctx = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
 
     constexpr size_t N = 1024;
     sycl::queue& mq = master_ctx->get_queue(0);
@@ -775,15 +751,10 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
  */
 TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
 {
-    std::unique_ptr<RuntimeContext> master_ctx;
-    try
-    {
-        master_ctx = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
 
     constexpr size_t N = 16;
     sycl::queue& mq = master_ctx->get_queue(0);
@@ -857,16 +828,11 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
  */
 TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHanging)
 {
-    std::unique_ptr<RuntimeContext> master_ctx, worker_ctx;
-    try
-    {
-        master_ctx = std::make_unique<RuntimeContext>();
-        worker_ctx = std::make_unique<RuntimeContext>();
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
+    auto worker_ctx = std::make_unique<RuntimeContext>();
 
     constexpr size_t N = 64;
     sycl::queue& mq = master_ctx->get_queue(0);
@@ -960,23 +926,17 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
  */
 TEST(Integration_DistributedE2ETest, FluentClusterOffload)
 {
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
     g_worker_runs.store(0, std::memory_order_relaxed);
 
     InProcessFabric fabric(1);
     auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
     auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
 
-    std::unique_ptr<RuntimeContext> worker_ctx;
-    std::unique_ptr<Runtime> rt;
-    try
-    {
-        worker_ctx = std::make_unique<RuntimeContext>();
-        rt = std::make_unique<Runtime>(Runtime::create());
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device available: " << e.what();
-    }
+    auto worker_ctx = std::make_unique<RuntimeContext>();
+    auto rt = std::make_unique<Runtime>(Runtime::create());
 
     auto worker_kernels = make_sushi<KernelRegistry>();
     register_vec_add(*worker_kernels);
@@ -1017,21 +977,17 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
 /** @brief Tests offload of a double-buffered State across even and odd step counts. */
 TEST(Integration_DistributedE2ETest, FluentDistributedStateParity)
 {
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
     constexpr std::size_t N = 1024;
 
     std::vector<int> even_result, odd_result;
     std::uint64_t off_even = 0, off_odd = 0;
-    try
-    {
-        g_state_worker_runs.store(0, std::memory_order_relaxed);
-        even_result = evolve_distributed_state(N, 4, off_even);   // even step count
-        g_state_worker_runs.store(0, std::memory_order_relaxed);
-        odd_result  = evolve_distributed_state(N, 5, off_odd);    // odd step count
-    }
-    catch (const std::exception& e)
-    {
-        GTEST_SKIP() << "No SYCL device / cluster unavailable: " << e.what();
-    }
+    g_state_worker_runs.store(0, std::memory_order_relaxed);
+    even_result = evolve_distributed_state(N, 4, off_even);   // even step count
+    g_state_worker_runs.store(0, std::memory_order_relaxed);
+    odd_result  = evolve_distributed_state(N, 5, off_odd);    // odd step count
 
     EXPECT_GE(off_even, 1u) << "Even-step State should have offloaded at least once.";
     EXPECT_GE(off_odd, 1u)  << "Odd-step State should have offloaded at least once.";

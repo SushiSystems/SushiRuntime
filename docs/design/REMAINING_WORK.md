@@ -12,6 +12,18 @@ reasoning in `docs/archive/slop/TODO.md`.
   waits on the owning queue's pending work; a debug-build guard that reports the unsafe access
   with its call site; a documented rule that any value read mid-run lives in `Residency::Host`.
   Listed in [`KNOWN_ISSUES.md`](../reference/KNOWN_ISSUES.md).
+- **An untracked task can run on a device that does not own its buffers.** A task without
+  regions takes `get_numa_local_queue`, which rotates over the node's queues per thread. With a
+  GPU and a CPU device on one NUMA node, the second untracked kernel a thread dispatches goes to
+  the other device and dereferences USM of a foreign context. Confirmed on 2026-10-09: the test
+  named in [`KNOWN_ISSUES.md`](../reference/KNOWN_ISSUES.md) faults with two devices and passes
+  with `ONEAPI_DEVICE_SELECTOR=cuda:*`. The fix is a routing rule for region-less tasks (a
+  device argument on `add_untracked`, or one default device), decided with EXEC-04 and EXEC-08
+  of `docs/agent/2026_10_09_USABILITY_AUDIT/REPORT.md`.
+- **A GPU with a known PCI address may still be placed on NUMA node 0.** `numa_mapper.cpp` asks
+  hwloc for a NUMA ancestor of the PCI device; in hwloc 2 a NUMA node is never a parent, so the
+  walk finds none. Read from `hwloc/helper.h` of hwloc 2.11, not observed: every development
+  machine has one NUMA node.
 - **A `Buffer` or `State` moved after `Graph::add` dangles silently.** The graph records the
   handle by address and the liveness token travels with the value, so the guard does not see the
   move (`include/SushiRuntime/api/data/buffer.hpp`, the `@warning` on the move constructor).

@@ -1080,6 +1080,22 @@ must see the count the producer wrote in this run.
 The producer reads its next count from a buffer and not from a host stack variable, because the
 kernel may run on the device, which cannot reach the stack frame of the test.
 
+## test_layer_equivalence.cpp
+
+The file compares whole output buffers byte for byte and uses the public API only, so it holds
+across a change of internals. All data is `std::uint32_t`.
+
+Four shapes are covered: the same work as regions of a `DynamicGraph` and as one static `Graph`,
+with a region dropped and recorded again; host tasks among kernels in one dependency chain;
+steps through `run_async()` against `run(n)`; and a 2-D box with an origin offset through each
+launch form. Where a layer choice applies, the chain layer is compared with the forced scheduler
+layer, and the offset launches also with a reference computed on the host.
+
+`NdRange` has no origin, so its kernels add the offset to the global id themselves.
+
+`UntrackedOffsetLaunchesMatchAcrossLayers` skips on a runtime that drives more than one device;
+the reason is in `docs/reference/KNOWN_ISSUES.md`.
+
 ## test_native_cpu_path.cpp
 
 The file covers the native CPU execution path, work package WP-7 of
