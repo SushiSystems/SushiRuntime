@@ -61,20 +61,40 @@ namespace SushiRuntime
             hwloc_topology_load(topology);
             hwloc_initialized = true;
 
-            for (auto& node : nodes) 
+            const int numa_node_count = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_NUMANODE);
+
+            for (auto& node : nodes)
             {
-                /** 
+                /**
                  * @brief for gpu/xpu devices, we find the closest numa node using the pci location.
                  * for cpu devices, we usually assign the default numa node.
                  */
-                if (node.is_gpu) 
+                if (node.is_gpu)
                 {
+                    // A device without a PCI address has nothing to look up on the bus.
+                    if (!node.pci_address.has_value())
+                    {
+                        node.numa_node_id = 0;
+                        if (numa_node_count > 1)
+                        {
+                            SR_LOG_WARN("No PCI address for [{}]; bus lookup skipped, placed on NUMA node 0 of {}, which may not be its nearest.",
+                                        node.name, numa_node_count);
+                        }
+                        else
+                        {
+                            SR_LOG_INFO("No PCI address for [{}] (expected on WSL2, where hwloc sees no PCI devices); bus lookup skipped, placed on NUMA node 0, the only node.",
+                                        node.name);
+                        }
+                        continue;
+                    }
+                    const PCIDomainAddress& pci_address = *node.pci_address;
+
                     /** @brief Find the PCI device in the hwloc topology. */
-                    hwloc_obj_t pci_device = hwloc_get_pcidev_by_busid(topology, 
-                                                                    node.pci_address.domain, 
-                                                                    node.pci_address.bus, 
-                                                                    node.pci_address.device, 
-                                                                    node.pci_address.function);
+                    hwloc_obj_t pci_device = hwloc_get_pcidev_by_busid(topology,
+                                                                    pci_address.domain,
+                                                                    pci_address.bus,
+                                                                    pci_address.device,
+                                                                    pci_address.function);
 
                     if (pci_device) 
                     {
@@ -86,9 +106,9 @@ namespace SushiRuntime
                             node.numa_node_id = ancestor->os_index;
                             char pci_str[24];
                             std::snprintf(pci_str, sizeof(pci_str), "%02x:%02x.%x",
-                                          static_cast<unsigned>(node.pci_address.bus),
-                                          static_cast<unsigned>(node.pci_address.device),
-                                          static_cast<unsigned>(node.pci_address.function));
+                                          static_cast<unsigned>(pci_address.bus),
+                                          static_cast<unsigned>(pci_address.device),
+                                          static_cast<unsigned>(pci_address.function));
                             SR_LOG_INFO("Device [{}] (PCI {}) is hard-bound to NUMA node {}",
                                         node.name, pci_str, node.numa_node_id);
                         } 

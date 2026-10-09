@@ -27,6 +27,9 @@
  */
 
 #pragma once
+#include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 #include <sycl/sycl.hpp>
@@ -43,27 +46,28 @@ namespace SushiRuntime
          */
         struct PCIDomainAddress 
         {
-            uint32_t domain;   /**< PCI domain */
-            uint32_t bus;      /**< PCI bus */
-            uint32_t device;   /**< PCI device */
-            uint32_t function; /**< PCI function */
+            std::uint32_t domain = 0;   /**< PCI domain */
+            std::uint32_t bus = 0;      /**< PCI bus */
+            std::uint32_t device = 0;   /**< PCI device */
+            std::uint32_t function = 0; /**< PCI function */
         };
 
         /**
          * @brief Represents a hardware unit like CPU or GPU.
          */
-        struct HardwareNode 
+        struct HardwareNode
         {
-            size_t logical_id;          /**< Logical ID within SushiRuntime. */
-            int numa_node_id;           /**< ID of the NUMA node from hwloc. */
-            sycl::device sycl_dev;      /**< SYCL device object. */
-            std::string name;           /**< Name of the device. */
-            bool is_gpu;                /**< True if the device is a GPU. */
-            
-            PCIDomainAddress pci_address; /**< PCI address of the device. */
-            
-            size_t global_mem_size;       /**< Total global memory size in bytes. */
-            uint32_t max_compute_units;   /**< Total number of compute units. */
+            std::size_t logical_id = 0; /**< Logical ID within SushiRuntime. */
+            int numa_node_id = -1;      /**< ID of the NUMA node from hwloc; -1 until mapped. */
+            sycl::device sycl_dev{};    /**< SYCL device object. */
+            std::string name{};         /**< Name of the device. */
+            bool is_gpu = false;        /**< True if the device is a GPU. */
+
+            /** @brief Holds the PCI address; empty when no source reported one. */
+            std::optional<PCIDomainAddress> pci_address = std::nullopt;
+
+            std::size_t global_mem_size = 0;     /**< Total global memory size in bytes. */
+            std::uint32_t max_compute_units = 0; /**< Total number of compute units. */
         };
 
         /**

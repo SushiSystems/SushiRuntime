@@ -32,6 +32,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
+#include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 
 using namespace SushiRuntime;
@@ -145,4 +146,26 @@ TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNuma)
             ev.wait();
         }) << "Synthetic NUMA node " << numa << " produced no working queue.";
     }
+}
+
+/**
+ * @brief Verifies that a GPU node carrying no PCI address is placed on the fallback NUMA node.
+ *
+ * Builds a node by hand, leaves its PCI address empty and asserts NUMAMapper puts it on node 0.
+ */
+TEST(Unit_TopologyAbstractionTest, GpuWithoutPciAddressTakesFallbackNumaNode)
+{
+    HardwareNode gpu;
+    gpu.name = "synthetic GPU without a PCI address";
+    gpu.is_gpu = true;
+
+    ASSERT_FALSE(gpu.pci_address.has_value());
+    ASSERT_EQ(gpu.numa_node_id, -1);
+
+    std::vector<HardwareNode> nodes{gpu};
+    NUMAMapper mapper;
+    mapper.map_distances(nodes);
+
+    EXPECT_FALSE(nodes[0].pci_address.has_value());
+    EXPECT_EQ(nodes[0].numa_node_id, 0);
 }
