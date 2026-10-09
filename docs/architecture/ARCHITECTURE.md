@@ -84,7 +84,7 @@ exercised deterministically on a single desktop.
 
 ## 3. The public API layer (`api/`)
 
-`include/SushiRuntime/api/runtime/runtime.hpp` is the intended entry point for users who
+`modules/surface/api/include/SushiRuntime/api/runtime/runtime.hpp` is the intended entry point for users who
 do not need to reach into the lower layers.
 
 - **`API::Runtime`** — owns a `RuntimeContext` and provides the graph and data
@@ -1152,7 +1152,7 @@ silently dropped in a consumer's build. `cl.exe` proper needs nothing: it does
 not contract unless asked with `/fp:contract`.
 
 The suite that holds all of this honest is `Integration_Determinism`
-(`tests/functional/integration/test_determinism.cpp`): the same graph run at
+(`tests/integration/test_determinism.cpp`): the same graph run at
 worker counts {1, 2, whole machine} with the rebalancer off, compared on the raw
 bytes of its output buffer, plus a check that no fast-math macro is defined in a
 translation unit outside the library — evidence the FP contract really did cross

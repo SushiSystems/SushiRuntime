@@ -78,7 +78,7 @@ sr run sr_functional_tests -- --gtest_filter='*Distributed*'
 
 The same binary plays either role, selected by the `--distributed=master|worker`
 flag the `sr` CLI forwards to your application's `main()`. The bundled
-`examples/distributed_demo.cpp` (built as `sr_distributed_demo` in distributed
+`applications/examples/distributed_demo.cpp` (built as `sr_distributed_demo` in distributed
 builds) offloads a vector-add.
 
 **Two processes on one host** (the worker retries until the master is up):
@@ -401,4 +401,4 @@ and asserts byte-identical results every run.
   workers run internally.
 - [`CLI_GUIDE.md`](CLI_GUIDE.md) — `sr build --distributed`,
   `sr run ... --distributed=ROLE`.
-- `examples/distributed_demo.cpp` — the runnable master/worker reference.
+- `applications/examples/distributed_demo.cpp` — the runnable master/worker reference.

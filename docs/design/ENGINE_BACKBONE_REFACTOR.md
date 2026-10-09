@@ -153,9 +153,9 @@ later.
 
 **Runtime side — DONE.**
 1. Merged, and tagged: `git tag` lists `v0.2.0`, and `CMakeLists.txt` /
-   `include/SushiRuntime/version.hpp` both read 0.2.0.
+   `modules/foundation/core/include/SushiRuntime/core/version.hpp` both read 0.2.0.
 2. TODO #33 (EventPolling `Task*`→`Node*` downcast) is closed — `Task::on_complete(ReadySink&)` +
-   `record_completion()`, called from `include/SushiRuntime/scheduler/event_polling.hpp:426,457`.
+   `record_completion()`, called from `modules/engine/scheduler/include/SushiRuntime/scheduler/event_polling.hpp:426,457`.
 3. The doc truth pass ran. `TODO.md` (now `docs/archive/slop/TODO.md`) and this file were reconciled against the tree on 2026-08-17;
    `docs/archive/slop/CODE_AND_ARCHITECTURE_REVIEW.md` now carries per-finding status.
 
@@ -339,7 +339,7 @@ inherits the whole source tree.
    `add_sycl_to_target` requirement surfaced as an interface property), and the BB-3 FP contract.
    What it must **not** carry: warnings, `-Werror`, sanitizers, `-march` (BB-3's split makes this
    true; a consumer-side test asserts it).
-2. `include/SushiRuntime/version.hpp` — `SR_VERSION_{MAJOR,MINOR,PATCH}` + a runtime
+2. `modules/foundation/core/include/SushiRuntime/core/version.hpp` — `SR_VERSION_{MAJOR,MINOR,PATCH}` + a runtime
    `version()` accessor, generated from the CMake project version. The engine's seam files can
    then `static_assert` the contract they were written against (P5 mechanized).
 3. The consumer-toolchain truth gets documented as the contract it is: kernels are header
