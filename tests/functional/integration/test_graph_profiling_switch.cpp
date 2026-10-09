@@ -37,8 +37,8 @@ namespace
     // True once any device queue this runtime built carries enable_profiling.
     bool any_profiling_queue_built(Execution::RuntimeContext& ctx)
     {
-        for (std::size_t i = 0; i < ctx.device_count(); ++i)
-            if (ctx.has_profiling_queue(i))
+        for (std::size_t i = 0; i < ctx.devices().count(); ++i)
+            if (ctx.devices().has_profiling_queue(i))
                 return true;
         return false;
     }

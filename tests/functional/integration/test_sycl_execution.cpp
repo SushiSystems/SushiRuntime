@@ -26,13 +26,15 @@
  * @author Mustafa Garip
  */
 
+#include <optional>
 #include <vector>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/graph/task_types.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
+#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 #include "../../common/test_helpers.hpp"
 
@@ -49,9 +51,9 @@ using SushiRuntime::Test::UsmShared;
 TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
-    sycl::queue& q = ctx.get_numa_local_queue(0);
+    sycl::queue& q = ctx.devices().queue_or_numa_local(std::nullopt, 0);
 
     constexpr size_t VECTOR_SIZE = 1024;
 
@@ -119,14 +121,16 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
 TEST(Integration_SyclExecutionTest, MultiStageChain)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     constexpr size_t N     = 2048;
     constexpr float  SCALE = 3.0f;
 
     // Both buffers are pinned to device 0, as a task's buffers live on one device; see README.md.
-    float*  data = static_cast<float*>(ctx.malloc_shared_on(N * sizeof(float), 0));
-    double* sum  = static_cast<double*>(ctx.malloc_shared_on(sizeof(double), 0));
+    float* data = static_cast<float*>(
+        ctx.memory().allocate({Memory::UsmKind::Shared, N * sizeof(float), 0, 0}));
+    double* sum = static_cast<double*>(
+        ctx.memory().allocate({Memory::UsmKind::Shared, sizeof(double), 0, 0}));
     ASSERT_NE(data, nullptr);
     ASSERT_NE(sum, nullptr);
 
@@ -171,6 +175,6 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     EXPECT_NEAR(*sum, expected, expected * 1e-6)
         << "Multi-stage pipeline produced an incorrect reduction.";
 
-    ctx.free_usm(data);
-    ctx.free_usm(sum);
+    ctx.memory().release(data);
+    ctx.memory().release(sum);
 }

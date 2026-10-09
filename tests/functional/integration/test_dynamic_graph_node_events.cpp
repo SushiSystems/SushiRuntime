@@ -43,7 +43,8 @@ namespace SushiRuntime
             /** @brief Declares the test-only friend access to DynamicGraph::plan_. */
             struct DynamicGraphNodeEventsTestAccess
             {
-                static const Execution::CompiledGraph& plan(const DynamicGraph& g) noexcept
+                static const SushiRuntime::Graph::CompiledGraph&
+                plan(const DynamicGraph& g) noexcept
                 {
                     return g.plan_;
                 }
@@ -57,7 +58,7 @@ using namespace SushiRuntime;
 namespace
 {
     /** @brief Returns the registration index of the one compiled node with the given name. */
-    std::uint32_t registration_index_of(const Execution::CompiledGraph& plan, const char* name)
+    std::uint32_t registration_index_of(const Graph::CompiledGraph& plan, const char* name)
     {
         const Graph::Node* found = nullptr;
         for (const auto& n : plan.all_nodes)

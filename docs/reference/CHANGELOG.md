@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-10 — execution: Deprecated the 31 members of `RuntimeContext` that forward to a part, each naming its replacement, and the context constructor of `TaskGraph` (`runtime_context.hpp`, `task_graph.hpp`).
+- 2026-10-10 — tests: Moved every in-repository caller to the device set, the allocator, the transfer counters and the topology view, and to the task include paths (`test_topology.cpp`, `test_profiling_queue.cpp`, `graph.hpp`).
 - 2026-10-10 — api: Made `distributed()` on buffers and states and the offload figures of the run report unconditional; without a cluster they do nothing (`buffer.hpp`, `state.hpp`, `run_report_builder.hpp`).
 - 2026-10-10 — execution: Removed `RuntimeRole` and the distributed members of `RuntimeContext`; `install_offload` takes shared ownership of the coordinator (`runtime_context.hpp`, `runtime_context.cpp`).
 - 2026-10-10 — distributed: Added `Cluster::attach` and its detach; removed `Runtime::cluster` and the api cluster header, so a cluster is attached from the distributed layer (`distributed/cluster.hpp`, `cluster.cpp`, `runtime.hpp`).

@@ -27,13 +27,14 @@
  */
 
 #include <cmath>
+#include <optional>
 #include <vector>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/graph/task_types.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 #include "../../common/test_helpers.hpp"
 
@@ -53,9 +54,9 @@ namespace
      */
     bool numa0_has_single_queue(RuntimeContext& ctx)
     {
-        sycl::queue& first = ctx.get_numa_local_queue(0);
+        sycl::queue& first = ctx.devices().queue_or_numa_local(std::nullopt, 0);
         for (int i = 0; i < 6; ++i)
-            if (&ctx.get_numa_local_queue(0) != &first)
+            if (&ctx.devices().queue_or_numa_local(std::nullopt, 0) != &first)
                 return false;
         return true;
     }
@@ -75,7 +76,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
                         "KERNEL nodes across USM contexts. Cross-device paths are covered "
                         "by HeterogeneousPipelineTest / AsyncOverlapBench.";
 
-    sycl::queue& q = ctx.get_numa_local_queue(0);
+    sycl::queue& q = ctx.devices().queue_or_numa_local(std::nullopt, 0);
 
     constexpr size_t N = 1024;
     UsmShared<float> A(q, N), B(q, N), C(q, N), D(q, N);
@@ -89,7 +90,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
     float* c = C.get();
     float* d = D.get();
 
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     // init: A[i] = i
     graph.add_node(
@@ -127,7 +128,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
     EXPECT_EQ(compiled.roots.size(), 1u) << "Only the init node should be a root of the diamond.";
 
     ctx.get_execution_engine().execute(std::move(compiled));
-    ctx.wait_all();
+    ctx.devices().wait_all();
 
     bool ok = true;
     for (size_t i = 0; i < N; ++i)

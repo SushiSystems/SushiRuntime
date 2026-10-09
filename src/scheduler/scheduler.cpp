@@ -42,7 +42,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/sycl_compat.hpp>
-#include <SushiRuntime/scheduler/task.hpp>
+#include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/topology/affinity.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -53,6 +53,7 @@
 #include <SushiRuntime/scheduler/work_stealing_deque.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 

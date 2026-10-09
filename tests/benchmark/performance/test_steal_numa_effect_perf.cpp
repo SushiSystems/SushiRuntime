@@ -40,6 +40,7 @@
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_view.hpp>
 
 #include "../../common/test_helpers.hpp"
 #include "../../common/scheduler_fixture.hpp"
@@ -175,7 +176,7 @@ TEST(Performance_StealNumaEffectBench, NumaAwareVsBlindThroughput)
     EXPECT_GT(aware_thr, 0.0);
 
     // The split shows locality only across real NUMA nodes; see tests/benchmark/README.md.
-    const auto& core_numa = blind_ctx.cpu_core_to_numa();
+    const auto& core_numa = blind_ctx.topology().core_to_numa();
     const std::set<int> real_nodes(core_numa.begin(), core_numa.end());
     if (real_nodes.size() < 2)
         GTEST_SKIP() << "Single physical NUMA node — synthetic-NUMA steal locality "

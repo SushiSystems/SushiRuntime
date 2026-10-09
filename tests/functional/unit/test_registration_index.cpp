@@ -38,8 +38,9 @@
 #include <SushiRuntime/SushiRuntime.h>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
 {
@@ -50,7 +51,7 @@ namespace SushiRuntime
             // Test-only friend seam onto Graph::plan_ (Graph has no public accessor).
             struct RegistrationIndexTestAccess
             {
-                static const Execution::CompiledGraph& plan(const Graph& g) noexcept
+                static const SushiRuntime::Graph::CompiledGraph& plan(const Graph& g) noexcept
                 {
                     return g.plan_;
                 }
@@ -72,7 +73,7 @@ namespace
     }
 
     /** @brief Finds the one compiled node named @p name, failing if missing or duplicated. */
-    const Node& find_named(const Execution::CompiledGraph& plan, const char* name)
+    const Node& find_named(const Graph::CompiledGraph& plan, const char* name)
     {
         const Node* found = nullptr;
         for (const auto& n : plan.all_nodes)
@@ -97,7 +98,7 @@ namespace
 TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     graph.add_node(noop_work());
     graph.name_last_node("A");
@@ -106,7 +107,7 @@ TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
     graph.add_node(noop_work());
     graph.name_last_node("C");
 
-    Execution::CompiledGraph plan = graph.compile();
+    Graph::CompiledGraph plan = graph.compile();
 
     ASSERT_EQ(plan.all_nodes.size(), 3u);
     // Proves the premise this test depends on: compiled order is reversed.
@@ -129,7 +130,7 @@ TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
 TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     // Its own index: not part of the group below.
     graph.add_node(noop_work());
@@ -148,7 +149,7 @@ TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
     graph.add_node(noop_work());
     graph.name_last_node("after");
 
-    Execution::CompiledGraph plan = graph.compile();
+    Graph::CompiledGraph plan = graph.compile();
     ASSERT_EQ(plan.all_nodes.size(), 5u);
 
     const std::uint32_t before = find_named(plan, "before").registration_index;
@@ -192,7 +193,7 @@ TEST(Unit_RegistrationIndex, AddReduceGroupsTileLevelsUnderOneIndex)
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("after");
     g.run();
 
-    const Execution::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
+    const Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
 
     std::optional<std::uint32_t> reduce_index;
     std::size_t reduce_node_count = 0;
@@ -242,7 +243,7 @@ TEST(Unit_RegistrationIndex, AddReduceGroupSurvivesRebuild)
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("after");
     g.run();
 
-    const Execution::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
+    const Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
 
     std::optional<std::uint32_t> reduce_index;
     std::size_t reduce_node_count = 0;
@@ -298,7 +299,7 @@ TEST(Unit_RegistrationIndex, LateBoundAddReduceGroupsTileLevelsUnderOneIndex)
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("after");
     g.run();
 
-    const Execution::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
+    const Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
 
     std::optional<std::uint32_t> reduce_index;
     std::size_t reduce_node_count = 0;

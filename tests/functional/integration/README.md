@@ -997,8 +997,8 @@ device queue, and a chain is either all device or all host.
 
 The test uses one explicit queue per device. It iterates the deduplicated queue set of `ctx` and not
 `sycl::device::get_devices()`. The SYCL list can hold more devices than `ctx` exposes, for example
-the duplicate OpenMP host device of AdaptiveCpp, so indexing `get_queue()` by the raw SYCL list
-overruns it and fails with "Queue index out of bounds".
+the duplicate OpenMP host device of AdaptiveCpp, so indexing `devices().queue()` by the raw SYCL
+list overruns it and fails with "Queue index out of bounds".
 
 ## test_late_bindings.cpp
 
@@ -1323,12 +1323,12 @@ the scan was planned for.
 
 ## test_profiling_queue.cpp
 
-The file covers `RuntimeContext::profiling_queue()`, sections A and F2 of
+The file covers the profiling queue of `RuntimeContext::devices()`, sections A and F2 of
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`, built as task 3 of
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`. A profiled node needs the
 SYCL `command_submit`, `command_start` and `command_end` times, which only a queue built with
-`enable_profiling` exposes. The plain queue that `get_queue()` returns must stay unchanged for every
-existing consumer.
+`enable_profiling` exposes. The plain queue that `devices().queue(index)` returns must stay
+unchanged for every existing consumer.
 
 ### `ProfilingQueueAddsThePropertyAndSharesTheContext`
 
@@ -1350,7 +1350,8 @@ every device eagerly, before any `run()` could have requested one.
 ### `SettingsProfilingReturnsThePlainQueueItself`
 
 With `RuntimeSettings::profiling` on, the plain queue already carries `enable_profiling`, so
-`profiling_queue()` must return that same queue handle and not a second, duplicate one.
+a request for the profiling flavour must return that same queue handle and not a second, duplicate
+one.
 
 ### `UsmFromThePlainQueueIsUsableOnTheProfilingQueue`
 
@@ -1594,8 +1595,9 @@ single vector allocation cannot be missed.
 ### `ReuseTicksDoNotAllocatePerTick`
 
 The baseline uses the device, the context and the in-order queue that the chain submits to
-(`Execution::RuntimeContext::chain_queue()`). It therefore measures what SYCL's own submission of
-the identical kernel costs on the calling thread, with none of the chain's bookkeeping around it.
+(the in-order flavour of `Execution::RuntimeContext::devices()`). It therefore measures what SYCL's
+own submission of the identical kernel costs on the calling thread, with none of the chain's
+bookkeeping around it.
 
 The test makes the three claims in order:
 
@@ -1628,8 +1630,9 @@ the cost of profiling as well.
 
 Both buffers are pinned to one device so that they share a context. The `Reduce` task touches `data`
 and `sum` together, and the co-location guard requires the buffers of a task to live on one device.
-`malloc_shared(numa)` round-robins across the devices of a NUMA node, which would scatter the two
-buffers across contexts on a host with several devices. `malloc_shared_on` fixes the device.
+`devices().device_for_numa(numa)` round-robins across the devices of a NUMA node, which would
+scatter the two buffers across contexts on a host with several devices. A `UsmRequest` with device
+index 0 fixes the device.
 
 ## test_workload_coordinator.cpp
 

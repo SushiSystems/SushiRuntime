@@ -32,8 +32,8 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/graph/task_types.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 #include "../../common/test_helpers.hpp"
 
@@ -50,7 +50,7 @@ using SushiRuntime::Test::UsmShared;
 TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 {
     RuntimeContext ctx;
-    TaskGraph graph(ctx);
+    TaskGraph graph;
 
     constexpr int    CHAINS = 16;
     constexpr size_t N      = 2048;
@@ -59,9 +59,9 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 
     // The queues come from ctx's deduplicated set, which get_devices() can exceed; see README.md.
     std::vector<sycl::queue*> device_queues;
-    for (size_t i = 0; i < ctx.device_count(); ++i)
+    for (size_t i = 0; i < ctx.devices().count(); ++i)
     {
-        sycl::queue& q = ctx.get_queue(i);
+        sycl::queue& q = ctx.devices().queue(i);
         if (q.get_device().is_gpu() || q.get_device().is_cpu())
             device_queues.push_back(&q);
     }
@@ -159,7 +159,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 
     auto compiled = graph.compile();
     ctx.get_execution_engine().execute(std::move(compiled));
-    ctx.wait_all();
+    ctx.devices().wait_all();
 
     for (int c = 0; c < CHAINS; ++c)
     {

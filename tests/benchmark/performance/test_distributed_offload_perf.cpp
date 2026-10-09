@@ -37,8 +37,10 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/sycl_compat.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
@@ -129,11 +131,12 @@ namespace
          */
         void free(RuntimeContext& ctx)
         {
+            Memory::UsmAllocator& memory = ctx.memory();
             for (size_t t = 0; t < TASKS; ++t)
             {
-                ctx.free_usm(a[t]);
-                ctx.free_usm(b[t]);
-                ctx.free_usm(out[t]);
+                memory.release(a[t]);
+                memory.release(b[t]);
+                memory.release(out[t]);
             }
         }
     };
@@ -225,7 +228,7 @@ TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
     }
     ASSERT_TRUE(supported) << "Workers never registered the kernel.";
 
-    sycl::queue& mq = master_ctx->get_queue(0);
+    sycl::queue& mq = master_ctx->devices().queue(0);
 
     // Warm-up graph (primes worker threads / first-touch).
     {

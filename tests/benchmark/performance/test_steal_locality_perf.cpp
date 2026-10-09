@@ -34,6 +34,7 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include <SushiRuntime/topology/topology_view.hpp>
 
 #include "../../common/test_helpers.hpp"
 #include "../../common/scheduler_fixture.hpp"
@@ -88,7 +89,7 @@ TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
 {
     RuntimeContext ctx;
 
-    const int nodes = distinct_numa_nodes(ctx.cpu_core_to_numa());
+    const int nodes = distinct_numa_nodes(ctx.topology().core_to_numa());
     if (nodes < 2)
         GTEST_SKIP() << "Single NUMA node (" << nodes << ") — steal locality is "
                         "unmeasurable here; runs only on bare-metal multi-socket.";

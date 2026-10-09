@@ -35,8 +35,8 @@
 #include <vector>
 
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/graph/task_types.hpp>
-#include <SushiRuntime/scheduler/task.hpp>
+#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/task/task.hpp>
 
 namespace SushiRuntime
 {

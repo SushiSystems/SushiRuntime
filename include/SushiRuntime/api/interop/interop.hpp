@@ -86,7 +86,7 @@ namespace SushiRuntime
                         context_, count * sizeof(T), device.value(), alignment);
                     void* address = allocation.address();
                     std::size_t bytes = allocation.bytes();
-                    return SushiRuntime::Interop::HostExport<T>{
+                    return HostExport<T>{
                         Buffer<T>(context_, std::move(allocation), count, device, Residency::Shared),
                         address, bytes};
                 }

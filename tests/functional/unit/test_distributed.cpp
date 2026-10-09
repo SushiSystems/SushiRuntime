@@ -38,7 +38,7 @@
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/buffer_registry.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;

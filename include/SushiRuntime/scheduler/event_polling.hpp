@@ -36,13 +36,14 @@
 #include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/scheduler/task.hpp>
-#include <SushiRuntime/scheduler/ready_sink.hpp>
+#include <SushiRuntime/task/task.hpp>
+#include <SushiRuntime/task/ready_sink.hpp>
 #include <SushiRuntime/core/event_timestamps.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/profiling_ledger.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 
 namespace SushiRuntime

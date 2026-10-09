@@ -38,8 +38,8 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/resource_region.hpp>
-#include <SushiRuntime/graph/late_bindings.hpp>
-#include <SushiRuntime/graph/task_types.hpp>
+#include <SushiRuntime/task/late_bindings.hpp>
+#include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 
@@ -78,6 +78,7 @@ namespace SushiRuntime
                  * @brief Creates an empty task graph with no offload coordinator.
                  * @param context Not read; a graph that offloads takes context.offload() instead.
                  */
+                [[deprecated("TaskGraph takes no context; use TaskGraph()")]]
                 explicit TaskGraph(SushiRuntime::Execution::RuntimeContext& context);
 
 

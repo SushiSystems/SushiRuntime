@@ -36,10 +36,13 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/interop/detail/bindless_detection.hpp>
 #include <SushiRuntime/interop/interop.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
 
 #if defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
 #include <sycl/ext/oneapi/bindless_images.hpp>
@@ -76,7 +79,7 @@ namespace SushiRuntime
                 InteropCapabilities capabilities;
                 capabilities.host_export = true;
                 capabilities.device_import = Detail::BINDLESS_IMAGES_AVAILABLE
-                    && context.device_is_gpu(device_index)
+                    && context.devices().is_gpu(device_index)
                     && device.has(sycl::aspect::ext_oneapi_external_memory_import);
                 if (device.has(sycl::aspect::ext_intel_device_info_uuid))
                 {
@@ -104,8 +107,8 @@ namespace SushiRuntime
                     {
                         try
                         {
-                            sycl::queue& queue = context_->get_queue(device_index_);
-                            context_->forget_usm(address);
+                            sycl::queue& queue = context_->devices().queue(device_index_);
+                            context_->memory().forget(address);
                             Experimental::unmap_external_linear_memory(address, queue);
                             Experimental::release_external_memory(memory_, queue);
                         }
@@ -141,9 +144,9 @@ namespace SushiRuntime
                             return;
                         try
                         {
-                            sycl::queue& queue = context_->get_queue(device_index_);
+                            sycl::queue& queue = context_->devices().queue(device_index_);
                             if (adopted_)
-                                context_->forget_usm(address_);
+                                context_->memory().forget(address_);
                             if (mapped_)
                                 Experimental::unmap_external_linear_memory(address_, queue);
                             Experimental::release_external_memory(memory_, queue);
@@ -201,7 +204,7 @@ namespace SushiRuntime
         {
             InteropCapabilities query_capabilities(Execution::RuntimeContext& context, std::size_t device_index)
             {
-                sycl::queue& queue = context.get_queue(device_index);
+                sycl::queue& queue = context.devices().queue(device_index);
                 return capabilities_for(context, queue, device_index);
             }
 
@@ -227,7 +230,8 @@ namespace SushiRuntime
 
                 // The owner exists before the allocation it will free (src/interop/README.md).
                 auto owner = std::make_unique<Memory::UsmAllocationOwner>(context->shared_memory());
-                void* address = context->aligned_malloc_host_on(alignment, rounded, device_index);
+                void* address = context->memory().allocate(
+                    {Memory::UsmKind::Host, rounded, alignment, device_index});
                 if (address == nullptr)
                     throw Core::SushiException(Core::Error{
                         Core::Errc::allocation_failed,
@@ -242,7 +246,7 @@ namespace SushiRuntime
                                                     std::size_t bytes, std::size_t device_index)
             {
 #if defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
-                sycl::queue& queue = context->get_queue(device_index);
+                sycl::queue& queue = context->devices().queue(device_index);
                 const InteropCapabilities capabilities = capabilities_for(*context, queue, device_index);
                 if (!capabilities.device_import)
                     throw Core::SushiException(Core::Error{
@@ -277,7 +281,7 @@ namespace SushiRuntime
                 void* address = Experimental::map_external_linear_memory(memory, descriptor.offset, bytes, queue);
                 guard.mark_mapped(address);
 
-                context->adopt_usm(address, device_index, bytes);
+                context->memory().adopt(address, device_index, bytes);
                 guard.mark_adopted();
 
                 auto owner = std::make_unique<DeviceImportOwner>(context, device_index, memory);

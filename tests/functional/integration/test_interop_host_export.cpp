@@ -27,6 +27,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <gtest/gtest.h>
 #include <SushiRuntime/SushiRuntime.h>
 
@@ -52,7 +53,8 @@ TEST(Integration_InteropHostExport, TheRegistryRoutesTheExportedAddress)
 {
     auto runtime = Runtime::create();
     auto shared = runtime.interop().export_host<float>(16, DeviceIndex{0}, 4096);
-    EXPECT_EQ(runtime.unsafe_context().context_index_for_ptr(shared.address), 0);
+    EXPECT_EQ(runtime.unsafe_context().memory().device_of(shared.address),
+              std::optional<std::size_t>(0));
 }
 
 /**

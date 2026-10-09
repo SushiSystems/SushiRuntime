@@ -37,7 +37,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/scheduler/task.hpp>
+#include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 
 #include "../../common/measurement.hpp"

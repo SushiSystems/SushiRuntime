@@ -28,6 +28,7 @@
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 #include <algorithm>
@@ -153,8 +154,8 @@ TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
         GTEST_SKIP() << "Need both a CPU and a GPU SYCL device for overlap benchmark.";
 
     RuntimeContext ctx;
-    sycl::queue& gpu_q = ctx.get_queue(gpu_idx);
-    sycl::queue& cpu_q = ctx.get_queue(cpu_idx);
+    sycl::queue& gpu_q = ctx.devices().queue(gpu_idx);
+    sycl::queue& cpu_q = ctx.devices().queue(cpu_idx);
 
     constexpr size_t N = 1u << 20; // 1M items per device
     constexpr int CPU_ITERS = 2048;

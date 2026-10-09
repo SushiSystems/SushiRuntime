@@ -32,7 +32,8 @@
 #include <vector>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/scheduler/task.hpp>
+#include <SushiRuntime/scheduler/range_task.hpp>
+#include <SushiRuntime/task/task.hpp>
 
 using namespace SushiRuntime;
 using SushiRuntime::Scheduler::Task;

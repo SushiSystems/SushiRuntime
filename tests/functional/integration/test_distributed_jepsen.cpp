@@ -40,7 +40,7 @@
 
 #include <SushiRuntime/core/sycl_compat.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
@@ -101,7 +101,7 @@ namespace
         auto w0_ctx = std::make_unique<RuntimeContext>();
         auto w1_ctx = std::make_unique<RuntimeContext>();
 
-        sycl::queue& mq = master_ctx->get_queue(0);
+        sycl::queue& mq = master_ctx->devices().queue(0);
         float* in = sycl::malloc_shared<float>(N, mq);
         std::vector<float*> y(K, nullptr);
         if (!in) return "alloc in failed";
@@ -280,7 +280,7 @@ TEST(Integration_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
     auto worker_ctx = std::make_unique<RuntimeContext>();
 
     constexpr size_t N = 128;
-    sycl::queue& mq = master_ctx->get_queue(0);
+    sycl::queue& mq = master_ctx->devices().queue(0);
     float* in  = sycl::malloc_shared<float>(N, mq);
     float* out = sycl::malloc_shared<float>(N, mq);
     ASSERT_NE(in, nullptr);

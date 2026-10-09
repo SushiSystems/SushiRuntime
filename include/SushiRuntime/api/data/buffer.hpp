@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -41,9 +42,13 @@
 #include <SushiRuntime/core/resource_region.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/strong_id.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/allocation.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
+#include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 
 namespace SushiRuntime
@@ -114,13 +119,28 @@ namespace SushiRuntime
             inline void* malloc_residency_on(Execution::RuntimeContext& ctx, std::size_t bytes,
                                              DeviceIndex device_index, Residency residency)
             {
+                const std::size_t device = device_index.value();
+                Memory::UsmAllocator& memory = ctx.memory();
                 switch (residency)
                 {
-                    case Residency::Device: return ctx.malloc_device_on(bytes, device_index.value());
-                    case Residency::Host:   return ctx.malloc_host_on(bytes, device_index.value());
-                    case Residency::Shared: return ctx.malloc_shared_on(bytes, device_index.value());
+                    case Residency::Device:
+                        return memory.allocate({Memory::UsmKind::Device, bytes, 0, device});
+                    case Residency::Host:
+                        return memory.allocate({Memory::UsmKind::Host, bytes, 0, device});
+                    case Residency::Shared:
+                        return memory.allocate({Memory::UsmKind::Shared, bytes, 0, device});
                 }
                 return nullptr;
+            }
+
+            /**
+             * @brief Returns the queue of the device that owns an address, or a queue of
+             *        NUMA node 0 when no device of the context owns it.
+             */
+            inline sycl::queue& owning_queue(Execution::RuntimeContext& ctx, void* address)
+            {
+                const std::optional<std::size_t> device = ctx.memory().owning_device(address);
+                return ctx.devices().queue_or_numa_local(device, 0);
             }
         } // namespace detail
 
@@ -319,9 +339,9 @@ namespace SushiRuntime
                     T* ptr = data();
                     if (count && ptr && ctx_)
                     {
-                        auto& q = ctx_->get_queue_for_ptr(static_cast<void*>(ptr));
+                        auto& q = detail::owning_queue(*ctx_, static_cast<void*>(ptr));
                         q.memcpy(out.data(), ptr + offset, count * sizeof(T)).wait();
-                        ctx_->add_device_to_host_bytes(count * sizeof(T));
+                        ctx_->transfers().add_device_to_host(count * sizeof(T));
                     }
                     return out;
                 }
@@ -342,9 +362,9 @@ namespace SushiRuntime
                     T* ptr = data();
                     if (count && ptr && ctx_ && src)
                     {
-                        auto& q = ctx_->get_queue_for_ptr(static_cast<void*>(ptr));
+                        auto& q = detail::owning_queue(*ctx_, static_cast<void*>(ptr));
                         q.memcpy(ptr + offset, src, count * sizeof(T)).wait();
-                        ctx_->add_host_to_device_bytes(count * sizeof(T));
+                        ctx_->transfers().add_host_to_device(count * sizeof(T));
                     }
                 }
 

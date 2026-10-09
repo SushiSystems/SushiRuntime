@@ -30,7 +30,10 @@
 #include <sycl/ext/oneapi/experimental/enqueue_functions.hpp>
 #include <SushiRuntime/core/event_timestamps.hpp>
 #include <SushiRuntime/core/logger.hpp>
-#include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/device/queue_flavour.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/execution/chain_run.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -57,7 +60,8 @@ namespace SushiRuntime
          */
         ChainRun::ChainRun(RuntimeContext& ctx, CompiledGraph& graph)
             : graph_(graph),
-              queue_(ctx.chain_queue(graph.chain.queue_index, graph.profiling)),
+              queue_(ctx.devices().queue(graph.chain.queue_index,
+                                         Device::QueueFlavour{true, graph.profiling})),
               profiling_(graph.profiling)
         {
             // The plan owns the reserved event buffer (src/execution/README.md).

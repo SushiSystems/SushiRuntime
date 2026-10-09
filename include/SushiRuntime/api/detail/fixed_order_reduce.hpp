@@ -35,6 +35,7 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 
 namespace SushiRuntime
 {
@@ -128,7 +129,7 @@ namespace SushiRuntime
                         " bytes failed (out of USM memory)."});
 
                 return std::shared_ptr<T>(static_cast<T*>(raw),
-                                          [ctx](T* p) { ctx->free_usm(p); });
+                                          [ctx](T* p) { ctx->memory().release(p); });
             }
 
             /**
