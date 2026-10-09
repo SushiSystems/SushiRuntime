@@ -82,8 +82,8 @@ bounds detection latency without spinning. Its wait has no predicate, so the not
 `set_liveness_timeout()` or `set_task_deadline()` wakes it to recompute the period instead
 of sleeping out an interval sized for the old value. Each pass first sends RTT pings, which
 refresh the `rtt_micros` and `free_mem` the policy reads, then reaps. Dead workers and
-overdue tasks hand back their nodes the same way: through `on_resubmit` when it is wired, or
-through `on_complete(node, false)` so that the graph at least does not stall.
+overdue tasks hand back their nodes the same way, through the sink's `resubmit()`. A
+coordinator that was never bound has no sink and keeps the node.
 
 A dead worker leaves the common kernel set and has its load reset, so the policy stops
 choosing it at once.
@@ -99,7 +99,7 @@ master stamped into the PING, so `now - token` is the round trip, free of clock 
 A TASK_RESULT whose task id is no longer in `pending` belongs to a task the master already
 re-dispatched: the worker was slow, not dead. Both its completion and its superseded output
 bytes are dropped. For a live result, the inline output bytes are copied into the master's
-authoritative buffers before `on_complete` releases successors, so a dependent reader sees
+authoritative buffers before `complete_remote()` releases successors, so a dependent reader sees
 the produced data.
 
 A BUFFER_PUSH from a worker is an eager writeback of an output into the master's
@@ -127,6 +127,29 @@ registered, makes the task fall back to local execution.
 The scheduler calls `try_offload()` only for a node flagged offloadable, so the node's
 offload state already exists and `offload()` returns it without allocating.
 
+### The offload seam
+
+`DistributedCoordinator` implements `Graph::OffloadCoordinator`, and the scheduler, the
+graph and the context reach it only through that interface;
+`include/SushiRuntime/task/README.md` describes the seam. `bind()` stores the address of the
+`Graph::OffloadSink` the scheduler implements. It must run before `start()`, because the
+transport and monitor threads read the pointer without a lock. A successful TASK_RESULT
+goes to the sink's `complete_remote()`; a failed one, and every orphan the monitor reaps,
+goes to `resubmit()`. The coordinator reads the node before either call, because each call
+gives up its reference.
+
+`share()` registers an allocation in the buffer registry and discards the handle.
+`statistics()` copies `offloaded_count`, `declined_count`, `redispatched_count` and
+`stale_writebacks` into `Graph::OffloadStatistics` and counts the live workers under `mtx`.
+The coordinator is also the allocator's `Memory::UsmReleaseObserver`: `on_release()`
+unregisters a freed address, so a later allocation at the same address gets a fresh id.
+
+`stop()` joins the monitor thread and stops the transport, and a second call does nothing.
+It falls short of the interface in three places. Nodes still in `pending` are neither
+resubmitted nor released. `try_offload()` does not check for a stopped coordinator, so a
+call after `stop()` can still publish a node. And `stop()` is `noexcept` while
+`ITransport::stop()` is not, so a transport that throws there ends the process.
+
 ### prepare
 
 `prepare()` runs once per `compile()`. A node is offloadable only if it carries an op id a
@@ -144,9 +167,9 @@ is registered; otherwise the node stays local and the host fallback still runs.
 ### Version bumps at completion
 
 `settle()` bumps the version of every registered buffer in the node's `io_writes_`. For a
-node the pool finished, the scheduler's completion observer calls `on_local_completion()`
-before the poller releases successors. For a node a worker finished, the TASK_RESULT handler
-copies the outputs, calls `settle()`, then invokes the completion hook, which releases
+node the pool finished, the scheduler's poller calls `on_local_completion()`
+before it releases successors. For a node a worker finished, the TASK_RESULT handler
+copies the outputs, calls `settle()`, then calls the sink's `complete_remote()`, which releases
 successors. Either way a dependent, notably an offloaded reader, is dispatched only after
 the version reflects the write, so a stale worker cache pulls again. `on_local_completion()`
 bumps for every node, with or without an offload state: a node with no op id carries none,

@@ -145,7 +145,7 @@ namespace
      */
     CompiledGraph build_graph(RuntimeContext& ctx, Workload& w)
     {
-        TaskGraph graph(ctx);
+        TaskGraph graph(ctx.offload());
         for (size_t t = 0; t < TASKS; ++t)
         {
             ctx.register_distributed_buffer(w.a[t],   N * sizeof(float));

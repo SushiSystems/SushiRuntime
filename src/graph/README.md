@@ -68,11 +68,13 @@ all; everything else is a deliberate, supported configuration.
 
 ### Distributed offload
 
-The graph decides nothing about offload. `compile()` hands `all_nodes` to
-`DistributedCoordinator::prepare()` when the context has a coordinator, after the tracker is
-reset and before the graph is returned; `src/distributed/README.md` says which nodes it
-marks. With no coordinator no node gets an offload state from `compile()`, so the
-scheduler's offload branch does nothing for it.
+The graph decides nothing about offload and names no context. Its constructor takes a
+`Graph::OffloadCoordinator*`, null by default, and `compile()` hands `all_nodes` to that
+coordinator's `prepare()` after the tracker is reset and before the graph is returned;
+`src/distributed/README.md` says which nodes the distributed coordinator marks. With a null
+coordinator no node gets an offload state from `compile()`, so the scheduler's offload
+branch does nothing for it. The constructor that takes a `RuntimeContext` ignores it and
+builds a graph with no coordinator.
 
 The add functions keep nothing for offload beyond `io_reads_` and `io_writes_`, which
 `prepare()` reads. `add_offload_dynamic()` is the exception: it stores the two live lists

@@ -670,7 +670,7 @@ namespace SushiRuntime
                 {
                     Graph& g = as_graph(*regions_.at(k));
 
-                    BackingGraph bg(*ctx_);
+                    BackingGraph bg(ctx_->offload());
                     for (auto& spec : g.specs_)
                     {
                         spec.emit(bg);

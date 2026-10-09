@@ -178,7 +178,7 @@ namespace
             }
         });
 
-        TaskGraph graph(*master_ctx);
+        TaskGraph graph(master_ctx->offload());
         for (int k = 0; k < K; ++k)
         {
             float* yk = y[k];
@@ -319,7 +319,7 @@ TEST(Integration_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
     master_ctx->register_distributed_buffer(in,  N * sizeof(float));
     master_ctx->register_distributed_buffer(out, N * sizeof(float));
 
-    TaskGraph graph(*master_ctx);
+    TaskGraph graph(master_ctx->offload());
     TaskMetadata m{};
     m.name  = "double";
     m.op_id = VEC_DOUBLE;

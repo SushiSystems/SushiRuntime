@@ -40,6 +40,7 @@
 #include <SushiRuntime/core/ref_counted.hpp>
 #include <SushiRuntime/core/resource_region.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/offload_sink.hpp>
 
 #include "offload_handles.hpp"
 
@@ -92,8 +93,8 @@ namespace SushiRuntime
             std::shared_ptr<ITransport>      transport;
             std::shared_ptr<IOffloadPolicy>  policy;
 
-            CompletionHook                   on_complete;
-            ResubmitHook                     on_resubmit;
+            /// @brief Takes back finished and orphaned nodes; null until bind().
+            Graph::OffloadSink*              sink = nullptr;
 
             std::mutex                       mtx;
             std::vector<WorkerStats>         workers;
@@ -308,12 +309,23 @@ namespace SushiRuntime
                         }
                     }
 
-                    // The versions advance before the hook releases successors.
+                    // The versions advance before the sink releases successors.
                     if (res.success)
                         settle(*node);
 
-                    if (on_complete)
-                        on_complete(node, res.success);
+                    if (!sink)
+                        break;
+
+                    if (res.success)
+                    {
+                        sink->complete_remote(*node);
+                        break;
+                    }
+
+                    // A failed remote result re-injects the node (src/distributed/README.md).
+                    SR_LOG_WARN("Offloaded node '{}' failed remotely; re-dispatching.",
+                                node->metadata.name);
+                    sink->resubmit(*node);
                     break;
                 }
                 case MsgType::PONG:
@@ -378,21 +390,12 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Sets the callback invoked upon task completion.
-         * @param hook The CompletionHook to run when a task finishes successfully or fails.
+         * @brief Stores the sink that takes back finished and orphaned nodes.
+         * @param sink Outlives every call made before stop() returns.
          */
-        void DistributedCoordinator::set_completion_hook(CompletionHook hook)
+        void DistributedCoordinator::bind(Graph::OffloadSink& sink)
         {
-            impl_->on_complete = std::move(hook);
-        }
-
-        /**
-         * @brief Sets the callback invoked to resubmit a failed or orphaned task.
-         * @param hook The ResubmitHook to run when a task needs to be re-dispatched.
-         */
-        void DistributedCoordinator::set_resubmit_hook(ResubmitHook hook)
-        {
-            impl_->on_resubmit = std::move(hook);
+            impl_->sink = &sink;
         }
 
         /**
@@ -526,6 +529,36 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Registers an allocation in the buffer registry.
+         * @param address Base of a live USM allocation of at least @p bytes.
+         */
+        void DistributedCoordinator::share(void* address, std::size_t bytes)
+        {
+            impl_->buffers->register_buffer(address, bytes);
+        }
+
+        /**
+         * @brief Returns the four counters and the live worker count.
+         * @return A snapshot; the worker count is read under the coordinator's lock.
+         */
+        Graph::OffloadStatistics DistributedCoordinator::statistics() const noexcept
+        {
+            Graph::OffloadStatistics snapshot;
+            snapshot.offloaded        = offloaded_count();
+            snapshot.declined         = declined_count();
+            snapshot.redispatched     = redispatched_count();
+            snapshot.stale_writebacks = stale_writeback_count();
+            snapshot.alive_workers    = static_cast<std::size_t>(alive_worker_count());
+            return snapshot;
+        }
+
+        /** @brief Unregisters the buffer at a released address, if it has one. */
+        void DistributedCoordinator::on_release(void* address) noexcept
+        {
+            impl_->buffers->unregister_buffer(address);
+        }
+
+        /**
          * @brief Starts the coordinator and its monitor thread.
          * Begins listening for transport messages and sets up liveness monitoring.
          */
@@ -548,7 +581,7 @@ namespace SushiRuntime
          * @brief Stops the coordinator and waits for threads to exit.
          * Signals the monitor to shutdown and stops the transport interface.
          */
-        void DistributedCoordinator::stop()
+        void DistributedCoordinator::stop() noexcept
         {
             if (!impl_)
                 return;
@@ -704,10 +737,9 @@ namespace SushiRuntime
                 for (Graph::Node* node : orphans)
                 {
                     redispatched_count.fetch_add(1, std::memory_order_relaxed);
-                    if (on_resubmit)
-                        on_resubmit(node);          // re-offload to a survivor, or run local
-                    else if (on_complete)
-                        on_complete(node, false);   // no resubmit wired: at least don't stall
+                    // The sink offers the node to a survivor or runs it locally.
+                    if (sink)
+                        sink->resubmit(*node);
                 }
             }
         }
@@ -715,15 +747,13 @@ namespace SushiRuntime
         /**
          * @brief Attempts to offload a graph node to a suitable worker.
          * Delegates selection to the policy and performs buffer tracking for the offload.
-         * @param node A pointer to the Graph::Node to offload.
+         * @param node The ready node; its OffloadState exists and is marked offloadable.
          * @return A boolean which is true if the node was successfully dispatched, false otherwise.
          */
-        bool DistributedCoordinator::try_offload(Graph::Node* node)
+        bool DistributedCoordinator::try_offload(Graph::Node& node)
         {
-            if (!node) return false;
-
             // offload() allocates nothing for a flagged node (src/distributed/README.md).
-            Graph::OffloadState& off = node->offload();
+            Graph::OffloadState& off = node.offload();
 
             // A node at the attempt cap is pinned local (src/distributed/README.md).
             if (off.attempts.load(std::memory_order_relaxed) >= MAX_OFFLOAD_ATTEMPTS)
@@ -735,8 +765,8 @@ namespace SushiRuntime
 
             // Input versions come from the master registry (src/distributed/README.md).
             TaskDispatchMsg msg;
-            msg.op_id = node->metadata.op_id;
-            msg.meta  = node->metadata;
+            msg.op_id = node.metadata.op_id;
+            msg.meta  = node.metadata;
 
             // A double-buffered node takes handles from live pointers (src/distributed/README.md).
             std::vector<BufferHandle> in_handles;
@@ -779,7 +809,7 @@ namespace SushiRuntime
             int chosen = -1;
             {
                 std::lock_guard<std::mutex> lk(impl_->mtx);
-                auto pick = impl_->policy->pick_worker(*node, impl_->workers, est_bytes);
+                auto pick = impl_->policy->pick_worker(node, impl_->workers, est_bytes);
                 if (!pick)
                 {
                     impl_->declined_count.fetch_add(1, std::memory_order_relaxed);
@@ -789,7 +819,7 @@ namespace SushiRuntime
 
                 msg.task_id = impl_->next_task_id.fetch_add(1, std::memory_order_relaxed);
                 impl_->pending[msg.task_id] =
-                    Impl::PendingTask{ node, chosen, Clock::now() }; // takes over the scheduling ref
+                    Impl::PendingTask{ &node, chosen, Clock::now() }; // takes over the scheduling ref
                 if (chosen >= 0 && chosen < static_cast<int>(impl_->workers.size()))
                     impl_->workers[chosen].inflight++;
             }
@@ -809,7 +839,7 @@ namespace SushiRuntime
             impl_->transport->send(chosen, MsgType::TASK_DISPATCH, bytes);
             impl_->offloaded_count.fetch_add(1, std::memory_order_relaxed);
             SR_LOG_INFO("Task {} ({}) offloaded to worker {}.",
-                        msg.task_id, node->metadata.name, chosen);
+                        msg.task_id, node.metadata.name, chosen);
             return true;
         }
 

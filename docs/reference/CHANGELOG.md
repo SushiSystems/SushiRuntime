@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-10 — execution: Added `RuntimeContext::install_offload` and `offload`; the distributed coordinator implements the seam and the release observer (`runtime_context.hpp`, `distributed_coordinator.hpp`).
+- 2026-10-10 — scheduler: Removed `set_coordinator`, `complete_offloaded_node` and the engine's `scheduler_ref`; the offload seam replaces them in every build (`task_scheduler.hpp`, `event_polling.hpp`).
+- 2026-10-10 — graph: Changed `TaskGraph` to take an offload coordinator; a graph built from a context no longer offloads unless it is given `ctx.offload()` (`task_graph.hpp`, `task_graph.cpp`, `graph.hpp`).
 - 2026-10-10 — task: Gave `Node` one offload state type in every build and removed its handle lists and base copies; the coordinator marks nodes and bumps versions itself (`node.hpp`, `offload_state.hpp`, `distributed_coordinator.cpp`).
 - 2026-10-10 — scheduler: Changed the `TaskScheduler` constructor to take the pool settings, the topology view, the device set and the allocator instead of a `RuntimeContext` (`task_scheduler.hpp`, `scheduler.cpp`, `runtime_settings.hpp`).
 - 2026-10-10 — execution: Removed `RuntimeContext::probe_hardware`; `malloc_shared(bytes, numa_id)` now picks the lowest-indexed device of the node instead of rotating (`runtime_context.hpp`, `runtime_context.cpp`).

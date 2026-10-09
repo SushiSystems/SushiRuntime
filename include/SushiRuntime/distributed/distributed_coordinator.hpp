@@ -28,11 +28,13 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <memory>
-#include <functional>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/memory/usm_release_observer.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
@@ -40,8 +42,6 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { struct Node; }
-
     namespace Distributed
     {
         /**
@@ -50,28 +50,10 @@ namespace SushiRuntime
          * Hides the complexity of network transport, worker heartbeats, and cluster state from the local task scheduler.
          * Remote buffer coherence is managed transparently via version bumping on local writes.
          */
-        class SUSHIRUNTIME_API DistributedCoordinator
+        class SUSHIRUNTIME_API DistributedCoordinator final : public Graph::OffloadCoordinator,
+                                                              public Memory::UsmReleaseObserver
         {
             public:
-                /**
-                 * @brief Callback invoked when a remotely executed task completes.
-                 *
-                 * Integrates remote completion with the local task graph's dependency resolution.
-                 *
-                 * @param node The task graph node that finished execution.
-                 * @param success True if execution completed without error, false otherwise.
-                 */
-                using CompletionHook = std::function<void(Graph::Node* node, bool success)>;
-
-                /**
-                 * @brief Callback invoked to re-inject an orphaned node into the ready queue.
-                 *
-                 * Called when a worker dies or fails, allowing the scheduler to retry offloading or execute locally.
-                 *
-                 * @param node The task graph node to be rescheduled.
-                 */
-                using ResubmitHook = std::function<void(Graph::Node* node)>;
-
                 /**
                  * @brief Constructs a coordinator from the kernel registry, buffers, transport and
                  *        policy.
@@ -80,7 +62,7 @@ namespace SushiRuntime
                                        BufferRegistry&           buffers,
                                        std::shared_ptr<ITransport>     transport,
                                        std::shared_ptr<IOffloadPolicy> policy);
-                ~DistributedCoordinator();
+                ~DistributedCoordinator() override;
 
                 DistributedCoordinator(const DistributedCoordinator&) = delete;
                 DistributedCoordinator& operator=(const DistributedCoordinator&) = delete;
@@ -93,11 +75,18 @@ namespace SushiRuntime
                 void start();
 
                 /**
-                 * @brief Drains inflight remote work and stops the network transport.
-                 *
-                 * Safely tears down cluster connections.
+                 * @brief Joins the monitor thread and stops the transport; a second call does
+                 *        nothing more.
+                 * @see src/distributed/README.md
                  */
-                void stop();
+                void stop() noexcept override;
+
+                /**
+                 * @brief Stores the sink that takes back finished and orphaned nodes.
+                 * @pre start() has not been called.
+                 * @param sink Outlives every call made before stop() returns.
+                 */
+                void bind(Graph::OffloadSink& sink) override;
 
                 /**
                  * @brief Checks if at least one active worker can execute a specific operation.
@@ -108,24 +97,6 @@ namespace SushiRuntime
                  * @return True if supported by a live worker, false otherwise.
                  */
                 bool supports(Graph::OpID op) const;
-
-                /**
-                 * @brief Installs the hook used to release a node's successors upon completion.
-                 *
-                 * The scheduler provides this closure to mirror local event polling behavior.
-                 *
-                 * @param hook The completion callback to register.
-                 */
-                void set_completion_hook(CompletionHook hook);
-
-                /**
-                 * @brief Installs the hook used to re-inject an orphaned node.
-                 *
-                 * The scheduler provides this closure to handle worker failures gracefully.
-                 *
-                 * @param hook The resubmission callback to register.
-                 */
-                void set_resubmit_hook(ResubmitHook hook);
 
                 /**
                  * @brief Sets the maximum silence duration before declaring a worker dead.
@@ -153,7 +124,7 @@ namespace SushiRuntime
                  * @param node The ready, offloadable node to dispatch.
                  * @return True if dispatched to a worker, false if the local fallback should be used.
                  */
-                bool try_offload(Graph::Node* node);
+                [[nodiscard]] bool try_offload(Graph::Node& node) override;
 
                 /**
                  * @brief Marks the nodes of a compiled graph that a worker may run.
@@ -162,13 +133,29 @@ namespace SushiRuntime
                  * touches is registered.
                  * @param nodes Borrowed for the call; a slot may be null.
                  */
-                void prepare(span<const sushi_ptr<Graph::Node>> nodes);
+                void prepare(span<const sushi_ptr<Graph::Node>> nodes) override;
 
                 /**
                  * @brief Advances the versions of the buffers a locally finished node wrote.
                  * @param node Borrowed for the call; called before its successors are released.
                  */
-                void on_local_completion(Graph::Node& node) noexcept;
+                void on_local_completion(Graph::Node& node) noexcept override;
+
+                /**
+                 * @brief Registers an allocation in the buffer registry; a known address keeps
+                 *        its handle.
+                 * @param address Base of a live USM allocation of at least @p bytes.
+                 */
+                void share(void* address, std::size_t bytes) override;
+
+                /**
+                 * @brief Returns the four counters and the live worker count.
+                 * @return A snapshot; the worker count is read under the coordinator's lock.
+                 */
+                [[nodiscard]] Graph::OffloadStatistics statistics() const noexcept override;
+
+                /** @brief Unregisters the buffer at a released address, if it has one. */
+                void on_release(void* address) noexcept override;
 
                 /**
                  * @brief Retrieves the total number of tasks successfully offloaded.

@@ -48,10 +48,10 @@
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #ifdef SR_DISTRIBUTED
-#include <SushiRuntime/memory/usm_release_observer.hpp>
-#include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include <SushiRuntime/distributed/distributed_coordinator.hpp>
 #endif
 
 namespace SushiRuntime
@@ -132,37 +132,6 @@ namespace SushiRuntime
                     throw;
                 }
             }
-
-#ifdef SR_DISTRIBUTED
-            /** @brief Drops a released address's row from the distributed buffer table. */
-            class DistributedBufferReleaseObserver final : public Memory::UsmReleaseObserver
-            {
-                public:
-                    /**
-                     * @brief Binds the observer to the table it drops rows from.
-                     * @param buffers Must outlive the observer.
-                     */
-                    explicit DistributedBufferReleaseObserver(
-                        Distributed::BufferRegistry& buffers) noexcept
-                        : buffers_(buffers)
-                    {
-                    }
-
-                    DistributedBufferReleaseObserver(const DistributedBufferReleaseObserver&) = delete;
-                    DistributedBufferReleaseObserver&
-                    operator=(const DistributedBufferReleaseObserver&) = delete;
-
-                    /** @brief Unregisters the buffer at an address; an unknown address is ignored. */
-                    void on_release(void* address) noexcept override
-                    {
-                        buffers_.unregister_buffer(address);
-                    }
-
-                private:
-                    /// @brief Table of distributable buffers, keyed by USM address.
-                    Distributed::BufferRegistry& buffers_;
-            };
-#endif
         } // namespace
 
         /**
@@ -190,11 +159,11 @@ namespace SushiRuntime
             /** @brief Stops everything that submits work, then lets the device set drain. */
             ~Impl()
             {
-#ifdef SR_DISTRIBUTED
-                // The network stops first, before the scheduler (src/execution/README.md).
-                if (coordinator)
-                    coordinator->stop();
+                // The coordinator stops first, before the scheduler (src/execution/README.md).
+                if (offload)
+                    offload->stop();
 
+#ifdef SR_DISTRIBUTED
                 // The allocator can outlive this object; it must not keep a pointer into it.
                 memory->set_release_observer(nullptr);
 #endif
@@ -258,12 +227,12 @@ namespace SushiRuntime
             /** @brief Master-side buffer id registry (created in Master mode). */
             std::unique_ptr<Distributed::BufferRegistry> buffers;
 
-            /** @brief Tells buffers about every released address (created in Master mode). */
-            std::optional<DistributedBufferReleaseObserver> release_observer;
-
             /** @brief Master-side offload coordinator (created in Master mode). */
             std::unique_ptr<Distributed::DistributedCoordinator> coordinator;
 #endif
+
+            /** @brief Installed offload coordinator, not owned; null when there is none. */
+            Graph::OffloadCoordinator* offload = nullptr;
 
             /** @brief Execution engine; built last, by RuntimeContext's constructor. */
             std::unique_ptr<ExecutionEngine> engine;
@@ -322,6 +291,19 @@ namespace SushiRuntime
         {
             if (impl_->engine)
                 impl_->engine->shutdown();
+        }
+
+        void RuntimeContext::install_offload(Graph::OffloadCoordinator* offload)
+        {
+            SR_THROW_IF(!impl_->engine,
+                        "ExecutionEngine is not initialized: the context is still being built.");
+            impl_->engine->install_offload(offload);
+            impl_->offload = offload;
+        }
+
+        Graph::OffloadCoordinator* RuntimeContext::offload() const noexcept
+        {
+            return impl_->offload;
         }
 
         bool RuntimeContext::profiling_enabled() const noexcept
@@ -496,25 +478,18 @@ namespace SushiRuntime
             if (!policy)
                 policy = std::make_shared<Distributed::LeastLoadedOffloadPolicy>();
 
-            // The allocator lets go of the table being replaced before that table is destroyed.
+            // The allocator and the scheduler let go of a coordinator before it is destroyed.
             impl_->memory->set_release_observer(nullptr);
-            impl_->buffers = std::make_unique<Distributed::BufferRegistry>();
-            impl_->release_observer.emplace(*impl_->buffers);
-            impl_->memory->set_release_observer(&*impl_->release_observer);
+            install_offload(nullptr);
+            impl_->coordinator.reset();
 
+            impl_->buffers = std::make_unique<Distributed::BufferRegistry>();
             impl_->coordinator = std::make_unique<Distributed::DistributedCoordinator>(
                 std::move(kernels), *impl_->buffers, std::move(transport), std::move(policy));
-
-            // The completion hook is wired before the coordinator (src/execution/README.md).
-            auto& sched = impl_->engine->scheduler_ref();
-            impl_->coordinator->set_completion_hook(
-                [&sched](Graph::Node* node, bool success)
-                {
-                    sched.complete_offloaded_node(node, success);
-                });
+            impl_->memory->set_release_observer(impl_->coordinator.get());
 
             // The coordinator is installed before its monitor starts (src/execution/README.md).
-            sched.set_coordinator(impl_->coordinator.get());
+            install_offload(impl_->coordinator.get());
             impl_->coordinator->start();
             impl_->role = RuntimeRole::Master;
 
@@ -524,19 +499,18 @@ namespace SushiRuntime
         Distributed::BufferHandle RuntimeContext::register_distributed_buffer(void* usm_ptr,
                                                                               uint64_t size_bytes)
         {
-            SR_THROW_IF(!impl_->buffers, "register_distributed_buffer requires Master mode.");
-            return impl_->buffers->register_buffer(usm_ptr, size_bytes);
+            SR_THROW_IF(!impl_->coordinator, "register_distributed_buffer requires Master mode.");
+            impl_->coordinator->share(usm_ptr, size_bytes);
+
+            const std::optional<Distributed::BufferHandle> handle = impl_->buffers->lookup(usm_ptr);
+            SR_THROW_IF(!handle, "register_distributed_buffer lost the buffer it registered.");
+            return *handle;
         }
 
         void RuntimeContext::bump_distributed_buffer(void* usm_ptr)
         {
             if (impl_->buffers)
                 impl_->buffers->bump_version(usm_ptr);
-        }
-
-        Distributed::DistributedCoordinator* RuntimeContext::distributed_coordinator() const noexcept
-        {
-            return impl_->coordinator.get();
         }
 
         void RuntimeContext::unregister_distributed_buffer(void* usm_ptr)

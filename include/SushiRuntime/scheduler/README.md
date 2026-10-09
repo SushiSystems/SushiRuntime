@@ -77,9 +77,10 @@ Profiling comes first. Every node passes through this point, so the per-node inv
 the kernel device time are added here exactly once per dispatch. The step does nothing unless the
 run was armed for profiling.
 
-In a distributed build the completion observer runs next, before the successors are released. A
-write's version bump is then visible to any dependent task, an offloaded reader for example, by the
-time that task is dispatched.
+When an offload coordinator is installed, its on_local_completion() runs next for a graph node,
+before the successors are released. A write's version bump is then visible to any dependent task,
+an offloaded reader for example, by the time that task is dispatched. With none installed the step
+is one pointer load and a branch never taken.
 
 trigger_successors() follows, and drop_inflight() comes last. The task's scheduling life ends at
 drop_inflight(), and its successors are already counted by add_inflight inside trigger_successors().

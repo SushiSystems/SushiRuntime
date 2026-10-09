@@ -154,7 +154,7 @@ namespace
         ctx.register_distributed_buffer(b,   n * sizeof(float));
         ctx.register_distributed_buffer(out, n * sizeof(float));
 
-        TaskGraph graph(ctx);
+        TaskGraph graph(ctx.offload());
         TaskMetadata meta{};
         meta.name  = "demo_vec_add";
         meta.op_id = VEC_ADD;

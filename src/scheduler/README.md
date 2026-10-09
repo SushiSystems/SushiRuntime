@@ -138,11 +138,16 @@ no clock samples in this loop.
 
 #### The offload branch
 
-For the overwhelming majority of tasks, the local ones, the offload branch is a single bool
-load. Only nodes the coordinator's `prepare()` marked offloadable at `compile()` reach the
-coordinator. On a successful offload the scheduling reference passes to the coordinator and
-is released when the remote result fires `complete_offloaded_node`, so the loop neither
+With no coordinator installed the offload branch is one load of `offload_` and a branch
+never taken; the node's offload state is not read. With one installed, only nodes its
+`prepare()` marked offloadable at `compile()` reach `try_offload()`, one virtual call each.
+On a successful offload the scheduling reference passes to the coordinator and is released
+when it returns the node through `complete_remote()` or `resubmit()`, so the loop neither
 executes nor releases the task.
+
+`offload_` sits with the scheduler's read-mostly members, after the allocator reference,
+away from the counters workers write. It is a plain pointer: `set_offload_coordinator()`
+writes it only while the pool runs no node.
 
 An offloaded node has left the local poll path and will not be reaped there, so its
 quiescence count is retired at once. Its remote completion re-triggers successors through
@@ -253,7 +258,8 @@ sees a fully written exception.
 
 `submit()` counts the task into the run before it becomes reachable to workers, so the
 quiescence counter can never miss it. The count is balanced by the poller's release on
-completion, or by the offload decrement in Master mode. The poller owns the counter's
+completion, or by the offload decrement when a coordinator accepts the node. The poller
+owns the counter's
 increment and decrement, because it is where tasks are born as successors and reaped on
 completion.
 
@@ -265,35 +271,32 @@ before any worker can drain them, the same happens-before `submit()` relies on. 
 independent and there are `num_workers` threads, so one `notify_all` replaces a storm of
 `notify_one` calls; idle workers that find no work sleep again.
 
-### Distributed master
+### Offload coordinator
 
-`set_coordinator()` installs a completion observer that passes every locally completed graph
-node to `DistributedCoordinator::on_local_completion()`. The coordinator bumps the versions
-of the buffers the node wrote and owns that rule; the scheduler only guarantees the call
-comes before the node's successors are released. An offloaded writer never reaches the
-observer: the coordinator bumps its buffers itself before it calls
-`complete_offloaded_node()`. See `src/distributed/README.md`.
+`TaskScheduler` implements `Graph::OffloadSink` and knows the coordinator only as a
+`Graph::OffloadCoordinator`; `include/SushiRuntime/task/README.md` describes the seam.
+`set_offload_coordinator()` calls `bind(*this)` on a non-null coordinator, then stores the
+pointer in the scheduler and in the poller. A null pointer removes the coordinator from both.
 
-The resubmit hook lets the coordinator re-inject a node orphaned by a dead worker or by a
-failed remote result. `submit()` is the thread-safe injector, so calling it from the
-coordinator's transport or monitor thread is safe. The orphaned node still carries the
-scheduling reference that passed to the coordinator at offload time. `submit()` takes its
-own reference, so the hook drops the transferred one right after, as
-`complete_offloaded_node()` does. Exactly one scheduling reference lives on, owned by the
-ready queue, and event polling releases it when the node completes.
+The poller passes every locally completed graph node to `on_local_completion()` before the
+node's successors are released. What the coordinator does there is its own rule; see
+`src/distributed/README.md`. An offloaded node never reaches that call: the coordinator
+settles it itself before it calls `complete_remote()`.
 
-In `complete_offloaded_node()` a failed remote result is treated like a lost worker: the
-node is re-injected and runs on a survivor or, once the retry cap is reached, locally.
-Versions are not bumped and successors are not released on failure, because the
-authoritative buffers were not validly produced.
+`resubmit()` takes back a node no worker finished, orphaned by a dead worker or failed
+remotely. `submit()` is the thread-safe injector, so calling it from a coordinator thread is
+safe. The node still carries the scheduling reference that passed to the coordinator at
+offload time. `submit()` takes its own reference, so `resubmit()` drops the transferred one
+right after. Exactly one scheduling reference lives on, owned by the ready queue, and event
+polling releases it when the node completes. Successors are not released, because the node
+has not run.
 
-On success the offloaded write has already landed in the master's authoritative buffer
-through the eager writeback and the coordinator has advanced its version, so later
-dependents pull again. Successors are released as `EventPolling::trigger_successors` releases them, but ready ones
-go through `submit()`, because this code runs on the coordinator's transport thread and not
-on a worker. Cross-region boundary successors of the dynamic region graph are released the
-same way; the list is empty for ordinary offloaded nodes. Last, the scheduling reference
-that passed to the coordinator at offload is dropped.
+`complete_remote()` takes back a node a worker ran. It walks `Node::for_each_successor()`
+and satisfies one dependency on each successor, as `Node::on_complete()` does for a local
+node, but a ready successor goes through `submit()`, because this code runs on a coordinator
+thread and not on a worker. The walk covers the cross-region boundary successors of the
+dynamic region graph. Last, the scheduling reference that passed to the coordinator at
+offload is dropped.
 
 ### migrate_tasks
 

@@ -54,11 +54,12 @@
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/buffer_registry.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/distributed/distributed_coordinator.hpp>
 #endif
 
 namespace SushiRuntime
 {
+    namespace Graph { class OffloadCoordinator; }
+
     namespace Execution
     {
         /**
@@ -134,6 +135,19 @@ namespace SushiRuntime
                  * The destructor will call this automatically if not done explicitly.
                  */
                 void shutdown();
+
+                /**
+                 * @brief Installs the coordinator that may run this context's graph nodes
+                 *        elsewhere.
+                 * @pre No run is in flight.
+                 * @param offload Not owned; null removes the installed one. The destructor calls
+                 *        stop() on the one still installed.
+                 * @see include/SushiRuntime/execution/README.md
+                 */
+                void install_offload(Graph::OffloadCoordinator* offload);
+
+                /** @brief Returns the installed offload coordinator, or nullptr for none. */
+                [[nodiscard]] Graph::OffloadCoordinator* offload() const noexcept;
 
                 // Every member from here to the template malloc_shared forwards to a part above.
 
@@ -303,9 +317,6 @@ namespace SushiRuntime
 
                 /** @brief Bumps a buffer's version after a local write (invalidates remote caches). */
                 void bump_distributed_buffer(void* usm_ptr);
-
-                /** @brief Returns the coordinator of a Master context, or nullptr in any other role. */
-                [[nodiscard]] Distributed::DistributedCoordinator* distributed_coordinator() const noexcept;
 
                 /** @brief Unregisters a buffer; memory().release() does it for a released address. */
                 void unregister_distributed_buffer(void* usm_ptr);
