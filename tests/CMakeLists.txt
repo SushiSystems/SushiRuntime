@@ -98,6 +98,7 @@ add_executable(sr_functional_tests
     functional/unit/test_topology_abstraction.cpp
     functional/unit/test_nvidia_topology.cpp
     functional/unit/test_usm_registry.cpp
+    functional/unit/test_device_queue_set.cpp
     functional/unit/test_allocation.cpp
     functional/unit/test_interop_vocabulary.cpp
     functional/unit/test_affinity.cpp

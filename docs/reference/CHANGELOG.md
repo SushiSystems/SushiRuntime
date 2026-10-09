@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-09 — device: Added `DeviceQueueSet`, the device inventory and queue families of a runtime, with NUMA routing resolved once at construction (`device_queue_set.hpp`, `device_info.hpp`, `queue_flavour.hpp`).
 - 2026-10-09 — api: Moved the `Interop` facade and `HostExport` to `api/interop/`; `Interop::HostExport` stays as an alias and `interop/` no longer includes `api/` (`api/interop/interop.hpp`, `api/interop/host_export.hpp`).
 - 2026-10-09 — scheduler: Moved `PinPolicy` and `WorkerPoolInfo` to the scheduler, kept as aliases under `Execution`, and added `WorkerPoolSettings` (`pin_policy.hpp`, `worker_pool_info.hpp`, `worker_pool_settings.hpp`).
 - 2026-10-09 — task: Moved `Task`, `Node`, the task types and the late bindings to `task/` headers; the old `scheduler/` and `graph/` paths forward (`task/task.hpp`, `task/node.hpp`, `task/task_types.hpp`).
