@@ -21,28 +21,33 @@
 
 /**
  * @file runtime_context.hpp
- * @brief Declares RuntimeContext, the owner of hardware, queues, USM and the execution engine.
+ * @brief Declares RuntimeContext, which builds the runtime's parts and owns the execution engine.
  * @author Mustafa Garip
  * @see include/SushiRuntime/execution/README.md
  */
 
 #pragma once
 
+#include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/memory/usm_registry.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #ifdef SR_DISTRIBUTED
 #include <chrono>
-#include <optional>
+#include <cstdint>
 #include <SushiRuntime/graph/task_types.hpp>
 #include <SushiRuntime/distributed/protocol.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
@@ -57,48 +62,34 @@ namespace SushiRuntime
     namespace Execution
     {
         /**
-         * @brief Central owner of hardware, SYCL queues, USM ownership, and the execution engine.
+         * @brief Builds the topology view, the device queues and the USM allocator, and owns
+         *        the execution engine that runs on them.
          *
          * Constructed once per process and shared (via shared_ptr) between the fluent
          * API layer and all graphs it produces. Uses Pimpl to keep the ABI stable.
          * In Standalone mode (default) carries zero distributed overhead.
          */
-        class SUSHIRUNTIME_API RuntimeContext 
+        class SUSHIRUNTIME_API RuntimeContext
         {
             public:
                 /**
                  * @brief Creates a runtime context and scans for hardware matching config.
                  * @param provider Topology source; null selects the hwloc default.
                  * @param distance_model NUMA distance model; null selects the hwloc default.
+                 * @throws Core::SushiException With Errc::unsupported when no device passes config.
                  * @see include/SushiRuntime/execution/README.md
                  */
                 explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {},
                                         std::shared_ptr<Topology::ITopologyProvider> provider = nullptr,
                                         std::shared_ptr<Topology::INumaDistanceModel> distance_model = nullptr,
                                         const RuntimeSettings& settings = {});
-                
-                /** @brief Destroys the context and frees all resources. */
+
+                /** @brief Stops the engine, then waits for every device queue. */
                 ~RuntimeContext();
 
                 /** @brief Copy and move are disabled to keep state integrity. */
                 RuntimeContext(const RuntimeContext&) = delete;
                 RuntimeContext& operator=(const RuntimeContext&) = delete;
-
-                /**
-                 * @brief Re-scans hardware and rebuilds the device queue list.
-                 *
-                 * Normally called automatically by the constructor. Call explicitly
-                 * only when the hardware topology changes at runtime (rare).
-                 *
-                 * @param config Device-class filter; defaults to including all classes.
-                 */
-                void probe_hardware(const Topology::HardwareFilterConfig& config = {});
-
-                /**
-                 * @brief Returns whether this context's queues were built with profiling on.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                bool profiling_enabled() const noexcept;
 
                 /**
                  * @brief Returns the runtime-wide settings this context was created with.
@@ -107,224 +98,23 @@ namespace SushiRuntime
                  */
                 const RuntimeSettings& settings() const noexcept;
 
-                /**
-                 * @brief Records bytes copied from device to host by an explicit transfer.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                void add_device_to_host_bytes(std::size_t bytes) noexcept;
+                /** @brief Returns the core-to-NUMA map and the NUMA distances. */
+                [[nodiscard]] const Topology::TopologyView& topology() const noexcept;
+
+                /** @brief Returns the device inventory and every SYCL queue built on it. */
+                [[nodiscard]] Device::DeviceQueueSet& devices() noexcept;
+
+                /** @brief Returns the allocator that records and releases this context's USM. */
+                [[nodiscard]] Memory::UsmAllocator& memory() noexcept;
 
                 /**
-                 * @brief Records bytes copied host->device by an explicit transfer.
-                 * @param bytes Number of bytes copied to the device (Buffer::write_range).
+                 * @brief Returns the allocator as a shared handle, for an owner that may outlive
+                 *        this context.
                  */
-                void add_host_to_device_bytes(std::size_t bytes) noexcept;
+                [[nodiscard]] const std::shared_ptr<Memory::UsmAllocator>& shared_memory() const noexcept;
 
-                /** @brief Cumulative device->host bytes from explicit transfers. */
-                std::size_t device_to_host_bytes() const noexcept;
-
-                /** @brief Cumulative host->device bytes from explicit transfers. */
-                std::size_t host_to_device_bytes() const noexcept;
-
-                /**
-                 * @brief Gets a SYCL queue for a specific device.
-                 * @param xpu_index The index of the device (default is 0).
-                 * @return sycl::queue& Reference to the device queue.
-                 */
-                sycl::queue& get_queue(size_t xpu_index = 0);
-
-                /**
-                 * @brief Returns the profiling-enabled queue of a device, building it on first use.
-                 * @throws Core::SushiException If the index is out of bounds.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                sycl::queue& profiling_queue(size_t xpu_index = 0);
-
-                /**
-                 * @brief Returns whether a device's profiling queue already exists, without
-                 *        building it.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                bool has_profiling_queue(size_t xpu_index) const noexcept;
-
-                /**
-                 * @brief Returns the in-order queue a chainable plan submits to on one device.
-                 * @param profiling True for the flavour that also carries enable_profiling.
-                 * @throws Core::SushiException If the index is out of bounds.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                sycl::queue& chain_queue(size_t xpu_index, bool profiling);
-
-                /**
-                 * @brief Returns the number of device queues exposed by get_queue().
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                size_t device_count() const;
-
-                /**
-                 * @brief Returns whether the device behind a queue is a GPU, read from the
-                 *        inventory.
-                 * @param xpu_index The index of the device; valid range [0, device_count()).
-                 * @throws Core::SushiException If the index is out of bounds.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                bool device_is_gpu(size_t xpu_index) const;
-
-                /**
-                 * @brief Selects a queue based on NUMA location.
-                 * @param numa_id The ID of the target NUMA node.
-                 * @return sycl::queue& Reference to the closest device queue.
-                 */
-                sycl::queue& get_numa_local_queue(int numa_id);
-
-                /**
-                 * @brief Returns the queue whose context owns ptr, or the NUMA-local fallback.
-                 * @param fallback_numa NUMA hint used when ptr cannot be located.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                sycl::queue& get_queue_for_ptr(void* ptr, int fallback_numa = 0);
-
-                /**
-                 * @brief Returns the device-queue index whose context owns ptr.
-                 * @return The owning device-queue index, or -1 if ptr is unknown.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                int context_index_for_ptr(void* ptr) noexcept;
-
-                /**
-                 * @brief Allocates shared USM and records its owning queue.
-                 * @param numa_id Target NUMA node; selects the owning queue.
-                 * @return USM pointer, or nullptr on failure.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                void* malloc_shared(size_t bytes, int numa_id = 0);
-
-                /**
-                 * @brief Allocates device USM and records its owning queue.
-                 * @see malloc_shared
-                 */
-                void* malloc_device(size_t bytes, int numa_id = 0);
-
-                /**
-                 * @brief Allocates shared USM pinned to one specific device queue.
-                 * @param device_index Target device queue index, in [0, device_count()).
-                 * @return USM pointer, or nullptr on failure.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                void* malloc_shared_on(size_t bytes, size_t device_index);
-
-                /**
-                 * @brief Allocates device-only USM pinned to one specific device queue.
-                 * @param device_index Target device queue index, in [0, device_count()).
-                 * @return Device USM pointer, or nullptr on failure.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                void* malloc_device_on(size_t bytes, size_t device_index);
-
-                /**
-                 * @brief Allocates pinned host USM in one specific device queue's context.
-                 * @param device_index Target device queue index, in [0, device_count()).
-                 * @return Host USM pointer, or nullptr on failure.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                void* malloc_host_on(size_t bytes, size_t device_index);
-
-                /**
-                 * @brief Frees shared, device or host USM from this context's malloc_* calls
-                 *        and drops its owner record. Safe to call with nullptr.
-                 */
-                void free_usm(void* ptr);
-
-                /**
-                 * @brief Allocates host USM aligned to @p alignment on one device queue.
-                 * @param alignment    Byte alignment of the returned address.
-                 * @param bytes        Allocation size in bytes.
-                 * @param device_index Target device queue; selects the owning context.
-                 * @return Host-addressable USM pointer, or nullptr on failure.
-                 */
-                void* aligned_malloc_host_on(std::size_t alignment, std::size_t bytes,
-                                             std::size_t device_index);
-
-                /**
-                 * @brief Allocates shared USM aligned to @p alignment on one device queue.
-                 * @param alignment    Byte alignment of the returned address; a power of two.
-                 * @param bytes        Allocation size in bytes.
-                 * @param device_index Target device queue index, in [0, device_count()).
-                 * @return Shared USM pointer, or nullptr on failure.
-                 */
-                void* aligned_malloc_shared_on(std::size_t alignment, std::size_t bytes,
-                                               std::size_t device_index);
-
-                /**
-                 * @brief Allocates device-only USM aligned to @p alignment on one device queue.
-                 * @param alignment    Byte alignment of the returned address; a power of two.
-                 * @param bytes        Allocation size in bytes.
-                 * @param device_index Target device queue index, in [0, device_count()).
-                 * @return Device USM pointer, or nullptr on failure.
-                 */
-                void* aligned_malloc_device_on(std::size_t alignment, std::size_t bytes,
-                                               std::size_t device_index);
-
-                /**
-                 * @brief Records an externally-allocated address as owned by one device queue.
-                 * @param address      The address to record; not allocated by this call.
-                 * @param device_index Target device queue that owns @p address.
-                 * @param bytes        Length of the mapping, or nothing when the importer
-                 *                     cannot know it; without a length only @p address
-                 *                     itself resolves, never an offset into it.
-                 */
-                void adopt_usm(void* address, std::size_t device_index,
-                               std::optional<std::size_t> bytes);
-
-                /**
-                 * @brief Finds the start of the recorded allocation an address falls in.
-                 * @param ptr Any address, interior or base; null resolves to nothing.
-                 * @return The allocation's first address, or nothing when no recorded allocation
-                 *        covers ptr.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                std::optional<void*> containing_usm_base(void* ptr) const;
-
-                /**
-                 * @brief Drops @p address's owner record without freeing it.
-                 * @param address The address to forget; safe to call with nullptr.
-                 */
-                void forget_usm(void* address) noexcept;
-
-                /**
-                 * @brief Counts the USM allocations this context has recorded and not yet freed.
-                 * @return Live records: every malloc_* or adopt_usm not yet matched by free_usm
-                 *         or forget_usm.
-                 */
-                std::size_t live_usm_count() const;
-
-                /**
-                 * @brief Typed convenience wrapper over malloc_shared.
-                 * @tparam T Element type.
-                 * @param count Number of elements.
-                 * @param numa_id Target NUMA node.
-                 */
-                template <typename T>
-                T* malloc_shared(size_t count, int numa_id = 0)
-                {
-                    return static_cast<T*>(malloc_shared(count * sizeof(T), numa_id));
-                }
-
-                /**
-                 * @brief NUMA latency cost between two nodes, via the injected model.
-                 * @return 10 for local, > 10 for remote (ACPI SLIT convention).
-                 */
-                int numa_distance(int numa_a, int numa_b) const;
-
-                /**
-                 * @brief Logical CPU (core) to NUMA node map, from the topology provider.
-                 *
-                 * Index = logical core id (as used by thread pinning). Used by the
-                 * scheduler to build NUMA-aware steal victim orders. May be empty if
-                 * the provider exposes no CPU topology → callers fall back to a flat
-                 * single-tier policy.
-                 */
-                const std::vector<int>& cpu_core_to_numa() const;
-
+                /** @brief Returns the byte counters of explicit host and device transfers. */
+                [[nodiscard]] Observability::TransferCounters& transfers() noexcept;
 
                 /**
                  * @brief Returns the execution engine owned by this context.
@@ -345,10 +135,150 @@ namespace SushiRuntime
                  */
                 void shutdown();
 
+                // Every member from here to the template malloc_shared forwards to a part above.
+
+                /** @brief Returns settings().profiling. */
+                bool profiling_enabled() const noexcept;
+
+                /** @brief Forwards to transfers().add_device_to_host(bytes). */
+                void add_device_to_host_bytes(std::size_t bytes) noexcept;
+
+                /** @brief Forwards to transfers().add_host_to_device(bytes). */
+                void add_host_to_device_bytes(std::size_t bytes) noexcept;
+
+                /** @brief Forwards to transfers().device_to_host(). */
+                std::size_t device_to_host_bytes() const noexcept;
+
+                /** @brief Forwards to transfers().host_to_device(). */
+                std::size_t host_to_device_bytes() const noexcept;
+
                 /**
-                 * @brief Waits for all async operations to finish (global sync).
+                 * @brief Forwards to devices().queue(xpu_index).
+                 * @throws Core::SushiException With Errc::invalid_access on a bad index.
                  */
+                sycl::queue& get_queue(size_t xpu_index = 0);
+
+                /**
+                 * @brief Forwards to devices().queue(xpu_index, {false, true}).
+                 * @throws Core::SushiException With Errc::invalid_access on a bad index.
+                 * @see include/SushiRuntime/execution/README.md
+                 */
+                sycl::queue& profiling_queue(size_t xpu_index = 0);
+
+                /** @brief Forwards to devices().has_profiling_queue(xpu_index). */
+                bool has_profiling_queue(size_t xpu_index) const noexcept;
+
+                /**
+                 * @brief Forwards to devices().queue(xpu_index, {true, profiling}).
+                 * @throws Core::SushiException With Errc::invalid_access on a bad index.
+                 * @see include/SushiRuntime/execution/README.md
+                 */
+                sycl::queue& chain_queue(size_t xpu_index, bool profiling);
+
+                /** @brief Forwards to devices().count(). */
+                size_t device_count() const;
+
+                /**
+                 * @brief Forwards to devices().is_gpu(xpu_index).
+                 * @throws Core::SushiException With Errc::invalid_access on a bad index.
+                 */
+                bool device_is_gpu(size_t xpu_index) const;
+
+                /** @brief Forwards to devices().queue_or_numa_local(std::nullopt, numa_id). */
+                sycl::queue& get_numa_local_queue(int numa_id);
+
+                /**
+                 * @brief Forwards to devices().queue_or_numa_local(memory().owning_device(ptr),
+                 *        fallback_numa).
+                 * @see include/SushiRuntime/execution/README.md
+                 */
+                sycl::queue& get_queue_for_ptr(void* ptr, int fallback_numa = 0);
+
+                /**
+                 * @brief Forwards to memory().device_of(ptr).
+                 * @return The device index, or -1 where device_of() returns nothing.
+                 */
+                int context_index_for_ptr(void* ptr) noexcept;
+
+                /**
+                 * @brief Forwards to memory().allocate() with UsmKind::Shared on
+                 *        devices().device_for_numa(numa_id).
+                 * @see include/SushiRuntime/execution/README.md
+                 */
+                void* malloc_shared(size_t bytes, int numa_id = 0);
+
+                /**
+                 * @brief Forwards to memory().allocate() with UsmKind::Device on
+                 *        devices().device_for_numa(numa_id).
+                 */
+                void* malloc_device(size_t bytes, int numa_id = 0);
+
+                /** @brief Forwards to memory().allocate({UsmKind::Shared, bytes, 0, device_index}). */
+                void* malloc_shared_on(size_t bytes, size_t device_index);
+
+                /** @brief Forwards to memory().allocate({UsmKind::Device, bytes, 0, device_index}). */
+                void* malloc_device_on(size_t bytes, size_t device_index);
+
+                /** @brief Forwards to memory().allocate({UsmKind::Host, bytes, 0, device_index}). */
+                void* malloc_host_on(size_t bytes, size_t device_index);
+
+                /** @brief Forwards to memory().release(ptr). */
+                void free_usm(void* ptr);
+
+                /**
+                 * @brief Forwards to memory().allocate({UsmKind::Host, bytes, alignment,
+                 *        device_index}).
+                 */
+                void* aligned_malloc_host_on(std::size_t alignment, std::size_t bytes,
+                                             std::size_t device_index);
+
+                /**
+                 * @brief Forwards to memory().allocate({UsmKind::Shared, bytes, alignment,
+                 *        device_index}).
+                 */
+                void* aligned_malloc_shared_on(std::size_t alignment, std::size_t bytes,
+                                               std::size_t device_index);
+
+                /**
+                 * @brief Forwards to memory().allocate({UsmKind::Device, bytes, alignment,
+                 *        device_index}).
+                 */
+                void* aligned_malloc_device_on(std::size_t alignment, std::size_t bytes,
+                                               std::size_t device_index);
+
+                /** @brief Forwards to memory().adopt(address, device_index, bytes). */
+                void adopt_usm(void* address, std::size_t device_index,
+                               std::optional<std::size_t> bytes);
+
+                /** @brief Forwards to memory().containing_base(ptr). */
+                std::optional<void*> containing_usm_base(void* ptr) const;
+
+                /** @brief Forwards to memory().forget(address). */
+                void forget_usm(void* address) noexcept;
+
+                /** @brief Forwards to memory().live_count(). */
+                std::size_t live_usm_count() const;
+
+                /** @brief Forwards to topology().numa_distance(numa_a, numa_b). */
+                int numa_distance(int numa_a, int numa_b) const;
+
+                /** @brief Forwards to topology().core_to_numa(). */
+                const std::vector<int>& cpu_core_to_numa() const;
+
+                /** @brief Forwards to devices().wait_all(). */
                 void wait_all();
+
+                /**
+                 * @brief Allocates count elements through malloc_shared(bytes, numa_id).
+                 * @tparam T Element type.
+                 * @param count Number of elements.
+                 * @param numa_id Target NUMA node.
+                 */
+                template <typename T>
+                T* malloc_shared(size_t count, int numa_id = 0)
+                {
+                    return static_cast<T*>(malloc_shared(count * sizeof(T), numa_id));
+                }
 
 #ifdef SR_DISTRIBUTED
                 /**
@@ -374,7 +304,7 @@ namespace SushiRuntime
                 /** @brief Bumps a buffer's version after a local write (invalidates remote caches). */
                 void bump_distributed_buffer(void* usm_ptr);
 
-                /** @brief Unregisters a buffer, used internally by free_usm. */
+                /** @brief Unregisters a buffer; memory().release() does it for a released address. */
                 void unregister_distributed_buffer(void* usm_ptr);
 
                 /** @brief Current handle for a registered pointer (used by compile()). */
@@ -422,22 +352,7 @@ namespace SushiRuntime
                 struct Impl;
                 /** @brief Pimpl handle for internal implementation details. */
                 sushi_ptr<Impl> impl_;
-
-                /**
-                 * @brief Builds device @p xpu_index's profiling queue, once.
-                 * @param xpu_index The device whose profiling queue to build.
-                 * @pre xpu_index < device_count().
-                 */
-                void build_profiling_queue(size_t xpu_index);
-
-                /**
-                 * @brief Builds device @p xpu_index's in-order chain queue of one flavour, once.
-                 * @param xpu_index The device whose chain queue to build.
-                 * @param profiling True for the flavour that carries enable_profiling.
-                 * @pre xpu_index < device_count().
-                 */
-                void build_chain_queue(size_t xpu_index, bool profiling);
         };
-    
+
     } // namespace Execution
 } // namespace SushiRuntime
