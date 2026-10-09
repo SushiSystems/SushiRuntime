@@ -52,10 +52,9 @@
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/scheduler/work_stealing_deque.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
-#ifdef SR_DISTRIBUTED
-#include <SushiRuntime/graph/node.hpp>
-#include <SushiRuntime/distributed/distributed_coordinator.hpp>
-#endif
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
+#include <SushiRuntime/task/offload_state.hpp>
 
 namespace SushiRuntime
 {
@@ -589,15 +588,14 @@ namespace SushiRuntime
                                 my_queue->push(split_chunk.value().leak());
                         }
 
-#ifdef SR_DISTRIBUTED
                         // An offloaded task is owned by the coordinator (src/scheduler/README.md).
                         bool offloaded = false;
-                        if (coordinator_ && task->is_graph_node())
+                        if (offload_ != nullptr && task->is_graph_node())
                         {
-                            auto* gnode = static_cast<SushiRuntime::Graph::Node*>(task);
-                            auto* off = gnode->offload_state();
-                            if (off && off->offloadable)
-                                offloaded = coordinator_->try_offload(gnode);
+                            auto& node = *static_cast<SushiRuntime::Graph::Node*>(task);
+                            const Graph::OffloadState* state = node.offload_state();
+                            if (state != nullptr && state->offloadable)
+                                offloaded = offload_->try_offload(node);
                         }
                         if (!offloaded)
                         {
@@ -614,11 +612,6 @@ namespace SushiRuntime
                                 quiesce_cv_.notify_all();
                             }
                         }
-#else
-                        const auto b0 = prof ? sclock::now() : sclock::time_point{};
-                        execute_task(task, thread_id, active_events);
-                        if (prof) add_ns(wt.busy_ns, b0, sclock::now());
-#endif
                     }
                 }
 
@@ -1157,79 +1150,47 @@ namespace SushiRuntime
             }
         }
 
-#ifdef SR_DISTRIBUTED
         /**
-         * @brief Sets the distributed coordinator for offloading tasks.
-         * @param c Pointer to the DistributedCoordinator.
+         * @brief Installs the offload coordinator in the scheduler and its poller, and binds it.
+         * @param offload Not owned; null removes the installed one.
          */
-        void TaskScheduler::set_coordinator(Distributed::DistributedCoordinator* c)
+        void TaskScheduler::set_offload_coordinator(Graph::OffloadCoordinator* offload)
         {
-            coordinator_ = c;
+            // The coordinator holds its sink before a worker can offer it a node.
+            if (offload != nullptr)
+                offload->bind(*this);
 
-            // A locally completed node bumps the buffers it wrote (src/scheduler/README.md).
-            if (c)
-            {
-                event_poller.set_completion_observer(
-                    [c](Task* t)
-                    {
-                        if (!t || !t->is_graph_node()) return;
-                        c->on_local_completion(*static_cast<SushiRuntime::Graph::Node*>(t));
-                    });
-
-                // The hook resubmits an orphan and drops one ref (src/scheduler/README.md).
-                c->set_resubmit_hook([this](Graph::Node* n) { submit(n); n->release(); });
-            }
+            offload_ = offload;
+            event_poller.set_offload_coordinator(offload);
         }
 
         /**
-         * @brief Completes a task that was offloaded to a remote node.
-         * @param node The graph node that was offloaded.
-         * @param success Whether the execution was successful.
+         * @brief Queues a node no worker finished and drops the coordinator's reference.
+         * @param node Accepted by the coordinator's try_offload().
          */
-        void TaskScheduler::complete_offloaded_node(Graph::Node* node, bool success)
+        void TaskScheduler::resubmit(Graph::Node& node)
         {
-            if (!node) return;
-
-            // A failed remote result re-injects the node (src/scheduler/README.md).
-            if (!success)
-            {
-                SR_LOG_WARN("Offloaded node '{}' failed remotely; re-dispatching.", node->metadata.name);
-                // The transferred ref is dropped; submit() took its own (src/scheduler/README.md).
-                submit(node);
-                node->release();
-                return;
-            }
-
-            // Ready successors use submit() on this transport thread (src/scheduler/README.md).
-            int32_t count   = node->inline_successor_count.load(std::memory_order_acquire);
-            int32_t max_idx = std::min(count, SushiRuntime::Graph::Node::MAX_INLINE_SUCCESSORS);
-            for (int32_t i = 0; i < max_idx; ++i)
-            {
-                auto* succ = node->inline_successors[i];
-                if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
-                    submit(succ);
-            }
-
-            auto* curr = node->successor_list.load(std::memory_order_acquire);
-            while (curr)
-            {
-                auto* succ = curr->target;
-                if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
-                    submit(succ);
-                curr = curr->next;
-            }
-
-            // Cross-region boundary successors are released the same way (src/scheduler/README.md).
-            for (auto* succ : node->region.boundary_successors)
-            {
-                if (succ && succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
-                    submit(succ);
-            }
-
-            // The ref the coordinator took at offload is dropped (src/scheduler/README.md).
-            node->release();
+            // submit() takes its own reference before the coordinator's is dropped.
+            submit(&node);
+            node.release();
         }
-#endif
+
+        /**
+         * @brief Releases a remotely finished node's successors, then drops the coordinator's
+         *        reference.
+         * @param node Accepted by the coordinator's try_offload().
+         */
+        void TaskScheduler::complete_remote(Graph::Node& node)
+        {
+            // Ready successors go through submit() on this coordinator thread.
+            node.for_each_successor([this](Graph::Node* successor)
+            {
+                if (successor->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                    submit(successor);
+            });
+
+            node.release();
+        }
 
     } // namespace Scheduler
 } // namespace SushiRuntime

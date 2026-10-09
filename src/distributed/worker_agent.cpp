@@ -394,7 +394,7 @@ namespace SushiRuntime
             try
             {
                 // The kernel runs through the worker's own TaskGraph (src/distributed/README.md).
-                Graph::TaskGraph g(ctx);
+                Graph::TaskGraph g;
                 const auto* k = kernel;
                 const auto  meta = msg.meta;
                 // Each pointer maps to its whole-buffer region (src/distributed/README.md).

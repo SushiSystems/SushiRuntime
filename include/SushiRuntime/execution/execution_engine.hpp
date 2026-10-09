@@ -45,9 +45,7 @@
 namespace SushiRuntime
 {
 
-#ifdef SR_DISTRIBUTED
-    namespace Scheduler { class TaskScheduler; }
-#endif
+    namespace Graph { class OffloadCoordinator; }
 
     namespace Execution
     {
@@ -321,10 +319,12 @@ namespace SushiRuntime
              */
             void collect_profiling(CompiledGraph& graph, Core::RunReport& report) const override;
 
-#ifdef SR_DISTRIBUTED
-            /** @brief Access to the persistent scheduler, so Master mode can attach the coordinator. */
-            SushiRuntime::Scheduler::TaskScheduler& scheduler_ref();
-#endif
+            /**
+             * @brief Forwards to the scheduler's set_offload_coordinator().
+             * @pre No run is in flight.
+             * @param offload Not owned; null removes the installed one.
+             */
+            void install_offload(Graph::OffloadCoordinator* offload);
 
         private:
             struct Impl;

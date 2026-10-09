@@ -47,6 +47,7 @@
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/scheduler/pin_policy.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
+#include <SushiRuntime/task/offload_sink.hpp>
 
 namespace SushiRuntime
 {
@@ -55,15 +56,12 @@ namespace SushiRuntime
     {
         class TaskGraph;
         struct Node;
+        class OffloadCoordinator;
     }
 
     namespace Topology { class TopologyView; }
     namespace Device { class DeviceQueueSet; }
     namespace Memory { class UsmAllocator; }
-
-#ifdef SR_DISTRIBUTED
-    namespace Distributed { class DistributedCoordinator; }
-#endif
 
     namespace Scheduler 
     {
@@ -91,7 +89,9 @@ namespace SushiRuntime
          * @brief Schedules tasks on a persistent, NUMA-aware work-stealing worker pool.
          * @see include/SushiRuntime/scheduler/README.md
          */
-        class SUSHIRUNTIME_API TaskScheduler : public ITelemetryProvider, public ITaskMigrator
+        class SUSHIRUNTIME_API TaskScheduler final : public ITelemetryProvider,
+                                                     public ITaskMigrator,
+                                                     public Graph::OffloadSink
         {
             public:
                 /** @brief Actual number of active workers. Read-only externally. */
@@ -203,6 +203,11 @@ namespace SushiRuntime
                 Device::DeviceQueueSet& devices_;
                 /** @brief Allocator asked which device owns a node's USM. */
                 const Memory::UsmAllocator& memory_;
+                /**
+                 * @brief Offered each offloadable node at dispatch; null when none is installed.
+                 * @see include/SushiRuntime/scheduler/README.md
+                 */
+                Graph::OffloadCoordinator* offload_ = nullptr;
 
                 /**
                  * @brief Holds whether workers bind to cores, copied from WorkerPoolSettings.
@@ -491,30 +496,28 @@ namespace SushiRuntime
                  */
                 void reset_worker_times() noexcept;
 
-#ifdef SR_DISTRIBUTED
                 /**
-                 * @brief Attaches the master-side coordinator (Master mode only).
-                 *
-                 * Null in Standalone/Worker mode → the dispatch loop never takes the
-                 * offload branch, so the local hot path is unchanged.
+                 * @brief Installs the coordinator offloadable nodes are offered to, and binds it
+                 *        to this scheduler.
+                 * @pre The pool runs no node.
+                 * @param offload Not owned; null removes the installed one.
+                 * @see include/SushiRuntime/scheduler/README.md
                  */
-                void set_coordinator(Distributed::DistributedCoordinator* c);
+                void set_offload_coordinator(Graph::OffloadCoordinator* offload);
 
                 /**
-                 * @brief Releases an offloaded node's successors once its remote
-                 * result arrives — the network equivalent of EventPolling firing.
-                 *
-                 * Installed as the coordinator's completion hook. Uses submit() so
-                 * it is safe to invoke from the transport thread.
+                 * @brief Queues a node no worker finished and drops the coordinator's reference.
+                 * @param node Accepted by the coordinator's try_offload().
                  */
-                void complete_offloaded_node(Graph::Node* node, bool success);
-#endif
+                void resubmit(Graph::Node& node) override;
 
-            private:
-#ifdef SR_DISTRIBUTED
-                /** @brief Master-side offload brain; null unless in Master mode. */
-                Distributed::DistributedCoordinator* coordinator_ = nullptr;
-#endif
+                /**
+                 * @brief Releases a remotely finished node's successors, then drops the
+                 *        coordinator's reference.
+                 * @param node Accepted by the coordinator's try_offload().
+                 * @see include/SushiRuntime/scheduler/README.md
+                 */
+                void complete_remote(Graph::Node& node) override;
         };
 
     } // namespace Scheduler

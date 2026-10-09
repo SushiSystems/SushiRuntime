@@ -35,7 +35,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-#include <functional>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/scheduler/task.hpp>
 #include <SushiRuntime/scheduler/ready_sink.hpp>
@@ -44,6 +43,7 @@
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/core/profiling_ledger.hpp>
 #include <SushiRuntime/graph/node.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 
 namespace SushiRuntime
 {
@@ -159,18 +159,15 @@ namespace SushiRuntime
                     }
                 };
 
-#ifdef SR_DISTRIBUTED
                 /**
-                 * @brief Installs an observer fired for each completed task.
-                 *
-                 * Used in Master mode to bump the versions of any registered
-                 * buffers the completed node wrote, keeping remote caches coherent.
+                 * @brief Names the coordinator told of every graph node this poller reaps.
+                 * @pre No worker is polling.
+                 * @param offload Not owned; null for none.
                  */
-                void set_completion_observer(std::function<void(SushiRuntime::Scheduler::Task*)> cb)
+                void set_offload_coordinator(Graph::OffloadCoordinator* offload) noexcept
                 {
-                    on_node_complete_ = std::move(cb);
+                    offload_ = offload;
                 }
-#endif
 
                 /**
                  * @brief Turns per-node kernel timing capture on or off.
@@ -239,10 +236,8 @@ namespace SushiRuntime
                 std::mutex*              quiesce_mutex_ = nullptr;
                 std::condition_variable* quiesce_cv_ = nullptr;
 
-#ifdef SR_DISTRIBUTED
-                /** @brief Optional per-completion observer (Master mode only). */
-                std::function<void(SushiRuntime::Scheduler::Task*)> on_node_complete_;
-#endif
+                /** @brief Told of each locally completed graph node; null for none. */
+                Graph::OffloadCoordinator* offload_ = nullptr;
                 /** @brief Whether to accumulate per-node kernel timing on completion. */
                 std::atomic<bool> profiling_{false};
                 /** @brief The armed round's event ledger, or null when it does not profile. */
@@ -303,11 +298,10 @@ namespace SushiRuntime
                             if (profiling)
                                 accumulate_profiling(active_events[i]);
 
-#ifdef SR_DISTRIBUTED
-                            // Observed before successors are released, so they see a version bump.
-                            if (on_node_complete_)
-                                on_node_complete_(active_events[i].task);
-#endif
+                            // Told before successors are released, so they see a version bump.
+                            if (offload_ != nullptr)
+                                report_local_completion(active_events[i].task);
+
                             trigger_successors(active_events[i].task, local_queue);
 
                             if (active_events[i].task)
@@ -351,6 +345,17 @@ namespace SushiRuntime
                 }
 
             private:
+                /**
+                 * @brief Tells the installed coordinator that the pool finished a graph node.
+                 * @pre offload_ is not null.
+                 * @param task The reaped task; null or a non-graph task is not reported.
+                 */
+                void report_local_completion(SushiRuntime::Scheduler::Task* task) noexcept
+                {
+                    if (task && task->is_graph_node())
+                        offload_->on_local_completion(*static_cast<Graph::Node*>(task));
+                }
+
                 /**
                  * @brief Writes this dispatch's event record before the completion is published.
                  * @see include/SushiRuntime/scheduler/README.md

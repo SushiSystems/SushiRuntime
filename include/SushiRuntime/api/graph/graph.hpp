@@ -2965,7 +2965,7 @@ namespace SushiRuntime
                     for (auto& token : reduce_registration_tokens_)
                         token->reset();
 
-                    BackingGraph bg(*ctx_);
+                    BackingGraph bg(ctx_->offload());
                     for (auto& spec : specs_)
                     {
                         spec.emit(bg);

@@ -37,16 +37,12 @@
 #include <SushiRuntime/core/logger.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/graph/dependency_tracker.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#ifdef SR_DISTRIBUTED
-#include <SushiRuntime/distributed/distributed_coordinator.hpp>
-#endif
+#include <SushiRuntime/task/offload_coordinator.hpp>
 
-namespace SushiRuntime 
+namespace SushiRuntime
 {
     namespace Graph
     {
-        using namespace SushiRuntime::Execution;
         using namespace SushiRuntime::Core;
 
         /**
@@ -84,8 +80,8 @@ namespace SushiRuntime
             /** @brief Tracker to handle automatic dependencies seamlessly. */
             DependencyTracker tracker;
 
-            /** @brief Reference to the runtime context. */
-            RuntimeContext& context;
+            /** @brief Given the compiled nodes by compile(); null for a local-only graph. */
+            OffloadCoordinator* offload = nullptr;
 
             /**
              * @brief Source of fresh registration indices, shared across add_* calls.
@@ -99,10 +95,9 @@ namespace SushiRuntime
 
             /**
              * @brief Constructs the internal implementation.
-             *
-             * @param ctx The runtime context used for execution.
+             * @param coordinator Not owned; null for a local-only graph.
              */
-            Impl(RuntimeContext& ctx) : context(ctx) {}
+            explicit Impl(OffloadCoordinator* coordinator) : offload(coordinator) {}
 
             /**
              * @brief Destroys the internal implementation.
@@ -188,13 +183,17 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Constructs a new TaskGraph.
-         *
-         * @param ctx The runtime context used to execute tasks.
+         * @brief Creates an empty task graph.
+         * @param offload Not owned; null for a graph that runs only on the local pool.
          */
-        TaskGraph::TaskGraph(RuntimeContext& ctx) : impl_(make_sushi<Impl>(ctx))
+        TaskGraph::TaskGraph(OffloadCoordinator* offload) : impl_(make_sushi<Impl>(offload))
         {
             SR_LOG_DEBUG("Lock-Free O(1) TaskGraph initialized.");
+        }
+
+        /** @brief Creates an empty task graph with no offload coordinator. */
+        TaskGraph::TaskGraph(Execution::RuntimeContext&) : TaskGraph(nullptr)
+        {
         }
 
         /**
@@ -602,10 +601,8 @@ namespace SushiRuntime
             graph.sentinel = std::move(sentinel);
             impl_->tracker.reset(); // Safely clear the lock-free history
 
-#ifdef SR_DISTRIBUTED
-            if (auto* coordinator = impl_->context.distributed_coordinator())
-                coordinator->prepare(graph.all_nodes);
-#endif
+            if (impl_->offload != nullptr)
+                impl_->offload->prepare(graph.all_nodes);
 
             SR_LOG_INFO("DAG compilation completed successfully.");
             return graph;

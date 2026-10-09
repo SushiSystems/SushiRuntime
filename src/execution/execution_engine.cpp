@@ -386,12 +386,11 @@ namespace SushiRuntime
             return m;
         }
 
-#ifdef SR_DISTRIBUTED
-        SushiRuntime::Scheduler::TaskScheduler& ExecutionEngine::scheduler_ref()
+        /** @brief Forwards to the scheduler's set_offload_coordinator(). */
+        void ExecutionEngine::install_offload(Graph::OffloadCoordinator* offload)
         {
-            return impl_->scheduler;
+            impl_->scheduler.set_offload_coordinator(offload);
         }
-#endif
 
         /**
          * @brief Runs a compiled graph on the persistent worker pool and waits.

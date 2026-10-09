@@ -274,9 +274,16 @@ The search is linear in live allocations, so it belongs in graph building, never
 
 ### enable_distributed_master
 
-enable_distributed_master() creates the buffer registry and the coordinator, installs the scheduler
-completion hook, and starts the transport. Until it is called the context behaves exactly as
-Standalone, with zero overhead.
+enable_distributed_master() creates the buffer registry and the coordinator, installs the
+coordinator with install_offload(), and starts the transport. Until it is called the context
+behaves exactly as Standalone.
+
+### install_offload and offload
+
+install_offload() gives the scheduler the Graph::OffloadCoordinator that may run graph nodes
+elsewhere; null removes it. The context does not own the coordinator and calls its stop() when the
+context is destroyed. offload() returns the installed pointer, or nullptr. A TaskGraph offloads only
+when it is constructed with that pointer.
 
 ## runtime_settings.hpp
 

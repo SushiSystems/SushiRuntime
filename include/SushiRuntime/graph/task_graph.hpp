@@ -53,6 +53,7 @@ namespace SushiRuntime
     namespace Graph
     {
         struct Node;
+        class OffloadCoordinator;
 
         /**
          * @brief Manages and optimizes dependencies between async tasks.
@@ -67,11 +68,19 @@ namespace SushiRuntime
                 static constexpr std::uint32_t NO_REGISTRATION = static_cast<std::uint32_t>(-1);
 
                 /**
-                 * @brief Creates a new task graph.
-                 * @param ctx Reference to the associated RuntimeContext.
+                 * @brief Creates an empty task graph.
+                 * @param offload Given the compiled nodes by compile(); null for a graph that
+                 *        runs only on the local pool. Not owned; outlives the graph.
                  */
-                TaskGraph(SushiRuntime::Execution::RuntimeContext& ctx);
-                
+                explicit TaskGraph(OffloadCoordinator* offload = nullptr);
+
+                /**
+                 * @brief Creates an empty task graph with no offload coordinator.
+                 * @param context Not read; a graph that offloads takes context.offload() instead.
+                 */
+                explicit TaskGraph(SushiRuntime::Execution::RuntimeContext& context);
+
+
                 /** @brief Destroys the graph and cleans up task states. */
                 ~TaskGraph();
 

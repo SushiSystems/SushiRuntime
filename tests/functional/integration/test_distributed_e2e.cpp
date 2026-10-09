@@ -236,7 +236,7 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
     master_ctx->register_distributed_buffer(b,   N * sizeof(float));
     master_ctx->register_distributed_buffer(out, N * sizeof(float));
 
-    TaskGraph graph(*master_ctx);
+    TaskGraph graph(master_ctx->offload());
     TaskMetadata meta{};
     meta.name  = "vec_add";
     meta.op_id = VEC_ADD;
@@ -362,7 +362,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     master_ctx->register_distributed_buffer(y0, N * sizeof(float));
     master_ctx->register_distributed_buffer(y1, N * sizeof(float));
 
-    TaskGraph graph(*master_ctx);
+    TaskGraph graph(master_ctx->offload());
     for (float* y : {y0, y1})
     {
         TaskMetadata m{};
@@ -463,7 +463,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     const auto x_before = master_ctx->distributed_buffer(x);
     ASSERT_TRUE(x_before.has_value());
 
-    TaskGraph graph(*master_ctx);
+    TaskGraph graph(master_ctx->offload());
 
     // Task A: LOCAL writer (no op_id) — fills x[i] = i + 1.
     TaskMetadata write_meta{};
@@ -582,7 +582,7 @@ TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
     master_ctx->register_distributed_buffer(b,   N * sizeof(float));
     master_ctx->register_distributed_buffer(out, N * sizeof(float));
 
-    TaskGraph graph(*master_ctx);
+    TaskGraph graph(master_ctx->offload());
     TaskMetadata meta{};
     meta.name  = "vec_add_tcp";
     meta.op_id = VEC_ADD;
@@ -698,7 +698,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     master_ctx->register_distributed_buffer(b,   N * sizeof(float));
     master_ctx->register_distributed_buffer(out, N * sizeof(float));
 
-    TaskGraph graph(*master_ctx);
+    TaskGraph graph(master_ctx->offload());
     TaskMetadata meta{};
     meta.name  = "vec_add_death";
     meta.op_id = VEC_ADD;
@@ -877,7 +877,7 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
     master_ctx->register_distributed_buffer(b,   N * sizeof(float));
     master_ctx->register_distributed_buffer(out, N * sizeof(float));
 
-    TaskGraph graph(*master_ctx);
+    TaskGraph graph(master_ctx->offload());
     TaskMetadata meta{};
     meta.name  = "vec_add_lost_push";
     meta.op_id = VEC_ADD;
