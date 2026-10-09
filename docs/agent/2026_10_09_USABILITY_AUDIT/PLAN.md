@@ -220,3 +220,32 @@ Found by workers while reading the coordinator and the scheduler; none is fixed 
 - `try_offload` copies the two baked handle vectors on every dispatch.
 - A run hangs when the task deadline is 0 and a live worker never answers.
 - The flag-off build of steps 5 and 6 passed a syntax check only; it is built and tested once step 8 has removed the flag below `distributed`.
+## Physical move (B7): how it is staged
+
+Decided by the orchestrator on 2026-10-10, after reading the build files. The owner ruled that
+nothing is built until the layout refactor is complete, so the first configure of the new build
+files is also the first build of steps 7 to 9. To keep that run debuggable the move lands as the
+smallest change that makes the layout real, and the rest of Part 3 of the spec follows it, each
+part with its own build.
+
+In the move commit:
+
+- Every file goes where the move map of `SPEC.md` puts it; the 47 files added since the map was
+  written follow their folder. A script in the scratchpad (`move_map.py`, `move_map.json`) parses
+  the map; the move itself is `git mv` driven by that table.
+- The seven headers that only forward today (`graph/task_types.hpp`, `graph/node.hpp`,
+  `graph/late_bindings.hpp`, `scheduler/task.hpp`, `scheduler/ready_sink.hpp`,
+  `interop/host_export.hpp`, and `version.hpp` after its move) are deleted and generated from
+  `cmake/SushiRuntimeMovedHeaders.cmake`, with the eight `core/` headers that change module.
+- In-repository includes move to the new paths.
+- `cmake/SushiRuntimeTiers.cmake`, `SushiRuntimeModule.cmake` and `SushiRuntimeLibrary.cmake`:
+  one OBJECT library per module, compiled with the include roots of its declared dependencies
+  only, composed into the one shared library. `DEPENDS` lists are computed from the includes.
+- SYCL flags keep today's mechanism (`add_sycl_to_target` on a module's sources).
+- Test programs: one per module with tests, and the root programs of the spec's table.
+- `CMakePresets.json` deleted; `examples/` to `applications/examples/`.
+
+After the first passing build, each with a build of its own: the header-check targets, the SYCL
+flag targets, the options and sanitizer files, the install split, test labels through
+`TEST_INCLUDE_FILES`, `.config/`, hidden visibility with `SR_API`, `tests/embed/`, the checker
+rules and `set(SR_INSTALL ON)` in the three parents.
