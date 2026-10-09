@@ -573,7 +573,7 @@ sr run sr_distributed_demo --distributed=master --port=5555 --workers=1
 
 The fluent API can drive the same offload without touching the protocol. A
 `State` marked `distributed()` registers both of its double-buffered allocations
-with the cluster, and `rt.cluster(transport, kernels, policy)` returns a handle
+with the cluster, and `Distributed::Cluster::attach(rt, transport, kernels, policy)` returns a handle
 that hands tasks to workers under the chosen `IOffloadPolicy`. Because a `State`
 swaps buffers every step, the offload handles are resolved at dispatch time
 rather than baked at compile time, so the same `add(op, state, fallback)` step

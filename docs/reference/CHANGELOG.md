@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Made `distributed()` on buffers and states and the offload figures of the run report unconditional; without a cluster they do nothing (`buffer.hpp`, `state.hpp`, `run_report_builder.hpp`).
+- 2026-10-10 — execution: Removed `RuntimeRole` and the distributed members of `RuntimeContext`; `install_offload` takes shared ownership of the coordinator (`runtime_context.hpp`, `runtime_context.cpp`).
+- 2026-10-10 — distributed: Added `Cluster::attach` and its detach; removed `Runtime::cluster` and the api cluster header, so a cluster is attached from the distributed layer (`distributed/cluster.hpp`, `cluster.cpp`, `runtime.hpp`).
 - 2026-10-10 — execution: Added `RuntimeContext::install_offload` and `offload`; the distributed coordinator implements the seam and the release observer (`runtime_context.hpp`, `distributed_coordinator.hpp`).
 - 2026-10-10 — scheduler: Removed `set_coordinator`, `complete_offloaded_node` and the engine's `scheduler_ref`; the offload seam replaces them in every build (`task_scheduler.hpp`, `event_polling.hpp`).
 - 2026-10-10 — graph: Changed `TaskGraph` to take an offload coordinator; a graph built from a context no longer offloads unless it is given `ctx.offload()` (`task_graph.hpp`, `task_graph.cpp`, `graph.hpp`).

@@ -1,18 +1,9 @@
 # api/runtime
 
-The Runtime entry point, its configuration and the Cluster handle.
+The Runtime entry point and its configuration.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
-
-## cluster.hpp
-
-### Cluster
-
-Runtime::cluster() returns a Cluster after promoting the runtime to Master and wiring the transport.
-The handle bundles the cluster's tuning knobs and telemetry so callers do not reach into
-RuntimeContext's distributed_\* surface directly. Offloadable tasks are still added with
-op_id-bearing task metadata; the handle governs the cluster, not the graph.
 
 ## runtime.hpp
 
@@ -71,8 +62,5 @@ not cover. The name is a warning: code that reaches it couples to a non-public t
 across versions. The fluent API or advanced() is the better choice wherever either is enough. The
 returned reference is owned by this Runtime.
 
-### cluster
-
-cluster() is a thin fluent wrapper over RuntimeContext::enable_distributed_master: it wires the
-transport and starts serving. Until it is called, the runtime is a fully offline single machine with
-zero distributed overhead.
+The distributed layer sits above this one and enters through it: Distributed::Cluster::attach()
+takes the Runtime and installs its master on this context, so no header here names a transport.

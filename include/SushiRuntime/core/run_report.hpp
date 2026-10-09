@@ -170,7 +170,7 @@ namespace SushiRuntime
             std::vector<NumaNodeStatistics> numa_statistics;      /**< Per-node breakdown (one entry per active node). */
 
             // D. Distributed breakdown
-            DistributedStatistics distributed_statistics;         /**< Offload/network stats (Master mode). */
+            DistributedStatistics distributed_statistics;         /**< Offload and network figures; zero with no cluster. */
 
             // E. PCIe / SYCL host-device transfers (reserved)
             std::size_t host_to_device_bytes = 0;       /**< Bytes moved by explicit write_range calls during the run. */

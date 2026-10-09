@@ -42,7 +42,9 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
+#include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
@@ -126,18 +128,19 @@ namespace
                   << " for " << workers << " worker(s)\n";
 
         auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-        ctx.enable_distributed_master(transport, make_sushi<KernelRegistry>(), policy);
+        auto cluster = Distributed::Cluster::attach(ctx, transport,
+                                                    make_sushi<KernelRegistry>(), policy);
 
         // Wait for the cluster to assemble.
-        for (int i = 0; i < 600 && ctx.distributed_alive_workers() < workers; ++i)
+        for (int i = 0; i < 600 && cluster.alive_workers() < workers; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        if (ctx.distributed_alive_workers() < workers)
+        if (cluster.alive_workers() < workers)
         {
-            std::cerr << "[master] only " << ctx.distributed_alive_workers()
+            std::cerr << "[master] only " << cluster.alive_workers()
                       << "/" << workers << " workers registered; aborting.\n";
             return 1;
         }
-        std::cout << "[master] " << ctx.distributed_alive_workers() << " worker(s) ready\n";
+        std::cout << "[master] " << cluster.alive_workers() << " worker(s) ready\n";
 
         sycl::queue& q = ctx.get_queue(0);
         float* a   = sycl::malloc_shared<float>(n, q);
@@ -150,9 +153,9 @@ namespace
             out[i] = 0.0f;
         }
 
-        ctx.register_distributed_buffer(a,   n * sizeof(float));
-        ctx.register_distributed_buffer(b,   n * sizeof(float));
-        ctx.register_distributed_buffer(out, n * sizeof(float));
+        ctx.offload()->share(a,   n * sizeof(float));
+        ctx.offload()->share(b,   n * sizeof(float));
+        ctx.offload()->share(out, n * sizeof(float));
 
         TaskGraph graph(ctx.offload());
         TaskMetadata meta{};
@@ -185,8 +188,8 @@ namespace
         }
 
         std::cout << "[master] result " << (ok ? "CORRECT" : "WRONG")
-                  << " | offloaded=" << ctx.distributed_offloaded_count()
-                  << " declined=" << ctx.distributed_declined_count()
+                  << " | offloaded=" << cluster.offloaded()
+                  << " declined=" << cluster.declined()
                   << " | out[1]=" << out[1] << " out[" << (n - 1) << "]=" << out[n - 1] << "\n";
 
         sycl::free(a, q);

@@ -31,6 +31,7 @@
 #include <cstddef>
 
 #include <SushiRuntime/core/run_report.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -77,12 +78,15 @@ namespace SushiRuntime
                 node.tasks_popped_local = (completed > stolen_total) ? (completed - stolen_total) : 0;
                 report.numa_statistics.push_back(node);
 
-#ifdef SR_DISTRIBUTED
-                auto& d = report.distributed_statistics;
-                d.tasks_offloaded_to_network = ctx.distributed_offloaded_count();
-                d.remote_nodes_involved =
-                    static_cast<std::size_t>(ctx.distributed_alive_workers());
-#endif
+                // report.reset() zeroed the offload figures; they stay zero with no coordinator.
+                if (const auto* offload = ctx.offload())
+                {
+                    const auto offload_statistics = offload->statistics();
+                    auto& distributed = report.distributed_statistics;
+                    distributed.tasks_offloaded_to_network =
+                        static_cast<std::size_t>(offload_statistics.offloaded);
+                    distributed.remote_nodes_involved = offload_statistics.alive_workers;
+                }
             }
 
         } // namespace detail

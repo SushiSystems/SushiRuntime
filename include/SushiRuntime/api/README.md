@@ -29,7 +29,7 @@ include that pulls them together.
 | `launch/` | The iteration geometry (Extent, NdRange) |
 | `vocabulary/` | The data-flow DSL (Reads/Writes, In/Out/InOut, Dynamic) and the reduction combiners (Sum, Minimum, Maximum) |
 | `graph/` | The chainable builders (Graph, Region, DynamicGraph) and RunHandle, the receipt for a step started asynchronously |
-| `runtime/` | The Runtime entry point, RuntimeConfig and the Cluster handle |
+| `runtime/` | The Runtime entry point and RuntimeConfig |
 | `detail/` | Callable traits, the per-step StepMachinery, report building |
 
 ### Promoted names

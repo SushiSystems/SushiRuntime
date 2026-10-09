@@ -272,18 +272,14 @@ containing_usm_base() lets a caller holding an interior pointer name the allocat
 which get_queue_for_ptr() and sycl::get_pointer_type() cannot: both answer on exact base addresses.
 The search is linear in live allocations, so it belongs in graph building, never in dispatch.
 
-### enable_distributed_master
-
-enable_distributed_master() creates the buffer registry and the coordinator, installs the
-coordinator with install_offload(), and starts the transport. Until it is called the context
-behaves exactly as Standalone.
-
 ### install_offload and offload
 
 install_offload() gives the scheduler the Graph::OffloadCoordinator that may run graph nodes
-elsewhere; null removes it. The context does not own the coordinator and calls its stop() when the
-context is destroyed. offload() returns the installed pointer, or nullptr. A TaskGraph offloads only
-when it is constructed with that pointer.
+elsewhere; null removes it. The context shares ownership of the coordinator: it calls stop() on the
+one still installed when the context is destroyed, and releases it after the engine has shut down.
+offload() returns the installed pointer, or nullptr. A TaskGraph offloads only when it is
+constructed with that pointer. With no coordinator installed the context is a single machine;
+Distributed::Cluster::attach() is what installs one.
 
 ## runtime_settings.hpp
 

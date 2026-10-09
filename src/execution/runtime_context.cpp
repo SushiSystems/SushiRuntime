@@ -50,9 +50,6 @@
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
-#ifdef SR_DISTRIBUTED
-#include <SushiRuntime/distributed/distributed_coordinator.hpp>
-#endif
 
 namespace SushiRuntime
 {
@@ -163,10 +160,8 @@ namespace SushiRuntime
                 if (offload)
                     offload->stop();
 
-#ifdef SR_DISTRIBUTED
-                // The allocator can outlive this object; it must not keep a pointer into it.
+                // The allocator can outlive the coordinator this object releases below.
                 memory->set_release_observer(nullptr);
-#endif
 
                 // The engine is destroyed before devices drains (src/execution/README.md).
                 if (engine)
@@ -175,10 +170,8 @@ namespace SushiRuntime
                     engine.reset();
                 }
 
-#ifdef SR_DISTRIBUTED
                 // The scheduler holds the coordinator's address until its workers have joined.
-                coordinator.reset();
-#endif
+                offload.reset();
             }
 
             Impl(const Impl&) = delete;
@@ -220,19 +213,8 @@ namespace SushiRuntime
             /** @brief Byte counters of explicit transfers (src/execution/README.md). */
             Observability::TransferCounters transfers;
 
-#ifdef SR_DISTRIBUTED
-            /** @brief Deployment role; Standalone unless explicitly promoted. */
-            RuntimeContext::RuntimeRole role = RuntimeContext::RuntimeRole::Standalone;
-
-            /** @brief Master-side buffer id registry (created in Master mode). */
-            std::unique_ptr<Distributed::BufferRegistry> buffers;
-
-            /** @brief Master-side offload coordinator (created in Master mode). */
-            std::unique_ptr<Distributed::DistributedCoordinator> coordinator;
-#endif
-
-            /** @brief Installed offload coordinator, not owned; null when there is none. */
-            Graph::OffloadCoordinator* offload = nullptr;
+            /** @brief Installed offload coordinator, co-owned; null when there is none. */
+            std::shared_ptr<Graph::OffloadCoordinator> offload;
 
             /** @brief Execution engine; built last, by RuntimeContext's constructor. */
             std::unique_ptr<ExecutionEngine> engine;
@@ -293,17 +275,19 @@ namespace SushiRuntime
                 impl_->engine->shutdown();
         }
 
-        void RuntimeContext::install_offload(Graph::OffloadCoordinator* offload)
+        void RuntimeContext::install_offload(std::shared_ptr<Graph::OffloadCoordinator> offload)
         {
             SR_THROW_IF(!impl_->engine,
                         "ExecutionEngine is not initialized: the context is still being built.");
-            impl_->engine->install_offload(offload);
-            impl_->offload = offload;
+            impl_->engine->install_offload(offload.get());
+
+            // The engine holds the new address before the replaced coordinator is released.
+            impl_->offload = std::move(offload);
         }
 
         Graph::OffloadCoordinator* RuntimeContext::offload() const noexcept
         {
-            return impl_->offload;
+            return impl_->offload.get();
         }
 
         bool RuntimeContext::profiling_enabled() const noexcept
@@ -465,115 +449,6 @@ namespace SushiRuntime
         {
             impl_->devices.wait_all();
         }
-
-#ifdef SR_DISTRIBUTED
-        void RuntimeContext::enable_distributed_master(
-            std::shared_ptr<Distributed::ITransport> transport,
-            sushi_ptr<Distributed::KernelRegistry>   kernels,
-            std::shared_ptr<Distributed::IOffloadPolicy> policy)
-        {
-            SR_THROW_IF(!transport, "enable_distributed_master requires a transport.");
-            SR_THROW_IF(!impl_->engine, "ExecutionEngine must be initialized before Master mode.");
-
-            if (!policy)
-                policy = std::make_shared<Distributed::LeastLoadedOffloadPolicy>();
-
-            // The allocator and the scheduler let go of a coordinator before it is destroyed.
-            impl_->memory->set_release_observer(nullptr);
-            install_offload(nullptr);
-            impl_->coordinator.reset();
-
-            impl_->buffers = std::make_unique<Distributed::BufferRegistry>();
-            impl_->coordinator = std::make_unique<Distributed::DistributedCoordinator>(
-                std::move(kernels), *impl_->buffers, std::move(transport), std::move(policy));
-            impl_->memory->set_release_observer(impl_->coordinator.get());
-
-            // The coordinator is installed before its monitor starts (src/execution/README.md).
-            install_offload(impl_->coordinator.get());
-            impl_->coordinator->start();
-            impl_->role = RuntimeRole::Master;
-
-            SR_LOG_INFO("RuntimeContext promoted to distributed Master mode.");
-        }
-
-        Distributed::BufferHandle RuntimeContext::register_distributed_buffer(void* usm_ptr,
-                                                                              uint64_t size_bytes)
-        {
-            SR_THROW_IF(!impl_->coordinator, "register_distributed_buffer requires Master mode.");
-            impl_->coordinator->share(usm_ptr, size_bytes);
-
-            const std::optional<Distributed::BufferHandle> handle = impl_->buffers->lookup(usm_ptr);
-            SR_THROW_IF(!handle, "register_distributed_buffer lost the buffer it registered.");
-            return *handle;
-        }
-
-        void RuntimeContext::bump_distributed_buffer(void* usm_ptr)
-        {
-            if (impl_->buffers)
-                impl_->buffers->bump_version(usm_ptr);
-        }
-
-        void RuntimeContext::unregister_distributed_buffer(void* usm_ptr)
-        {
-            if (impl_->buffers)
-                impl_->buffers->unregister_buffer(usm_ptr);
-        }
-
-        std::optional<Distributed::BufferHandle>
-        RuntimeContext::distributed_buffer(void* usm_ptr) const
-        {
-            if (!impl_->buffers)
-                return std::nullopt;
-            return impl_->buffers->lookup(usm_ptr);
-        }
-
-        bool RuntimeContext::distributed_supports(Graph::OpID op) const
-        {
-            return impl_->coordinator && impl_->coordinator->supports(op);
-        }
-
-        RuntimeContext::RuntimeRole RuntimeContext::distributed_role() const
-        {
-            return impl_->role;
-        }
-
-        uint64_t RuntimeContext::distributed_offloaded_count() const
-        {
-            return impl_->coordinator ? impl_->coordinator->offloaded_count() : 0;
-        }
-
-        uint64_t RuntimeContext::distributed_declined_count() const
-        {
-            return impl_->coordinator ? impl_->coordinator->declined_count() : 0;
-        }
-
-        uint64_t RuntimeContext::distributed_redispatched_count() const
-        {
-            return impl_->coordinator ? impl_->coordinator->redispatched_count() : 0;
-        }
-
-        uint64_t RuntimeContext::distributed_stale_writeback_count() const
-        {
-            return impl_->coordinator ? impl_->coordinator->stale_writeback_count() : 0;
-        }
-
-        void RuntimeContext::distributed_set_liveness_timeout(std::chrono::milliseconds timeout)
-        {
-            if (impl_->coordinator)
-                impl_->coordinator->set_liveness_timeout(timeout);
-        }
-
-        void RuntimeContext::distributed_set_task_deadline(std::chrono::milliseconds deadline)
-        {
-            if (impl_->coordinator)
-                impl_->coordinator->set_task_deadline(deadline);
-        }
-
-        int RuntimeContext::distributed_alive_workers() const
-        {
-            return impl_->coordinator ? impl_->coordinator->alive_worker_count() : 0;
-        }
-#endif
 
     } // namespace Execution
 } // namespace SushiRuntime

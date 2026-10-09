@@ -41,7 +41,6 @@
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/graph/dynamic_graph.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
-#include <SushiRuntime/api/runtime/cluster.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 

@@ -230,19 +230,19 @@ with every queue available. The scheduler it starts lives as long as the `Runtim
 ### Destruction order
 
 The order in `~Impl` is load-bearing. The installed offload coordinator stops first, so no
-late remote completion can touch the scheduler while or after it is torn down. With the
-distributed layer compiled in, the allocator's release observer is cleared next: a `Buffer`
-holds the allocator through `shared_memory()` and can release its memory after the context
-is gone, and the observer it would call is the coordinator `Impl` owns. The
-`ExecutionEngine` goes after that; its
+late remote completion can touch the scheduler while or after it is torn down. The
+allocator's release observer is cleared next: a `Buffer` holds the allocator through
+`shared_memory()` and can release its memory after the context is gone, and the observer it
+would call is the coordinator `Impl` is about to release. The `ExecutionEngine` goes after
+that; its
 shutdown joins every worker thread and removes any dangling reference to a queue or to
 another `Impl` member. Only then is it safe to drain outstanding GPU work, which the
 `Device::DeviceQueueSet` does in its own destructor when `Impl`'s members are destroyed, so
 every hardware operation has completed before the SYCL objects it used go out of scope.
 
-The stopped coordinator is destroyed after the engine, not when it stops. The scheduler keeps
-its address for the offload branch, the poller for the completion call, and a worker can read it
-until the engine's shutdown has joined the pool.
+`Impl` releases its share of the stopped coordinator after the engine, not when it stops. The
+scheduler keeps its address for the offload branch, the poller for the completion call, and a
+worker can read it until the engine's shutdown has joined the pool.
 
 The set's destructor logs a late asynchronous device error and continues;
 `include/SushiRuntime/device/README.md` says why.
@@ -309,10 +309,9 @@ owner the first is already acting on. The free goes against the owning queue's c
 which correctness requires; without a record it falls back to queue 0 as a best effort and
 logs a WARN. An address recorded through `adopt_usm()` is forgotten and not freed.
 
-With the distributed layer compiled in, the coordinator is the allocator's
-`Memory::UsmReleaseObserver`: it unregisters the address from the buffer registry before the
-record is dropped and the memory freed. `enable_distributed_master()` installs it as soon as
-it has built the coordinator.
+The allocator tells a `Memory::UsmReleaseObserver` about a release before the record is
+dropped and the memory freed. The context installs none; `Distributed::Cluster::attach()`
+installs its coordinator there, and `~Impl` clears whatever is installed.
 
 `containing_usm_base()` resolves an interior pointer to the base `owner_of()` knows, for
 callers validating a pointer a user handed them. It is linear in live allocations, which
@@ -321,15 +320,11 @@ makes it a registration-time query and not a dispatch-time one.
 ### Offload coordinator
 
 `install_offload()` hands a `Graph::OffloadCoordinator` to the engine, which forwards it to
-the scheduler's `set_offload_coordinator()`, and records the pointer `offload()` returns. The
-context does not own it. A graph offloads only when it was built with that pointer:
-`TaskGraph(ctx.offload())`, which the fluent `Graph` and `DynamicGraph` pass themselves.
-
-### Distributed master
-
-`enable_distributed_master()` builds the buffer registry and the coordinator, sets the
-coordinator as the allocator's release observer and calls `install_offload()`, which makes
-the dispatch loop's offload branch live. The coordinator is installed, and so bound to its
-sink, before `start()` launches the monitor thread. Otherwise a worker reaped in the first
-liveness window would find no sink to resubmit to. A second call releases the previous
-coordinator from the allocator and the scheduler and destroys it before its registry.
+the scheduler's `set_offload_coordinator()`, and keeps the `shared_ptr` whose address
+`offload()` returns. The context shares ownership so that the coordinator outlives the
+engine's shutdown whatever its installer does with its own reference. Installing another
+coordinator, or null, releases the share after the engine holds the new address. The context
+never names a concrete coordinator: `src/distributed/README.md` describes the one the
+distributed layer installs. A graph offloads only when it was built with the installed
+pointer: `TaskGraph(ctx.offload())`, which the fluent `Graph` and `DynamicGraph` pass
+themselves.

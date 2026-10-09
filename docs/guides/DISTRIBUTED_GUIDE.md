@@ -109,32 +109,37 @@ length).
 
 ### Master
 
-A normal `RuntimeContext` is *promoted* to master. You give it a connected
-transport, a kernel registry, and (optionally) an offload policy:
+A cluster is attached to a normal runtime. `Distributed::Cluster::attach` takes
+the `API::Runtime` (or a bare `RuntimeContext`), a connected transport, a kernel
+registry, and optionally an offload policy, and returns a handle:
 
 ```cpp
+#include <SushiRuntime/distributed/cluster.hpp>
+
 auto transport = TcpTransport::make_master(/*port=*/5555, /*workers=*/4);
 auto policy    = std::make_shared<LeastLoadedOffloadPolicy>(/*min_offload_bytes=*/0);
-ctx.enable_distributed_master(transport, make_sushi<KernelRegistry>(), policy);
+auto cluster   = Distributed::Cluster::attach(rt, transport, make_sushi<KernelRegistry>(), policy);
 
-// Register the USM buffers that may cross the wire.
-ctx.register_distributed_buffer(a,   n * sizeof(float));
-ctx.register_distributed_buffer(b,   n * sizeof(float));
-ctx.register_distributed_buffer(out, n * sizeof(float));
+// Share the USM buffers that may cross the wire.
+ctx.offload()->share(a,   n * sizeof(float));
+ctx.offload()->share(b,   n * sizeof(float));
+ctx.offload()->share(out, n * sizeof(float));
 ```
 
-> **Fluent shortcut.** With the fluent API, `Runtime::cluster(transport, kernels,
-> policy)` promotes the runtime to Master and returns an `API::Cluster` handle that
-> bundles the tuning knobs and telemetry (`wait_for_workers`, `task_deadline`,
-> `liveness_timeout`, `offloaded()`/`stale_writebacks()`/…), and
-> `Buffer<T>::distributed()` registers a buffer inline. `State<T>::distributed()`
-> does the same for a stepped field: it registers *both* of the State's
-> allocations, which keep stable handles for the State's lifetime while only the
-> read-vs-write role rotates each step, so the offload path follows the live
-> pointers. Both are no-ops when the handle is empty.
+The handle bundles the tuning knobs and the telemetry (`wait_for_workers`,
+`task_deadline`, `liveness_timeout`, `offloaded()`, `stale_writebacks()` and the
+rest). It is a copyable view: destroying it leaves the cluster attached, and
+`cluster.detach()` removes it while no run is active.
 
-Until `enable_distributed_master` is called, the context behaves exactly as
-Standalone (zero overhead). A task becomes offloadable only if its
+> **Fluent shortcut.** `Buffer<T>::distributed()` shares a buffer inline.
+> `State<T>::distributed()` does the same for a stepped field: it shares *both* of
+> the State's allocations, which keep stable handles for the State's lifetime
+> while only the read-vs-write role rotates each step, so the offload path follows
+> the live pointers. Both do nothing when no cluster is attached or the handle is
+> empty.
+
+Until a cluster is attached, the runtime runs every node locally; the dispatch
+loop pays one pointer test per node. A task becomes offloadable only if its
 `TaskMetadata::op_id` is set to an `OpID` that some live worker supports — you set
 that when building the graph:
 
@@ -228,11 +233,11 @@ miss on its next use and re-pulls. The end-to-end test
 write to `X` bumps its version so a dependent offloaded reader sees the fresh
 bytes.
 
-This means **you must register a buffer** (`register_distributed_buffer`) before a
-task that touches it can be offloaded — an unregistered pointer has no handle to
-ship. Local writes to a registered buffer are tracked for you; if you mutate a
-registered buffer through a path the runtime can't see, call
-`bump_distributed_buffer(ptr)` to force the invalidation.
+This means **you must share a buffer** (`ctx.offload()->share(ptr, bytes)` or
+`Buffer<T>::distributed()`) before a task that touches it can be offloaded: a
+pointer that was never shared has no handle to ship. Local writes to a shared
+buffer are tracked for you; if you mutate one through a path the runtime can't
+see, call `cluster.bump_buffer(ptr)` to force the invalidation.
 
 ---
 
@@ -259,7 +264,7 @@ queue backlog** — excludes any worker whose `free_mem` is below the payload si
 tier of the same locality hierarchy the NUMA scheduler already uses.
 
 The policy is swappable: implement `IOffloadPolicy::pick_worker` and pass your
-instance to `enable_distributed_master`. **Returning `nullopt` is always safe** —
+instance to `Cluster::attach`. **Returning `nullopt` is always safe** —
 the task falls back to local execution.
 
 ---
@@ -268,7 +273,7 @@ the task falls back to local execution.
 
 Workers heartbeat (default every **1 s**, `WorkerAgent::set_heartbeat_interval`).
 The master's liveness monitor declares a worker dead if it is silent longer than
-the timeout (default **5 s**, `RuntimeContext::distributed_set_liveness_timeout`);
+the timeout (default **5 s**, `Cluster::liveness_timeout`);
 any inbound message refreshes liveness, so this only fires on a genuinely
 crashed/hung peer.
 
@@ -283,15 +288,19 @@ offloaded to never answers.
 
 ## 10. Telemetry
 
-The master exposes counters for observability:
+The cluster handle exposes counters for observability:
 
 ```cpp
-ctx.distributed_offloaded_count();     // tasks actually shipped to a worker
-ctx.distributed_declined_count();      // offloadable tasks the policy kept local
-ctx.distributed_redispatched_count();  // tasks re-injected after a death/failure
-ctx.distributed_alive_workers();       // live registered workers
-ctx.distributed_supports(op);          // can the cluster run this OpID?
+cluster.offloaded();         // tasks actually shipped to a worker
+cluster.declined();          // offloadable tasks the policy kept local
+cluster.redispatched();      // tasks re-injected after a death/failure
+cluster.stale_writebacks();  // worker outputs dropped as out of date
+cluster.alive_workers();     // live registered workers
+cluster.supports(op);        // can the cluster run this OpID?
 ```
+
+`ctx.offload()->statistics()` returns the first five as one struct, through the
+interface the runtime itself sees.
 
 ---
 

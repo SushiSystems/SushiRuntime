@@ -40,7 +40,9 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
+#include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
@@ -148,9 +150,9 @@ namespace
         TaskGraph graph(ctx.offload());
         for (size_t t = 0; t < TASKS; ++t)
         {
-            ctx.register_distributed_buffer(w.a[t],   N * sizeof(float));
-            ctx.register_distributed_buffer(w.b[t],   N * sizeof(float));
-            ctx.register_distributed_buffer(w.out[t], N * sizeof(float));
+            ctx.offload()->share(w.a[t],   N * sizeof(float));
+            ctx.offload()->share(w.b[t],   N * sizeof(float));
+            ctx.offload()->share(w.out[t], N * sizeof(float));
 
             TaskMetadata meta{};
             meta.name  = "vec_add";
@@ -209,14 +211,15 @@ TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
 
     auto master_k = make_sushi<KernelRegistry>();
     auto policy   = std::make_shared<LeastLoadedOffloadPolicy>(0); // offload everything
-    master_ctx->enable_distributed_master(master_t, master_k, policy);
+    auto cluster = Distributed::Cluster::attach(*master_ctx, master_t,
+                                                master_k, policy);
     a0.start();
     a1.start();
 
     bool supported = false;
     for (int i = 0; i < 300 && !supported; ++i)
     {
-        supported = master_ctx->distributed_supports(VEC_ADD);
+        supported = cluster.supports(VEC_ADD);
         if (!supported)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -268,7 +271,7 @@ TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
     std::printf("  Per-task latency: %8.2f us (encode+pull+exec+writeback)\n", per_task_us);
     std::printf("  Offloaded       : %d / %zu   (declined %llu)\n",
                 offloaded, TASKS,
-                (unsigned long long)master_ctx->distributed_declined_count());
+                (unsigned long long)cluster.declined());
     std::printf("  Worker split    : w0=%d  w1=%d\n", r0, r1);
 
     EXPECT_TRUE(correct) << "Offloaded results written back to the master are wrong.";

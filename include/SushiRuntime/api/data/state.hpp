@@ -181,10 +181,9 @@ namespace SushiRuntime
                     swap(cur_, next_);
                 }
 
-#ifdef SR_DISTRIBUTED
                 /**
-                 * @brief Registers both fields as distributable buffers in Master mode; does
-                 *        nothing when empty.
+                 * @brief Shares both fields with the runtime's offload coordinator; does nothing
+                 *        when none is installed or the state is empty.
                  * @see include/SushiRuntime/api/data/README.md
                  */
                 State& distributed() &
@@ -201,7 +200,6 @@ namespace SushiRuntime
                     next_.distributed();
                     return std::move(*this);
                 }
-#endif // SR_DISTRIBUTED
 
             private:
                 Buffer<T> cur_;

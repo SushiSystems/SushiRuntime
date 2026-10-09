@@ -45,16 +45,6 @@
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
-#ifdef SR_DISTRIBUTED
-#include <chrono>
-#include <cstdint>
-#include <SushiRuntime/graph/task_types.hpp>
-#include <SushiRuntime/distributed/protocol.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
-#include <SushiRuntime/distributed/kernel_registry.hpp>
-#include <SushiRuntime/distributed/buffer_registry.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
-#endif
 
 namespace SushiRuntime
 {
@@ -68,7 +58,6 @@ namespace SushiRuntime
          *
          * Constructed once per process and shared (via shared_ptr) between the fluent
          * API layer and all graphs it produces. Uses Pimpl to keep the ABI stable.
-         * In Standalone mode (default) carries zero distributed overhead.
          */
         class SUSHIRUNTIME_API RuntimeContext
         {
@@ -138,13 +127,13 @@ namespace SushiRuntime
 
                 /**
                  * @brief Installs the coordinator that may run this context's graph nodes
-                 *        elsewhere.
+                 *        elsewhere, and shares its ownership.
                  * @pre No run is in flight.
-                 * @param offload Not owned; null removes the installed one. The destructor calls
-                 *        stop() on the one still installed.
+                 * @param offload Null removes the installed one. The context releases its share
+                 *        when another is installed and, in its destructor, after the engine.
                  * @see include/SushiRuntime/execution/README.md
                  */
-                void install_offload(Graph::OffloadCoordinator* offload);
+                void install_offload(std::shared_ptr<Graph::OffloadCoordinator> offload);
 
                 /** @brief Returns the installed offload coordinator, or nullptr for none. */
                 [[nodiscard]] Graph::OffloadCoordinator* offload() const noexcept;
@@ -293,74 +282,6 @@ namespace SushiRuntime
                 {
                     return static_cast<T*>(malloc_shared(count * sizeof(T), numa_id));
                 }
-
-#ifdef SR_DISTRIBUTED
-                /**
-                 * @brief Deployment role. Standalone is the default — the runtime
-                 * is a fully offline, single-machine library unless a cluster mode
-                 * is explicitly requested.
-                 */
-                enum class RuntimeRole { Standalone, Master, Worker };
-
-                /**
-                 * @brief Promotes this context to Master mode and wires the cluster.
-                 * @param transport Connected master-side transport, one peer per worker.
-                 * @param policy Offload policy; null selects LeastLoadedOffloadPolicy.
-                 * @see include/SushiRuntime/execution/README.md
-                 */
-                void enable_distributed_master(std::shared_ptr<Distributed::ITransport> transport,
-                                               sushi_ptr<Distributed::KernelRegistry>   kernels,
-                                               std::shared_ptr<Distributed::IOffloadPolicy> policy = nullptr);
-
-                /** @brief Registers a USM buffer as distributable (Master mode). */
-                Distributed::BufferHandle register_distributed_buffer(void* usm_ptr, uint64_t size_bytes);
-
-                /** @brief Bumps a buffer's version after a local write (invalidates remote caches). */
-                void bump_distributed_buffer(void* usm_ptr);
-
-                /** @brief Unregisters a buffer; memory().release() does it for a released address. */
-                void unregister_distributed_buffer(void* usm_ptr);
-
-                /** @brief Current handle for a registered pointer (used by compile()). */
-                std::optional<Distributed::BufferHandle> distributed_buffer(void* usm_ptr) const;
-
-                /** @brief True if the cluster can run this OpID (used by compile()). */
-                bool distributed_supports(Graph::OpID op) const;
-
-                /** @brief Current deployment role. */
-                RuntimeRole distributed_role() const;
-
-                /** @brief Tasks shipped to workers so far (Master mode telemetry; 0 otherwise). */
-                uint64_t distributed_offloaded_count() const;
-
-                /** @brief Offloadable tasks the policy kept local (Master mode telemetry). */
-                uint64_t distributed_declined_count() const;
-
-                /** @brief Tasks re-injected after a worker death / remote failure (Master mode telemetry). */
-                uint64_t distributed_redispatched_count() const;
-
-                /** @brief Writebacks rejected by the version fence — stale/superseded results (Master mode telemetry). */
-                uint64_t distributed_stale_writeback_count() const;
-
-                /**
-                 * @brief Sets the worker liveness timeout (Master mode).
-                 *
-                 * A worker silent for longer than this is declared dead and its
-                 * in-flight tasks are re-dispatched to a survivor or run locally.
-                 */
-                void distributed_set_liveness_timeout(std::chrono::milliseconds timeout);
-
-                /**
-                 * @brief Sets the per-task offload deadline (Master mode; default 30s).
-                 *
-                 * A task with no result within this bound is re-dispatched, covering
-                 * a lost dispatch/result to a still-heartbeating worker. 0 disables.
-                 */
-                void distributed_set_task_deadline(std::chrono::milliseconds deadline);
-
-                /** @brief Number of live (registered) workers in the cluster. */
-                int distributed_alive_workers() const;
-#endif
 
             private:
                 struct Impl;

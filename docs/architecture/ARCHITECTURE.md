@@ -906,14 +906,12 @@ The top-level owner (Pimpl, for a stable ABI; non-copyable, non-movable). It:
 - owns the `ExecutionEngine` and tears everything down in the correct order on
   `shutdown()` / destruction.
 
-When built with `SR_ENABLE_DISTRIBUTED`, `RuntimeContext` also carries a
-`RuntimeRole` enum (`Standalone` / `Master` / `Worker`) and exposes methods for
-buffer registration (`register_distributed_buffer`, `bump_distributed_buffer`,
-`unregister_distributed_buffer`, `distributed_buffer`), role query
-(`distributed_role`, `distributed_supports`), and telemetry
-(`distributed_offloaded_count`, `distributed_declined_count`,
-`distributed_redispatched_count`, `distributed_alive_workers`,
-`distributed_set_liveness_timeout`). These are all zero-cost when the macro is off.
+`RuntimeContext` knows the distributed layer only as a `Graph::OffloadCoordinator`:
+`install_offload()` installs one and `offload()` returns it, or `nullptr`. The
+type is the same in every build. With `SR_ENABLE_DISTRIBUTED`,
+`Distributed::Cluster::attach()` builds the buffer registry and the coordinator,
+installs them, and returns the handle that carries the knobs, the telemetry and
+the buffer version calls.
 
 **The cross-context invariant.** USM is pinned to the device/context it was
 allocated on. Running a kernel on a sibling device's queue (e.g. CPU USM on a

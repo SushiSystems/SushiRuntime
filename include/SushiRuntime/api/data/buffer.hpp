@@ -44,6 +44,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/allocation.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 
 namespace SushiRuntime
 {
@@ -379,30 +380,35 @@ namespace SushiRuntime
                                                 count * sizeof(T)};
                 }
 
-#ifdef SR_DISTRIBUTED
                 /**
-                 * @brief Registers this buffer as distributable in Master mode; does nothing when
-                 *        empty.
+                 * @brief Shares this buffer with the runtime's offload coordinator; does nothing
+                 *        when none is installed or the buffer is empty.
                  * @return *this from the lvalue overload, the buffer by value from the rvalue
                  *        overload.
                  * @see include/SushiRuntime/api/data/README.md
                  */
                 Buffer& distributed() &
                 {
-                    if (ctx_ && data())
-                        ctx_->register_distributed_buffer(data(), size_ * sizeof(T));
+                    share_with_offload();
                     return *this;
                 }
 
                 Buffer distributed() &&
                 {
-                    if (ctx_ && data())
-                        ctx_->register_distributed_buffer(data(), size_ * sizeof(T));
+                    share_with_offload();
                     return std::move(*this);
                 }
-#endif // SR_DISTRIBUTED
 
             private:
+                /** @brief Hands the allocation to the installed offload coordinator, if any. */
+                void share_with_offload()
+                {
+                    if (!ctx_ || !data())
+                        return;
+                    if (auto* offload = ctx_->offload())
+                        offload->share(data(), size_ * sizeof(T));
+                }
+
                 /** @brief Throws an invalid_access error when host indexing is invalid. */
                 void require_host_accessible(const char* where) const
                 {

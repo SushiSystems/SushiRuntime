@@ -184,7 +184,8 @@ Each row is closed by `sr build --distributed` and `sr test` on the machine of p
 | B2, `CompiledGraph` to graph, seam headers, `RuntimeContext` on the bricks | `f53630b`, `d305f03`, `23719da` | 414 of 414 passed, 3 skipped | 19 of 19 passed |
 | Step 5, scheduler off the context | `159d09b` | 414 of 414 passed, 3 skipped | 19 of 19 passed; scheduler 141 ns per task (130 to 156), root fan-out 5 394 to 6 202 ns, chain layer 5 856 to 6 557 ns, wide fan-out 898 ns (442 to 1 321) |
 | Step 6, offload state on the seam type | `5281030`, `78b445c` | 414 of 414 passed, 3 skipped | not run; the step adds nothing to a node without a coordinator |
-| Step 7, control path on the seam | `refactor(scheduler)!` after `78b445c` | not built: the owner ruled on 2026-10-10 that the steps from here are built and tested once, when the refactor is complete. Syntax check of 120 units passed, flag-off check of 9 units passed | not run |
+| Step 7, control path on the seam | `ecf6bda` | not built: the owner ruled on 2026-10-10 that the steps from here are built and tested once, when the refactor is complete. Syntax check of 120 units passed, flag-off check of 9 units passed | not run |
+| Step 8, `Cluster` to distributed | `refactor(distributed)!` after `ecf6bda` | not built; syntax check of 120 units and of the new `cluster.cpp` passed, flag-off check of 8 units passed. Two tests added and never run: `ClusterDetachAndDisplacement`, `ClusterHandleOutlivesRuntime` | not run |
 
 Benchmarks after B2, median of five, two invocations of the suite a few minutes apart:
 

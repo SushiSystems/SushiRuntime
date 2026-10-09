@@ -42,7 +42,9 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
+#include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
@@ -127,9 +129,10 @@ namespace
         a1.set_pull_timeout(std::chrono::milliseconds(120));
 
         auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-        master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
-        master_ctx->distributed_set_liveness_timeout(std::chrono::milliseconds(250));
-        master_ctx->distributed_set_task_deadline(std::chrono::milliseconds(300));
+        auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
+                                                    make_sushi<KernelRegistry>(), policy);
+        cluster.liveness_timeout(std::chrono::milliseconds(250));
+        cluster.task_deadline(std::chrono::milliseconds(300));
         a0.start();
         a1.start();
 
@@ -137,15 +140,15 @@ namespace
         bool both = false;
         for (int i = 0; i < 500 && !both; ++i)
         {
-            both = master_ctx->distributed_alive_workers() == W;
+            both = cluster.alive_workers() == W;
             if (!both) std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         if (!both) { a0.stop(); a1.stop(); sycl::free(in, mq); for (auto p : y) sycl::free(p, mq);
                      return "cluster did not assemble"; }
 
-        master_ctx->register_distributed_buffer(in, N * sizeof(float));
+        master_ctx->offload()->share(in, N * sizeof(float));
         for (int k = 0; k < K; ++k)
-            master_ctx->register_distributed_buffer(y[k], N * sizeof(float));
+            master_ctx->offload()->share(y[k], N * sizeof(float));
 
         // The fabric mutex serializes the fault policy, so one shared RNG is safe; see README.md.
         auto rng = std::make_shared<std::mt19937_64>(seed);
@@ -303,21 +306,22 @@ TEST(Integration_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
     agent.set_pull_timeout(std::chrono::milliseconds(150));
 
     auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
-    master_ctx->distributed_set_task_deadline(std::chrono::milliseconds(300));
+    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
+                                                make_sushi<KernelRegistry>(), policy);
+    cluster.task_deadline(std::chrono::milliseconds(300));
     agent.start();
 
     // The HELLO retry must punch through the loss within a generous window.
     bool up = false;
     for (int i = 0; i < 500 && !up; ++i)
     {
-        up = master_ctx->distributed_alive_workers() == 1;
+        up = cluster.alive_workers() == 1;
         if (!up) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     ASSERT_TRUE(up) << "Cluster never assembled under registration loss.";
 
-    master_ctx->register_distributed_buffer(in,  N * sizeof(float));
-    master_ctx->register_distributed_buffer(out, N * sizeof(float));
+    master_ctx->offload()->share(in,  N * sizeof(float));
+    master_ctx->offload()->share(out, N * sizeof(float));
 
     TaskGraph graph(master_ctx->offload());
     TaskMetadata m{};

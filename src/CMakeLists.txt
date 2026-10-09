@@ -80,31 +80,10 @@ target_compile_definitions(sushiruntime PRIVATE
     WIN32_LEAN_AND_MEAN
 )
 
-# SR_DISTRIBUTED is PUBLIC, and this is not a leftover from before NodeExtensions
-# fixed Node's layout — it is load-bearing for two independent reasons, both of
-# which survive that fix.
-#
-# 1. It is how the distributed API reaches consumers at all. This library
-#    compiles none of include/SushiRuntime/api/, so every `#ifdef SR_DISTRIBUTED`
-#    there is consumer-compiled surface: Buffer/State registration
-#    (`buffer.hpp`, `state.hpp`), the whole cluster API (`cluster.hpp`,
-#    `runtime.hpp`), and DynamicGraph::rearm()'s reset of each node's offload
-#    attempt counter (`dynamic_graph.hpp`). Making the define PRIVATE would
-#    compile the cluster API out of every consumer and silently break offload
-#    retry — a functional regression, not an ABI cleanup.
-# 2. NodeExtensions still changes SIZE with the flag. Node's own layout no longer
-#    does (the extensions live behind a unique_ptr), but that pointer's deleter is
-#    instantiated in whichever translation unit destroys the Node — and consumers
-#    do destroy Nodes, from header-inline API code. A consumer compiled without
-#    the flag would size-delete a heap object the library allocated with a
-#    different definition.
-#
-# Making it PRIVATE therefore needs more than flipping the keyword: NodeExtensions
-# would have to become opaque (forward-declared here, defined and deleted in the
-# library), and the distributed API surface would need a deliberate opt-in path
-# for consumers. Until that is designed and an ABI check backs it, PUBLIC is the
-# correct and honest visibility. The installed package reports the build's choice
-# as SushiRuntime_DISTRIBUTED so a consumer can at least see what it linked.
+# No header of the library reads SR_DISTRIBUTED: every type has one layout with and
+# without the distributed layer. The definition is PUBLIC so a consumer can test whether
+# <SushiRuntime/distributed/cluster.hpp> has a library behind it. The installed package
+# reports the same choice as SushiRuntime_DISTRIBUTED.
 if(SR_ENABLE_DISTRIBUTED)
     target_compile_definitions(sushiruntime PUBLIC SR_DISTRIBUTED)
     # The raw-socket TCP transport needs Winsock on Windows.
@@ -128,6 +107,7 @@ if(SR_ENABLE_DISTRIBUTED)
         distributed/kernel_registry.cpp
         distributed/worker_agent.cpp
         distributed/distributed_coordinator.cpp
+        distributed/cluster.cpp
     )
 endif()
 

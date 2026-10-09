@@ -99,14 +99,16 @@ keeps the whole-buffer default when used bare.
 
 ### distributed()
 
-distributed() is opt-in: only a registered buffer can cross to a worker, and the master stays
-authoritative for it. It does nothing on an empty handle.
+distributed() hands the allocation to the offload coordinator installed on the runtime's context,
+through Graph::OffloadCoordinator::share(). It is opt-in: only a shared buffer can cross to a worker,
+and the master stays authoritative for it. It does nothing on an empty handle, and nothing when no
+coordinator is installed, so a buffer is shared only if Distributed::Cluster::attach() ran first.
 
 Two overloads exist to make chaining safe. The lvalue overload (on a named buffer) returns *this.
 The rvalue overload (on a temporary returned by Runtime::buffer()) moves the buffer into the caller
 so the allocation survives the chain: `auto a = rt.buffer<float>(n).distributed();`
 
-A State\<T> is also distributable (State::distributed()); it registers both of its allocations and
+A State\<T> is also distributable (State::distributed()); it shares both of its allocations and
 the offload path resolves the step's read/write handles from the live pointers, so the swap is
 followed without breaking the version-by-pointer coherence model.
 
@@ -142,7 +144,8 @@ fields are freed together with it. An empty State returns an empty observer.
 State::distributed() is opt-in and mirrors Buffer::distributed(). It exposes each of the State's two
 allocations to the cluster so a stepped graph can offload its update rule. The two allocations keep
 stable handles for the State's lifetime; only which one is read and which is written rotates each
-step, and the offload path follows that from the live pointers. It does nothing on an empty State.
+step, and the offload path follows that from the live pointers. It does nothing on an empty State
+or when no offload coordinator is installed.
 
 ### State::read_range
 

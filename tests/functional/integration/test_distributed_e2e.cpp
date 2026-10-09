@@ -42,8 +42,10 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/node.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
+#include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
@@ -146,8 +148,9 @@ namespace
         register_state_step(*worker_kernels);
         WorkerAgent agent(worker_ctx, worker_transport, worker_kernels);
 
-        auto cluster = rt.cluster(master_transport, make_sushi<KernelRegistry>(),
-                                  std::make_shared<LeastLoadedOffloadPolicy>(0));
+        auto cluster = Distributed::Cluster::attach(rt, master_transport,
+                                                    make_sushi<KernelRegistry>(),
+                                                    std::make_shared<LeastLoadedOffloadPolicy>(0));
         agent.start();
         if (!cluster.wait_for_workers(1, std::chrono::seconds(3)))
             throw std::runtime_error("worker never registered with the cluster");
@@ -218,7 +221,8 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
 
     auto master_kernels = make_sushi<KernelRegistry>();
     auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0); // min_offload_bytes=0
-    master_ctx->enable_distributed_master(master_transport, master_kernels, policy);
+    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
+                                                master_kernels, policy);
 
     agent.start();
 
@@ -226,15 +230,15 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
     bool supported = false;
     for (int i = 0; i < 300 && !supported; ++i)
     {
-        supported = master_ctx->distributed_supports(VEC_ADD);
+        supported = cluster.supports(VEC_ADD);
         if (!supported)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     ASSERT_TRUE(supported) << "Worker never registered the kernel with the master.";
 
-    master_ctx->register_distributed_buffer(a,   N * sizeof(float));
-    master_ctx->register_distributed_buffer(b,   N * sizeof(float));
-    master_ctx->register_distributed_buffer(out, N * sizeof(float));
+    master_ctx->offload()->share(a,   N * sizeof(float));
+    master_ctx->offload()->share(b,   N * sizeof(float));
+    master_ctx->offload()->share(out, N * sizeof(float));
 
     TaskGraph graph(master_ctx->offload());
     TaskMetadata meta{};
@@ -344,7 +348,8 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     WorkerAgent a1(*w1_ctx, w1_transport, k1);
 
     auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
+    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
+                                                make_sushi<KernelRegistry>(), policy);
     a0.start();
     a1.start();
 
@@ -352,15 +357,15 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     bool both = false;
     for (int i = 0; i < 500 && !both; ++i)
     {
-        both = master_ctx->distributed_alive_workers() == 2;
+        both = cluster.alive_workers() == 2;
         if (!both)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     ASSERT_TRUE(both) << "Both workers should have registered.";
 
-    master_ctx->register_distributed_buffer(in, N * sizeof(float));
-    master_ctx->register_distributed_buffer(y0, N * sizeof(float));
-    master_ctx->register_distributed_buffer(y1, N * sizeof(float));
+    master_ctx->offload()->share(in, N * sizeof(float));
+    master_ctx->offload()->share(y0, N * sizeof(float));
+    master_ctx->offload()->share(y1, N * sizeof(float));
 
     TaskGraph graph(master_ctx->offload());
     for (float* y : {y0, y1})
@@ -386,7 +391,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     auto compiled = graph.compile();
     master_ctx->get_execution_engine().execute(std::move(compiled));
 
-    EXPECT_EQ(master_ctx->distributed_offloaded_count(), 2u);
+    EXPECT_EQ(cluster.offloaded(), 2u);
     // Only the total is asserted, because which worker gets which task is a race; see README.md.
     EXPECT_EQ(c0.load() + c1.load(), 2) << "Both tasks should have run on workers.";
 
@@ -445,22 +450,23 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
 
     auto master_kernels = make_sushi<KernelRegistry>();
     auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    master_ctx->enable_distributed_master(master_transport, master_kernels, policy);
+    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
+                                                master_kernels, policy);
     agent.start();
 
     bool supported = false;
     for (int i = 0; i < 300 && !supported; ++i)
     {
-        supported = master_ctx->distributed_supports(VEC_ADD);
+        supported = cluster.supports(VEC_ADD);
         if (!supported)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     ASSERT_TRUE(supported);
 
-    master_ctx->register_distributed_buffer(x, N * sizeof(float));
-    master_ctx->register_distributed_buffer(y, N * sizeof(float));
+    master_ctx->offload()->share(x, N * sizeof(float));
+    master_ctx->offload()->share(y, N * sizeof(float));
 
-    const auto x_before = master_ctx->distributed_buffer(x);
+    const auto x_before = cluster.buffer_handle(x);
     ASSERT_TRUE(x_before.has_value());
 
     TaskGraph graph(master_ctx->offload());
@@ -502,7 +508,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     auto compiled = graph.compile();
     master_ctx->get_execution_engine().execute(std::move(compiled));
 
-    const auto x_after = master_ctx->distributed_buffer(x);
+    const auto x_after = cluster.buffer_handle(x);
     ASSERT_TRUE(x_after.has_value());
     EXPECT_GT(x_after->version, x_before->version)
         << "Local write to a registered buffer should auto-bump its version.";
@@ -566,21 +572,22 @@ TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
 
     auto master_kernels = make_sushi<KernelRegistry>();
     auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    master_ctx->enable_distributed_master(master_transport, master_kernels, policy);
+    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
+                                                master_kernels, policy);
     agent.start();
 
     bool supported = false;
     for (int i = 0; i < 500 && !supported; ++i)
     {
-        supported = master_ctx->distributed_supports(VEC_ADD);
+        supported = cluster.supports(VEC_ADD);
         if (!supported)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     ASSERT_TRUE(supported) << "Worker never registered over TCP.";
 
-    master_ctx->register_distributed_buffer(a,   N * sizeof(float));
-    master_ctx->register_distributed_buffer(b,   N * sizeof(float));
-    master_ctx->register_distributed_buffer(out, N * sizeof(float));
+    master_ctx->offload()->share(a,   N * sizeof(float));
+    master_ctx->offload()->share(b,   N * sizeof(float));
+    master_ctx->offload()->share(out, N * sizeof(float));
 
     TaskGraph graph(master_ctx->offload());
     TaskMetadata meta{};
@@ -663,8 +670,9 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
         });
 
     auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
-    master_ctx->distributed_set_liveness_timeout(std::chrono::milliseconds(300));
+    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
+                                                make_sushi<KernelRegistry>(), policy);
+    cluster.liveness_timeout(std::chrono::milliseconds(300));
 
     worker_transport->start();
     {
@@ -688,15 +696,15 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     bool supported = false;
     for (int i = 0; i < 300 && !supported; ++i)
     {
-        supported = master_ctx->distributed_supports(VEC_ADD);
+        supported = cluster.supports(VEC_ADD);
         if (!supported)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     ASSERT_TRUE(supported) << "Fake worker never registered the kernel.";
 
-    master_ctx->register_distributed_buffer(a,   N * sizeof(float));
-    master_ctx->register_distributed_buffer(b,   N * sizeof(float));
-    master_ctx->register_distributed_buffer(out, N * sizeof(float));
+    master_ctx->offload()->share(a,   N * sizeof(float));
+    master_ctx->offload()->share(b,   N * sizeof(float));
+    master_ctx->offload()->share(out, N * sizeof(float));
 
     TaskGraph graph(master_ctx->offload());
     TaskMetadata meta{};
@@ -721,7 +729,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
 
     EXPECT_TRUE(got_dispatch.load(std::memory_order_relaxed))
         << "Task should have been offloaded before the worker died.";
-    EXPECT_GE(master_ctx->distributed_redispatched_count(), 1u)
+    EXPECT_GE(cluster.redispatched(), 1u)
         << "The dead worker's task should have been re-dispatched.";
 
     bool correct = true;
@@ -767,13 +775,14 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
     auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
 
     auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
+    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
+                                                make_sushi<KernelRegistry>(), policy);
     worker_transport->start();
 
-    master_ctx->register_distributed_buffer(out, N * sizeof(float)); // version 1
-    master_ctx->bump_distributed_buffer(out);                        // -> 2
-    master_ctx->bump_distributed_buffer(out);                        // -> 3
-    auto cur = master_ctx->distributed_buffer(out);
+    master_ctx->offload()->share(out, N * sizeof(float)); // version 1
+    cluster.bump_buffer(out);                             // -> 2
+    cluster.bump_buffer(out);                             // -> 3
+    auto cur = cluster.buffer_handle(out);
     ASSERT_TRUE(cur.has_value());
     ASSERT_EQ(cur->version, 3u);
 
@@ -792,7 +801,7 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
     bool fenced = false;
     for (int i = 0; i < 300 && !fenced; ++i)
     {
-        fenced = master_ctx->distributed_stale_writeback_count() >= 1;
+        fenced = cluster.stale_writebacks() >= 1;
         if (!fenced) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     EXPECT_TRUE(fenced) << "Stale writeback should have been rejected by the version fence.";
@@ -862,20 +871,21 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
     agent.set_pull_timeout(std::chrono::milliseconds(200)); // fail fast for the test
 
     auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    master_ctx->enable_distributed_master(master_transport, make_sushi<KernelRegistry>(), policy);
+    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
+                                                make_sushi<KernelRegistry>(), policy);
     agent.start();
 
     bool supported = false;
     for (int i = 0; i < 300 && !supported; ++i)
     {
-        supported = master_ctx->distributed_supports(VEC_ADD);
+        supported = cluster.supports(VEC_ADD);
         if (!supported) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     ASSERT_TRUE(supported);
 
-    master_ctx->register_distributed_buffer(a,   N * sizeof(float));
-    master_ctx->register_distributed_buffer(b,   N * sizeof(float));
-    master_ctx->register_distributed_buffer(out, N * sizeof(float));
+    master_ctx->offload()->share(a,   N * sizeof(float));
+    master_ctx->offload()->share(b,   N * sizeof(float));
+    master_ctx->offload()->share(out, N * sizeof(float));
 
     TaskGraph graph(master_ctx->offload());
     TaskMetadata meta{};
@@ -942,8 +952,9 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
     register_vec_add(*worker_kernels);
     WorkerAgent agent(*worker_ctx, worker_transport, worker_kernels);
 
-    auto cluster = rt->cluster(master_transport, make_sushi<KernelRegistry>(),
-                               std::make_shared<LeastLoadedOffloadPolicy>(0));
+    auto cluster = Distributed::Cluster::attach(*rt, master_transport,
+                                                make_sushi<KernelRegistry>(),
+                                                std::make_shared<LeastLoadedOffloadPolicy>(0));
     agent.start();
     ASSERT_TRUE(cluster.wait_for_workers(1, std::chrono::seconds(3)))
         << "Worker never registered with the fluent cluster.";
@@ -1001,4 +1012,65 @@ TEST(Integration_DistributedE2ETest, FluentDistributedStateParity)
         EXPECT_EQ(odd_result[i], base + 5 * step)
             << "Odd-step distributed State result wrong at " << i;
     }
+}
+
+/** @brief Tests detach() and the displacement of one master by a later attach(). */
+TEST(Integration_DistributedE2ETest, ClusterDetachAndDisplacement)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    auto master_ctx = std::make_unique<RuntimeContext>();
+    EXPECT_EQ(master_ctx->offload(), nullptr);
+
+    auto attach_master = [&master_ctx](InProcessFabric& fabric)
+    {
+        return Distributed::Cluster::attach(*master_ctx,
+                                            std::make_shared<InProcessTransport>(fabric, -1),
+                                            make_sushi<KernelRegistry>());
+    };
+
+    InProcessFabric first_fabric(1);
+    auto first = attach_master(first_fabric);
+    EXPECT_NE(master_ctx->offload(), nullptr);
+
+    first.detach();
+    EXPECT_EQ(master_ctx->offload(), nullptr);
+    first.detach();
+    EXPECT_EQ(master_ctx->offload(), nullptr) << "A second detach() must do nothing.";
+
+    InProcessFabric second_fabric(1);
+    auto second = attach_master(second_fabric);
+    const auto* second_installed = master_ctx->offload();
+    ASSERT_NE(second_installed, nullptr);
+
+    InProcessFabric third_fabric(1);
+    auto third = attach_master(third_fabric);
+    const auto* third_installed = master_ctx->offload();
+    ASSERT_NE(third_installed, nullptr);
+    EXPECT_NE(third_installed, second_installed);
+
+    second.detach();
+    EXPECT_EQ(master_ctx->offload(), third_installed)
+        << "A displaced handle must not remove the master that replaced it.";
+}
+
+/** @brief Tests that a handle outlives its runtime and that its detach() then does nothing. */
+TEST(Integration_DistributedE2ETest, ClusterHandleOutlivesRuntime)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    InProcessFabric fabric(1);
+    auto master_ctx = std::make_unique<RuntimeContext>();
+    auto cluster = Distributed::Cluster::attach(*master_ctx,
+                                                std::make_shared<InProcessTransport>(fabric, -1),
+                                                make_sushi<KernelRegistry>());
+    const auto copy = cluster;
+
+    master_ctx.reset();
+
+    cluster.detach();
+    EXPECT_EQ(copy.alive_workers(), 0);
+    EXPECT_EQ(copy.offloaded(), 0u);
 }
