@@ -188,29 +188,28 @@ namespace SushiRuntime
                                 std::smatch match;
                                 if (std::regex_search(pci_str, match, pci_regex) && match.size() == 5)
                                 {
-                                    node.pci_address.domain = std::stoul(match[1].str(), nullptr, 16);
-                                    node.pci_address.bus = std::stoul(match[2].str(), nullptr, 16);
-                                    node.pci_address.device = std::stoul(match[3].str(), nullptr, 16);
-                                    node.pci_address.function = std::stoul(match[4].str(), nullptr, 16);
+                                    // The node takes the address only once all four fields parsed.
+                                    PCIDomainAddress address;
+                                    address.domain = static_cast<std::uint32_t>(std::stoul(match[1].str(), nullptr, 16));
+                                    address.bus = static_cast<std::uint32_t>(std::stoul(match[2].str(), nullptr, 16));
+                                    address.device = static_cast<std::uint32_t>(std::stoul(match[3].str(), nullptr, 16));
+                                    address.function = static_cast<std::uint32_t>(std::stoul(match[4].str(), nullptr, 16));
+                                    node.pci_address = address;
 
                                     char pci_str[24];
                                     std::snprintf(pci_str, sizeof(pci_str), "%04x:%02x:%02x.%x",
-                                                  static_cast<unsigned>(node.pci_address.domain),
-                                                  static_cast<unsigned>(node.pci_address.bus),
-                                                  static_cast<unsigned>(node.pci_address.device),
-                                                  static_cast<unsigned>(node.pci_address.function));
+                                                  static_cast<unsigned>(address.domain),
+                                                  static_cast<unsigned>(address.bus),
+                                                  static_cast<unsigned>(address.device),
+                                                  static_cast<unsigned>(address.function));
                                     SR_LOG_DEBUG("Device {} PCI: {}", node.name, pci_str);
                                 }
-                            }
-                            else
-                            {
-                                SR_LOG_WARN("Could not resolve PCI address for {} via any method — NUMA affinity will be estimated.", node.name);
                             }
                         }
                         catch (...)
                         {
                             SR_LOG_WARN("Could not retrieve PCI address for {}, NUMA mapping may be degraded.", node.name);
-                            node.pci_address = {0,0,0,0};
+                            node.pci_address.reset();
                         }
                     }
 
