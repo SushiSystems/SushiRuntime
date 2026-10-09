@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-09 — api: Moved the `Interop` facade and `HostExport` to `api/interop/`; `Interop::HostExport` stays as an alias and `interop/` no longer includes `api/` (`api/interop/interop.hpp`, `api/interop/host_export.hpp`).
 - 2026-10-09 — scheduler: Moved `PinPolicy` and `WorkerPoolInfo` to the scheduler, kept as aliases under `Execution`, and added `WorkerPoolSettings` (`pin_policy.hpp`, `worker_pool_info.hpp`, `worker_pool_settings.hpp`).
 - 2026-10-09 — task: Moved `Task`, `Node`, the task types and the late bindings to `task/` headers; the old `scheduler/` and `graph/` paths forward (`task/task.hpp`, `task/node.hpp`, `task/task_types.hpp`).
 - 2026-10-09 — core: Removed two unused includes, of the run report and of the logger; a file that relied on either includes it itself (`error.hpp`, `ref_counted.hpp`).

@@ -34,9 +34,9 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
+#include <SushiRuntime/api/interop/interop.hpp>
 #include <SushiRuntime/api/runtime/cluster.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/interop/interop.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 
 namespace SushiRuntime
