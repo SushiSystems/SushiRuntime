@@ -35,7 +35,6 @@
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
-#include <SushiRuntime/api/runtime/cluster.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 
@@ -213,24 +212,6 @@ namespace SushiRuntime
                  * @see include/SushiRuntime/api/runtime/README.md
                  */
                 Execution::RuntimeContext& unsafe_context() noexcept { return *ctx_; }
-
-#ifdef SR_DISTRIBUTED
-                /**
-                 * @brief Promotes this runtime to a distributed Master and returns its Cluster
-                 *        handle.
-                 * @param transport Connected master-side transport, one peer per worker.
-                 * @param policy Offload policy; null selects LeastLoadedOffloadPolicy.
-                 * @see include/SushiRuntime/api/runtime/README.md
-                 */
-                Cluster cluster(std::shared_ptr<Distributed::ITransport> transport,
-                                sushi_ptr<Distributed::KernelRegistry> kernels,
-                                std::shared_ptr<Distributed::IOffloadPolicy> policy = nullptr)
-                {
-                    ctx_->enable_distributed_master(std::move(transport),
-                                                    std::move(kernels), std::move(policy));
-                    return Cluster(ctx_);
-                }
-#endif // SR_DISTRIBUTED
 
             private:
                 explicit Runtime(std::shared_ptr<Execution::RuntimeContext> ctx)

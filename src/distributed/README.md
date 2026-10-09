@@ -33,6 +33,44 @@ A payload below `min_offload_bytes_` stays local, because the network would only
 latency. A worker whose `free_mem` is known and smaller than the payload is skipped. When no
 worker is eligible the policy returns nothing and the task runs locally.
 
+## cluster.cpp
+
+### State
+
+`Cluster::State` owns the `BufferRegistry` and the `DistributedCoordinator` of one master. The
+coordinator takes the registry by reference, so the registry is declared first and destroyed
+last. The state owns both, and not the coordinator its registry, because the handle reads
+versions from the registry directly (`bump_buffer()`, `buffer_handle()`) and the coordinator
+keeps receiving its registry through the constructor.
+
+### Attachment
+
+The context takes shared ownership of the coordinator it runs
+(`RuntimeContext::install_offload()`). `attach()` gives it an aliasing `shared_ptr`: the
+pointer is the coordinator, the owner is an `Attachment` that holds a share of the `State`.
+So the context keeps the whole state alive, registry included, for as long as it holds the
+coordinator, whatever happens to the handles.
+
+`~Attachment` runs when the context lets go: in `~RuntimeContext` after the engine has shut
+down, or when another coordinator or null is installed. It sets `State::context` to null.
+That pointer is how `detach()` knows whether the context still exists and still holds this
+master, and a handle that outlives its runtime never follows it.
+
+### Order in attach and detach
+
+`attach()` first calls `release_installed()`, which stops any coordinator the context
+already holds, clears the allocator's release observer and installs null. The observer is
+cleared before the install because the install can destroy the old coordinator. Then
+`attach()` builds the state, sets the coordinator as the release observer, installs it and
+calls `start()`. The coordinator is installed, and so bound to its sink, before `start()`
+launches the monitor thread; otherwise a worker reaped in the first liveness window would
+find no sink to resubmit to.
+
+`detach()` is `release_installed()` on the context the state still points at.
+
+`State::context` is a plain pointer. `attach()`, `detach()` and the context's destructor
+write it and `detach()` reads it, so the caller orders those three.
+
 ## distributed_coordinator.cpp
 
 ### Bookkeeping

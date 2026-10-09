@@ -6,6 +6,38 @@ compiled only under SR_DISTRIBUTED.
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
 
+## cluster.hpp
+
+### Cluster
+
+Cluster::attach() is the way into the layer. It builds a master on a runtime, installs it as the
+runtime's Graph::OffloadCoordinator and as the allocator's release observer, starts it, and returns
+a handle to its knobs and counters. Until attach() runs, the runtime is a single machine: no header
+of `api` or `execution` names a transport, and Buffer::distributed() does nothing.
+
+One overload takes an API::Runtime and the other an Execution::RuntimeContext. The first forwards
+to the second through Runtime::unsafe_context(); the second serves code that drives a bare context.
+
+The handle is a view. Copies name the same master, and destroying one changes nothing, so a caller
+may drop the handle straight after attach(). The runtime shares ownership of the master, stops it
+when the runtime is destroyed and releases it after its engine has shut down. A handle that
+outlives its runtime still reads the stopped master's counters.
+
+### detach
+
+detach() stops the master, clears the allocator's release observer and removes the master from the
+scheduler, in that order. Every graph compiled afterwards runs locally. The caller must make sure
+no run is in flight, because the scheduler reads the coordinator's address without a lock; the code
+cannot check that. detach() does nothing when the runtime has already released the master, which
+covers a destroyed runtime and a second attach() on the same runtime.
+
+### bump_buffer and buffer_handle
+
+Both read the master's buffer registry by USM address. Offload bumps versions itself at dispatch and
+at completion; bump_buffer() is for a write the runtime did not see, and for tests that need a
+stale version. A buffer enters the registry through Graph::OffloadCoordinator::share(), which
+Buffer::distributed() and State::distributed() call.
+
 ## protocol.hpp
 
 ### Distributed wire protocol

@@ -577,7 +577,7 @@ on every step.
 `evolve_distributed_state` evolves a distributed `State<int>` for `steps` steps on an in-process
 cluster with one worker and returns its final field.
 
-It builds the cluster through the fluent surface (`Runtime::cluster`, `State::distributed`,
+It builds the cluster with `Distributed::Cluster::attach` on a fluent runtime (`State::distributed`,
 `Graph::add(op, State, ...)`). The per-step rule `next[i] = cur[i] + (i % 7)` is registered
 identically on the worker, so the caller can check the offloaded result against a closed form. The
 helper throws if no SYCL device is present or the worker fails to register, and the caller turns
@@ -624,6 +624,19 @@ handles at dispatch. An even and an odd number of steps leave the logical result
 physical buffers, and no other test has that property, so this one is the sharpest check that the
 live-IO indirection follows the swap. Both runs must match the closed form `seed[i] + steps*(i %
 7)`, and both must have offloaded.
+
+### `ClusterDetachAndDisplacement`
+
+The test attaches three masters to one bare context, each on its own fabric with no worker.
+`detach()` must leave `offload()` null, and a second `detach()` on the same handle must do nothing.
+A third `attach()` displaces the second master; the second handle's `detach()` must then leave the
+third installed, because a displaced handle no longer points at the context.
+
+### `ClusterHandleOutlivesRuntime`
+
+The test destroys the context while two copies of a handle are alive, then calls `detach()` and
+reads counters. Under ASan this is the check that a handle never follows a pointer into a destroyed
+context and that the master outlives the engine that held its address.
 
 ## test_distributed_jepsen.cpp
 

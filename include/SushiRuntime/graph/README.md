@@ -93,8 +93,7 @@ whose fixed handles the coordinator keeps in the payload of the node's OffloadSt
 ### OffloadState
 
 A node that a coordinator may run elsewhere carries a Graph::OffloadState behind one pointer;
-`include/SushiRuntime/task/README.md` describes it. The type and sizeof(Node) are the same with and
-without SR_DISTRIBUTED, and a node that never offloads never allocates one.
+`include/SushiRuntime/task/README.md` describes it. The type and sizeof(Node) do not depend on a build flag, and a node that never offloads never allocates one.
 
 ### Node
 
