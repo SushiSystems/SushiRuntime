@@ -143,7 +143,7 @@ namespace SushiRuntime
                 [[nodiscard]] SendStatus send_stream(PeerId peer,
                                                      std::unique_ptr<FrameSource> source) override;
 
-                /** @brief Closes one connection after its queued control frames are written. */
+                /** @brief Closes one connection; queued control frames get one second to leave. */
                 void close_peer(PeerId peer) noexcept override;
 
                 /**

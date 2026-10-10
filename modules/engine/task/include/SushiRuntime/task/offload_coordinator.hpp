@@ -46,7 +46,7 @@ namespace SushiRuntime
          */
         struct OffloadStatistics
         {
-            std::uint64_t offloaded = 0;        /**< Dispatches a worker accepted. */
+            std::uint64_t offloaded = 0;        /**< Dispatches queued to a worker. */
             std::uint64_t declined = 0;         /**< Offloadable dispatches left to run locally. */
             std::uint64_t redispatched = 0;     /**< Nodes taken back from a lost worker or task. */
             std::uint64_t stale_writebacks = 0; /**< Worker outputs dropped as out of date. */

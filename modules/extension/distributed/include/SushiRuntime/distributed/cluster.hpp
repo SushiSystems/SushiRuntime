@@ -73,7 +73,11 @@ namespace SushiRuntime
              */
             SharedSecret secret;
 
-            /** @brief Chooses the worker of each task; null selects LeastLoadedOffloadPolicy. */
+            /**
+             * @brief Chooses the worker of each task; null selects LeastLoadedOffloadPolicy.
+             *
+             * That default keeps a task whose inputs total under 64 KiB on this machine.
+             */
             std::shared_ptr<IOffloadPolicy> policy;
 
             /** @brief Lives as long as the master, which reads no kernel from it; may be null. */

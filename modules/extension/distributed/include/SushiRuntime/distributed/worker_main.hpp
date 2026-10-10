@@ -61,7 +61,9 @@ namespace SushiRuntime
         /**
          * @brief Holds the settings of a worker process, one field per command line flag.
          *
-         * A flag beats its environment variable, which beats the default written here.
+         * A flag beats its environment variable, which beats the default written here. An
+         * application with flags of its own parses them, fills this and calls the overload of
+         * run_worker() that takes it.
          */
         struct WorkerOptions
         {
@@ -100,7 +102,7 @@ namespace SushiRuntime
          * @brief Runs a worker from its command line until a signal or a fatal end.
          *
          * Reads the flags and the environment, then calls the other overload. `--help` and
-         * `--version` print and return 0; a bad flag prints the reason and returns 1.
+         * `--version` print and return 0; a bad or unknown flag prints the reason and returns 1.
          * @param kernels The kernels this binary can run; not null.
          * @return A WorkerExitCode value, for main() to return.
          */

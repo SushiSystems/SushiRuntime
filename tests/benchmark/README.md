@@ -43,11 +43,32 @@ reports milliseconds per node. Layer 0, which removes the per-node allocation in
 
 ## benchmark_distributed_offload.cpp
 
-The benchmark reports throughput and per-task latency of the master-to-worker offload path,
-and the policy's load split across two workers. It is built only with `SR_ENABLE_DISTRIBUTED`.
-It uses `InProcessTransport`, so the software round trip (encode, pull, remote kernel,
-writeback, release) is measured deterministically. Every task does a verified vector add, and
-each worker increments its own counter, so the reported split is what ran where.
+The benchmark measures the round trip of an offloaded task: dispatch, the worker's pull of the
+input, the kernel, the output chunks written back into the master's buffer, and the result. It
+is built only with `SR_ENABLE_DISTRIBUTED`. Master and workers run in one process, each worker a
+`WorkerAgent` on a runtime of its own. The kernel writes each input element plus one, and every
+task is added with `add_registered_task`, so the local fallback is the same kernel. The policy
+is `LeastLoadedOffloadPolicy(0)`, which offloads a task whatever its size.
+
+Each case runs once untimed, which pays the first touch of the buffers and the worker's cache
+allocation, then five timed runs, of which the median is reported. Before a run the inputs are
+rewritten and bumped, so a worker pulls them again instead of reading its cache. The timed
+region is `execute()` alone: the refill, the graph build and the check of the outputs stay
+outside it.
+
+`OffloadRoundTripThroughput` runs 256 independent tasks of 256 floats each on two workers over
+the in-process fabric. It prints milliseconds per run, microseconds per task, tasks per second,
+the dispatches offloaded and taken back in the timed runs, and the kernels each worker has run
+since it started, which is the split the policy made. It asserts that every output is right and
+that at least one dispatch was offloaded.
+
+`RoundTripByBufferSize` runs one task with one input and one output of 64 KiB, 4 MiB and 64 MiB,
+first over the in-process fabric and then over TCP on a loopback port the OS chooses, with one
+worker. It prints milliseconds per round trip and MiB per second, counting the input going out
+and the output coming back. It asserts that every output is right, that each of the five timed
+runs was offloaded and that no task was taken back.
+
+Neither test asserts a speed.
 
 ## benchmark_dynamic_graph.cpp
 

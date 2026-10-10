@@ -333,9 +333,10 @@ namespace SushiRuntime
                 /**
                  * @brief Ends one connection without waiting for it.
                  *
-                 * Sends to the peer return UnknownPeer from here on. Control frames already
-                 * queued are still written, streams are dropped, then the connection closes
-                 * and on_peer_lost() reports ClosedLocally. An unknown id is ignored.
+                 * Sends to the peer return UnknownPeer from here on. Streams are dropped and
+                 * control frames already queued are written for a bounded time, then
+                 * on_peer_lost() reports ClosedLocally; a peer that takes no byte may be reported
+                 * later, as WriteStalled. An unknown id is ignored.
                  */
                 virtual void close_peer(PeerId peer) noexcept = 0;
 
@@ -345,7 +346,7 @@ namespace SushiRuntime
                 [[nodiscard]] virtual TransportExposure exposure() const noexcept = 0;
 
                 /**
-                 * @brief Returns the bytes moved so far; reads counters and takes no lock.
+                 * @brief Returns the bytes moved so far; it may take a short lock.
                  */
                 [[nodiscard]] virtual TransportStatistics statistics() const noexcept = 0;
         };

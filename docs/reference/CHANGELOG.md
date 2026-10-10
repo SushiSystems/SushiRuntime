@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-10 — docs: Rewrote the distributed guide for protocol version 2 and replaced the layer's entries in the known issues and the backlog (`DISTRIBUTED_GUIDE.md`, `KNOWN_ISSUES.md`).
 - 2026-10-10 — api: Changed `add()` and `add_untracked()` to take the launch first, as a count, an `Extent` or an `NdRange`; the old argument orders forward and are deprecated (`builder_surface.hpp`).
 - 2026-10-10 — api: Added `Coupled` and `On` to the vocabulary and `extend()` and `name()` to the builder; name_last() forwards to name() and is deprecated (`builder_surface.hpp`).
 - 2026-10-10 — api: Changed an untracked kernel to run on device 0 unless `On(...)` names another; it no longer rotates over devices (`emit_untracked.hpp`, `recorder.hpp`).

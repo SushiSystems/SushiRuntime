@@ -208,7 +208,7 @@ namespace SushiRuntime
             goodbye.text = "no frame within the liveness timeout";
             for (const PeerId peer : peers_)
             {
-                // close_peer() still writes a queued control frame, so the worker reads why.
+                // close_peer() gives a queued control frame time to leave, so the worker reads why.
                 const SendStatus sent = send_message(transport_, peer, goodbye, payload_);
                 static_cast<void>(sent);
                 transport_.close_peer(peer);
