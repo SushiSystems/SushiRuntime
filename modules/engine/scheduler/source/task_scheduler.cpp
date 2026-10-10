@@ -50,6 +50,7 @@
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include "failure_naming.hpp"
 #include "work_stealing_deque.hpp"
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -66,85 +67,6 @@ namespace SushiRuntime
 
         namespace
         {
-            /** @brief Pairs a failure's one-line description with the exception that carries it. */
-            struct NamedFailure
-            {
-                std::string message;      /**< The failing task, then the original message. */
-                std::exception_ptr error; /**< An exception of the original's family carrying message. */
-            };
-
-            /**
-             * @brief Names @p task for a failure report.
-             * @return The task's label, with the registration index when it is a graph node.
-             */
-            std::string describe_task(const Task& task)
-            {
-                if (!task.is_graph_node())
-                    return Core::Detail::sr_format("task '{}'", task.get_name());
-
-                const auto& node = static_cast<const SushiRuntime::Graph::Node&>(task);
-                return Core::Detail::sr_format("node '{}' (registration index {})",
-                                               node.get_name(), node.registration_index);
-            }
-
-            /**
-             * @brief Builds the failure of @p task from a SushiException, keeping its code.
-             * @param task The task that threw.
-             * @param cause The exception it threw.
-             */
-            NamedFailure name_failure(const Task& task, const Core::SushiException& cause)
-            {
-                NamedFailure failure;
-                failure.message = Core::Detail::sr_format("{} failed: {}", describe_task(task),
-                                                          cause.what());
-                failure.error = std::make_exception_ptr(
-                    Core::SushiException(Core::Error{cause.error().code, failure.message}));
-                return failure;
-            }
-
-            /**
-             * @brief Builds the failure of @p task from a sycl::exception, keeping its code.
-             * @param task The task that threw.
-             * @param cause The exception it threw.
-             */
-            NamedFailure name_failure(const Task& task, const sycl::exception& cause)
-            {
-                NamedFailure failure;
-                failure.message = Core::Detail::sr_format("{} failed: {}", describe_task(task),
-                                                          cause.what());
-                failure.error = std::make_exception_ptr(
-                    sycl::exception(cause.code(), failure.message));
-                return failure;
-            }
-
-            /**
-             * @brief Builds the failure of @p task from any other standard exception.
-             * @param task The task that threw.
-             * @param cause The exception it threw.
-             */
-            NamedFailure name_failure(const Task& task, const std::exception& cause)
-            {
-                NamedFailure failure;
-                failure.message = Core::Detail::sr_format("{} failed: {}", describe_task(task),
-                                                          cause.what());
-                failure.error = std::make_exception_ptr(std::runtime_error(failure.message));
-                return failure;
-            }
-
-            /**
-             * @brief Builds the failure of @p task from a throw that is not a std::exception.
-             * @param task The task that threw.
-             */
-            NamedFailure name_failure(const Task& task)
-            {
-                NamedFailure failure;
-                failure.message = Core::Detail::sr_format(
-                    "{} failed with an exception that is not a std::exception",
-                    describe_task(task));
-                failure.error = std::make_exception_ptr(std::runtime_error(failure.message));
-                return failure;
-            }
-
             /** @brief NUMA node whose devices serve a task that is not a graph node. */
             constexpr int K_TASK_NUMA_NODE = 0;
 
