@@ -29,13 +29,7 @@
 #pragma once
 
 #include <cstddef>
-#include <memory>
-#include <string>
 #include <vector>
-
-#include <SushiRuntime/api/data/buffer.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
 
 namespace SushiRuntime
 {
@@ -106,30 +100,6 @@ namespace SushiRuntime
                 for (std::size_t i = 0; i + 1 < levels.size(); ++i)
                     total += levels[i].out_count;
                 return total;
-            }
-
-            /**
-             * @brief Allocates the USM scratch a reduction's intermediate levels use.
-             * @param count Elements to allocate; must be non-zero.
-             * @throws Core::SushiException If the allocation fails.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            template <typename T>
-            inline std::shared_ptr<T> make_reduce_scratch(
-                std::shared_ptr<Execution::RuntimeContext> ctx,
-                std::size_t count, DeviceIndex device_index, Residency residency)
-            {
-                const std::size_t bytes = count * sizeof(T);
-                void* raw = malloc_residency_on(*ctx, bytes, device_index, residency);
-
-                if (raw == nullptr)
-                    throw Core::SushiException(Core::Error{
-                        Core::Errc::allocation_failed,
-                        "Reduction scratch allocation of " + std::to_string(bytes) +
-                        " bytes failed (out of USM memory)."});
-
-                return std::shared_ptr<T>(static_cast<T*>(raw),
-                                          [ctx](T* p) { ctx->memory().release(p); });
             }
 
             /**

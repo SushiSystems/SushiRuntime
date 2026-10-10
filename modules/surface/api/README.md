@@ -9,6 +9,7 @@ the Runtime entry point.
 | `detail/` | [detail/README.md](detail/README.md) |
 | `graph/` | [graph/README.md](graph/README.md) |
 | `launch/` | [launch/README.md](launch/README.md) |
+| `primitives/` | [primitives/README.md](primitives/README.md) |
 | `runtime/` | [runtime/README.md](runtime/README.md) |
 | `vocabulary/` | [vocabulary/README.md](vocabulary/README.md) |
 
@@ -28,9 +29,10 @@ include that pulls them together.
 | `data/` | The data handles (Buffer, State) |
 | `launch/` | The iteration geometry (Extent, NdRange) |
 | `vocabulary/` | The data-flow DSL (Reads/Writes, In/Out/InOut, Dynamic) and the reduction combiners (Sum, Minimum, Maximum) |
-| `graph/` | The chainable builders (Graph, Region, DynamicGraph) and RunHandle, the receipt for a step started asynchronously |
+| `graph/` | The chainable builders (Graph, Region, DynamicGraph), the Recorder they record onto, and RunHandle, the receipt for a step started asynchronously |
+| `primitives/` | The fixed-order reduction, segmented reduction, prefix scan and counting sort, as free functions over the Recorder; the folder leaves for SushiBLAS in the next step |
 | `runtime/` | The Runtime entry point and RuntimeConfig |
-| `detail/` | Callable traits, the per-step StepMachinery, report building |
+| `detail/` | Callable traits, the replay callable of each node shape, the per-step StepMachinery, report building |
 
 ### Promoted names
 

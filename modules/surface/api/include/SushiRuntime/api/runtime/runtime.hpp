@@ -33,6 +33,7 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
+#include <SushiRuntime/api/graph/dynamic_graph.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -160,7 +161,7 @@ namespace SushiRuntime
                  * @brief Starts a new dynamic, region-partitioned graph.
                  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
                  */
-                DynamicGraph dynamic_graph();
+                DynamicGraph dynamic_graph() { return DynamicGraph(ctx_); }
 
                 /**
                  * @brief Allocates a typed shared-USM buffer owned by this runtime.
