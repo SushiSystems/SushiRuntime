@@ -149,6 +149,29 @@ migrate_tasks(from_worker_id, count) names no destination, because no implementa
 tasks go where any worker can take them. The three-argument form is deprecated, ignores
 `to_worker_id` and forwards to this one.
 
+## run_outcome.hpp
+
+### RunOutcome
+
+RunOutcome holds the two ways a run ends early: the first exception a task threw, and a
+cancellation asked for from another thread. TaskScheduler holds one by value and its run-error
+members forward to it. The dispatch loop reads is_aborting() once per task, which is two atomic
+loads.
+
+### A failure
+
+record() keeps the first exception and drops later ones. A failure aborts only the current run.
+Remaining tasks drain without executing so the DAG still reaches the sentinel, and the worker
+pool stays alive and re-armable. It is distinct from shutdown_requested, which permanently tears
+the pool down. arm_for_execution() calls clear_failure() at the start of each round.
+
+### A cancellation
+
+Like a failure, a cancellation makes remaining tasks drain without executing (the sentinel still
+runs), but the run completes normally instead of throwing: the drive loop sees the flag and stops.
+Unlike a failure it is not cleared per step by arm_for_execution(). A cancellation aborts the
+whole multi-step run, so only reset_cancellation() clears it, at the start of a fresh run.
+
 ## task.hpp
 
 ### on_complete
@@ -238,20 +261,6 @@ throttling submit throughput. The two counters shadow the container sizes and ar
 pending_mutex, so the hot path can read them relaxed and skip the lock entirely when they are zero.
 A stale zero is harmless: the enqueuer always notifies and the loop re-checks. A stale non-zero,
 which is rare, just takes the lock and finds nothing.
-
-### run_failed_
-
-run_failed_ aborts only the current run. Remaining tasks drain without executing so the DAG still
-reaches the sentinel, and the worker pool stays alive and re-armable. It is distinct from
-shutdown_requested, which permanently tears the pool down. arm_for_execution() clears it at the
-start of each round.
-
-### run_cancelled_
-
-Like run_failed_, run_cancelled_ makes remaining tasks drain without executing (the sentinel still
-runs), but the run completes normally instead of throwing: the drive loop sees the flag and stops.
-Unlike run_failed_ it is not cleared per step by arm_for_execution(). A cancellation aborts the
-whole multi-step run, so only reset_cancellation() clears it, at the start of a fresh run.
 
 ### pinning_
 
@@ -661,8 +670,8 @@ a `sycl::event{}` to compare against.
 
 ##### A throwing task
 
-A task that throws fails only its run. The first exception is recorded and `run_failed_` is
-set, but `shutdown_requested` is not latched, so the pool survives and can be re-armed for
+A task that throws fails only its run. The first exception is recorded in the scheduler's
+`RunOutcome`, but `shutdown_requested` is not latched, so the pool survives and can be re-armed for
 the next graph. The failed task is pushed to the poller as ready so its successors still
 fire; with the skip path for an aborting run, the whole DAG drains to the sentinel.
 
