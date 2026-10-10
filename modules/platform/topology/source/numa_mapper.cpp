@@ -115,14 +115,32 @@ namespace SushiRuntime
                         else
                         {
                             /** @brief fallback to node 0 if no direct numa ancestor is found. */
-                            node.numa_node_id = 0; 
-                            SR_LOG_WARN("No direct NUMA ancestor for [{}], falling back to node 0", node.name);
+                            node.numa_node_id = 0;
+                            if (numa_node_count > 1)
+                            {
+                                SR_LOG_WARN("No direct NUMA ancestor for [{}]; placed on NUMA node 0 of {}, which may not be its nearest.",
+                                            node.name, numa_node_count);
+                            }
+                            else
+                            {
+                                SR_LOG_INFO("No direct NUMA ancestor for [{}]; placed on NUMA node 0, the only node.",
+                                            node.name);
+                            }
                         }
                     }
                     else 
                     {
-                        SR_LOG_WARN("Could not find PCI device in hwloc topology for [{}].", node.name);
                         node.numa_node_id = 0;
+                        if (numa_node_count > 1)
+                        {
+                            SR_LOG_WARN("hwloc lists no PCI device for [{}]; placed on NUMA node 0 of {}, which may not be its nearest.",
+                                        node.name, numa_node_count);
+                        }
+                        else
+                        {
+                            SR_LOG_INFO("hwloc lists no PCI device for [{}]; placed on NUMA node 0, the only node.",
+                                        node.name);
+                        }
                     }
                 } 
                 else 

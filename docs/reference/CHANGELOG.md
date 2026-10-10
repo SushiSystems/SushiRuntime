@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-10 — topology: Logged the two NUMA fallbacks of a GPU at warning level only on a machine with more than one NUMA node (`numa_mapper.cpp`).
 - 2026-10-10 — api: Split the two graph headers into one header per symbol and built the graph, the region and the dynamic graph on one recorder (`recorder.hpp`, `builder_surface.hpp`, `step_driver.hpp`, `plan_cache.hpp`).
 - 2026-10-10 — api: Moved the reduce, segmented reduce, prefix scan and counting sort bodies onto the public recorder interface; the add members forward to them (`primitives/reduce.hpp`, `primitives/primitive_members.hpp`).
 - 2026-10-10 — distributed: Added the protocol v2 frame and message codec, pinned by golden bytes (`wire_frame.hpp`, `wire_messages.hpp`, `wire_codec.hpp`, `test_wire_format.cpp`).
