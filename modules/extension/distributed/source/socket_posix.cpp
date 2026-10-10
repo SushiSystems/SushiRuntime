@@ -615,6 +615,7 @@ namespace SushiRuntime
          */
         void Socket::shutdown() noexcept
         {
+            shut_down_.store(true, std::memory_order_release);
             if (is_open())
                 (void)::shutdown(to_native(handle_), SHUT_RDWR);
         }
