@@ -277,3 +277,62 @@ The tree without `SR_ENABLE_DISTRIBUTED` builds and passes 387 of 387 tests, 3 s
 
 Not yet run: the package suite (`sr test --suite package`), and a build of SushiBLAS, SushiAI
 and SushiEngine against the moved tree.
+
+## Task E0: the split of `TaskScheduler`
+
+Designed on 2026-10-10 from `task_scheduler.cpp` at `caa0f52`. The class keeps every public
+declaration; what changes is where its state and its cold code live.
+
+### The bricks
+
+| Brick | File | Owns | Used by |
+| --- | --- | --- | --- |
+| Failure naming | `source/failure_naming.hpp`, `.cpp` | `NamedFailure`, `describe_task()`, the four `name_failure()` overloads. Free functions of a task and an exception; no scheduler state | `execute_task()` |
+| `RunOutcome` | `include/SushiRuntime/scheduler/run_outcome.hpp` | `run_failed_`, `run_error_`, its mutex, `run_cancelled_`. `record()`, `error()`, `has_failed()`, `cancel()`, `is_cancelled()`, `is_aborting()`, `reset()` | the scheduler's six run-error members, which forward; the dispatch loop; the offload gate |
+| `QuiescenceLatch` | `include/SushiRuntime/scheduler/quiescence_latch.hpp` | `inflight_`, its mutex and condition variable. `add(n)`, `retire()`, `wait()` | `submit()`, `submit_batch()`, `wait_quiescent()`, the poller, the offloaded branch of the loop |
+| Node placement | `source/node_placement.hpp`, `.cpp` | The first-dispatch check that a node's regions share one device, and the device index it caches. One function of a node, the allocator and the queue set; it throws `invalid_graph` | `execute_task()`, once per node |
+| `OffloadGate` | `include/SushiRuntime/scheduler/offload_gate.hpp` | The coordinator pointer and the offer made at dispatch: `install()`, `offer(task, outcome)` | the dispatch loop; `set_offload_coordinator()` |
+| Offload return | `source/offload_return.cpp` | The definitions of `resubmit()` and `complete_remote()`, the scheduler's two `OffloadSink` members | the coordinator's thread |
+| Worker loop and dispatch | `source/task_scheduler.cpp` | What is left: the pool, the injector queues, stealing, `dispatch_loop()`, `execute_task()` | |
+
+`RunOutcome`, `QuiescenceLatch` and `OffloadGate` are members held by value, so their headers
+sit under `include/` beside `event_polling.hpp`, which is there for the same reason. A pointer
+to a private type would add a load on the dispatch path.
+
+### State that crosses
+
+- The loop reads `RunOutcome::is_aborting()` once per task, as two atomic loads; today it reads
+  the same two atomics.
+- `EventPolling::set_inflight_tracker()` takes three pointers today. It takes one
+  `QuiescenceLatch*`, and `add_inflight()` and `drop_inflight()` forward to it.
+- `OffloadGate::offer()` is the block at `task_scheduler.cpp:609-624`: one null test for a
+  runtime with no coordinator, as today.
+- Node placement writes `cached_queue_index_` and `locality_checked_` on the node, as today.
+
+### Left where it is, and why
+
+The injector queues and the per-worker time buckets are two more responsibilities. They are
+not among the five named for this task; both go to `REMAINING_WORK.md` when E0 closes.
+
+### Order
+
+One commit per brick, in the table's order, each with a build and the full test run. The
+benchmarks run before the first commit and after the last.
+
+### Before
+
+Three runs of `sr run sr_benchmark_tests` at `caa0f52`, release, 12 workers, with an editor open
+on the machine. Median of each run; the spread between runs is the noise an after-figure is read
+against.
+
+| Benchmark | Case | Run 1 | Run 2 | Run 3 |
+| --- | --- | --- | --- | --- |
+| `scheduler_dispatch` | `scheduler`, ns per task | 164.7 | 163.9 | 149.5 |
+| `root_fanout` | `batched_submit`, size 1, ns per root step | 9 049 | 9 241 | 5 926 |
+| `root_fanout` | `batched_submit`, size 1024 | 5 809 | 8 866 | 5 630 |
+| `chain_dispatch` | `chain`, size 1, ns per node step | 7 253 | 8 577 | 6 131 |
+| `chain_dispatch` | `chain`, size 1024 | 8 907 | 5 512 | 5 652 |
+| `wide_fanout` | `steps20000_x64`, ns per task | 2 091 | 596 | 768 |
+
+`wide_fanout` moved by a factor of 3.5 between runs with no change to the code, so it can show
+only a regression larger than that.
