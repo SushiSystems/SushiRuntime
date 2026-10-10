@@ -76,8 +76,10 @@ The v1 limits a user must know are in
 - **Unmeasured costs.** `PendingTasks::insert()` allocates per dispatch, and the release
   observer takes the buffer registry's mutex on every USM release. Both wait for the TCP
   benchmark figures.
-- **Verification not yet run.** An ASan run of the layer, 100 repeats of the TCP fault suite,
-  and the TCP rows of the distributed benchmark.
+- **Verification not yet run.** 100 repeats of the TCP fault suite and the TCP rows of the
+  distributed benchmark. An ASan run of the layer was tried on 2026-10-10 and could not start:
+  the intel/llvm bundle on the Windows machine ships no `clang_rt.asan` runtime, so `sr build
+  --type asan` stops at configure. It needs a bundle with compiler-rt, or the Linux machine.
 - **Endpoint configuration.** Cluster addresses come from flags and the environment; there is
   no nodes file.
 - **Dynamic-graph offload.** The dynamic composer bypasses `TaskGraph::compile`, where
