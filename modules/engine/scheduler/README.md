@@ -277,7 +277,7 @@ default-constructed with an indeterminate value in C++17, feeding the thermal st
 rates. Wrapping each counter in a cache-line-aligned, zero-initialised struct, as WorkerTimeBuckets
 does, fixes both.
 
-### inflight_
+### quiescence_
 
 The completion sentinel signals the caller from its host_work, which runs on a worker thread before
 that worker and its peers have finished the poll bookkeeping (trigger_successors and release) for
