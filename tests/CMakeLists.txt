@@ -15,9 +15,6 @@ cmake_minimum_required(VERSION 3.22) # gtest_discover_tests(TEST_FILTER ...)
 #   sr_benchmark_tests    benchmark/, under SR_BUILD_BENCHMARKS
 #   Package.*             package/, through tools/packaging
 
-option(SR_BUILD_BENCHMARKS
-    "Build the heavy stress/performance test suite (CI fast lane sets OFF)" ON)
-
 sushiruntime_add_test_program(
     NAME sr_functional_tests
     SOURCES
