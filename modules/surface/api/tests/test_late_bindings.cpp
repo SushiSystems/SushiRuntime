@@ -22,7 +22,7 @@
 /**
  * @file test_late_bindings.cpp
  * @brief Tests that a graph whose live size, base or participation changes per step compiles once.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

@@ -22,7 +22,7 @@
 /**
  * @file test_profiling_queue.cpp
  * @brief Tests the profiling queue RuntimeContext::devices() builds against the plain queue.
- * @see tests/integration/README.md
+ * @see modules/engine/execution/tests/README.md
  * @author Mustafa Garip
  */
 

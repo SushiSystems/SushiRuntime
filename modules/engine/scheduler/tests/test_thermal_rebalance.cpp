@@ -22,7 +22,7 @@
 /**
  * @file test_thermal_rebalance.cpp
  * @brief Tests ThermalProxyStrategy against fake telemetry and a fake migrator.
- * @see tests/unit/README.md
+ * @see modules/engine/scheduler/tests/README.md
  * @author Mustafa Garip
  */
 

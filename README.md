@@ -423,7 +423,7 @@ Tasks come in two flavors: **kernel** tasks that submit work through a `sycl::ha
 
 ## Architecture
 
-The code is organized into layers under `include/SushiRuntime/` and `src/`.
+The code is organized into modules under `modules/<tier>/<module>/`; a module includes only lower tiers and the same-tier modules `cmake/SushiRuntimeTiers.cmake` lists. The headings below name each module's include folder.
 
 ### Public API (`api/`)
 The fluent entry point that most users should start from:
@@ -522,30 +522,31 @@ See [Distributed execution](#distributed-execution-optional) for how to run it.
 ## Project layout
 
 ```
-include/SushiRuntime/   Public headers (this is the API surface)
-  api/                  Fluent entry point: Runtime, Buffer/State handles,
-                        API::Graph, RunReport, Error, Errc
-  core/                 Ref counting, smart pointer, logger, constants,
-                        error/result/run_report types, compat shims (bit, span, sycl_compat)
-  topology/             Hardware discovery, NUMA mapping, thread affinity,
-                        injectable topology/distance providers
-  memory/               USM allocation ownership, the USM registry, epoch reclamation
-  graph/                Task graph, nodes, dependency tracker, task types
-  scheduler/            Work-stealing scheduler, tasks, event polling, rebalancer
-  execution/            Runtime context, execution engine, ExecutionMetrics
-  interop/              Host memory export and device memory import (API::Interop)
-  distributed/          Optional master-worker offload (protocol, ByteWriter/ByteReader,
-                        transports, KernelRegistry, BufferRegistry, coordinator, worker agent,
-                        IOffloadPolicy, WorkerStats)
-src/                    Implementations of the above
-examples/               Tutorial apps, all on the fluent API: quickstart, vecadd_demo,
+modules/                One folder per module, grouped by tier, lowest first.
+  foundation/           core (ref counting, sushi_ptr, span, error, result, version),
+                        logging (the logger), sycl (toolchain differences)
+  platform/             topology (discovery, NUMA, affinity), memory (USM allocator and
+                        registry, epoch reclamation), device (device inventory, queues),
+                        observability (run report, profiling ledger, transfer counters)
+  engine/               task (Task, Node, task types, the offload seam), scheduler
+                        (work-stealing pool, event polling, rebalancer), graph (TaskGraph,
+                        dependency tracker), execution (RuntimeContext, execution engine)
+  surface/              interop (external memory vocabulary and import), api (Runtime,
+                        Buffer/State, API::Graph, DynamicGraph, the umbrella header)
+  extension/            distributed (optional master-worker offload: protocol,
+                        transports, coordinator, worker agent, Cluster)
+                        Each module holds README.md, CMakeLists.txt,
+                        include/SushiRuntime/<module>/, source/ and tests/.
+applications/examples/  Tutorial apps, all on the fluent API: quickstart, vecadd_demo,
                         stencil_demo, coupled_fields_demo, game_engine_demo,
                         streaming_world_demo (always built); distributed_demo
                         (distributed builds only)
-tests/
+tests/                  Tests that cross module boundaries
   common/               Shared GoogleTest entry point and helpers
-  functional/           unit / regression / integration (fast, CI)
-  benchmark/            stress / performance (heavy, nightly)
+  unit/ integration/ regression/ allocation/   fast, CI
+  benchmark/            stress and performance (heavy, nightly)
+  package/              A consumer built against the installed package
+cmake/                  Build functions and the tier table (SushiRuntimeTiers.cmake)
 cli/                    Python `sr` / `sushiruntime` CLI package (Typer + rich)
 .github/workflows/      CI: functional tests per push, benchmarks nightly
 docs/                   The manual, indexed by docs/README.md; api/ holds the Doxygen main page

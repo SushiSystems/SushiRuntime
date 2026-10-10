@@ -22,7 +22,7 @@
 /**
  * @file test_dynamic_graph.cpp
  * @brief Tests the region-partitioned graph that Runtime::dynamic_graph() returns.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

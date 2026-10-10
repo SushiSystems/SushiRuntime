@@ -22,7 +22,7 @@
 /**
  * @file test_event_polling.cpp
  * @brief Tests that ActiveEventList keeps every event across its inline and spill storage.
- * @see tests/unit/README.md
+ * @see modules/engine/scheduler/tests/README.md
  * @author Mustafa Garip
  */
 

@@ -22,7 +22,7 @@
 /**
  * @file test_native_cpu_path.cpp
  * @brief Tests add_host(), which runs plain C++ on a worker thread ordered by the data it touches.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

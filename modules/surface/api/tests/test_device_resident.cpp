@@ -22,7 +22,7 @@
 /**
  * @file test_device_resident.cpp
  * @brief Tests buffers and States allocated with Residency::Device, Shared and Host.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

@@ -22,7 +22,7 @@
 /**
  * @file test_reduce_dispatch_width.cpp
  * @brief Tests the dispatch widths that add_reduce() and add_segmented_reduce() stamp.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

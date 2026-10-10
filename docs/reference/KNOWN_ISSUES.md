@@ -11,7 +11,7 @@ Defects that are recorded and not yet fixed. The work each one needs is in
 | A host read of a `Residency::Shared` buffer while a kernel runs on the same GPU faults on Windows with CUDA (0xC0000006). Values read mid-run must live in `Residency::Host` | `modules/surface/api/include/SushiRuntime/api/data/buffer.hpp` |
 | A `Buffer` or `State` moved after it was passed to `Graph::add` leaves the graph pointing at the old address, and the liveness guard does not report it | `modules/surface/api/include/SushiRuntime/api/data/buffer.hpp` |
 | On Linux with the current DPC++ a profiled in-order chain makes 8 allocations per tick on the calling thread and bare SYCL makes 5, so `Integration_SteadyStateAllocation.ProfiledReuseTicksDoNotAllocatePerTick` fails (512 to 2048 against 320 to 1280); first seen on CI on 2026-10-05, not reproduced on Windows | `tests/allocation/test_steady_state_allocation.cpp` |
-| A distributed worker that drops mid-run cannot rejoin | `src/distributed/` |
+| A distributed worker that drops mid-run cannot rejoin | `modules/extension/distributed/` |
 | A distributed worker does not receive task N+1 while task N runs | `modules/extension/distributed/source/worker_agent.cpp` |
 | The worker allocates, frees and inspects devices through `ctx.get_queue(0)`, bypassing its NUMA-aware scheduler | `modules/extension/distributed/source/worker_agent.cpp` |
 | The TCP frame header carries its length in native byte order, so a cluster must share one endianness | `modules/extension/distributed/source/tcp_transport.cpp` |

@@ -82,9 +82,9 @@ Expectations for a mergeable change:
    (`--type debug`) is strongly encouraged for lock-free changes. Use
    `sr test --repeat N` to hunt flakiness.
 3. **New behavior ships with tests.** Put fast, deterministic tests in
-   `tests/functional/` (unit/regression/integration); heavy stress/perf probes go
+   the module's `tests/` folder, or `tests/` (unit/regression/integration) when it crosses modules; heavy stress/perf probes go
    in `tests/benchmark/`. Fixed bugs get a sentinel in
-   `tests/functional/regression/`.
+   `tests/regression/`.
 4. **Distributed changes** are validated with `sr build --distributed` and
    the `*Distributed*` tests, which run the full protocol over the in-process
    fabric and TCP loopback without needing a cluster.
@@ -270,7 +270,7 @@ Treat the following as hard requirements, not suggestions:
   apt line must move together.
 - **Public API carries Doxygen.** New or changed public functions follow the
   Doxygen rules in §4. The header *is* documentation — it feeds the fluent API
-  reference site (`sr docs`, scoped to `include/SushiRuntime/api` by the
+  reference site (`sr docs`, scoped to `modules/surface/api/include/SushiRuntime/api` by the
   repo-root `Doxyfile`), so a missing `@param` on a public symbol is a doc gap CI
   reports.
 

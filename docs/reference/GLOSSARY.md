@@ -6,7 +6,7 @@ The words this repository's documents use. A term defined in code names the head
 
 | Word | Meaning |
 | --- | --- |
-| Fluent API | The public surface under `include/SushiRuntime/api/`: `Runtime`, `Buffer`, `State`, `Graph`, `DynamicGraph`. A user who stays on it never names a lower layer |
+| Fluent API | The public surface under `modules/surface/api/include/SushiRuntime/api/`: `Runtime`, `Buffer`, `State`, `Graph`, `DynamicGraph`. A user who stays on it never names a lower layer |
 | Task | One unit of work in a graph. It declares the memory it reads and writes; the runtime derives the order |
 | Node | A task as the graph stores it, with its successors, in-degree and metadata (`graph/node.hpp`) |
 | Hazard | A pair of accesses to the same memory that fixes an order between two tasks: read-after-write (RAW), write-after-read (WAR) or write-after-write (WAW) |

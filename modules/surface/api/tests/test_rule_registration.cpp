@@ -22,7 +22,7 @@
 /**
  * @file test_rule_registration.cpp
  * @brief Tests Graph::rule_registration, which maps an add() call to its registration index.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

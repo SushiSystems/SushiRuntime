@@ -22,7 +22,7 @@
 /**
  * @file test_fluent_hardening.cpp
  * @brief Tests the multidimensional, variadic, wrapper and captured-argument forms of fluent add().
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

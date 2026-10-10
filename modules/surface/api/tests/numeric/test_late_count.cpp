@@ -22,7 +22,7 @@
 /**
  * @file test_late_count.cpp
  * @brief Tests the tiled level plan and LateCount's resolution point, both pure host functions.
- * @see tests/unit/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

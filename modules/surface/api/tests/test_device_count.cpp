@@ -22,7 +22,7 @@
 /**
  * @file test_device_count.cpp
  * @brief Tests API::sized_from_device, which sizes a task from a count written earlier in the step.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

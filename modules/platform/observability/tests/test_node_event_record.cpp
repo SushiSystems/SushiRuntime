@@ -22,7 +22,7 @@
 /**
  * @file test_node_event_record.cpp
  * @brief Tests Core::NodeEventRecord's layout and what RunReport::reset() keeps and zeroes.
- * @see tests/unit/README.md
+ * @see modules/platform/observability/tests/README.md
  * @author Mustafa Garip
  */
 

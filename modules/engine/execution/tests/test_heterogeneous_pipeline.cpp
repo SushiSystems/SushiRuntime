@@ -22,7 +22,7 @@
 /**
  * @file test_heterogeneous_pipeline.cpp
  * @brief Tests many independent host, device, host chains running at once through the scheduler.
- * @see tests/integration/README.md
+ * @see modules/engine/execution/tests/README.md
  * @author Mustafa Garip
  */
 

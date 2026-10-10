@@ -42,9 +42,11 @@ these thin out to standard aliases.
 
 ## 2. The layered architecture
 
-The code is organized as a stack of layers under `include/SushiRuntime/` (public
-API) and `src/` (implementations). Higher layers depend on lower ones; lower
-layers never depend up.
+The code is organized as modules under `modules/<tier>/<module>/`, each with its public
+headers in `include/SushiRuntime/<module>/` and its implementation in `source/`. A
+module depends on lower tiers and on the same-tier modules that
+`cmake/SushiRuntimeTiers.cmake` lists; the build refuses any other dependency. The
+diagram groups the modules by the layer they form; section 16 has the full map.
 
 ```
         ┌─────────────────────────────────────────────────────────┐
@@ -1251,27 +1253,34 @@ helper is a no-op stub and `-fsycl` is applied globally.
 ## 16. Directory map
 
 ```
-include/SushiRuntime/      Public API (the headers this document describes)
-  api/         Runtime (fluent entry point), Buffer/State handles, API::Graph,
-               API::DynamicGraph / Region, RunReport, Error, Errc
-  core/        RefCounted, sushi_ptr, logger, common constants, OpID, export macro,
-               Error/Result/RunReport, compat shims (bit, span, sycl_compat)
-  topology/    HardwareDiscovery, NUMAMapper, ITopologyProvider/INumaDistanceModel,
-               Hwloc + Remapping/Matrix substitutes, affinity
-  memory/      UsmRegistry (pointer ownership), EpochManager (EBR)
-  graph/       TaskGraph, Node, DependencyTracker, task_types (OpID/TaskMetadata)
-  scheduler/   TaskScheduler, Task/RangeTask, EventPolling, WorkloadCoordinator,
-               rebalancer_interfaces, ThermalProxyStrategy
-  execution/   RuntimeContext, IExecutionEngine/ExecutionEngine, CompiledGraph,
-               ExecutionMetrics
-  interop/     DeviceUuid, ExternalMemoryDescriptor, InteropCapabilities,
-               API::Interop (host export, device import, capability query)
-  distributed/ (optional) protocol, ByteWriter/ByteReader, transports
-               (InProcessFabric/InProcessTransport, TcpTransport), KernelRegistry,
-               BufferRegistry, coordinator, worker agent, IOffloadPolicy, WorkerStats
-src/                       Implementations of the above
-tests/                     functional/ (unit, integration, regression) + benchmark/
-examples/                  fluent tutorials: quickstart + *_demo (always built);
+modules/<tier>/<module>/   README.md, CMakeLists.txt, include/SushiRuntime/<module>/,
+                           source/, tests/. Tiers, lowest first:
+  foundation/  core        RefCounted, sushi_ptr, span, bit, Error/Result, export macro
+               logging     the logger and the SR_LOG macros
+               sycl        sycl_compat (toolchain differences)
+  platform/    topology    HardwareDiscovery, NUMAMapper, ITopologyProvider,
+                           INumaDistanceModel, TopologyView, affinity
+               memory      UsmAllocator, UsmRegistry, resource regions, EpochManager (EBR)
+               device      DeviceQueueSet, DeviceInfo, QueueFlavour
+               observability  RunReport, ProfilingLedger, TransferCounters
+  engine/      task        Task, Node, task_types (OpID/TaskMetadata), late bindings,
+                           OffloadState/OffloadSink/OffloadCoordinator
+               scheduler   TaskScheduler, RangeTask, EventPolling, WorkloadCoordinator,
+                           rebalancer_interfaces, ThermalProxyStrategy
+               graph       TaskGraph, CompiledGraph, DependencyTracker
+               execution   RuntimeContext, IExecutionEngine/ExecutionEngine,
+                           ExecutionMetrics
+  surface/     interop     DeviceUuid, ExternalMemoryDescriptor, InteropCapabilities
+               api         Runtime, Buffer/State, API::Graph, API::DynamicGraph / Region,
+                           API::Interop, the umbrella header SushiRuntime.h
+  extension/   distributed (optional) protocol, ByteWriter/ByteReader, transports,
+                           KernelRegistry, BufferRegistry, coordinator, worker agent,
+                           IOffloadPolicy, WorkerStats, Cluster
+cmake/                     build functions; SushiRuntimeTiers.cmake states the tier order
+                           and the edges allowed inside a tier
+tests/                     tests that cross modules: unit/, integration/, regression/,
+                           allocation/, benchmark/, package/
+applications/examples/     fluent tutorials: quickstart + *_demo (always built);
                            distributed_demo (distributed builds only)
 docs/                      the manual, indexed by docs/README.md
 ```

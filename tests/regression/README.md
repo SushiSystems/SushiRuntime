@@ -1,9 +1,11 @@
 # Regression tests
 
-The tests in `tests/functional/regression` are sentinels for defects that were found and fixed. This
-document records what each test proves and why it is built the way it is. A section is named after a
-test file, and a subsection after the test it describes. The source comments state one invariant per
-line and cite this file.
+The tests in `tests/regression` are sentinels for defects that were found and fixed. They name
+headers of more than one module by path, which is why they are here and not in a module. A module's
+own tests are documented in `modules/<tier>/<module>/tests/README.md`. This document records what
+each test proves and why it is built the way it is. A section is named after a test file, and a
+subsection after the test it describes. The source comments state one invariant per line and cite
+this file.
 
 ## test_regression.cpp
 

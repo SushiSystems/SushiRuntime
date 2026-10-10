@@ -22,7 +22,7 @@
 /**
  * @file test_region_emitter.cpp
  * @brief Tests add_emitter(), the recording form that hands the caller the backing graph.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

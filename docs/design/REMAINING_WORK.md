@@ -51,7 +51,7 @@ reasoning in `docs/archive/slop/TODO.md`.
 
 ## Before the v1.0.0 freeze
 
-- **Doxygen conformance sweep.** Every public function under `include/SushiRuntime/` follows
+- **Doxygen conformance sweep.** Every public function under a module's `include/` follows
   the rule in [`CONTRIBUTING.md`](../CONTRIBUTING.md) §4, in one pass that changes no behaviour.
   `python tools/documentation/check_source_comments.py include src tests examples cli tools --report`
   counted 1 291 findings on 2026-10-05: 771 comment runs, 295 blocks over the ceiling, 204 file
@@ -69,7 +69,7 @@ reasoning in `docs/archive/slop/TODO.md`.
 The v1 limits a user must know are in
 [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md) §12. The engineering gaps:
 
-- **Reconnect.** A worker that drops mid-run cannot rejoin; nothing in `src/distributed/`
+- **Reconnect.** A worker that drops mid-run cannot rejoin; nothing in `modules/extension/distributed/`
   re-establishes the connection.
 - **Pipelining.** The worker has one job queue, so task N+1 is not received while N runs
   (`modules/extension/distributed/source/worker_agent.cpp`).
@@ -113,9 +113,8 @@ The v1 limits a user must know are in
   layout" sections restate `docs/getting_started/INTRODUCTION.md` and
   `docs/architecture/ARCHITECTURE.md`. The README keeps the pitch, the requirements and the
   build line; the rest moves to the page that already holds it.
-- **No area README.** None of `cli/`, `tests/`, `examples/`, `cmake/` or the nine folders under
-  `include/SushiRuntime/` carries a `README.md`; their facts are in
-  `docs/architecture/ARCHITECTURE.md` §3 to §12.
+- **No `cmake/README.md`.** The build functions and the tier table are described only in the
+  comments of the files themselves.
 - **Humanizer pass over the manual.** The estate audit measured 3.3 to 4.0 em dashes per 300
   words in the seven manual pages against a ceiling of about one.
 - **Changelog entries that were never written.** The dispatch-width work of 2026-09-21
@@ -140,10 +139,13 @@ The v1 limits a user must know are in
 - **CI.** `.github/workflows/ci.yml` runs on Linux only, calls `cmake` and `ctest` directly,
   runs none of the checkers, has no release workflow, and its `cli` job installs `sushicore`
   from a path SushiStack no longer carries.
-- **Names the sibling layout does not use.** `src/` for `source/`, `examples/` for
-  `applications/`, `tests/functional/` and `tests/benchmark/` as an extra level, and the
-  umbrella header `modules/surface/api/include/SushiRuntime/SushiRuntime.h`. A rename of the header is a public
-  interface change.
+- **The umbrella header's name.** `SushiRuntime/SushiRuntime.h` is the one header with a `.h`
+  suffix and a capitalised name. A rename is a public interface change.
+- **Layout steps left after the move.** The three headers nothing outside their module includes
+  (`work_stealing_deque.hpp`, `dependency_tracker.hpp`, `bindless_detection.hpp`) still sit under
+  `include/`; `Doxyfile`, `Dockerfile`, `SECURITY.md` and `CODE_OF_CONDUCT.md` have not moved to
+  `.config/` and `.github/`; the library exports every symbol; no header is compiled alone. The
+  order is in `docs/agent/2026_10_09_USABILITY_AUDIT/PLAN.md`.
 - **No `.clang-format` or `.editorconfig`** in the root.
 - **Ignore rules.** `docs/api-site/.gitignore` repeats two root rules; the root `.gitignore`
   still lists `dependencies/` and `docs/html`, and has no rule for `.superpowers/`,

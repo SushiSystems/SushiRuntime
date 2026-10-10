@@ -22,7 +22,7 @@
 /**
  * @file test_dependency_tracker.cpp
  * @brief Tests the edges the lock-free DependencyTracker creates between raw nodes.
- * @see tests/unit/README.md
+ * @see modules/engine/graph/tests/README.md
  * @author Mustafa Garip
  */
 

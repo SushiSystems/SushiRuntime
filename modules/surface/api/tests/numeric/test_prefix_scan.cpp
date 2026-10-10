@@ -22,7 +22,7 @@
 /**
  * @file test_prefix_scan.cpp
  * @brief Tests add_prefix_scan() against a host reference, with late-bound replay and indexing.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

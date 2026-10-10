@@ -22,7 +22,7 @@
 /**
  * @file test_device_pipeline.cpp
  * @brief Tests a diamond of four device-kernel nodes added with add_node(TaskWork, reads, writes).
- * @see tests/integration/README.md
+ * @see modules/engine/execution/tests/README.md
  * @author Mustafa Garip
  */
 

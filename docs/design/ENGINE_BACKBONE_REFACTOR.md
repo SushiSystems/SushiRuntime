@@ -184,7 +184,7 @@ across the reduction swap; `compile_count()==1` invariants hold; a grep proves
 
 ## 5. BB-1 — Vulkan interop: the missing half
 
-**Status.** BB-1a landed in 0.3.0 as `include/SushiRuntime/interop/`, shaped by SushiEngine's
+**Status.** BB-1a landed in 0.3.0 as the `interop` module, shaped by SushiEngine's
 `docs/design/SYCL_VULKAN_INTEROP.md`, which supersedes this section where the two differ. BB-1b is
 unbuilt.
 
@@ -228,7 +228,7 @@ an empty `sycl::event{}` with the warning *"do not chain SYCL dependencies on th
 - Non-goal: importing Vulkan *images*. The engine's export half deals in buffers; hardware-
   filtered volume sampling is exactly the render-resource domain P4 excludes.
 
-**Proof.** A new `interop_demo` in `examples/` (compiled in CI when the toolchain supports it):
+**Proof.** A new `interop_demo` in `applications/examples/` (compiled in CI when the toolchain supports it):
 device kernel writes positions into an imported buffer, a host-side Vulkan stub validates
 contents with zero copies; the engine's `vulkan_interop_buffer.cpp:249` gains its first caller;
 animation's palette readback loop (`device_batch_evaluator.hpp:241-250`, element-by-element
@@ -326,7 +326,7 @@ consumer-side CMake test in BB-4).
 
 **The problem.** There is no out-of-tree consumption path: no `install(EXPORT)`, no
 `SushiRuntimeConfig.cmake`, no version header, no namespaced target; the documented integration
-is "drop your .cpp into examples/". The engine consumes the runtime by `add_subdirectory` of a
+is "drop your .cpp into applications/examples/". The engine consumes the runtime by `add_subdirectory` of a
 sibling checkout (`sushiengine/cmake/Runtime.cmake:11-19`) — workable for the monorepo-adjacent
 layout, but it means "pin a known-good runtime" is a checkout convention, not an artifact, and
 any third consumer (the VST host case in the audio plan, a dedicated server image, CI shards)
