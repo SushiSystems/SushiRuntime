@@ -259,11 +259,7 @@ namespace SushiRuntime
         void TaskScheduler::arm_for_execution(bool profiling)
         {
             // Wakes workers for a new round; clears the previous round's failure.
-            {
-                std::lock_guard<std::mutex> lock(run_error_mutex_);
-                run_error_ = nullptr;
-            }
-            run_failed_.store(false, std::memory_order_release);
+            outcome_.clear_failure();
 
             // The poller gets the profiling flag before any worker runs (modules/engine/scheduler/README.md).
             event_poller.set_profiling(profiling);
@@ -489,7 +485,7 @@ namespace SushiRuntime
                     catch (...)
                     {
                         SR_LOG_ERROR("poll_events threw; aborting the current run.");
-                        record_run_error(std::current_exception());
+                        outcome_.record(std::current_exception());
                     }
 
                     // Only a priority submission takes the global mutex (modules/engine/scheduler/README.md).
@@ -537,10 +533,7 @@ namespace SushiRuntime
                             if (state != nullptr && state->offloadable)
                             {
                                 // A node of an aborting run stays local; execute_task skips it.
-                                const bool aborting =
-                                    run_failed_.load(std::memory_order_acquire) ||
-                                    run_cancelled_.load(std::memory_order_acquire);
-                                if (!aborting)
+                                if (!outcome_.is_aborting())
                                     offloaded = offload_->try_offload(node);
                             }
                         }
@@ -592,8 +585,7 @@ namespace SushiRuntime
             if (!task) return;
 
             // An aborting run executes no more kernels (modules/engine/scheduler/README.md).
-            if (run_failed_.load(std::memory_order_acquire) ||
-                run_cancelled_.load(std::memory_order_acquire))
+            if (outcome_.is_aborting())
             {
                 bool is_sentinel = task->is_graph_node() &&
                                    static_cast<SushiRuntime::Graph::Node*>(task)->is_sentinel;
@@ -626,7 +618,7 @@ namespace SushiRuntime
                              failure.message);
 
                 // Only this run fails; the pool stays re-armable (modules/engine/scheduler/README.md).
-                record_run_error(failure.error);
+                outcome_.record(failure.error);
 
                 // The failed task is pushed as ready so successors fire (modules/engine/scheduler/README.md).
                 events.push(skipped_event(task));
@@ -829,30 +821,6 @@ namespace SushiRuntime
             {
                 abort_run(name_failure(*task));
             }
-        }
-
-        /**
-         * @brief Records the run's first exception and flips run_failed_ (modules/engine/scheduler/README.md).
-         * @param ep The exception thrown by the task; later ones are dropped.
-         */
-        void TaskScheduler::record_run_error(std::exception_ptr ep)
-        {
-            std::lock_guard<std::mutex> lock(run_error_mutex_);
-            if (!run_failed_.load(std::memory_order_relaxed))
-            {
-                run_error_ = ep;
-                run_failed_.store(true, std::memory_order_release);
-            }
-        }
-
-        /**
-         * @brief Returns the first exception captured during the current run.
-         * @return The captured exception, or null if the run did not fail.
-         */
-        std::exception_ptr TaskScheduler::run_error()
-        {
-            std::lock_guard<std::mutex> lock(run_error_mutex_);
-            return run_error_;
         }
 
         /**

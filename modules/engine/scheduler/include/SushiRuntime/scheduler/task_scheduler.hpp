@@ -46,6 +46,7 @@
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/scheduler/pin_policy.hpp>
+#include <SushiRuntime/scheduler/run_outcome.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 
@@ -181,20 +182,8 @@ namespace SushiRuntime
                  *  a second call would overwrite live std::thread handles (terminate)
                  *  and break the Chase-Lev single-owner-per-deque invariant. */
                 std::atomic<bool> threads_started_{false};
-                /**
-                 * @brief Tells whether a task threw during the current run.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                std::atomic<bool> run_failed_{false};
-                /** @brief Guards run_error_ on the cold failure path. */
-                std::mutex run_error_mutex_;
-                /** @brief First exception captured this run; delivered to the caller. */
-                std::exception_ptr run_error_;
-                /**
-                 * @brief Tells whether the active run was cancelled from another thread.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                std::atomic<bool> run_cancelled_{false};
+                /** @brief Failure and cancellation of the active run. */
+                RunOutcome outcome_;
                 /** @brief Poller to track SYCL events. */
                 EventPolling event_poller;
                 /** @brief Core-to-NUMA map and NUMA distances the steal order is built from. */
@@ -298,8 +287,6 @@ namespace SushiRuntime
                 void execute_task(Task* task, int worker_id, EventPolling::ActiveEventList& events);
                 /** @brief Runs one worker thread until stop(); @p thread_id is its worker index. */
                 void dispatch_loop(int thread_id);
-                /** @brief Records the first exception of the run and flips run_failed_. */
-                void record_run_error(std::exception_ptr ep);
                 /** @brief Looks for a task to steal from another thread's queue. */
                 Task* find_task_to_steal(int th_id);
                 /** @brief Moves pending submissions into the local worker queue. */
@@ -419,16 +406,15 @@ namespace SushiRuntime
                  * instead of success. Cleared each round by arm_for_execution().
                  * @return True if the current run has failed.
                  */
-                bool run_failed() const { return run_failed_.load(std::memory_order_acquire); }
+                bool run_failed() const { return outcome_.has_failed(); }
 
                 /**
                  * @brief Returns the first exception captured during the current run.
                  *
-                 * Synchronizes with the failing worker via run_error_mutex_, so the
-                 * value is visible once run_failed() reads true.
+                 * The value is visible once run_failed() reads true.
                  * @return The captured exception, or null if the run did not fail.
                  */
-                std::exception_ptr run_error();
+                std::exception_ptr run_error() { return outcome_.error(); }
 
                 /**
                  * @brief Requests cancellation of the active run. Thread-safe.
@@ -436,16 +422,16 @@ namespace SushiRuntime
                  * Remaining tasks drain without executing and the run completes
                  * (the sentinel still fires); the driver stops launching new steps.
                  */
-                void request_cancellation() noexcept { run_cancelled_.store(true, std::memory_order_release); }
+                void request_cancellation() noexcept { outcome_.cancel(); }
 
                 /**
                  * @brief Reports whether the active run has been cancelled.
                  * @return True if request_cancellation() was called and not yet reset.
                  */
-                bool run_cancelled() const { return run_cancelled_.load(std::memory_order_acquire); }
+                bool run_cancelled() const { return outcome_.is_cancelled(); }
 
                 /** @brief Clears the cancellation flag at the start of a fresh run. */
-                void reset_cancellation() { run_cancelled_.store(false, std::memory_order_release); }
+                void reset_cancellation() { outcome_.clear_cancellation(); }
 
                 size_t get_worker_count() const override;
                 size_t get_queue_size(int worker_id) const override;
