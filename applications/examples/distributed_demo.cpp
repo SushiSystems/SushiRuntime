@@ -203,7 +203,7 @@ namespace
 
     /**
      * @brief Reads the cluster's key, or returns the empty secret when no file was named.
-     * @throws Core::SushiException When the file cannot be read or holds fewer than 32 bytes.
+     * @throws SushiException When the file cannot be read or holds fewer than 32 bytes.
      */
     Distributed::SharedSecret read_secret(const std::filesystem::path& file)
     {
@@ -235,7 +235,7 @@ namespace
 
         // The lambda is the local fallback; a worker runs the kernel registered for the same id.
         auto graph = runtime.graph();
-        graph.add(DistributedDemo::K_VECTOR_ADD, count, API::Reads(a, b), API::Writes(sum),
+        graph.add(DistributedDemo::K_VECTOR_ADD, count, Reads(a, b), Writes(sum),
                   [a_data, b_data, sum_data](std::size_t index)
                   {
                       DistributedDemo::add_element(a_data, b_data, sum_data, index);
@@ -278,7 +278,7 @@ namespace
     /**
      * @brief Attaches a master, waits for a worker, runs the vector add and reports.
      * @return 0 when the sum is right, 1 otherwise.
-     * @throws Core::SushiException When the secret cannot be read or the master does not start.
+     * @throws SushiException When the secret cannot be read or the master does not start.
      */
     int run_demo(const DemoOptions& options)
     {

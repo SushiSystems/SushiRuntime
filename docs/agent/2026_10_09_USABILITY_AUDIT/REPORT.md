@@ -2482,3 +2482,13 @@ Effort: S each.
 5. Done and not done are listed above under "Not checked".
 6. No source written; nothing to syntax-check.
 7. Scratchpad: I wrote nothing to it. `du -sh` on the scratchpad reports 9.0K, which was there from other work in this session; I deleted nothing because I created nothing.
+
+## Dispatches
+
+One line per dispatch, recorded from C8 on. The turn count is the worker's tool calls.
+
+```
+dispatch: C8 builder surface — opus low, 96 turns, passed after two fixes by the orchestrator (a null name, one test line)
+dispatch: C13 umbrella, promotion, namespaces — opus low, 99 turns, passed
+dispatch: C14 examples and callers — opus low, 64 turns, passed
+```
