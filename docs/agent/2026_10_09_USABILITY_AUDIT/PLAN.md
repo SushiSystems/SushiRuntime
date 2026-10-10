@@ -263,4 +263,8 @@ Wide fan-out read 547 ns in phase A, then 366, 898 and 703 ns in three later run
 with a spread of 691 to 809. The other cases stay inside the phase A spread. Phase E measures
 wide fan-out on a quiet machine before it decides whether steps 5 to 9 cost it anything.
 
-Not yet built: the tree without `SR_ENABLE_DISTRIBUTED`.
+The tree without `SR_ENABLE_DISTRIBUTED` builds and passes 387 of 387 tests, 3 skipped, at
+`f15a0e9`: the layer adds 29 tests and no header changes with the flag.
+
+Not yet run: the package suite (`sr test --suite package`), and a build of SushiBLAS, SushiAI
+and SushiEngine against the moved tree.

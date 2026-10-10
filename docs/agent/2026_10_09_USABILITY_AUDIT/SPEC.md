@@ -2319,3 +2319,406 @@ Step 6 is what makes step 8 incremental: the product is composed from recorded o
 - **Item 7, scratchpad.** Nothing was written. `du -sh` on the session scratchpad printed `4.0K`, an empty directory; the `b3` subfolder was never created. Nothing to delete.
 - **Items 3 and 4.** Commands run were `ls`, `cat`, `sed`, `grep`, `git ls-files`, `cmake --version` and one failed `python -c` import probe. No configure, build or test started, and no file was created, touched or deleted in any repository.
 - **Skills loaded:** `humanizer`, `repository-layout`, `project-tools`, `dependencies`, `platform-portability`, `versioning-and-release`, `continuous-integration`, `testing`.
+
+# Phase D: distributed layer, production ready for a trusted LAN
+
+Read-only design against the working tree at `703eed9`. Paths are relative to `D:\Projects\sushiruntime`. `M/` stands for `modules/extension/distributed/`, `inc/` for `M/include/SushiRuntime/distributed/`, `src/` for `M/source/`. Nothing was built or run, so every behavioural claim comes from reading.
+
+### 1. Findings table
+
+Status: **closed** (today's code settles it), **changed** (the evidence moved or part is done), **stands**. Task ids are from section 7.
+
+| Id | Status | Evidence in today's code | Settled by |
+| --- | --- | --- | --- |
+| DIST-01 SIGPIPE | stands | `src/tcp_transport.cpp:176` sends with flags 0; a failed write only shuts the socket (`:251`), so later writes hit it again | T3, T6, T14 |
+| DIST-02 output allocation kills the worker | stands | `src/worker_agent.cpp:393` resolves outputs before the `try` at `:395`; throws at `:232-238`; `exec_loop` has no guard (`:483-497`) | T10 |
+| DIST-03 open port, no peer gate | stands | `INADDR_ANY` at `src/tcp_transport.cpp:316`; `BUFFER_REQUEST` and `BUFFER_PUSH` served with no registered check (`src/distributed_coordinator.cpp:239-272`); fence compares a wire version (`:260`); a rejected HELLO only breaks (`:211-216`) | T2, T6, T8, T9 |
+| DIST-04 stray connection takes a slot | stands | `src/tcp_transport.cpp:261-271` accepts exactly `worker_count` sockets, then returns | T6, T8, T14 |
+| DIST-05 slow link reads as dead worker | stands | liveness refreshes after a whole frame (`src/distributed_coordinator.cpp:199-203`, `src/tcp_transport.cpp:225-229`); one send mutex per socket (`:245`); `registered` never clears (`src/worker_agent.cpp:474`) | T6, T9, T10, T14 |
+| DIST-06 silent version mismatch | stands | `src/distributed_coordinator.cpp:211-216` logs and breaks without a reply; the worker re-sends HELLO every heartbeat (`src/worker_agent.cpp:474-475`) | T1, T8, T10 |
+| DIST-07 worker never learns the master is gone | stands | `ITransport::send` returns `void` and there is no peer-state callback (`inc/i_transport.hpp:45-96`); `run()` only returns on `stop()` (`src/worker_agent.cpp:610-615`) | T5, T6, T10 |
+| DIST-08 unused master `KernelRegistry` | changed | entry point is now `Cluster::attach` (`inc/cluster.hpp:70-73`), which still requires `kernels`; the coordinator stores it (`src/distributed_coordinator.cpp:370`) and never reads it | T5, T16 (Q8) |
+| DIST-09 no worker entry point | stands | the only worker `main` is the demo (`applications/examples/distributed_demo.cpp:104`) | T12, T15 |
+| DIST-10 manual registration, silent local run | changed | `Buffer::distributed()` shares and is a no-op with no coordinator (`modules/surface/api/include/SushiRuntime/api/data/buffer.hpp:404-429`). Still open: `prepare()` skips silently (`src/distributed_coordinator.cpp:499-500`, `:512-514`); `wait_for_workers` polls at 5 ms (`src/cluster.cpp:53`, `:178-188`) | T8, T11 (Q9) |
+| DIST-11 kernels get pointers without sizes | stands | `inc/kernel_registry.hpp:58-62`; the worker drops the size at `src/worker_agent.cpp:372-383` | T5, T10 (Q8) |
+| DIST-12 256 MiB cap | stands | `src/tcp_transport.cpp:241` casts the length to `uint32_t`; the receiver drops at `:218-223` | T1, T9 |
+| DIST-13 four copies, two zero-fills | stands | `src/distributed_coordinator.cpp:246-248`; `inc/protocol.hpp:141`, `:302`, `:332`; `src/tcp_transport.cpp:225`; `src/worker_agent.cpp:341`, `:421-423` | T9, T10 (two copies remain, see section 9) |
+| DIST-14 blocking send and INFO per task | stands | `src/distributed_coordinator.cpp:839` writes on the pool worker; `:841` logs at INFO per task | T6, T11 |
+| DIST-15 struct memory on the wire, no magic | stands | `inc/protocol.hpp:235` writes `BufferHandle` raw, `:230` a struct; `FrameHeader` (`:105-109`) is unused; the frame is `[u32][u8]` (`src/tcp_transport.cpp:210-215`) | T1 |
+| DIST-16 master readers unguarded | stands | the handler is installed with no `try` (`src/distributed_coordinator.cpp:567-572`); the worker has one (`src/worker_agent.cpp:578-593`) | T6 |
+| DIST-17 errors without endpoint or cause, no hostnames | stands | `src/tcp_transport.cpp:322`, `:411`; `inet_pton` only (`:390-391`); `WSAStartup` result dropped (`:73`) | T3, T6 |
+| DIST-18 unwritten `ITransport` contract | stands | `inc/i_transport.hpp:51`, `:63`; master is `-1` in TCP (`src/tcp_transport.cpp:60`) and the worker addresses it as `0` (`src/worker_agent.cpp:118`); `InProcessFabric::impl_` is public (`inc/in_process_transport.hpp:131-133`) | T5, T6 |
+| DIST-19 four responsibilities per file | stands | one `Impl` holds membership, pending table, message handling and dispatch (`src/distributed_coordinator.cpp:89-173`); the worker likewise (`src/worker_agent.cpp:53-188`) | T7-T12 |
+| DIST-20 inflight drift | stands | `src/distributed_coordinator.cpp:285-287` decrements for a result that was not pending | T7 |
+| DIST-21 platform branches in the transport | stands | `src/tcp_transport.cpp:38`, `:68`, `:86`, `:102`, `:128`, `:332`; `SO_REUSEADDR` at `:311` | T3 |
+| DIST-22 worker cache only grows | stands | entries leave only in `free_all()` (`src/worker_agent.cpp:502-508`); no release message in `MsgType` (`inc/protocol.hpp:87-98`) | T1, T9, T10 |
+| DIST-23 API shape depends on the flag | closed for API shape | no header reads `SR_DISTRIBUTED` (`cmake/SushiRuntimeLibrary.cmake:73-76`; a grep of `modules/` finds none). Install rules for an OFF build were not checked | none |
+| DIST-24 stale documentation | stands | `docs/guides/DISTRIBUTED_GUIDE.md:102`, `:166`, `:193`, `:223`, `:320`, `:337`; `M/README.md:59`, `:160`, `:326`, `:382` | T17 |
+| DIST-25 transitive includes | stands | `inc/protocol.hpp:31-33` | T1, T5 (the header is deleted) |
+| D1 pending nodes leak at stop | stands | `stop()` (`src/distributed_coordinator.cpp:584-599`) never touches `pending` (`:113`) | T7, T11 |
+| D2 no stopped check; node touched after publish | stands | publish at `:821-822`, then `attempts` at `:836` and `metadata.name` at `:841` | T11 |
+| D3 dynamic node bumps the snapshot list | stands | `settle` walks `io_writes_` (`:181-182`), not `live_writes` (`modules/engine/task/include/SushiRuntime/task/offload_state.hpp:80`) | T11 |
+| D4 aborted run still offloads and bumps | stands | dispatch branch has no run-state check (`modules/engine/scheduler/source/task_scheduler.cpp:594-599`); a skipped node is pushed as ready (`:649-661`) and the poller reports it (`modules/engine/scheduler/include/SushiRuntime/scheduler/event_polling.hpp:303-304`) | T4 |
+| D5 handle vectors copied per dispatch | stands | `src/distributed_coordinator.cpp:797-798` | T11 |
+| D6 hang with deadline 0 | stands | `reap_timed_out_tasks` returns at `:657-659` | T1, T7 (Q7) |
+| D7 `noexcept` over a mutex and over `ITransport::stop()` | stands | `statistics()` (`:544`) locks through `:468`; `stop()` (`:584`) calls `:598`, declared without `noexcept` at `inc/i_transport.hpp:88` | T5, T8, T11 |
+| D8 `shutdown()` skips the coordinator | stands | `modules/engine/execution/source/runtime_context.cpp:272-276` against the destructor at `:159-161` | T4 |
+| D9 failed `start()` leaves a coordinator installed | stands | install at `src/cluster.cpp:159-164`, `start()` at `:165`, no cleanup | T11 |
+| D10 offloaded count is cumulative | stands | `modules/surface/api/include/SushiRuntime/api/detail/run_report_builder.hpp:84-90` | T4 |
+| D11 destroyed handle does not detach | stands, unruled | `inc/cluster.hpp:54-55` | Q4 |
+| N1 (new) copy outside the registry lock | hypothesis from reading | lookup then `memcpy` at `src/distributed_coordinator.cpp:242-247`, `:257-270`, `:299-308`, while `on_release` unregisters (`:556-559`) | T9 |
+| N2 (new) unsynchronised peer table in TCP | hypothesis from reading | accept thread writes `peers` and `readers` (`src/tcp_transport.cpp:268-269`); `send` and `stop` read them unlocked (`:432-438`, `:466-474`) | T6 |
+| N3 (new) the attempt cap pins a node for good | hypothesis from reading | `off.offloadable = false` (`src/distributed_coordinator.cpp:761`), though `attempts` is documented per run (`offload_state.hpp:69`) | T11 |
+
+### 2. Target shape of the module
+
+Flat files, no subfolders under `source/` (I did not load `repository-layout`; rename if it says otherwise).
+
+**Public, `inc/`**
+
+| Header | Owns |
+| --- | --- |
+| `cluster.hpp` | `Cluster` handle and `ClusterOptions` |
+| `cluster_statistics.hpp` | `ClusterStatistics`, `WorkerSnapshot` (plain data) |
+| `shared_secret.hpp` | `SharedSecret`: bytes, `from_file`, `from_environment` |
+| `endpoint.hpp` | `Endpoint{host, port}` and `parse("host:port")`, `"[v6]:port"` |
+| `message_type.hpp` | `MsgType`, the only wire type a transport author needs |
+| `buffer_handle.hpp` | `GlobalBufferID`, `BufferHandle` (returned by `Cluster::buffer_handle`) |
+| `buffer_view.hpp` | `BufferView{data, size_bytes}`, `as<T>()` |
+| `i_transport.hpp` | `ITransport`, `TransportEvents`, `FrameSource`, `PeerId`, `SendStatus`, `TransportStatus`, the written contract |
+| `tcp_transport.hpp` | `TcpTransport::make_master(TcpMasterOptions)`, `make_worker(Endpoint, TcpWorkerOptions)` |
+| `in_process_transport.hpp` | fabric and endpoints with the same factory shape; `impl_` private |
+| `i_offload_policy.hpp` | unchanged apart from the contract text (called under the directory lock, must not call back) |
+| `kernel_registry.hpp` | registry; gains the `BufferView` kernel form |
+| `worker_agent.hpp` | `WorkerAgent`, for an application that embeds a worker |
+| `worker_main.hpp` | `WorkerOptions`, `run_worker(...)` |
+| `registered_task.hpp` | DIST-08 helper (T16, after Q8) |
+
+Leaving `inc/`: `protocol.hpp` (deleted, replaced by the private codec), `buffer_registry.hpp` and `distributed_coordinator.hpp` (moved to `src/`). See Q2.
+
+**Private, `src/`**
+
+| File | Owns |
+| --- | --- |
+| `wire_codec.hpp` | little-endian field writer and reader with bounds and range checks |
+| `wire_frame.hpp/.cpp` | the 12-byte frame header, magic, version, limits |
+| `wire_messages.hpp/.cpp` | one struct, `encode` and `decode` per message |
+| `message_router.hpp` | table `MsgType -> handler`, used by both roles |
+| `sha256.hpp/.cpp` | SHA-256 |
+| `hmac_sha256.hpp/.cpp` | HMAC over it, constant-time compare |
+| `handshake.hpp/.cpp` | nonce, the two proofs, verification; pure functions |
+| `shared_secret.cpp`, `endpoint.cpp` | the two public value types |
+| `socket.hpp`, `socket_posix.cpp`, `socket_windows.cpp` | the one platform seam: listen, connect, accept, exact read, full write, shutdown, close, resolve, error text |
+| `outbox.hpp/.cpp` | per-peer send queue: control frames ahead of bulk streams |
+| `peer_connection.hpp/.cpp` | one TCP connection: its reader thread, writer thread and outbox |
+| `tcp_transport.cpp` | acceptor or connector, the peer table |
+| `in_process_transport.cpp` | fabric, fault policy, pump |
+| `buffer_registry.hpp/.cpp` | ids, versions, and the only code that copies master buffer bytes (`read`, `write` under its lock) |
+| `worker_directory.hpp/.cpp` | per-peer session state, `WorkerStats`, op support, liveness, alive count |
+| `pending_tasks.hpp/.cpp` | the task table; owns the node references |
+| `buffer_exchange.hpp/.cpp` | serves pulls as a `FrameSource`, applies fenced output chunks |
+| `offload_dispatcher.hpp/.cpp` | `prepare` and `try_offload` |
+| `cluster_monitor.hpp/.cpp` | the monitor thread: pings, liveness, deadlines, handshake deadlines |
+| `distributed_coordinator.hpp/.cpp` | implements `Graph::OffloadCoordinator` and `Memory::UsmReleaseObserver` by composing the bricks; start and stop order |
+| `cluster.cpp`, `offload_handles.hpp`, `i_offload_policy.cpp`, `kernel_registry.cpp` | as today |
+| `worker_buffer_cache.hpp/.cpp` | worker cache: chunk assembly, byte budget, least-recently-used eviction, pins |
+| `dispatch_deduplicator.hpp/.cpp` | seen task ids |
+| `master_link.hpp/.cpp` | worker side of the handshake, heartbeat, master-gone detection |
+| `dispatch_executor.hpp/.cpp` | job queue, exec thread, kernel run, result and output chunks |
+| `worker_agent.cpp` | composes the four worker bricks |
+| `stop_signal.hpp/.cpp` | SIGINT, SIGTERM (and SIGBREAK where defined) into one flag |
+| `worker_main.cpp` | `run_worker`: flags, environment, signals, exit codes |
+
+**What `Cluster` exposes.** `attach(runtime|context, transport, ClusterOptions)`, `detach()`, `wait_for_workers`, `alive_workers`, `liveness_timeout`, `task_deadline`, `supports`, `bump_buffer`, `buffer_handle`, and one `statistics()` returning `ClusterStatistics` (section 5). The four counter getters (`inc/cluster.hpp:111-120`) stay as forwarders. `ClusterOptions` carries `secret`, `policy`, `kernels` (optional), `liveness_timeout`, `task_deadline`, `handshake_timeout`, `chunk_bytes`. The runtime keeps seeing only `Graph::OffloadCoordinator`: `context.install_offload` still receives the aliasing `shared_ptr` built at `src/cluster.cpp:162-164`.
+
+### 3. Protocol v2
+
+**Frame.** 12 bytes, little-endian, then the payload.
+
+| Offset | Size | Field |
+| --- | --- | --- |
+| 0 | 4 | magic `'S','R','D','P'` |
+| 4 | 2 | `version` = 2 |
+| 6 | 1 | `type` (`MsgType`) |
+| 7 | 1 | `flags`: bit 0 = last chunk; other bits must be 0 |
+| 8 | 4 | `payload_length`, at most `MAX_FRAME_PAYLOAD` = 1 MiB |
+
+The magic read as a v1 length is 0x50445253 (about 1.35 GB), above v1's 256 MiB cap, so a v1 master drops a v2 worker at `src/tcp_transport.cpp:218-223` instead of misparsing it. There is no checksum; TCP's own is the only one on a LAN.
+
+**Field encoding.** Fixed-width little-endian integers. `bool` is one byte, and any value other than 0 or 1 fails the decode. Enums are range-checked. Strings are `u16` length plus bytes, at most 255. Lists are a `u32` count checked against the remaining bytes before any reserve. `BufferHandle` is `id u64, version u32, size u64`: 20 bytes, no padding. `TaskMetadata` is `task_type u8, priority i32, numa_affinity i32, param_count u8, params u64[]`; `name` stays off the wire as today (`inc/protocol.hpp:228`).
+
+**Messages.**
+
+| # | Type | Direction | Payload |
+| --- | --- | --- | --- |
+| 1 | HELLO | W to M | `worker_nonce[32]`, `build_id` str, `node_name` str |
+| 2 | CHALLENGE | M to W | `master_nonce[32]`, `master_proof[32]`, `session_id u64` |
+| 3 | PROOF | W to M | `worker_proof[32]`, ops `u32[]`, `max_jobs u32`, `cache_budget u64` |
+| 4 | WELCOME | M to W | `worker_id u32`, `liveness_timeout_ms u32`, `ping_interval_ms u32`, `chunk_bytes u32` |
+| 5 | REJECT | either | `reason u8` (version, auth, malformed, busy), `sender_version u16`, text |
+| 6 | GOODBYE | either | `reason u8` (shutdown, liveness, detach), text |
+| 7 | TASK_DISPATCH | M to W | `task_id`, `op_id`, metadata, input handles, output handles |
+| 8 | TASK_ACCEPTED | W to M | `task_id` |
+| 9 | TASK_RESULT | W to M | `task_id`, `status u8`, output handles (bytes travelled before it as chunks) |
+| 10 | BUFFER_REQUEST | W to M | `id`, `version` |
+| 11 | BUFFER_CHUNK | either | `purpose u8` (pull reply, task output), `task_id u64`, handle (20), `offset u64`, then data to the end of the frame |
+| 12 | BUFFER_ABORT | sender to receiver | `id`, `version`, `task_id`, `reason u8` (stale, gone) |
+| 13 | BUFFER_RELEASE | M to W | `id` |
+| 14 | PING | M to W | `token u64` |
+| 15 | PONG | W to M | `token u64`, `free_mem u64` |
+| 16 | HEARTBEAT | W to M | `queue_depth u32`, `oldest_held_task_id u64`, `cache_bytes u64` |
+
+**Handshake and the shared secret.** No hash exists in the tree that could authenticate anything (the only hit is the op-id hash in `modules/engine/task/include/SushiRuntime/task/task_types.hpp`). Proposal (Q1): SHA-256 and HMAC-SHA256 written in the module, about 200 lines, pinned by the FIPS 180-4 and RFC 4231 vectors. That adds no dependency.
+
+- Supply: a file of at least 32 random bytes, the same on both machines. Master: `ClusterOptions::secret = SharedSecret::from_file(path)`. Worker: `--secret-file` or `SR_CLUSTER_SECRET_FILE`. No flag takes the secret inline, because a process list would show it.
+- On the wire: nonces and proofs, never the secret. `master_proof = HMAC(secret, "SRDP2 master" || worker_nonce || master_nonce)`, `worker_proof = HMAC(secret, "SRDP2 worker" || worker_nonce || master_nonce)`. The worker checks the master's proof before it sends PROOF, so authentication is mutual. The labels stop one side's proof being replayed as the other's.
+- The session layer runs the handshake, above `ITransport`, so the in-process transport and its fault policy exercise the same code as TCP. An empty secret runs the same exchange with an empty key (one path). `Cluster::attach` refuses an empty secret when `transport->exposure()` is `Network`.
+- Until WELCOME a peer is not a worker: `WorkerDirectory` drops every other message from it, and closes it after `handshake_timeout` (default 5 s). Over a lossy fabric the worker restarts with a fresh nonce if no WELCOME arrives within one heartbeat interval.
+- Protects against: stray connections and port scans, a worker from another cluster, a host on the LAN without the file reading or overwriting buffers, a passive listener learning the secret, replay of a recorded handshake.
+- Does not protect against: reading buffer bytes off the wire (no encryption, by ruling), an on-path host injecting or altering frames after the handshake (frames carry no MAC), connection floods beyond the cap on unauthenticated peers, offline guessing of a short secret from a recorded handshake (hence 32 random bytes).
+- If the owner rejects in-tree SHA-256, only a compared token is possible: the secret travels in HELLO in the clear. That still stops stray and misconfigured peers, but any host that can capture one handshake can then join.
+
+**Version negotiation.** None in v2: both sides must be equal. Every frame carries the version, and the receiver enforces it on every frame.
+
+| Event | Master logs | Worker logs |
+| --- | --- | --- |
+| Good magic, other version | ERROR once per connection: `worker <ip:port> speaks protocol v3, this master v2; build both from one commit; closed`. Sends REJECT(version), closes | ERROR once: `master <host:port> speaks protocol v2, this worker v3; build both from one commit`. Exits 4, no reconnect |
+| Bad magic | WARN once: `<ip:port> sent bytes that are not a SushiRuntime frame (first four 0x........); closed`. No reply | ERROR: `<host:port> is not a SushiRuntime master`. Exits 4 |
+| v2 worker, v1 master | (v1 drops an oversized frame) | WARN: `master closed the connection during the handshake; protocol or secret mismatch is likely`, then the reconnect rules |
+
+**Chunked transfer and flow control (DIST-05, DIST-12).**
+
+- Chunk data is 256 KiB by default, sent in WELCOME, allowed range 4 KiB to 1 MiB minus 64. At 100 Mbit/s one chunk takes about 21 ms. Offsets and sizes are `u64`, so buffer size is bounded by memory, not by a frame.
+- Chunks describe themselves (handle, offset, last flag); there is no begin frame. The receiver accepts offset 0 or the next expected offset; a gap or a duplicate discards the transfer, and the existing recovery (pull timeout, then a failed result, then redispatch) takes over.
+- Sender: `BufferExchange` hands the transport a `FrameSource`. The peer's writer thread calls `next()` when it is ready for a bulk frame, so a buffer is never queued whole. `BufferRegistry::read(id, version, offset, out)` copies one chunk into the writer's reusable scratch under the registry lock and reports `Stale` or `Gone`, on which the sender emits BUFFER_ABORT. This closes N1.
+- Interleaving: the outbox has a control queue and a list of streams. The writer drains all control frames, then sends one chunk, round-robin over streams. A heartbeat or dispatch therefore waits at most one chunk.
+- Flow control is TCP's window plus that single writer: nothing accumulates on the sender because streams are pulled, and nothing on the receiver because the reader copies each chunk into the destination allocation before it reads the next frame. There are no application credits. The control queue is bounded (default 4096 frames); when it is full `send` returns `QueueFull` and `try_offload` declines. A write that makes no progress for the liveness timeout closes the peer. The alternative, per-transfer credits, is listed in section 9.
+- Liveness counts any frame, so a transfer in progress refreshes it every chunk. The worker's pull timeout becomes an idle timeout that restarts on each chunk of that buffer. The master's task deadline measures from the later of dispatch time and the last chunk exchanged with that worker.
+- Outputs: the worker sends BUFFER_CHUNK(task output) frames, then TASK_RESULT. The master writes each chunk in place through `BufferRegistry::write`, which accepts it only when the task is still pending and the chunk's version equals the version recorded at dispatch. Reaping a task bumps its output versions first, so late chunks fail the fence. Today's fence trusts the wire version (`src/distributed_coordinator.cpp:260`, `:301`). See Q6 for in-place against staged.
+
+**Heartbeat and master-gone detection (DIST-07).** WELCOME carries the liveness timeout, so both sides use one number. The master pings every monitor pass. The worker treats the master as lost when the transport reports the connection closed or when no frame arrived for one liveness timeout (half-open link). It then drops its queued jobs, logs once and reconnects with backoff (Q10). When the master reaps a silent worker it calls `close_peer`, so the worker sees the close, reconnects and registers again; the stuck `registered` flag of DIST-05 has no equivalent, because registration belongs to a connection. `session_id` is random per coordinator: a worker that reconnects to a different session clears its cache, since buffer ids restart at 1 in each master process (`src/buffer_registry.cpp`, `next_id_++`).
+
+**Lost dispatch or result without a deadline (D6).** The worker acknowledges each dispatch with TASK_ACCEPTED. The master reaps a task that is not acknowledged within one liveness timeout, whatever the deadline. HEARTBEAT carries the smallest task id the worker still holds; an acknowledged task below it with no result is reaped as a lost result. A deadline of 0 then means only "no bound on kernel run time" (Q7).
+
+**Compatibility rule.** The 12-byte header and the first three fields of REJECT and GOODBYE are frozen for every future version, so any two versions can refuse each other in words. Everything else may change, and any change to a field bumps `version`. Master and worker must carry the same version; there is no cross-version operation. `M/README.md` gets a version table, and the golden-bytes test fails on any layout change until the constant and the table move together.
+
+### 4. Threading and ownership
+
+**Threads.**
+
+| Thread | Runs |
+| --- | --- |
+| Pool worker | `try_offload`, `on_local_completion` |
+| Compiling or user thread | `prepare`, `share`, `on_release`, `statistics`, `attach`, `detach`, `stop` |
+| TCP acceptor (master) or connector (worker) | accept or resolve-and-connect; creates a `PeerConnection` |
+| Peer reader, one per connection | reads frames into a reusable buffer, calls `TransportEvents`; on the master this is where `sink->complete_remote` and `resubmit` run |
+| Peer writer, one per connection | drains the outbox |
+| Monitor (master) | pings, liveness, deadlines, handshake deadlines; calls `sink->resubmit` |
+| Exec, heartbeat (worker) | kernel execution; heartbeat and master silence |
+
+Two threads per connection is a choice for two machines that hard-codes nothing: the peer table is a map keyed by `PeerId`, ids are never reused, and `peer_count()` leaves the interface. A reactor behind the same `ITransport` is the later step.
+
+**Pending nodes.** `PendingTasks` owns the scheduling reference from the moment `insert` succeeds until one of `take(task_id)`, `take_for_worker`, `take_overdue` or `drain` returns the node. Whoever removes the entry owns the node and must pass it to the sink. No other code holds a `Node*` across a lock release. The entry records the worker and the output ids and versions, so remote settlement never reads the node's lists.
+
+**`stop()`.** In order: (1) `PendingTasks::close()` sets `stopped` under its mutex, after which `insert` refuses; (2) the monitor is joined; (3) the transport stops, which joins every reader, so no handler is running; (4) `drain()` returns the remaining nodes and each goes to `sink->resubmit`. The seam allows sink calls until `stop()` returns (`modules/engine/task/include/SushiRuntime/task/offload_coordinator.hpp:124-131`), and `resubmit` re-queues through `submit` (`task_scheduler.cpp:1172-1178`), so an in-flight run finishes locally instead of hanging or leaking. `stop()` stays `noexcept`: `ITransport::stop()` becomes `noexcept`, and the resubmit loop sits in a plain `try`/`catch (...)` that logs and releases the node. There is no rethrow and no nested exception anywhere in the design.
+
+**`try_offload` without blocking.**
+
+1. Check the attempt cap, then `attempts++`. This is the last write to the node.
+2. One registry lock: snapshot input and output handles. Fixed-buffer nodes read the baked vectors through spans (D5); a dynamic node resolves its live lists into a reused thread-local scratch vector.
+3. Directory lock: return false if stopped; `policy->pick_worker`; allocate the task id.
+4. Registry lock: bump output versions, read them back. Encode the frame.
+5. Pending lock: refuse if stopped; insert `{node, worker, outputs, time}`. From here the node belongs to `PendingTasks` and this thread does not touch it (D2).
+6. `transport->send(...)`, which copies the small frame into the outbox and returns. On any status but `Queued`, `take(task_id)`: if it returns the node, undo the inflight count and return false; if not, a reaper already owns it and the answer is true.
+
+There is no socket call, no INFO line (a counter and one TRACE), and four short locks. A node that is not offloadable costs nothing new: the branch at `task_scheduler.cpp:594-599` is unchanged for it.
+
+**Lock order.** Five mutexes: directory, pending, registry, one outbox per peer, the transport's peer table. None is held while calling another brick, the transport or the sink, so none nests and no order exists to violate. The one outward call under a lock is `policy->pick_worker` under the directory mutex, as today (`src/distributed_coordinator.cpp:811-812`), and the policy contract will forbid calling back. `statistics()` reads atomics only, including an atomic alive count the directory maintains (D7).
+
+**Lifetime rule.** `Cluster::State` owns the registry, then the coordinator (`src/cluster.cpp:91-94`). The context co-owns the state through the attachment and releases it in its destructor after the engine has shut down (`runtime_context.cpp:159-174`). The coordinator holds the transport and is its only event sink; a transport is started once and belongs to one coordinator, and a second `start` returns an error status. Bricks are destroyed only after `stop()` has joined every thread that can reach them. A `Cluster` handle may outlive the runtime and then reads a stopped coordinator, as `ClusterHandleOutlivesRuntime` already pins (`M/tests/test_distributed_e2e.cpp:1059`). `RuntimeContext::shutdown()` stops the coordinator before the engine (D8). `attach` uninstalls and throws a fresh exception when `start()` returns a failed status (D9); `start()` returns a status instead of throwing, which is also what DIST-17 asks for.
+
+### 5. Operability
+
+**Worker entry point (DIST-09).** Kernels are C++ callables registered in the worker's own binary (`inc/kernel_registry.hpp:72`), so a generic shipped executable would have nothing to run. Proposal (Q5): a library function plus a thin `main`.
+
+- `int Distributed::run_worker(int argc, char** argv, sushi_ptr<KernelRegistry> kernels)` and `int run_worker(const WorkerOptions&, sushi_ptr<KernelRegistry>)`.
+- `applications/examples/distributed_worker.cpp`: registers the demo kernel and returns `run_worker(argc, argv, kernels)`. The demo keeps the master role only.
+
+| Flag | Environment | Default |
+| --- | --- | --- |
+| `--master host:port` | `SR_MASTER` | required |
+| `--secret-file path` | `SR_CLUSTER_SECRET_FILE` | none (refused by a master that has one) |
+| `--name text` | `SR_WORKER_NAME` | hostname |
+| `--max-jobs n` | `SR_WORKER_MAX_JOBS` | 1024 |
+| `--cache-bytes n` | `SR_WORKER_CACHE_BYTES` | 0 = half of device memory |
+| `--heartbeat-ms n` | `SR_WORKER_HEARTBEAT_MS` | 1000 |
+| `--pull-idle-timeout-ms n` | `SR_WORKER_PULL_IDLE_TIMEOUT_MS` | 5000 |
+| `--connect-timeout-s n` | `SR_WORKER_CONNECT_TIMEOUT_S` | 60; 0 waits forever |
+| `--no-reconnect` | | reconnect on |
+| `--log-level`, `--version`, `--help` | | |
+
+A flag beats the environment, which beats the default. `--version` prints the protocol version and the build id.
+
+Signals: the first SIGINT or SIGTERM (SIGBREAK on Windows) stops intake, fails queued jobs with status `shutting_down`, lets the running kernel finish, sends GOODBYE and exits 0. The master redispatches at once instead of waiting for liveness. A second signal exits 130 immediately. The handler only sets a flag; the main thread polls it every 100 ms.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | stopped by signal |
+| 1 | bad flag, bad endpoint, unreadable or short secret file |
+| 2 | master not reached within the connect timeout |
+| 3 | rejected: authentication |
+| 4 | rejected: protocol version, or the peer is not a master |
+| 5 | master lost with `--no-reconnect` |
+| 70 | internal error |
+
+**Log lines (DIST-17).** Every line names the endpoint and the cause. Nothing logs per task or per chunk above TRACE.
+
+| Failure | Master | Worker |
+| --- | --- | --- |
+| Bind fails | ERROR `cannot listen on <addr>:<port>: <os text>; another process holds the port, choose another or stop it` | |
+| Listening | INFO `listening on <addr>:<port>, protocol v2, authentication on/off` | |
+| Resolve or connect fails | | WARN on the first failure and every tenth attempt: `cannot reach master <host>:<port> (<resolved ip>): <os text>; attempt <n>, next in <ms>` |
+| Connected, registered | INFO `worker <id> "<name>" <ip:port> registered, <n> kernels, build <id>` | INFO `registered with master <host:port> as worker <id>` |
+| Wrong secret | WARN `<ip:port> failed authentication; closed` | ERROR `master <host:port> rejected the secret in <file>` |
+| Version or magic | see section 3 | see section 3 |
+| Handshake timeout | WARN `<ip:port> sent no valid handshake in <ms> ms; closed` | |
+| Peer lost | WARN `worker <id> <ip:port> lost: <cause>; <n> tasks returned to the scheduler` | WARN `master <host:port> lost: <cause>; reconnecting` |
+| Liveness | WARN `worker <id> silent for <ms> ms (limit <ms>); closed, <n> tasks returned` | WARN `no frame from master for <ms> ms; reconnecting` |
+| Task deadline, lost dispatch, lost result | WARN, rate-limited to one per worker per second, with the task id and which of the three | |
+| Malformed frame | WARN `<ip:port> sent a malformed <type> frame (<len> bytes): <field>; closed` | same wording about the master |
+| Exception in a handler | ERROR with peer, type, length and `what()`; the peer is closed, the process lives (DIST-16) | same |
+| Output allocation fails | | ERROR `task <id>: cannot allocate <n> bytes for buffer <id> (budget <n>, in use <n>)`; result status `output_alloc_failed` (DIST-02) |
+| Nothing stamped at compile | WARN once per `prepare`: `<k> of <n> op-tagged nodes will run locally: <a> no live worker for the op, <b> buffer not shared (first: op <id>)` (DIST-10) | |
+| Write to a dead socket | handled inside `Socket`: `MSG_NOSIGNAL` on Linux, `SO_NOSIGPIPE` on macOS, peer marked closed after the first failed write (DIST-01) | same |
+
+**Counters.** `Cluster::statistics()` returns `ClusterStatistics`: cumulative `offloaded`, `declined`, `redispatched`, `stale_writebacks` (today's four), plus `handshake_rejected_auth`, `handshake_rejected_version`, `peers_lost`, `tasks_reaped_deadline`, `tasks_reaped_unacknowledged`, `tasks_reaped_lost_result`, `bytes_sent`, `bytes_received`, `chunks_sent`, `chunks_received`, `transfers_aborted`, `send_queue_full`, gauges `alive_workers` and `pending_tasks`, and one `WorkerSnapshot` per worker (`id`, `name`, `endpoint`, `inflight`, `rtt_micros`, `free_mem`, `queue_depth`, `cache_bytes`, `ms_since_last_frame`). The worker keeps `tasks_run`, `tasks_failed` by status, `cache_bytes`, `cache_evictions`, `reconnects`, and logs them at INFO on shutdown. `RunReport` reports the delta of `offloaded` over the run (D10). Exporting to a file or a socket is not designed here.
+
+**Hostname resolution.** `getaddrinfo` with `AF_UNSPEC` inside `Socket`. Each connect attempt tries the returned addresses in order, and each reconnect cycle resolves again. The master's bind address defaults to `127.0.0.1`; `0.0.0.0`, `::` or a named interface must be given explicitly, and `attach` refuses a non-loopback bind with no secret. On Windows the listener sets `SO_EXCLUSIVEADDRUSE` instead of `SO_REUSEADDR` (`src/tcp_transport.cpp:311`), and the `WSAStartup` result is checked.
+
+### 6. Tests
+
+All new suites run in the fast lane. TCP tests bind port 0 on loopback and wait on conditions (a counter, an event), never on a sleep.
+
+| File (new) | Test | Pins |
+| --- | --- | --- |
+| `test_wire_format.cpp` | `GoldenBytes_<Message>` (16) | exact bytes per message; fails on any layout change (DIST-15) |
+| | `FrameHeaderGolden`, `MagicReadsAsOversizedV1Length` | header layout; the v1 interaction of section 3 |
+| | `EveryTruncationFailsCleanly` | each prefix of each golden frame decodes to an error |
+| | `RejectsOutOfRangeEnumAndBool`, `ListCountBoundedByRemainingBytes` | range checks |
+| `test_handshake.cpp` | `Sha256Fips180Vectors`, `HmacRfc4231Vectors` | the two primitives |
+| | `ProofsDifferByRole`, `WrongSecretFails`, `FreshNonceDefeatsReplay` | the exchange |
+| `test_socket.cpp` | `WriteToClosedPeerReturnsError` | the process survives (DIST-01) |
+| | `BindInUseNamesPortAndCause`, `LocalhostResolves`, `Ipv6LoopbackConnects` | DIST-17 |
+| `test_transport_conformance.cpp`, parameterised over in-process and TCP | `DeliversInOrderPerPeer`, `PeerLostOnceAfterLastFrame`, `NoCallbackAfterStop`, `SendFromCallbackAllowed`, `SendAfterStopReturnsStopped`, `ControlFrameOvertakesStream` | the written contract (DIST-18) |
+| `test_pending_tasks.cpp` | `InsertAfterCloseRefused`, `TakeIsExactlyOnce`, `DrainReturnsEveryNode` | D1, D2 |
+| | `LateResultLeavesInflightAlone` | DIST-20 |
+| | `UnacknowledgedTaskReapedWithDeadlineZero`, `AcknowledgedTaskBelowOldestHeldReaped` | D6 |
+| `test_worker_directory.cpp` | `UnregisteredPeerMessagesDropped`, `HandshakeDeadlineClosesPeer` | DIST-03, DIST-04 |
+| | `WaitForWorkersWakesOnRegistration` | DIST-10 (no poll) |
+| `test_buffer_exchange.cpp` | `ChunkedRoundTrip` at 0, 1, chunk-1, chunk, chunk+1, 3 chunks+7 bytes | chunk boundaries |
+| | `ForgedVersionFenced`, `GapDiscardsTransfer`, `ReleaseDuringStreamAborts` | DIST-03 fence, N1 |
+| `test_worker_bricks.cpp` | `OutputAllocationFailureFailsTheTask` | DIST-02 |
+| | `ReleaseEvicts`, `BudgetEvictsLeastRecentlyUsedUnpinned` | DIST-22 |
+| | `KernelSeesBufferSizes`, `LegacyKernelSignatureStillRuns` | DIST-11 |
+| `test_distributed_tcp_faults.cpp` with `tcp_fault_proxy.hpp` (a loopback proxy that can pass, stall, cut, throttle or truncate) | `StrayConnectionTakesNoSlot` | DIST-04 |
+| | `GarbageBytesClosedMasterLives`, `V1FrameRejected`, `OversizedLengthClosesPeerNotProcess` | DIST-15, DIST-16 |
+| | `WrongSecretRejected`, `VersionMismatchLoggedOncePerConnection` | DIST-03, DIST-06 |
+| | `MasterKilledWorkerSurvivesAndReconnects` | DIST-01, DIST-07 |
+| | `WorkerCutMidChunkTaskFinishesLocally` | partial transfer |
+| | `StalledLinkReapedThenWorkerRejoins` | DIST-05 rejoin |
+| | `ThrottledTransferKeepsWorkerAlive` (8 MiB at 4 MiB/s, liveness 500 ms) | DIST-05, scaled from 64 MiB at 100 Mbit/s against 5 s |
+| | `ManyChunkBufferCrossesIntact` (1 MiB at `chunk_bytes` 4 KiB) | DIST-12 in the fast lane |
+| | `DispatchReturnsWhilePeerStalled` (an unrelated local task completes while the proxy stalls) | DIST-14 |
+| `modules/engine/scheduler/tests/test_offload_seam.cpp`, with a fake coordinator | `AbortedRunOffersNoNode`, `SkippedNodeNotReportedAsCompleted` | D4 |
+| | `ShutdownStopsCoordinatorBeforeEngine` | D8 |
+
+Added to `test_distributed_e2e.cpp`: `StopResubmitsPendingNodes` (D1), `TryOffloadAfterStopRunsLocally` (D2), `DynamicStateBumpsTheLiveBufferAfterSwap` (D3), `AttachStartFailureLeavesNothingInstalled` (D9), `RunReportOffloadedIsPerRun` (D10), `AttemptCapDoesNotOutliveTheRun` (N3), `RefusesEmptySecretOnNetworkExposure`. A heavy-lane test `BufferAbove256MiBCrosses` covers DIST-12 at real size.
+
+Existing tests that change:
+
+- `test_distributed.cpp:67-117` and `:322-393` (round trips and fuzz) are rewritten against the new codec; `BufferPushMsg` and the inline `TaskResultMsg` bytes no longer exist. `:120` moves to the new transport interface.
+- Every e2e and jepsen test that builds `InProcessTransport(fabric, -1)` or calls the four-argument `attach` moves to the factories and `ClusterOptions`.
+- `OffloadOverTcpLoopback` (`test_distributed_e2e.cpp:538-567`) uses `TcpMasterOptions`.
+- `StaleWritebackIsFenced` (`:760`) and `LostBufferPushTimesOutInsteadOfHanging` (`:838`) filter on `BUFFER_CHUNK`.
+- `RegistrationSurvivesMessageLoss` (`test_distributed_jepsen.cpp:274`) now covers a four-message handshake.
+- `tests/benchmark/benchmark_distributed_offload.cpp` is ported and gains the TCP loopback sizes of DIST-13 (64 KiB, 4 MiB, 64 MiB).
+
+### 7. Task list
+
+Files in one wave are disjoint. "Outside" marks work beyond `M/`.
+
+| Task | Acceptance criterion | Files (N new, C changed, D deleted) | Waits on | Wave |
+| --- | --- | --- | --- | --- |
+| T0 Owner rules on Q1-Q10 | answers recorded in the work folder | | | 0 |
+| T1 Wire format v2 | `test_wire_format.cpp` passes, 16 golden messages | N `src/wire_codec.hpp`, `wire_frame.hpp/.cpp`, `wire_messages.hpp/.cpp`, `message_router.hpp`, `inc/message_type.hpp`, `inc/buffer_handle.hpp`, `tests/test_wire_format.cpp` | Q6, Q7 | 1 |
+| T2 Authentication primitives | FIPS and RFC vectors pass | N `src/sha256.hpp/.cpp`, `hmac_sha256.hpp/.cpp`, `handshake.hpp/.cpp`, `shared_secret.cpp`, `inc/shared_secret.hpp`, `tests/test_handshake.cpp` | Q1 | 1 |
+| T3 Socket seam | `test_socket.cpp` passes on Windows and Linux; no `_WIN32` outside the two socket sources | N `src/socket.hpp`, `socket_posix.cpp`, `socket_windows.cpp`, `endpoint.cpp`, `inc/endpoint.hpp`, `tests/test_socket.cpp` | | 1 |
+| T4 Engine and surface fixes. **Outside**: D4 is the scheduler's dispatch and skip path, D8 is `RuntimeContext`, D10 is the report builder, and the seam text must say `try_offload` does not block on I/O | `test_offload_seam.cpp` passes; a non-offloadable node executes no new instruction at dispatch | C `modules/engine/scheduler/source/task_scheduler.cpp` (run-state check inside the `offloadable` branch; an `executed` flag on the events pushed at `:656-661` and `:667-672`), C `.../scheduler/event_polling.hpp` (report only executed nodes), C `modules/engine/execution/source/runtime_context.cpp`, C `modules/engine/task/include/SushiRuntime/task/offload_coordinator.hpp` (contract text), C `modules/surface/api/include/SushiRuntime/api/detail/run_report_builder.hpp` and the caller that captures the "before" counters, N `modules/engine/scheduler/tests/test_offload_seam.cpp` | | 1 |
+| **Build and run all tests after wave 1.** The old distributed code is untouched and should stay green. | | | | |
+| T5 Contract headers | each public header passes `-fsyntax-only` alone | C `inc/i_transport.hpp`, `tcp_transport.hpp`, `in_process_transport.hpp`, `cluster.hpp`, `kernel_registry.hpp`, `worker_agent.hpp`, `i_offload_policy.hpp`; N `inc/cluster_statistics.hpp`, `buffer_view.hpp`, `worker_main.hpp`; D `inc/protocol.hpp`; moved to `src/`: `buffer_registry.hpp`, `distributed_coordinator.hpp` | T0, T1-T3 | 2 |
+| T6 Transports | conformance suite passes for both transports | N `src/outbox.hpp/.cpp`, `peer_connection.hpp/.cpp`, `tests/test_transport_conformance.cpp`; C `src/tcp_transport.cpp`, `in_process_transport.cpp` | T5 | 3 |
+| T7 `PendingTasks` | `test_pending_tasks.cpp` passes | N `src/pending_tasks.hpp/.cpp`, test | T5 | 3 |
+| T8 `WorkerDirectory` | `test_worker_directory.cpp` passes | N `src/worker_directory.hpp/.cpp`, test | T5 | 3 |
+| T9 Registry and `BufferExchange` | `test_buffer_exchange.cpp` passes | C `src/buffer_registry.hpp/.cpp`; N `src/buffer_exchange.hpp/.cpp`, test | T5 | 3 |
+| T10 Worker bricks | `test_worker_bricks.cpp` passes | N `src/worker_buffer_cache.hpp/.cpp`, `dispatch_deduplicator.hpp/.cpp`, `master_link.hpp/.cpp`, `dispatch_executor.hpp/.cpp`, test; C `src/kernel_registry.cpp` | T5 | 3 |
+| T11 Master composition | the coordinator source holds no `switch (type)` and no mutex of its own; e2e passes after the wave | N `src/offload_dispatcher.hpp/.cpp`, `cluster_monitor.hpp/.cpp`; C `src/distributed_coordinator.hpp/.cpp`, `cluster.cpp`, `offload_handles.hpp` | T6-T9 | 4 |
+| T12 Worker composition and entry | `run_worker` returns each exit code of section 5 in `test_worker_main.cpp` | C `src/worker_agent.cpp`; N `src/worker_main.cpp`, `stop_signal.hpp/.cpp`, `tests/test_worker_main.cpp` | T6, T10 | 4 |
+| T13 Port and extend existing tests | the three suites compile against the new headers and carry the seven new e2e cases | C `tests/test_distributed.cpp`, `test_distributed_e2e.cpp`, `test_distributed_jepsen.cpp` | T5 | 4 |
+| T14 TCP fault tests | the twelve tests of section 6 exist and are deterministic over 100 repeats | N `tests/tcp_fault_proxy.hpp`, `tests/test_distributed_tcp_faults.cpp` | T3, T5 | 4 |
+| T15 Applications and benchmark. **Outside**: the demo and the benchmark call the API that changed | the demo worker `main` is under 20 lines | C `applications/examples/distributed_demo.cpp`; N `applications/examples/distributed_worker.cpp`; C `tests/benchmark/benchmark_distributed_offload.cpp` | T5 | 4 |
+| **Build and run the distributed tests after wave 4.** This is the first build that can be green since T5: T5 changes `ITransport` under the old coordinator and agent, so waves 2 and 3 end with the build red. Workers in those waves have only `clang -fsyntax-only`. | | | | |
+| T16 Registered-kernel fallback (DIST-08). **Outside** only if Q8 chooses the fluent form, which edits `modules/surface/api/.../graph/graph.hpp` | one e2e test adds an op with no lambda and passes with and without a worker | N `inc/registered_task.hpp`, `src/registered_task.cpp`; C `tests/test_distributed_e2e.cpp` | Q8, T11 | 5 |
+| T17 Documentation (DIST-24). **Outside**: `docs/` | each line listed in DIST-24 is corrected; the protocol version table exists | C `docs/guides/DISTRIBUTED_GUIDE.md`, `M/README.md`, `M/tests/README.md`, `applications/examples/README.md`, `docs/reference/KNOWN_ISSUES.md`, changelog | T11, T12 | 5 |
+| **Build and run everything after wave 5.** | | | | |
+
+For the orchestrator's `SOURCES` list in `M/CMakeLists.txt` (`:11-18` today), the new `.cpp` files are: `wire_frame`, `wire_messages`, `sha256`, `hmac_sha256`, `handshake`, `shared_secret`, `endpoint`, `socket_posix`, `socket_windows`, `outbox`, `peer_connection`, `pending_tasks`, `worker_directory`, `buffer_exchange`, `offload_dispatcher`, `cluster_monitor`, `worker_buffer_cache`, `dispatch_deduplicator`, `master_link`, `dispatch_executor`, `stop_signal`, `worker_main`, and `registered_task` in wave 5.
+
+Other build-file work for the orchestrator:
+
+- New test sources for `sushiruntime_add_module_tests` (`M/CMakeLists.txt:28-33`): `test_wire_format`, `test_handshake`, `test_socket`, `test_transport_conformance`, `test_pending_tasks`, `test_worker_directory`, `test_buffer_exchange`, `test_worker_bricks`, `test_worker_main`, `test_distributed_tcp_faults`.
+- The brick tests include private headers, so the test target needs `M/source` on its include path.
+- A scheduler test target for `test_offload_seam.cpp`.
+- An example target for `distributed_worker.cpp` (`applications/examples/CMakeLists.txt:66-67`).
+- The two socket sources each carry one whole-file platform guard unless the module macro can list sources per platform.
+
+The working tree has uncommitted edits to `docs/guides/DISTRIBUTED_GUIDE.md` and eighteen other documents (`git status`); T17 must start from them.
+
+### 8. Questions for the owner
+
+| # | Question | Recommendation | Alternative |
+| --- | --- | --- | --- |
+| Q1 | How does the secret authenticate without a dependency? | SHA-256 and HMAC written in the module, mutual challenge-response, pinned by the published vectors | A token compared in HELLO: no hash code, but one captured handshake lets any host join |
+| Q2 | Which headers stay public? | Remove `protocol.hpp`, make `buffer_registry.hpp` and `distributed_coordinator.hpp` private, break `ITransport` once (no third implementation exists in the tree) | Keep all three public with deprecation and carry both transport interfaces for a release |
+| Q3 | Shape of `attach` and the default bind | `attach(runtime, transport, ClusterOptions)`; the four-argument form deprecated and forwarding with an empty secret; default bind `127.0.0.1`; an empty secret refused on a network-exposed transport | Secret always required, with an explicit "unauthenticated" switch for tests |
+| Q4 | Should destroying a `Cluster` handle detach (D11)? | No. The handle is a copyable view and one test relies on it outliving the runtime. Mark `attach` `[[nodiscard]]` | Detach when the last copy dies, which makes a temporary `attach(...)` a silent detach |
+| Q5 | Worker entry point | `run_worker` in the library plus a thin `main` per application | A shipped `sr_worker` that loads kernels from a shared library through an exported registration function: one binary for all, at the cost of a plug-in ABI |
+| Q6 | Output writeback | In place, chunk by chunk, fenced by pending state and an exact version; a failed transfer leaves the buffer partly written until the node reruns | Stage in master memory and commit on TASK_RESULT: never torn, costs one output-sized allocation and copy |
+| Q7 | Meaning of `task_deadline(0)` | "No bound on kernel run time"; lost dispatches and lost results are still reaped through the acknowledgement and the heartbeat | Reject 0 and require a finite deadline |
+| Q8 | DIST-08 and DIST-11 API shape | `kernels` becomes optional in `ClusterOptions`; a free function in the module adds an op whose local fallback is the registered kernel, at `TaskGraph` level; kernels take `span<const BufferView>`, the pointer form kept as a deprecated adapter | A fluent `graph.add(op, ...)` with no lambda, which edits the surface module and needs a per-element adapter |
+| Q9 | DIST-10: register buffers automatically? | No. Sharing stays explicit (`.distributed()`), since which bytes leave the machine is a data decision; add the WARN | Register any runtime-allocated buffer an op-tagged task touches |
+| Q10 | Worker behaviour when the master is lost | Reconnect with backoff, forever, unless `--no-reconnect` | Exit 5 and leave restart to a service manager |
+
+### 9. Not read / not verified
+
+Not opened or only skimmed:
+
+- `inc/buffer_registry.hpp`, `kernel_registry.hpp`, `i_offload_policy.hpp`, `in_process_transport.hpp`, `worker_agent.hpp`: declarations only, through a filter.
+- `src/kernel_registry.cpp`; the second half of `src/buffer_registry.cpp`.
+- `M/README.md`, `M/tests/README.md` and the guide: headings and the DIST-24 lines only.
+- Test bodies: I read the test names, the e2e helpers (`test_distributed_e2e.cpp:40-186`) and the jepsen scenario setup.
+- `tests/benchmark/benchmark_distributed_offload.cpp`, `test_helpers.hpp`, `modules/memory` (`usm_release_observer.hpp`, the allocator), `compiled_graph.hpp`, `step_machinery.hpp`, the scheduler README, `SECURITY.md`.
+- The optional skills (`repository-layout`, `api-stability`, `file-formats`, `platform-portability`, `testing`, `logging`, `cpp-code-style`, `multi-agent-work`): none loaded. File names, log levels and the status type should be checked against them.
+- `distributed_demo.cpp` was read through a filter that dropped line numbers, so only `:104` and `:127` are cited.
+
+Guesses until run or measured:
+
+- N1, N2, N3 are read from code. N1 also depends on whether the allocator calls `on_release` before it frees, which I did not check.
+- The chunk size (256 KiB), the control queue bound (4096) and the choice of no application credits. The benchmark of DIST-13 and a throttled run should confirm that TCP backpressure with a pulled stream is enough; per-transfer credits are the fallback.
+- DIST-13 goes from four copies and two zero-fills to two cache-sized copies per direction (buffer to scratch, frame buffer to destination). True zero-copy needs pinning in the registry and a receive-into-destination hook in `ITransport`; it is left out.
+- `on_local_completion` takes the registry mutex for every local node (`event_polling.hpp:303-304`, `src/distributed_coordinator.cpp:181-182`). Chunk copies now hold that mutex for one 256 KiB `memcpy`. Whether that delays local completions measurably is unknown.
+- `std::random_device` as the nonce source. If it is not backed by the OS generator on this toolchain, the nonce needs `getrandom` and `BCryptGenRandom` behind the socket seam, and the second adds a link library.
+- Whether module tests can include `src/` headers, whether the scheduler module has a test target, and whether `core` already has a status type for `TransportStatus`.
+- That a bare `catch (...)` without rethrow is safe on the Windows toolchain. The design uses no rethrow and no nested exception, but I did not test the catch itself.
+- Where the "before" snapshot for D10 is captured in the surface module; I read only `run_report_builder.hpp:70-93`.
+- DIST-23: I checked the API shape, not what an OFF build installs.
+- Whether a graph reset clears `offloadable` after the attempt cap (N3).
