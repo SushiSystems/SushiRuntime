@@ -38,7 +38,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/interop/detail/bindless_detection.hpp>
+#include "bindless_detection.hpp"
 #include <SushiRuntime/interop/interop.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>

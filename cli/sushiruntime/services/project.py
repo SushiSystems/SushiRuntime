@@ -535,6 +535,6 @@ def docs() -> int:
     root = find_project_root()
     cfg = load_config()
     env = load_build_env(cfg, _build_dir(root, False))
-    doxyfile = root / "Doxyfile"
+    doxyfile = root / ".config" / "doxygen" / "Doxyfile"
     (root / _API_SITE_DIR).mkdir(parents=True, exist_ok=True)
     return _DRIVER.doxygen(cfg, doxyfile, root, env, install_hint=_DOXYGEN_HINT)

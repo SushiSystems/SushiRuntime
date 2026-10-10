@@ -374,7 +374,7 @@ and asserts byte-identical results every run.
   per-run; there is no persistence or recovery log.
 - **No Byzantine tolerance.** Workers are trusted to run the registered kernel
   faithfully; the layer defends against *crashes and lost messages*, not malice.
-  (See [`SECURITY.md`](../reference/SECURITY.md) for the trust boundary.)
+  (See [`SECURITY.md`](../../.github/SECURITY.md) for the trust boundary.)
 
 ---
 
@@ -386,7 +386,7 @@ and asserts byte-identical results every run.
   into the worker; a worker can only run ops it registered.
 - **No transport encryption/auth.** The TCP transport is a bare socket layer
   intended for a trusted LAN, not the public internet. See
-  [`SECURITY.md`](../reference/SECURITY.md).
+  [`SECURITY.md`](../../.github/SECURITY.md).
 - **Coherence is intentionally simple:** master-authoritative, pull-on-miss,
   versioned. There is no peer-to-peer worker cache sharing in v1.
 

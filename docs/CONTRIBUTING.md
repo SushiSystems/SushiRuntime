@@ -266,12 +266,12 @@ Treat the following as hard requirements, not suggestions:
   knobs (deadlines, version fencing) updates
   [`DISTRIBUTED_GUIDE.md`](guides/DISTRIBUTED_GUIDE.md).
 - **A new dependency updates the dependency surface.** See §7 — the entry in
-  `../cli/sushistack.deps.toml`, the `CMakeLists.txt` find call, and the `Dockerfile`
+  `../cli/sushistack.deps.toml`, the `CMakeLists.txt` find call, and `.config/docker/Dockerfile`
   apt line must move together.
 - **Public API carries Doxygen.** New or changed public functions follow the
   Doxygen rules in §4. The header *is* documentation — it feeds the fluent API
   reference site (`sr docs`, scoped to `modules/surface/api/include/SushiRuntime/api` by the
-  repo-root `Doxyfile`), so a missing `@param` on a public symbol is a doc gap CI
+  `.config/doxygen/Doxyfile`), so a missing `@param` on a public symbol is a doc gap CI
   reports.
 
 Code samples in the guides are checked against the real API, mirroring what the
@@ -397,8 +397,8 @@ manifest's scope — update them separately if needed:
 1. **`CMakeLists.txt`** — if the C++ build needs to find the library, add a
    `find_package(mylib REQUIRED)` or `pkg_check_modules(mylib REQUIRED mylib)`
    call, and link the relevant targets against it.
-2. **`Dockerfile`** — if the Docker image needs the library at image-build time,
-   add it to the `apt-get install` line in the `Dockerfile`.
+2. **`.config/docker/Dockerfile`** — if the Docker image needs the library at image-build time,
+   add it to the `apt-get install` line in that file.
 
 These three files move together for any library the C++ build and the container
 both consume.
@@ -423,14 +423,14 @@ sr setup             # install it (skipped automatically if check_cmd passes)
 Use the GitHub issue templates. A good bug report includes the platform and
 toolchain, the build type, the exact command, and the smallest reproducer you can
 manage. For anything that looks like a **security** issue, do **not** open a public
-issue — follow [`SECURITY.md`](reference/SECURITY.md).
+issue — follow [`SECURITY.md`](../.github/SECURITY.md).
 
 ---
 
 ## 9. Questions
 
-Open a GitHub Discussion, join the community Discord (see [`SECURITY.md`](reference/SECURITY.md)
+Open a GitHub Discussion, join the community Discord (see [`SECURITY.md`](../.github/SECURITY.md)
 for the current invite), or email **mustafagarip@sushisystems.io**.
 
 Please be respectful in all project spaces — see
-[`CODE_OF_CONDUCT.md`](reference/CODE_OF_CONDUCT.md).
+[`CODE_OF_CONDUCT.md`](../.github/CODE_OF_CONDUCT.md).

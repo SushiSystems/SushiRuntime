@@ -28,7 +28,7 @@ a module's `include/` or `source/`. A name that leaves the code leaves the page 
 
 ## Doxygen input
 
-`Doxyfile` at the repository root names `docs/reference/API_MAINPAGE.md` and three manual pages in its
+`.config/doxygen/Doxyfile` names `docs/reference/API_MAINPAGE.md` and three manual pages in its
 `INPUT`. A page that moves or is renamed changes `INPUT` in the same commit. Doxygen writes its
 site to `build/docs/api-site/html/`, inside the build tree.
 

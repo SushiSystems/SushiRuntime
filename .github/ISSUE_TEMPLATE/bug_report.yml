@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for filing a bug. Please give us enough to reproduce it.
-        For **security** issues do NOT use this form — see SECURITY.md.
+        For **security** issues do NOT use this form — see .github/SECURITY.md.
   - type: textarea
     id: what-happened
     attributes:

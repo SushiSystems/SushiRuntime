@@ -165,7 +165,7 @@ result faults on older CPUs. See
 
 ### Docker
 
-A `Dockerfile` based on `nvidia/cuda` (Ubuntu 22.04) with a pre-built **intel/llvm** nightly SYCL bundle is provided, so you can build and run — including the CUDA backend — without installing a toolchain locally. The image ships the `intel-llvm` (primary) and `adaptivecpp` toolchains; the `intel-llvm` path is the tested default (`sr toolchain intel-llvm`). It also installs the Intel OpenCL CPU runtime so the host CPU shows up as a SYCL device. For GPU passthrough you need the NVIDIA Container Toolkit.
+A Dockerfile (`.config/docker/Dockerfile`) based on `nvidia/cuda` (Ubuntu 22.04) with a pre-built **intel/llvm** nightly SYCL bundle is provided, so you can build and run — including the CUDA backend — without installing a toolchain locally. The image ships the `intel-llvm` (primary) and `adaptivecpp` toolchains; the `intel-llvm` path is the tested default (`sr toolchain intel-llvm`). It also installs the Intel OpenCL CPU runtime so the host CPU shows up as a SYCL device. For GPU passthrough you need the NVIDIA Container Toolkit.
 
 ```bash
 sr container build
@@ -550,7 +550,7 @@ cmake/                  Build functions and the tier table (SushiRuntimeTiers.cm
 cli/                    Python `sr` / `sushiruntime` CLI package (Typer + rich)
 .github/workflows/      CI: functional tests per push, benchmarks nightly
 docs/                   The manual, indexed by docs/README.md; api/ holds the Doxygen main page
-Doxyfile                Doxygen configuration for the fluent API reference
+.config/                Tool configuration: doxygen/Doxyfile, docker/Dockerfile
 tools/                  Manual checkers and the packaging oracle; see tools/README.md
 Dockerfile              CUDA + Clang/LLVM SYCL build environment
 ```

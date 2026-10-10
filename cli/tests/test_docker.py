@@ -31,7 +31,8 @@ def test_build_with_no_flags(calls, tmp_path):
     assert docker.build() == 0
 
     cmd, cwd = calls[0]
-    assert cmd == ["docker", "build", "-t", "sushiruntime", "."]
+    assert cmd == ["docker", "build", "-f", ".config/docker/Dockerfile",
+                   "-t", "sushiruntime", "."]
     assert cwd == tmp_path
 
 
@@ -39,7 +40,8 @@ def test_build_with_no_cache_and_oneapi(calls):
     assert docker.build(no_cache=True, oneapi=True) == 0
 
     cmd, _ = calls[0]
-    assert cmd == ["docker", "build", "-t", "sushiruntime", "--no-cache",
+    assert cmd == ["docker", "build", "-f", ".config/docker/Dockerfile",
+                   "-t", "sushiruntime", "--no-cache",
                     "--build-arg", "WITH_ONEAPI=1", "."]
 
 

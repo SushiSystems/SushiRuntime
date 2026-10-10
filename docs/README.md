@@ -31,8 +31,8 @@ What SushiRuntime is, its requirements and its build line are in the root
 | [Changelog](reference/CHANGELOG.md) | What changed, by release |
 | [Glossary](reference/GLOSSARY.md) | The words these documents use |
 | [Known issues](reference/KNOWN_ISSUES.md) | Defects that are recorded and not yet fixed |
-| [Security policy](reference/SECURITY.md) | How to report a vulnerability, and what is in scope |
-| [Code of conduct](reference/CODE_OF_CONDUCT.md) | The conduct expected of contributors |
+| [Security policy](../.github/SECURITY.md) | How to report a vulnerability, and what is in scope |
+| [Code of conduct](../.github/CODE_OF_CONDUCT.md) | The conduct expected of contributors |
 | [API main page](reference/API_MAINPAGE.md) | The front page of the Doxygen site that `sr docs` builds |
 
 ## Process

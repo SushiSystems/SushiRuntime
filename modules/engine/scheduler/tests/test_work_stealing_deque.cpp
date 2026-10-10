@@ -32,7 +32,7 @@
 #include <thread>
 #include <vector>
 #include <gtest/gtest.h>
-#include <SushiRuntime/scheduler/work_stealing_deque.hpp>
+#include "work_stealing_deque.hpp"
 
 using SushiRuntime::Scheduler::Deque;
 using SushiRuntime::Scheduler::Task;

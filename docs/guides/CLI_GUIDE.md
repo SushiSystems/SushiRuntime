@@ -249,7 +249,7 @@ sr docs        # build the fluent API reference into build/docs/api-site/html
 sr docs bundle --release 1.0.0   # pack the manual and the reference for docs.sushisystems.io
 ```
 
-`sr docs` runs Doxygen against the repo-root `Doxyfile` (scoped to the
+`sr docs` runs Doxygen against `.config/doxygen/Doxyfile` (scoped to the
 public `modules/surface/api/include/SushiRuntime/api` surface). Doxygen is an external tool, not
 vendored: install it (`winget install DimitriVanHeesch.Doxygen` on Windows,
 `apt-get install doxygen graphviz` on Linux, `brew install doxygen graphviz` on
@@ -301,7 +301,7 @@ package` is the check.
 
 ## `sr container` — the development container
 
-A `Dockerfile` provides a complete SYCL toolchain (an intel/llvm nightly bundle,
+`.config/docker/Dockerfile` provides a complete SYCL toolchain (an intel/llvm nightly bundle,
 the `intel-llvm` toolchain) plus the Intel OpenCL CPU runtime, so you can build
 and run — including the CUDA backend — without installing a compiler on your host.
 
