@@ -59,29 +59,10 @@ include("${SR_CMAKE_DIR}/gpu/GpuBackend.cmake")
 include("${SR_CMAKE_DIR}/gpu/DetectGpu.cmake")
 sushiruntime_gpu_finalize()
 
-# Install layout and the package's own location. GNUInstallDirs is what makes an
-# install respect a distribution's conventions (lib64, multiarch) instead of
-# hardcoding "lib"; SR_INSTALL_CMAKEDIR is where find_package(SushiRuntime) looks.
-include(GNUInstallDirs)
-set(SR_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SushiRuntime"
-    CACHE STRING "Where the SushiRuntime CMake package files are installed")
+# Declares the install layout (GNUInstallDirs) the library target reads, and the
+# function that installs it once the modules exist.
 include("${SR_CMAKE_DIR}/SushiRuntimeInstall.cmake")
-
-# The version literals in core/version.hpp are hand-written, so they are greppable and
-# need no generated header on the include path. That is only safe if they cannot disagree
-# with the version the build and the package advertise, so a disagreement stops the
-# configure here.
-set(SR_VERSION_HEADER
-    "${CMAKE_CURRENT_SOURCE_DIR}/modules/foundation/core/include/SushiRuntime/core/version.hpp")
-file(STRINGS "${SR_VERSION_HEADER}" SR_VERSION_STRING_LINE
-     REGEX "^#define SUSHIRUNTIME_VERSION_STRING ")
-string(REGEX MATCH "\"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _sr_unused "${SR_VERSION_STRING_LINE}")
-if(NOT CMAKE_MATCH_1 STREQUAL PROJECT_VERSION)
-    message(FATAL_ERROR
-        "Version mismatch: project() says ${PROJECT_VERSION}, "
-        "${SR_VERSION_HEADER} says ${CMAKE_MATCH_1}. "
-        "Update both; they are the same fact stated twice.")
-endif()
+include("${SR_CMAKE_DIR}/SushiRuntimeVersionCheck.cmake")
 
 # --- Modules, the library and the programs --------------------------------------
 # The test function is declared before the modules, because a module declares its own
@@ -94,53 +75,11 @@ add_subdirectory(modules)
 
 add_subdirectory(applications/examples)
 
-# --- Package files --------------------------------------------------------------
-# Written after add_subdirectory(modules) because the Config template interpolates
-# options that the subdirectories may still be resolving when this file starts.
-include(CMakePackageConfigHelpers)
-
-configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SushiRuntimeConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/SushiRuntimeConfig.cmake"
-    INSTALL_DESTINATION "${SR_INSTALL_CMAKEDIR}"
-)
-
-# SameMinorVersion: the project is pre-1.0 and its API is not frozen, so a
-# consumer asking for 0.2 must not be handed 0.3. Revisit at the v1.0.0 freeze,
-# where SameMajorVersion becomes the honest compatibility statement.
-write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/SushiRuntimeConfigVersion.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMinorVersion
-)
-
-install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/SushiRuntimeConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/SushiRuntimeConfigVersion.cmake"
-    DESTINATION "${SR_INSTALL_CMAKEDIR}"
-)
-
-# The third-party libraries an installed consumer loads at run time. Called after
-# the export rules so the package is described before its dependencies are added
-# to it.
-sushiruntime_install_runtime_dependencies()
-
-# --- Packaging ----------------------------------------------------------------
-# An archive of the installed tree, for handing the SDK to a consumer who is not
-# building it from source. The layout is whatever the install rules above produce,
-# so the archive and a plain `cmake --install` cannot drift apart.
-set(CPACK_PACKAGE_NAME "SushiRuntime")
-set(CPACK_PACKAGE_VENDOR "SushiSystems")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_PACKAGE_FILE_NAME "SushiRuntime-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}")
-set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/packages")
-set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
-if(WIN32)
-    set(CPACK_GENERATOR "ZIP")
-else()
-    set(CPACK_GENERATOR "TGZ")
-endif()
-include(CPack)
+# --- Install and package --------------------------------------------------------
+# After add_subdirectory(modules): the rules name the library target and the include
+# roots the modules recorded.
+sushiruntime_install_package()
+include("${SR_CMAKE_DIR}/SushiRuntimePackaging.cmake")
 
 # --- Testing ------------------------------------------------------------------
 # Tests that cross module boundaries; a module's own tests are declared in its folder.
