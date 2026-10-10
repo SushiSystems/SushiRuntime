@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 # Composes the module object libraries into the one shared library, writes the forwarding
-# headers of moved include paths, and installs and exports the result.
+# headers of moved include paths. cmake/SushiRuntimeInstall.cmake installs and exports it.
 
 include("${CMAKE_CURRENT_LIST_DIR}/SushiRuntimeMovedHeaders.cmake")
 
@@ -32,9 +32,17 @@ function(sushiruntime_write_forwarding_headers)
 endfunction()
 
 # Declares the shared library `sushiruntime` (alias SushiRuntime::SushiRuntime) from the
-# object libraries the modules recorded, then its install and export rules.
+# object libraries the modules recorded.
 function(sushiruntime_compose_library)
     sushiruntime_write_forwarding_headers()
+
+    # Before 1.0 a minor release may break the ABI, so the minor number is part of the name
+    # a program is linked against.
+    if(PROJECT_VERSION_MAJOR EQUAL 0)
+        set(SR_SOVERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
+    else()
+        set(SR_SOVERSION "${PROJECT_VERSION_MAJOR}")
+    endif()
 
     add_library(sushiruntime SHARED)
     # One spelling for an in-tree consumer (add_subdirectory) and an installed one
@@ -78,7 +86,7 @@ function(sushiruntime_compose_library)
 
     set_target_properties(sushiruntime PROPERTIES
         VERSION ${PROJECT_VERSION}
-        SOVERSION ${PROJECT_VERSION_MAJOR}
+        SOVERSION ${SR_SOVERSION}
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
         POSITION_INDEPENDENT_CODE ON
@@ -88,30 +96,4 @@ function(sushiruntime_compose_library)
         # install(EXPORT ... NAMESPACE SushiRuntime::) would otherwise produce
         # SushiRuntime::sushiruntime, a different spelling from the in-tree alias.
         EXPORT_NAME SushiRuntime)
-
-    # The export set carries the library and the floating-point contract it links
-    # PUBLIC. CMake refuses to export a target whose interface names a target no export
-    # set contains, so sushiruntime_deterministic_fp is in the set.
-    install(TARGETS sushiruntime sushiruntime_deterministic_fp
-        EXPORT SushiRuntimeTargets
-        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-        INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-
-    foreach(include_root IN LISTS include_roots SR_FORWARDING_INCLUDE_ROOT)
-        install(DIRECTORY "${include_root}/"
-            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-            FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
-    endforeach()
-
-    install(EXPORT SushiRuntimeTargets
-        FILE SushiRuntimeTargets.cmake
-        NAMESPACE SushiRuntime::
-        DESTINATION "${SR_INSTALL_CMAKEDIR}")
-
-    # The same targets, usable from a build tree without installing.
-    export(EXPORT SushiRuntimeTargets
-        FILE "${PROJECT_BINARY_DIR}/SushiRuntimeTargets.cmake"
-        NAMESPACE SushiRuntime::)
 endfunction()
