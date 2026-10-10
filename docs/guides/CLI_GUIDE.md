@@ -200,6 +200,7 @@ Useful options:
 sr test --suite functional --filter 'Steal.*'   # only tests whose name matches the regex
 sr test --asan                                   # run the build-asan/ tree instead of build/
 sr test --distributed                            # run against a distributed-enabled build
+sr test --module scheduler                       # the tests of one module, whatever their kind
 sr test --repeat 50                              # re-run each test up to 50x, stop on first failure
 ```
 

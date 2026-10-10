@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — cli: Added `sr test --module`, which runs the tests labelled with one module's name (`cli.py`, `project.py`, `SushiRuntimeTests.cmake`).
 - 2026-10-11 — build: Added a header check per module that compiles every public header first and alone with the declared dependencies only (`SushiRuntimeModule.cmake`).
 - 2026-10-11 — cli: Added `--jobs` / `-j` to `sr build` (`cli.py`, `project.py`).
 - 2026-10-11 — tools: Added the same-tier and declared-dependency rules to the layering checker, and a test that compares its tables with the CMake tier table (`check_layering.py`, `test_tier_table.py`).

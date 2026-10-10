@@ -54,12 +54,13 @@ if(WIN32)
     add_dependencies(sushiruntime_tests_runtime_dll sushiruntime)
 endif()
 
-# sushiruntime_add_test_program(NAME <target> [BENCHMARK] SOURCES <file>...)
+# sushiruntime_add_test_program(NAME <target> [BENCHMARK] [MODULE <module>] SOURCES <file>...)
 #
 # BENCHMARK registers the Stress_* and Performance_* suites with a 900 second limit; a
 # program without it registers Unit_*, Integration_* and Regression_* with 120 seconds.
+# MODULE adds the module's name as a second label on every test of the program.
 function(sushiruntime_add_test_program)
-    cmake_parse_arguments(ARG "BENCHMARK" "NAME" "SOURCES" ${ARGN})
+    cmake_parse_arguments(ARG "BENCHMARK" "NAME;MODULE" "SOURCES" ${ARGN})
     if("${ARG_NAME}" STREQUAL "" OR NOT ARG_SOURCES)
         message(FATAL_ERROR "sushiruntime_add_test_program(): NAME and SOURCES are required.")
     endif()
@@ -88,6 +89,10 @@ function(sushiruntime_add_test_program)
         string(REPLACE "|" ";" parts "${group}")
         list(GET parts 0 filter)
         list(GET parts 1 label)
+        if(NOT "${ARG_MODULE}" STREQUAL "")
+            # The separator is escaped: the property list crosses a generated script.
+            string(APPEND label "\;${ARG_MODULE}")
+        endif()
         gtest_discover_tests(${ARG_NAME}
             DISCOVERY_MODE PRE_TEST
             WORKING_DIRECTORY "${PROJECT_BINARY_DIR}/tests"
@@ -109,7 +114,8 @@ function(sushiruntime_add_module_tests)
     foreach(source IN LISTS ARG_SOURCES)
         list(APPEND test_sources "${CMAKE_CURRENT_SOURCE_DIR}/tests/${source}")
     endforeach()
-    sushiruntime_add_test_program(NAME "sr_${ARG_MODULE}_tests" SOURCES ${test_sources})
+    sushiruntime_add_test_program(
+        NAME "sr_${ARG_MODULE}_tests" MODULE "${ARG_MODULE}" SOURCES ${test_sources})
     target_include_directories("sr_${ARG_MODULE}_tests" PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/source")
 endfunction()
