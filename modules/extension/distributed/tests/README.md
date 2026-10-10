@@ -1009,3 +1009,21 @@ and output still leaves.
 
 `test_worker_directory.cpp`: `IdentityCarriesTheBuildOfTheLastHello` pins
 `WorkerDirectory::identity()`.
+
+## Cases added with the defect fixes
+
+`test_distributed_tcp_faults.cpp`: `LinkStalledMidTransferLostAtLivenessClose` stalls a link in the
+middle of a 32 MiB transfer with the master's write idle timeout at 10 minutes, and expects the
+peer lost and its task finished locally once liveness closes it. The three raw-byte cases also
+expect `peers_closed_malformed == 1`. `WorkerCutMidChunkTaskFinishesLocally` reads `peers_lost` and
+`redispatched` as soon as the run returns.
+
+`test_worker_bricks.cpp`: `GenericLambdaRegistersAsAKernel` replaces
+`LegacyKernelSignatureStillRuns`. `EndedLinkStopsItsTransport`: a link that ended for good stops
+its transport from its own thread. `PingGetsNoPongBeforeRegistration`: a link in the handshake
+answers no PING. `LateChallengeForAForgottenHelloIsIgnored`: after a fifth HELLO a CHALLENGE that
+matches no remembered nonce does not end the link.
+
+`test_worker_directory.cpp`: `HelloFromARegisteredWorkerRegistersNothingTwice`: a HELLO from a
+registered worker answers `AlreadyRegistered` and leaves the alive count, the kernels, the inflight
+count and the identity as they were.

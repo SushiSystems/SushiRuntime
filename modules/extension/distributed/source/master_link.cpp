@@ -124,6 +124,7 @@ namespace SushiRuntime
             peer_ = PeerId{};
             phase_ = Phase::Idle;
             sent_nonce_count_ = 0;
+            hello_count_ = 0;
             proof_sent_ = false;
             watched_peer_.store(0, std::memory_order_relaxed);
         }
@@ -177,6 +178,7 @@ namespace SushiRuntime
                             sent_nonces_.rend());
                 sent_nonces_[0] = nonce;
                 sent_nonce_count_ = std::min(sent_nonce_count_ + 1, K_NONCE_HISTORY);
+                ++hello_count_;
                 phase_ = Phase::HelloSent;
                 hello_at_ = Clock::now();
             }
@@ -249,6 +251,7 @@ namespace SushiRuntime
         {
             Nonces nonces{};
             std::size_t nonce_count = 0;
+            bool has_forgotten_nonce = false;
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
                 if (end() != WorkerEnd::Running || peer_ != peer ||
@@ -257,6 +260,7 @@ namespace SushiRuntime
 
                 nonces = sent_nonces_;
                 nonce_count = sent_nonce_count_;
+                has_forgotten_nonce = hello_count_ > sent_nonce_count_;
             }
 
             const HandshakeNonce master_nonce = to_handshake(challenge.master_nonce);
@@ -269,6 +273,16 @@ namespace SushiRuntime
                 if (verify_proof(HandshakeRole::Master, secret_, nonces[index], master_nonce,
                                  master_proof))
                     answered = index;
+            }
+
+            if (answered == nonce_count && has_forgotten_nonce)
+            {
+                // The proof may answer a HELLO whose nonce is forgotten, so it proves nothing.
+                SR_LOG_DEBUG("CHALLENGE from master (peer {}) matches none of the last {} "
+                             "HELLOs and earlier ones are forgotten; ignored, the next HELLO "
+                             "runs the handshake",
+                             peer.value, nonce_count);
+                return LinkChange::None;
             }
 
             if (answered == nonce_count)
@@ -383,6 +397,13 @@ namespace SushiRuntime
 
         void MasterLink::on_ping(PeerId peer, const Wire::PingMessage& ping)
         {
+            {
+                // A PONG from a link that is not registered would keep a master waiting on it.
+                const std::lock_guard<std::mutex> lock(mutex_);
+                if (peer_ != peer || phase_ != Phase::Registered)
+                    return;
+            }
+
             Wire::PongMessage pong;
             pong.token = ping.token;
             if (options_.free_memory_probe)
@@ -553,10 +574,11 @@ namespace SushiRuntime
             /** @brief Names what one pass of the thread does once the mutex is released. */
             enum class Action : std::uint8_t
             {
-                Wait,        /**< Nothing is due. */
-                Heartbeat,   /**< Send HEARTBEAT. */
-                Restart,     /**< Send HELLO again with a fresh nonce. */
-                CloseSilent, /**< Close a master that sent nothing for the liveness timeout. */
+                Wait,          /**< Nothing is due. */
+                StopTransport, /**< Stop the transport of a link that reached a final end. */
+                Heartbeat,     /**< Send HEARTBEAT. */
+                Restart,       /**< Send HELLO again with a fresh nonce. */
+                CloseSilent,   /**< Close a master that sent nothing for the liveness timeout. */
             };
 
             std::unique_lock<std::mutex> lock(mutex_);
@@ -569,10 +591,15 @@ namespace SushiRuntime
                 std::chrono::milliseconds silence{0};
                 std::chrono::milliseconds limit{0};
 
-                const bool running = end() == WorkerEnd::Running &&
-                                     !leaving_.load(std::memory_order_acquire);
+                const bool is_leaving = leaving_.load(std::memory_order_acquire);
+                const bool running = end() == WorkerEnd::Running && !is_leaving;
 
-                if (running && phase_ == Phase::Registered)
+                if (end() != WorkerEnd::Running && !is_leaving && !transport_stopped_)
+                {
+                    action = Action::StopTransport;
+                    transport_stopped_ = true;
+                }
+                else if (running && phase_ == Phase::Registered)
                 {
                     const Clock::time_point last = last_frame();
                     const bool watched = liveness_ > std::chrono::milliseconds::zero();
@@ -620,7 +647,13 @@ namespace SushiRuntime
                 lock.unlock();
                 try
                 {
-                    if (action == Action::CloseSilent)
+                    if (action == Action::StopTransport)
+                    {
+                        SR_LOG_DEBUG("the link to the master ended; stopping its transport, "
+                                     "which connects no more");
+                        transport_.stop();
+                    }
+                    else if (action == Action::CloseSilent)
                     {
                         SR_LOG_WARN("no frame from master (peer {}) for {} ms (limit {} ms); "
                                     "closing the connection so the transport can reconnect",
@@ -659,6 +692,10 @@ namespace SushiRuntime
                                  peer.value);
                 }
                 lock.lock();
+
+                // A stopped transport reports no loss, so the connection is forgotten here.
+                if (action == Action::StopTransport)
+                    forget_connection();
             }
         }
 

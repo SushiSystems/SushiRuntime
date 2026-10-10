@@ -62,11 +62,13 @@ namespace SushiRuntime
         {
             std::uint64_t offloaded = 0;                   /**< Dispatches queued to a worker. */
             std::uint64_t declined = 0;                    /**< Offloadable dispatches run here. */
+            std::uint64_t completed_remote = 0;            /**< Tasks a worker finished whole. */
             std::uint64_t redispatched = 0;                /**< Tasks taken back and resubmitted. */
             std::uint64_t stale_writebacks = 0;            /**< Output chunks the fence refused. */
             std::uint64_t handshake_rejected_auth = 0;     /**< Peers whose proof failed. */
             std::uint64_t handshake_rejected_version = 0;  /**< Peers of another protocol. */
             std::uint64_t peers_lost = 0;                  /**< Registered workers that left. */
+            std::uint64_t peers_closed_malformed = 0;      /**< Peers closed for a bad frame. */
             std::uint64_t tasks_reaped_deadline = 0;       /**< Tasks past the task deadline. */
             std::uint64_t tasks_reaped_unacknowledged = 0; /**< Dispatches no worker confirmed. */
             std::uint64_t tasks_reaped_lost_result = 0;    /**< Tasks a worker stopped holding. */

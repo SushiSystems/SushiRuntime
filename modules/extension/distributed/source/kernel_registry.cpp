@@ -33,42 +33,9 @@ namespace SushiRuntime
 {
     namespace Distributed
     {
-        namespace
-        {
-            /** @brief Returns the addresses of a list of views, in the same order. */
-            std::vector<void*> addresses_of(SushiRuntime::span<const BufferView> views)
-            {
-                std::vector<void*> addresses;
-                addresses.reserve(views.size());
-                for (const BufferView& view : views)
-                    addresses.push_back(view.data);
-                return addresses;
-            }
-        } // namespace
-
         void KernelRegistry::register_kernel(Graph::OpID id, Kernel kernel)
         {
             kernels_[id.value] = std::move(kernel);
-        }
-
-        void KernelRegistry::register_kernel(Graph::OpID id, RemoteKernel kernel)
-        {
-            Kernel adapter = [legacy = std::move(kernel)](
-                                 sycl::queue& queue, SushiRuntime::span<const BufferView> inputs,
-                                 SushiRuntime::span<const BufferView> outputs,
-                                 const Graph::TaskMetadata& metadata) -> sycl::event
-            {
-                const std::vector<void*> input_addresses = addresses_of(inputs);
-                const std::vector<void*> output_addresses = addresses_of(outputs);
-                return legacy(
-                    queue,
-                    SushiRuntime::span<void* const>(input_addresses.data(),
-                                                    input_addresses.size()),
-                    SushiRuntime::span<void* const>(output_addresses.data(),
-                                                    output_addresses.size()),
-                    metadata);
-            };
-            kernels_[id.value] = std::move(adapter);
         }
 
         bool KernelRegistry::has(Graph::OpID id) const

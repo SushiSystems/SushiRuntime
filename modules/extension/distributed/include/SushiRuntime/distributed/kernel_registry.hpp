@@ -67,17 +67,8 @@ namespace SushiRuntime
                     SushiRuntime::span<const BufferView> outputs,
                     const Graph::TaskMetadata& metadata)>;
 
-                /** @brief Names the kernel form that receives addresses without their sizes. */
-                using RemoteKernel = std::function<sycl::event(
-                    sycl::queue& queue, SushiRuntime::span<void* const> inputs,
-                    SushiRuntime::span<void* const> outputs, const Graph::TaskMetadata& metadata)>;
-
                 /** @brief Sets the kernel of an operation, replacing the one set before. */
                 void register_kernel(Graph::OpID id, Kernel kernel);
-
-                /** @brief Wraps a pointer-form kernel in a Kernel and registers the wrapper. */
-                [[deprecated("register a kernel that takes span<const BufferView>")]]
-                void register_kernel(Graph::OpID id, RemoteKernel kernel);
 
                 /** @brief Returns whether an operation has a kernel. */
                 [[nodiscard]] bool has(Graph::OpID id) const;

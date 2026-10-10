@@ -146,6 +146,24 @@ namespace SushiRuntime
                 /** @brief Runs the writer: pops the outbox and writes header, then payload. */
                 void write_loop() noexcept;
 
+                /**
+                 * @brief Writes bytes to the socket, counts them and times the call.
+                 *
+                 * write_began_ticks_ holds the start of the call while it runs, which is how
+                 * close() sees a write that waits.
+                 */
+                [[nodiscard]] SocketResult write_timed(SushiRuntime::span<const std::byte> bytes,
+                                                       std::chrono::milliseconds limit);
+
+                /**
+                 * @brief Returns whether the writer has waited in one socket write for
+                 *        close_linger or longer.
+                 *
+                 * Such a write has had the time close() grants the writer, so close() shuts
+                 * the socket instead of waiting for write_idle_timeout.
+                 */
+                [[nodiscard]] bool has_spent_linger() const noexcept;
+
                 /// @brief The id the transport gave the connection.
                 PeerId peer_;
 
@@ -181,6 +199,9 @@ namespace SushiRuntime
 
                 /// @brief Set by the writer so the reader reports WriteStalled.
                 std::atomic<bool> write_stalled_{false};
+
+                /// @brief Start of the writer's current socket write, in clock ticks; 0 in none.
+                std::atomic<std::chrono::steady_clock::rep> write_began_ticks_{0};
 
                 /// @brief Bytes written to the socket.
                 std::atomic<std::uint64_t> bytes_sent_{0};

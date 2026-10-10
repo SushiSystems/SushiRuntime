@@ -232,8 +232,8 @@ namespace SushiRuntime
                             return;
                         }
 
-                        drop_peer(peer,
-                                  Core::Detail::sr_format(
+                        drop_malformed(
+                            peer, Core::Detail::sr_format(
                                       "sent a malformed {} frame ({} bytes): decoding stopped "
                                       "at offset {} with status {}",
                                       message_type_name(Message::K_TYPE), payload.size(),
@@ -266,15 +266,17 @@ namespace SushiRuntime
             /** @brief Returns a lost worker's tasks to the scheduler and logs the loss once. */
             void on_peer_lost(PeerId peer, const PeerLoss& loss) override
             {
-                if (loss.cause == PeerLossCause::VersionMismatch)
-                    rejected_version.fetch_add(1, std::memory_order_relaxed);
-
                 const RetiredPeer retired = retire_peer(peer);
                 if (!retired.peer.known)
                     return;
 
+                if (loss.cause == PeerLossCause::BadMagic ||
+                    loss.cause == PeerLossCause::MalformedFrame)
+                    closed_malformed.fetch_add(1, std::memory_order_relaxed);
+
                 if (loss.cause == PeerLossCause::VersionMismatch)
                 {
+                    rejected_version.fetch_add(1, std::memory_order_relaxed);
                     SR_LOG_ERROR("{} (peer {}) speaks protocol v{}, this master v{}; build both "
                                  "from one commit; closed, {} tasks returned to the scheduler",
                                  retired.peer.endpoint, peer.value, loss.peer_version,
@@ -292,11 +294,19 @@ namespace SushiRuntime
                 SR_LOG_DEBUG("a master-side transport reported an abandoned connect: {}", cause);
             }
 
-            /** @brief Answers HELLO with CHALLENGE when the directory expects it. */
+            /** @brief Answers HELLO with CHALLENGE, or with WELCOME for a registered worker. */
             void on_hello(PeerId peer, std::uint8_t /*flags*/, const Wire::HelloMessage& hello)
             {
                 const HandshakeNonce master_nonce = make_nonce();
                 const HelloReply reply = directory.accept_hello(peer, hello, master_nonce);
+                if (reply.step == HandshakeStep::AlreadyRegistered)
+                {
+                    SR_LOG_DEBUG("worker {} says HELLO again, so its WELCOME was lost; WELCOME "
+                                 "is sent again",
+                                 peer.value);
+                    send_welcome(peer);
+                    return;
+                }
                 if (reply.step != HandshakeStep::Accepted)
                     return;
 
@@ -318,12 +328,7 @@ namespace SushiRuntime
                 const HandshakeStep step = directory.accept_proof(peer, proof, now);
                 if (step == HandshakeStep::Accepted)
                 {
-                    Wire::WelcomeMessage welcome;
-                    welcome.worker_id = peer.value;
-                    welcome.liveness_timeout_ms = to_wire_milliseconds(monitor.liveness_timeout());
-                    welcome.ping_interval_ms = to_wire_milliseconds(monitor.period());
-                    welcome.chunk_bytes = options.chunk_bytes;
-                    send_control(peer, welcome);
+                    send_welcome(peer);
                     log_registered(peer, proof.ops.size());
                     return;
                 }
@@ -378,6 +383,8 @@ namespace SushiRuntime
                                              task->outputs.data(), task->outputs.size()));
                 if (is_whole)
                 {
+                    // The count rises before the scheduler can end the run that reads it.
+                    completed_remote.fetch_add(1, std::memory_order_relaxed);
                     directory.release_inflight(peer);
                     dispatcher.complete_remote(*task->node);
                     sink->complete_remote(*task->node);
@@ -422,7 +429,8 @@ namespace SushiRuntime
                 pending.note_chunk(peer, std::chrono::steady_clock::now());
                 const bool is_last = (flags & Wire::K_FRAME_FLAG_LAST_CHUNK) != 0;
                 if (exchange.apply_output_chunk(peer, chunk, is_last) == ChunkStatus::Malformed)
-                    drop_peer(peer, "sent a BUFFER_CHUNK whose purpose, size or offset is wrong");
+                    drop_malformed(peer,
+                                   "sent a BUFFER_CHUNK whose purpose, size or offset is wrong");
             }
 
             /** @brief Forgets the progress of an output transfer its worker gave up. */
@@ -458,16 +466,26 @@ namespace SushiRuntime
                                  static_cast<int>(sent));
             }
 
-            /** @brief Passes taken tasks to resubmit_tasks() and counts them. */
+            /** @brief Sends a registered worker its WELCOME: its id and the session's timings. */
+            void send_welcome(PeerId peer)
+            {
+                Wire::WelcomeMessage welcome;
+                welcome.worker_id = peer.value;
+                welcome.liveness_timeout_ms = to_wire_milliseconds(monitor.liveness_timeout());
+                welcome.ping_interval_ms = to_wire_milliseconds(monitor.period());
+                welcome.chunk_bytes = options.chunk_bytes;
+                send_control(peer, welcome);
+            }
+
+            /** @brief Counts taken tasks, then passes them to resubmit_tasks(). */
             std::size_t resubmit(SushiRuntime::span<PendingTask> tasks) noexcept
             {
                 if (tasks.empty() || sink == nullptr)
                     return 0;
 
-                const std::size_t count =
-                    resubmit_tasks(tasks, registry, exchange, directory, *sink);
-                redispatched.fetch_add(count, std::memory_order_relaxed);
-                return count;
+                // The count rises before the scheduler can end the run that reads it.
+                redispatched.fetch_add(tasks.size(), std::memory_order_relaxed);
+                return resubmit_tasks(tasks, registry, exchange, directory, *sink);
             }
 
             /**
@@ -483,11 +501,13 @@ namespace SushiRuntime
                 if (!retired.peer.registered)
                     return retired;
 
+                // The count rises before the worker's tasks go back to the scheduler.
+                peers_lost.fetch_add(1, std::memory_order_relaxed);
+
                 std::vector<PendingTask> tasks;
                 pending.take_for_worker(peer, tasks);
                 retired.tasks_returned =
                     resubmit(SushiRuntime::span<PendingTask>(tasks.data(), tasks.size()));
-                peers_lost.fetch_add(1, std::memory_order_relaxed);
                 return retired;
             }
 
@@ -512,8 +532,11 @@ namespace SushiRuntime
                                 retired.peer.endpoint, peer.value, cause);
             }
 
-            /** @brief Closes a peer for a stated cause, returns its tasks and logs one line. */
-            void drop_peer(PeerId peer, const std::string& cause)
+            /**
+             * @brief Closes a peer for a stated cause, returns its tasks and logs one line.
+             * @return False when the directory had forgotten the peer, so nothing was logged.
+             */
+            bool drop_peer(PeerId peer, const std::string& cause)
             {
                 // Sends to the peer fail from here, so a dispatch racing this is undone.
                 transport->close_peer(peer);
@@ -521,6 +544,14 @@ namespace SushiRuntime
                 const RetiredPeer retired = retire_peer(peer);
                 if (retired.peer.known)
                     log_retired(peer, retired, cause, false);
+                return retired.peer.known;
+            }
+
+            /** @brief Closes a peer for a frame that does not decode and counts it once. */
+            void drop_malformed(PeerId peer, const std::string& cause)
+            {
+                if (drop_peer(peer, cause))
+                    closed_malformed.fetch_add(1, std::memory_order_relaxed);
             }
 
             /** @brief Logs the line of a worker that has just registered. */
@@ -587,6 +618,12 @@ namespace SushiRuntime
 
             /// @brief Registered workers that left.
             std::atomic<std::uint64_t> peers_lost{0};
+
+            /// @brief Peers closed for bad magic, a malformed header or a malformed payload.
+            std::atomic<std::uint64_t> closed_malformed{0};
+
+            /// @brief Tasks a worker finished with every output whole.
+            std::atomic<std::uint64_t> completed_remote{0};
         };
 
         DistributedCoordinator::DistributedCoordinator(BufferRegistry& registry,
@@ -785,6 +822,9 @@ namespace SushiRuntime
             snapshot.handshake_rejected_version =
                 impl.rejected_version.load(std::memory_order_relaxed);
             snapshot.peers_lost = impl.peers_lost.load(std::memory_order_relaxed);
+            snapshot.peers_closed_malformed =
+                impl.closed_malformed.load(std::memory_order_relaxed);
+            snapshot.completed_remote = impl.completed_remote.load(std::memory_order_relaxed);
             snapshot.tasks_reaped_deadline = monitored.tasks_reaped_deadline;
             snapshot.tasks_reaped_unacknowledged = monitored.tasks_reaped_unacknowledged;
             snapshot.tasks_reaped_lost_result = monitored.tasks_reaped_lost_result;

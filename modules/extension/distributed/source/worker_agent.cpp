@@ -46,6 +46,7 @@
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/api/runtime/runtime.hpp>
 
 #include "dispatch_deduplicator.hpp"
 #include "dispatch_executor.hpp"
@@ -628,6 +629,14 @@ namespace SushiRuntime
                 SR_LOG_DEBUG("the transport gave up on the master while this worker stops: {}",
                              cause);
             apply(change);
+        }
+
+        WorkerAgent::WorkerAgent(API::Runtime& runtime, std::shared_ptr<ITransport> transport,
+                                 sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
+            : WorkerAgent(runtime.unsafe_context(), std::move(transport), std::move(kernels),
+                          std::move(options))
+        {
+
         }
 
         WorkerAgent::WorkerAgent(Execution::RuntimeContext& context,
