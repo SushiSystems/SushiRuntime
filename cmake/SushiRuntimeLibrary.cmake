@@ -91,7 +91,8 @@ function(sushiruntime_compose_library)
         CXX_STANDARD_REQUIRED ON
         POSITION_INDEPENDENT_CODE ON
         LINKER_LANGUAGE CXX
-        WINDOWS_EXPORT_ALL_SYMBOLS ON
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
         OUTPUT_NAME "sushiruntime"
         # install(EXPORT ... NAMESPACE SushiRuntime::) would otherwise produce
         # SushiRuntime::sushiruntime, a different spelling from the in-tree alias.

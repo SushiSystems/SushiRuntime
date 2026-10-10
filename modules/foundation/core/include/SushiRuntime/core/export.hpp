@@ -21,7 +21,7 @@
 
 /**
  * @file export.hpp
- * @brief Defines SUSHIRUNTIME_API, the symbol export and import macro.
+ * @brief Defines SUSHIRUNTIME_API, SR_API and SR_TYPE_API, the symbol visibility macros.
  * @author Mustafa Garip
  */
 
@@ -35,4 +35,20 @@
   #endif
 #else
   #define SUSHIRUNTIME_API __attribute__((visibility("default")))
+#endif
+
+/** @brief Short spelling of SUSHIRUNTIME_API. */
+#define SR_API SUSHIRUNTIME_API
+
+/**
+ * @brief Marks a type defined whole in a header whose type information crosses the library.
+ *
+ * The library is compiled with hidden visibility, so an exception thrown inside it and
+ * caught by a consumer needs type information both sides can see. The macro is empty on
+ * Windows, where an inline class is neither exported nor imported.
+ */
+#if defined(_WIN32) || defined(__CYGWIN__)
+  #define SR_TYPE_API
+#else
+  #define SR_TYPE_API __attribute__((visibility("default")))
 #endif
