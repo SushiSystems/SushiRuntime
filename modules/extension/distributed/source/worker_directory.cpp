@@ -32,6 +32,8 @@
 #include <array>
 #include <utility>
 
+#include <SushiRuntime/task/node.hpp>
+
 namespace SushiRuntime
 {
     namespace Distributed
@@ -235,10 +237,16 @@ namespace SushiRuntime
             if (closed_)
                 return std::nullopt;
 
+            const Graph::OpID operation = node.metadata.op_id;
             candidates_.clear();
             for (const auto& [value, session] : sessions_)
             {
                 if (!has_room(session))
+                    continue;
+
+                // A worker without the node's kernel would only send the task back.
+                if (std::find(session.operations.begin(), session.operations.end(), operation) ==
+                    session.operations.end())
                     continue;
 
                 WorkerStats stats;
@@ -260,8 +268,15 @@ namespace SushiRuntime
                 return std::nullopt;
 
             // A policy may answer with an id it was not offered; such a pick counts as none.
+            const auto offered = [choice](const WorkerStats& stats)
+            {
+                return stats.worker_id == *choice;
+            };
+            if (std::none_of(candidates_.begin(), candidates_.end(), offered))
+                return std::nullopt;
+
             const auto position = sessions_.find(static_cast<std::uint32_t>(*choice));
-            if (position == sessions_.end() || !has_room(position->second))
+            if (position == sessions_.end())
                 return std::nullopt;
 
             ++position->second.inflight;

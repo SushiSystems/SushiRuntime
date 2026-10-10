@@ -468,16 +468,18 @@ namespace SushiRuntime
 
             if (was_registered)
             {
-                SR_LOG_WARN("master (peer {}) lost: {} {}; queued jobs are dropped and the "
+                SR_LOG_WARN("master (peer {}) lost: {}{}{}; queued jobs are dropped and the "
                             "transport decides whether to reconnect",
-                            peer.value, loss_cause_name(loss.cause), loss.text);
+                            peer.value, loss_cause_name(loss.cause),
+                            loss.text.empty() ? "" : " ", loss.text);
                 return LinkChange::Disconnected;
             }
 
             if (end() == WorkerEnd::Running)
-                SR_LOG_WARN("master (peer {}) connection ended during the handshake: {} {}; a "
+                SR_LOG_WARN("master (peer {}) connection ended during the handshake: {}{}{}; a "
                             "protocol or secret mismatch is likely",
-                            peer.value, loss_cause_name(loss.cause), loss.text);
+                            peer.value, loss_cause_name(loss.cause),
+                            loss.text.empty() ? "" : " ", loss.text);
             return LinkChange::None;
         }
 

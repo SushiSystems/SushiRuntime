@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-10 — distributed: Fixed the master offering a task to a worker that did not register its kernel (`worker_directory.cpp`).
 - 2026-10-10 — distributed: Changed the wire protocol to version 2: a 12-byte frame with magic and version, 16 message types and a 1 MiB payload bound; a version 1 peer is refused (`wire_frame.hpp`, `wire_messages.hpp`).
 - 2026-10-10 — distributed: Added a mutual HMAC-SHA256 handshake over a shared secret; an empty secret is refused on a transport other machines reach (`handshake.hpp`, `shared_secret.hpp`, `cluster.cpp`).
 - 2026-10-10 — distributed: Changed `Cluster::attach` to take `ClusterOptions`, bind 127.0.0.1 by default and keep the cluster attached before when the new one does not start (`cluster.hpp`, `tcp_transport.hpp`).
