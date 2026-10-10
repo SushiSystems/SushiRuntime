@@ -20,11 +20,10 @@ The words this repository's documents use. A term defined in code names the head
 | Region | One partition of a `DynamicGraph`, keyed by a `RegionKey`. It compiles on its own and is added or dropped between steps |
 | Chain | The in-order path that runs a chainable plan from the calling thread, without the scheduler. Layer 1 of the graph replay design |
 | Layer | Which path ran a step, reported in `RunReport::layer` (`Core::ExecutionLayer`) |
-| Registration index | The number a task takes when it is added; the tile levels of one `add_reduce` share it. `RunReport::node_events` is numbered by it |
+| Registration index | The number a task takes when it is added; the nodes of one `Recorder::rule()` scope share it. `RunReport::node_events` is numbered by it |
 | Node event record | `Core::NodeEventRecord`: the submit, start and end times of one dispatch, collected when a graph requests profiling |
 | Clock pairing | `Core::ClockPairing`: an event-clock reading and a steady-clock reading taken together at a run's first device submission, used to place host and device records on one axis |
 | Profiling queue | A second queue per device, built on first use with profiling enabled, that a graph requesting profiling dispatches through |
-| Tile tree | The fixed-order reduction tree of `add_reduce`, 256 elements to a tile, which makes a reduction give the same bits at any worker count |
 | Offload | Sending one task to a remote worker through the optional distributed layer |
 | `OpID` | A 32-bit FNV-1a hash of an operation's name. It is what crosses the wire in place of code (`graph/task_types.hpp`) |
 | Master, worker | The two roles of the distributed layer. The master owns the graph and the buffers; a worker runs the ops it registered |

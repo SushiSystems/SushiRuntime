@@ -141,6 +141,54 @@ the two is wrong.
 A pointer from another runtime or from the stack has no residency this context can read. That is a
 different fault from a device slot, and it gets a different message.
 
+## test_device_sized_launch.cpp
+
+The file covers the launches of phase P3 of `docs/design/GRAPH_REPLAY.md` (sections D.2 and G): a
+`Recorder::kernel(DeviceSized, ...)` and a `sized_from_device` task, both sized by a count a
+predecessor wrote in the same step.
+
+### `record_marking_rule`
+
+`record_marking_rule` is the rule every case but two records. A resolver publishes two live words
+into recorder scratch, the width and a salt, and a device-sized kernel folds its index and both
+words into `marks[t]` for the work-items below the width. A word at or past the width keeps what an
+earlier step left, so the bytes after a step depend on every width so far. `marked` is the host
+model of one such write.
+
+### `OnlyItemsBelowTheLiveWidthRun`
+
+Widths of 10, 0, the capacity and 257 run in turn on one compiled plan. After each run every word
+must equal the host model, and the word one past the capacity must still hold the canary. A launch
+that ignored the live width, or read the width of the previous run, fails on the first comparison.
+
+### `ANullLiveWidthRunsEveryItemAndTheArityPicksTheWords`
+
+A null `live_width` lets every work-item run. A callable of one argument gets the index alone and
+one of two arguments gets `live_words[0]` after it. `record_marking_rule` covers the callable of
+three arguments.
+
+### `ZeroCapacityLaunchRunsNothingAndReleasesItsSuccessor`
+
+A zero-width `parallel_for` is not portable, so a launch of capacity zero submits an empty task. The
+node must still complete: a successor that reads the same buffer copies the untouched canary.
+
+### `DeviceSizedRuleChainMatchesSchedulerAsTheCountsChange`
+
+On every step a producer kernel writes a new width, 0 and the capacity included, and the host hands
+the resolver a new salt. The chain and the forced scheduler must record the same digest of the
+whole buffer on each of 48 steps, bit for bit, and the digest must change on more than a quarter of
+them.
+
+### `SizedFromDeviceChainMatchesSchedulerAsTheCountChanges`
+
+The same comparison for a `sized_from_device` task, whose live size comes from the same counter.
+
+### `DeviceCountOverCapacityFailsAChainedRun`
+
+A producer writes a count one above the capacity. The resolver cannot throw from a kernel, so it
+writes a fault record and the run fails when the step ends. A second graph on the same runtime,
+with a count that fits, runs clean on the chain.
+
 ## test_device_resident.cpp
 
 The file covers device-resident state, work package WP-6 of
@@ -540,6 +588,53 @@ in the middle of a run.
 The raw-pointer setter takes no buffer, so `add()` checks the pointer: a slot inside `Shared` memory
 is rejected before the graph records the task.
 
+## test_late_count.cpp
+
+The file covers where `Recorder::resolve()` takes the live value of a `LateCount` from and when it
+reads it. Every case records `record_live_count_copy`, a resolver whose fill copies the live count
+into a buffer the test reads back.
+
+### `DefaultResolvesToCapacity`
+
+With neither a host provider nor a device slot the live count is the capacity, as in a fixed call.
+
+### `ChangingHostCountKeepsOneCompile`
+
+A host count that changes between runs, zero included, must not force a recompile. The capacity
+fixes the plan and only the live value varies.
+
+### `HostCountAboveCapacityFailsTheRun`
+
+A host count above the capacity fails the run when the resolver is submitted, as an out-of-window
+`based_at()` does. The fill never runs, so the output keeps its canary.
+
+### `DeviceSlotResolvesFromHostResidentBuffer`
+
+A `Residency::Host` device slot resolves to the value written into it, exactly as
+`sized_from_device()` reads its own slot.
+
+### `DeviceCountAboveCapacityFailsTheRunOnBothLayers`
+
+A device count above the capacity fails the run on a default runtime and on one that forces the
+scheduler. A second graph with a count that fits then runs clean on the same runtime.
+
+### `NonHostDeviceSlotIsRejectedAtRegistration`
+
+A device slot that is not `Residency::Host` is rejected by `Recorder::resolve()`, the way
+`require_host_device_slots()` rejects a non-host slot of `sized_from_device()`. Nothing is
+recorded, and the failure does not wait for the first run.
+
+### `ResolverSeesTheCountItsPredecessorJustWrote`
+
+A count sourced from the device must be read when the resolver is dispatched, after its producer,
+and not polled at the step boundary. A resolver that dropped the device slot from its reads would
+still compile and run, but it would report the count of the previous run. A producer node writes a
+fresh count into a `Residency::Host` slot on every run and the test expects that count in the same
+run.
+
+The producer reads its next count from a buffer and not from a host stack variable, because the
+kernel may run on the device, which cannot reach the stack frame of the test.
+
 ## test_native_cpu_path.cpp
 
 The file covers the native CPU execution path, work package WP-7 of
@@ -570,6 +665,55 @@ A native task that throws fails the run, which is the error isolation of work pa
 runtime stays usable: a fresh graph runs cleanly afterwards. Native tasks therefore share the kernel
 error path and do not latch the worker pool dead.
 
+## test_node_options_width.cpp
+
+The file covers `NodeOptions::width`: the width a node states when it is recorded is the
+`launched_width` and the `live_width` of its node event records. Each node of a rule reads a region
+the node before it wrote, so `report.node_events` lands in recording order whichever layer ran it.
+
+### `EachNodeOfARuleReportsItsStatedWidth`
+
+Two nodes of one rule state 600 and 1. The buffers they name are oversized by 9 and by 8 elements,
+so a stamp that read the size of either buffer and not the stated width fails.
+
+### `ResolverAndDeviceSizedNodeReportTheirStatedWidths`
+
+A resolver states a width of one and a device-sized kernel states its capacity. The `LateCount` is
+left at its default, so the live count is the capacity and every work-item writes.
+
+## test_recorder_scratch.cpp
+
+The file covers `Recorder::scratch()`. Every case records `record_staged_rule`: a rule of two nodes
+in which the first writes `in[i] + 1` into scratch and the second writes twice that into `out`. A
+wrong or freed scratch pointer, or a second node that ran before the first, gives a wrong `out`.
+
+### `AConsumerSeesWhatPassedThroughTheScratch`
+
+A task that reads the output of the rule is ordered after both of its nodes, not only after the
+first: the copy it makes must hold the finished values.
+
+### `EachRunReadsItsInputAsItStands`
+
+The input changes before each of four runs and the plan compiles once. Each run must produce the
+values of the input as it stood then, through the same scratch.
+
+### `ScratchSurvivesARecompile`
+
+Scratch is allocated when the node is recorded, not when the plan compiles. A node added after the
+first run forces a second plan, and the kernels replayed into it still hold a valid pointer.
+
+### `ScratchIsFreedWithTheRecorder`
+
+Recording the rule raises the allocator's live count by one, and destroying the graph brings it
+back to the baseline.
+
+### `RegionsRecordRulesWithScratch`
+
+Two regions of a `DynamicGraph` each record the rule through `Region::recorder()`, the second
+reading what the first wrote. Before the last round the test asks for region 1 again, which marks
+it for a rebuild, so the composer replays its nodes onto a new sub-graph with the scratch they
+captured.
+
 ## test_region_emitter.cpp
 
 The file covers `add_emitter()`, the recording form that hands the caller the backing TaskGraph.
@@ -591,8 +735,8 @@ nodes ran in their recorded order and the boundary edge ordered the consumer beh
 
 ### `AnEmitterIsOneRule`
 
-An emitter that records two nodes reports a region size of one and a graph size of one. `size()`
-counts rules, as it does for a reduction that lowers to several nodes.
+An emitter that records two nodes reports a region size of one and a graph size of one: `size()`
+counts an emitter once, however many nodes it adds.
 
 ### `AnEmitterReplaysOnlyWhenItsRegionIsRebuilt`
 
@@ -609,6 +753,19 @@ Four steps advance both, so the form is not specific to regions and survives a c
 `Graph::rule_registration` is the only way a caller can read the node events of a `RunReport`. The
 events number nodes by registration index, and the `add()` order a caller thinks in is a different
 sequence. These cases check the mapping between the two.
+
+`record` adds three plain kernels and then `record_grouped_rule`, three kernels inside one
+`Recorder::rule()` scope, each reading what the one before it wrote.
+
+### `TheNodesOfOneRuleScopeShareOneIndex`
+
+Each plain `add()` takes an index of its own. The three nodes of the scope share one, which no
+plain kernel has, and the recorder counts four rules.
+
+### `ARulesNodesReportOneIndexOnEveryStep`
+
+Over `run(4)` the report holds one event per node per step, and on every step exactly three events
+carry the index of the rule.
 
 ## test_run_report_reuse.cpp
 
@@ -662,402 +819,3 @@ call without holding both.
 
 The asynchronous path settles into a caller-owned report too. The overlapped frame loop is the one
 that most wants the overload.
-
-## numeric/
-
-### test_counting_sort.cpp
-
-The file covers `Graph::add_counting_sort()`. Its design is sections A3 and B of
-`docs/archive/superpowers/specs/2026-09-16-scan-and-counting-sort-design.md`, and it was built as
-task 4 of `docs/archive/superpowers/specs/2026-09-16-scan-and-counting-sort-plan.md`. The tests
-check stability against `std::stable_sort`, the digit-count boundaries a live key range crosses,
-late-bound replay with one compile, and that every internal pass of one call shares one `node_index`
-across steps.
-
-#### `HostReference`
-
-`HostReference` is the host reference for every case in the file: a stable sort of (key, index)
-pairs by key alone, plus the bucket offsets and counts that follow from it. It is the ground truth
-`add_counting_sort()` is checked against, and it does not copy the algorithm under test.
-
-#### `StableAgainstHostReferenceOnDuplicateKeys`
-
-The test checks stability against `std::stable_sort` on seeded duplicate keys. A comparison against
-`std::sort` proves the case is not vacuous: a plain unstable sort must be able to disagree with the
-stable reference on the same input, or the test would pass whether or not `add_counting_sort()` were
-stable.
-
-#### `StableAcrossMultipleDigitsWhenTheLowDigitTies`
-
-The test checks stability across digits. Every key has the same low byte, so the first, least
-significant digit pass ties every element, and only the second digit pass tells them apart. The same
-`std::sort` comparison as in `StableAgainstHostReferenceOnDuplicateKeys` proves that the tie
-matters.
-
-#### `LargeRandomCaseAgainstHostReference`
-
-The large case is seeded and random. n = 10^6 with a 2^20 key range needs more than 256 tiles (10^6
-/ 256 is about 3907) and three digit passes. It is the first size and range in the suite that
-crosses both boundaries at once.
-
-#### `ZeroElementsWritesZeroEverywhere`
-
-With zero elements, every bucket starts and stays at the live count, which is zero, and nothing
-beyond the declared window is touched.
-
-#### `MaximumKeyOfA20BitRange`
-
-The maximum key of a 2^20 range catches a digit-count or mask error at the top bit, because
-`key_range.capacity - 1` sets exactly bit 19.
-
-#### `DigitCountFollowsKeyRangeCapacity`
-
-A live key range at or below 2^16 must take two digit passes, and one above it three. Each digit
-block is a histogram, a column scan, a bin base and a placement, so the node count the call emits
-grows by exactly four per extra digit.
-
-#### `LateBoundChangingCountAndKeyRangeKeepsOneCompile`
-
-A late-bound element count and a late-bound key range that both change between runs must not force a
-recompile. The capacity fixes the topology; only the live values and the buffers they describe vary.
-
-#### `LiveKeyRangeBelowCapacityLandsInIndices`
-
-A key range capacity of 2^24 plans three digits. Live key ranges that need one, two and three digits
-must each leave the stable order in the indices, whichever digit turns out to be the last one that
-runs.
-
-#### `DigitsAboveTheLiveKeyRangeDoNotRun`
-
-The upper digits are skipped. A key that breaks the precondition of the live key range but fits the
-capacity is sorted by its low byte alone, which could not happen if the digit above it still ran.
-The test is white-box by design; a caller must never pass such a key.
-
-The key 0x0101 has low byte 1, so one digit puts it between 0 and 2, and two digits would put it
-last.
-
-#### `RegionsRecordScanAndCountingSort`
-
-A `DynamicGraph` region records the prefix scan and the counting sort exactly as a `Graph` does,
-each in its own region, with live counts that change between runs.
-
-#### `EachRunSortsItsOwnKeys`
-
-The test covers substeps: `run(4)` with keys that change every step, so the sort of each step must
-reflect the buffer as it stood when that step ran.
-
-#### `SharesOneNodeIndexAcrossStepsAndPasses`
-
-Every internal pass that one `add_counting_sort()` call emits shares one `node_index`, and
-`run(steps)` records one invocation per step for each pass. The node event records are specified in
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`.
-
-`key_range.capacity = 50` needs one digit, because 50 - 1 fits in 6 bits. The call therefore emits 1
-node for the resolver, total and digit plan, 4 for the one digit block, 1 for the offsets and 1 for
-the counts: 7 nodes.
-
-#### `InternalNodeWidthsMatchTheDispatchTable`
-
-The `launched_width` of each internal pass must be its own row of the width table; a test that only
-checked that some width was stamped would prove less. Every pass reads a region the pass before it
-wrote: `plan_region`, then `hist_region`, then `col_total_region`, then `bin_base_region`, then the
-shared indices buffer, then the offsets. `report.node_events` therefore lands in that dependency
-order whichever execution path ran the passes.
-
-The shape is that of `SharesOneNodeIndexAcrossStepsAndPasses`: `key_range.capacity = 50` needs one
-digit, `T_cap = next_live_tile_count(300) = 2` and `DIGIT_BINS = 256`. The node order is resolver,
-histogram, column scan, bin base, placement, offsets, counts.
-
-#### `LateBoundCountAboveCapacityFailsTheRun`
-
-A live element count above its capacity fails the run. The alternative is a read or a write past the
-buffers the sort was planned for.
-
-#### `LateBoundKeyRangeAboveCapacityFailsTheRun`
-
-A live bucket count above its capacity fails the run too. The offsets pass never reads the live key
-range (section A3 of the design document), but the `key_range` resolver still validates it on every
-run.
-
-### test_device_sized_primitives.cpp
-
-The file covers phase P3 of `docs/design/GRAPH_REPLAY.md` (sections D.2 and G).
-
-On every step a producer kernel writes a new live count, 0 and the capacity included. The scan, the
-counting sort, the reductions and a `sized_from_device` task size themselves from that count on the
-device. The chain and the forced scheduler must record the same per-step digests bit for bit.
-
-### test_fixed_order_reduce.cpp
-
-The file covers `Graph::add_reduce`, `Graph::add_segmented_reduce` and the fixed-tile plan under
-them. A parallel reduce also gets the sum right, so a correct sum is not the claim under test. The
-claim is that the combination order is a function of the element layout alone, which makes the bit
-pattern reproducible.
-
-The strongest available check is a host reference that performs the identical fixed-tile fold,
-compared bit for bit. If the device result matched some other order, the two would differ in the low
-bits of a float sum. The inputs are built so that the naive left-to-right sum differs from the tiled
-one, and that difference is what lets the comparison fail.
-
-#### `fold_level`
-
-`fold_level` is the host mirror of `detail::fold_tile` over a whole level. It folds each tile of at
-most `TILE` values left to right, seeded with the first element of the tile.
-
-#### `fixed_order_sum`
-
-`fixed_order_sum` returns the value the runtime is required to produce for a sum: repeated levels of
-`fold_level` until one value remains. It mirrors `detail::plan_reduction`.
-
-#### `order_sensitive_input`
-
-`order_sensitive_input` builds a sum whose result depends on the order in which the values are
-combined: one large magnitude, followed by many values small enough to vanish when added to the
-running total but not when added to each other first.
-
-#### `bit_equal`
-
-The `double` overload of `bit_equal` does for `double` what `bit_equal(float, float)` does for
-`float`. The byte-identity checks need it, because `EXPECT_DOUBLE_EQ` tolerates a difference of 4
-ULP and the late-bound contract is byte identity.
-
-#### `PlanLayoutIsPureAndDisjoint`
-
-The plan is a pure function of the element count. Level counts divide by the tile size until one
-value remains, and consecutive levels never share scratch.
-
-#### `SumMatchesTheFixedOrderReferenceExactly`
-
-The sum matches, bit for bit, a host fold with the identical tile structure. It also differs from
-the naive left-to-right sum, which proves that the comparison discriminates between orders.
-
-#### `ResultIsStableAcrossSchedules`
-
-Repeated runs of the same graph, and a fresh graph on a runtime that runs the background rebalancer,
-must all agree bit for bit. Work stealing and the rebalancer change which worker folds which tile,
-and neither may change the result. The test varies the schedule at a fixed pool size. Varying the
-pool size is the job of the conformance suite `Integration_Determinism`.
-
-The second runtime takes the same input with the rebalancer on. That is a different scheduling
-regime, because task migration reassigns tiles to workers in the middle of a run.
-
-#### `EdgeCounts`
-
-The test uses element counts around the tile boundaries and the degenerate ones: a single value, an
-empty reduction (which yields the identity), and counts that land exactly on a level boundary.
-
-#### `MinimumAndMaximum`
-
-`Minimum` and `Maximum` reduce with the same machinery. Their identities must let any element win.
-
-#### `ConsumerSeesTheFinishedResult`
-
-A reduction is an ordinary tracked task. A consumer that reads the output is ordered after the whole
-reduction chain, not only after its first level.
-
-#### `SegmentedReduceOverRaggedSegments`
-
-The segmented reduce runs over ragged segments, one of them empty. The empty segment must yield the
-identity and must not read past its zero-length window.
-
-#### `RejectsMisSizedArguments`
-
-Arguments of the wrong size are rejected when the task is recorded, at the call site. They do not
-fault on the device in the middle of a run.
-
-#### `LateBoundMatchesFixedCountExactly`
-
-A `LateCount` reduce planned for a capacity must match the fixed-count overload bit for bit at every
-live count tested. The design promises the same fold order for a live n as the fixed-count path
-would produce for that n.
-
-#### `LateBoundChangingCountKeepsOneCompile`
-
-A late-bound reduce whose live count changes between runs must not recompile. The topology (levels,
-scratch and node count) is fixed at the capacity, and only the live count varies per step.
-
-#### `LateBoundAboveCapacityFailsTheRun`
-
-A `LateCount` above its capacity fails the run. The alternative is a read past the buffers the
-reduce was planned for.
-
-### test_late_count.cpp
-
-The file covers the tiled level plan (`detail::plan_tiled_levels` and `live_tile_levels` in
-`api/detail/fixed_order_scan.hpp`) and the one resolution point of `LateCount`
-(`detail::resolve_late_count` in `api/graph/graph.hpp`). Both are pure host functions, so the suite
-needs no device and no `Runtime`.
-
-#### `LevelCountsAtTileBoundaries`
-
-The level count for a capacity is the tree that `add_reduce` already plans. The test exercises it at
-the boundaries the tile size creates.
-
-#### `LiveCountBelowCapacityMatchesThatCountAtCapacity`
-
-A live count below the capacity must fold into the tile boundaries that the same count would get as
-a capacity. The levels below the point where the live chain reaches one value line up, index for
-index, with `plan_reduction(n)`.
-
-Every level past what `plan_reduction(n)` needs is a pass-through of a single element, and folding
-it changes nothing.
-
-#### `DefaultResolvesToCapacity`
-
-`resolve_late_count` is the one resolution point. With neither a host provider nor a device slot,
-the live count is the capacity, as in a fixed call.
-
-#### `AboveCapacityIsRejected`
-
-A live count above the capacity fails the run, as an out-of-window `based_at()` does. It is neither
-clamped silently nor allowed to read past the end.
-
-#### `DeviceSlotResolvesFromHostResidentBuffer`
-
-A `Residency::Host` device slot resolves to the value a predecessor wrote into it, exactly as
-`sized_from_device()` reads its own `device_count` slot.
-
-#### `NonHostDeviceSlotIsRejectedAtRegistration`
-
-A device slot that is not `Residency::Host` is rejected at registration, the way
-`require_host_device_slots()` rejects a non-host slot of `sized_from_device()`. It does not wait to
-fail on the first run of the graph.
-
-#### `RadixDigitCountAtByteBoundaries`
-
-The test checks digit counts at the 8-bit boundaries. A key range of 256 still fits one digit and
-257 needs two. Zero and one take one digit.
-
-#### `RadixPlanSkipsDigitsAboveTheLiveKeyRange`
-
-A plan for three digits whose live key range needs fewer runs only the low digits, and the last
-active digit always places into the indices.
-
-### test_late_count_ordering.cpp
-
-The file covers the ordering claim behind the device slot of `LateCount`, which came out of the
-second fix round of `docs/archive/superpowers/specs/2026-09-16-scan-and-counting-sort-plan.md`. A
-count sourced from the device must be resolved when the consuming node is dispatched, after its
-producer. It must not be polled at the step boundary, before the producer has run. A graph whose
-resolver dropped the device slot from its `Reads` would still compile and run, but it would fold the
-count of the previous step and not the one just written. The test is built to catch that regression.
-
-#### `ReduceSeesTheCountItsPredecessorJustWrote`
-
-A producer node writes a fresh live count into a `Residency::Host` slot on every run, and a
-late-bound `add_reduce` reads the same slot through `LateCount::device` in the same run. The reduce
-must see the count the producer wrote in this run.
-
-The producer reads its next count from a buffer and not from a host stack variable, because the
-kernel may run on the device, which cannot reach the stack frame of the test.
-
-### test_prefix_scan.cpp
-
-The file covers `Graph::add_prefix_scan()`. Its design is sections A1 and B of
-`docs/archive/superpowers/specs/2026-09-16-scan-and-counting-sort-design.md`, and it was built as
-task 3 of `docs/archive/superpowers/specs/2026-09-16-scan-and-counting-sort-plan.md`. The tests
-check exact agreement with a host reference at the tile edges, the exclusive contract (`offsets[n]
-== total`), late-bound replay with one compile, and that every internal pass of one call shares one
-`node_index` across steps.
-
-#### `host_exclusive_scan`
-
-`host_exclusive_scan` is an exclusive prefix sum over `uint32`, modulo 2^32, which is the contract
-of the scan: `offsets[i]` is the sum of `counts[0..i)`, and both `offsets[n]` and the return value
-carry the grand sum.
-
-#### `CANARY`
-
-`CANARY` is a sentinel that a real scan would never produce. A slot that keeps it was not written,
-and a slot that loses it was written when it must not have been.
-
-#### `ExactAgreementWithHostReferenceAtTileEdges`
-
-The tile edges are where an off-by-one in the level plan or in the base of the down-sweep would
-show: 0, 1, one below, at and above a tile, one below, at and above the second level, and 10^6.
-`offsets` and `total` are filled with the canary before the run, and `offsets` carries one extra
-slot past `capacity + 1` that must survive untouched. Neither a stale zero nor a write past the
-declared window can then pass by accident.
-
-#### `OffsetsAtLiveCountEqualsTotal`
-
-The second half of the exclusive contract: `offsets[n]` is exactly the sum that `add_prefix_scan()`
-also publishes through `total`, not an approximation of it.
-
-#### `LateBoundChangingCountKeepsOneCompile`
-
-A live count that changes between runs must not force a recompile. The topology (levels and scratch)
-is fixed at the capacity; only the live count and the counts it scans vary per run.
-
-#### `EachRunScansItsOwnCounts`
-
-When the counts change between calls, and not only the live count, a run must scan what is in the
-buffer at the time it runs, not a stale copy.
-
-#### `SharesOneNodeIndexAcrossStepsAndPasses`
-
-Every internal pass that one `add_prefix_scan()` call emits (the late-count resolver, the up-sweep
-levels, the down-sweep levels and the closing write) shares one `node_index`, and `run(steps)`
-records one invocation per step for each of them. The node event records are specified in
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`.
-
-`plan_tiled_levels(600)` gives two levels: level 0 folds 600 into 3 and level 1 folds 3 into 1. The
-call therefore emits 1 node for the resolver, 1 for the up-sweep (every level but the top), 2 for
-the down-sweep (every level) and 1 for the closing write: 5 nodes.
-
-#### `InternalNodeWidthsMatchTheDispatchTable`
-
-The `launched_width` of each internal pass must be its own row of the width table; a test that only
-checked that some width was stamped would prove less. Every pass reads a region the pass before it
-wrote: `state_region`, then `up_scratch`, then `down_scratch`, then the whole-buffer
-write-after-write on `offsets`. `report.node_events` therefore lands in that dependency order
-whichever execution path ran the passes.
-
-The shape is that of `SharesOneNodeIndexAcrossStepsAndPasses`: `plan_tiled_levels(600)` gives level
-0 from 600 to 3 and level 1 from 3 to 1. The node order is resolver, up0, down-top, down0, closing.
-
-#### `ZeroCapacityWritesZeroTotal`
-
-With capacity zero the live count is always zero, so `total` and `offsets[0]` are always zero. The
-buffers start from the canary, so a zero that was already there cannot pass for a written one.
-
-#### `LateBoundAboveCapacityFailsTheRun`
-
-A live count above its capacity fails the run. The alternative is a read or a write past the buffers
-the scan was planned for.
-
-### test_reduce_dispatch_width.cpp
-
-The file covers the dispatch widths of `Graph::add_reduce()` and `Graph::add_segmented_reduce()`, in
-the style of `InternalNodeWidthsMatchTheDispatchTable` in `test_prefix_scan.cpp`.
-
-#### `EagerReduceLevelWidthsMatchTheDispatchTable`
-
-`plan_reduction(600)` at `REDUCE_TILE = 256` has two levels: level 0 folds 600 values into ceil(600
-/ 256) = 3 partials, and level 1 folds those 3 into ceil(3 / 256) = 1. Each level is its own node,
-so the launch width per node is the `out_count` of that level, in level order.
-
-#### `EagerReduceZeroCountStampsWidthOne`
-
-`n == 0` skips every level and emits one node that writes the identity. That node still has a real
-launch width of one, not `WIDTH_UNKNOWN`.
-
-#### `LateBoundSegmentedReduceWidthsMatchResolverAndCapacity`
-
-A `LateCount` left at its default, with no host provider and no device slot, behaves like a fixed
-count equal to its capacity, which is the documented fallback of `detail::read_live_count()`. The
-late-bound overload of `add_segmented_reduce()` therefore emits its resolver, a `single_task` of
-width one, followed by its per-segment node, whose width is the capacity.
-
-`segment_offsets` and `output` are each oversized past `segment_count` by a different amount. A
-width stamp that read the size of either buffer, and not the launch range, would then fail and could
-not pass by accident.
-
-#### `EagerSegmentedReduceWidthMatchesSegmentCount`
-
-The fixed-count overload emits one node over exactly `segment_count` elements, so its launch width
-is `segment_count`.
-
-The buffers are oversized as in `LateBoundSegmentedReduceWidthsMatchResolverAndCapacity`:
-`segment_offsets` and `output` each carry a different amount of padding past `segment_count`, which
-pins the stamp to the launch range and not to either size.

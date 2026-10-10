@@ -113,12 +113,11 @@ The file is the determinism conformance suite: the same graph on the same machin
 byte-identical output however many workers ran it.
 
 Rollback netcode and replay files are built on this guarantee, and two independent things can break
-it. The scheduler can: if the combination order of a reduction depended on which worker picked up
-which tile, a two-worker run and a sixteen-worker run would disagree in the low bits and nothing
-would report an error. The compiler can: fast-math licenses reassociation, so the same source may be
+it. The scheduler can: if a node could start before a node it reads from had finished, or a
+work-item could see a neighbour's partial result, a two-worker run and a sixteen-worker run would
+disagree in the low bits and nothing would report an error. The compiler can: fast-math licenses reassociation, so the same source may be
 folded in a different order in two builds, and FMA contraction rounds once where the source says
-twice. `Unit_FixedOrderReduce` pins the order of the reduction at a fixed pool size. This suite
-varies the pool size, which the `worker_count` setting from item BB-2 of
+twice. This suite varies the pool size, which the `worker_count` setting from item BB-2 of
 `docs/design/ENGINE_BACKBONE_REFACTOR.md` makes possible, and it separately asserts the compiler
 contract, which no scheduling discipline can replace.
 
@@ -135,14 +134,22 @@ Without such an input the test would pass on a runtime that reassociated freely.
 ### `alternating_value`
 
 `alternating_value` is a second pattern that alternates in sign, so that a divergence which happened
-to cancel in the first reduction still shows in the output.
+to cancel in the first total still shows in the output.
+
+### `record_tiled_total`
+
+`record_tiled_total` is the rule under test, written in the test over `Recorder`. One work-item
+per tile of 256 values adds its tile left to right into recorder scratch, and a second node adds
+the 157 partials left to right into the total. Which values meet which is fixed by the tile size,
+so the total has one correct bit pattern, and that pattern differs from the plain left-to-right
+sum of the same input.
 
 ### `run_workload`
 
 `run_workload` runs one fixed workload on a runtime built for `worker_count` workers, where 0 means
-the whole machine, and copies the results out. Two independent reduction chains compete for the
-pool, so the worker that folds a given tile varies with the pool size. A map then mixes both totals
-into every output element, so a divergence in either chain reaches the bytes being compared.
+the whole machine, and copies the results out. Two independent rules compete for the pool, so the
+worker that adds a given tile varies with the pool size. A map then mixes both totals into every
+output element, so a divergence in either rule reaches the bytes being compared.
 
 ### `bytes_equal`
 
@@ -184,9 +191,14 @@ The same configuration, run again from scratch, must land on the same bytes.
 the run-to-run scheduling jitter of an unchanged pool (which steal wins a race, which worker parks)
 to expose a dependence on order.
 
+### `TheRebalancerDoesNotChangeTheBytes`
+
+The whole machine runs the workload with the background rebalancer off and then on. Task migration
+reassigns work-items to workers in the middle of a run, and the output must not move by a byte.
+
 ### `ReplayDoesNotDriftAcrossSteps`
 
-A replayed graph must not drift. Every step of a multi-step run recomputes the same reduction from
+A replayed graph must not drift. Every step of a multi-step run recomputes the same total from
 the same input, so step 1 and step `STEPS` have to produce the same bytes. A drift would mean that
 per-step state of the plan had leaked into the arithmetic.
 
@@ -300,6 +312,38 @@ layer, and the offset launches also with a reference computed on the host.
 
 `UntrackedOffsetLaunchesMatchAcrossLayers` skips on a runtime that drives more than one device;
 the reason is in `docs/reference/KNOWN_ISSUES.md`.
+
+## test_logging_defaults.cpp
+
+The file covers what a program sees of the logger when it creates a `Runtime`. It is here and not
+in the `logging` module because the lines it looks for are logged by `device` and `topology` while
+`Runtime::create()` runs.
+
+### `Integration_LoggingDefaults`
+
+The fixture puts the logger in synchronous mode with the default sink, and afterwards restores the
+default sink and the level the process had. Synchronous mode also waits for records that earlier
+tests of the program queued, so none of them lands inside a capture.
+
+### `capture_streams_around_create`
+
+The helper creates and destroys a default `Runtime` between GoogleTest's `CaptureStdout` and
+`CaptureStderr`, which redirect the two file descriptors. The streams are captured this way and not
+through a sink because the claim is about what reaches the terminal, including anything written
+past the logger.
+
+### `CreateIsSilentAtTheDefaultLevel`
+
+At `Warn` both streams are empty. The test sets `Warn` itself, since `SR_LOG_LEVEL` in the
+environment of the test run would otherwise decide the level. Every start-up line of a healthy
+machine is `Info`; a machine on which start-up warns fails this test, and the captured text is in
+the failure message.
+
+### `DeviceLineArrivesThroughTheSinkAtInfo`
+
+At `Info` with a sink installed, the sink receives the `Device: ...` line of
+`device_queue_set.cpp` at level `Info`, and both streams stay empty because the sink replaced the
+default.
 
 ## test_node_event_records.cpp
 

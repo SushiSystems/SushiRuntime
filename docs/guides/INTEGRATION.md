@@ -190,15 +190,16 @@ while (running)
     simulation.run(report);
 ```
 
-A live element count that changes every tick — a grid's per-cell occupancy, a
-contact list — scans into exclusive offsets the same way, planned once for a
-capacity and resolved per run:
+A live element count that changes every tick (a grid's per-cell occupancy, a contact
+list) is a `LateCount`: planned once for a capacity and resolved per run, from the host or
+from a slot a predecessor kernel wrote. A launch sized by it is recorded through the
+graph's recorder:
 
 ```cpp
 API::LateCount n;
 n.capacity = MAX_CELLS;
 n.host = [&] { return live_cell_count; };
-simulation.add_prefix_scan(counts, offsets, total, n);
+// SushiBLAS's prefix scan and counting sort take a LateCount this way.
 ```
 
 See [`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) §9.1 for what the pool guarantees and §3 for the run API.

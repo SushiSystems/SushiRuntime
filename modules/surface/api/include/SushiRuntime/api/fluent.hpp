@@ -34,8 +34,8 @@
 #include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>
-#include <SushiRuntime/api/vocabulary/combine.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
+#include <SushiRuntime/api/vocabulary/late_count.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/graph/region.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>

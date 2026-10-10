@@ -34,7 +34,6 @@
 
 #include <SushiRuntime/api/graph/builder_surface.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
-#include <SushiRuntime/api/primitives/primitive_members.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime
@@ -45,8 +44,7 @@ namespace SushiRuntime
          * @brief Records one mutable partition of a DynamicGraph through the add() surface.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
-        class Region : public BuilderSurface<Region>,
-                       public Primitives::PrimitiveMembers<Region>
+        class Region : public BuilderSurface<Region>
         {
             public:
                 /**

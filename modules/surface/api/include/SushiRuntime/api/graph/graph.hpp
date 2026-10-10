@@ -40,8 +40,6 @@
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/graph/step_driver.hpp>
-#include <SushiRuntime/api/primitives/primitive_members.hpp>
-#include <SushiRuntime/api/vocabulary/late_count.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -69,7 +67,6 @@ namespace SushiRuntime
          * Obtain one from Runtime::graph(); it is moveable but not copyable.
          */
         class Graph : public BuilderSurface<Graph>,
-                      public Primitives::PrimitiveMembers<Graph>,
                       public StepDriver<Graph>,
                       private PlanCache
         {

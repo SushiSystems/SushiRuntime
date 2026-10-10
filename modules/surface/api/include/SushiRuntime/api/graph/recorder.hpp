@@ -53,6 +53,7 @@
 #include <SushiRuntime/api/detail/emit_tracked.hpp>
 #include <SushiRuntime/api/detail/emit_untracked.hpp>
 #include <SushiRuntime/api/detail/host_slot_check.hpp>
+#include <SushiRuntime/api/detail/late_count_resolution.hpp>
 #include <SushiRuntime/api/detail/node_spec.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/detail/usm_scratch.hpp>
@@ -476,11 +477,16 @@ namespace SushiRuntime
                  * @param device Device whose context holds the fault record of a device count.
                  * @param access What fill writes, and any further region it reads.
                  * @param fill   Device callable run once as fill(live), in the order of counts.
+                 * @throws Core::SushiException With invalid_access for a device slot outside
+                 *         host USM, or invalid_graph for a capacity past a uint32 slot.
                  */
                 template <std::size_t K, class Fill>
                 void resolve(const std::array<LateCount, K>& counts, DeviceIndex device,
                              Access access, Fill fill, NodeOptions options = {})
                 {
+                    for (const LateCount& count : counts)
+                        detail::validate_late_count(count, "Recorder::resolve");
+
                     std::vector<Core::LivenessObserver> lives;
                     bool reads_device = false;
                     for (const LateCount& count : counts)

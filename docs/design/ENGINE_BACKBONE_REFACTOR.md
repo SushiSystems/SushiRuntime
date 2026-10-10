@@ -2,6 +2,11 @@
 
 **Status:** Open — BB-0's runtime side, BB-1a, BB-2, BB-3, BB-4 and BB-6 item 4 landed; BB-1b is unbuilt; BB-5, BB-7, BB-8 and the rest of BB-6 were not re-checked against the tree on 2026-10-05.
 
+The reductions, the prefix scan and the counting sort this document names (`add_reduce`,
+`add_segmented_reduce`, `add_prefix_scan`, `add_counting_sort`) leave the runtime for SushiBLAS
+in v0.4.0; the runtime keeps the `Recorder` interface they are built on. Read every mention
+below as the state before that release.
+
 Engineering plan, authored 2026-07-30 on the branch `feature/physics-substrate-seams`, which has
 since merged. What landed in the first wave is recorded in
 `docs/archive/slop/BACKBONE_WAVE_STATUS.md`.

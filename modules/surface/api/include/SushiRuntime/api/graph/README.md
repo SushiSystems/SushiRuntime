@@ -24,8 +24,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
-The replay callable of each node shape is in `detail/emit_*.hpp`, and the numeric members
-(add_reduce() and its siblings) come from `primitives/primitive_members.hpp`.
+The replay callable of each node shape is in `detail/emit_*.hpp`.
 
 ## graph.hpp
 
@@ -58,8 +57,7 @@ A Recorder is the single owner of recorded work: the nodes in recording order, t
 observers of the handles they name, the USM scratch they use and their per-step hooks. Graph and
 Region each hold one. Every recording member builds a replay callable and ends in the private
 record(), which appends the node, attaches it to the open rule, takes the observers and advances
-generation(). A domain library records through the public members and needs no friendship; the
-numeric primitives are written that way.
+generation(). A domain library records through the public members and needs no friendship.
 
 ### RuleScope
 
@@ -88,6 +86,36 @@ replay() adds every recorded node to a backing graph in recording order and stam
 PlanCache::build() and RegionComposer::build_region() both call it, so a static graph and a region
 are replayed by the same code. The visitor overload reports each node once it is added; PlanCache
 uses it to read back the registration index.
+
+### kernel(DeviceSized, ...)
+
+A DeviceSized launch always runs `capacity` work-items, so its width is part of the compiled plan
+and the live width can come from a word a predecessor wrote in the same step. A work-item at or
+past `*live_width` returns at once; a null `live_width` lets every item run. The kernel's arity
+picks what it receives after its index:
+
+| Callable | Receives |
+| --- | --- |
+| `fn(t)` | The index |
+| `fn(t, w0)` | The index and `live_words[0]` |
+| `fn(t, w0, w1)` | The index, `live_words[0]` and `live_words[1]` |
+
+The words are read on the device, so the Access must name the regions `live_width` and
+`live_words` lie in; that read is what orders the launch after the node that wrote them.
+
+### resolve
+
+resolve() records one single-task node that turns K LateCounts into live values and hands them to
+`fill` on the device, in the order of `counts`. A host count is read when the node is submitted. A
+device count is read inside the kernel, and its slot is added to the node's reads, so the node
+runs after the producer of the count. `fill` writes the values where the later nodes of the rule
+read them, usually words from scratch() that a DeviceSized launch names.
+
+A count is checked twice. resolve() rejects a device slot outside Residency::Host and a capacity
+too wide for a uint32 word before it records anything. At run, a host count above its capacity
+throws at submission, and a device count above its capacity is replaced by zero and written to a
+fault record resolve() allocated; the step driver reads that record when the step ends and fails
+the run.
 
 ### scratch
 
@@ -298,8 +326,7 @@ whose last element is the callable: add(Extent, captures..., fn) and add(State, 
 defaulted trailing name cannot be expressed there. One spelling that works for every shape,
 including any added later, beats a trailing argument on most of them and an exception for the rest.
 
-For a task that expands to several nodes, such as a reduction, name_last() names the last one, the
-final fold.
+In a rule of several nodes, name_last() names the node recorded last.
 
 ### add(State out, State in0, rest..., fn): the trailing pack
 
@@ -672,9 +699,9 @@ nodes into one plan and steps them together. DynamicGraph::region() returns one.
 ### Shared surface
 
 Region and Graph take every add() overload (per-element, N-D, State, capture, tracked, dynamic,
-offload), the untracked, emitter and host forms and name_last() from BuilderSurface, and the
-reductions, the prefix scan and the counting sort from PrimitiveMembers, so a region records work
-exactly as a static graph does. A call on a region returns the Region.
+offload), the untracked, emitter and host forms and name_last() from BuilderSurface, so a region
+records work exactly as a static graph does. A call on a region returns the Region. Both expose
+recorder(), so a function written over a Recorder records onto either.
 
 ## run_handle.hpp
 
