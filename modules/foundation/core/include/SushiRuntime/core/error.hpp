@@ -32,6 +32,8 @@
 #include <string>
 #include <utility>
 
+#include <SushiRuntime/core/export.hpp>
+
 namespace SushiRuntime
 {
     namespace Core
@@ -97,7 +99,7 @@ namespace SushiRuntime
          *
          * Wraps an Error object and exposes its message through the std::runtime_error interface.
          */
-        class SushiException : public std::runtime_error
+        class SR_TYPE_API SushiException : public std::runtime_error
         {
             public:
                 /**

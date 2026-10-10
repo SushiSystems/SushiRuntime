@@ -157,7 +157,9 @@ function(sushiruntime_add_module)
         set_target_properties(${objects} PROPERTIES
             CXX_STANDARD 17
             CXX_STANDARD_REQUIRED ON
-            POSITION_INDEPENDENT_CODE ON)
+            POSITION_INDEPENDENT_CODE ON
+            CXX_VISIBILITY_PRESET hidden
+            VISIBILITY_INLINES_HIDDEN ON)
         if(ARG_SYCL)
             add_sycl_to_target(TARGET ${objects} SOURCES ${sources})
         endif()
