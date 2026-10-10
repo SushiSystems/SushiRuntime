@@ -22,9 +22,9 @@ heap-allocate in DPC++, and the comparison runs per event per poll.
 
 ### PolledEvent::executed
 
-executed is true for a task whose work ran, which is the default, and false for a task the
-scheduler released without running it: a node of an aborted run, or a late-bound node disabled for
-the step. The poller reaps both kinds the same way and reports only an executed graph node to the
+executed is true for a task whose work ran to its end, which is the default, and false otherwise:
+a node of an aborted run, a late-bound node disabled for the step, or a node whose work threw. The
+poller reaps both kinds the same way and reports only an executed graph node to the
 offload coordinator. The flag sits in the padding after has_event, so the record stays 40 bytes
 under the MSVC ABI, where it was measured.
 

@@ -156,7 +156,7 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Builds the ready event of a task the scheduler releases without running it.
+             * @brief Builds the ready event of a task whose work did not run to its end.
              * @return An event the poller reaps at once and reports to no offload coordinator.
              */
             EventPolling::PolledEvent skipped_event(Task* task)
@@ -707,7 +707,7 @@ namespace SushiRuntime
                 record_run_error(failure.error);
 
                 // The failed task is pushed as ready so successors fire (modules/engine/scheduler/README.md).
-                events.push({sycl::event{}, task, true});
+                events.push(skipped_event(task));
             };
 
             try 

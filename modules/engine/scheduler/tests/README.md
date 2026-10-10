@@ -54,8 +54,8 @@ offer count must stay at the one offer of the healthy run both times.
 
 ### `SkippedNodeNotReportedAsCompleted`
 
-Two kinds of node are released without running: a node of a cancelled run and a late-bound node
-disabled for the step. Neither may reach `on_local_completion()`. The poller makes that call before
+Three kinds of node did not run to their end: a node of a cancelled run, a late-bound node
+disabled for the step and a node whose work threw. None may reach `on_local_completion()`. The poller makes that call before
 it drops the in-flight count, so the counter is final when `wait_quiescent()` returns.
 
 ## test_node_placement.cpp

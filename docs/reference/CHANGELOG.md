@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-10 — scheduler: Fixed a node whose work threw being reported to the offload coordinator as completed (`task_scheduler.cpp`, `event_polling.hpp`).
 - 2026-10-10 — api: Removed `add_reduce`, `add_segmented_reduce`, `add_prefix_scan` and `add_counting_sort`; they leave for SushiBLAS, built on the recorder (`graph.hpp`).
 - 2026-10-10 — api: Removed the `Sum`, `Minimum` and `Maximum` combiners and the fixed-order plan helpers; they leave for SushiBLAS (`vocabulary/combine.hpp`, `detail/fixed_order_reduce.hpp`).
 - 2026-10-10 — api: Changed `Recorder::resolve` to reject a non-host device slot and an oversized capacity when it records (`graph/recorder.hpp`).

@@ -76,7 +76,7 @@ namespace SushiRuntime
                     bool has_event = false;
 
                     /**
-                     * @brief Tells whether the task's work ran; false for a task released unrun.
+                     * @brief Tells whether the task's work ran to its end; false when skipped or thrown.
                      * @see modules/engine/scheduler/README.md
                      */
                     bool executed = true;
