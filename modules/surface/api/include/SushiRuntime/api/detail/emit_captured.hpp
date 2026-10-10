@@ -32,14 +32,15 @@
 #include <cstdint>
 #include <optional>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/api/detail/callable_traits.hpp>
+#include <SushiRuntime/api/detail/emit_launch.hpp>
+#include <SushiRuntime/api/graph/access.hpp>
 #include <SushiRuntime/api/graph/backing_graph.hpp>
-#include <SushiRuntime/api/launch/extent.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -49,27 +50,48 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief Builds the replay of an Extent launch that hands its kernel raw pointers.
-             * @tparam Pointers A std::tuple of raw pointers, handed to fn after the shifted id.
+             * @brief Gathers the regions and the observers of In, Out and InOut captures.
+             * @return What the captures read and write, in argument order.
              */
-            template <int N, class Pointers, class F>
+            template <class... Captures>
+            Access captured_access(const Captures&... captures)
+            {
+                Access access;
+                const auto collect = [&access](const auto& capture)
+                {
+                    using Capture = std::decay_t<decltype(capture)>;
+                    if (Capture::reads)
+                        access.reads.push_back(capture.key);
+                    if (Capture::writes)
+                        access.writes.push_back(capture.key);
+                    if (!capture.life.expired())
+                        access.lives.push_back(capture.life);
+                };
+                (collect(captures), ...);
+                return access;
+            }
+
+            /**
+             * @brief Builds the replay of a launch that hands its kernel one pointer per capture.
+             * @tparam Launch   std::size_t, Extent<N> or NdRange<N>.
+             * @tparam Pointers A std::tuple of raw pointers, handed to fn after the index.
+             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+             */
+            template <class Launch, class Pointers, class F>
             auto captured_node(std::vector<Core::ResourceRegion> reads,
                                std::vector<Core::ResourceRegion> writes,
-                               Extent<N> e, Pointers ptrs, F&& fn, std::size_t width)
+                               Launch launch, Pointers pointers, F&& fn, std::size_t width)
             {
-                return [fn = std::forward<F>(fn), e, reads = std::move(reads),
-                        writes = std::move(writes), ptrs, width]
+                return [fn = std::forward<F>(fn), launch, reads = std::move(reads),
+                        writes = std::move(writes), pointers, width]
                        (BackingGraph& bg, std::optional<std::uint32_t> registration)
                 {
-                    bg.add_node([fn, e, ptrs](sycl::handler& h)
+                    bg.add_node([fn, launch, pointers](sycl::handler& h)
                     {
-                        const sycl::id<N> off = e.offset;
-                        h.parallel_for(e.extent, [fn, off, ptrs](sycl::id<N> idx)
+                        std::apply([&h, &fn, &launch](auto... pointer)
                         {
-                            invoke_with_pointers(
-                                fn, idx + off, ptrs,
-                                std::make_index_sequence<std::tuple_size<Pointers>::value>{});
-                        });
+                            submit_launch(h, launch, fn, pointer...);
+                        }, pointers);
                     }, reads, writes, {}, registration);
                     bg.width_last_node(width);
                 };

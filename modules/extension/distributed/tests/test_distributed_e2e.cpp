@@ -1318,8 +1318,7 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
     const float* right = b.data();
     float* sum = out.data();
     auto graph = runtime.graph();
-    graph.add(K_VEC_ADD, K_COUNT, {a.dependency_key(), b.dependency_key()},
-              {out.dependency_key()},
+    graph.add(K_VEC_ADD, K_COUNT, Reads(a, b), Writes(out),
               [left, right, sum](std::size_t index) { sum[index] = left[index] + right[index]; },
               {static_cast<std::uint64_t>(K_COUNT)});
     graph.run();

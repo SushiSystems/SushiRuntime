@@ -133,7 +133,7 @@ TEST(Integration_FluentLifecycle, CoupledFieldsAreJacobi)
     {
         vn[i] = vc[i] + 1;
     });
-    sim.add(u, v, [](std::size_t i, const int* uc, int* un, const int* vc)
+    sim.add(Coupled(u, v), [](std::size_t i, const int* uc, int* un, const int* vc)
     {
         un[i] = uc[i] + vc[i];
     });
@@ -210,7 +210,7 @@ TEST(Integration_FluentLifecycle, DanglingResourceIsReported)
     {
         auto buf = rt.buffer<int>(N);
         int* p = buf.data();
-        sim.add(Reads(), Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+        sim.add(N, Reads(), Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
     }   // buf is destroyed here, before the graph runs
 
     auto r = sim.try_run();

@@ -112,12 +112,17 @@ namespace SushiRuntime
                 [[nodiscard]] const Recorder& recorder() const noexcept { return recorder_; }
 
                 /** @brief Stands for "this rule has no index yet". */
-                static constexpr std::uint32_t no_registration = BackingGraph::NO_REGISTRATION;
+                static constexpr std::uint32_t NO_REGISTRATION =
+                    ::SushiRuntime::Graph::TaskGraph::NO_REGISTRATION;
+
+                /** @brief Names the same value as NO_REGISTRATION. */
+                [[deprecated("use NO_REGISTRATION")]]
+                static constexpr std::uint32_t no_registration = NO_REGISTRATION;
 
                 /**
                  * @brief Returns the registration index the rule at position rule took.
                  * @param rule Position in add() order, below size(); last_rule() gives the newest.
-                 * @return The index every node of the rule reports under, or no_registration when
+                 * @return The index every node of the rule reports under, or NO_REGISTRATION when
                  *        rule is out of range or nothing compiled yet.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
@@ -127,8 +132,8 @@ namespace SushiRuntime
                 }
 
                 using PlanCache::compile_count;
-                using StepDriver<Graph>::profiling_requested;
-                using StepDriver<Graph>::set_profiling_requested;
+                using StepDriver<Graph>::is_profiling_requested;
+                using StepDriver<Graph>::set_profiling;
 
             private:
                 friend class Runtime;
@@ -155,13 +160,13 @@ namespace SushiRuntime
                 /** @brief Records the profiling request; the next run rebuilds the plan. */
                 void request_profiling(bool requested) noexcept
                 {
-                    PlanCache::set_profiling_requested(requested);
+                    PlanCache::set_profiling(requested);
                 }
 
                 /** @brief Returns whether the next plan requests per-node device timing. */
                 bool profiling_request() const noexcept
                 {
-                    return PlanCache::profiling_requested();
+                    return PlanCache::is_profiling_requested();
                 }
 
                 /** @brief Returns whether any task has been recorded. */

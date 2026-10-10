@@ -50,6 +50,7 @@
 #include <SushiRuntime/api/detail/emit_device_sized.hpp>
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
 #include <SushiRuntime/api/detail/emit_host.hpp>
+#include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/detail/emit_late_count_resolver.hpp>
 #include <SushiRuntime/api/detail/emit_offload.hpp>
 #include <SushiRuntime/api/detail/emit_state.hpp>
@@ -70,6 +71,8 @@
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
+#include <SushiRuntime/api/vocabulary/placement.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
@@ -181,9 +184,8 @@ namespace SushiRuntime
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 void kernel(std::size_t count, Access access, F&& fn, NodeOptions options = {})
                 {
-                    record(detail::per_element_node(std::move(access.reads),
-                                                    std::move(access.writes),
-                                                    count, std::forward<F>(fn), options.width),
+                    record(detail::launch_node(std::move(access.reads), std::move(access.writes),
+                                               count, std::forward<F>(fn), options.width),
                            access.lives);
                 }
 
@@ -201,25 +203,26 @@ namespace SushiRuntime
 
                 /**
                  * @brief Records a launch over an Extent, ordered by its access.
-                 * @param fn Callable invoked as fn(sycl::id<N>) with the extent's offset applied.
+                 * @param fn Callable invoked as fn(sycl::id<N>) with the extent's origin applied.
                  */
                 template <int N, class F>
                 void kernel(Extent<N> extent, Access access, F&& fn, NodeOptions options = {})
                 {
-                    record(detail::extent_node(std::move(access.reads), std::move(access.writes),
+                    record(detail::launch_node(std::move(access.reads), std::move(access.writes),
                                                extent, std::forward<F>(fn), options.width),
                            access.lives);
                 }
 
                 /**
                  * @brief Records a tiled launch over an NdRange, ordered by its access.
-                 * @param fn Callable invoked as fn(sycl::nd_item<N>).
+                 * @param fn Callable invoked as fn(sycl::nd_item<N>), or as
+                 *        fn(sycl::nd_item<N>, sycl::id<N>) to get the id with the origin applied.
                  */
                 template <int N, class F>
                 void kernel(NdRange<N> range, Access access, F&& fn, NodeOptions options = {})
                 {
-                    record(detail::nd_range_node(std::move(access.reads), std::move(access.writes),
-                                                 range, std::forward<F>(fn), options.width),
+                    record(detail::launch_node(std::move(access.reads), std::move(access.writes),
+                                               range, std::forward<F>(fn), options.width),
                            access.lives);
                 }
 
@@ -274,15 +277,16 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Records an Extent launch whose kernel gets one raw pointer per capture.
-                 * @param pointers A std::tuple of pointers, passed to fn after the shifted id.
+                 * @brief Records a launch whose kernel gets one raw pointer per capture.
+                 * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
+                 * @param pointers A std::tuple of pointers, passed to fn after the index.
                  */
-                template <int N, class Pointers, class F>
-                void captured_kernel(Extent<N> extent, Access access, Pointers pointers, F&& fn,
+                template <class Launch, class Pointers, class F>
+                void captured_kernel(Launch launch, Access access, Pointers pointers, F&& fn,
                                      NodeOptions options = {})
                 {
                     record(detail::captured_node(std::move(access.reads), std::move(access.writes),
-                                                 extent, std::move(pointers), std::forward<F>(fn),
+                                                 launch, std::move(pointers), std::forward<F>(fn),
                                                  options.width),
                            access.lives);
                 }
@@ -318,57 +322,87 @@ namespace SushiRuntime
 
                 /**
                  * @brief Records a per-element launch over [0, count) that names no region.
-                 * @param fn Callable invoked as fn(i) for each index.
+                 * @param fn        Callable invoked as fn(i) for each index.
+                 * @param placement Device the node runs on; a handle it names is watched.
+                 * @throws Core::SushiException With invalid_access for a device the runtime
+                 *         does not have.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                void untracked_kernel(std::size_t count, F&& fn)
+                void untracked_kernel(std::size_t count, F&& fn,
+                                      const On& placement = On(DeviceIndex{0}))
                 {
                     std::vector<Core::LivenessObserver> lives;
-                    record(detail::untracked_per_element_node(count, std::forward<F>(fn)), lives);
+                    const std::size_t device = placed_device(placement, lives);
+                    record(detail::untracked_launch_node(count, device, std::forward<F>(fn)),
+                           lives);
                 }
 
                 /**
                  * @brief Records a region-less launch that drives the handler itself.
-                 * @param fn Callable invoked as fn(0, count, sycl::handler&).
+                 * @param fn        Callable invoked as fn(0, count, sycl::handler&).
+                 * @param placement Device the node runs on; a handle it names is watched.
+                 * @throws Core::SushiException With invalid_access for a device the runtime
+                 *         does not have.
                  */
                 template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
-                void untracked_kernel(std::size_t count, F&& fn)
+                void untracked_kernel(std::size_t count, F&& fn,
+                                      const On& placement = On(DeviceIndex{0}))
                 {
                     std::vector<Core::LivenessObserver> lives;
-                    record(detail::untracked_range_node(count, std::forward<F>(fn)), lives);
+                    const std::size_t device = placed_device(placement, lives);
+                    record(detail::untracked_range_node(count, device, std::forward<F>(fn)),
+                           lives);
                 }
 
                 /**
                  * @brief Records a launch over an Extent that names no region.
-                 * @param fn Callable invoked as fn(sycl::id<N>) with the extent's offset applied.
+                 * @param fn        Callable invoked as fn(sycl::id<N>) with the origin applied.
+                 * @param placement Device the node runs on; a handle it names is watched.
+                 * @throws Core::SushiException With invalid_access for a device the runtime
+                 *         does not have.
                  */
                 template <int N, class F>
-                void untracked_kernel(Extent<N> extent, F&& fn)
+                void untracked_kernel(Extent<N> extent, F&& fn,
+                                      const On& placement = On(DeviceIndex{0}))
                 {
                     std::vector<Core::LivenessObserver> lives;
-                    record(detail::untracked_extent_node(extent, std::forward<F>(fn)), lives);
+                    const std::size_t device = placed_device(placement, lives);
+                    record(detail::untracked_launch_node(extent, device, std::forward<F>(fn)),
+                           lives);
                 }
 
                 /**
                  * @brief Records a tiled launch over an NdRange that names no region.
-                 * @param fn Callable invoked as fn(sycl::nd_item<N>).
+                 * @param fn        Callable invoked as fn(sycl::nd_item<N>), or as
+                 *                  fn(sycl::nd_item<N>, sycl::id<N>) for the id with the origin.
+                 * @param placement Device the node runs on; a handle it names is watched.
+                 * @throws Core::SushiException With invalid_access for a device the runtime
+                 *         does not have.
                  */
                 template <int N, class F>
-                void untracked_kernel(NdRange<N> range, F&& fn)
+                void untracked_kernel(NdRange<N> range, F&& fn,
+                                      const On& placement = On(DeviceIndex{0}))
                 {
                     std::vector<Core::LivenessObserver> lives;
-                    record(detail::untracked_nd_range_node(range, std::forward<F>(fn)), lives);
+                    const std::size_t device = placed_device(placement, lives);
+                    record(detail::untracked_launch_node(range, device, std::forward<F>(fn)),
+                           lives);
                 }
 
                 /**
                  * @brief Records a raw command group that names no region.
-                 * @param fn Callable invoked as fn(sycl::handler&).
+                 * @param fn        Callable invoked as fn(sycl::handler&).
+                 * @param placement Device the node runs on; a handle it names is watched.
+                 * @throws Core::SushiException With invalid_access for a device the runtime
+                 *         does not have.
                  */
                 template <class F>
-                void untracked_raw_kernel(F&& fn)
+                void untracked_raw_kernel(F&& fn, const On& placement = On(DeviceIndex{0}))
                 {
                     std::vector<Core::LivenessObserver> lives;
-                    record(detail::untracked_raw_node(std::forward<F>(fn)), lives);
+                    const std::size_t device = placed_device(placement, lives);
+                    record(detail::untracked_raw_node(device, std::forward<F>(fn)), lives);
                 }
 
                 /**
@@ -387,17 +421,22 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Records a State rule launched over an Extent.
+                 * @brief Records a State rule over a count, an Extent or an NdRange.
                  * @param state The state the rule evolves; must outlive this recorder.
-                 * @param fn Callable invoked as fn(sycl::id<N>, const T* cur, T* next).
+                 * @param fn Callable invoked as fn(index, const T* cur, T* next).
+                 * @throws Core::SushiException With invalid_graph for a launch past the state.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <typename T, int N, class F>
-                void state_rule(State<T>& state, Extent<N> extent, F&& fn)
+                template <typename T, class Launch, class F,
+                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                void state_rule(State<T>& state, Launch launch, F&& fn)
                 {
+                    detail::require_launch_within(launch, state.size(), "add(launch, state, fn)",
+                                                  next_rule(), "the State");
                     auto view = steps_.view_for(state);
                     std::vector<Core::LivenessObserver> lives;
                     detail::gather_life(lives, state);
-                    record(detail::state_extent_node(view, &state, extent, std::forward<F>(fn)),
+                    record(detail::state_launch_node(view, &state, launch, std::forward<F>(fn)),
                            lives);
                     steps_.register_advance(state, view);
                 }
@@ -433,10 +472,15 @@ namespace SushiRuntime
                  * @param out    The field written; must outlive this recorder.
                  * @param fn     Callable invoked as fn(i, cur, next, a, ...).
                  * @param inputs The fields read; each must outlive this recorder.
+                 * @throws Core::SushiException With invalid_graph for an input smaller than out.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class F, class... Inputs>
                 void coupled_rule(State<T>& out, F&& fn, State<Inputs>&... inputs)
                 {
+                    (detail::require_launch_within(out.size(), inputs.size(),
+                                                   "add(Coupled(out, in0, ...), fn)", next_rule(),
+                                                   "a State read"), ...);
                     std::vector<Core::LivenessObserver> lives;
                     detail::gather_life(lives, out);
                     (detail::gather_life(lives, inputs), ...);
@@ -445,6 +489,35 @@ namespace SushiRuntime
                     auto views = std::make_tuple(steps_.view_for(inputs)...);
                     auto states = std::make_tuple(&out, &inputs...);
                     record(detail::coupled_node(out_view, &out, views, states, std::forward<F>(fn)),
+                           lives);
+                    steps_.register_advance(out, out_view);
+                }
+
+                /**
+                 * @brief Records a coupled rule over a count, an Extent or an NdRange.
+                 * @param out    The field written; must outlive this recorder.
+                 * @param fn     Callable invoked as fn(index, cur, next, a, ...).
+                 * @param inputs The fields read; each must outlive this recorder.
+                 * @throws Core::SushiException With invalid_graph for a launch past a State.
+                 */
+                template <class Launch, typename T, class F, class... Inputs,
+                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                void coupled_rule(Launch launch, State<T>& out, F&& fn, State<Inputs>&... inputs)
+                {
+                    static constexpr const char* K_CALL = "add(launch, Coupled(out, in0, ...), fn)";
+                    detail::require_launch_within(launch, out.size(), K_CALL, next_rule(),
+                                                  "the State written");
+                    (detail::require_launch_within(launch, inputs.size(), K_CALL, next_rule(),
+                                                   "a State read"), ...);
+                    std::vector<Core::LivenessObserver> lives;
+                    detail::gather_life(lives, out);
+                    (detail::gather_life(lives, inputs), ...);
+
+                    auto out_view = steps_.view_for(out);
+                    auto views = std::make_tuple(steps_.view_for(inputs)...);
+                    auto states = std::make_tuple(&out, &inputs...);
+                    record(detail::coupled_launch_node(out_view, &out, views, states, launch,
+                                                       std::forward<F>(fn)),
                            lives);
                     steps_.register_advance(out, out_view);
                 }
@@ -643,6 +716,37 @@ namespace SushiRuntime
                     for (Core::LivenessObserver& life : lives)
                         watch(std::move(life));
                     ++generation_;
+                }
+
+                /** @brief Returns the position the next recorded node's rule has. */
+                std::size_t next_rule() const noexcept
+                {
+                    const bool joins = scope_open_ && scope_has_node_;
+                    return joins ? rule_names_.size() - 1 : rule_names_.size();
+                }
+
+                /**
+                 * @brief Checks a placement and hands over the observer of the handle it names.
+                 * @param lives Gains the placement's observer when it watches an allocation.
+                 * @return Index of the device the node is placed on.
+                 * @throws Core::SushiException With invalid_access for a device the runtime
+                 *         does not have.
+                 */
+                std::size_t placed_device(const On& placement,
+                                          std::vector<Core::LivenessObserver>& lives) const
+                {
+                    const std::size_t device = placement.device.value();
+                    const std::size_t count = context_->devices().count();
+                    if (device >= count)
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::invalid_access,
+                            "add_untracked(..., On(DeviceIndex{" + std::to_string(device) +
+                                "}), fn): the runtime has " + std::to_string(count) +
+                                " device(s); name a device below that, or place the kernel "
+                                "with On(buffer)."});
+                    if (!placement.life.expired())
+                        lives.push_back(placement.life);
+                    return device;
                 }
 
                 /**

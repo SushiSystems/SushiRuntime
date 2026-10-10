@@ -48,7 +48,7 @@ namespace
         int* p = buf.data();
 
         auto g = rt.graph();
-        g.add(API::Reads{}, API::Writes(buf), N,
+        g.add(N, API::Reads{}, API::Writes(buf),
               [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
         g.run();
 

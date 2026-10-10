@@ -86,7 +86,7 @@ TEST(Integration_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
 
     auto world = rt.dynamic_graph();
     EXPECT_FALSE(world.is_profiling_requested());
-    world.region(0).add(API::Reads{}, API::Writes(buf), N,
+    world.region(0).add(N, API::Reads{}, API::Writes(buf),
                         [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto report = world.run();
@@ -107,10 +107,10 @@ TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRe
 
     auto world = rt.dynamic_graph();
     world.set_profiling(true);
-    world.region(0).add(API::Reads{}, API::Writes(a), N,
-                        [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name_last("A");
-    world.region(1).add(API::Reads{}, API::Writes(b), N,
-                        [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name_last("B");
+    world.region(0).add(N, API::Reads{}, API::Writes(a),
+                        [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("A");
+    world.region(1).add(N, API::Reads{}, API::Writes(b),
+                        [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("B");
 
     auto report = world.run();
     ASSERT_FALSE(report.node_events.empty())
@@ -143,12 +143,12 @@ TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrde
     world.set_profiling(true);
 
     // Region 5 is keyed above region 2, so its two calls land after region 2's one; see README.md.
-    world.region(5).add(API::Reads{}, API::Writes(a), N,
-                        [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name_last("R5_first");
-    world.region(5).add(API::Reads{}, API::Writes(b), N,
-                        [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name_last("R5_second");
-    world.region(2).add(API::Reads{}, API::Writes(c), N,
-                        [pc](std::size_t i) { pc[i] = static_cast<int>(i); }).name_last("R2_only");
+    world.region(5).add(N, API::Reads{}, API::Writes(a),
+                        [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("R5_first");
+    world.region(5).add(N, API::Reads{}, API::Writes(b),
+                        [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("R5_second");
+    world.region(2).add(N, API::Reads{}, API::Writes(c),
+                        [pc](std::size_t i) { pc[i] = static_cast<int>(i); }).name("R2_only");
 
     world.run();
 
@@ -177,15 +177,15 @@ TEST(Integration_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
     auto world = rt.dynamic_graph();
     world.set_profiling(true);
 
-    world.region(0).add(API::Reads{}, API::Writes(a), N,
-                        [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name_last("kept");
-    world.region(1).add(API::Reads{}, API::Writes(b), N,
-                        [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name_last("dropped_v1");
+    world.region(0).add(N, API::Reads{}, API::Writes(a),
+                        [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("kept");
+    world.region(1).add(N, API::Reads{}, API::Writes(b),
+                        [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("dropped_v1");
     world.run();
 
     world.drop(1);
-    world.region(1).add(API::Reads{}, API::Writes(b), N,
-                        [pb](std::size_t i) { pb[i] = static_cast<int>(i) * 2; }).name_last("dropped_v2");
+    world.region(1).add(N, API::Reads{}, API::Writes(b),
+                        [pb](std::size_t i) { pb[i] = static_cast<int>(i) * 2; }).name("dropped_v2");
     world.run();
 
     const auto& plan = API::detail::DynamicGraphNodeEventsTestAccess::plan(world);
@@ -208,19 +208,19 @@ TEST(Integration_DynamicGraphNodeEvents, RequestToggleRecompilesOnce)
     int* p = buf.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(buf), N,
+    world.region(0).add(N, API::Reads{}, API::Writes(buf),
                         [p](std::size_t i) { p[i] += 1; });
 
     world.run();
-    const std::size_t compiles_before = world.compile_count();
+    const std::size_t compiles_before = world.compose_count();
 
     world.set_profiling(true);
     world.run();
-    EXPECT_EQ(world.compile_count(), compiles_before + 1)
+    EXPECT_EQ(world.compose_count(), compiles_before + 1)
         << "the toggle must force exactly one recompose";
 
-    const std::size_t compiles_after_toggle = world.compile_count();
+    const std::size_t compiles_after_toggle = world.compose_count();
     world.run();
-    EXPECT_EQ(world.compile_count(), compiles_after_toggle)
+    EXPECT_EQ(world.compose_count(), compiles_after_toggle)
         << "an unmutated run after the toggle must not recompile again";
 }

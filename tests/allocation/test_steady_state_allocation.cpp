@@ -201,7 +201,7 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
 
     float* p = buf.data();
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(buf), N, kernel(p));
+    g.add(N, API::Reads{}, API::Writes(buf), kernel(p));
 
     const std::size_t reuse_short = allocations_for_reuse_ticks(g, TICKS);
     const std::size_t reuse_long  = allocations_for_reuse_ticks(g, TICKS * 4);
@@ -247,7 +247,7 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
         scheduled_buf[i] = 0.0f;
 
     auto sg = scheduled_rt.graph();
-    sg.add(API::Reads{}, API::Writes(scheduled_buf), N, kernel(scheduled_buf.data()));
+    sg.add(N, API::Reads{}, API::Writes(scheduled_buf), kernel(scheduled_buf.data()));
 
     const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, TICKS);
     const std::size_t scheduler_long  = allocations_for_reuse_ticks(sg, TICKS * 4);
@@ -273,7 +273,7 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
 
     float* p = buf.data();
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(buf), N,
+    g.add(N, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<float>(i) * 0.25f; });
 
     Core::RunReport report;
@@ -318,7 +318,7 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
 
     auto g = rt.graph();
     g.set_profiling(true);
-    g.add(API::Reads{}, API::Writes(buf), N, kernel(p));
+    g.add(N, API::Reads{}, API::Writes(buf), kernel(p));
 
     const std::size_t reuse_short = allocations_for_reuse_ticks(g, TICKS);
     const std::size_t reuse_long  = allocations_for_reuse_ticks(g, TICKS * 4);
@@ -352,7 +352,7 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
 
     auto sg = scheduled_rt.graph();
     sg.set_profiling(true);
-    sg.add(API::Reads{}, API::Writes(scheduled_buf), N, kernel(scheduled_buf.data()));
+    sg.add(N, API::Reads{}, API::Writes(scheduled_buf), kernel(scheduled_buf.data()));
 
     const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, TICKS);
     const std::size_t scheduler_long  = allocations_for_reuse_ticks(sg, TICKS * 4);

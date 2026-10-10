@@ -95,7 +95,7 @@ namespace
 
         float* v = r.values.data();
         for (std::size_t k = 0; k < PLAIN_RULES; ++k)
-            r.graph.add(Reads(r.values), Writes(r.values), WIDTH,
+            r.graph.add(WIDTH, Reads(r.values), Writes(r.values),
                         [v](std::size_t i) { v[i] = v[i] * 1.000001f; });
 
         record_grouped_rule(r.graph.recorder(), r.first, r.second, r.third);
@@ -113,7 +113,7 @@ TEST(Integration_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
     ASSERT_EQ(r.graph.size(), PLAIN_RULES + 1u);
     ASSERT_EQ(r.graph.node_count(), PLAIN_RULES + RULE_NODES);
     for (std::size_t rule = 0; rule < r.graph.size(); ++rule)
-        EXPECT_EQ(r.graph.rule_registration(rule), API::Graph::no_registration)
+        EXPECT_EQ(r.graph.rule_registration(rule), API::Graph::NO_REGISTRATION)
             << "rule " << rule << " reported an index before the first run";
 }
 
@@ -129,16 +129,16 @@ TEST(Integration_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
     for (std::size_t rule = 0; rule < PLAIN_RULES; ++rule)
     {
         const std::uint32_t index = r.graph.rule_registration(rule);
-        EXPECT_NE(index, API::Graph::no_registration);
+        EXPECT_NE(index, API::Graph::NO_REGISTRATION);
         plain.insert(index);
     }
     EXPECT_EQ(plain.size(), PLAIN_RULES) << "a plain add() must take an index of its own";
 
     ASSERT_EQ(r.grouped, PLAIN_RULES) << "the rule scope is the rule after the plain ones";
     const std::uint32_t shared = r.graph.rule_registration(r.grouped);
-    EXPECT_NE(shared, API::Graph::no_registration);
+    EXPECT_NE(shared, API::Graph::NO_REGISTRATION);
     EXPECT_EQ(plain.count(shared), 0u) << "the rule must not reuse a plain add()'s index";
-    EXPECT_EQ(r.graph.rule_registration(r.graph.size()), API::Graph::no_registration)
+    EXPECT_EQ(r.graph.rule_registration(r.graph.size()), API::Graph::NO_REGISTRATION)
         << "a position past the last rule names no rule";
 
     std::size_t reported = 0;

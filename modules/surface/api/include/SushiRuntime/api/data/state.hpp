@@ -214,12 +214,14 @@ namespace SushiRuntime
                 }
 
                 /** @brief Forwards to detail::HandleAccess::read_key(). */
+                [[deprecated("name the State in Reads(...) instead")]]
                 void* read_key() const noexcept
                 {
                     return detail::HandleAccess::read_key(*this);
                 }
 
                 /** @brief Forwards to detail::HandleAccess::write_key(). */
+                [[deprecated("name the State in Writes(...) instead")]]
                 void* write_key() const noexcept
                 {
                     return detail::HandleAccess::write_key(*this);

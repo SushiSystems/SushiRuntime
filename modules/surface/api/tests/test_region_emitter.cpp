@@ -80,7 +80,7 @@ TEST(Integration_RegionEmitter, EmittedNodesOrderAgainstANeighbourRegion)
                            [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
         record_device_task(bg, "triple", {px}, {px}, N, [px](std::size_t i) { px[i] *= 3; });
     });
-    world.region(11).add(API::Reads(x), API::Writes(y), N,
+    world.region(11).add(N, API::Reads(x), API::Writes(y),
                          [px, py](std::size_t i) { py[i] = px[i] * 2; });
 
     world.run();
@@ -141,13 +141,13 @@ TEST(Integration_RegionEmitter, AnEmitterReplaysOnlyWhenItsRegionIsRebuilt)
 
     auto world = rt.dynamic_graph();
     world.region(0).add_emitter(emitter);
-    world.region(1).add(API::Reads{}, API::Writes(b), N, [pb](std::size_t i) { pb[i] += 1; });
+    world.region(1).add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] += 1; });
 
     world.run(3);
     EXPECT_EQ(*emitted, 1) << "a replayed step does not call the emitter";
-    EXPECT_EQ(world.compile_count(), 1u);
+    EXPECT_EQ(world.compose_count(), 1u);
 
-    world.region(1).add(API::Reads{}, API::Writes(b), N, [pb](std::size_t i) { pb[i] += 1; });
+    world.region(1).add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] += 1; });
     world.run();
     EXPECT_EQ(*emitted, 1) << "rebuilding a neighbour leaves this region's nodes alone";
 
@@ -183,7 +183,7 @@ TEST(Integration_RegionEmitter, AStaticGraphTakesAnEmitter)
     {
         record_device_task(bg, "count_up", {px}, {px}, N, [px](std::size_t i) { px[i] += 1; });
     });
-    graph.add(API::Reads(x), API::Writes(y), N, [px, py](std::size_t i) { py[i] = px[i] * 10; });
+    graph.add(N, API::Reads(x), API::Writes(y), [px, py](std::size_t i) { py[i] = px[i] * 10; });
 
     graph.run(4);
 

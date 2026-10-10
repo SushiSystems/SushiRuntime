@@ -142,7 +142,7 @@ namespace
         auto g = rt.graph();
         record_tiled_total(g.recorder(), first, total_a);
         record_tiled_total(g.recorder(), second, total_b);
-        g.add(Reads(first, second, total_a, total_b), Writes(out), N,
+        g.add(N, Reads(first, second, total_a, total_b), Writes(out),
               [pf, ps, pa, pb, po](std::size_t i)
               {
                   po[i] = pf[i] * pa[0] + ps[i] * pb[0];

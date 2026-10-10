@@ -217,7 +217,7 @@ TEST(Integration_LateCount, ResolverSeesTheCountItsPredecessorJustWrote)
     std::uint32_t* counter_ptr = counter.data();
 
     auto g = rt.graph();
-    g.add(Reads(source), Writes(counter), std::size_t{1},
+    g.add(std::size_t{1}, Reads(source), Writes(counter),
           [counter_ptr, source_ptr](std::size_t) { counter_ptr[0] = source_ptr[0]; });
     record_live_count_copy(g.recorder(), device_count(counter, CAPACITY), out);
 

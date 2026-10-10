@@ -51,7 +51,7 @@ int main()
     });
 
     // v_cur is the previous step's v, not the v_next of the rule above; see applications/examples/README.md.
-    sim.add(u, v, [](std::size_t i, const int* uc, int* un, const int* vc)
+    sim.add(Coupled(u, v), [](std::size_t i, const int* uc, int* un, const int* vc)
     {
         un[i] = uc[i] + vc[i];
     });

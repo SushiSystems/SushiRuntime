@@ -105,7 +105,7 @@ TEST(Integration_RuntimeEntry, DefaultConfigCreates)
         values[i] = 0;
 
     auto graph = rt.graph();
-    graph.add(Reads(), Writes(values), COUNT, [data](std::size_t i) { data[i] = 7; });
+    graph.add(COUNT, Reads(), Writes(values), [data](std::size_t i) { data[i] = 7; });
     graph.run();
 
     for (std::size_t i = 0; i < COUNT; ++i)

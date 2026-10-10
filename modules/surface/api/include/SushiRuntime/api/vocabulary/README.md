@@ -1,7 +1,7 @@
 # api/vocabulary
 
-The data-flow vocabulary of the fluent API: Reads and Writes, the capture wrappers, Dynamic and
-LateCount.
+The data-flow vocabulary of the fluent API: Reads and Writes, the capture wrappers, Coupled, On,
+Dynamic and LateCount.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
@@ -13,6 +13,40 @@ symbol or passage it explains, and that header's file block cites this page.
 In wraps a Buffer so add() can both register the read and hand the kernel the raw element pointer.
 The caller writes the data flow once and gets pointer capture and dependency ordering together. Out
 and InOut are the same wrapper for the other two access intents.
+
+## coupled.hpp
+
+### Coupled
+
+Coupled(out, in0, ...) names the States of one update rule: the first is written, the others are
+read. add(Coupled(out, in0), fn) hands the kernel the current and next field of `out`, then the
+current field of each State read, in argument order. Every read sees the previous step's data,
+because a State advances only after all of a step's kernels have run.
+
+Up to v0.3 the same rule was written add(out, in0, ..., fn). Two States side by side said nothing
+about which one is written, and the form had no place for a launch. Coupled is one access
+descriptor, like Reads with Writes or a list of captures, so it sits after the launch the way they
+do: add(Extent, Coupled(u, v), fn) runs a coupled rule over a sub-box.
+
+Coupled holds references and no copies. A rule over one State is add(state, fn), so a Coupled with
+nothing to read does not compile.
+
+## placement.hpp
+
+### On
+
+A kernel added with add_untracked() names no region, so the runtime cannot read its device from
+its data. On states it. On(buffer) and On(state) take the device of the handle and keep its
+liveness observer, so a graph whose handle was destroyed is refused with `dangling_resource`
+like any other. On(DeviceIndex) names the device outright and watches nothing.
+
+Without an On the kernel runs on DeviceIndex{0}, the default device of Runtime::buffer() and
+Runtime::state(). A default buffer and a default untracked kernel therefore meet on one device.
+Up to v0.3 an untracked kernel went to whichever device a rotation reached, which on a machine
+with two devices could be one that did not own the pointers the kernel had captured.
+
+On orders nothing. A kernel that must run before or after another names its data with Reads and
+Writes and is added with add().
 
 ## dependencies.hpp
 

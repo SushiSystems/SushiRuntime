@@ -48,7 +48,7 @@ TEST(Integration_LateBindings, DynamicSizePerElement)
     std::size_t live = 0;
     auto g = rt.graph();
     g.add(API::sized([&] { return live; }),
-          API::Reads{}, API::Writes(buf), CAP,
+          CAP, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] += 1; });
 
     for (std::size_t k = 1; k <= CAP; ++k)
@@ -78,7 +78,7 @@ TEST(Integration_LateBindings, EnableTogglePerElement)
     bool on = true;
     auto g = rt.graph();
     g.add(API::when([&] { return on; }),
-          API::Reads{}, API::Writes(buf), N,
+          N, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] += 1; });
 
     std::size_t enabled_steps = 0;
@@ -112,9 +112,9 @@ TEST(Integration_LateBindings, DisabledNodeStillReleasesSuccessors)
     auto g = rt.graph();
     // Downstream reads the gate buffer upstream writes, so it is ordered after; see README.md.
     g.add(API::when([&] { return on; }),
-          API::Reads{}, API::Writes(gate), N,
+          N, API::Reads{}, API::Writes(gate),
           [gp](std::size_t i) { gp[i] += 1; });
-    g.add(API::Reads(gate), API::Writes(sink), N,
+    g.add(N, API::Reads(gate), API::Writes(sink),
           [sp](std::size_t i) { sp[i] += 1; });
 
     for (std::size_t k = 0; k < STEPS; ++k)
@@ -174,7 +174,7 @@ TEST(Integration_LateBindings, ComposedWhenAndSized)
     std::size_t live = CAP;
     auto g = rt.graph();
     g.add(API::when([&] { return on; }).sized([&] { return live; }),
-          API::Reads{}, API::Writes(buf), CAP,
+          CAP, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] += 1; });
 
     int expected0 = 0;               // increments seen by element 0
@@ -206,7 +206,7 @@ TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
     auto g = rt.graph();
     g.add(API::based_at([&base] { return base; })
               .sized([&count] { return count; }),
-          API::Reads{}, API::Writes(buf), CAPACITY,
+          CAPACITY, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i) + 1000; });
 
     const std::size_t starts[] = { 0, 8, 40, 63 };
@@ -250,7 +250,7 @@ TEST(Integration_LateBindings, BaseWithoutASizeRunsToTheEnd)
 
     auto g = rt.graph();
     g.add(API::based_at([] { return BASE; }),
-          API::Reads{}, API::Writes(buf), CAPACITY,
+          CAPACITY, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] = 1; });
     g.run();
 
@@ -277,10 +277,10 @@ TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
     for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = -1;
 
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(slice), std::size_t{1},
+    g.add(std::size_t{1}, API::Reads{}, API::Writes(slice),
           [s](std::size_t) { s[0] = 30u; s[1] = 25u; });
     g.add(API::based_at_device(slice, 0).sized_from_device(slice, 1),
-          API::Reads{}, API::Writes(buf), CAPACITY,
+          CAPACITY, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i); });
     g.run();
 
@@ -307,7 +307,7 @@ TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
 
     auto g = rt.graph();
     g.add(API::based_at([&base] { return base; }).sized([] { return std::size_t{10}; }),
-          API::Reads{}, API::Writes(buf), CAPACITY,
+          CAPACITY, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] = 1; });
 
     EXPECT_THROW(g.run(), SushiException) << "10 elements from index 10 does not fit 16";

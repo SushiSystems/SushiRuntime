@@ -53,7 +53,7 @@ TEST(Integration_DeviceResident, BufferRoundTrip)
 
     int* p = buf.data();
     auto g = rt.graph();
-    g.add(API::Reads(buf), API::Writes(buf), N, [p](std::size_t i) { p[i] *= 2; });
+    g.add(N, API::Reads(buf), API::Writes(buf), [p](std::size_t i) { p[i] *= 2; });
     g.run();
 
     const std::vector<int> out = buf.read_range({0, N});
@@ -177,7 +177,7 @@ TEST(Integration_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
 
     int* p = buf.data();
     auto g = rt.graph();
-    g.add(API::Reads(buf), API::Writes(buf), N, [p](std::size_t i) { p[i] += 1000; });
+    g.add(N, API::Reads(buf), API::Writes(buf), [p](std::size_t i) { p[i] += 1000; });
     g.run();
 
     for (std::size_t i = 0; i < N; ++i)

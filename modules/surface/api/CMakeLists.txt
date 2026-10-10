@@ -24,6 +24,7 @@ sushiruntime_add_module_tests(
     MODULE api
     SOURCES
         test_async_step.cpp
+        test_builder_surface.cpp
         test_data_handles.cpp
         test_device_count.cpp
         test_device_resident.cpp

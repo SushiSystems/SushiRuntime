@@ -72,7 +72,7 @@ namespace
         {
             int* p = bufs[r].data();
             // Each task touches only its own buffer -> independent -> a root.
-            g.add(API::Reads{}, API::Writes(bufs[r]), 1,
+            g.add(1, API::Reads{}, API::Writes(bufs[r]),
                   [p](std::size_t) { p[0] += 1; });
         }
 

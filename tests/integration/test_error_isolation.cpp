@@ -78,8 +78,8 @@ TEST(Integration_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationInde
 {
     auto rt = Runtime::create();
     auto g  = rt.graph();
-    g.add_host([] {}).name_last("healthy");
-    g.add_host([] { throw std::runtime_error("boom"); }).name_last("faulty");
+    g.add_host([] {}).name("healthy");
+    g.add_host([] { throw std::runtime_error("boom"); }).name("faulty");
 
     const auto result = g.try_run();
     ASSERT_FALSE(result);

@@ -52,13 +52,13 @@ TEST(Integration_DynamicGraph, IndependentRegionsRunAndComposeOnce)
     int* pb = b.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i) { pa[i] += 1; });
-    world.region(1).add(API::Reads{}, API::Writes(b), N, [pb](std::size_t i) { pb[i] += 2; });
+    world.region(0).add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] += 1; });
+    world.region(1).add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] += 2; });
 
     world.run(STEPS);
 
     EXPECT_EQ(world.region_count(), 2u);
-    EXPECT_EQ(world.compile_count(), 1u) << "an unmutated multi-step run must compose once.";
+    EXPECT_EQ(world.compose_count(), 1u) << "an unmutated multi-step run must compose once.";
     for (std::size_t i = 0; i < N; ++i)
     {
         ASSERT_EQ(a[i], static_cast<int>(STEPS));
@@ -84,9 +84,9 @@ TEST(Integration_DynamicGraph, CrossRegionDependencyOrders)
     int* py = y.data();
 
     auto world = rt.dynamic_graph();
-    world.region(10).add(API::Reads{}, API::Writes(x), N,
+    world.region(10).add(N, API::Reads{}, API::Writes(x),
                          [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
-    world.region(11).add(API::Reads(x), API::Writes(y), N,
+    world.region(11).add(N, API::Reads(x), API::Writes(y),
                          [px, py](std::size_t i) { py[i] = px[i] * 2; });
 
     world.run();
@@ -113,8 +113,8 @@ TEST(Integration_DynamicGraph, DropRegionStopsItsWork)
     int* pb = b.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i) { pa[i] += 1; });
-    world.region(1).add(API::Reads{}, API::Writes(b), N, [pb](std::size_t i) { pb[i] += 1; });
+    world.region(0).add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] += 1; });
+    world.region(1).add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] += 1; });
 
     world.run(3);                 // both advance to 3
 
@@ -148,13 +148,13 @@ TEST(Integration_DynamicGraph, AddRegionBetweenSteps)
     int* pb = b.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i) { pa[i] += 1; });
+    world.region(0).add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] += 1; });
     world.run(2);
-    EXPECT_EQ(world.compile_count(), 1u);
+    EXPECT_EQ(world.compose_count(), 1u);
 
-    world.region(1).add(API::Reads{}, API::Writes(b), N, [pb](std::size_t i) { pb[i] += 1; });
+    world.region(1).add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] += 1; });
     world.run(2);
-    EXPECT_EQ(world.compile_count(), 2u) << "adding a region recomposes once.";
+    EXPECT_EQ(world.compose_count(), 2u) << "adding a region recomposes once.";
 
     for (std::size_t i = 0; i < N; ++i)
     {
@@ -184,19 +184,19 @@ TEST(Integration_DynamicGraph, SingleRecomposePerMutation)
     for (std::size_t r = 0; r < REGIONS; ++r)
     {
         int* p = bufs[r].data();
-        world.region(r).add(API::Reads{}, API::Writes(bufs[r]), N,
+        world.region(r).add(N, API::Reads{}, API::Writes(bufs[r]),
                             [p](std::size_t i) { p[i] += 1; });
     }
 
     world.run(3);
-    EXPECT_EQ(world.compile_count(), 1u) << "building all regions once composes once.";
+    EXPECT_EQ(world.compose_count(), 1u) << "building all regions once composes once.";
 
     // Mutate exactly one region; one recompose, not REGIONS recomposes.
     int* p7 = bufs[7].data();
-    world.region(7).add(API::Reads{}, API::Writes(bufs[7]), N,
+    world.region(7).add(N, API::Reads{}, API::Writes(bufs[7]),
                         [p7](std::size_t i) { p7[i] += 10; });
     world.run(1);
-    EXPECT_EQ(world.compile_count(), 2u) << "one mutation recomposes exactly once.";
+    EXPECT_EQ(world.compose_count(), 2u) << "one mutation recomposes exactly once.";
 
     for (std::size_t r = 0; r < REGIONS; ++r)
         for (std::size_t i = 0; i < N; ++i)
@@ -222,9 +222,9 @@ TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
         a[i] = 0;
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i) { pa[i] += 1; });
+    world.region(0).add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] += 1; });
     world.run();
-    const std::size_t composed = world.compile_count();
+    const std::size_t composed = world.compose_count();
 
     const API::Region* found = world.find_region(0);
     ASSERT_NE(found, nullptr);
@@ -233,7 +233,7 @@ TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
     EXPECT_FALSE(world.has_region(9));
 
     world.run();
-    EXPECT_EQ(world.compile_count(), composed) << "a lookup is not a mutation";
+    EXPECT_EQ(world.compose_count(), composed) << "a lookup is not a mutation";
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(a[i], 2) << "at i=" << i;
 }
@@ -256,11 +256,11 @@ TEST(Integration_DynamicGraph, ThreeRegionChainThreadsValue)
     int* pz = z.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(x), N,
+    world.region(0).add(N, API::Reads{}, API::Writes(x),
                         [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
-    world.region(1).add(API::Reads(x), API::Writes(y), N,
+    world.region(1).add(N, API::Reads(x), API::Writes(y),
                         [px, py](std::size_t i) { py[i] = px[i] * 2; });
-    world.region(2).add(API::Reads(y), API::Writes(z), N,
+    world.region(2).add(N, API::Reads(y), API::Writes(z),
                         [py, pz](std::size_t i) { pz[i] = py[i] + 1; });
 
     world.run();
@@ -287,11 +287,11 @@ TEST(Integration_DynamicGraph, ReadReadSharingStaysConsistent)
     int* p2 = o2.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(base), N,
+    world.region(0).add(N, API::Reads{}, API::Writes(base),
                         [pb](std::size_t i) { pb[i] = static_cast<int>(i) + 1; });
-    world.region(1).add(API::Reads(base), API::Writes(o1), N,
+    world.region(1).add(N, API::Reads(base), API::Writes(o1),
                         [pb, p1](std::size_t i) { p1[i] = pb[i] + 10; });
-    world.region(2).add(API::Reads(base), API::Writes(o2), N,
+    world.region(2).add(N, API::Reads(base), API::Writes(o2),
                         [pb, p2](std::size_t i) { p2[i] = pb[i] + 100; });
 
     world.run();
@@ -319,15 +319,15 @@ TEST(Integration_DynamicGraph, StreamInConsumerRewiresProducer)
     int* py = y.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(x), N,
+    world.region(0).add(N, API::Reads{}, API::Writes(x),
                         [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
     world.run();
-    EXPECT_EQ(world.compile_count(), 1u);
+    EXPECT_EQ(world.compose_count(), 1u);
 
-    world.region(1).add(API::Reads(x), API::Writes(y), N,
+    world.region(1).add(N, API::Reads(x), API::Writes(y),
                         [px, py](std::size_t i) { py[i] = px[i] * 3; });
     world.run();
-    EXPECT_EQ(world.compile_count(), 2u) << "streaming a sharer in recomposes once.";
+    EXPECT_EQ(world.compose_count(), 2u) << "streaming a sharer in recomposes once.";
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(y[i], static_cast<int>(i + 1) * 3) << "at i=" << i;
@@ -349,9 +349,9 @@ TEST(Integration_DynamicGraph, DropProducerLeavesConsumerRunnable)
     int* py = y.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(x), N,
+    world.region(0).add(N, API::Reads{}, API::Writes(x),
                         [px](std::size_t i) { px[i] = static_cast<int>(i); });
-    world.region(1).add(API::Reads(x), API::Writes(y), N,
+    world.region(1).add(N, API::Reads(x), API::Writes(y),
                         [px, py](std::size_t i) { py[i] += px[i]; });
     world.run();
 
@@ -476,11 +476,11 @@ TEST(Integration_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
     int* t = total.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(shared.region({0, HALF})), HALF,
+    world.region(0).add(HALF, API::Reads{}, API::Writes(shared.region({0, HALF})),
                         [p](std::size_t i) { p[i] = 2; });
-    world.region(1).add(API::Reads{}, API::Writes(shared.region({HALF, HALF})), HALF,
+    world.region(1).add(HALF, API::Reads{}, API::Writes(shared.region({HALF, HALF})),
                         [p](std::size_t i) { p[HALF + i] = 3; });
-    world.region(2).add(API::Reads(shared), API::Writes(total), std::size_t{1},
+    world.region(2).add(std::size_t{1}, API::Reads(shared), API::Writes(total),
                         [p, t](std::size_t)
                         {
                             int sum = 0;

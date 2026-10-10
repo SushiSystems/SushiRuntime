@@ -34,14 +34,15 @@
 #include <optional>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/callable_traits.hpp>
+#include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/graph/backing_graph.hpp>
-#include <SushiRuntime/api/launch/extent.hpp>
 
 namespace SushiRuntime
 {
@@ -50,8 +51,28 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief Builds the replay of a rule that reads a State's current field into its next.
-             * @param state The state the rule evolves; read at every replay.
+             * @brief Adds the node of a rule that reads a State's current field into its next.
+             * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
+             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+             */
+            template <typename T, class Launch, class F>
+            void add_state_node(BackingGraph& bg, std::optional<std::uint32_t> registration,
+                                const std::shared_ptr<StateView<T>>& view, const State<T>& state,
+                                const Launch& launch, const F& fn)
+            {
+                bg.add_node([fn, view, launch](sycl::handler& h)
+                {
+                    // The view is read at each submit, so the kernel follows the swap.
+                    const T* cur = view->cur;
+                    T* next = view->next;
+                    submit_launch(h, launch, fn, cur, next);
+                }, { HandleAccess::read_key(state) }, { HandleAccess::write_key(state) }, {},
+                registration);
+            }
+
+            /**
+             * @brief Builds the replay of a State rule over the whole field.
+             * @param state The state the rule evolves; its size is read at every replay.
              */
             template <typename T, class F>
             auto state_node(std::shared_ptr<StateView<T>> view, State<T>* state, F&& fn)
@@ -59,45 +80,55 @@ namespace SushiRuntime
                 return [fn = std::forward<F>(fn), view, state]
                        (BackingGraph& bg, std::optional<std::uint32_t> registration)
                 {
-                    const std::size_t n = state->size();
-                    bg.add_node([fn, view, n](sycl::handler& h)
-                    {
-                        // Read fresh each submit (each step) to follow the swap.
-                        const T* cur = view->cur;
-                        T* next = view->next;
-                        h.parallel_for(sycl::range<1>(n),
-                                       [=](sycl::id<1> i) { fn(i[0], cur, next); });
-                    }, { HandleAccess::read_key(*state) }, { HandleAccess::write_key(*state) }, {},
-                    registration);
-                };
-            }
-
-            /** @brief Builds the replay of a State rule launched over an Extent. */
-            template <typename T, int N, class F>
-            auto state_extent_node(std::shared_ptr<StateView<T>> view, State<T>* state,
-                                   Extent<N> e, F&& fn)
-            {
-                return [fn = std::forward<F>(fn), view, state, e]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
-                {
-                    bg.add_node([fn, view, e](sycl::handler& h)
-                    {
-                        const T* cur = view->cur;
-                        T* next = view->next;
-                        const sycl::id<N> off = e.offset;
-                        h.parallel_for(e.extent, [=](sycl::id<N> idx)
-                        {
-                            fn(idx + off, cur, next);
-                        });
-                    }, { HandleAccess::read_key(*state) }, { HandleAccess::write_key(*state) }, {},
-                    registration);
+                    add_state_node(bg, registration, view, *state, state->size(), fn);
                 };
             }
 
             /**
-             * @brief Builds the replay of a rule that writes one State from several current fields.
+             * @brief Builds the replay of a State rule over a launch the caller gave.
+             * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
+             */
+            template <typename T, class Launch, class F>
+            auto state_launch_node(std::shared_ptr<StateView<T>> view, State<T>* state,
+                                   Launch launch, F&& fn)
+            {
+                return [fn = std::forward<F>(fn), view, state, launch]
+                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                {
+                    add_state_node(bg, registration, view, *state, launch, fn);
+                };
+            }
+
+            /**
+             * @brief Adds the node of a rule that writes one State from several current fields.
              * @tparam Views  A std::tuple of the read States' views, in argument order.
              * @tparam States A std::tuple of State pointers: the written one first, then the reads.
+             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+             */
+            template <typename T, class Views, class States, class Launch, class F>
+            void add_coupled_node(BackingGraph& bg, std::optional<std::uint32_t> registration,
+                                  const std::shared_ptr<StateView<T>>& out_view,
+                                  const State<T>& out, const Views& views, const States& states,
+                                  const Launch& launch, const F& fn)
+            {
+                using Seq = std::make_index_sequence<std::tuple_size<Views>::value>;
+                auto reads = read_keys_of(states,
+                    std::make_index_sequence<std::tuple_size<States>::value>{});
+                bg.add_node([fn, out_view, views, launch](sycl::handler& h)
+                {
+                    const T* cur = out_view->cur;
+                    T* next = out_view->next;
+                    // The inputs are resolved at each submit, so the kernel holds raw pointers.
+                    std::apply([&h, &fn, &launch, cur, next](auto... input)
+                    {
+                        submit_launch(h, launch, fn, cur, next, input...);
+                    }, views_current(views, Seq{}));
+                }, reads, { HandleAccess::write_key(out) }, {}, registration);
+            }
+
+            /**
+             * @brief Builds the replay of a coupled rule over the whole field written.
+             * @param out The State written; its size is read at every replay.
              */
             template <typename T, class Views, class States, class F>
             auto coupled_node(std::shared_ptr<StateView<T>> out_view, State<T>* out,
@@ -106,21 +137,23 @@ namespace SushiRuntime
                 return [fn = std::forward<F>(fn), out_view, views, states, out]
                        (BackingGraph& bg, std::optional<std::uint32_t> registration)
                 {
-                    using Seq = std::make_index_sequence<std::tuple_size<Views>::value>;
-                    const std::size_t n = out->size();
-                    auto reads = read_keys_of(states,
-                        std::make_index_sequence<std::tuple_size<States>::value>{});
-                    bg.add_node([fn, out_view, views, n](sycl::handler& h)
-                    {
-                        const T* cur = out_view->cur;
-                        T* next = out_view->next;
-                        // Resolved host-side at submit, so the kernel captures raw pointers.
-                        auto ins_ptrs = views_current(views, Seq{});
-                        h.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i)
-                        {
-                            invoke_state(fn, i[0], cur, next, ins_ptrs, Seq{});
-                        });
-                    }, reads, { HandleAccess::write_key(*out) }, {}, registration);
+                    add_coupled_node(bg, registration, out_view, *out, views, states,
+                                     out->size(), fn);
+                };
+            }
+
+            /**
+             * @brief Builds the replay of a coupled rule over a launch the caller gave.
+             * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
+             */
+            template <typename T, class Views, class States, class Launch, class F>
+            auto coupled_launch_node(std::shared_ptr<StateView<T>> out_view, State<T>* out,
+                                     Views views, States states, Launch launch, F&& fn)
+            {
+                return [fn = std::forward<F>(fn), out_view, views, states, out, launch]
+                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                {
+                    add_coupled_node(bg, registration, out_view, *out, views, states, launch, fn);
                 };
             }
         } // namespace detail

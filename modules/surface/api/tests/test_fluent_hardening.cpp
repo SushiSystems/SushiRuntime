@@ -101,7 +101,7 @@ TEST(Integration_FluentHardening, State2DSteppedUpdate)
         field[i] = 0;
 
     auto g = rt.graph();
-    g.add(field, Extent{W, H}, [](sycl::id<2> idx, const int* cur, int* next)
+    g.add(Extent{W, H}, field, [](sycl::id<2> idx, const int* cur, int* next)
     {
         const std::size_t x = idx[0];
         const std::size_t y = idx[1];
@@ -135,7 +135,7 @@ TEST(Integration_FluentHardening, VariadicCoupledThreeInputs)
     // a and b have their own (identity) update rules so they advance each step.
     g.add(a, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i]; });
     g.add(b, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i]; });
-    g.add(u, a, b, [](std::size_t i, const int* cur, int* next,
+    g.add(Coupled(u, a, b), [](std::size_t i, const int* cur, int* next,
                       const int* av, const int* bv)
     {
         next[i] = cur[i] + av[i] + bv[i];
@@ -159,8 +159,8 @@ TEST(Integration_FluentHardening, ReadsWritesWrappersOrdering)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(Reads{}, Writes{ buf }, N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
-    g.add(Reads{ buf }, Writes{ buf }, N, [p](std::size_t i) { p[i] = p[i] * p[i]; });
+    g.add(N, Reads{}, Writes{ buf }, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads{ buf }, Writes{ buf }, [p](std::size_t i) { p[i] = p[i] * p[i]; });
     g.run();
 
     for (std::size_t i = 0; i < N; ++i)
@@ -208,7 +208,7 @@ TEST(Integration_FluentHardening, InteriorOnlyHaloUpdate)
     auto g = rt.graph();
     // Iterate the (W-2)x(H-2) interior box starting at (1,1); the border is skipped.
     Extent<2> interior{ sycl::range<2>(W - 2, H - 2), sycl::id<2>(1, 1) };
-    g.add(Reads{ buf }, Writes{ buf }, interior, [p](sycl::id<2> idx)
+    g.add(interior, Reads{ buf }, Writes{ buf }, [p](sycl::id<2> idx)
     {
         p[idx[1] * W + idx[0]] += 1;
     });

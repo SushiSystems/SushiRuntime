@@ -150,7 +150,7 @@ namespace
             std::uint32_t* st = step.data();
             const std::uint32_t* sc = schedule.data();
             const auto period = static_cast<std::uint32_t>(schedule.size());
-            g.add(Reads(schedule), Writes(counter, step), std::size_t{1},
+            g.add(std::size_t{1}, Reads(schedule), Writes(counter, step),
                   [c, st, sc, period](std::size_t)
                   {
                       const std::uint32_t s = st[0];
@@ -165,7 +165,7 @@ namespace
             const std::uint32_t* src = source.data();
             const std::uint32_t* st = step.data();
             std::uint32_t* h = history.data();
-            g.add(Reads(source, step), Writes(history), std::size_t{1},
+            g.add(std::size_t{1}, Reads(source, step), Writes(history),
                   [src, st, h, words](std::size_t)
                   {
                       std::uint32_t acc = 2166136261u;
@@ -313,7 +313,7 @@ TEST(Integration_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsS
     g.recorder().kernel(API::DeviceSized{0, nullptr, nullptr},
                         API::Access(Reads(), Writes(target)),
                         [t](std::size_t item) { t[item] = 0u; });
-    g.add(Reads(target), Writes(done), std::size_t{1}, [t, d](std::size_t) { d[0] = t[0]; });
+    g.add(std::size_t{1}, Reads(target), Writes(done), [t, d](std::size_t) { d[0] = t[0]; });
 
     const auto report = g.run();
 
@@ -364,7 +364,7 @@ TEST(Integration_DeviceSizedLaunch, SizedFromDeviceChainMatchesSchedulerAsTheCou
 
         auto g = rt.graph();
         hx.add_producer(g);
-        g.add(API::sized_from_device(hx.counter), Reads{}, Writes(acc), CAPACITY,
+        g.add(API::sized_from_device(hx.counter), CAPACITY, Reads{}, Writes(acc),
               [a](std::size_t i) { a[i] = a[i] * 2654435761u + 12345u; });
         hx.add_digest(g, acc, CAPACITY);
         return hx.record(g);
@@ -384,14 +384,14 @@ TEST(Integration_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
     std::uint32_t* c = counter.data();
 
     auto g = rt.graph();
-    g.add(Reads{}, Writes(counter), std::size_t{1},
+    g.add(std::size_t{1}, Reads{}, Writes(counter),
           [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
     record_marking_rule(g.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
     EXPECT_THROW(g.run(4), SushiException);
 
     // A later graph with a count inside the capacity runs clean on the same runtime.
     auto valid = rt.graph();
-    valid.add(Reads{}, Writes(counter), std::size_t{1}, [c](std::size_t) { c[0] = 3u; });
+    valid.add(std::size_t{1}, Reads{}, Writes(counter), [c](std::size_t) { c[0] = 3u; });
     record_marking_rule(valid.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
     const auto report = valid.run(2);
     EXPECT_TRUE(report.is_successful);

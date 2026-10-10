@@ -18,7 +18,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
 | `node_options.hpp` | NodeOptions |
 | `backing_graph.hpp` | BackingGraph and is_graph_emitter_v |
-| `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_emitter(), add_host(), name_last(), size(), node_count() and last_rule() |
+| `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_host(), add_emitter(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
 | `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, cancel(), set_profiling() and the step loop |
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
@@ -53,7 +53,7 @@ Recorder::rule() scope records. size() counts rules, node_count() counts the nod
 and rule_registration(rule) takes a position below size(); last_rule() is the position of the rule
 just added. RunReport numbers a node event by registration index, and every node of a rule carries
 the rule's index, so rule_registration() maps a record back to the call that recorded it. The
-indices are drawn when the graph compiles, so every rule reports `no_registration` until the first
+indices are drawn when the graph compiles, so every rule reports `NO_REGISTRATION` until the first
 run, and a recompile may renumber them.
 
 DynamicGraph::rule_registration(key, rule) answers the same for a rule of one region. A commit
@@ -193,28 +193,211 @@ parallel_for runs.
 ### BuilderSurface
 
 BuilderSurface is the overload set of add() and its siblings, written once for Graph and
-Region. Each overload turns its arguments into an Access and calls one recording member of the
-builder's Recorder, then returns the builder, so calls chain on the type the caller holds.
+Region. Each overload checks its callable, calls one recording member of the builder's Recorder
+and returns the builder, so calls chain on the type the caller holds. No overload holds logic of
+its own: what a launch does is in `api/detail/emit_launch.hpp`, and what a rule records is in the
+Recorder.
 
-### add_untracked(n, fn)
+### Argument order
 
-add_untracked(n, fn) is the dependency-blind form of add(Reads, Writes, n, fn). A per-element
-callable is void(std::size_t) capturing raw USM pointers, so nothing in its type says what it
-touches and the runtime cannot infer it. This overload therefore records no read or write regions:
-the task is both a root and a leaf, ordered against nothing. That is correct for self-contained work
-(seeding a buffer no other task in this graph reads, a benchmark kernel) and wrong the moment
-another task shares data with it. Whenever ordering matters, name the data with
-Reads(...)/Writes(...) and use add().
+Every call reads in one order: modifier, launch, access, callable, options.
+
+| Part | What it is | Spellings |
+| --- | --- | --- |
+| modifier | changes how the rule is run | `Dynamic`, an `OpID` |
+| launch | how many work-items, and their index | a count, `Extent<N>`, `NdRange<N>`; the whole field when a State rule gives none |
+| access | the data, and how the kernel gets it | `Reads` and `Writes`, `In`/`Out`/`InOut`, a `State`, `Coupled`, `On` |
+| callable | the kernel | a lambda |
+| options | scalars sent with an offloaded kernel | `{params...}` |
+
+Up to v0.3 the launch came third after Reads and Writes, second after a State, and first before
+captures. A caller had to remember which, and a new launch shape needed one overload per access.
+The launch and the access are now two independent descriptors, so each launch works with each
+access:
+
+| Access | count | Extent | NdRange | whole field | Dynamic |
+| --- | --- | --- | --- | --- | --- |
+| `Reads`, `Writes` | yes | yes | yes | | yes, with a capacity |
+| `In`, `Out`, `InOut` | yes | yes | yes | | |
+| `State` | yes | yes | yes | yes | yes |
+| `Coupled` | yes | yes | yes | yes | |
+| none (add_untracked) | yes | yes | yes | | |
+
+### Which add do I call
+
+| The kernel | Call |
+| --- | --- |
+| steps one field from its previous value | `add(state, fn)` |
+| steps one field and reads others | `add(Coupled(out, in0, ...), fn)` |
+| does either over part of the field | the same with a launch first: `add(Extent{...}.at(origin), state, fn)` |
+| reads and writes buffers, and should receive their pointers | `add(launch, In(a), Out(b), fn)` |
+| captures its own pointers | `add(launch, Reads(a), Writes(b), fn)` |
+| has a live size or an on/off switch that changes per step | `add(sized(...), capacity, Reads(a), Writes(b), fn)` or `add(sized(...), state, fn)` |
+| may run on another machine | `add("name"_op, n, Reads(a), Writes(b), local)` or `add("name"_op, state, local)` |
+| drives the sycl::handler itself | `add(Reads(a), Writes(b), fn)` |
+| is host C++ and submits no device work | `add_host(Reads(a), Writes(b), fn)` |
+| shares no data with any other rule | `add_untracked(launch, fn)`, with `On(buffer)` when the buffer is not on device 0 |
+| is recorded by a library through the engine's graph | `add_emitter(fn)` |
+| is recorded by a library through the Recorder | `extend(fn)` |
+
+In/Out/InOut is the form to prefer for buffers: the data is named once, and the pointers the
+kernel receives are the ones the runtime orders by. With Reads and Writes the kernel captures its
+pointers by hand, and the two lists can get out of step.
+
+### A wrong callable
+
+A callable whose signature does not fit fails one `static_assert` in
+`api/detail/callable_checks.hpp`. Its text states the signature the call expects, and it is the
+only error: the overload does not instantiate the recording call after a failed check. The
+overloads are selected by the launch and the access alone, so a mistyped callable can no longer
+empty the overload set.
+
+### add(launch, Reads, Writes, fn)
+
+The kernel captures raw USM pointers, and Reads(...) and Writes(...) tell the dependency tracker
+which Buffers, States or regions those pointers belong to. A count calls `fn(i)`, an Extent calls
+`fn(sycl::id<N>)` with the origin added, and an NdRange calls `fn(sycl::nd_item<N>)` or
+`fn(sycl::nd_item<N>, sycl::id<N>)`.
+
+A count also takes a range kernel, `fn(begin, end, sycl::handler&)`, which drives the handler over
+[0, n) itself. That is the form for a kernel the per-element shape cannot express while its
+regions still order it.
+
+### add(Reads, Writes, raw_kernel)
+
+`fn(sycl::handler&)` owns the whole command group (its own parallel_for, local accessors, a
+memcpy) while the declared regions still order it. It has no launch because the runtime submits
+none. The shaped overloads are the better choice wherever one fits, since they cannot get the
+launch geometry and the declared data out of step.
+
+### add(launch, In/Out/InOut..., fn)
+
+The caller passes the buffers a kernel touches as In(buf), Out(buf) or InOut(buf). The runtime
+registers the reads and writes and hands `fn` the raw element pointers, in argument order, after
+the index. Up to v0.3 this form existed for an Extent only, so 1-D code wrote `Extent{n}` to get
+it; a count and an NdRange now take it too.
+
+The first capture is a parameter of its own, which guarantees at least one. The rest is one
+trailing pack so that the compiler can deduce it: its last element is the callable and the others
+are further captures. add() splits the pack, checks that everything before the callable is a
+capture, and the call site reads `In(a), Out(c), fn` with `fn` last.
+
+### add(state, fn)
+
+This is the canonical stepped rule: it reads the State's current field and writes its next field,
+and the dependency tracker keys on those two buffers. The runtime supplies the current and next
+pointers to `fn` at execution time, so under run(n) the same compiled node follows the
+double-buffer swap with no recompilation. A State takes exactly one update rule per step.
+
+### add(launch, state, fn)
+
+The launch form runs the same rule over a count, an Extent or an NdRange: a prefix of the field,
+a sub-box for boundary or halo handling, or a tiled launch. `fn` receives the launch's index
+before the two pointers.
+
+The launch is compared with the State when the rule is added. A launch that reaches past the
+State throws `invalid_graph` at the add() call, naming the rule, the launch with its origin and
+the State's size; `api/detail/README.md` says what "reaches" means for each launch.
+
+### add(Coupled, fn) and add(launch, Coupled, fn)
+
+A coupled rule writes the next field of one State from its own current field and the current
+field of one or more others. It is the building block for coupled systems such as
+reaction-diffusion with several species. All reads see the previous step's data (a Jacobi
+update): every State advances only after all of a step's kernels have run. Each field takes
+exactly one update rule per step.
+
+The whole-field form iterates the size of the State written, and add() throws `invalid_graph`
+when a State read is smaller than that. The launch form compares the launch with every State
+named.
+
+### add(Dynamic, capacity, Reads, Writes, fn)
+
+The rule is compiled once, and the Dynamic built from when() and sized() lets its iteration size
+and whether it runs vary every step with no recompile. The buffers are allocated for `capacity`
+elements; sized() iterates the live count each step, and when() can skip the rule.
+
+sized_from_device() takes the count from a slot a predecessor kernel wrote instead of from the
+host, which is what lets a produce-then-consume chain (broadphase to narrowphase to solver) run in
+one composition with no worst-case launch width. The counter is registered as one of this rule's
+reads, so the producer is ordered before it.
+
+based_at() and based_at_device() move where the rule starts, for a slice whose offset shifts
+between steps, such as a graph colour. The callable still receives absolute indices, and the
+window must fit the capacity: one that does not fails the run.
+
+### add(Dynamic, state, fn)
+
+This is the late-bound form of add(state, fn). The State's full allocation is the capacity;
+sized() iterates a prefix of it (a changing number of active cells, for example), and when() can
+skip the step's kernel. The double-buffer swap is followed as in the static form.
+
+The State still advances (swaps current and next) on a step its when() disabled, so a skipped
+step leaves the un-written next field current. This overload suits size variation; sleeping a
+field across steps belongs to the streaming layer, not to when().
+
+### add(OpID, n, reads, writes, local, params)
+
+This overload is the fluent counterpart to a distributed dispatch. `op` names a kernel registered
+(by the same OpID) in this binary's KernelRegistry on every node; when the runtime is a master
+with a live worker that supports `op`, the scheduler may ship this task over the wire. Otherwise
+(a standalone build, no worker, or the policy declining) `local` runs it on this machine, so the
+same graph is correct with or without a cluster.
+
+`reads` and `writes` are Reads(...) and Writes(...), or two lists of base pointers. The dependency
+tracker orders the task by them, and the distributed layer resolves them to network buffer
+handles. `params` are scalar arguments carried in TaskMetadata, element counts for example.
+
+### add(OpID, state, local, params)
+
+This overload is the distributed counterpart of add(state, fn): the State's step may ship to a
+worker or run its local fallback, with the same graph correct either way. Because a State rotates
+its allocations each step, the node tracks the step's read and write buffers through live pointer
+lists the runtime re-points before every step, so the compiled plan stays replayable while the
+offload follows the double-buffer swap. The State must be registered with State::distributed()
+first so both allocations can cross to a worker.
+
+### add_untracked(launch, fn)
+
+add_untracked() records no read or write region: the rule is both a root and a leaf, ordered
+against nothing. That is correct for self-contained work (seeding a buffer no other rule of this
+graph reads, a benchmark kernel) and wrong the moment another rule shares data with it. Whenever
+ordering matters, name the data and use add().
+
+The launch is a count, an Extent or an NdRange, and the kernel receives the same index as in
+add(). A count also takes a range kernel, and add_untracked(fn) takes a raw kernel.
+
+### add_untracked(launch, On, fn)
+
+The runtime places a rule on the device that owns the first region it writes. An untracked rule
+names no region, so it states its device: On(buffer) and On(state) name the device of a handle
+and watch the handle, On(DeviceIndex) names a device. Without an On the rule runs on device 0,
+where Runtime::buffer() and Runtime::state() allocate by default. An On that names a device the
+runtime does not have throws `invalid_access` at the call.
+
+### add_host(Reads, Writes, fn)
+
+add_host(Reads, Writes, fn) is for host C++ that submits no device work: gameplay logic, AI,
+navigation, the CPU half of a broadphase. The caller names the data it touches so the tracker
+orders it against the rest of the graph; the runtime then runs `fn` on a worker thread, with no
+SYCL queue submission, and releases its successors through the same path as any kernel. The
+shared USM it reads is visible because the task runs only after its predecessors complete.
+
+### add_host(fn)
+
+add_host(fn) is the dependency-free form: with no Reads or Writes the task is both a root and a
+leaf, so it is for self-contained host work (telemetry, a per-step callback) that needs no
+ordering against other tasks.
 
 ### add_emitter
 
-add_emitter(emit) records work the fluent verbs do not shape: `emit` receives the backing
-TaskGraph and adds its own nodes with add_node(), add_task() or add_native(). It is for a library
-above the runtime that already records through the lower-level graph and wants that work inside a
-Graph or a Region without restating each task as an add() overload. The runtime learns nothing
-about that library; it calls `emit` and takes the nodes.
+add_emitter(emitter) records work the fluent verbs do not shape: `emitter` receives the engine's
+SushiRuntime::Graph::TaskGraph and adds its own nodes with add_node(), add_task() or add_native().
+It is for a library above the runtime that already records through the lower-level graph and wants
+that work inside a Graph or a Region without restating each task as an add() overload. The runtime
+learns nothing about that library; it calls `emitter` and takes the nodes.
 
-`emit` is called at every build of the plan, so in a DynamicGraph it runs again each time its
+`emitter` is called at every build of the plan, so in a DynamicGraph it runs again each time its
 region is rebuilt and never while the region is left alone. It must therefore be repeatable, and it
 only adds nodes: compiling the graph, taking its nodes or keeping a reference to it breaks the
 build that called it.
@@ -222,190 +405,56 @@ build that called it.
 An emitter is one rule, so size() counts it once however many nodes it adds. Ordering comes from
 the regions each node declares, exactly as for nodes the fluent verbs emit; the call takes no
 Reads or Writes of its own. The nodes keep the names and registration indices they were recorded
-with, one index per node, so a profile shows each kernel. name_last() and rule_registration()
-address the last node only.
+with, one index per node, so a profile shows each kernel. name() and rule_registration() address
+the last node only.
 
 Device work an emitter records must wait on the dependency events it is handed
 (`h.depends_on(deps)`); a chained plan relies on that for its order.
 
-### add_untracked(Extent, fn)
+The parameter type was spelled `BackingGraph` up to v0.3. The alias named nothing a caller could
+look up, so the contract now names the engine type.
 
-add_untracked(Extent, fn) is the 2-D and 3-D counterpart of add_untracked(std::size_t, fn): the
-runtime submits a parallel_for over the Extent's box and invokes `fn` with the global sycl::id of
-each work-item. When the Extent carries an origin offset the iteration covers only that sub-box, so
-a kernel can skip a halo or touch just a ghost layer. Plain 1-D counts keep using the std::size_t
-overloads; a 1-D Extent is only needed for an origin offset. The overload records no regions, so a
-task that must be ordered uses add(Reads, Writes, Extent, fn).
+### extend
 
-### add_untracked(NdRange, fn)
+extend(extension) calls `extension(Recorder&)` once, when it is called, and the nodes the
+extension records form one rule. It is how a library that records through the public Recorder
+joins a chain: `graph.add(...).extend([&](Recorder& r) { record_my_nodes(r); }).name("mine")`.
+An emitter is replayed at every build and sees the engine's graph; an extension runs once and
+sees the recorder, so what it records is replayed like any other rule.
 
-add_untracked(NdRange, fn) submits a parallel_for over the NdRange and hands `fn` a
-sycl::nd_item\<N>, exposing the work-group model (barriers, local shared memory, sub-groups) that a
-flat parallel_for cannot. It is for blocked algorithms such as tiled GEMM and shared-memory
-stencils, where neighbouring work-items must cooperate. The overload records no regions, so a task
-that must be ordered uses add(Reads, Writes, NdRange, fn).
+### name
 
-### add(Reads, Writes, n, fn)
-
-This overload is the ergonomic form of the explicit-tracking one: the caller passes the Buffers and
-States the task reads and writes as Reads(...)/Writes(...) instead of building a std::vector\<void*>
-by hand. The dependency tracker still orders the task by the keys those wrappers gathered.
-
-### add(Reads, Writes, NdRange, fn)
-
-This overload is the ordered counterpart of add_untracked(NdRange, fn). It has the same work-group
-execution model (barriers, local memory, sub-groups), but the task is ordered against the rest of
-the graph by the regions it declares, so a tiled kernel is no longer forced to give up dependency
-tracking to get an nd_item.
-
-### add(Reads, Writes, n, range_kernel)
-
-This overload is the ordered counterpart of add_untracked(n, range_kernel). `fn` still drives the
-sycl::handler over [0, n) itself, which is the escape hatch for a kernel the per-element form cannot
-express, but the regions it declares order it against the rest of the graph.
-
-### add(Reads, Writes, raw_kernel)
-
-This overload is the ordered counterpart of add_untracked(raw_kernel). `fn` owns the whole command
-group (its own parallel_for, local accessors, a memcpy) while the declared regions still order it.
-It is for a launch shape no other overload fits; the shaped overloads are the better choice
-otherwise, since they cannot get the launch geometry and the declared data out of step.
-
-### add(Extent, In/Out/InOut..., fn)
-
-This is the most direct form: the caller passes the buffers a kernel touches as
-In(buf)/Out(buf)/InOut(buf), and the runtime both registers the reads and writes and hands `fn` the
-raw element pointers, in argument order, after the index. The caller writes the data flow once and
-gets pointer capture and dependency ordering together. `Cap0` is the first capture wrapper; a
-separate parameter for it guarantees at least one.
-
-### add(Extent, In/Out/InOut..., fn): the trailing pack
-
-`Args` is one trailing parameter pack so that the compiler can deduce it. Its last element is the
-callable and the others are further captures. add() splits the pack inside its body, which keeps the
-call site reading `In(a), Out(c), fn` with `fn` last.
-
-### add(State, fn)
-
-This is the canonical stepped task: it reads the state's current field and writes its next field,
-with the dependency tracker keying on those two buffers automatically. The runtime supplies the
-current/next pointers to `fn` at execution time, so under run(n) the same compiled node follows the
-double-buffer swap with no recompilation. A State takes exactly one update rule per step.
-
-### add(State, Extent, fn)
-
-This is the 2-D and 3-D form of add(State, fn): the runtime iterates the Extent box (the whole
-field, or a sub-box for boundary or halo handling) and hands `fn` the global index alongside the
-current/next pointers. The double-buffer swap is followed exactly as in the 1-D form. The rank `N`
-is 1, 2 or 3.
-
-### add(State out, State in0, rest..., fn)
-
-This overload writes the next field of `out` from the current field of `out` and the current field
-of one or more other States. It is the building block for coupled systems such as reaction-diffusion
-with several species. All reads see the previous step's data (a Jacobi update): every State advances
-only after all of a step's kernels have run, so writing one field never changes what another reads
-in the same step. Each field must have exactly one update rule per step.
-
-### add(vector\<void*> reads, vector\<void*> writes, n, fn)
-
-This overload is the advanced escape hatch for callers who manage their own data and want the
-dependency tracker to order the task against others by the pointers it touches. The State and Buffer
-overloads are the better choice; this one is only for cases where handle-based tracking does not
-fit.
-
-### add(Dynamic, Reads, Writes, capacity, fn)
-
-This overload is the dynamic counterpart of the Reads/Writes per-element add: the task is compiled
-once, but `dyn`, the late-binding controls built from when() and sized(), lets its iteration size
-and whether it runs vary every step with no recompile. The touched buffers are allocated for the
-maximum of `capacity` elements; sized() then iterates only the live count each step, and when() can
-skip the task entirely.
-
-sized_from_device() takes the count from a slot a predecessor kernel wrote instead of from the host,
-which is what lets a produce-then-consume chain (broadphase to narrowphase to solver) run in one
-composition with no worst-case launch width. The counter is registered as one of this task's reads,
-so the producer is necessarily ordered before it.
-
-based_at() and based_at_device() move where the node starts, for a slice whose offset shifts between
-steps, such as a graph colour. The callable still receives absolute indices, and the window must fit
-the capacity: one that does not fails the run instead of reading past the end.
-
-### add(Dynamic, State, fn)
-
-This overload is the dynamic counterpart of add(State, fn): the same read-current, write-next
-stepped task, but `dyn` lets its active-element count and whether it runs vary every step with no
-recompile. The State's full allocation is the capacity; sized() iterates a prefix of it (a changing
-number of active cells, for example), and when() can skip the step's kernel. The double-buffer swap
-is followed as in the static form. A State takes exactly one update rule per step.
-
-The State still advances (swaps current and next) on a step its when() disabled, so a skipped step
-leaves the un-written next field current. This overload suits size variation; truly sleeping a field
-across steps belongs to the streaming layer, not when().
-
-### add_host(Reads, Writes, fn)
-
-add_host(Reads, Writes, fn) is for arbitrary host C++ that submits no device work: gameplay logic,
-AI, navigation, the CPU half of a broadphase. The caller names the data it touches with
-Reads(...)/Writes(...) so the tracker orders it against the rest of the graph; the runtime then runs
-`fn` natively on a worker thread, with no SYCL queue submission, and releases its successors through
-the same path as any kernel task. The shared USM it reads is visible because the task runs only
-after its predecessors complete.
-
-### add_host(fn)
-
-add_host(fn) is the dependency-free form of add_host: with no Reads or Writes the task is both a
-root and a leaf, so it is for self-contained host work (telemetry, a per-step callback) that needs
-no ordering against other tasks. It runs natively, with no SYCL submission.
-
-### name_last
-
-Without a name a node reports as "unnamed_task" in RunReport::NodeTiming, which makes a profile of a
-real graph a list of identical labels. Chaining name_last() onto any add() names the rule that call
+Without a name a node reports as "unnamed_task" in RunReport::NodeTiming, which makes a profile of
+a real graph a list of identical labels. Chaining name() onto any add() names the rule that call
 added:
 
 ```cpp
-sim.add(API::Reads(a), API::Writes(b), n, integrate).name_last("integrate");
+sim.add(n, API::Reads(a), API::Writes(b), integrate).name("integrate");
 ```
 
-A trailing name argument would have been shorter, but two launch shapes end in a parameter pack
-whose last element is the callable: add(Extent, captures..., fn) and add(State, States..., fn). A
-defaulted trailing name cannot be expressed there. One spelling that works for every shape,
-including any added later, beats a trailing argument on most of them and an exception for the rest.
+A trailing name argument would have been shorter, but the capture form ends in a parameter pack
+whose last element is the callable, and a defaulted trailing name cannot be expressed there. One
+spelling that works for every shape, including any added later, beats a trailing argument on most
+of them and an exception for the rest.
 
-name_last() copies the label, so a temporary string is a valid argument. Every node of the rule
+name() copies the label, so a temporary string is a valid argument. Every node of the rule
 reports the name; an emitter is the exception, because the backing graph can name only the last
-node an emitter added. An empty label, or a null `const char*`, returns the rule to the default
-name. The `const char*` overload exists so that a null pointer is not turned into a string view.
+node an emitter added. An empty label returns the rule to the default name, and so does a null
+`const char*`.
 
-### add(State out, State in0, rest..., fn): the trailing pack
+### Deprecated spellings
 
-`Rest` is one trailing parameter pack so that the compiler can deduce it. Its last element is the
-callable and the others are further read States. add() splits the pack inside its body, which keeps
-the call site reading `add(out, a, b, c, fn)`.
+v0.4.0 keeps each spelling it replaces as a `[[deprecated]]` member that forwards to the new one
+and holds no code of its own.
 
-### add(OpID, n, reads, writes, local, params)
-
-This overload is the fluent counterpart to a distributed dispatch. `op` names a kernel registered
-(by the same OpID) in this binary's KernelRegistry on every node; when the runtime is a Master with
-a live worker that supports `op`, the scheduler may ship this task over the wire. Otherwise (a
-standalone build, no worker, or the policy declining) `local` runs it on this machine, so the same
-graph is correct with or without a cluster.
-
-`reads` and `writes` are the buffers the task touches, given as dependency keys
-(Buffer/State::dependency_key() or read_/write_key()). The dependency tracker orders the task by
-them, and the distributed layer resolves them to network buffer handles. `params` are scalar
-arguments carried in TaskMetadata, element counts for example.
-
-### add(OpID, State, local, params)
-
-This overload is the distributed counterpart of add(State, fn): the State's step may ship to a
-worker (when `op` is registered cluster-wide and a worker is willing) or run its local fallback,
-with the same graph correct either way. Because a State rotates its allocations each step, the node
-tracks the step's read and write buffers through live pointer lists the runtime re-points before
-every step, so the compiled plan stays replayable while the offload follows the double-buffer swap.
-The State must be registered with State::distributed() first so both allocations can cross to a
-worker.
+| Deprecated | Replacement |
+| --- | --- |
+| `add(Reads, Writes, launch, fn)` | `add(launch, Reads, Writes, fn)` |
+| `add(state, Extent, fn)` | `add(Extent, state, fn)` |
+| `add(out, in0, ..., fn)` | `add(Coupled(out, in0, ...), fn)` |
+| `add(Dynamic, Reads, Writes, capacity, fn)` | `add(Dynamic, capacity, Reads, Writes, fn)` |
+| `add(vector<void*>, vector<void*>, n, fn)`, and the same after a `Dynamic` | `Reads(pointer...)` and `Writes(pointer...)`: a base pointer converts to the region of its whole buffer |
+| `name_last(label)` | `name(label)` |
 
 ## plan_cache.hpp
 
@@ -430,9 +479,9 @@ rearm() restores the cached plan's per-run state so it can run again. The schedu
 re-arms itself; rearm() resets the DAG-side state a previous run consumed, which
 CompiledGraph owns next to the Node definition.
 
-### set_profiling_requested
+### set_profiling
 
-set_profiling_requested() marks the plan dirty so the next run recompiles with the new
+set_profiling() marks the plan dirty so the next run recompiles with the new
 `CompiledGraph::profiling` flag stamped in. The setting is independent of every other graph on the
 same runtime.
 
@@ -874,7 +923,7 @@ A Region built without a log belongs to no graph and lists nothing.
 ### Shared surface
 
 Region and Graph take every add() overload (per-element, N-D, State, capture, tracked, dynamic,
-offload), the untracked, emitter and host forms and name_last() from BuilderSurface, so a region
+offload), the untracked, emitter and host forms and name() from BuilderSurface, so a region
 records work exactly as a static graph does. A call on a region returns the Region. Both expose
 recorder(), so a function written over a Recorder records onto either.
 

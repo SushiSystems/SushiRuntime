@@ -46,11 +46,8 @@ TEST(Integration_FluentAPI, TryRunSuccessPath)
         buf[i] = 0;
 
     int* p   = buf.data();
-    void* wk = buf.dependency_key();
-
     auto g = rt.graph();
-    g.add(std::vector<void*>{}, std::vector<void*>{ wk }, N,
-          [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads(), Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto result = g.try_run();
     ASSERT_TRUE(result.has_value()) << "try_run() should succeed on a valid graph.";
@@ -199,15 +196,15 @@ TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
         buf[i] = 0;
 
     int* p = buf.data();
-    void* key = buf.dependency_key();
+    void* key = buf.data();
 
     auto g = rt.graph();
 
     // Task 1: write p[i] = i
-    g.add({}, { key }, N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads(), Writes(key), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     // Task 2: square in place (RAW on p -> must run after task 1)
-    g.add({ key }, { key }, N, [p](std::size_t i) { p[i] = p[i] * p[i]; });
+    g.add(N, Reads(key), Writes(key), [p](std::size_t i) { p[i] = p[i] * p[i]; });
 
     g.run();
 
@@ -228,8 +225,8 @@ TEST(Integration_FluentAPI, TrackedRangeKernelOrdering)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(Reads(), Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
-    g.add(Reads(buf), Writes(buf), N,
+    g.add(N, Reads(), Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads(buf), Writes(buf),
           [p](std::size_t begin, std::size_t end, sycl::handler& h)
     {
         h.parallel_for(sycl::range<1>(end - begin), [p, begin](sycl::id<1> idx)
@@ -258,7 +255,7 @@ TEST(Integration_FluentAPI, TrackedRawKernelOrdering)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(Reads(), Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads(), Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
     g.add(Reads(buf), Writes(buf), [p](sycl::handler& h)
     {
         h.parallel_for(sycl::range<1>(N), [p](sycl::id<1> idx)
@@ -289,9 +286,9 @@ TEST(Integration_FluentAPI, TrackedNdRangeOrdering)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(Reads(), Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
-    g.add(Reads(buf), Writes(buf),
-          NdRange{ sycl::range<1>(N), sycl::range<1>(16) },
+    g.add(N, Reads(), Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(NdRange{ sycl::range<1>(N), sycl::range<1>(16) }, Reads(buf),
+          Writes(buf),
           [p](sycl::nd_item<1> it)
     {
         const std::size_t i = it.get_global_id(0);
@@ -327,13 +324,13 @@ TEST(Integration_FluentAPI, SubRegionDisjointWritesThenWholeRead)
     auto g = rt.graph();
 
     // Lower half := 1, upper half := 2. Disjoint regions of buf -> unordered.
-    g.add(Reads(), Writes(buf.region({0, N / 2})), N / 2,
+    g.add(N / 2, Reads(), Writes(buf.region({0, N / 2})),
           [p](std::size_t i) { p[i] = 1; });
-    g.add(Reads(), Writes(buf.region({N / 2, N / 2})), N / 2,
+    g.add(N / 2, Reads(), Writes(buf.region({N / 2, N / 2})),
           [p](std::size_t i) { p[N / 2 + i] = 2; });
 
     // Whole-buffer read overlaps both halves -> ordered after both writers.
-    g.add(Reads(buf), Writes(out), N,
+    g.add(N, Reads(buf), Writes(out),
           [p, o](std::size_t i) { o[i] = p[i]; });
 
     g.run();
@@ -365,8 +362,7 @@ TEST(Integration_FluentAPI, BufferAllocateUseAndReadBack)
     float* dp = dst.data();
 
     auto g = rt.graph();
-    g.add({ src.dependency_key() }, { dst.dependency_key() }, N,
-          [sp, dp](std::size_t i) { dp[i] = sp[i] * 2.0f; });
+    g.add(N, Reads(sp), Writes(dp), [sp, dp](std::size_t i) { dp[i] = sp[i] * 2.0f; });
 
     g.run();
 

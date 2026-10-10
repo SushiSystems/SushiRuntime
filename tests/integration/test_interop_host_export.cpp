@@ -66,7 +66,7 @@ TEST(Integration_InteropHostExport, AKernelWritesWhatTheHostReads)
     auto shared = runtime.interop().export_host<std::uint32_t>(257, DeviceIndex{0}, 4096);
     std::uint32_t* out = shared.buffer.data();
     runtime.graph()
-        .add(Reads(), Writes(shared.buffer), 257,
+        .add(257, Reads(), Writes(shared.buffer),
              [out](std::size_t i) { out[i] = static_cast<std::uint32_t>(i * 3u); })
         .run();
     for (std::size_t i = 0; i < 257; ++i)
