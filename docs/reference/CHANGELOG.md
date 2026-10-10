@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-10 — distributed: Added the protocol v2 frame and message codec, pinned by golden bytes (`wire_frame.hpp`, `wire_messages.hpp`, `wire_codec.hpp`, `test_wire_format.cpp`).
+- 2026-10-10 — distributed: Added the shared secret and the HMAC-SHA256 challenge-response a master and a worker prove it with (`shared_secret.hpp`, `handshake.hpp`, `hmac_sha256.hpp`, `sha256.hpp`).
+- 2026-10-10 — distributed: Added the endpoint type and one socket seam over POSIX and Winsock with host name resolution and a status for every failure (`endpoint.hpp`, `socket.hpp`, `socket_posix.cpp`, `socket_windows.cpp`).
 - 2026-10-10 — scheduler: Stopped offering nodes of an aborted run to the offload coordinator and reporting skipped nodes as completed; a shutdown stops the coordinator first (`task_scheduler.cpp`, `event_polling.hpp`).
 - 2026-10-10 — core: Added `Errc::invalid_state` and `require_matching_version`, and marked the result type and its accessors nodiscard (`error.hpp`, `version.hpp`, `result.hpp`).
 - 2026-10-10 — topology: Changed the constructors of the topology view, the remapping provider and the matrix distance model to throw `SushiException`, not `std::invalid_argument` (`topology_view.cpp`, `matrix_distance_model.hpp`).
