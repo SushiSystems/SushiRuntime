@@ -3814,3 +3814,30 @@ Written from the reports of the two composition tasks, committed as `9582ee6`. T
    stays for `run_worker` itself.
 10. `UsmAllocator` calls `on_release` for every release, so each takes the registry mutex for one
     failed lookup. Phase E.
+
+### What the first outside user of the surface met (T15)
+
+The demo, the worker program and the benchmark are the first code written against the public
+headers from outside the module. Each line names its owner.
+
+1. `ClusterStatistics` has no count of tasks a worker finished; the demo derives it from
+   `offloaded - redispatched`. Add `completed_remote`. Owner: T19.
+2. `add_registered_task` takes a `Graph::TaskGraph&`, which `API::Graph` does not expose, so a
+   fluent program states a fallback lambda beside the registered kernel. Owner: C8, through the
+   recorder.
+3. `Buffer::distributed()` before `attach()` does nothing and logs nothing. One WARN. Owner: T19.
+4. The default policy keeps a task under 64 KiB of inputs local; `cluster.hpp` does not say so.
+   Owner: T17.
+5. The two `register_kernel` overloads both take a `std::function`, so a generic lambda is
+   ambiguous. The deprecated pointer form goes in this release, which removes the ambiguity.
+   Owner: T19.
+6. The `_op` literal lives in `Graph::Literals` and no distributed header re-exports it. Owner: C13.
+7. `WorkerAgent` takes an `Execution::RuntimeContext&` only; `Cluster::attach` has an
+   `API::Runtime` overload. Owner: T19.
+8. `offload_coordinator.hpp` documents `offloaded` as dispatches a worker accepted,
+   `cluster_statistics.hpp` as dispatches queued. One sentence. Owner: T17.
+9. `run_worker(argc, argv, ...)` refuses a flag it does not know, so an application with a flag of
+   its own parses first and calls the `WorkerOptions` overload. Documented. Owner: T17.
+10. `SushiRuntime.h` includes no distributed header. One umbrella
+    `SushiRuntime/distributed/distributed.hpp`. Owner: C13.
+11. `tests/benchmark/README.md` describes the old distributed benchmark. Owner: T17.

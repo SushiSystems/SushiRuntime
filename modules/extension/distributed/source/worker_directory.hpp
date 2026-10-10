@@ -101,6 +101,21 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Describes who a registered worker is, for the line that logs its registration.
+         */
+        struct WorkerIdentity
+        {
+            /** @brief Holds the name from HELLO. */
+            std::string name;
+
+            /** @brief Holds the endpoint the transport reported. */
+            std::string endpoint;
+
+            /** @brief Holds the build identifier from HELLO. */
+            std::string build_id;
+        };
+
+        /**
          * @brief Keeps one session per connected peer: handshake state, kernels, liveness, load.
          *
          * A worker's id is the value of its PeerId. The directory owns one mutex, held only
@@ -227,6 +242,9 @@ namespace SushiRuntime
                 [[nodiscard]] bool wait_for_workers(std::size_t count,
                                                     std::chrono::milliseconds timeout);
 
+                /** @brief Returns who a registered worker is, or nothing for any other peer. */
+                [[nodiscard]] std::optional<WorkerIdentity> identity(PeerId worker) const;
+
                 /** @brief Appends one snapshot per registered worker. */
                 void snapshot(std::chrono::steady_clock::time_point now,
                               std::vector<WorkerSnapshot>& out) const;
@@ -260,6 +278,9 @@ namespace SushiRuntime
 
                     /** @brief The endpoint the transport reported. */
                     std::string endpoint;
+
+                    /** @brief The build identifier from HELLO. */
+                    std::string build_id;
 
                     /** @brief The nonce of the last HELLO. */
                     HandshakeNonce worker_nonce{};

@@ -134,6 +134,7 @@ namespace SushiRuntime
             }
 
             session.name.assign(hello.node_name);
+            session.build_id.assign(hello.build_id);
             session.worker_nonce = worker_nonce;
             session.master_nonce = master_nonce;
             session.phase = Phase::AwaitsProof;
@@ -343,6 +344,17 @@ namespace SushiRuntime
                 std::min<std::chrono::milliseconds>(timeout, K_LONGEST_WAIT);
             registered_.wait_for(lock, bounded, [this, &reached] { return closed_ || reached(); });
             return reached();
+        }
+
+        std::optional<WorkerIdentity> WorkerDirectory::identity(PeerId worker) const
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            const auto position = sessions_.find(worker.value);
+            if (position == sessions_.end() || position->second.phase != Phase::Registered)
+                return std::nullopt;
+
+            const Session& session = position->second;
+            return WorkerIdentity{session.name, session.endpoint, session.build_id};
         }
 
         void WorkerDirectory::snapshot(std::chrono::steady_clock::time_point now,

@@ -168,10 +168,16 @@ namespace SushiRuntime
                 /**
                  * @brief Ends the link: MasterUnreachable when it never registered, MasterLost
                  *        when it had.
+                 * @return None, and nothing ends, once the link is leaving.
                  */
                 LinkChange on_connect_abandoned();
 
-                /** @brief Queues GOODBYE(shutdown) to the master when registered. */
+                /**
+                 * @brief Queues GOODBYE(shutdown) to the master when registered.
+                 *
+                 * From here on the link is leaving: a loss or an abandoned connect is logged at
+                 * DEBUG and changes no end.
+                 */
                 void say_goodbye() noexcept;
 
                 /** @brief Returns the peer the link is registered with, or nothing. */
@@ -260,6 +266,14 @@ namespace SushiRuntime
 
                 /// @brief Set by stop().
                 bool stopping_ = false;
+
+                /**
+                 * @brief Set by say_goodbye() and stop(): the worker is leaving on its own.
+                 *
+                 * From then on a loss or an abandoned connect is what the worker asked for:
+                 * it is logged at DEBUG, changes no end, and a new connection is closed.
+                 */
+                std::atomic<bool> leaving_{false};
 
                 /// @brief Running, or the final end.
                 std::atomic<WorkerEnd> end_{WorkerEnd::Running};

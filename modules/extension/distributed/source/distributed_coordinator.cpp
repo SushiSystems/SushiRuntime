@@ -53,6 +53,7 @@
 #include "message_router.hpp"
 #include "offload_dispatcher.hpp"
 #include "pending_tasks.hpp"
+#include "ping_clock.hpp"
 #include "task_resubmission.hpp"
 #include "wire_codec.hpp"
 #include "wire_frame.hpp"
@@ -83,6 +84,9 @@ namespace SushiRuntime
                 "no kernel for the operation",           "the worker is shutting down",
             };
 
+            /** @brief Names the endpoint of a transport whose start() reported none. */
+            constexpr const char* K_UNNAMED_ENDPOINT = "an unnamed endpoint";
+
             /** @brief Returns the entry of a word table for a wire value, or its first entry. */
             template <std::size_t Count>
             const char* words_for(const char* const (&table)[Count], std::size_t value) noexcept
@@ -98,15 +102,6 @@ namespace SushiRuntime
                 for (std::size_t index = 0; index < wire.size(); ++index)
                     wire[index] = static_cast<std::byte>(octets[index]);
                 return wire;
-            }
-
-            /** @brief Returns the monotonic clock in microseconds, the token of a PING. */
-            std::uint64_t monotonic_micros() noexcept
-            {
-                return static_cast<std::uint64_t>(
-                    std::chrono::duration_cast<std::chrono::microseconds>(
-                        std::chrono::steady_clock::now().time_since_epoch())
-                        .count());
             }
 
             /** @brief Returns a count of milliseconds as the u32 a WELCOME field carries. */
@@ -329,7 +324,7 @@ namespace SushiRuntime
                     welcome.ping_interval_ms = to_wire_milliseconds(monitor.period());
                     welcome.chunk_bytes = options.chunk_bytes;
                     send_control(peer, welcome);
-                    log_registered(peer, proof.ops.size(), now);
+                    log_registered(peer, proof.ops.size());
                     return;
                 }
 
@@ -441,11 +436,7 @@ namespace SushiRuntime
             /** @brief Records the round trip of a PING and the worker's free memory. */
             void on_pong(PeerId peer, std::uint8_t /*flags*/, const Wire::PongMessage& pong)
             {
-                const std::uint64_t now = monotonic_micros();
-                const std::uint64_t elapsed = now >= pong.token ? now - pong.token : 0;
-                const std::uint64_t upper = std::numeric_limits<std::uint32_t>::max();
-                directory.note_pong(peer, static_cast<std::uint32_t>(std::min(elapsed, upper)),
-                                    pong.free_mem);
+                directory.note_pong(peer, ping_round_trip_micros(pong.token), pong.free_mem);
             }
 
             /** @brief Records a worker's load and which tasks it still holds. */
@@ -533,20 +524,14 @@ namespace SushiRuntime
             }
 
             /** @brief Logs the line of a worker that has just registered. */
-            void log_registered(PeerId peer, std::size_t kernel_count,
-                                std::chrono::steady_clock::time_point now)
+            void log_registered(PeerId peer, std::size_t kernel_count)
             {
-                std::vector<WorkerSnapshot> workers;
-                directory.snapshot(now, workers);
-                for (const WorkerSnapshot& worker : workers)
-                {
-                    if (worker.id != peer.value)
-                        continue;
-
-                    SR_LOG_INFO("worker {} \"{}\" {} registered, {} kernels", worker.id,
-                                worker.name, worker.endpoint, kernel_count);
+                const std::optional<WorkerIdentity> worker = directory.identity(peer);
+                if (!worker.has_value())
                     return;
-                }
+
+                SR_LOG_INFO("worker {} \"{}\" {} registered, {} kernels, build {}", peer.value,
+                            worker->name, worker->endpoint, kernel_count, worker->build_id);
             }
 
             /// @brief The secret, the policy, the kernels kept alive and the timings.
@@ -671,11 +656,9 @@ namespace SushiRuntime
                 return result;
             }
 
-            const bool is_network = impl.transport->exposure() == TransportExposure::Network;
-            SR_LOG_INFO("distributed master listening on a {} transport, protocol v{}, "
-                        "authentication {}",
-                        is_network ? "network" : "loopback", Wire::K_PROTOCOL_VERSION,
-                        impl.options.secret.empty() ? "off" : "on");
+            SR_LOG_INFO("distributed master listening on {}, protocol v{}, authentication {}",
+                        result.message.empty() ? K_UNNAMED_ENDPOINT : result.message.c_str(),
+                        Wire::K_PROTOCOL_VERSION, impl.options.secret.empty() ? "off" : "on");
             return result;
         }
 

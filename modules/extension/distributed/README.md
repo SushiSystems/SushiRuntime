@@ -63,9 +63,9 @@ Network transport and that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. T
 removes the coordinator the runtime held before, sets the release observer, installs the new
 coordinator, which is where the scheduler binds its sink, and calls
 DistributedCoordinator::start(). start() starts the transport, then the monitor, and logs
-`distributed master listening on a loopback transport, protocol v2, authentication off` with the
-exposure and the authentication state of this master. The line does not name the address:
-ITransport has no member that returns it.
+`distributed master listening on 127.0.0.1:7000, protocol v2, authentication off`. The endpoint is
+the message of the `TransportResult` the transport's `start()` returned: the bound `address:port`
+for TCP, so a bind to port 0 shows the port the OS chose, and `in-process` for a fabric.
 
 The handle is a view. Copies name the same master and destroying one changes nothing. attach() is
 `[[nodiscard]]`, so a caller that wants no handle says so with a cast to void. The runtime shares
@@ -103,8 +103,9 @@ reconnects is a new `PeerId` on the master, and each connection to the master is
 the worker. There is no fixed id for the master and no peer count on the interface.
 
 **Start and stop.** `start(events)` is called once. A master binds and listens inside it, so a
-port that is taken comes back as `BindFailed` with the endpoint and the OS reason in the message. A
-worker returns `Ok` and connects on its own thread. A second `start()` returns `AlreadyStarted`.
+port that is taken comes back as `BindFailed` with the endpoint and the OS reason in the message.
+On `Ok` a master's message is the endpoint it listens on. A worker returns `Ok` with an empty
+message and connects on its own thread. A second `start()` returns `AlreadyStarted`.
 `stop()` is `noexcept`, blocks until every transport thread has ended and makes no event once it
 returns; it closes peers without `on_peer_lost()`. A stopped transport does not start again.
 
@@ -171,6 +172,7 @@ lifetime.
 | `buffer_exchange.hpp` | `BufferExchange` | the pull sources it makes, progress of incoming output transfers | reader thread; its sources on a writer thread |
 | `offload_dispatcher.hpp` | `OffloadDispatcher` | `prepare`, `try_offload`, local and remote settlement of a node | compiling thread, pool worker |
 | `cluster_monitor.hpp` | `ClusterMonitor` | the monitor thread | its own thread |
+| `ping_clock.hpp` | `make_ping_token()`, `ping_round_trip_micros()` | the clock a `PING` token is read from and measured on | monitor thread, reader thread |
 | `task_resubmission.hpp` | `resubmit_tasks()` | the one sequence that returns a taken task to the scheduler | monitor, reader, the thread in `stop()` |
 | `distributed_coordinator.hpp` | `DistributedCoordinator` | the bricks above, the router, start and stop order | every thread of the seam |
 
@@ -254,7 +256,7 @@ decodes the payload and calls a member; a payload that does not decode closes th
 | Frame | Handler does |
 | --- | --- |
 | `HELLO` | draws a nonce, `accept_hello()`, sends `CHALLENGE` with the session id |
-| `PROOF` | `accept_proof()`; sends `WELCOME` and logs the registration, or sends `REJECT`, counts `handshake_rejected_auth` and closes the peer |
+| `PROOF` | `accept_proof()`; sends `WELCOME` and logs the registration with what `WorkerDirectory::identity()` returns (name, endpoint, the build id of `HELLO`), or sends `REJECT`, counts `handshake_rejected_auth` and closes the peer |
 | `TASK_ACCEPTED` | `PendingTasks::acknowledge()` |
 | `TASK_RESULT` | `PendingTasks::take()`; nothing more when the task is not pending. Otherwise `sink.complete_remote()` when the status is `Succeeded` and `BufferExchange::finish_task()` says every output arrived whole, `resubmit_tasks()` when not |
 | `BUFFER_REQUEST` | `send_stream()` with the source `BufferExchange::serve_pull()` makes |
@@ -293,12 +295,18 @@ registry refused plus the chunks `expects_output()` refused.
 | Node | `offloadable` | Payload |
 | --- | --- | --- |
 | op-tagged, an alive worker has the kernel, every buffer shared | true | input handles, then output handles |
+| op-tagged, supported, every buffer shared, two writes name one buffer | false | the handles of the shared buffers it writes |
 | any other node that writes a shared buffer | false | the handles of the shared buffers it writes |
 | any other node | false | none, and no `OffloadState` is created for it |
-| double-buffered (`live_reads` or `live_writes` set) | true when tagged, supported and every live address is shared | none |
+| double-buffered (`live_reads` or `live_writes` set) | true when tagged, supported, every live address is shared and no two live writes name one buffer | none |
 
-One WARN per call names how many op-tagged nodes stay local, how many for each reason and the
-first operation id.
+A dispatch raises the version of each output once. A buffer listed twice among the outputs would
+leave with two versions, and the output fence would refuse the chunks of one of them, so such a
+node runs locally. The same buffer as an input and as an output is one write and may leave.
+
+One WARN per call names how many op-tagged nodes stay local, how many for each of the three
+reasons (no live worker for the op, buffer not shared, buffer written twice) and the first
+operation id.
 
 ### try_offload
 
@@ -333,7 +341,7 @@ payload lists no output takes no lock.
 
 ### A pass
 
-1. `PING` to every alive worker; the token is the monotonic clock in microseconds.
+1. `PING` to every alive worker; the token is `make_ping_token()` of `ping_clock.hpp`.
 2. `take_silent()`: each worker listed gets `GOODBYE(liveness)` and `close_peer()`. The
    transport then reports the loss and the coordinator returns the worker's tasks.
 3. `take_handshake_overdue()`: each peer listed is closed.
@@ -350,11 +358,19 @@ tightest timeout in force (the liveness timeout, or the task deadline when it is
 least 1 ms. `set_liveness_timeout()` and `set_task_deadline()` wake the thread, so a shorter
 timeout applies from the next pass. `WELCOME` carries the period a worker registered under.
 
+## ping_clock.hpp
+
+`make_ping_token()` reads the steady clock in microseconds, and `ping_round_trip_micros(token)`
+returns the time since a token was made, 0 for a token from the future and the largest `u32` for a
+longer trip. The monitor makes the token of each `PING`; the coordinator measures the `PONG` that
+brings it back. Both are header-only.
+
 ## frame_sending.hpp
 
 `send_message(transport, peer, message, scratch)` encodes a wire message into a buffer the caller
 reuses and queues it with `ITransport::send()`; the three-argument form uses a buffer of its own.
-The coordinator and the monitor send every control frame through it.
+The coordinator, the monitor, `MasterLink` and `DispatchExecutor` send every control frame through
+it.
 
 ## worker_agent.hpp
 
@@ -382,7 +398,9 @@ decodes the payload and calls the brick that owns the message:
 A payload that does not decode closes the connection with one WARN that names the master, the
 type, the length and the offset of the field. A dispatch from a connection the link is not
 registered on is ignored. On `RegisteredNewSession` the agent clears the cache and the seen ids; on
-`Disconnected` it drops the queued jobs. The executor sends `TASK_ACCEPTED` itself.
+`Disconnected` it calls `DispatchExecutor::discard_queued()`, which drops the queued jobs and
+aborts the input pull the exec thread has open, so that task fails as `InputUnavailable` at once
+instead of after `pull_idle_timeout`. The executor sends `TASK_ACCEPTED` itself.
 
 The agent logs `connected to master <address:port>` when a connection opens and the transport's
 cause when the transport gives up. `MasterLink` logs registration and loss by peer number.
@@ -399,14 +417,15 @@ cause when the transport gives up. `MasterLink` logs registration and loss by pe
 
 ### Stop order
 
-1. A flag makes `on_peer_connected()` close any connection that opens from here on.
+1. The agent's phase becomes `Stopped`, and `on_peer_connected()` closes any connection that opens
+   from here on.
 2. `DispatchExecutor::stop()`: no more jobs, a `ShuttingDown` result per queued job, the running
    kernel finishes, the exec thread is joined.
-3. `MasterLink::say_goodbye()` queues `GOODBYE`.
+3. `MasterLink::say_goodbye()` queues `GOODBYE` and marks the link as leaving.
 4. `close_peer()` on the registered connection, then a wait of at most 2 s for its
    `on_peer_lost()`. A transport's `stop()` drops queued control frames, and this is what gets the
    results and the `GOODBYE` onto the wire. The loss and a transport that then gives up are
-   expected here, so the agent does not pass them to the link.
+   expected here; see the next section.
 5. `ITransport::stop()`: every reader and writer is joined and every kept stream is destroyed,
    which returns the last cache pins.
 6. `MasterLink::stop()` joins the heartbeat thread; a `Running` end becomes `Stopped`.
@@ -414,6 +433,17 @@ cause when the transport gives up. `MasterLink` logs registration and loss by pe
 
 A `start()` that fails stops the three in the same order and leaves no thread. An agent that ended
 for a reason other than `stop()` still needs `stop()`.
+
+### A loss the worker caused
+
+`MasterLink` holds the rule, once: after `say_goodbye()` or `stop()` the link is leaving, and
+`on_lost()` and `on_connect_abandoned()` then log at DEBUG, return `LinkChange::None` and change no
+end, `on_connected()` closes the connection, and the heartbeat thread sends nothing. The link is
+where it belongs because the link writes those lines and sends the `GOODBYE` that makes the next
+loss the worker's own, so every composer of a link gets the rule, and the agent passes each loss
+and each abandon to the link without a filter. The agent logs the transport's cause at WARN only
+when the link answers `Ended`. A master that goes away while `DispatchExecutor::stop()` still
+drains, before `say_goodbye()`, is a real loss and is logged as one.
 
 ## worker_main.hpp
 

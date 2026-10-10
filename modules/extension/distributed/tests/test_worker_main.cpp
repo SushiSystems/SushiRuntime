@@ -21,13 +21,12 @@
 
 /**
  * @file test_worker_main.cpp
- * @brief Tests the worker's option parser, its stop flag and each exit code of run_worker().
+ * @brief Tests the worker's option parser, its stop flag and each exit code of a worker.
  * @author Mustafa Garip
  */
 
 #include <chrono>
 #include <condition_variable>
-#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -46,10 +45,13 @@
 
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/distributed/endpoint.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
+#include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/worker_main.hpp>
 
 #include "environment.hpp"
@@ -58,6 +60,7 @@
 #include "wire_frame.hpp"
 #include "wire_messages.hpp"
 #include "worker_options_parser.hpp"
+#include "worker_session.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -145,21 +148,24 @@ namespace
     };
 
     /**
-     * @brief Plays the master's frames of one script over a TCP listener on loopback.
+     * @brief Plays the master's frames of one script over a master transport it starts.
      *
      * It verifies no proof and dispatches nothing; the secret is empty on both sides.
      */
     class FakeMaster final : public TransportEvents
     {
         public:
-            /** @brief Listens on a free loopback port. */
-            explicit FakeMaster(MasterScript script)
-                : script_(script), transport_(TcpTransport::make_master())
+            /**
+             * @brief Starts a master endpoint and answers its workers.
+             * @param transport Not null and not started.
+             */
+            FakeMaster(MasterScript script, std::shared_ptr<ITransport> transport)
+                : script_(script), transport_(std::move(transport))
             {
                 started_ = transport_->start(*this);
             }
 
-            /** @brief Stops the listener and joins its threads. */
+            /** @brief Stops the transport and joins its threads. */
             ~FakeMaster()
             {
                 transport_->stop();
@@ -170,22 +176,10 @@ namespace
             FakeMaster(FakeMaster&&) = delete;
             FakeMaster& operator=(FakeMaster&&) = delete;
 
-            /** @brief Returns how the listener started. */
+            /** @brief Returns how the transport started. */
             const TransportResult& started() const noexcept
             {
                 return started_;
-            }
-
-            /** @brief Returns the address a worker connects to. */
-            Endpoint endpoint() const
-            {
-                return transport_->local_endpoint();
-            }
-
-            /** @brief Stops the listener, so the port takes no connection. */
-            void stop()
-            {
-                transport_->stop();
             }
 
             /** @brief Waits until a welcomed worker has sent a HEARTBEAT, so it is registered. */
@@ -311,10 +305,10 @@ namespace
             /// @brief What the master does with a worker.
             MasterScript script_;
 
-            /// @brief The listener.
-            std::shared_ptr<TcpTransport> transport_;
+            /// @brief The master endpoint.
+            std::shared_ptr<ITransport> transport_;
 
-            /// @brief How the listener started.
+            /// @brief How the transport started.
             TransportResult started_;
 
             /// @brief Guards the two flags below.
@@ -330,6 +324,89 @@ namespace
             bool goodbye_ = false;
     };
 
+    /** @brief Holds the time a served worker waits for a master no test starts. */
+    constexpr std::chrono::milliseconds K_NO_MASTER_TIMEOUT{50};
+
+    /** @brief Holds a connect timeout no test of a started master reaches. */
+    constexpr std::chrono::milliseconds K_MASTER_TIMEOUT = K_WAIT;
+
+    /**
+     * @brief Serves the master of a fabric with serve_worker() on a thread of its own.
+     *
+     * The worker joins without a secret and does not reconnect. The destructor asks for the
+     * stop, so a test that fails early still joins the thread.
+     */
+    class ServedWorker final
+    {
+        public:
+            /** @brief Starts serving; a worker endpoint is added to the fabric. */
+            ServedWorker(InProcessFabric& fabric, std::chrono::milliseconds connect_timeout)
+                : exit_code_(std::async(
+                      std::launch::async,
+                      [this, transport = InProcessTransport::make_worker(
+                                 fabric, link_options(connect_timeout))]
+                      {
+                          return serve_worker(context_, transport, make_sushi<KernelRegistry>(),
+                                              agent_options(), stop_signal_);
+                      }))
+            {
+
+            }
+
+            /** @brief Asks for the stop; the future then waits for the serving thread. */
+            ~ServedWorker()
+            {
+                stop_signal_.request();
+            }
+
+            ServedWorker(const ServedWorker&) = delete;
+            ServedWorker& operator=(const ServedWorker&) = delete;
+            ServedWorker(ServedWorker&&) = delete;
+            ServedWorker& operator=(ServedWorker&&) = delete;
+
+            /** @brief Sets the stop flag as the first signal of a worker process does. */
+            void request_stop() noexcept
+            {
+                stop_signal_.request();
+            }
+
+            /** @brief Returns the exit code serve_worker() gave, or nothing after K_WAIT. */
+            std::optional<WorkerExitCode> exit_code()
+            {
+                if (exit_code_.wait_for(K_WAIT) != std::future_status::ready)
+                    return std::nullopt;
+                return exit_code_.get();
+            }
+
+        private:
+            /** @brief Returns the settings of an endpoint that gives up where TCP would. */
+            static InProcessWorkerOptions link_options(std::chrono::milliseconds connect_timeout)
+            {
+                InProcessWorkerOptions options;
+                options.reconnect = false;
+                options.connect_timeout = connect_timeout;
+                return options;
+            }
+
+            /** @brief Returns the settings of an agent whose heartbeat a test can wait for. */
+            static WorkerAgentOptions agent_options()
+            {
+                WorkerAgentOptions options;
+                options.name = "test-worker";
+                options.heartbeat_interval = std::chrono::milliseconds(20);
+                return options;
+            }
+
+            /// @brief The flag serve_worker() reads; a test sets it with request_stop().
+            StopSignal stop_signal_;
+
+            /// @brief The runtime the agent's kernels would run on.
+            Execution::RuntimeContext context_;
+
+            /// @brief The exit code of the serving thread; declared last, so it ends first.
+            std::future<WorkerExitCode> exit_code_;
+    };
+
     /** @brief Returns the options of a worker that joins a master on loopback without a secret. */
     WorkerOptions options_for(const Endpoint& master)
     {
@@ -339,23 +416,6 @@ namespace
         options.connect_timeout = std::chrono::seconds(20);
         options.reconnect = false;
         return options;
-    }
-
-    /** @brief Runs run_worker() on another thread and returns its exit code when it ends. */
-    std::future<int> run_in_background(WorkerOptions options)
-    {
-        return std::async(std::launch::async, [options = std::move(options)]
-        {
-            return run_worker(options, make_sushi<KernelRegistry>());
-        });
-    }
-
-    /** @brief Returns the exit code of a background worker, or nothing after K_WAIT. */
-    std::optional<int> exit_code_of(std::future<int>& worker)
-    {
-        if (worker.wait_for(K_WAIT) != std::future_status::ready)
-            return std::nullopt;
-        return worker.get();
     }
 } // namespace
 
@@ -629,77 +689,87 @@ TEST(Unit_WorkerMainTest, VersionPrintsTheProtocolAndExitsZero)
     EXPECT_NE(line.find("build "), std::string::npos) << line;
 }
 
-/** @brief Tests that a registered worker stops in order on SIGTERM and exits 0. */
+/** @brief Tests that a registered worker stops in order when the stop flag is set: code 0. */
 TEST(Integration_WorkerMainTest, SignalStopsWithExitZero)
 {
-    std::future<int> worker;
-    FakeMaster master(MasterScript::Register);
+    InProcessFabric fabric;
+    FakeMaster master(MasterScript::Register, InProcessTransport::make_master(fabric));
     ASSERT_TRUE(master.started().is_ok()) << master.started().message;
-    WorkerOptions options = options_for(master.endpoint());
-    options.heartbeat_interval = std::chrono::milliseconds(20);
-    worker = run_in_background(std::move(options));
+    ServedWorker worker(fabric, K_MASTER_TIMEOUT);
 
-    // run_worker() installs its handlers before it connects, so a registered worker has them.
     ASSERT_TRUE(master.wait_for_heartbeat());
-    ASSERT_EQ(std::raise(SIGTERM), 0);
+    worker.request_stop();
 
-    const std::optional<int> exit_code = exit_code_of(worker);
+    const std::optional<WorkerExitCode> exit_code = worker.exit_code();
     ASSERT_TRUE(exit_code.has_value());
-    EXPECT_EQ(*exit_code, static_cast<int>(WorkerExitCode::StoppedBySignal));
+    EXPECT_EQ(*exit_code, WorkerExitCode::StoppedBySignal);
     EXPECT_TRUE(master.wait_for_goodbye());
 }
 
 /** @brief Tests that REJECT(authentication) ends the worker with exit code 3. */
 TEST(Integration_WorkerMainTest, AuthenticationRejectExitsThree)
 {
-    std::future<int> worker;
-    FakeMaster master(MasterScript::RejectAuthentication);
+    InProcessFabric fabric;
+    FakeMaster master(MasterScript::RejectAuthentication,
+                      InProcessTransport::make_master(fabric));
     ASSERT_TRUE(master.started().is_ok()) << master.started().message;
-    worker = run_in_background(options_for(master.endpoint()));
+    ServedWorker worker(fabric, K_MASTER_TIMEOUT);
 
-    const std::optional<int> exit_code = exit_code_of(worker);
+    const std::optional<WorkerExitCode> exit_code = worker.exit_code();
     ASSERT_TRUE(exit_code.has_value());
-    EXPECT_EQ(*exit_code, static_cast<int>(WorkerExitCode::RejectedAuthentication));
+    EXPECT_EQ(*exit_code, WorkerExitCode::RejectedAuthentication);
 }
 
 /** @brief Tests that REJECT(version) ends the worker with exit code 4. */
 TEST(Integration_WorkerMainTest, VersionRejectExitsFour)
 {
-    std::future<int> worker;
-    FakeMaster master(MasterScript::RejectVersion);
+    InProcessFabric fabric;
+    FakeMaster master(MasterScript::RejectVersion, InProcessTransport::make_master(fabric));
     ASSERT_TRUE(master.started().is_ok()) << master.started().message;
-    worker = run_in_background(options_for(master.endpoint()));
+    ServedWorker worker(fabric, K_MASTER_TIMEOUT);
 
-    const std::optional<int> exit_code = exit_code_of(worker);
+    const std::optional<WorkerExitCode> exit_code = worker.exit_code();
     ASSERT_TRUE(exit_code.has_value());
-    EXPECT_EQ(*exit_code, static_cast<int>(WorkerExitCode::ProtocolMismatch));
+    EXPECT_EQ(*exit_code, WorkerExitCode::ProtocolMismatch);
 }
 
-/** @brief Tests that a port nothing listens on ends the worker with exit code 2. */
+/** @brief Tests that a fabric with no master ends the worker with exit code 2. */
 TEST(Integration_WorkerMainTest, MasterNotReachedExitsTwo)
 {
-    std::future<int> worker;
-    FakeMaster master(MasterScript::Register);
-    ASSERT_TRUE(master.started().is_ok()) << master.started().message;
-    WorkerOptions options = options_for(master.endpoint());
-    options.connect_timeout = std::chrono::seconds(1);
-    master.stop();
-    worker = run_in_background(std::move(options));
+    InProcessFabric fabric;
+    ServedWorker worker(fabric, K_NO_MASTER_TIMEOUT);
 
-    const std::optional<int> exit_code = exit_code_of(worker);
+    const std::optional<WorkerExitCode> exit_code = worker.exit_code();
     ASSERT_TRUE(exit_code.has_value());
-    EXPECT_EQ(*exit_code, static_cast<int>(WorkerExitCode::MasterUnreachable));
+    EXPECT_EQ(*exit_code, WorkerExitCode::MasterUnreachable);
 }
 
 /** @brief Tests that losing the master with reconnecting off ends the worker with exit code 5. */
 TEST(Integration_WorkerMainTest, MasterLostWithoutReconnectExitsFive)
 {
-    std::future<int> worker;
-    FakeMaster master(MasterScript::RegisterThenClose);
+    InProcessFabric fabric;
+    FakeMaster master(MasterScript::RegisterThenClose, InProcessTransport::make_master(fabric));
     ASSERT_TRUE(master.started().is_ok()) << master.started().message;
-    worker = run_in_background(options_for(master.endpoint()));
+    ServedWorker worker(fabric, K_MASTER_TIMEOUT);
 
-    const std::optional<int> exit_code = exit_code_of(worker);
+    const std::optional<WorkerExitCode> exit_code = worker.exit_code();
     ASSERT_TRUE(exit_code.has_value());
-    EXPECT_EQ(*exit_code, static_cast<int>(WorkerExitCode::MasterLost));
+    EXPECT_EQ(*exit_code, WorkerExitCode::MasterLost);
+}
+
+/** @brief Tests that run_worker() joins a master over TCP and returns the code of its end. */
+TEST(Integration_WorkerMainTest, RunWorkerOverTcpReturnsTheCodeOfItsEnd)
+{
+    const std::shared_ptr<TcpTransport> listener = TcpTransport::make_master();
+    FakeMaster master(MasterScript::RegisterThenClose, listener);
+    ASSERT_TRUE(master.started().is_ok()) << master.started().message;
+
+    std::future<int> worker = std::async(
+        std::launch::async, [options = options_for(listener->local_endpoint())]
+        {
+            return run_worker(options, make_sushi<KernelRegistry>());
+        });
+
+    ASSERT_EQ(worker.wait_for(K_WAIT), std::future_status::ready);
+    EXPECT_EQ(worker.get(), static_cast<int>(WorkerExitCode::MasterLost));
 }

@@ -213,10 +213,10 @@ namespace SushiRuntime
                 void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
                               Payload payload) override;
 
-                /** @brief Forgets the connection; unless stopping, acts on the link's answer. */
+                /** @brief Forgets the connection and acts on the link's answer. */
                 void on_peer_lost(PeerId peer, const PeerLoss& loss) override;
 
-                /** @brief Logs the transport's cause and ends the link, unless stopping. */
+                /** @brief Ends the link and logs the transport's cause when that ended it. */
                 void on_connect_abandoned(const std::string& cause) override;
 
             private:
@@ -286,9 +286,6 @@ namespace SushiRuntime
 
                 /// @brief How far the agent's life has come.
                 std::atomic<Phase> phase_{Phase::Built};
-
-                /// @brief Set by stop(); a connection that opens afterwards is closed.
-                std::atomic<bool> stopping_{false};
 
                 /// @brief The buffers of the tasks; destroyed after the transport stopped.
                 WorkerBufferCache cache_;
@@ -494,7 +491,6 @@ namespace SushiRuntime
             if (!result.is_ok())
             {
                 phase_.store(Phase::Stopped);
-                stopping_.store(true);
                 executor_.stop();
                 transport_->stop();
                 link_.stop();
@@ -561,7 +557,6 @@ namespace SushiRuntime
                 return;
             }
 
-            stopping_.store(true);
             executor_.stop();
             link_.say_goodbye();
             close_master();
@@ -586,7 +581,7 @@ namespace SushiRuntime
 
         void WorkerAgent::Impl::on_peer_connected(PeerId peer, const PeerInfo& info)
         {
-            if (stopping_.load())
+            if (phase_.load() == Phase::Stopped)
             {
                 transport_->close_peer(peer);
                 return;
@@ -620,24 +615,19 @@ namespace SushiRuntime
             }
             connection_changed_.notify_all();
 
-            if (stopping_.load())
-            {
-                SR_LOG_DEBUG("connection to the master (peer {}) closed while the worker stops",
-                             peer.value);
-                return;
-            }
-
             apply(link_.on_lost(peer, loss));
         }
 
         void WorkerAgent::Impl::on_connect_abandoned(const std::string& cause)
         {
-            if (stopping_.load())
-                return;
-
-            SR_LOG_WARN("the transport gave up on the master: {}; this worker stops serving",
-                        cause);
-            apply(link_.on_connect_abandoned());
+            const LinkChange change = link_.on_connect_abandoned();
+            if (change == LinkChange::Ended)
+                SR_LOG_WARN("the transport gave up on the master: {}; this worker stops serving",
+                            cause);
+            else
+                SR_LOG_DEBUG("the transport gave up on the master while this worker stops: {}",
+                             cause);
+            apply(change);
         }
 
         WorkerAgent::WorkerAgent(Execution::RuntimeContext& context,

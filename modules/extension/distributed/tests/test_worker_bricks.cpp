@@ -425,11 +425,12 @@ namespace
      */
     struct Worker
     {
-        /** @brief Builds the bricks with a cache budget; no thread runs. */
-        explicit Worker(std::uint64_t budget_bytes = 1024 * 1024)
+        /** @brief Builds the bricks with a budget and the executor's bounds; no thread runs. */
+        explicit Worker(std::uint64_t budget_bytes = 1024 * 1024,
+                        const DispatchExecutorOptions& options = DispatchExecutorOptions{})
             : cache(allocator.callables(), budget_bytes),
               kernels(make_sushi<KernelRegistry>()),
-              executor(kernels, cache, transport, queue, DispatchExecutorOptions{})
+              executor(kernels, cache, transport, queue, options)
         {
 
         }
@@ -897,6 +898,47 @@ TEST(Unit_DispatchExecutorTest, OutputStreamEndsWithTheResult)
     EXPECT_EQ(worker.cache.bytes(), 0u) << "the stream's destructor kept a pin";
 }
 
+TEST(Unit_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
+{
+    // With no idle timeout the pull ends only when something ends it.
+    DispatchExecutorOptions options;
+    options.pull_idle_timeout = std::chrono::milliseconds(0);
+    Worker worker(1024 * 1024, options);
+
+    std::atomic<int> kernel_calls{0};
+    const Graph::OpID op(18);
+    worker.kernels->register_kernel(
+        op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
+                                                   span<const BufferView>,
+                                                   const Graph::TaskMetadata&)
+                                   {
+                                       ++kernel_calls;
+                                       return sycl::event{};
+                                   }));
+    worker.executor.start();
+
+    const BufferHandle input = handle_of(3, 5, 12);
+    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(1, op, {input}, {}), 8),
+              EnqueueStatus::Queued);
+    ASSERT_TRUE(worker.transport.wait_for(MessageType::BufferRequest, 1));
+
+    worker.executor.discard_queued();
+
+    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 1))
+        << "the exec thread still waits for an input no master will send";
+    EXPECT_EQ(worker.result(0).status, Wire::TaskResultStatus::InputUnavailable);
+    EXPECT_EQ(kernel_calls.load(), 0);
+    EXPECT_EQ(worker.executor.statistics().tasks_failed_input_unavailable, 1u);
+    EXPECT_EQ(worker.cache.bytes(), 0u) << "the abandoned pull kept its allocation";
+
+    // The exec thread is free again: a task of the next connection runs.
+    ASSERT_EQ(worker.executor.enqueue(PeerId{2}, dispatch_of(1, op, {}, {}), 8),
+              EnqueueStatus::Queued);
+    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 2));
+    EXPECT_EQ(worker.result(1).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(kernel_calls.load(), 1);
+}
+
 TEST(Unit_MasterLinkTest, HandshakeChecksTheMasterBeforeProving)
 {
     FakeTransport transport;
@@ -1063,4 +1105,34 @@ TEST(Unit_MasterLinkTest, NewSessionClearsTheCache)
     EXPECT_EQ(seen.size(), 0u);
     EXPECT_EQ(allocator.live(), 0);
     EXPECT_EQ(link.reconnects(), 2u);
+}
+
+TEST(Unit_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
+{
+    FakeTransport transport;
+    const std::vector<std::uint8_t> secret = secret_of(0x42);
+    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
+                    link_options(std::chrono::milliseconds(60000)), fixed_nonces());
+    const PeerId peer{1};
+
+    ASSERT_EQ(register_link(link, peer, secret, 7, 0), LinkChange::RegisteredNewSession);
+    link.say_goodbye();
+    EXPECT_EQ(transport.count(MessageType::Goodbye), 1u);
+
+    PeerLoss loss;
+    loss.cause = PeerLossCause::ClosedLocally;
+    EXPECT_EQ(link.on_lost(peer, loss), LinkChange::None)
+        << "the worker's own close was reported as a lost master";
+    EXPECT_FALSE(link.master().has_value());
+
+    EXPECT_EQ(link.on_connect_abandoned(), LinkChange::None);
+    EXPECT_EQ(link.end(), WorkerEnd::Running) << "a leaving worker ended as MasterLost";
+
+    const PeerId next{2};
+    link.on_connected(next);
+    EXPECT_EQ(transport.count(MessageType::Hello), 1u) << "a leaving link sent HELLO";
+    EXPECT_TRUE(transport.is_closed(next));
+
+    link.stop();
+    EXPECT_EQ(link.end(), WorkerEnd::Stopped);
 }

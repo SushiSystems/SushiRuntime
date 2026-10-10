@@ -60,6 +60,9 @@ namespace SushiRuntime
             /** @brief Caps the frames waiting in a receiver before a stream stops being pulled. */
             constexpr std::uint32_t K_STREAM_WINDOW_FRAMES = 16;
 
+            /** @brief Names the endpoint a started master reports where TCP reports a port. */
+            constexpr const char* K_MASTER_ENDPOINT_NAME = "in-process";
+
             /** @brief Names the two ends of a connection on the fabric. */
             enum class Side : std::uint8_t
             {
@@ -917,6 +920,8 @@ namespace SushiRuntime
                 impl.is_accepting = true;
             }
             impl.phase.store(Impl::Phase::Running);
+            if (impl.side == Side::Master)
+                result.message = K_MASTER_ENDPOINT_NAME;
             try
             {
                 impl.pump = std::thread([&impl] { impl.run(); });

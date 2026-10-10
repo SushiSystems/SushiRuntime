@@ -109,12 +109,16 @@ namespace
         return bytes;
     }
 
-    /** @brief Returns the HELLO of a worker called "worker" with the given nonce. */
-    Wire::HelloMessage hello_with(const HandshakeNonce& worker_nonce)
+    /** @brief Names the build every HELLO of a test carries unless the test names another. */
+    constexpr const char* K_BUILD = "test-build";
+
+    /** @brief Returns the HELLO of a worker called "worker" with the given nonce and build. */
+    Wire::HelloMessage hello_with(const HandshakeNonce& worker_nonce,
+                                  const char* build_id = K_BUILD)
     {
         Wire::HelloMessage hello;
         hello.worker_nonce = to_wire(worker_nonce.bytes);
-        hello.build_id = "test-build";
+        hello.build_id = build_id;
         hello.node_name = "worker";
         return hello;
     }
@@ -612,4 +616,45 @@ TEST_F(Unit_WorkerDirectory, SnapshotReportsWhatTheWorkerSent)
     EXPECT_EQ(workers[0].queue_depth, 3u);
     EXPECT_EQ(workers[0].cache_bytes, 8192u);
     EXPECT_EQ(workers[0].ms_since_last_frame, 600u);
+}
+
+TEST_F(Unit_WorkerDirectory, IdentityCarriesTheBuildOfTheLastHello)
+{
+    const HandshakeNonce first_worker_nonce = nonce_of(0x11);
+    const HandshakeNonce first_master_nonce = nonce_of(0x22);
+    const HandshakeNonce second_worker_nonce = nonce_of(0x33);
+    const HandshakeNonce second_master_nonce = nonce_of(0x44);
+
+    EXPECT_FALSE(directory_.identity(K_STRANGER).has_value());
+
+    directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
+    ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(first_worker_nonce, "build-a"),
+                                      first_master_nonce).step,
+              HandshakeStep::Accepted);
+    EXPECT_FALSE(directory_.identity(K_FIRST).has_value())
+        << "a peer that owes PROOF is no worker yet";
+
+    ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(second_worker_nonce, "build-b"),
+                                      second_master_nonce).step,
+              HandshakeStep::Accepted);
+    ASSERT_EQ(directory_.accept_proof(
+                  K_FIRST,
+                  proof_with(secret(), second_worker_nonce, second_master_nonce, {}, 4),
+                  at(milliseconds(1))),
+              HandshakeStep::Accepted);
+
+    const std::optional<WorkerIdentity> worker = directory_.identity(K_FIRST);
+    ASSERT_TRUE(worker.has_value());
+    EXPECT_EQ(worker->name, "worker");
+    EXPECT_EQ(worker->endpoint, "10.0.0.1:7000");
+    EXPECT_EQ(worker->build_id, "build-b");
+
+    // A registered worker's HELLO is out of order and leaves what it registered with.
+    ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(first_worker_nonce, "build-c"),
+                                      first_master_nonce).step,
+              HandshakeStep::OutOfOrder);
+    EXPECT_EQ(directory_.identity(K_FIRST)->build_id, "build-b");
+
+    EXPECT_TRUE(directory_.remove_peer(K_FIRST).registered);
+    EXPECT_FALSE(directory_.identity(K_FIRST).has_value());
 }

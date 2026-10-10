@@ -37,6 +37,7 @@
 #include <SushiRuntime/task/offload_sink.hpp>
 
 #include "frame_sending.hpp"
+#include "ping_clock.hpp"
 #include "task_resubmission.hpp"
 #include "wire_messages.hpp"
 
@@ -61,15 +62,6 @@ namespace SushiRuntime
                 "the worker did not acknowledge the dispatch",
                 "the worker's heartbeats stopped listing it",
             };
-
-            /** @brief Returns the monotonic clock in microseconds, the token of a PING. */
-            std::uint64_t monotonic_micros() noexcept
-            {
-                return static_cast<std::uint64_t>(
-                    std::chrono::duration_cast<std::chrono::microseconds>(
-                        std::chrono::steady_clock::now().time_since_epoch())
-                        .count());
-            }
         } // namespace
 
         ClusterMonitor::ClusterMonitor(WorkerDirectory& directory, PendingTasks& pending,
@@ -196,7 +188,7 @@ namespace SushiRuntime
             directory_.list_workers(peers_);
 
             Wire::PingMessage ping;
-            ping.token = monotonic_micros();
+            ping.token = make_ping_token();
             for (const PeerId peer : peers_)
             {
                 // A PING that is not queued costs one sample; liveness counts every frame.
