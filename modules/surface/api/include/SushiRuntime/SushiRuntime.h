@@ -53,7 +53,6 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/graph/dependency_tracker.hpp>
 
 // Scheduler Components
 #include <SushiRuntime/scheduler/task_scheduler.hpp>

@@ -50,7 +50,7 @@
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
-#include <SushiRuntime/scheduler/work_stealing_deque.hpp>
+#include "work_stealing_deque.hpp"
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_widths.hpp>

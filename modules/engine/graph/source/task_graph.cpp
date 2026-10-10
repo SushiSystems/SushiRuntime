@@ -36,7 +36,7 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/graph/dependency_tracker.hpp>
+#include "dependency_tracker.hpp"
 #include <SushiRuntime/task/offload_coordinator.hpp>
 
 namespace SushiRuntime

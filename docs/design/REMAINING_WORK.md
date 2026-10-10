@@ -141,11 +141,8 @@ The v1 limits a user must know are in
   from a path SushiStack no longer carries.
 - **The umbrella header's name.** `SushiRuntime/SushiRuntime.h` is the one header with a `.h`
   suffix and a capitalised name. A rename is a public interface change.
-- **Layout steps left after the move.** The three headers nothing outside their module includes
-  (`work_stealing_deque.hpp`, `dependency_tracker.hpp`, `bindless_detection.hpp`) still sit under
-  `include/`; `Doxyfile`, `Dockerfile`, `SECURITY.md` and `CODE_OF_CONDUCT.md` have not moved to
-  `.config/` and `.github/`; the library exports every symbol; no header is compiled alone. The
-  order is in `docs/agent/2026_10_09_USABILITY_AUDIT/PLAN.md`.
+- **Layout steps left after the move.** The library exports every symbol, and no header is
+  compiled alone. The order is in `docs/agent/2026_10_09_USABILITY_AUDIT/PLAN.md`.
 - **No `.clang-format` or `.editorconfig`** in the root.
 - **Ignore rules.** `docs/api-site/.gitignore` repeats two root rules; the root `.gitignore`
   still lists `dependencies/` and `docs/html`, and has no rule for `.superpowers/`,

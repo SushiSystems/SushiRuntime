@@ -7,6 +7,9 @@ symbol or passage it explains, and that header's file block cites this page.
 
 ## dependency_tracker.hpp
 
+A private header: it sits in `source/`, nothing outside the module includes it, and it is
+not installed.
+
 ### get_shard_idx
 
 get_shard_idx() shards on the owning allocation (its base), not the sub-region, so every access to

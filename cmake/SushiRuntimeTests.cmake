@@ -98,7 +98,8 @@ endfunction()
 
 # sushiruntime_add_module_tests(MODULE <module> SOURCES <file under tests/>...)
 #
-# Builds sr_<module>_tests from the calling module's tests/ folder.
+# Builds sr_<module>_tests from the calling module's tests/ folder. The program may
+# include the module's private headers, which sit in source/, by a quoted name.
 function(sushiruntime_add_module_tests)
     cmake_parse_arguments(ARG "" "MODULE" "SOURCES" ${ARGN})
     if("${ARG_MODULE}" STREQUAL "" OR NOT ARG_SOURCES)
@@ -109,4 +110,6 @@ function(sushiruntime_add_module_tests)
         list(APPEND test_sources "${CMAKE_CURRENT_SOURCE_DIR}/tests/${source}")
     endforeach()
     sushiruntime_add_test_program(NAME "sr_${ARG_MODULE}_tests" SOURCES ${test_sources})
+    target_include_directories("sr_${ARG_MODULE}_tests" PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/source")
 endfunction()

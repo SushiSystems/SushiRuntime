@@ -13,6 +13,7 @@ from .. import console
 from ..config import PROFILE, find_project_root
 
 IMAGE = "sushiruntime"
+DOCKERFILE = ".config/docker/Dockerfile"
 
 _RUNNER = Runner(console, PROFILE.program)
 
@@ -20,7 +21,7 @@ _RUNNER = Runner(console, PROFILE.program)
 def build(no_cache: bool = False, oneapi: bool = False) -> int:
     console.header("Docker Build")
     root = find_project_root()
-    cmd = ["docker", "build", "-t", IMAGE]
+    cmd = ["docker", "build", "-f", DOCKERFILE, "-t", IMAGE]
     if no_cache:
         console.info("Building without the layer cache (--no-cache).")
         cmd.append("--no-cache")

@@ -323,6 +323,9 @@ at or below THROTTLING_RATE.
 
 ## work_stealing_deque.hpp
 
+A private header: it sits in `source/`, nothing outside the module includes it, and it is
+not installed.
+
 ### Deque
 
 A fixed-capacity power-of-2 ring buffer avoids dynamic resizing and the memory-reclamation hazards a

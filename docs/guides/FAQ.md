@@ -57,7 +57,7 @@ section of the [README](../../README.md) gives the configure line and the preset
 `intel-llvm`, `adaptivecpp` and `oneapi`. `SR_BUILD_TESTS` is `OFF` in a direct CMake build, so
 pass `-DSR_BUILD_TESTS=ON` if you want test binaries.
 
-The repository also carries a `Dockerfile` with an intel/llvm nightly SYCL bundle and the
+The repository also carries `.config/docker/Dockerfile`, with an intel/llvm nightly SYCL bundle and the
 Intel OpenCL CPU runtime. `sr container build` builds the image and `sr container run` starts
 it with the repository mounted. GPU passthrough needs the NVIDIA Container Toolkit on the host.
 
@@ -175,6 +175,6 @@ open a GitHub issue or Discussion.
 
 Do not open a public issue for a security problem. Email mustafagarip@sushisystems.io, or use
 GitHub's private vulnerability reporting under the repository's Security tab. The
-[security policy](../reference/SECURITY.md) promises an acknowledgement within 72 hours and an
+[security policy](../../.github/SECURITY.md) promises an acknowledgement within 72 hours and an
 initial assessment within 7 days. It asks for the affected component, the version or commit
 hash, reproduction steps, and the platform, toolchain and build configuration.

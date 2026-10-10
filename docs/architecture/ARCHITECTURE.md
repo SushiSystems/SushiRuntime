@@ -770,7 +770,7 @@ Runs the ready tasks. A work-stealing scheduler with a persistent worker pool.
 ### 9.1 `TaskScheduler`
 
 - One **work-stealing `Deque`** per worker (`worker_queues[MAX_WORKER_THREADS]`,
-  defined in `scheduler/work_stealing_deque.hpp`). A worker pushes/pops its own
+  defined in `work_stealing_deque.hpp`, a private header of the scheduler module). A worker pushes/pops its own
   deque LIFO and **steals** from others' deque ends FIFO when idle. The ring is a
   fixed `CAPACITY = 262144` slots; because `push` is single-producer (owner-only),
   a full ring spills the surplus into an owner-private overflow buffer and `pop`

@@ -4,7 +4,5 @@ summary = "SushiRuntime is a C++17 runtime library for task-based parallel compu
 sections = ["getting_started", "guides", "architecture", "reference"]
 exclude = [
     "reference/API_MAINPAGE.md",
-    "reference/CODE_OF_CONDUCT.md",
-    "reference/SECURITY.md",
 ]
 api = true

@@ -3,7 +3,7 @@
 # Scope is deliberately the public surface only (modules/surface/api/include/SushiRuntime/api), the
 # product's documented face. Lower layers are described in docs/ARCHITECTURE.md
 # and are intentionally not part of this scripting-style reference. Build it with
-# `sr doxygen` (or `doxygen Doxyfile`); output lands in docs/api-site/html.
+# `sr doxygen` (or `doxygen .config/doxygen/Doxyfile` from the repository root); output lands in docs/api-site/html.
 
 PROJECT_NAME           = "SushiRuntime"
 PROJECT_BRIEF          = "Orchestration runtime — fluent C++ API reference"

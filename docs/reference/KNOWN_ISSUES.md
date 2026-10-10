@@ -17,7 +17,7 @@ Defects that are recorded and not yet fixed. The work each one needs is in
 | The TCP frame header carries its length in native byte order, so a cluster must share one endianness | `modules/extension/distributed/source/tcp_transport.cpp` |
 | `accept_loop()` writes the `peers` vector while `send()` and `stop()` read it without a lock | `modules/extension/distributed/source/tcp_transport.cpp` |
 | An offloadable op recorded on a `DynamicGraph` region runs its local fallback and is never shipped to a worker | `modules/engine/graph/source/task_graph.cpp` |
-| The TCP transport has no encryption and no authentication | [`SECURITY.md`](SECURITY.md), [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md) §12 |
+| The TCP transport has no encryption and no authentication | [`SECURITY.md`](../../.github/SECURITY.md), [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md) §12 |
 
 ## Build, CLI and CI
 

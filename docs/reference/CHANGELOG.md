@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-10 — build: Moved the Doxygen and Docker files to a configuration folder and the security policy and code of conduct beside the workflows (`.config/README.md`, `project.py`, `docker.py`, `ci.yml`).
+- 2026-10-10 — graph: Made `dependency_tracker.hpp`, `work_stealing_deque.hpp` and `bindless_detection.hpp` private to their modules; the umbrella header no longer includes the tracker (`SushiRuntime.h`, `SushiRuntimeTests.cmake`).
 - 2026-10-10 — docs: Moved the notes of each test beside the test, one page per module and one for the allocation program, and pointed each test source at its page (`tests/README.md`, `tests/allocation/README.md`).
 - 2026-10-10 — docs: Described the module layout in the project layout, the architecture map and the pages that named the old folders (`README.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `REMAINING_WORK.md`).
 - 2026-10-10 — scheduler: Removed the export macro from `RangeTask`, which is defined whole in its header (`range_task.hpp`).
