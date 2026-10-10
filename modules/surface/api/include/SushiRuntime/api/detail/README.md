@@ -157,24 +157,33 @@ node, so the containment search never meets a dispatch. A null slot passes.
 
 ## late_count_resolution.hpp
 
-### resolve_late_count
-
-resolve_late_count() is the one place a LateCount's host side is read: a host provider wins when
-set, then a device slot, and with neither the live count is the capacity, so a LateCount left at
-its default behaves like a fixed count. The result is never larger than `lc.capacity`.
-
 ### late_count_source and read_live_count
 
 A resolver node reads a host count on the host and a device count in its kernel.
-late_count_source() runs at submission: it resolves a host count through resolve_late_count() and,
-for a device count, only names the slot. read_live_count() runs in the kernel: it reads the slot,
-and a value above the capacity becomes zero and a DEVICE_FAULT_LATE_COUNT record.
+late_count_source() runs once per step, when the resolver is submitted. For a device count it copies
+the address of the slot and reads nothing. For a host count it calls the provider, and for a fixed
+count it takes the capacity; a provider that returns more than the capacity throws `invalid_graph`
+there. read_live_count() runs in the kernel: it reads the slot, and a value above the capacity
+becomes zero and a DEVICE_FAULT_LATE_COUNT record.
 
-### validate_late_count
+Neither validates the LateCount. Its factories checked the capacity, the residency of the slot and
+the index when the count was built (api/vocabulary/README.md), so a step compares nothing but the
+live count with the capacity.
 
-validate_late_count() mirrors require_host_device_slots(): a device slot must be Residency::Host,
-checked before a node is recorded and not inside the run loop. It also rejects a capacity too wide
-for a uint32 live-count word. Recorder::resolve() calls it for every count it is given.
+### gather_device_read
+
+gather_device_read() gives a recorder what a device count adds to its resolver: the region of the
+slot's buffer as a read, which orders the resolver after the kernel that writes the count, and the
+buffer's liveness observer. It returns whether the count has a device slot, so the recorder knows
+the resolver needs a fault record.
+
+## device_fault.hpp
+
+### late_count_overflow
+
+A count over its capacity is found in two places: on the host by late_count_source(), and after the
+step by throw_if_device_fault() reading the record a kernel left. late_count_overflow() builds the
+error for both, so the two paths report one message.
 
 ## late_window.hpp
 

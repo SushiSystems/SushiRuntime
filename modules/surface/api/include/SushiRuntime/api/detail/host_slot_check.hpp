@@ -104,8 +104,10 @@ namespace SushiRuntime
             inline void require_host_device_slots(Execution::RuntimeContext& context,
                                                   const Dynamic& dyn)
             {
-                require_host_slot(context, dyn.device_count, "sized_from_device");
-                require_host_slot(context, dyn.device_base, "based_at_device");
+                require_host_slot(context, DynamicAccess::count_slot(dyn).words,
+                                  "sized_from_device");
+                require_host_slot(context, DynamicAccess::base_slot(dyn).words,
+                                  "based_at_device");
             }
         } // namespace detail
     } // namespace API

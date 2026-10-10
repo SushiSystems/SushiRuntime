@@ -196,9 +196,7 @@ from a slot a predecessor kernel wrote. A launch sized by it is recorded through
 graph's recorder:
 
 ```cpp
-API::LateCount n;
-n.capacity = MAX_CELLS;
-n.host = [&] { return live_cell_count; };
+const auto n = API::LateCount::from_host(MAX_CELLS, [&] { return live_cell_count; });
 // SushiBLAS's prefix scan and counting sort take a LateCount this way.
 ```
 

@@ -499,27 +499,16 @@ namespace SushiRuntime
                  * @param device Device whose context holds the fault record of a device count.
                  * @param access What fill writes, and any further region it reads.
                  * @param fill   Device callable run once as fill(live), in the order of counts.
-                 * @throws Core::SushiException With invalid_access for a device slot outside
-                 *         host USM, or invalid_graph for a capacity past a uint32 slot.
                  */
                 template <std::size_t K, class Fill>
                 void resolve(const std::array<LateCount, K>& counts, DeviceIndex device,
                              Access access, Fill fill, NodeOptions options = {})
                 {
-                    for (const LateCount& count : counts)
-                        detail::validate_late_count(count, "Recorder::resolve");
-
                     std::vector<Core::LivenessObserver> lives;
                     bool reads_device = false;
                     for (const LateCount& count : counts)
-                    {
-                        if (count.host || count.device == nullptr)
-                            continue;
-                        const Reads slot(*count.device);
-                        access.reads.insert(access.reads.end(), slot.keys.begin(), slot.keys.end());
-                        lives.insert(lives.end(), slot.lives.begin(), slot.lives.end());
-                        reads_device = true;
-                    }
+                        reads_device =
+                            detail::gather_device_read(count, access.reads, lives) || reads_device;
                     std::uint32_t* fault = reads_device ? fault_record(device) : nullptr;
 
                     lives.insert(lives.end(), access.lives.begin(), access.lives.end());
@@ -709,8 +698,10 @@ namespace SushiRuntime
                  */
                 std::uint32_t* fault_record_for(const Dynamic& window)
                 {
-                    const std::uint32_t* slot = (window.device_count != nullptr)
-                        ? window.device_count : window.device_base;
+                    const std::uint32_t* count_words =
+                        detail::DynamicAccess::count_slot(window).words;
+                    const std::uint32_t* slot = (count_words != nullptr)
+                        ? count_words : detail::DynamicAccess::base_slot(window).words;
                     if (slot == nullptr)
                         return nullptr;
                     void* address = const_cast<void*>(static_cast<const void*>(slot));

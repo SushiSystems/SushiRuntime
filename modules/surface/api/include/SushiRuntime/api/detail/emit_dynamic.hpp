@@ -73,17 +73,19 @@ namespace SushiRuntime
                                               const Dynamic& dyn,
                                               std::vector<Core::ResourceRegion>& reads)
             {
-                if (dyn.device_count != nullptr)
+                const DeviceSlot count = DynamicAccess::count_slot(dyn);
+                if (count.words != nullptr)
                 {
-                    lb.device_count = dyn.device_count;
-                    lb.device_count_index = dyn.device_count_index;
-                    register_device_slot(dyn.device_count, dyn.device_count_index, reads);
+                    lb.device_count = count.words;
+                    lb.device_count_index = count.index;
+                    register_device_slot(count.words, count.index, reads);
                 }
-                if (dyn.device_base != nullptr)
+                const DeviceSlot base = DynamicAccess::base_slot(dyn);
+                if (base.words != nullptr)
                 {
-                    lb.device_base = dyn.device_base;
-                    lb.device_base_index = dyn.device_base_index;
-                    register_device_slot(dyn.device_base, dyn.device_base_index, reads);
+                    lb.device_base = base.words;
+                    lb.device_base_index = base.index;
+                    register_device_slot(base.words, base.index, reads);
                 }
             }
 

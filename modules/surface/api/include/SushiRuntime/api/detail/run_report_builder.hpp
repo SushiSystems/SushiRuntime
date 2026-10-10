@@ -29,6 +29,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #include <SushiRuntime/observability/run_report.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -43,8 +44,20 @@ namespace SushiRuntime
         namespace detail
         {
             /**
+             * @brief Returns how many dispatches the offload coordinator has accepted so far.
+             * @return Zero when the context has no coordinator.
+             */
+            [[nodiscard]] inline std::uint64_t offloaded_dispatches(
+                const Execution::RuntimeContext& ctx) noexcept
+            {
+                const auto* offload = ctx.offload();
+                return offload != nullptr ? offload->statistics().offloaded : 0;
+            }
+
+            /**
              * @brief Assembles a RunReport from a finished run's raw measurements.
              * @param report The report to overwrite; reset before it is filled.
+             * @param offloaded_before What offloaded_dispatches() returned before the run.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             inline void fill_run_report(
@@ -52,6 +65,7 @@ namespace SushiRuntime
                 Execution::RuntimeContext&         ctx,
                 const Execution::ExecutionMetrics& before,
                 const Execution::ExecutionMetrics& after,
+                std::uint64_t                      offloaded_before,
                 std::size_t                        total_tasks,
                 double                             compile_ms,
                 double                             total_ms)
@@ -84,9 +98,12 @@ namespace SushiRuntime
                 if (const auto* offload = ctx.offload())
                 {
                     const auto offload_statistics = offload->statistics();
+                    const std::uint64_t offloaded_now = offload_statistics.offloaded;
                     auto& distributed = report.distributed_statistics;
-                    distributed.tasks_offloaded_to_network =
-                        static_cast<std::size_t>(offload_statistics.offloaded);
+                    // A coordinator installed during the run starts below the earlier reading.
+                    distributed.tasks_offloaded_to_network = static_cast<std::size_t>(
+                        offloaded_now >= offloaded_before ? offloaded_now - offloaded_before
+                                                          : offloaded_now);
                     distributed.remote_nodes_involved = offload_statistics.alive_workers;
                 }
             }

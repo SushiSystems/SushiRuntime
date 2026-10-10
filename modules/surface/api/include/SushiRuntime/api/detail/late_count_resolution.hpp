@@ -21,7 +21,7 @@
 
 /**
  * @file late_count_resolution.hpp
- * @brief Declares the helpers that validate a LateCount and read its live value.
+ * @brief Declares the helpers that register a LateCount's reads and read its live value.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
@@ -30,13 +30,13 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
-#include <string>
+#include <vector>
 
-#include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
 {
@@ -45,70 +45,25 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief Reads a LateCount's live value and checks it against its capacity.
-             * @throws Core::SushiException With invalid_access if @c lc.device is set
-             *        but is not Residency::Host, or invalid_graph if the live count
-             *        exceeds @c lc.capacity, the same way an out-of-window based_at()
-             *        fails the run.
+             * @brief Appends the read and the observer of a device count's slot.
+             * @param reads Gains the region of the slot's buffer when the count has a slot.
+             * @param lives Gains the observer of that buffer when it watches an allocation.
+             * @return True when the count is read from a device slot.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
-            inline std::size_t resolve_late_count(const LateCount& lc)
+            inline bool gather_device_read(const LateCount& count,
+                                           std::vector<Core::ResourceRegion>& reads,
+                                           std::vector<Core::LivenessObserver>& lives)
             {
-                std::size_t live = lc.capacity;
-                if (lc.host)
-                {
-                    live = lc.host();
-                }
-                else if (lc.device != nullptr)
-                {
-                    if (lc.device->residency() != Residency::Host)
-                        throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                            "LateCount: the device slot is Residency::" +
-                            std::string(residency_name(lc.device->residency())) +
-                            ", but the live count is read on the host while kernels "
-                            "may run; allocate it with Residency::Host."});
-                    if (lc.device_index >= lc.device->size())
-                        throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                            "LateCount: device_index " + std::to_string(lc.device_index) +
-                            " is out of range for a buffer of " +
-                            std::to_string(lc.device->size()) + " elements."});
-                    live = static_cast<std::size_t>(lc.device->data()[lc.device_index]);
-                }
-
-                if (live > lc.capacity)
-                    throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
-                        "LateCount: the live count (" + std::to_string(live) +
-                        ") exceeds the capacity it was planned for (" +
-                        std::to_string(lc.capacity) + ")."});
-                return live;
+                if (LateCountAccess::slot(count) == nullptr)
+                    return false;
+                reads.push_back(LateCountAccess::slot_region(count));
+                const Core::LivenessObserver& life = LateCountAccess::slot_life(count);
+                if (!life.expired())
+                    lives.push_back(life);
+                return true;
             }
 
-            /**
-             * @brief Rejects an ill-formed LateCount at registration, before add() changes the
-             *        graph.
-             * @throws Core::SushiException With invalid_access for a non-host
-             *        device slot, or invalid_graph for an oversized capacity.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            inline void validate_late_count(const LateCount& lc, const char* what)
-            {
-                if (lc.capacity > static_cast<std::size_t>(
-                        std::numeric_limits<std::uint32_t>::max()))
-                    throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
-                        std::string(what) + ": capacity (" + std::to_string(lc.capacity) +
-                        ") exceeds what a uint32 live-count slot can hold (" +
-                        std::to_string(std::numeric_limits<std::uint32_t>::max()) + ")."});
-                if (lc.device != nullptr && lc.device->residency() != Residency::Host)
-                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                        std::string(what) + ": the device slot is Residency::" +
-                        std::string(residency_name(lc.device->residency())) +
-                        ", but the live count is read while kernels may run; "
-                        "allocate it with Residency::Host."});
-            }
-        }
-
-        namespace detail
-        {
             /**
              * @brief Names where one LateCount's live value comes from, in a form a kernel carries.
              */
@@ -121,26 +76,25 @@ namespace SushiRuntime
 
             /**
              * @brief Resolves a LateCount's host side and names its device slot without reading it.
-             * @param lc The count to resolve.
+             * @param count The count to resolve.
              * @return The source a resolver kernel reads.
-             * @throws Core::SushiException As resolve_late_count(), or invalid_access for a device
-             *         index out of range.
+             * @throws Core::SushiException With invalid_graph if a host provider returns more
+             *         than the capacity.
+             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
-            inline LiveCountSource late_count_source(const LateCount& lc)
+            inline LiveCountSource late_count_source(const LateCount& count)
             {
                 LiveCountSource source;
-                source.capacity = lc.capacity;
-                if (lc.host || lc.device == nullptr)
-                {
-                    source.host_live = resolve_late_count(lc);
+                source.capacity = count.capacity();
+                source.slot = LateCountAccess::slot(count);
+                if (source.slot != nullptr)
                     return source;
-                }
-                if (lc.device_index >= lc.device->size())
-                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                        "LateCount: device_index " + std::to_string(lc.device_index) +
-                        " is out of range for a buffer of " +
-                        std::to_string(lc.device->size()) + " elements."});
-                source.slot = lc.device->data() + lc.device_index;
+
+                const LateCount::Provider* host = LateCountAccess::host(count);
+                source.host_live = (host != nullptr) ? (*host)() : source.capacity;
+                if (source.host_live > source.capacity)
+                    throw Core::SushiException(
+                        late_count_overflow(source.host_live, source.capacity));
                 return source;
             }
 
@@ -161,7 +115,7 @@ namespace SushiRuntime
                 record_device_fault(fault, DEVICE_FAULT_LATE_COUNT, 0, live, source.capacity);
                 return 0;
             }
-        }
+        } // namespace detail
 
     } // namespace API
 } // namespace SushiRuntime

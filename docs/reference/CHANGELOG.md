@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Changed `LateCount` to a class built by `LateCount::fixed`, `from_host` or `from_device`; its fields and default constructor are gone and a bad slot throws at construction (`late_count.hpp`).
+- 2026-10-10 — api: Made the fields of `Dynamic` private and added the members `when`, `sized` and `based_at`; the three forms with the and prefix are deprecated (`dynamic.hpp`).
+- 2026-10-10 — api: Removed the raw-pointer setters `and_sized_from_device` and `and_based_at_device`; pass the buffer to `sized_from_device` or `based_at_device` (`dynamic.hpp`).
+- 2026-10-10 — api: Changed `sized()` after `sized_from_device()` on one window to drop the device slot, so the source set last decides the live size (`dynamic.hpp`).
 - 2026-10-10 — execution: Added `RuntimeContext::offload_sink()` and `ExecutionEngine::offload_sink()`, and declared `cancel()` noexcept (`runtime_context.hpp`, `execution_engine.hpp`).
 - 2026-10-10 — api: Changed `size()` of every graph kind to count rules, and `rule_registration` to take a rule position; `node_count()` and `last_rule()` are new (`builder_surface.hpp`).
 - 2026-10-10 — api: Changed `DynamicGraph::region(key)` so that reading a region no longer marks it for a rebuild; added `Region::clear()` (`dynamic_graph.hpp`, `region.hpp`).
