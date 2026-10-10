@@ -137,10 +137,17 @@ shared and needs no synchronisation.
 
 ## rebalancer_interfaces.hpp
 
-### get_completion_rate
+### completed_task_count
 
-get_completion_rate() returns a running total, not a per-interval rate; callers diff two snapshots
-to compute a rate over an interval.
+completed_task_count() returns a running total, not a per-interval rate; callers diff two snapshots
+to compute a rate over an interval. `get_completion_rate()` is its deprecated spelling and forwards
+to it.
+
+### migrate_tasks
+
+migrate_tasks(from_worker_id, count) names no destination, because no implementation picks one: the
+tasks go where any worker can take them. The three-argument form is deprecated, ignores
+`to_worker_id` and forwards to this one.
 
 ## task.hpp
 
@@ -183,7 +190,7 @@ steals are tracked separately so the RunReport can report the balance within and
 
 The requested range is clamped into the machine's core count at construction, so first_core reports
 what is in effect and not what was asked for. A caller verifying that it reserved cores should read
-it together with num_workers.
+it together with get_worker_count().
 
 ### drain_scratch_
 
@@ -273,8 +280,8 @@ zero only once every node has been fully finalized. wait_quiescent() blocks the 
 ### queue_device_index
 
 queue_device_index() serves one caller: the NUMA rotation, DeviceQueueSet::queue_or_numa_local(),
-returns a queue and not an index. On a profiled round the scan finds that queue's device so the
-dispatch still goes through dispatch_queue().
+which only a task that is not a graph node takes, returns a queue and not an index. On a profiled
+round the scan finds that queue's device so the dispatch still goes through dispatch_queue().
 
 ### arm_for_execution
 
@@ -598,9 +605,19 @@ Both the KERNEL and the HOST path must run on the queue whose context owns the n
 HOST task is as dangerous as a KERNEL one: its `host_work` commonly submits a device kernel
 on exactly the queue it is handed, so a sibling device's queue picked round-robin causes a
 cross-context illegal access, for example CPU-allocated USM dispatched onto a CUDA queue.
-The queue is routed by the data pointer, the first write region or else the first read
-region, and falls back to NUMA-local round-robin only when the node carries no USM to anchor
-on.
+A graph node therefore has one placement, and `Graph::placement_of()` in the task module is
+the one function that names it, from the first of these that applies:
+
+1. The node names a region a device owns: the owner of its first write region, else of its
+   first read region.
+2. The node states a placement with `Node::place_on()`: that device.
+3. Otherwise device 0, `Graph::DEFAULT_PLACEMENT`, the device a default buffer is allocated
+   on.
+
+A kernel that captured USM the runtime cannot see names no region, so rule 2 or 3 decides
+where it runs, and it runs there on every step. A node whose region no device owns, such as
+a host address used as a dependency key, also falls to rules 2 and 3.
+`TaskMetadata::numa_affinity` plays no part in the choice.
 
 A single kernel cannot dereference USM from two device contexts that are not peers. A node
 whose regions straddle a device boundary would hit an illegal cross-context access, so the
@@ -611,14 +628,17 @@ misconfigured fails again on a later run. Cross-device execution itself needs re
 ownership and halo exchange, which the runtime does not have; the check enforces the
 co-location contract the layer above must honour.
 
-The same lookup yields the owning queue index, which is cached on the node. Steady-state
-replay then routes through `DeviceQueueSet::queue(index)`, an indexed read, and not through
-`UsmAllocator::owning_device()`. Only a hit in the allocator's record, `device_of()`, is
-cached. On a miss `owning_device()` asks SYCL which device owns the anchor, and that device
-is routed by index too. A node with no anchor, or an anchor no device owns, takes
-`DeviceQueueSet::queue_or_numa_local()`, which rotates over the devices of the NUMA node and
-returns a queue. Every branch goes through `dispatch_queue()`, except that the rotation
-without profiling uses the returned queue and skips the index lookup.
+The first dispatch asks `placement_of()` once, after the co-location check, and caches the
+answer on the node as `cached_queue_index_`. Steady-state replay then routes through
+`DeviceQueueSet::queue(index)`, an indexed read, and calls neither `placement_of()` nor
+`UsmAllocator::owning_device()`. A placement at or past the device count fails the run with
+`Errc::invalid_graph`, the index and the count; like a co-location failure it is not cached,
+so it recurs on a later run.
+
+A task that is not a graph node has no placement. It takes
+`DeviceQueueSet::queue_or_numa_local()` for NUMA node 0, which rotates over the devices of
+that node and returns a queue. Every branch goes through `dispatch_queue()`, except that
+the rotation without profiling uses the returned queue and skips the index lookup.
 
 `execute_host()` takes a vector of dependencies, so the rarer path of a HOST node that
 submits its own device work still allocates one. The kernel path calls `depends_on()` per
@@ -665,7 +685,7 @@ quiescence count, and spreads the fixed cost over the whole root set: one `pendi
 acquisition, one `inflight_` increment and one wake burst, where there would be one of each
 per root. The `inflight_` increment stays inside the locked region, so tasks are counted
 before any worker can drain them, the same happens-before `submit()` relies on. Roots are
-independent and there are `num_workers` threads, so one `notify_all` replaces a storm of
+independent and there are `num_workers_` threads, so one `notify_all` replaces a storm of
 `notify_one` calls; idle workers that find no work sleep again.
 
 #### Offload coordinator
@@ -700,4 +720,4 @@ offload is dropped.
 
 `migrate_tasks()` steals up to `count` tasks, lock-free, from the congested worker and puts
 them on the global priority queue for cooler workers to take, then wakes every sleeping or
-idle worker. The `to_worker_id` argument is unused.
+idle worker.

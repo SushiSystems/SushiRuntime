@@ -27,8 +27,9 @@
  */
 
 #pragma once
-#include <vector>
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace SushiRuntime
 {
@@ -57,11 +58,18 @@ namespace SushiRuntime
                 virtual size_t get_queue_size(int worker_id) const = 0;
 
                 /**
-                 * @brief Returns the cumulative completed-task count of one worker.
+                 * @brief Returns how many tasks one worker has completed since it started.
                  * @param worker_id Worker index in [0, get_worker_count()).
                  * @see modules/engine/scheduler/README.md
                  */
-                virtual size_t get_completion_rate(int worker_id) const = 0;
+                virtual size_t completed_task_count(int worker_id) const = 0;
+
+                /** @brief Forwards to completed_task_count(). */
+                [[deprecated("use completed_task_count")]]
+                size_t get_completion_rate(int worker_id) const
+                {
+                    return completed_task_count(worker_id);
+                }
         };
 
         /**
@@ -76,12 +84,22 @@ namespace SushiRuntime
                 virtual ~ITaskMigrator() = default;
 
                 /**
-                 * @brief Moves up to @p count tasks from one worker to another.
+                 * @brief Takes up to @p count tasks off one worker for the other workers to run.
                  * @param from_worker_id Source worker index.
-                 * @param to_worker_id   Destination worker index.
                  * @param count          Maximum number of tasks to move.
                  */
-                virtual void migrate_tasks(int from_worker_id, int to_worker_id, size_t count) = 0;
+                virtual void migrate_tasks(int from_worker_id, size_t count) = 0;
+
+                /**
+                 * @brief Forwards to migrate_tasks(from_worker_id, count).
+                 * @param to_worker_id Not read; no implementation chooses the destination.
+                 */
+                [[deprecated("use migrate_tasks(from_worker_id, count)")]]
+                void migrate_tasks(int from_worker_id, int to_worker_id, size_t count)
+                {
+                    static_cast<void>(to_worker_id);
+                    migrate_tasks(from_worker_id, count);
+                }
         };
 
         /**

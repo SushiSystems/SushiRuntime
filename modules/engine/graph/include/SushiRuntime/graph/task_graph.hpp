@@ -93,36 +93,39 @@ namespace SushiRuntime
                  * @brief Adds a device task whose work receives a sycl::handler.
                  * @param registration Index to stamp on this node; none draws one from
                  *        reserve_registration().
+                 * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                void add_node(TaskWork work, const std::vector<sycl::event>& dependencies = {},
-                             std::optional<std::uint32_t> registration = std::nullopt);
+                Node& add_node(TaskWork work, const std::vector<sycl::event>& dependencies = {},
+                               std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds a device task ordered by the USM regions it touches.
                  * @param registration Index to stamp on this node; none draws one from
                  *        reserve_registration().
+                 * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                void add_node(TaskWork work,
-                             const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                             const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                             const std::vector<sycl::event>& dependencies = {},
-                             std::optional<std::uint32_t> registration = std::nullopt);
+                Node& add_node(TaskWork work,
+                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                               const std::vector<sycl::event>& dependencies = {},
+                               std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds a device task carrying a late-binding block.
                  * @param bindings Shared per-step controls; null behaves like the plain overload.
                  * @param registration Index to stamp on this node; none draws one from
                  *        reserve_registration().
+                 * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                void add_node(TaskWork work,
-                             const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                             const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                             std::shared_ptr<LateBindings> bindings,
-                             const std::vector<sycl::event>& dependencies = {},
-                             std::optional<std::uint32_t> registration = std::nullopt);
+                Node& add_node(TaskWork work,
+                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                               std::shared_ptr<LateBindings> bindings,
+                               const std::vector<sycl::event>& dependencies = {},
+                               std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Names the node most recently added to this graph.
@@ -172,61 +175,66 @@ namespace SushiRuntime
                  * @brief Adds a semantic task with explicit device work and a host fallback.
                  * @param registration Index to stamp on this node; none draws one from
                  *        reserve_registration().
+                 * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                void add_task(const TaskMetadata& meta,
-                              const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                              const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                              TaskWork device_work,
-                              HostWork fallback_work,
-                              const std::vector<sycl::event>& dependencies = {},
-                              std::optional<std::uint32_t> registration = std::nullopt);
+                Node& add_task(const TaskMetadata& meta,
+                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                               TaskWork device_work,
+                               HostWork fallback_work,
+                               const std::vector<sycl::event>& dependencies = {},
+                               std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds a semantic task with a host-side fallback only.
                  * @param registration Index to stamp on this node; none draws one from
                  *        reserve_registration().
+                 * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                void add_task(const TaskMetadata& meta,
-                              const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                              const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                              HostWork fallback_work,
-                              const std::vector<sycl::event>& dependencies = {},
-                              std::optional<std::uint32_t> registration = std::nullopt);
+                Node& add_task(const TaskMetadata& meta,
+                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                               HostWork fallback_work,
+                               const std::vector<sycl::event>& dependencies = {},
+                               std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds an offloadable task whose buffers rotate every step.
                  * @param live_reads Shared list of the buffers read this step.
                  * @param live_writes Shared list of the buffers written this step.
-                 * @param registration Index to stamp on this node; none draws one from
-                 *        reserve_registration().
+                 * @param registration Index to stamp on this node; none draws a fresh one.
+                 * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                void add_offload_dynamic(const TaskMetadata& meta,
-                                         std::shared_ptr<std::vector<void*>> live_reads,
-                                         std::shared_ptr<std::vector<void*>> live_writes,
-                                         HostWork fallback_work,
-                                         const std::vector<sycl::event>& dependencies = {},
-                                         std::optional<std::uint32_t> registration = std::nullopt);
+                Node& add_offload_dynamic(const TaskMetadata& meta,
+                                          std::shared_ptr<std::vector<void*>> live_reads,
+                                          std::shared_ptr<std::vector<void*>> live_writes,
+                                          HostWork fallback_work,
+                                          const std::vector<sycl::event>& dependencies = {},
+                                          std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds a pure-CPU task run natively, with no SYCL submission.
                  * @param work Callable run once on a worker thread; submits no SYCL work.
                  * @param registration Index to stamp on this node; none draws one from
                  *        reserve_registration().
+                 * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                void add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                                const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                                std::function<void()> work,
-                                const std::vector<sycl::event>& dependencies = {},
-                                std::optional<std::uint32_t> registration = std::nullopt);
+                Node& add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
+                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                                 std::function<void()> work,
+                                 const std::vector<sycl::event>& dependencies = {},
+                                 std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.
                  * @pre Every node is inserted first; not thread-safe against add_node() or
                  *        add_task().
+                 * @throws Core::SushiException With Errc::invalid_graph, naming one node that
+                 *         cannot run, when the graph has no root or holds a cycle.
                  * @see modules/engine/graph/README.md
                  */
                 CompiledGraph compile();

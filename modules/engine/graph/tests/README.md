@@ -12,3 +12,47 @@ The file covers hazard resolution in the lock-free `DependencyTracker`. It pins 
 on raw nodes: read-after-write, write-after-read and write-after-write each add an edge, two readers
 stay parallel, a shared buffer produces one edge and not several, and a node never depends on
 itself. The observable is `in_degree`, the count of incoming edges that the scheduler decrements.
+
+## test_task_graph.cpp
+
+The file covers the builder surface of `TaskGraph`: what an add call returns and what `compile()`
+throws for a graph that cannot run. No test submits work, so the device and host callables do
+nothing.
+
+### `add_edge`
+
+`add_edge` wires one dependency by hand, a successor entry and one `in_degree` count, which is what
+the dependency pass adds for a hazard. The tracker never produces a cycle from region accesses, so
+the cycle tests build theirs with it.
+
+### `EveryAddReturnsTheNodeItAdded`
+
+Each of the seven add overloads is called once. The returned reference must be the node
+`last_node_added()` reports right after the call, must carry what that overload sets (a region
+list, the bindings, the execution mode, the live lists), and no two calls may share a node.
+
+### `AReturnedNodeTakesItsRegistrationAndConfiguration`
+
+A node added with a registration carries it, and one added without draws the index
+`last_registration_index()` reports. A name, a width and a placement written through the reference
+are what the "last node" accessors then read back.
+
+### `TheCompiledPlanOwnsTheReturnedNodes`
+
+The references stay valid across `compile()`: the plan's `all_nodes` holds the same two objects.
+
+### `CompileWithNoRootThrowsInvalidGraphNamingANode`
+
+Two nodes that wait on each other leave no root. The test expects `Errc::invalid_graph` and a
+message with the node count and one of the two, named by its label and registration index.
+
+### `CompileWithACycleBehindARootThrowsInvalidGraphNamingANode`
+
+A third node with no dependency gives the graph a root, so only the drain check finds the cycle. The
+message must count 2 of 3 nodes and name a cycle member. Which member follows the order of
+`all_nodes`, so the test accepts either and rejects the root.
+
+### `AGraphCompilesAfterAFailedCompile`
+
+A failed `compile()` leaves the builder empty and usable: one node added afterwards compiles into a
+plan of one node and one root.

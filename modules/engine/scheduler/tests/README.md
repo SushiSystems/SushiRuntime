@@ -58,6 +58,52 @@ Two kinds of node are released without running: a node of a cancelled run and a 
 disabled for the step. Neither may reach `on_local_completion()`. The poller makes that call before
 it drops the in-flight count, so the counter is final when `wait_quiescent()` returns.
 
+## test_node_placement.cpp
+
+The file pins which device queue the scheduler hands a graph node. A kernel that captured USM the
+runtime cannot see names no region, so nothing but the placement rule keeps it on the device that
+owns its memory. Each node is a host node that submits device work, so the scheduler picks a queue
+for it, and its work records the queue it receives and submits nothing.
+
+### `Unit_NodePlacement`
+
+The fixture builds the scheduler from a topology view, a device set and an allocator, as
+`Unit_OffloadSeam` does. The device set holds two entries over the one device SYCL selects by
+default, both on NUMA node 0. Each entry has its own `sycl::queue`, and two queues compare equal
+only when they are copies of one another, so the queue a node receives names its entry.
+
+### `dispatched_device`
+
+`dispatched_device` runs one node and compares the queue its work received with the plain queue of
+each entry. `wait_quiescent()` returns after the work ran, so the read needs no lock. The tests also
+read `Node::cached_queue_index_`, the index the scheduler records on the node at its first dispatch,
+which would still tell the entries apart if their queues could not.
+
+### `RegionlessNodesRunOnDeviceZeroAndAPlacedNodeOnItsDevice`
+
+Two nodes with no region and no placement both receive entry 0, and a third placed with
+`place_on(1)` receives entry 1. A rotation over the NUMA node's devices cannot hand entry 0 to two
+dispatches in a row. The test first asserts that the two entries' queues differ.
+
+### `ANodeKeepsItsDeviceOnEveryStep`
+
+Each node is dispatched four times, so every dispatch after the first takes the cached index.
+
+### `ARegionOwnerOutranksTheStatedPlacement`
+
+`UsmAllocator::adopt()` records a host address as owned by entry 1 without allocating device
+memory. A node that writes it and states entry 0 still runs on entry 1.
+
+### `AnUnownedRegionLeavesTheStatedPlacementInForce`
+
+A host address with no record has no owning device, so the node runs on the placement it states,
+and on entry 0 when it states none.
+
+### `APlacementPastTheDeviceSetFailsTheRun`
+
+`place_on(2)` on a two-entry set fails the run with `Errc::invalid_graph`. The message names the
+node, the index and the device count, and the node's work does not run.
+
 ## test_range_task.cpp
 
 The file covers `RangeTask::split`, the primitive for divisible workloads: the grain threshold, that
@@ -75,7 +121,7 @@ duplicate, and the test could not assert that the chunks are distinct.
 The file drives the real `ThermalProxyStrategy` with a fake telemetry and a fake migrator. The rule
 of the strategy is to migrate work away from a throttled worker, whose queue backs up while its
 completion crawls, toward the least-loaded one, and to leave alone a long queue that still drains
-fast. `get_completion_rate()` is cumulative, so on the first `evaluate()` the delta equals the
+fast. `completed_task_count()` is cumulative, so on the first `evaluate()` the delta equals the
 reported total.
 
 ## test_work_stealing_deque.cpp

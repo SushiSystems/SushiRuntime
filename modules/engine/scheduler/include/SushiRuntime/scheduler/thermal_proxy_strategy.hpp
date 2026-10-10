@@ -67,11 +67,12 @@ namespace SushiRuntime
                     int idle_worker = -1;
                     size_t max_queue = 0;
                     size_t min_queue = SIZE_MAX;
+                    size_t bottleneck_rate = 0;
 
                     for (size_t i = 0; i < num_workers; ++i)
                     {
                         size_t q_size = telemetry.get_queue_size(i);
-                        size_t total_completed = telemetry.get_completion_rate(i);
+                        size_t total_completed = telemetry.completed_task_count(i);
 
                         size_t current_rate = total_completed - last_completed_counts_[i];
                         last_completed_counts_[i] = total_completed;
@@ -80,6 +81,7 @@ namespace SushiRuntime
                         {
                             max_queue = q_size;
                             bottleneck_worker = i;
+                            bottleneck_rate = current_rate;
                         }
 
                         if (q_size < min_queue)
@@ -92,10 +94,13 @@ namespace SushiRuntime
                     if (bottleneck_worker != -1 && idle_worker != -1 && bottleneck_worker != idle_worker)
                     {
                         size_t tasks_to_move = std::max(static_cast<size_t>(10), (max_queue - min_queue) / 2);
-                        migrator.migrate_tasks(bottleneck_worker, idle_worker, tasks_to_move);
+                        migrator.migrate_tasks(bottleneck_worker, tasks_to_move);
 
-                        SR_LOG_DEBUG("Rebalancer: Rescued {} tasks from struggling Core {} (Rate: {}) -> Idle Core {}",
-                                     tasks_to_move, bottleneck_worker, (max_queue - last_completed_counts_[bottleneck_worker]), idle_worker);
+                        SR_LOG_DEBUG("Rebalancer: took up to {} tasks off worker {} (queue depth "
+                                     "{}, {} completed since the last check); the idlest worker "
+                                     "is {} (queue depth {}).",
+                                     tasks_to_move, bottleneck_worker, max_queue, bottleneck_rate,
+                                     idle_worker, min_queue);
                     }
                 }
         };

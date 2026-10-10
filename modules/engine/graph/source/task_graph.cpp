@@ -28,11 +28,12 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
-#include <stdexcept>
+#include <string>
 #include <atomic>
 #include <vector>
 #include <unordered_map>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
@@ -62,6 +63,16 @@ namespace SushiRuntime
             Node* node;
             RawNodeEntry* next;
         };
+
+        namespace
+        {
+            /** @brief Names @p node for an error message: its label and registration index. */
+            std::string describe_node(const Node& node)
+            {
+                return Core::Detail::sr_format("node '{}' (registration index {})",
+                                               node.get_name(), node.registration_index);
+            }
+        } // namespace
 
         /**
          * @brief Private implementation of the TaskGraph utilizing O(1) Lock-Free architecture.
@@ -136,9 +147,10 @@ namespace SushiRuntime
              * @brief Pushes a node onto the lock-free tracking stacks (modules/engine/graph/README.md).
              * @param node The node to insert.
              * @param registration Index to stamp on the node; absent draws a fresh one.
+             * @return The node inserted, which the lifetime stack owns.
              */
-            void push_node_lock_free(sushi_ptr<Node> node,
-                                     std::optional<std::uint32_t> registration = std::nullopt)
+            Node& push_node_lock_free(sushi_ptr<Node> node,
+                                      std::optional<std::uint32_t> registration = std::nullopt)
             {
                 // Stamped before publishing, so every reader sees a formed index.
                 node->registration_index = registration
@@ -179,6 +191,8 @@ namespace SushiRuntime
                 while (!potential_leaves.compare_exchange_weak(old_leaf, leaf_entry, 
                                                                std::memory_order_release, 
                                                                std::memory_order_relaxed));
+
+                return *raw_ptr;
             }
         };
 
@@ -203,14 +217,13 @@ namespace SushiRuntime
 
         /**
          * @brief Adds a device task (kernel/transfer) with manual event dependencies.
-         *
          * @param work The task payload to execute.
          * @param dependencies An optional list of manual SYCL dependencies.
-         * @param registration Registration index to stamp on this node instead of
-         *                     drawing a fresh one.
+         * @param registration Index to stamp on this node; absent draws a fresh one.
+         * @return The node added.
          */
-        void TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies,
-                                 std::optional<std::uint32_t> registration)
+        Node& TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies,
+                                  std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->work = std::move(work);
@@ -219,33 +232,36 @@ namespace SushiRuntime
             SR_LOG_DEBUG("Node added with {} manual dependencies.", dependencies.size());
 
             // O(1) Lock-Free insertion
-            impl_->push_node_lock_free(std::move(node), registration);
+            return impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**
          * @brief Adds a device task and resolves USM data dependencies automatically.
          * @param registration Index to stamp on this node; absent draws a fresh one.
+         * @return The node added.
          */
-        void TaskGraph::add_node(TaskWork work,
-                                 const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                                 const std::vector<sycl::event>& dependencies,
-                                 std::optional<std::uint32_t> registration)
+        Node& TaskGraph::add_node(TaskWork work,
+                                  const std::vector<Core::ResourceRegion>& read_access,
+                                  const std::vector<Core::ResourceRegion>& write_access,
+                                  const std::vector<sycl::event>& dependencies,
+                                  std::optional<std::uint32_t> registration)
         {
-            add_node(std::move(work), read_access, write_access, nullptr, dependencies, registration);
+            return add_node(std::move(work), read_access, write_access, nullptr, dependencies,
+                            registration);
         }
 
         /**
          * @brief Adds a device task with automatic tracking and a late-binding block.
          * @param bindings Shared per-step controls; null behaves like the plain overload.
          * @param registration Index to stamp on this node; absent draws a fresh one.
+         * @return The node added.
          */
-        void TaskGraph::add_node(TaskWork work,
-                                 const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                                 std::shared_ptr<LateBindings> bindings,
-                                 const std::vector<sycl::event>& dependencies,
-                                 std::optional<std::uint32_t> registration)
+        Node& TaskGraph::add_node(TaskWork work,
+                                  const std::vector<Core::ResourceRegion>& read_access,
+                                  const std::vector<Core::ResourceRegion>& write_access,
+                                  std::shared_ptr<LateBindings> bindings,
+                                  const std::vector<sycl::event>& dependencies,
+                                  std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->work = std::move(work);
@@ -266,21 +282,22 @@ namespace SushiRuntime
             SR_LOG_DEBUG("Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
 
             // O(1) Lock-Free insertion
-            impl_->push_node_lock_free(std::move(node), registration);
+            return impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**
          * @brief Adds a semantic task with explicit device work and a host fallback.
          * @param device_work The preferred device-side workload; empty selects host mode.
          * @param registration Index to stamp on this node; absent draws a fresh one.
+         * @return The node added.
          */
-        void TaskGraph::add_task(const TaskMetadata& meta,
-                                 const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                                 TaskWork device_work,
-                                 HostWork fallback_work,
-                                 const std::vector<sycl::event>& dependencies,
-                                 std::optional<std::uint32_t> registration)
+        Node& TaskGraph::add_task(const TaskMetadata& meta,
+                                  const std::vector<Core::ResourceRegion>& read_access,
+                                  const std::vector<Core::ResourceRegion>& write_access,
+                                  TaskWork device_work,
+                                  HostWork fallback_work,
+                                  const std::vector<sycl::event>& dependencies,
+                                  std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->metadata = meta;
@@ -327,40 +344,42 @@ namespace SushiRuntime
                          read_access.size(), write_access.size());
             
             // O(1) Lock-Free insertion
-            impl_->push_node_lock_free(std::move(node), registration);
+            return impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**
          * @brief Adds a semantic task that carries host-side work only.
          * @param registration Index to stamp on this node; absent draws a fresh one.
+         * @return The node added.
          */
-        void TaskGraph::add_task(const TaskMetadata& meta,
-                                 const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                                 HostWork fallback_work,
-                                 const std::vector<sycl::event>& dependencies,
-                                 std::optional<std::uint32_t> registration)
+        Node& TaskGraph::add_task(const TaskMetadata& meta,
+                                  const std::vector<Core::ResourceRegion>& read_access,
+                                  const std::vector<Core::ResourceRegion>& write_access,
+                                  HostWork fallback_work,
+                                  const std::vector<sycl::event>& dependencies,
+                                  std::optional<std::uint32_t> registration)
         {
-            add_task(meta,
-                     read_access,
-                     write_access,
-                     TaskWork{},
-                     std::move(fallback_work),
-                     dependencies,
-                     registration);
+            return add_task(meta,
+                            read_access,
+                            write_access,
+                            TaskWork{},
+                            std::move(fallback_work),
+                            dependencies,
+                            registration);
         }
 
         /**
          * @brief Adds an offloadable task whose touched buffers rotate every step.
          * @param meta Metadata carrying the offloadable op_id.
          * @param registration Index to stamp on this node; absent draws a fresh one.
+         * @return The node added.
          */
-        void TaskGraph::add_offload_dynamic(const TaskMetadata& meta,
-                                            std::shared_ptr<std::vector<void*>> live_reads,
-                                            std::shared_ptr<std::vector<void*>> live_writes,
-                                            HostWork fallback_work,
-                                            const std::vector<sycl::event>& dependencies,
-                                            std::optional<std::uint32_t> registration)
+        Node& TaskGraph::add_offload_dynamic(const TaskMetadata& meta,
+                                             std::shared_ptr<std::vector<void*>> live_reads,
+                                             std::shared_ptr<std::vector<void*>> live_writes,
+                                             HostWork fallback_work,
+                                             const std::vector<sycl::event>& dependencies,
+                                             std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->metadata  = meta;
@@ -386,7 +405,7 @@ namespace SushiRuntime
             off.live_reads  = std::move(live_reads);
             off.live_writes = std::move(live_writes);
 
-            impl_->push_node_lock_free(std::move(node), registration);
+            return impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**
@@ -455,12 +474,13 @@ namespace SushiRuntime
         /**
          * @brief Adds a pure-CPU task run natively on a worker thread.
          * @param work Callable run once on a worker thread; submits no SYCL work.
+         * @return The node added.
          */
-        void TaskGraph::add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                                   const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
-                                   std::function<void()> work,
-                                   const std::vector<sycl::event>& dependencies,
-                                   std::optional<std::uint32_t> registration)
+        Node& TaskGraph::add_native(const std::vector<Core::ResourceRegion>& read_access,
+                                    const std::vector<Core::ResourceRegion>& write_access,
+                                    std::function<void()> work,
+                                    const std::vector<sycl::event>& dependencies,
+                                    std::optional<std::uint32_t> registration)
         {
             auto node = make_sushi<Node>();
             node->native_work          = std::move(work);
@@ -481,13 +501,13 @@ namespace SushiRuntime
             SR_LOG_DEBUG("Native CPU node added (R: {}, W: {}).",
                          read_access.size(), write_access.size());
 
-            impl_->push_node_lock_free(std::move(node), registration);
+            return impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**
          * @brief Compiles the graph from the candidates tagged at insertion (modules/engine/graph/README.md).
          * @return The compiled graph ready to run; empty when no node was added.
-         * @throws std::runtime_error If the graph has no root node or contains a cycle.
+         * @throws Core::SushiException With Errc::invalid_graph for no root or a cycle.
          */
         CompiledGraph TaskGraph::compile()
         {
@@ -541,10 +561,17 @@ namespace SushiRuntime
 
             if (graph.roots.empty())
             {
-                SR_LOG_ERROR("Task graph has no root nodes. The graph may contain a cycle or unresolved dependencies.");
+                // all_nodes is not empty here, and with no root every node waits on another.
+                const Node& waiting = *graph.all_nodes.front();
+                const std::string message = Core::Detail::sr_format(
+                    "TaskGraph::compile(): none of the {} nodes is a root, so no node can start; "
+                    "{} waits on {} unfinished dependencies. Remove the dependency cycle.",
+                    graph.all_nodes.size(), describe_node(waiting),
+                    waiting.in_degree.load(std::memory_order_relaxed));
+                SR_LOG_ERROR("{}", message);
                 // The tracker is drained before the throw (modules/engine/graph/README.md).
                 impl_->tracker.reset();
-                throw std::runtime_error("Task graph has no root nodes.");
+                throw Core::SushiException(Core::Error{Core::Errc::invalid_graph, message});
             }
 
             // A root set does not rule out a disjoint cycle (modules/engine/graph/README.md).
@@ -588,13 +615,19 @@ namespace SushiRuntime
 
                 if (drained != graph.all_nodes.size())
                 {
-                    SR_LOG_ERROR("Task graph contains a dependency cycle: {} of {} "
-                                 "nodes are unreachable and would hang the run.",
-                                 graph.all_nodes.size() - drained,
-                                 graph.all_nodes.size());
+                    // Walked in all_nodes order, so one graph always names the same node.
+                    const auto undrained = std::find_if(
+                        graph.all_nodes.begin(), graph.all_nodes.end(),
+                        [&](const sushi_ptr<Node>& n) { return shadow_indeg[n.get()] > 0; });
+                    const std::string message = Core::Detail::sr_format(
+                        "TaskGraph::compile(): {} of {} nodes sit in or behind a dependency cycle "
+                        "and would never run, for example {}. Remove the cycle.",
+                        graph.all_nodes.size() - drained, graph.all_nodes.size(),
+                        undrained != graph.all_nodes.end() ? describe_node(**undrained)
+                                                           : std::string("an unidentified node"));
+                    SR_LOG_ERROR("{}", message);
                     impl_->tracker.reset(); // same UAF-avoidance as the no-roots path
-                    throw std::runtime_error(
-                        "Task graph contains a dependency cycle (unschedulable nodes).");
+                    throw Core::SushiException(Core::Error{Core::Errc::invalid_graph, message});
                 }
             }
 

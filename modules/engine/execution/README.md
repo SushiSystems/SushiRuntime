@@ -430,8 +430,8 @@ the engine closed for good. On success the guard is disarmed and ownership passe
 The "Executing graph" line is DEBUG, not INFO. A run happens once per replayed step, so in a
 million-step `run(n)` an INFO line would emit millions of log records, each with an
 `ostringstream`, a timestamp, a global mutex and a condition-variable notify, and that would
-undo the allocation-free latch. DEBUG is compiled out in release, where `ACTIVE_LOG_LEVEL`
-is INFO.
+undo the allocation-free latch. DEBUG is compiled out in release, where
+`K_LOG_LEVEL_CEILING` is `Info`.
 
 #### The sentinel
 

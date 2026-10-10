@@ -94,9 +94,6 @@ namespace SushiRuntime
                                                      public Graph::OffloadSink
         {
             public:
-                /** @brief Actual number of active workers. Read-only externally. */
-                size_t num_workers = 0;
-
                 /**
                  * @brief Returns the first core of the range workers are bound into, as applied.
                  * @return The first bound core index; meaningless when pinning() is Float.
@@ -111,6 +108,9 @@ namespace SushiRuntime
                 PinPolicy pinning() const noexcept { return pinning_; }
 
             private:
+                /** @brief Number of workers in the pool, fixed at construction. */
+                size_t num_workers_ = 0;
+
                 /** @brief List of queues for each worker thread. */
                 std::array<sushi_ptr<Deque>, Core::MAX_WORKER_THREADS> worker_queues;
                 /**
@@ -296,6 +296,8 @@ namespace SushiRuntime
                  *         completion accounting — must be the scheduler's worker id,
                  *         not the EBR slot id). */
                 void execute_task(Task* task, int worker_id, EventPolling::ActiveEventList& events);
+                /** @brief Runs one worker thread until stop(); @p thread_id is its worker index. */
+                void dispatch_loop(int thread_id);
                 /** @brief Records the first exception of the run and flips run_failed_. */
                 void record_run_error(std::exception_ptr ep);
                 /** @brief Looks for a task to steal from another thread's queue. */
@@ -335,9 +337,6 @@ namespace SushiRuntime
                               const Memory::UsmAllocator& memory);
                 /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();
-
-                /** @brief Main loop for worker threads. */
-                void dispatch_loop(int thread_id);
 
                 /**
                  * @brief Starts the persistent background worker threads.
@@ -450,9 +449,10 @@ namespace SushiRuntime
 
                 size_t get_worker_count() const override;
                 size_t get_queue_size(int worker_id) const override;
-                size_t get_completion_rate(int worker_id) const override;
+                size_t completed_task_count(int worker_id) const override;
 
-                void migrate_tasks(int from_worker_id, int to_worker_id, size_t count) override;
+                void migrate_tasks(int from_worker_id, size_t count) override;
+                using ITaskMigrator::migrate_tasks;
 
                 /**
                  * @brief Introspection hook (tests): the distance-ordered steal

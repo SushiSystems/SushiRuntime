@@ -189,7 +189,7 @@ TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
     ASSERT_EQ(execution_order.size(), 51);
 
     bool found_high_early = false;
-    int check_window = static_cast<int>(scheduler.num_workers) * 2;
+    int check_window = static_cast<int>(scheduler.get_worker_count()) * 2;
     if (check_window > 51)
         check_window = 51;
 
