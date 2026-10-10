@@ -21,28 +21,43 @@
 
 /**
  * @file distributed_coordinator.cpp
- * @brief Dispatches offloadable nodes to workers and re-injects the ones a worker loses.
+ * @brief Implements DistributedCoordinator: the master's bricks wired behind the offload seam.
  * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
  */
 
-#include <SushiRuntime/distributed/distributed_coordinator.hpp>
+#include "distributed_coordinator.hpp"
 
-#include <mutex>
-#include <chrono>
-#include <thread>
-#include <vector>
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
-#include <condition_variable>
-#include <unordered_map>
-#include <unordered_set>
+#include <exception>
+#include <limits>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <SushiRuntime/logging/logger.hpp>
-#include <SushiRuntime/core/ref_counted.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
+#include <SushiRuntime/distributed/buffer_handle.hpp>
+#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/message_type.hpp>
 
-#include "offload_handles.hpp"
+#include "buffer_exchange.hpp"
+#include "cluster_monitor.hpp"
+#include "frame_sending.hpp"
+#include "handshake.hpp"
+#include "message_router.hpp"
+#include "offload_dispatcher.hpp"
+#include "pending_tasks.hpp"
+#include "task_resubmission.hpp"
+#include "wire_codec.hpp"
+#include "wire_frame.hpp"
+#include "wire_messages.hpp"
+#include "worker_directory.hpp"
 
 namespace SushiRuntime
 {
@@ -50,797 +65,778 @@ namespace SushiRuntime
     {
         namespace
         {
-            using Clock = std::chrono::steady_clock;
-            /// @brief Caps failed remote dispatches per node (modules/extension/distributed/README.md).
-            constexpr uint32_t MAX_OFFLOAD_ATTEMPTS = 2;
-
-            /**
-             * @brief Appends the handle of each region's owning buffer to @p handles.
-             * @return False as soon as one region's base is not registered.
-             */
-            bool resolve_handles(const BufferRegistry& buffers,
-                                 const std::vector<Core::ResourceRegion>& regions,
-                                 std::vector<BufferHandle>& handles)
-            {
-                handles.reserve(regions.size());
-                for (const auto& region : regions)
-                {
-                    auto handle = buffers.lookup(region.base);
-                    if (!handle)
-                        return false;
-                    handles.push_back(*handle);
-                }
-                return true;
-            }
-
-            /** @brief Tells whether every address of a live list is registered; null is true. */
-            bool all_registered(const BufferRegistry& buffers,
-                                const std::shared_ptr<std::vector<void*>>& addresses)
-            {
-                if (!addresses)
-                    return true;
-                for (void* address : *addresses)
-                    if (!buffers.lookup(address))
-                        return false;
-                return true;
-            }
-        }
-
-        struct DistributedCoordinator::Impl : public Core::RefCounted
-        {
-            sushi_ptr<KernelRegistry>        kernels;
-            BufferRegistry*                  buffers = nullptr;
-            std::shared_ptr<ITransport>      transport;
-            std::shared_ptr<IOffloadPolicy>  policy;
-
-            /// @brief Takes back finished and orphaned nodes; null until bind().
-            Graph::OffloadSink*              sink = nullptr;
-
-            std::mutex                       mtx;
-            std::vector<WorkerStats>         workers;
-            /// @brief Holds each worker's last inbound message time (modules/extension/distributed/README.md).
-            std::vector<Clock::time_point>      last_seen;
-            std::vector<std::vector<uint32_t>>  worker_ops;
-            /// @brief Counts the workers that expose each op id (modules/extension/distributed/README.md).
-            std::unordered_map<uint32_t, int> op_support;
-
-            struct PendingTask
-            {
-                Graph::Node*      node = nullptr;
-                int               worker = -1;
-                Clock::time_point dispatched_at; // for the per-task deadline
+            /** @brief Holds the words a log line uses for each PeerLossCause, by its value. */
+            constexpr const char* K_LOSS_CAUSE_WORDS[] = {
+                "closed by the peer",      "closed by this master", "read or write failed",
+                "write stalled",           "not a SushiRuntime frame",
+                "protocol version mismatch", "malformed frame",     "a frame handler failed",
             };
-            std::unordered_map<uint64_t, PendingTask> pending; // task_id -> {node, worker}
-            std::atomic<uint64_t>            next_task_id{1};
 
-            /// @brief Holds the per-task deadline in ms; 0 disables it (modules/extension/distributed/README.md).
-            std::atomic<int64_t>             task_deadline_ms{30000};
+            /** @brief Holds the words a log line uses for each GoodbyeReason, by its value. */
+            constexpr const char* K_GOODBYE_REASON_WORDS[] = {
+                "unknown reason", "shutdown", "liveness", "detach"};
 
-            // "ran where" telemetry, so silent local fallback is observable.
-            std::atomic<uint64_t>            offloaded_count{0};
-            std::atomic<uint64_t>            declined_count{0};
-            std::atomic<uint64_t>            redispatched_count{0};
-            // Writebacks rejected by the version fence (stale/superseded results).
-            std::atomic<uint64_t>            stale_writebacks{0};
+            /** @brief Holds the words a log line uses for each TaskResultStatus, by its value. */
+            constexpr const char* K_RESULT_STATUS_WORDS[] = {
+                "unknown status",   "succeeded",         "the kernel failed",
+                "an output could not be allocated",      "an input did not arrive",
+                "no kernel for the operation",           "the worker is shutting down",
+            };
 
-            /// @brief Holds the ms of silence that mark a worker dead (modules/extension/distributed/README.md).
-            std::atomic<int64_t>             liveness_timeout_ms{5000};
-            std::thread                      monitor_thread;
-            std::mutex                       monitor_mtx;
-            std::condition_variable          monitor_cv;
-            std::atomic<bool>                monitor_running{false};
+            /** @brief Returns the entry of a word table for a wire value, or its first entry. */
+            template <std::size_t Count>
+            const char* words_for(const char* const (&table)[Count], std::size_t value) noexcept
+            {
+                return table[value < Count ? value : 0];
+            }
+
+            /** @brief Returns 32 octets of a nonce or a proof as the wire carries them. */
+            std::array<std::byte, Wire::K_NONCE_BYTES> to_wire(
+                const std::array<std::uint8_t, Wire::K_NONCE_BYTES>& octets) noexcept
+            {
+                std::array<std::byte, Wire::K_NONCE_BYTES> wire{};
+                for (std::size_t index = 0; index < wire.size(); ++index)
+                    wire[index] = static_cast<std::byte>(octets[index]);
+                return wire;
+            }
+
+            /** @brief Returns the monotonic clock in microseconds, the token of a PING. */
+            std::uint64_t monotonic_micros() noexcept
+            {
+                return static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch())
+                        .count());
+            }
+
+            /** @brief Returns a count of milliseconds as the u32 a WELCOME field carries. */
+            std::uint32_t to_wire_milliseconds(std::chrono::milliseconds duration) noexcept
+            {
+                const std::int64_t upper = std::numeric_limits<std::uint32_t>::max();
+                return static_cast<std::uint32_t>(
+                    std::clamp<std::int64_t>(duration.count(), 0, upper));
+            }
+
+            /** @brief Returns the session identifier of one coordinator, drawn at random. */
+            std::uint64_t draw_session_id()
+            {
+                const HandshakeNonce nonce = make_nonce();
+                std::uint64_t session = 0;
+                for (std::size_t index = 0; index < sizeof(session); ++index)
+                    session |= static_cast<std::uint64_t>(nonce.bytes[index]) << (8 * index);
+                return session;
+            }
+
+            /** @brief Returns the given policy, or LeastLoadedOffloadPolicy when it is null. */
+            std::shared_ptr<IOffloadPolicy> policy_or_default(
+                std::shared_ptr<IOffloadPolicy> policy)
+            {
+                if (policy)
+                    return policy;
+                return std::make_shared<LeastLoadedOffloadPolicy>();
+            }
 
             /**
-             * @brief Handles an incoming message from a worker.
-             * Processes different message types such as registration, buffer pushes, and task results.
-             * @param peer The integer ID of the worker.
-             * @param type The MsgType of the message.
-             * @param payload A span of bytes representing the message payload.
+             * @brief Returns the transport after checking it is there.
+             * @throws Core::SushiException When @p transport is null.
              */
-            void handle_message(int peer, MsgType type, SushiRuntime::span<const std::byte> payload);
+            std::shared_ptr<ITransport> require_transport(std::shared_ptr<ITransport> transport)
+            {
+                SR_THROW_IF(!transport,
+                            "DistributedCoordinator needs a master-side transport; got null.");
+                return transport;
+            }
+
+            /** @brief Returns the monitor's timings out of the cluster's options. */
+            ClusterMonitorOptions monitor_options(const ClusterOptions& options)
+            {
+                ClusterMonitorOptions timings;
+                timings.liveness_timeout = options.liveness_timeout;
+                timings.task_deadline = options.task_deadline;
+                timings.handshake_timeout = options.handshake_timeout;
+                return timings;
+            }
+
+            /** @brief Returns the cause of a loss in words, with the transport's detail. */
+            std::string describe(const PeerLoss& loss)
+            {
+                std::string words =
+                    words_for(K_LOSS_CAUSE_WORDS, static_cast<std::size_t>(loss.cause));
+                if (!loss.text.empty())
+                    words += " (" + loss.text + ")";
+                return words;
+            }
+        } // namespace
+
+        /**
+         * @brief Holds the master's bricks and the handlers that call them in turn.
+         *
+         * It is the transport's event receiver. Each handler runs on the reader thread of the
+         * peer that sent the frame and holds no lock of its own between two brick calls.
+         */
+        struct DistributedCoordinator::Impl final : public TransportEvents
+        {
+            /** @brief Names the router of one frame: peer, flags, payload. */
+            using Router =
+                Wire::MessageRouter<PeerId, std::uint8_t, SushiRuntime::span<const std::byte>>;
+
+            /** @brief Describes what retire_peer() found and returned to the scheduler. */
+            struct RetiredPeer
+            {
+                /** @brief What the directory knew about the peer. */
+                RemovedPeer peer;
+
+                /** @brief The tasks of the worker that went back to the scheduler. */
+                std::size_t tasks_returned = 0;
+            };
+
+            /** @brief Builds the bricks in the order they are declared and sets the handlers. */
+            Impl(BufferRegistry& shared_buffers, std::shared_ptr<ITransport> master_transport,
+                 ClusterOptions cluster_options)
+                : options(std::move(cluster_options)),
+                  registry(shared_buffers),
+                  transport(require_transport(std::move(master_transport))),
+                  directory(options.secret.bytes(), policy_or_default(options.policy)),
+                  exchange(registry, options.chunk_bytes),
+                  dispatcher(registry, directory, pending, *transport),
+                  monitor(directory, pending, registry, exchange, *transport,
+                          monitor_options(options)),
+                  session_id(draw_session_id())
+            {
+                handle(&Impl::on_hello);
+                handle(&Impl::on_proof);
+                handle(&Impl::on_goodbye);
+                handle(&Impl::on_task_accepted);
+                handle(&Impl::on_task_result);
+                handle(&Impl::on_buffer_request);
+                handle(&Impl::on_buffer_chunk);
+                handle(&Impl::on_buffer_abort);
+                handle(&Impl::on_pong);
+                handle(&Impl::on_heartbeat);
+            }
 
             /**
-             * @brief Periodically checks worker liveness and re-dispatches tasks.
-             * Runs in a background thread to reap dead workers and timed-out tasks.
+             * @brief Sets the handler of one message type: decode, then call a member.
+             *
+             * A payload that does not decode closes the peer and reaches no member.
+             * @tparam Message A wire message: it names its type as K_TYPE and has decode().
              */
-            void monitor_loop();
+            template <typename Message>
+            void handle(void (Impl::*member)(PeerId, std::uint8_t, const Message&))
+            {
+                router.set_handler(
+                    Message::K_TYPE,
+                    [this, member](PeerId peer, std::uint8_t flags,
+                                   SushiRuntime::span<const std::byte> payload)
+                    {
+                        Message message;
+                        const Wire::DecodeResult decoded = Message::decode(payload, message);
+                        if (decoded.ok())
+                        {
+                            (this->*member)(peer, flags, message);
+                            return;
+                        }
+
+                        drop_peer(peer,
+                                  Core::Detail::sr_format(
+                                      "sent a malformed {} frame ({} bytes): decoding stopped "
+                                      "at offset {} with status {}",
+                                      message_type_name(Message::K_TYPE), payload.size(),
+                                      decoded.offset, static_cast<int>(decoded.status)));
+                    });
+            }
+
+            /** @brief Adds a connection that owes HELLO to the directory. */
+            void on_peer_connected(PeerId peer, const PeerInfo& info) override
+            {
+                directory.add_peer(peer, info.endpoint, std::chrono::steady_clock::now());
+                SR_LOG_DEBUG("peer {} connected from {}; it owes HELLO", peer.value,
+                             info.endpoint);
+            }
+
+            /** @brief Refreshes the peer's liveness and routes a frame the directory admits. */
+            void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+                          SushiRuntime::span<const std::byte> payload) override
+            {
+                if (!directory.admits(peer, type))
+                    return;
+
+                directory.note_frame(peer, std::chrono::steady_clock::now());
+                if (router.route(type, peer, flags, payload) == Wire::RouteStatus::Unhandled)
+                    drop_peer(peer, Core::Detail::sr_format(
+                                        "sent {}, which a master does not take",
+                                        message_type_name(type)));
+            }
+
+            /** @brief Returns a lost worker's tasks to the scheduler and logs the loss once. */
+            void on_peer_lost(PeerId peer, const PeerLoss& loss) override
+            {
+                if (loss.cause == PeerLossCause::VersionMismatch)
+                    rejected_version.fetch_add(1, std::memory_order_relaxed);
+
+                const RetiredPeer retired = retire_peer(peer);
+                if (!retired.peer.known)
+                    return;
+
+                if (loss.cause == PeerLossCause::VersionMismatch)
+                {
+                    SR_LOG_ERROR("{} (peer {}) speaks protocol v{}, this master v{}; build both "
+                                 "from one commit; closed, {} tasks returned to the scheduler",
+                                 retired.peer.endpoint, peer.value, loss.peer_version,
+                                 Wire::K_PROTOCOL_VERSION, retired.tasks_returned);
+                    return;
+                }
+
+                log_retired(peer, retired, describe(loss),
+                            loss.cause == PeerLossCause::ClosedLocally);
+            }
+
+            /** @brief Records that a transport gave up connecting; a master's never does. */
+            void on_connect_abandoned(const std::string& cause) override
+            {
+                SR_LOG_DEBUG("a master-side transport reported an abandoned connect: {}", cause);
+            }
+
+            /** @brief Answers HELLO with CHALLENGE when the directory expects it. */
+            void on_hello(PeerId peer, std::uint8_t /*flags*/, const Wire::HelloMessage& hello)
+            {
+                const HandshakeNonce master_nonce = make_nonce();
+                const HelloReply reply = directory.accept_hello(peer, hello, master_nonce);
+                if (reply.step != HandshakeStep::Accepted)
+                    return;
+
+                SR_LOG_DEBUG("peer {} says HELLO as \"{}\", build {}", peer.value,
+                             hello.node_name, hello.build_id);
+
+                Wire::ChallengeMessage challenge;
+                challenge.master_nonce = to_wire(master_nonce.bytes);
+                challenge.master_proof = to_wire(reply.master_proof);
+                challenge.session_id = session_id;
+                send_control(peer, challenge);
+            }
+
+            /** @brief Answers PROOF with WELCOME, or with REJECT and a close. */
+            void on_proof(PeerId peer, std::uint8_t /*flags*/, const Wire::ProofMessage& proof)
+            {
+                const std::chrono::steady_clock::time_point now =
+                    std::chrono::steady_clock::now();
+                const HandshakeStep step = directory.accept_proof(peer, proof, now);
+                if (step == HandshakeStep::Accepted)
+                {
+                    Wire::WelcomeMessage welcome;
+                    welcome.worker_id = peer.value;
+                    welcome.liveness_timeout_ms = to_wire_milliseconds(monitor.liveness_timeout());
+                    welcome.ping_interval_ms = to_wire_milliseconds(monitor.period());
+                    welcome.chunk_bytes = options.chunk_bytes;
+                    send_control(peer, welcome);
+                    log_registered(peer, proof.ops.size(), now);
+                    return;
+                }
+
+                if (step != HandshakeStep::AuthenticationFailed)
+                    return;
+
+                rejected_authentication.fetch_add(1, std::memory_order_relaxed);
+                Wire::RejectMessage reject;
+                reject.reason = Wire::RejectReason::Authentication;
+                reject.sender_version = Wire::K_PROTOCOL_VERSION;
+                reject.text = "the proof does not match this master's secret";
+                send_control(peer, reject);
+                drop_peer(peer, "failed authentication");
+            }
+
+            /** @brief Returns a leaving worker's tasks at once and closes its connection. */
+            void on_goodbye(PeerId peer, std::uint8_t /*flags*/,
+                            const Wire::GoodbyeMessage& goodbye)
+            {
+                std::string cause = "said GOODBYE (";
+                cause += words_for(K_GOODBYE_REASON_WORDS,
+                                   static_cast<std::size_t>(goodbye.reason));
+                cause += ")";
+                if (!goodbye.text.empty())
+                    cause.append(": ").append(goodbye.text);
+                drop_peer(peer, cause);
+            }
+
+            /** @brief Records that a worker confirmed a dispatch. */
+            void on_task_accepted(PeerId peer, std::uint8_t /*flags*/,
+                                  const Wire::TaskAcceptedMessage& accepted)
+            {
+                pending.acknowledge(accepted.task_id, peer);
+            }
 
             /**
-             * @brief Sends round-trip time ping messages to all alive workers.
-             * Sends a fresh RTT probe to every live worker, snapshotting peers under the mutex.
+             * @brief Settles the task of a result: completed when every output arrived whole,
+             *        resubmitted otherwise. A result whose task is not pending changes nothing.
              */
-            void send_rtt_pings();
+            void on_task_result(PeerId peer, std::uint8_t /*flags*/,
+                                const Wire::TaskResultMessage& result)
+            {
+                std::optional<PendingTask> task = pending.take(result.task_id, peer);
+                if (!task.has_value())
+                    return;
+
+                const bool is_whole =
+                    result.status == Wire::TaskResultStatus::Succeeded &&
+                    exchange.finish_task(task->task_id,
+                                         SushiRuntime::span<const BufferHandle>(
+                                             task->outputs.data(), task->outputs.size()));
+                if (is_whole)
+                {
+                    directory.release_inflight(peer);
+                    dispatcher.complete_remote(*task->node);
+                    sink->complete_remote(*task->node);
+                    return;
+                }
+
+                const std::size_t resubmitted =
+                    resubmit(SushiRuntime::span<PendingTask>(&*task, 1));
+                SR_LOG_DEBUG("task {} came back from worker {} without a whole result ({}); {} "
+                             "resubmitted",
+                             result.task_id, peer.value,
+                             words_for(K_RESULT_STATUS_WORDS,
+                                       static_cast<std::size_t>(result.status)),
+                             resubmitted);
+            }
+
+            /** @brief Hands the peer's writer a stream of the requested buffer version. */
+            void on_buffer_request(PeerId peer, std::uint8_t /*flags*/,
+                                   const Wire::BufferRequestMessage& request)
+            {
+                pending.note_chunk(peer, std::chrono::steady_clock::now());
+                const SendStatus sent = transport->send_stream(
+                    peer, exchange.serve_pull(request.id, request.version));
+                if (sent != SendStatus::Queued)
+                    SR_LOG_DEBUG("pull of buffer {} version {} by worker {} was not queued "
+                                 "(status {}); the worker's pull timeout fails the task",
+                                 request.id.value, request.version, peer.value,
+                                 static_cast<int>(sent));
+            }
+
+            /** @brief Writes one output chunk in place when both halves of the fence pass. */
+            void on_buffer_chunk(PeerId peer, std::uint8_t flags,
+                                 const Wire::BufferChunkMessage& chunk)
+            {
+                if (!pending.expects_output(chunk.task_id, peer, chunk.handle.id,
+                                            chunk.handle.version))
+                {
+                    fenced_chunks.fetch_add(1, std::memory_order_relaxed);
+                    return;
+                }
+
+                pending.note_chunk(peer, std::chrono::steady_clock::now());
+                const bool is_last = (flags & Wire::K_FRAME_FLAG_LAST_CHUNK) != 0;
+                if (exchange.apply_output_chunk(peer, chunk, is_last) == ChunkStatus::Malformed)
+                    drop_peer(peer, "sent a BUFFER_CHUNK whose purpose, size or offset is wrong");
+            }
+
+            /** @brief Forgets the progress of an output transfer its worker gave up. */
+            void on_buffer_abort(PeerId peer, std::uint8_t /*flags*/,
+                                 const Wire::BufferAbortMessage& abort)
+            {
+                if (pending.expects_output(abort.task_id, peer, abort.id, abort.version))
+                    exchange.forget_task(abort.task_id);
+            }
+
+            /** @brief Records the round trip of a PING and the worker's free memory. */
+            void on_pong(PeerId peer, std::uint8_t /*flags*/, const Wire::PongMessage& pong)
+            {
+                const std::uint64_t now = monotonic_micros();
+                const std::uint64_t elapsed = now >= pong.token ? now - pong.token : 0;
+                const std::uint64_t upper = std::numeric_limits<std::uint32_t>::max();
+                directory.note_pong(peer, static_cast<std::uint32_t>(std::min(elapsed, upper)),
+                                    pong.free_mem);
+            }
+
+            /** @brief Records a worker's load and which tasks it still holds. */
+            void on_heartbeat(PeerId peer, std::uint8_t /*flags*/,
+                              const Wire::HeartbeatMessage& heartbeat)
+            {
+                directory.note_heartbeat(peer, heartbeat.queue_depth, heartbeat.cache_bytes);
+                pending.note_heartbeat(peer, heartbeat.oldest_held_task_id);
+            }
+
+            /** @brief Queues one control frame; a refusal is left to the peer's own timeouts. */
+            template <typename Message>
+            void send_control(PeerId peer, const Message& message)
+            {
+                const SendStatus sent = send_message(*transport, peer, message);
+                if (sent != SendStatus::Queued)
+                    SR_LOG_DEBUG("{} for peer {} was not queued (status {})",
+                                 message_type_name(Message::K_TYPE), peer.value,
+                                 static_cast<int>(sent));
+            }
+
+            /** @brief Passes taken tasks to resubmit_tasks() and counts them. */
+            std::size_t resubmit(SushiRuntime::span<PendingTask> tasks) noexcept
+            {
+                if (tasks.empty() || sink == nullptr)
+                    return 0;
+
+                const std::size_t count =
+                    resubmit_tasks(tasks, registry, exchange, directory, *sink);
+                redispatched.fetch_add(count, std::memory_order_relaxed);
+                return count;
+            }
 
             /**
-             * @brief Reaps workers that missed heartbeats.
-             * Collects tasks orphaned by a now-dead worker and returns them for re-dispatch.
-             * @return A vector of Graph::Node pointers for orphaned tasks.
+             * @brief Forgets a peer and, when it was a worker, returns its tasks.
+             *
+             * The directory forgets a peer once, so of two calls for one peer the second finds
+             * it unknown and returns nothing.
              */
-            std::vector<Graph::Node*> reap_dead_workers();
+            RetiredPeer retire_peer(PeerId peer)
+            {
+                RetiredPeer retired;
+                retired.peer = directory.remove_peer(peer);
+                if (!retired.peer.registered)
+                    return retired;
 
-            /**
-             * @brief Reaps tasks that have timed out on alive workers.
-             * Collects tasks whose per-task deadline elapsed and returns them for re-dispatch.
-             * @return A vector of Graph::Node pointers for timed-out tasks.
-             */
-            std::vector<Graph::Node*> reap_timed_out_tasks();
+                std::vector<PendingTask> tasks;
+                pending.take_for_worker(peer, tasks);
+                retired.tasks_returned =
+                    resubmit(SushiRuntime::span<PendingTask>(tasks.data(), tasks.size()));
+                peers_lost.fetch_add(1, std::memory_order_relaxed);
+                return retired;
+            }
 
-            /**
-             * @brief Closes a node's run: bumps the buffers it wrote and clears its attempts.
-             * @param node Finished on the pool, or remotely with its outputs written back.
-             */
-            void settle(Graph::Node& node) noexcept;
+            /** @brief Logs one line for a peer retire_peer() forgot. */
+            void log_retired(PeerId peer, const RetiredPeer& retired, const std::string& cause,
+                             bool is_logged_elsewhere)
+            {
+                if (retired.peer.registered)
+                {
+                    SR_LOG_WARN("worker {} \"{}\" {} lost: {}; {} tasks returned to the "
+                                "scheduler",
+                                peer.value, retired.peer.name, retired.peer.endpoint, cause,
+                                retired.tasks_returned);
+                    return;
+                }
+
+                if (is_logged_elsewhere)
+                    SR_LOG_DEBUG("{} (peer {}) closed before it registered: {}",
+                                 retired.peer.endpoint, peer.value, cause);
+                else
+                    SR_LOG_WARN("{} (peer {}) closed before it registered: {}",
+                                retired.peer.endpoint, peer.value, cause);
+            }
+
+            /** @brief Closes a peer for a stated cause, returns its tasks and logs one line. */
+            void drop_peer(PeerId peer, const std::string& cause)
+            {
+                // Sends to the peer fail from here, so a dispatch racing this is undone.
+                transport->close_peer(peer);
+
+                const RetiredPeer retired = retire_peer(peer);
+                if (retired.peer.known)
+                    log_retired(peer, retired, cause, false);
+            }
+
+            /** @brief Logs the line of a worker that has just registered. */
+            void log_registered(PeerId peer, std::size_t kernel_count,
+                                std::chrono::steady_clock::time_point now)
+            {
+                std::vector<WorkerSnapshot> workers;
+                directory.snapshot(now, workers);
+                for (const WorkerSnapshot& worker : workers)
+                {
+                    if (worker.id != peer.value)
+                        continue;
+
+                    SR_LOG_INFO("worker {} \"{}\" {} registered, {} kernels", worker.id,
+                                worker.name, worker.endpoint, kernel_count);
+                    return;
+                }
+            }
+
+            /// @brief The secret, the policy, the kernels kept alive and the timings.
+            ClusterOptions options;
+
+            /// @brief Names and versions of the shared buffers; owned by Cluster::State.
+            BufferRegistry& registry;
+
+            /// @brief Carries every frame; this object is its only event receiver.
+            std::shared_ptr<ITransport> transport;
+
+            /// @brief Sessions, handshake state and the load of each worker.
+            WorkerDirectory directory;
+
+            /// @brief The tasks out on a worker and the nodes they own.
+            PendingTasks pending;
+
+            /// @brief Pull streams and the progress of incoming outputs.
+            BufferExchange exchange;
+
+            /// @brief Marks and dispatches nodes.
+            OffloadDispatcher dispatcher;
+
+            /// @brief The thread for pings, liveness and deadlines.
+            ClusterMonitor monitor;
+
+            /// @brief The handler of each message type a master takes.
+            Router router;
+
+            /// @brief Identifies this coordinator to workers that reconnect.
+            std::uint64_t session_id;
+
+            /// @brief Takes nodes back; set by bind() before any thread starts.
+            Graph::OffloadSink* sink = nullptr;
+
+            /// @brief Set by the first start().
+            std::atomic<bool> started{false};
+
+            /// @brief Set by the first stop().
+            std::atomic<bool> stopped{false};
+
+            /// @brief Tasks resubmitted by a handler or by stop().
+            std::atomic<std::uint64_t> redispatched{0};
+
+            /// @brief Output chunks refused because their task was not pending.
+            std::atomic<std::uint64_t> fenced_chunks{0};
+
+            /// @brief Peers whose proof failed.
+            std::atomic<std::uint64_t> rejected_authentication{0};
+
+            /// @brief Peers the transport closed for another protocol version.
+            std::atomic<std::uint64_t> rejected_version{0};
+
+            /// @brief Registered workers that left.
+            std::atomic<std::uint64_t> peers_lost{0};
         };
 
-        /**
-         * @brief Closes a node's run: bumps the buffers it wrote and clears its attempts.
-         * @param node Finished on the pool, or remotely with its outputs written back.
-         */
-        void DistributedCoordinator::Impl::settle(Graph::Node& node) noexcept
+        DistributedCoordinator::DistributedCoordinator(BufferRegistry& registry,
+                                                       std::shared_ptr<ITransport> transport,
+                                                       ClusterOptions options)
+            : impl_(std::make_unique<Impl>(registry, std::move(transport), std::move(options)))
         {
-            for (const auto& region : node.io_writes_)
-                buffers->bump_version(region.base);
 
-            if (Graph::OffloadState* off = node.offload_state())
-                off->attempts.store(0, std::memory_order_relaxed);
         }
 
-        /**
-         * @brief Handles an incoming message from a worker.
-         * Updates liveness statistics and processes registration, buffers, and results based on the message type.
-         * @param peer The integer ID of the worker.
-         * @param type The MsgType of the message.
-         * @param payload A span of bytes representing the message payload.
-         */
-        void DistributedCoordinator::Impl::handle_message(int peer, MsgType type,
-                                                          SushiRuntime::span<const std::byte> payload)
-        {
-            // Any inbound message refreshes the peer's liveness (modules/extension/distributed/README.md).
-            {
-                std::lock_guard<std::mutex> lk(mtx);
-                if (peer >= 0 && peer < static_cast<int>(last_seen.size()))
-                    last_seen[peer] = Clock::now();
-            }
-
-            switch (type)
-            {
-                case MsgType::REGISTER_HELLO:
-                {
-                    ByteReader r(payload);
-                    uint32_t ver = r.get<uint32_t>();
-                    if (!r.ok() || ver != PROTOCOL_VERSION)
-                    {
-                        // A protocol mismatch keeps the peer out (modules/extension/distributed/README.md).
-                        SR_LOG_ERROR("Worker {} HELLO rejected: protocol v{} != v{}.",
-                                     peer, ver, PROTOCOL_VERSION);
-                        break;
-                    }
-                    uint32_t n = r.get<uint32_t>();
-                    std::vector<uint32_t> ops;
-                    for (uint32_t i = 0; i < n && r.ok(); ++i) ops.push_back(r.get<uint32_t>());
-
-                    {
-                        std::lock_guard<std::mutex> lk(mtx);
-                        if (peer >= 0 && peer < static_cast<int>(workers.size()))
-                        {
-                            auto& w = workers[peer];
-                            if (!w.alive)
-                            {
-                                w.alive = true;
-                                worker_ops[peer] = ops;
-                                for (uint32_t op : ops) op_support[op]++;
-                            }
-                        }
-                    }
-                    transport->send(peer, MsgType::REGISTER_ACK, {});
-                    SR_LOG_INFO("Worker {} registered with {} kernels.", peer, n);
-                    break;
-                }
-                case MsgType::BUFFER_REQUEST:
-                {
-                    auto req = BufferRequestMsg::deserialize(payload);
-                    if (auto e = buffers->lookup_by_id(req.id))
-                    {
-                        BufferPushMsg push;
-                        push.handle = e->handle;
-                        push.data.resize(e->handle.size_bytes);
-                        std::memcpy(push.data.data(), e->ptr, e->handle.size_bytes);
-                        auto bytes = push.serialize();
-                        transport->send(peer, MsgType::BUFFER_PUSH, bytes);
-                    }
-                    break;
-                }
-                case MsgType::BUFFER_PUSH:
-                {
-                    // The worker writes an output back to the master (modules/extension/distributed/README.md).
-                    auto push = BufferPushMsg::deserialize(payload);
-                    if (auto e = buffers->lookup_by_id(push.handle.id))
-                    {
-                        // The version fence drops a stale writeback (modules/extension/distributed/README.md).
-                        if (push.handle.version < e->handle.version)
-                        {
-                            stale_writebacks.fetch_add(1, std::memory_order_relaxed);
-                            SR_LOG_WARN("Dropping stale writeback for buffer {} "
-                                        "(v{} < current v{}).", push.handle.id.value,
-                                        push.handle.version, e->handle.version);
-                            break;
-                        }
-                        uint64_t n = push.data.size();
-                        if (n > e->handle.size_bytes) n = e->handle.size_bytes;
-                        std::memcpy(e->ptr, push.data.data(), n);
-                    }
-                    break;
-                }
-                case MsgType::TASK_RESULT:
-                {
-                    auto res = TaskResultMsg::deserialize(payload);
-                    Graph::Node* node = nullptr;
-                    {
-                        std::lock_guard<std::mutex> lk(mtx);
-                        if (auto it = pending.find(res.task_id); it != pending.end())
-                        {
-                            node = it->second.node;
-                            pending.erase(it);
-                        }
-                        if (peer >= 0 && peer < static_cast<int>(workers.size()) &&
-                            workers[peer].inflight > 0)
-                            workers[peer].inflight--;
-                    }
-                    // A result absent from pending is dropped (modules/extension/distributed/README.md).
-                    if (!node)
-                        break;
-
-                    // Output bytes land before successors are released (modules/extension/distributed/README.md).
-                    if (res.success)
-                    {
-                        for (size_t i = 0; i < res.outputs.size(); ++i)
-                        {
-                            const auto& h = res.outputs[i];
-                            auto e = buffers->lookup_by_id(h.id);
-                            if (!e) continue;
-                            if (h.version < e->handle.version)
-                            {
-                                stale_writebacks.fetch_add(1, std::memory_order_relaxed);
-                                continue;
-                            }
-                            uint64_t n = res.output_data[i].size();
-                            if (n > e->handle.size_bytes) n = e->handle.size_bytes;
-                            std::memcpy(e->ptr, res.output_data[i].data(), n);
-                        }
-                    }
-
-                    // The versions advance before the sink releases successors.
-                    if (res.success)
-                        settle(*node);
-
-                    if (!sink)
-                        break;
-
-                    if (res.success)
-                    {
-                        sink->complete_remote(*node);
-                        break;
-                    }
-
-                    // A failed remote result re-injects the node (modules/extension/distributed/README.md).
-                    SR_LOG_WARN("Offloaded node '{}' failed remotely; re-dispatching.",
-                                node->metadata.name);
-                    sink->resubmit(*node);
-                    break;
-                }
-                case MsgType::PONG:
-                {
-                    // RTT is measured on the master clock alone (modules/extension/distributed/README.md).
-                    auto pong = PongMsg::deserialize(payload);
-                    auto sent = Clock::time_point(Clock::duration(
-                        static_cast<Clock::rep>(pong.token)));
-                    auto rtt_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                        Clock::now() - sent).count();
-                    if (rtt_us < 0) rtt_us = 0;
-
-                    std::lock_guard<std::mutex> lk(mtx);
-                    if (peer >= 0 && peer < static_cast<int>(workers.size()))
-                    {
-                        workers[peer].rtt_micros = static_cast<uint32_t>(
-                            rtt_us > UINT32_MAX ? UINT32_MAX : rtt_us);
-                        workers[peer].free_mem   = pong.free_mem;
-                    }
-                    break;
-                }
-                case MsgType::HEARTBEAT:
-                default:
-                    break;
-            }
-        }
-
-        /**
-         * @brief Constructs a DistributedCoordinator.
-         * Initializes internal data structures to manage task offloading and tracking across workers.
-         * @param kernels A sushi_ptr to the KernelRegistry.
-         * @param buffers A reference to the BufferRegistry.
-         * @param transport A std::shared_ptr to the ITransport interface.
-         * @param policy A std::shared_ptr to the IOffloadPolicy.
-         */
-        DistributedCoordinator::DistributedCoordinator(sushi_ptr<KernelRegistry> kernels,
-                                                       BufferRegistry&           buffers,
-                                                       std::shared_ptr<ITransport>     transport,
-                                                       std::shared_ptr<IOffloadPolicy> policy)
-            : impl_(make_sushi<Impl>())
-        {
-            impl_->kernels   = std::move(kernels);
-            impl_->buffers   = &buffers;
-            impl_->transport = std::move(transport);
-            impl_->policy    = std::move(policy);
-
-            const int n = impl_->transport->peer_count();
-            impl_->workers.resize(static_cast<size_t>(n));
-            impl_->last_seen.assign(static_cast<size_t>(n), Clock::now());
-            impl_->worker_ops.resize(static_cast<size_t>(n));
-            for (int i = 0; i < n; ++i)
-                impl_->workers[i].worker_id = i;
-        }
-
-        /**
-         * @brief Destructs the DistributedCoordinator.
-         * Stops operations and background threads before destruction.
-         */
         DistributedCoordinator::~DistributedCoordinator()
         {
             stop();
         }
 
-        /**
-         * @brief Stores the sink that takes back finished and orphaned nodes.
-         * @param sink Outlives every call made before stop() returns.
-         */
         void DistributedCoordinator::bind(Graph::OffloadSink& sink)
         {
             impl_->sink = &sink;
         }
 
-        /**
-         * @brief Updates the maximum time without heartbeats before declaring a worker dead.
-         * Wakes the monitor thread to apply the new timeout immediately.
-         * @param timeout A std::chrono::milliseconds specifying the new timeout.
-         */
-        void DistributedCoordinator::set_liveness_timeout(std::chrono::milliseconds timeout)
+        TransportResult DistributedCoordinator::start()
         {
-            impl_->liveness_timeout_ms.store(timeout.count(), std::memory_order_relaxed);
-            // The notify makes the monitor recompute its poll period (modules/extension/distributed/README.md).
-            impl_->monitor_cv.notify_all();
+            Impl& impl = *impl_;
+            TransportResult result;
+            if (impl.sink == nullptr)
+            {
+                result.status = TransportStatus::Failed;
+                result.message = "the coordinator has no sink; bind() must run before start()";
+                return result;
+            }
+            if (impl.started.exchange(true, std::memory_order_acq_rel))
+            {
+                result.status = TransportStatus::AlreadyStarted;
+                result.message = "the coordinator was started before; a master starts once";
+                return result;
+            }
+
+            result = impl.transport->start(impl);
+            if (!result.is_ok())
+            {
+                SR_LOG_ERROR("distributed master did not start: {}; nothing is left running",
+                             result.message);
+                return result;
+            }
+
+            std::string failure;
+            try
+            {
+                impl.monitor.start(*impl.sink);
+            }
+            catch (const std::exception& error)
+            {
+                failure = error.what();
+            }
+            catch (...)
+            {
+                failure = "unknown exception";
+            }
+
+            if (!failure.empty())
+            {
+                impl.transport->stop();
+                result.status = TransportStatus::Failed;
+                result.message = "cannot start the cluster monitor thread: " + failure;
+                SR_LOG_ERROR("distributed master did not start: {}; the transport is stopped",
+                             result.message);
+                return result;
+            }
+
+            const bool is_network = impl.transport->exposure() == TransportExposure::Network;
+            SR_LOG_INFO("distributed master listening on a {} transport, protocol v{}, "
+                        "authentication {}",
+                        is_network ? "network" : "loopback", Wire::K_PROTOCOL_VERSION,
+                        impl.options.secret.empty() ? "off" : "on");
+            return result;
         }
 
-        /**
-         * @brief Updates the maximum time a task can remain pending on a worker.
-         * Wakes the monitor thread to apply the new deadline immediately.
-         * @param deadline A std::chrono::milliseconds specifying the new per-task deadline.
-         */
-        void DistributedCoordinator::set_task_deadline(std::chrono::milliseconds deadline)
+        void DistributedCoordinator::stop() noexcept
         {
-            impl_->task_deadline_ms.store(deadline.count(), std::memory_order_relaxed);
-            // The notify makes the monitor recompute its poll period (modules/extension/distributed/README.md).
-            impl_->monitor_cv.notify_all();
+            Impl& impl = *impl_;
+            if (impl.stopped.exchange(true, std::memory_order_acq_rel))
+                return;
+
+            impl.pending.close();
+            impl.directory.close();
+            impl.monitor.stop();
+            impl.transport->stop();
+
+            std::vector<PendingTask> tasks;
+            try
+            {
+                impl.pending.drain(tasks);
+            }
+            catch (const std::exception& error)
+            {
+                SR_LOG_ERROR("distributed master could not drain every pending task: {}; the "
+                             "nodes not drained stay with the table and do not run",
+                             error.what());
+            }
+            catch (...)
+            {
+                SR_LOG_ERROR("distributed master could not drain every pending task: unknown "
+                             "exception; the nodes not drained stay with the table and do not "
+                             "run");
+            }
+
+            // Every reader and the monitor are joined, so this thread alone holds the tasks.
+            const std::size_t returned =
+                impl.resubmit(SushiRuntime::span<PendingTask>(tasks.data(), tasks.size()));
+            SR_LOG_INFO("distributed master stopped; {} tasks returned to the scheduler",
+                        returned);
         }
 
-        /**
-         * @brief Retrieves the total number of offloaded tasks.
-         * @return An uint64_t representing the offloaded task count.
-         */
-        uint64_t DistributedCoordinator::offloaded_count() const
-        {
-            return impl_->offloaded_count.load(std::memory_order_relaxed);
-        }
-
-        /**
-         * @brief Retrieves the total number of declined tasks.
-         * @return An uint64_t representing the declined task count.
-         */
-        uint64_t DistributedCoordinator::declined_count() const
-        {
-            return impl_->declined_count.load(std::memory_order_relaxed);
-        }
-
-        /**
-         * @brief Retrieves the total number of re-dispatched tasks.
-         * @return An uint64_t representing the re-dispatched task count.
-         */
-        uint64_t DistributedCoordinator::redispatched_count() const
-        {
-            return impl_->redispatched_count.load(std::memory_order_relaxed);
-        }
-
-        /**
-         * @brief Retrieves the total number of stale writebacks dropped.
-         * @return An uint64_t representing the stale writeback count.
-         */
-        uint64_t DistributedCoordinator::stale_writeback_count() const
-        {
-            return impl_->stale_writebacks.load(std::memory_order_relaxed);
-        }
-
-        /**
-         * @brief Counts the currently alive workers in the network.
-         * Iterates over all known workers and sums those marked as alive.
-         * @return An integer count of alive workers.
-         */
-        int DistributedCoordinator::alive_worker_count() const
-        {
-            std::lock_guard<std::mutex> lk(impl_->mtx);
-            int n = 0;
-            for (const auto& w : impl_->workers) if (w.alive) ++n;
-            return n;
-        }
-
-        /**
-         * @brief Checks if a specific operation is supported by the alive workers.
-         * @param op The Graph::OpID representing the operation.
-         * @return A boolean which is true if at least one worker supports it, false otherwise.
-         */
-        bool DistributedCoordinator::supports(Graph::OpID op) const
-        {
-            std::lock_guard<std::mutex> lk(impl_->mtx);
-            auto it = impl_->op_support.find(op.value);
-            return it != impl_->op_support.end() && it->second > 0;
-        }
-
-        /**
-         * @brief Marks the nodes of a compiled graph that a worker may run.
-         * @param nodes Borrowed for the call; a slot may be null.
-         */
         void DistributedCoordinator::prepare(span<const sushi_ptr<Graph::Node>> nodes)
         {
-            const BufferRegistry& buffers = *impl_->buffers;
-
-            for (const auto& slot : nodes)
-            {
-                Graph::Node* node = slot.get();
-                if (!node || node->metadata.op_id.value == 0)
-                    continue;
-                if (!supports(node->metadata.op_id))
-                    continue;
-
-                // A double-buffered node bakes no handles here (modules/extension/distributed/README.md).
-                Graph::OffloadState* live = node->offload_state();
-                if (live && (live->live_reads || live->live_writes))
-                {
-                    live->offloadable = all_registered(buffers, live->live_reads) &&
-                                        all_registered(buffers, live->live_writes);
-                    continue;
-                }
-
-                auto handles = std::make_unique<OffloadHandles>();
-                if (!resolve_handles(buffers, node->io_reads_, handles->in_handles) ||
-                    !resolve_handles(buffers, node->io_writes_, handles->out_handles))
-                    continue;
-
-                Graph::OffloadState& off = node->offload();
-                off.payload     = std::move(handles);
-                off.offloadable = true;
-            }
+            impl_->dispatcher.prepare(nodes);
         }
 
-        /**
-         * @brief Advances the versions of the buffers a locally finished node wrote.
-         * @param node Borrowed for the call; called before its successors are released.
-         */
+        bool DistributedCoordinator::try_offload(Graph::Node& node)
+        {
+            return impl_->dispatcher.try_offload(node);
+        }
+
         void DistributedCoordinator::on_local_completion(Graph::Node& node) noexcept
         {
-            impl_->settle(node);
+            impl_->dispatcher.complete_local(node);
         }
 
-        /**
-         * @brief Registers an allocation in the buffer registry.
-         * @param address Base of a live USM allocation of at least @p bytes.
-         */
         void DistributedCoordinator::share(void* address, std::size_t bytes)
         {
-            impl_->buffers->register_buffer(address, bytes);
+            impl_->registry.register_buffer(address, bytes);
         }
 
-        /**
-         * @brief Returns the four counters and the live worker count.
-         * @return A snapshot; the worker count is read under the coordinator's lock.
-         */
         Graph::OffloadStatistics DistributedCoordinator::statistics() const noexcept
         {
+            const Impl& impl = *impl_;
+            const OffloadDispatcherStatistics dispatched = impl.dispatcher.statistics();
+
             Graph::OffloadStatistics snapshot;
-            snapshot.offloaded        = offloaded_count();
-            snapshot.declined         = declined_count();
-            snapshot.redispatched     = redispatched_count();
-            snapshot.stale_writebacks = stale_writeback_count();
-            snapshot.alive_workers    = static_cast<std::size_t>(alive_worker_count());
+            snapshot.offloaded = dispatched.offloaded;
+            snapshot.declined = dispatched.declined;
+            snapshot.redispatched = impl.monitor.statistics().redispatched +
+                                    impl.redispatched.load(std::memory_order_relaxed);
+            snapshot.stale_writebacks = impl.exchange.statistics().stale_writebacks +
+                                        impl.fenced_chunks.load(std::memory_order_relaxed);
+            snapshot.alive_workers = impl.directory.alive_count();
             return snapshot;
         }
 
-        /** @brief Unregisters the buffer at a released address, if it has one. */
         void DistributedCoordinator::on_release(void* address) noexcept
         {
-            impl_->buffers->unregister_buffer(address);
-        }
-
-        /**
-         * @brief Starts the coordinator and its monitor thread.
-         * Begins listening for transport messages and sets up liveness monitoring.
-         */
-        void DistributedCoordinator::start()
-        {
-            Impl* raw = impl_.get();
-            impl_->transport->on_message(
-                [raw](int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
-                {
-                    raw->handle_message(peer, type, payload);
-                });
-            impl_->transport->start();
-
-            bool expected = false;
-            if (impl_->monitor_running.compare_exchange_strong(expected, true))
-                impl_->monitor_thread = std::thread([raw] { raw->monitor_loop(); });
-        }
-
-        /**
-         * @brief Stops the coordinator and waits for threads to exit.
-         * Signals the monitor to shutdown and stops the transport interface.
-         */
-        void DistributedCoordinator::stop() noexcept
-        {
-            if (!impl_)
+            Impl& impl = *impl_;
+            const GlobalBufferID released = impl.registry.unregister_buffer(address);
+            if (!released.valid())
                 return;
 
-            bool expected = true;
-            if (impl_->monitor_running.compare_exchange_strong(expected, false))
+            try
             {
-                impl_->monitor_cv.notify_all();
-                if (impl_->monitor_thread.joinable())
-                    impl_->monitor_thread.join();
+                Wire::BufferReleaseMessage release;
+                release.id = released;
+
+                std::vector<PeerId> workers;
+                impl.directory.list_workers(workers);
+                for (const PeerId worker : workers)
+                    impl.send_control(worker, release);
             }
-
-            if (impl_->transport)
-                impl_->transport->stop();
-        }
-
-        /**
-         * @brief Reaps workers that missed heartbeats.
-         * Collects tasks orphaned by dead workers and drops them from the common kernel set.
-         * @return A vector of Graph::Node pointers for orphaned tasks.
-         */
-        std::vector<Graph::Node*> DistributedCoordinator::Impl::reap_dead_workers()
-        {
-            std::vector<Graph::Node*> orphans;
-            const auto now = Clock::now();
-            const auto timeout = std::chrono::milliseconds(
-                liveness_timeout_ms.load(std::memory_order_relaxed));
-
-            std::lock_guard<std::mutex> lk(mtx);
-            for (size_t i = 0; i < workers.size(); ++i)
+            catch (const std::exception& error)
             {
-                auto& w = workers[i];
-                if (!w.alive)
-                    continue;
-                if (now - last_seen[i] < timeout)
-                    continue;
-
-                // A dead worker leaves the kernel set with no load (modules/extension/distributed/README.md).
-                w.alive    = false;
-                w.inflight = 0;
-                for (uint32_t op : worker_ops[i])
-                {
-                    auto it = op_support.find(op);
-                    if (it != op_support.end() && --it->second <= 0)
-                        op_support.erase(it);
-                }
-                worker_ops[i].clear();
-                SR_LOG_WARN("Worker {} missed heartbeats; declaring it dead and "
-                            "re-dispatching its tasks.", static_cast<int>(i));
-
-                // Hand back every task still owned by this worker.
-                for (auto it = pending.begin(); it != pending.end(); )
-                {
-                    if (it->second.worker == static_cast<int>(i))
-                    {
-                        orphans.push_back(it->second.node);
-                        it = pending.erase(it);
-                    }
-                    else ++it;
-                }
+                SR_LOG_DEBUG("BUFFER_RELEASE for buffer {} was not sent: {}; the workers' "
+                             "cache budgets evict it",
+                             released.value, error.what());
             }
-            return orphans;
-        }
-
-        /**
-         * @brief Reaps tasks that have timed out on alive workers.
-         * Collects tasks whose per-task deadline elapsed indicating a lost dispatch/result.
-         * @return A vector of Graph::Node pointers for timed-out tasks.
-         */
-        std::vector<Graph::Node*> DistributedCoordinator::Impl::reap_timed_out_tasks()
-        {
-            std::vector<Graph::Node*> orphans;
-            const int64_t deadline_ms = task_deadline_ms.load(std::memory_order_relaxed);
-            if (deadline_ms <= 0)
-                return orphans; // per-task deadline disabled
-
-            const auto now = Clock::now();
-            const auto deadline = std::chrono::milliseconds(deadline_ms);
-
-            std::lock_guard<std::mutex> lk(mtx);
-            for (auto it = pending.begin(); it != pending.end(); )
+            catch (...)
             {
-                if (now - it->second.dispatched_at < deadline)
-                {
-                    ++it;
-                    continue;
-                }
-
-                // A task past its deadline counts as failed (modules/extension/distributed/README.md).
-                const int w = it->second.worker;
-                if (w >= 0 && w < static_cast<int>(workers.size()) && workers[w].inflight > 0)
-                    workers[w].inflight--;
-                SR_LOG_WARN("Task {} exceeded its {}ms deadline on worker {}; "
-                            "re-dispatching.", it->first, deadline_ms, w);
-                orphans.push_back(it->second.node);
-                it = pending.erase(it);
-            }
-            return orphans;
-        }
-
-        /**
-         * @brief Sends round-trip time ping messages to all alive workers.
-         * Broadcasts a steady-clock token to measure latency across the network.
-         */
-        void DistributedCoordinator::Impl::send_rtt_pings()
-        {
-            std::vector<int> alive_peers;
-            {
-                std::lock_guard<std::mutex> lk(mtx);
-                for (size_t i = 0; i < workers.size(); ++i)
-                    if (workers[i].alive)
-                        alive_peers.push_back(static_cast<int>(i));
-            }
-            for (int peer : alive_peers)
-            {
-                PingMsg ping;
-                ping.token = static_cast<uint64_t>(
-                    Clock::now().time_since_epoch().count());
-                transport->send(peer, MsgType::PING, ping.serialize());
+                SR_LOG_DEBUG("BUFFER_RELEASE for buffer {} was not sent: unknown exception; the "
+                             "workers' cache budgets evict it",
+                             released.value);
             }
         }
 
-        /**
-         * @brief Periodically checks worker liveness and re-dispatches tasks.
-         * Wakes at fractions of the tightest deadline to reap timed out operations efficiently.
-         */
-        void DistributedCoordinator::Impl::monitor_loop()
+        ClusterStatistics DistributedCoordinator::cluster_statistics() const
         {
-            while (monitor_running.load())
-            {
-                {
-                    std::unique_lock<std::mutex> lk(monitor_mtx);
-                    // Half the tightest deadline, with a 50 ms floor (modules/extension/distributed/README.md).
-                    int64_t live_ms = liveness_timeout_ms.load(std::memory_order_relaxed);
-                    int64_t task_ms = task_deadline_ms.load(std::memory_order_relaxed);
-                    int64_t tightest = live_ms;
-                    if (task_ms > 0 && task_ms < tightest) tightest = task_ms;
-                    auto period = std::chrono::milliseconds(tightest / 2);
-                    if (period.count() < 50) period = std::chrono::milliseconds(50);
-                    // No predicate, so a setter's notify ends the wait (modules/extension/distributed/README.md).
-                    monitor_cv.wait_for(lk, period);
-                }
-                if (!monitor_running.load())
-                    break;
+            const Impl& impl = *impl_;
+            const OffloadDispatcherStatistics dispatched = impl.dispatcher.statistics();
+            const ClusterMonitorStatistics monitored = impl.monitor.statistics();
+            const BufferExchangeStatistics exchanged = impl.exchange.statistics();
+            const TransportStatistics moved = impl.transport->statistics();
 
-                // Pings refresh the RTT and free_mem the policy reads (modules/extension/distributed/README.md).
-                send_rtt_pings();
-
-                // Dead workers and overdue tasks re-inject alike (modules/extension/distributed/README.md).
-                auto orphans = reap_dead_workers();
-                auto stuck   = reap_timed_out_tasks();
-                orphans.insert(orphans.end(), stuck.begin(), stuck.end());
-                for (Graph::Node* node : orphans)
-                {
-                    redispatched_count.fetch_add(1, std::memory_order_relaxed);
-                    // The sink offers the node to a survivor or runs it locally.
-                    if (sink)
-                        sink->resubmit(*node);
-                }
-            }
+            ClusterStatistics snapshot;
+            snapshot.offloaded = dispatched.offloaded;
+            snapshot.declined = dispatched.declined;
+            snapshot.redispatched =
+                monitored.redispatched + impl.redispatched.load(std::memory_order_relaxed);
+            snapshot.stale_writebacks =
+                exchanged.stale_writebacks + impl.fenced_chunks.load(std::memory_order_relaxed);
+            snapshot.handshake_rejected_auth =
+                impl.rejected_authentication.load(std::memory_order_relaxed);
+            snapshot.handshake_rejected_version =
+                impl.rejected_version.load(std::memory_order_relaxed);
+            snapshot.peers_lost = impl.peers_lost.load(std::memory_order_relaxed);
+            snapshot.tasks_reaped_deadline = monitored.tasks_reaped_deadline;
+            snapshot.tasks_reaped_unacknowledged = monitored.tasks_reaped_unacknowledged;
+            snapshot.tasks_reaped_lost_result = monitored.tasks_reaped_lost_result;
+            snapshot.bytes_sent = moved.bytes_sent;
+            snapshot.bytes_received = moved.bytes_received;
+            snapshot.chunks_sent = exchanged.chunks_sent;
+            snapshot.chunks_received = exchanged.chunks_received;
+            snapshot.transfers_aborted = exchanged.transfers_aborted;
+            snapshot.send_queue_full = dispatched.send_queue_full;
+            snapshot.alive_workers = impl.directory.alive_count();
+            snapshot.pending_tasks = impl.pending.size();
+            impl.directory.snapshot(std::chrono::steady_clock::now(), snapshot.workers);
+            return snapshot;
         }
 
-        /**
-         * @brief Attempts to offload a graph node to a suitable worker.
-         * Delegates selection to the policy and performs buffer tracking for the offload.
-         * @param node The ready node; its OffloadState exists and is marked offloadable.
-         * @return A boolean which is true if the node was successfully dispatched, false otherwise.
-         */
-        bool DistributedCoordinator::try_offload(Graph::Node& node)
+        bool DistributedCoordinator::supports(Graph::OpID op) const
         {
-            // offload() allocates nothing for a flagged node (modules/extension/distributed/README.md).
-            Graph::OffloadState& off = node.offload();
+            return impl_->directory.supports(op);
+        }
 
-            // A node at the attempt cap is pinned local (modules/extension/distributed/README.md).
-            if (off.attempts.load(std::memory_order_relaxed) >= MAX_OFFLOAD_ATTEMPTS)
-            {
-                off.offloadable = false;
-                impl_->declined_count.fetch_add(1, std::memory_order_relaxed);
-                return false;
-            }
+        bool DistributedCoordinator::wait_for_workers(std::size_t count,
+                                                      std::chrono::milliseconds timeout)
+        {
+            return impl_->directory.wait_for_workers(count, timeout);
+        }
 
-            // Input versions come from the master registry (modules/extension/distributed/README.md).
-            TaskDispatchMsg msg;
-            msg.op_id = node.metadata.op_id;
-            msg.meta  = node.metadata;
+        void DistributedCoordinator::set_liveness_timeout(
+            std::chrono::milliseconds timeout) noexcept
+        {
+            impl_->monitor.set_liveness_timeout(timeout);
+        }
 
-            // A double-buffered node takes handles from live pointers (modules/extension/distributed/README.md).
-            std::vector<BufferHandle> in_handles;
-            std::vector<BufferHandle> out_handles;
-            const bool dynamic_io = static_cast<bool>(off.live_reads) ||
-                                    static_cast<bool>(off.live_writes);
-            if (dynamic_io)
-            {
-                if (off.live_reads)
-                    for (void* p : *off.live_reads)
-                    {
-                        auto h = impl_->buffers->lookup(p);
-                        if (!h) { impl_->declined_count.fetch_add(1, std::memory_order_relaxed); return false; }
-                        in_handles.push_back(*h);
-                    }
-                if (off.live_writes)
-                    for (void* p : *off.live_writes)
-                    {
-                        auto h = impl_->buffers->lookup(p);
-                        if (!h) { impl_->declined_count.fetch_add(1, std::memory_order_relaxed); return false; }
-                        out_handles.push_back(*h);
-                    }
-            }
-            else
-            {
-                // prepare() gave every offloadable fixed-buffer node its handles.
-                const auto& baked = static_cast<const OffloadHandles&>(*off.payload);
-                in_handles  = baked.in_handles;
-                out_handles = baked.out_handles;
-            }
-
-            uint64_t est_bytes = 0;
-            for (const auto& h : in_handles)
-            {
-                BufferHandle cur = h;
-                if (auto e = impl_->buffers->lookup_by_id(h.id)) cur = e->handle;
-                msg.inputs.push_back(cur);
-                est_bytes += cur.size_bytes;
-            }
-            int chosen = -1;
-            {
-                std::lock_guard<std::mutex> lk(impl_->mtx);
-                auto pick = impl_->policy->pick_worker(node, impl_->workers, est_bytes);
-                if (!pick)
-                {
-                    impl_->declined_count.fetch_add(1, std::memory_order_relaxed);
-                    return false; // transparent local fallback
-                }
-                chosen = *pick;
-
-                msg.task_id = impl_->next_task_id.fetch_add(1, std::memory_order_relaxed);
-                impl_->pending[msg.task_id] =
-                    Impl::PendingTask{ &node, chosen, Clock::now() }; // takes over the scheduling ref
-                if (chosen >= 0 && chosen < static_cast<int>(impl_->workers.size()))
-                    impl_->workers[chosen].inflight++;
-            }
-
-            // Outputs get a fresh version once a worker is chosen (modules/extension/distributed/README.md).
-            for (const auto& h : out_handles)
-            {
-                impl_->buffers->bump_version_by_id(h.id);
-                BufferHandle cur = h;
-                if (auto e = impl_->buffers->lookup_by_id(h.id)) cur = e->handle;
-                msg.outputs.push_back(cur);
-            }
-
-            off.attempts.fetch_add(1, std::memory_order_relaxed);
-
-            auto bytes = msg.serialize();
-            impl_->transport->send(chosen, MsgType::TASK_DISPATCH, bytes);
-            impl_->offloaded_count.fetch_add(1, std::memory_order_relaxed);
-            SR_LOG_INFO("Task {} ({}) offloaded to worker {}.",
-                        msg.task_id, node.metadata.name, chosen);
-            return true;
+        void DistributedCoordinator::set_task_deadline(std::chrono::milliseconds deadline) noexcept
+        {
+            impl_->monitor.set_task_deadline(deadline);
         }
 
     } // namespace Distributed

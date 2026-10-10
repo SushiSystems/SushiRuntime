@@ -21,34 +21,52 @@
 
 /**
  * @file offload_handles.hpp
- * @brief Declares OffloadHandles, the buffer handles the coordinator keeps on a node.
+ * @brief Declares OffloadHandles, the buffer handles the dispatcher keeps on a node.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */
 
 #pragma once
 
+#include <cstddef>
 #include <vector>
-#include <SushiRuntime/distributed/buffer_handle.hpp>
+
+#include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
+#include <SushiRuntime/distributed/buffer_handle.hpp>
 
 namespace SushiRuntime
 {
     namespace Distributed
     {
         /**
-         * @brief Holds the handles of the buffers a fixed-buffer node reads and writes.
+         * @brief Holds the handles of the shared buffers a fixed-buffer node touches.
          *
-         * DistributedCoordinator::prepare() stores one in Graph::OffloadState::payload;
-         * a double-buffered node has none.
+         * OffloadDispatcher::prepare() stores one in Graph::OffloadState::payload. On an
+         * offloadable node it lists every buffer read, then every buffer written. On a node
+         * that stays local it lists only the shared buffers the node writes, so a local
+         * completion can raise their versions. A double-buffered node has none.
          */
         struct OffloadHandles final : public Graph::OffloadPayload
         {
-            /** @brief Handles of the buffers the node reads, in io_reads_ order. */
-            std::vector<BufferHandle> in_handles;
+            /** @brief Returns the handles of the buffers read, in io_reads_ order. */
+            [[nodiscard]] SushiRuntime::span<const BufferHandle> inputs() const noexcept
+            {
+                return SushiRuntime::span<const BufferHandle>(handles.data(), input_count);
+            }
 
-            /** @brief Handles of the buffers the node writes, in io_writes_ order. */
-            std::vector<BufferHandle> out_handles;
+            /** @brief Returns the handles of the buffers written, in io_writes_ order. */
+            [[nodiscard]] SushiRuntime::span<BufferHandle> outputs() noexcept
+            {
+                return SushiRuntime::span<BufferHandle>(handles.data() + input_count,
+                                                        handles.size() - input_count);
+            }
+
+            /** @brief Holds the input handles, then the output handles, in one block. */
+            std::vector<BufferHandle> handles;
+
+            /** @brief Counts the leading entries of handles that are inputs. */
+            std::size_t input_count = 0;
         };
 
     } // namespace Distributed

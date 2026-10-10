@@ -21,621 +21,657 @@
 
 /**
  * @file worker_agent.cpp
- * @brief Runs the tasks a master dispatches to this worker and returns their results.
+ * @brief Implements WorkerAgent: the four worker bricks composed over one transport.
  * @author Mustafa Garip
  */
 
 #include <SushiRuntime/distributed/worker_agent.hpp>
 
-#include <deque>
-#include <queue>
-#include <mutex>
-#include <chrono>
-#include <thread>
+#include <algorithm>
 #include <atomic>
-#include <vector>
 #include <condition_variable>
-#include <unordered_map>
-#include <unordered_set>
-#include <stdexcept>
+#include <exception>
+#include <limits>
+#include <mutex>
+#include <optional>
+#include <utility>
+#include <vector>
+
 #include <sycl/sycl.hpp>
+
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/logging/logger.hpp>
-#include <SushiRuntime/core/ref_counted.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+
+#include "dispatch_deduplicator.hpp"
+#include "dispatch_executor.hpp"
+#include "handshake.hpp"
+#include "master_link.hpp"
+#include "message_router.hpp"
+#include "wire_codec.hpp"
+#include "wire_frame.hpp"
+#include "wire_messages.hpp"
+#include "worker_buffer_cache.hpp"
 
 namespace SushiRuntime
 {
     namespace Distributed
     {
-        struct WorkerAgent::Impl : public Core::RefCounted
+        namespace
         {
-            Execution::RuntimeContext&   ctx;
-            std::shared_ptr<ITransport>  transport;
-            sushi_ptr<KernelRegistry>    kernels;
+            /** @brief Holds the device the worker's kernels run on and its cache lives on. */
+            constexpr std::size_t K_DEVICE_INDEX = 0;
 
-            /// @brief Holds one cached buffer; a miss or a stale version is pulled from the master.
-            struct CacheEntry { uint32_t version = 0; void* ptr = nullptr; uint64_t size = 0; };
-            std::mutex                              cache_mtx;
-            std::condition_variable                 cache_cv;
-            std::unordered_map<uint64_t, CacheEntry> cache;
+            /** @brief Holds the cache budget of a device that reports no memory size. */
+            constexpr std::uint64_t K_FALLBACK_CACHE_BYTES = 1024ull * 1024ull * 1024ull;
 
-            /// @brief Guards the job queue the exec thread drains (modules/extension/distributed/README.md).
-            std::mutex                    job_mtx;
-            std::condition_variable       job_cv;
-            std::queue<TaskDispatchMsg>   jobs;
-            std::thread                   exec_thread;
-            std::atomic<bool>             running{false};
+            /** @brief Holds the longest name HELLO can carry, in bytes. */
+            constexpr std::size_t K_MAXIMUM_NAME_BYTES = 255;
 
-            /// @brief Caps the pending-job queue; 0 means unbounded (modules/extension/distributed/README.md).
-            std::atomic<size_t>           max_jobs{1024};
+            /** @brief Bounds the wait for the master's connection to drain in stop(). */
+            constexpr std::chrono::milliseconds K_CLOSE_LIMIT{2000};
 
-            /// @brief Caps the task ids kept to reject duplicates (modules/extension/distributed/README.md).
-            static constexpr size_t       MAX_SEEN_IDS = 4096;
-            std::mutex                    seen_mtx;
-            std::unordered_set<uint64_t>  seen_ids;
-            std::deque<uint64_t>          seen_order;
+            /** @brief Names the payload of a frame as a handler receives it. */
+            using Payload = SushiRuntime::span<const std::byte>;
 
-            /**
-             * @brief Records a task ID to detect duplicate dispatches.
-             * Returns false if the task ID was already seen and processed.
-             * @param task_id The uint64_t identifier of the task.
-             * @return A boolean which is true if the task ID is new, false otherwise.
-             */
-            bool mark_seen(uint64_t task_id)
+            /** @brief Refuses a constructor argument the caller must not pass. */
+            [[noreturn]] void refuse(const char* message)
             {
-                std::lock_guard<std::mutex> lk(seen_mtx);
-                if (!seen_ids.insert(task_id).second)
-                    return false;
-                seen_order.push_back(task_id);
-                if (seen_order.size() > MAX_SEEN_IDS)
+                throw Core::SushiException(Core::Error{Core::Errc::invalid_access, message});
+            }
+
+            /** @brief Returns the transport, or refuses a null one. */
+            std::shared_ptr<ITransport> require_transport(std::shared_ptr<ITransport> transport)
+            {
+                if (!transport)
+                    refuse("WorkerAgent needs a transport; a null one was passed");
+                return transport;
+            }
+
+            /** @brief Returns the registry, or refuses a null one. */
+            sushi_ptr<KernelRegistry> require_kernels(sushi_ptr<KernelRegistry> kernels)
+            {
+                if (!kernels)
+                    refuse("WorkerAgent needs a kernel registry; a null one was passed");
+                return kernels;
+            }
+
+            /** @brief Returns the options with a name HELLO can carry. */
+            WorkerAgentOptions bounded(WorkerAgentOptions options)
+            {
+                if (options.name.size() > K_MAXIMUM_NAME_BYTES)
                 {
-                    seen_ids.erase(seen_order.front());
-                    seen_order.pop_front();
+                    SR_LOG_WARN("worker name holds {} bytes; HELLO carries {}, so the name is cut "
+                                "to that length",
+                                options.name.size(), K_MAXIMUM_NAME_BYTES);
+                    options.name.resize(K_MAXIMUM_NAME_BYTES);
                 }
-                return true;
+                return options;
             }
 
-            /// @brief Bounds the wait for a pulled buffer (modules/extension/distributed/README.md).
-            std::chrono::milliseconds     pull_timeout{5000};
-
-            /// @brief Records that the master acknowledged HELLO (modules/extension/distributed/README.md).
-            std::atomic<bool>             registered{false};
-
-            /**
-             * @brief Sends a registration HELLO message to the master.
-             * Announces the worker's protocol version and supported operations.
-             */
-            void send_hello()
+            /** @brief Returns the cache budget: the one asked for, or half the device's memory. */
+            std::uint64_t resolve_cache_budget(Execution::RuntimeContext& context,
+                                               std::uint64_t requested)
             {
-                ByteWriter w;
-                w.put<uint32_t>(PROTOCOL_VERSION);
-                auto ops = kernels->known_ops();
-                w.put<uint32_t>(static_cast<uint32_t>(ops.size()));
-                for (auto op : ops) w.put<uint32_t>(op.value);
-                transport->send(0, MsgType::REGISTER_HELLO, w.view());
+                if (requested != 0)
+                    return requested;
+
+                const std::vector<Device::DeviceInfo>& devices = context.devices().devices();
+                const std::uint64_t half = devices.size() > K_DEVICE_INDEX
+                                               ? devices[K_DEVICE_INDEX].memory_bytes / 2
+                                               : 0;
+                if (half != 0)
+                    return half;
+
+                SR_LOG_WARN("device {} reports no memory size; the worker's buffer cache takes "
+                            "{} bytes",
+                            K_DEVICE_INDEX, K_FALLBACK_CACHE_BYTES);
+                return K_FALLBACK_CACHE_BYTES;
             }
 
-            /// @brief Holds the period of the worker's HEARTBEAT (modules/extension/distributed/README.md).
-            std::chrono::milliseconds     heartbeat_interval{1000};
-            std::thread                   heartbeat_thread;
-            std::mutex                    heartbeat_mtx;
-            std::condition_variable       heartbeat_cv;
-
-            Impl(Execution::RuntimeContext& c) : ctx(c) {}
-
-            /**
-             * @brief Periodically sends heartbeats to the master to prove liveness.
-             */
-            void heartbeat_loop();
-
-            /**
-             * @brief Handles incoming messages from the transport.
-             * @param peer The integer ID of the peer.
-             * @param type The MsgType of the message.
-             * @param payload A span of bytes representing the message payload.
-             */
-            void on_message(int peer, MsgType type, SushiRuntime::span<const std::byte> payload);
-
-            /**
-             * @brief Allocates a cache buffer of a wire-supplied size (modules/extension/distributed/README.md).
-             * @param size_bytes Requested size from the wire; above MAX_FRAME_BYTES it throws.
-             * @return A non-null pointer to shared USM memory, unless size_bytes is zero.
-             */
-            void* alloc_cache_buffer(uint64_t size_bytes);
-
-            /**
-             * @brief Continuously dequeues and executes dispatch jobs.
-             */
-            void exec_loop();
-
-            /**
-             * @brief Executes a single dispatched task.
-             * Resolves buffers, invokes the kernel, and sends the result.
-             * @param msg The TaskDispatchMsg containing the task parameters.
-             */
-            void execute_dispatch(const TaskDispatchMsg& msg);
-
-            /**
-             * @brief Calculates the current device-memory headroom.
-             * Prefers the Intel free-memory query, falling back to total global memory.
-             * @return An uint64_t representing the available memory in bytes.
-             */
-            uint64_t device_free_mem() const;
-
-            /**
-             * @brief Retrieves a local USM pointer for a required input buffer.
-             * Pulls data from the master if the local cache is absent or stale.
-             * @param h The BufferHandle describing the required buffer.
-             * @return A void pointer to the memory, or nullptr on timeout.
-             */
-            void* resolve_input(const BufferHandle& h);
-
-            /**
-             * @brief Prepares a local USM buffer for output.
-             * Allocates a new buffer or reuses an appropriately sized existing one.
-             * @param h The BufferHandle describing the output buffer.
-             * @return A void pointer to the allocated memory.
-             */
-            void* resolve_output(const BufferHandle& h);
-
-            /**
-             * @brief Frees all cached USM allocations.
-             */
-            void free_all();
-        };
-
-        /**
-         * @brief Retrieves a local USM pointer for a required input buffer.
-         * Pulls data from the master if the local cache is absent or stale.
-         * @param h The BufferHandle describing the required buffer.
-         * @return A void pointer to the memory, or nullptr on timeout.
-         */
-        void* WorkerAgent::Impl::resolve_input(const BufferHandle& h)
-        {
-            std::unique_lock<std::mutex> lk(cache_mtx);
-
-            auto fresh = [&]() -> void*
+            /** @brief Returns an allocator that keeps cached buffers as recorded shared USM. */
+            CacheAllocator make_cache_allocator(Memory::UsmAllocator& memory)
             {
-                auto it = cache.find(h.id.value);
-                if (it != cache.end() && it->second.ptr && it->second.version >= h.version)
-                    return it->second.ptr;
-                return nullptr;
-            };
-
-            if (void* p = fresh()) return p;
-
-            // A miss or stale entry pulls; the pump deposits the push (modules/extension/distributed/README.md).
-            lk.unlock();
-            BufferRequestMsg req{ h.id, h.version };
-            transport->send(0, MsgType::BUFFER_REQUEST, req.serialize());
-            lk.lock();
-
-            // The wait is bounded unless the timeout is non-positive (modules/extension/distributed/README.md).
-            auto ready = [&] { return fresh() != nullptr || !running.load(); };
-            if (pull_timeout.count() > 0)
-                cache_cv.wait_for(lk, pull_timeout, ready);
-            else
-                cache_cv.wait(lk, ready);
-            return fresh();
-        }
-
-        /**
-         * @brief Allocates a cache buffer of a wire-supplied size (modules/extension/distributed/README.md).
-         * @param size_bytes Requested size from the wire; above MAX_FRAME_BYTES it throws.
-         * @return A non-null pointer to shared USM memory, unless size_bytes is zero.
-         */
-        void* WorkerAgent::Impl::alloc_cache_buffer(uint64_t size_bytes)
-        {
-            if (size_bytes > MAX_FRAME_BYTES)
-                throw std::runtime_error(
-                    "BufferHandle size_bytes exceeds MAX_FRAME_BYTES");
-            void* p = sycl::malloc_shared(size_bytes, ctx.devices().queue(0));
-            // malloc_shared may return null on OOM (modules/extension/distributed/README.md).
-            if (!p && size_bytes != 0)
-                throw std::runtime_error("USM allocation for cache buffer failed");
-            return p;
-        }
-
-        /**
-         * @brief Prepares a local USM buffer for output.
-         * Allocates a new buffer or reuses an appropriately sized existing one.
-         * @param h The BufferHandle describing the output buffer.
-         * @return A void pointer to the allocated memory.
-         */
-        void* WorkerAgent::Impl::resolve_output(const BufferHandle& h)
-        {
-            std::lock_guard<std::mutex> lk(cache_mtx);
-            auto& e = cache[h.id.value];
-            if (!e.ptr || e.size != h.size_bytes)
-            {
-                if (e.ptr) sycl::free(e.ptr, ctx.devices().queue(0));
-                e.ptr  = alloc_cache_buffer(h.size_bytes);
-                e.size = h.size_bytes;
-            }
-            e.version = h.version;
-            return e.ptr;
-        }
-
-        /**
-         * @brief Handles incoming messages from the transport.
-         * Processes registration acks, task dispatches, pings, and buffer pushes.
-         * @param peer The integer ID of the peer.
-         * @param type The MsgType of the message.
-         * @param payload A span of bytes representing the message payload.
-         */
-        void WorkerAgent::Impl::on_message(int /*peer*/, MsgType type, SushiRuntime::span<const std::byte> payload)
-        {
-            switch (type)
-            {
-                case MsgType::REGISTER_ACK:
-                    if (!registered.exchange(true))
-                        SR_LOG_INFO("Worker agent registered with master.");
-                    break;
-
-                case MsgType::TASK_DISPATCH:
+                CacheAllocator allocator;
+                allocator.allocate = [&memory](std::size_t size_bytes) -> void*
                 {
-                    auto msg = TaskDispatchMsg::deserialize(payload);
-                    // A duplicate dispatch is dropped (modules/extension/distributed/README.md).
-                    if (!mark_seen(msg.task_id))
-                    {
-                        SR_LOG_WARN("Worker ignoring duplicate dispatch of task {}.", msg.task_id);
-                        break;
-                    }
-                    const uint64_t tid = msg.task_id;
-                    bool queued = false;
-                    {
-                        std::lock_guard<std::mutex> lk(job_mtx);
-                        const size_t cap = max_jobs.load(std::memory_order_relaxed);
-                        if (cap == 0 || jobs.size() < cap) // 0 == unbounded
-                        {
-                            jobs.push(std::move(msg));
-                            queued = true;
-                        }
-                    }
-                    if (queued)
-                    {
-                        job_cv.notify_one();
-                    }
-                    else
-                    {
-                        // Overloaded: fast-fail so the master recovers the task.
-                        SR_LOG_WARN("Worker job queue full; rejecting task {}.", tid);
-                        TaskResultMsg r;
-                        r.task_id = tid;
-                        r.success = false;
-                        transport->send(0, MsgType::TASK_RESULT, r.serialize());
-                    }
-                    break;
-                }
-                case MsgType::PING:
-                {
-                    // The pong echoes the token and carries free_mem (modules/extension/distributed/README.md).
-                    auto ping = PingMsg::deserialize(payload);
-                    PongMsg pong;
-                    pong.token    = ping.token;
-                    pong.free_mem = device_free_mem();
-                    transport->send(0, MsgType::PONG, pong.serialize());
-                    break;
-                }
-                case MsgType::BUFFER_PUSH:
-                {
-                    auto push = BufferPushMsg::deserialize(payload);
-                    {
-                        std::lock_guard<std::mutex> lk(cache_mtx);
-                        auto& e = cache[push.handle.id.value];
-                        // A push older than the cache entry is ignored (modules/extension/distributed/README.md).
-                        if (e.ptr && push.handle.version < e.version)
-                            break;
-                        if (!e.ptr || e.size != push.handle.size_bytes)
-                        {
-                            if (e.ptr) sycl::free(e.ptr, ctx.devices().queue(0));
-                            e.ptr  = alloc_cache_buffer(push.handle.size_bytes);
-                            e.size = push.handle.size_bytes;
-                        }
-                        // The copy is clamped to the allocated size (modules/extension/distributed/README.md).
-                        uint64_t n = push.data.size();
-                        if (n > e.size) n = e.size;
-                        std::memcpy(e.ptr, push.data.data(), n);
-                        e.version = push.handle.version;
-                    }
-                    cache_cv.notify_all();
-                    break;
-                }
-                default:
-                    break;
-            }
-        }
-
-        /**
-         * @brief Executes a single dispatched task.
-         * Resolves buffers, invokes the kernel via TaskGraph, and sends the result.
-         * @param msg The TaskDispatchMsg containing the task parameters.
-         */
-        void WorkerAgent::Impl::execute_dispatch(const TaskDispatchMsg& msg)
-        {
-            TaskResultMsg result;
-            result.task_id = msg.task_id;
-            result.success = true;
-
-            const auto* kernel = kernels->find(msg.op_id);
-            if (!kernel)
-            {
-                SR_LOG_ERROR("Worker received unknown OpID {}.", msg.op_id.value);
-                result.success = false;
-                transport->send(0, MsgType::TASK_RESULT, result.serialize());
-                return;
-            }
-
-            std::vector<void*> in_ptrs, out_ptrs;
-            in_ptrs.reserve(msg.inputs.size());
-            out_ptrs.reserve(msg.outputs.size());
-
-            // A null input fails the task before the kernel runs (modules/extension/distributed/README.md).
-            bool inputs_ok = true;
-            for (const auto& h : msg.inputs)
-            {
-                void* p = resolve_input(h);
-                if (!p) inputs_ok = false;
-                in_ptrs.push_back(p);
-            }
-            if (!inputs_ok)
-            {
-                SR_LOG_ERROR("Worker could not resolve inputs for task {} "
-                             "(buffer pull timed out); failing it.", msg.task_id);
-                result.success = false;
-                transport->send(0, MsgType::TASK_RESULT, result.serialize());
-                return;
-            }
-
-            for (const auto& h : msg.outputs) out_ptrs.push_back(resolve_output(h));
-
-            try
-            {
-                // The kernel runs through the worker's own TaskGraph (modules/extension/distributed/README.md).
-                Graph::TaskGraph g;
-                const auto* k = kernel;
-                const auto  meta = msg.meta;
-                // Each pointer maps to its whole-buffer region (modules/extension/distributed/README.md).
-                g.add_task(msg.meta,
-                    std::vector<SushiRuntime::Core::ResourceRegion>(in_ptrs.begin(), in_ptrs.end()),
-                    std::vector<SushiRuntime::Core::ResourceRegion>(out_ptrs.begin(), out_ptrs.end()),
-                    [k, in_ptrs, out_ptrs, meta](sycl::queue& q,
-                        const std::vector<sycl::event>&) -> sycl::event
-                    {
-                        return (*k)(q, in_ptrs, out_ptrs, meta);
-                    });
-                ctx.get_execution_engine().execute(g.compile());
-
-                // Output bytes travel inside the result (modules/extension/distributed/README.md).
-                result.outputs = msg.outputs; // new versions now live on this worker
-                result.output_data.resize(msg.outputs.size());
-                {
-                    std::lock_guard<std::mutex> lk(cache_mtx);
-                    for (size_t i = 0; i < msg.outputs.size(); ++i)
-                    {
-                        auto it = cache.find(msg.outputs[i].id.value);
-                        if (it != cache.end() && it->second.ptr)
-                            result.output_data[i].assign(
-                                static_cast<std::byte*>(it->second.ptr),
-                                static_cast<std::byte*>(it->second.ptr) + it->second.size);
-                    }
-                }
-            }
-            catch (...)
-            {
-                SR_LOG_ERROR("Worker kernel for OpID {} threw.", msg.op_id.value);
-                result.success = false;
-                result.outputs.clear();
-                result.output_data.clear();
-            }
-
-            transport->send(0, MsgType::TASK_RESULT, result.serialize());
-        }
-
-        /**
-         * @brief Calculates the current device-memory headroom.
-         * Prefers the Intel free-memory query, falling back to total global memory.
-         * @return An uint64_t representing the available memory in bytes.
-         */
-        uint64_t WorkerAgent::Impl::device_free_mem() const
-        {
-            try
-            {
-                auto dev = ctx.devices().queue(0).get_device();
-                // free_memory needs device-info extension version 5 (modules/extension/distributed/README.md).
-#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
-                if (dev.has(sycl::aspect::ext_intel_free_memory))
-                    return dev.get_info<sycl::ext::intel::info::device::free_memory>();
-#endif
-                // Total capacity stands in when no query exists (modules/extension/distributed/README.md).
-                return dev.get_info<sycl::info::device::global_mem_size>();
-            }
-            catch (...)
-            {
-                return 0; // unknown -> the policy treats 0 as "no headroom info".
-            }
-        }
-
-        /**
-         * @brief Periodically sends heartbeats to the master to prove liveness.
-         */
-        void WorkerAgent::Impl::heartbeat_loop()
-        {
-            while (running.load())
-            {
-                std::unique_lock<std::mutex> lk(heartbeat_mtx);
-                heartbeat_cv.wait_for(lk, heartbeat_interval, [&] { return !running.load(); });
-                if (!running.load()) return;
-                lk.unlock();
-                // Keep retrying registration until the master acknowledges it.
-                if (!registered.load(std::memory_order_relaxed))
-                    send_hello();
-                transport->send(0, MsgType::HEARTBEAT, {});
-            }
-        }
-
-        /**
-         * @brief Continuously dequeues and executes dispatch jobs.
-         */
-        void WorkerAgent::Impl::exec_loop()
-        {
-            for (;;)
-            {
-                TaskDispatchMsg job;
-                {
-                    std::unique_lock<std::mutex> lk(job_mtx);
-                    job_cv.wait(lk, [&] { return !jobs.empty() || !running.load(); });
-                    if (jobs.empty() && !running.load()) return;
-                    job = std::move(jobs.front());
-                    jobs.pop();
-                }
-                execute_dispatch(job);
-            }
-        }
-
-        /**
-         * @brief Frees all cached USM allocations.
-         */
-        void WorkerAgent::Impl::free_all()
-        {
-            std::lock_guard<std::mutex> lk(cache_mtx);
-            for (auto& [id, e] : cache)
-                if (e.ptr) sycl::free(e.ptr, ctx.devices().queue(0));
-            cache.clear();
-        }
-
-        /**
-         * @brief Constructs a WorkerAgent instance.
-         * Initializes the worker with a runtime context, transport layer, and kernel registry.
-         * @param ctx A reference to the Execution::RuntimeContext.
-         * @param transport A std::shared_ptr to the ITransport interface.
-         * @param kernels A sushi_ptr to the KernelRegistry.
-         */
-        WorkerAgent::WorkerAgent(Execution::RuntimeContext& ctx,
-                                 std::shared_ptr<ITransport> transport,
-                                 sushi_ptr<KernelRegistry>   kernels)
-            : impl_(make_sushi<Impl>(ctx))
-        {
-            impl_->transport = std::move(transport);
-            impl_->kernels   = std::move(kernels);
-        }
-
-        /**
-         * @brief Destructs the WorkerAgent.
-         * Automatically stops threads and releases resources.
-         */
-        WorkerAgent::~WorkerAgent()
-        {
-            stop();
-        }
-
-        /**
-         * @brief Configures the frequency of liveness heartbeats sent to the master.
-         * @param interval A std::chrono::milliseconds specifying the duration between heartbeats.
-         */
-        void WorkerAgent::set_heartbeat_interval(std::chrono::milliseconds interval)
-        {
-            impl_->heartbeat_interval = interval;
-        }
-
-        /**
-         * @brief Sets the maximum time to wait for buffer pulls from the master.
-         * @param timeout A std::chrono::milliseconds specifying the timeout duration.
-         */
-        void WorkerAgent::set_pull_timeout(std::chrono::milliseconds timeout)
-        {
-            impl_->pull_timeout = timeout;
-        }
-
-        /**
-         * @brief Sets the maximum number of pending jobs in the worker queue.
-         * Dispatches exceeding this limit are fast-failed.
-         * @param max_jobs A size_t representing the maximum queue size.
-         */
-        void WorkerAgent::set_max_jobs(size_t max_jobs)
-        {
-            impl_->max_jobs.store(max_jobs, std::memory_order_relaxed);
-        }
-
-        /**
-         * @brief Starts the worker agent threads and network handlers.
-         * Begins listening for messages and kicks off the background execution and heartbeat loops.
-         */
-        void WorkerAgent::start()
-        {
-            bool expected = false;
-            if (!impl_->running.compare_exchange_strong(expected, true))
-                return;
-
-            Impl* raw = impl_.get();
-            impl_->transport->on_message(
-                [raw](int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
-                {
-                    // A throw on the pump thread is logged and dropped (modules/extension/distributed/README.md).
                     try
                     {
-                        raw->on_message(peer, type, payload);
+                        return memory.allocate(Memory::UsmRequest{Memory::UsmKind::Shared,
+                                                                  size_bytes, 0, K_DEVICE_INDEX});
                     }
-                    catch (const std::exception& ex)
+                    catch (const std::exception& error)
                     {
-                        SR_LOG_WARN("Worker dropped a message from peer {} "
-                                    "(type {}): {}", peer,
-                                    static_cast<int>(type), ex.what());
+                        SR_LOG_ERROR("cannot allocate {} bytes of worker cache on device {}: {}; "
+                                     "the task that needs them fails",
+                                     size_bytes, K_DEVICE_INDEX, error.what());
+                        return nullptr;
                     }
                     catch (...)
                     {
-                        SR_LOG_WARN("Worker dropped a message from peer {} "
-                                    "(type {}): unknown error.", peer,
-                                    static_cast<int>(type));
+                        SR_LOG_ERROR("cannot allocate {} bytes of worker cache on device {}: "
+                                     "unknown exception; the task that needs them fails",
+                                     size_bytes, K_DEVICE_INDEX);
+                        return nullptr;
                     }
+                };
+                allocator.release = [&memory](void* address) { memory.release(address); };
+                return allocator;
+            }
+
+            /** @brief Returns the device's free memory, its total when no query exists, else 0. */
+            std::uint64_t read_free_memory(sycl::queue& queue)
+            {
+                try
+                {
+                    const sycl::device device = queue.get_device();
+#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
+                    if (device.has(sycl::aspect::ext_intel_free_memory))
+                        return device.get_info<sycl::ext::intel::info::device::free_memory>();
+#endif
+                    return device.get_info<sycl::info::device::global_mem_size>();
+                }
+                catch (const std::exception& error)
+                {
+                    SR_LOG_DEBUG("cannot read the free memory of device {}: {}; PONG carries 0",
+                                 K_DEVICE_INDEX, error.what());
+                    return 0;
+                }
+            }
+        } // namespace
+
+        /**
+         * @brief Holds the worker's bricks and receives the transport's events for them.
+         */
+        struct WorkerAgent::Impl final : public TransportEvents
+        {
+            public:
+                /** @brief Builds the bricks and the routing table; no thread runs yet. */
+                Impl(Execution::RuntimeContext& context, std::shared_ptr<ITransport> transport,
+                     sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options);
+
+                /** @brief Starts the exec thread, the heartbeat thread and the transport. */
+                [[nodiscard]] TransportResult start();
+
+                /** @brief Stops the bricks and the transport in the order the README gives. */
+                void stop() noexcept;
+
+                /** @brief Returns the link's end, waiting for it at most the timeout. */
+                [[nodiscard]] WorkerEnd wait_for_end(std::chrono::milliseconds timeout);
+
+                /** @brief Returns the counters of the executor, the cache and the link. */
+                [[nodiscard]] WorkerStatistics statistics() const noexcept;
+
+                /** @brief Records the connection and opens the handshake on it. */
+                void on_peer_connected(PeerId peer, const PeerInfo& info) override;
+
+                /** @brief Refreshes the master watch, then routes the frame to its brick. */
+                void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+                              Payload payload) override;
+
+                /** @brief Forgets the connection; unless stopping, acts on the link's answer. */
+                void on_peer_lost(PeerId peer, const PeerLoss& loss) override;
+
+                /** @brief Logs the transport's cause and ends the link, unless stopping. */
+                void on_connect_abandoned(const std::string& cause) override;
+
+            private:
+                /** @brief Names how far the agent's life has come. */
+                enum class Phase : std::uint8_t
+                {
+                    Built,   /**< start() has not been called. */
+                    Started, /**< start() ran; stop() has work to do. */
+                    Stopped, /**< stop() ran, or start() failed. */
+                };
+
+                /** @brief Names the routing table: peer, flag byte and payload per frame. */
+                using Router = Wire::MessageRouter<PeerId, std::uint8_t, Payload>;
+
+                /** @brief Returns what the link tells the master and how it probes this worker. */
+                [[nodiscard]] MasterLinkOptions make_link_options(const KernelRegistry& kernels);
+
+                /**
+                 * @brief Routes one message type to a handler that receives it decoded.
+                 * @tparam Handle Callable as `void(PeerId, std::uint8_t flags, Message&)`.
+                 */
+                template <typename Message, typename Handle>
+                void route(Handle handle);
+
+                /** @brief Fills the routing table, one row per message a worker receives. */
+                void build_routes();
+
+                /** @brief Logs a frame that did not decode and closes its connection. */
+                void refuse_malformed(PeerId peer, MessageType type, std::size_t length,
+                                      const Wire::DecodeResult& decoded);
+
+                /** @brief Acts on the other bricks as a link change asks. */
+                void apply(LinkChange change);
+
+                /** @brief Queues a dispatch from the registered master unless it was seen. */
+                void accept_dispatch(PeerId peer, Wire::TaskDispatchMessage& dispatch);
+
+                /** @brief Returns the endpoint of a connection for a log line. */
+                [[nodiscard]] std::string endpoint_of(PeerId peer) const;
+
+                /** @brief Closes the registered connection and waits until its queue drained. */
+                void close_master() noexcept;
+
+                /** @brief Writes the counters as one INFO line. */
+                void log_statistics() const noexcept;
+
+                /// @brief Supplies the queue kernels run on and the cache's memory.
+                Execution::RuntimeContext& context_;
+
+                /// @brief Carries every frame; the agent is its only receiver.
+                std::shared_ptr<ITransport> transport_;
+
+                /// @brief The settings; owns the secret the link borrows.
+                WorkerAgentOptions options_;
+
+                /// @brief Guards connected_ and endpoint_.
+                mutable std::mutex mutex_;
+
+                /// @brief Wakes close_master() when a connection ends.
+                std::condition_variable connection_changed_;
+
+                /// @brief The connection that is open; 0 for none.
+                PeerId connected_;
+
+                /// @brief The master's address and port on that connection.
+                std::string endpoint_;
+
+                /// @brief How far the agent's life has come.
+                std::atomic<Phase> phase_{Phase::Built};
+
+                /// @brief Set by stop(); a connection that opens afterwards is closed.
+                std::atomic<bool> stopping_{false};
+
+                /// @brief The buffers of the tasks; destroyed after the transport stopped.
+                WorkerBufferCache cache_;
+
+                /// @brief The task ids seen in the master's session.
+                DispatchDeduplicator deduplicator_;
+
+                /// @brief The handshake, the heartbeat and the master watch.
+                MasterLink link_;
+
+                /// @brief The job queue and the exec thread.
+                DispatchExecutor executor_;
+
+                /// @brief Maps each message type to the brick that owns it.
+                Router router_;
+        };
+
+        WorkerAgent::Impl::Impl(Execution::RuntimeContext& context,
+                                std::shared_ptr<ITransport> transport,
+                                sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
+            : context_(context), transport_(require_transport(std::move(transport))),
+              options_(bounded(std::move(options))),
+              cache_(make_cache_allocator(context.memory()),
+                     resolve_cache_budget(context, options_.cache_bytes)),
+              link_(*transport_, options_.secret.bytes(),
+                    make_link_options(*require_kernels(kernels)), make_nonce),
+              executor_(kernels, cache_, *transport_, context.devices().queue(K_DEVICE_INDEX),
+                        DispatchExecutorOptions{options_.max_jobs, options_.pull_idle_timeout})
+        {
+            build_routes();
+        }
+
+        MasterLinkOptions WorkerAgent::Impl::make_link_options(const KernelRegistry& kernels)
+        {
+            MasterLinkOptions link;
+            link.name = options_.name;
+            link.build_id = runtime_version_string();
+            link.ops = kernels.known_ops();
+            link.max_jobs = static_cast<std::uint32_t>(std::min<std::size_t>(
+                options_.max_jobs, std::numeric_limits<std::uint32_t>::max()));
+            link.cache_budget = cache_.budget();
+            link.heartbeat_interval = options_.heartbeat_interval;
+            link.heartbeat_probe = [this]
+            {
+                Wire::HeartbeatMessage heartbeat;
+                heartbeat.queue_depth = executor_.queue_depth();
+                heartbeat.oldest_held_task_id = executor_.oldest_held_task_id();
+                heartbeat.cache_bytes = cache_.bytes();
+                return heartbeat;
+            };
+            link.free_memory_probe = [this]
+            {
+                return read_free_memory(context_.devices().queue(K_DEVICE_INDEX));
+            };
+            return link;
+        }
+
+        template <typename Message, typename Handle>
+        void WorkerAgent::Impl::route(Handle handle)
+        {
+            router_.set_handler(
+                Message::K_TYPE,
+                [this, handle = std::move(handle)](PeerId peer, std::uint8_t flags,
+                                                   Payload payload)
+                {
+                    Message message;
+                    const Wire::DecodeResult decoded = Message::decode(payload, message);
+                    if (!decoded.ok())
+                    {
+                        refuse_malformed(peer, Message::K_TYPE, payload.size(), decoded);
+                        return;
+                    }
+                    handle(peer, flags, message);
                 });
-            impl_->transport->start();
-
-            // The heartbeat loop re-sends HELLO until REGISTER_ACK (modules/extension/distributed/README.md).
-            impl_->send_hello();
-
-            impl_->exec_thread = std::thread([raw] { raw->exec_loop(); });
-
-            // A zero interval disables heartbeats (tests use this to feign death).
-            if (impl_->heartbeat_interval.count() > 0)
-                impl_->heartbeat_thread = std::thread([raw] { raw->heartbeat_loop(); });
         }
 
-        /**
-         * @brief Blocks the calling thread until the agent stops.
-         */
-        void WorkerAgent::run()
+        void WorkerAgent::Impl::build_routes()
         {
-            // Park until stop() flips running; exec/pump threads do the work.
-            std::unique_lock<std::mutex> lk(impl_->job_mtx);
-            impl_->job_cv.wait(lk, [this] { return !impl_->running.load(); });
+            route<Wire::ChallengeMessage>(
+                [this](PeerId peer, std::uint8_t, Wire::ChallengeMessage& challenge)
+                {
+                    apply(link_.on_challenge(peer, challenge));
+                });
+            route<Wire::WelcomeMessage>(
+                [this](PeerId peer, std::uint8_t, Wire::WelcomeMessage& welcome)
+                {
+                    apply(link_.on_welcome(peer, welcome));
+                });
+            route<Wire::RejectMessage>(
+                [this](PeerId peer, std::uint8_t, Wire::RejectMessage& reject)
+                {
+                    apply(link_.on_reject(peer, reject));
+                });
+            route<Wire::GoodbyeMessage>(
+                [this](PeerId peer, std::uint8_t, Wire::GoodbyeMessage& goodbye)
+                {
+                    link_.on_goodbye(peer, goodbye);
+                });
+            route<Wire::PingMessage>(
+                [this](PeerId peer, std::uint8_t, Wire::PingMessage& ping)
+                {
+                    link_.on_ping(peer, ping);
+                });
+            route<Wire::TaskDispatchMessage>(
+                [this](PeerId peer, std::uint8_t, Wire::TaskDispatchMessage& dispatch)
+                {
+                    accept_dispatch(peer, dispatch);
+                });
+            route<Wire::BufferChunkMessage>(
+                [this](PeerId, std::uint8_t flags, Wire::BufferChunkMessage& chunk)
+                {
+                    if (chunk.purpose == Wire::ChunkPurpose::PullReply)
+                        cache_.accept_chunk(chunk, (flags & Wire::K_FRAME_FLAG_LAST_CHUNK) != 0);
+                });
+            route<Wire::BufferAbortMessage>(
+                [this](PeerId, std::uint8_t, Wire::BufferAbortMessage& abort)
+                {
+                    cache_.abort_transfer(abort.id, abort.version);
+                });
+            route<Wire::BufferReleaseMessage>(
+                [this](PeerId, std::uint8_t, Wire::BufferReleaseMessage& release)
+                {
+                    cache_.release(release.id);
+                });
         }
 
-        /**
-         * @brief Stops the worker agent and cleans up resources.
-         * Signals background threads to terminate and frees cached USM buffers.
-         */
-        void WorkerAgent::stop()
+        void WorkerAgent::Impl::refuse_malformed(PeerId peer, MessageType type,
+                                                 std::size_t length,
+                                                 const Wire::DecodeResult& decoded)
         {
-            bool expected = true;
-            if (!impl_->running.compare_exchange_strong(expected, false))
+            SR_LOG_WARN("master {} sent a malformed {} frame ({} bytes): the field at offset {} "
+                        "did not decode (codec status {}); closing the connection",
+                        endpoint_of(peer), message_type_name(type), length, decoded.offset,
+                        static_cast<int>(decoded.status));
+            transport_->close_peer(peer);
+        }
+
+        void WorkerAgent::Impl::apply(LinkChange change)
+        {
+            if (change == LinkChange::RegisteredNewSession)
+            {
+                cache_.clear();
+                deduplicator_.clear();
+                return;
+            }
+
+            if (change == LinkChange::Disconnected)
+                executor_.discard_queued();
+        }
+
+        void WorkerAgent::Impl::accept_dispatch(PeerId peer,
+                                                Wire::TaskDispatchMessage& dispatch)
+        {
+            const std::uint64_t task_id = dispatch.task_id;
+            const std::optional<PeerId> master = link_.master();
+            if (!master || *master != peer)
+            {
+                SR_LOG_DEBUG("task {}: dispatched on peer {}, which is not registered; ignored",
+                             task_id, peer.value);
+                return;
+            }
+
+            if (!deduplicator_.mark_seen(task_id))
                 return;
 
-            impl_->job_cv.notify_all();
-            impl_->cache_cv.notify_all();
-            impl_->heartbeat_cv.notify_all();
-            if (impl_->heartbeat_thread.joinable())
-                impl_->heartbeat_thread.join();
-            if (impl_->exec_thread.joinable())
-                impl_->exec_thread.join();
+            const EnqueueStatus status =
+                executor_.enqueue(peer, std::move(dispatch), link_.chunk_bytes());
+            if (status == EnqueueStatus::QueueFull)
+                SR_LOG_DEBUG("task {}: the job queue holds {} tasks, its bound; nothing is sent "
+                             "and the master takes the task back",
+                             task_id, options_.max_jobs);
+        }
 
-            if (impl_->transport)
-                impl_->transport->stop();
+        std::string WorkerAgent::Impl::endpoint_of(PeerId peer) const
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            if (connected_ == peer && !endpoint_.empty())
+                return endpoint_;
+            return "(peer " + std::to_string(peer.value) + ")";
+        }
 
-            impl_->free_all();
+        TransportResult WorkerAgent::Impl::start()
+        {
+            Phase expected = Phase::Built;
+            if (!phase_.compare_exchange_strong(expected, Phase::Started))
+                return TransportResult{TransportStatus::AlreadyStarted,
+                                       "the worker agent was started before"};
+
+            TransportResult result;
+            try
+            {
+                executor_.start();
+                link_.start();
+                result = transport_->start(*this);
+            }
+            catch (const std::exception& error)
+            {
+                result = TransportResult{TransportStatus::Failed,
+                                         std::string("the worker agent could not start: ") +
+                                             error.what()};
+            }
+
+            if (!result.is_ok())
+            {
+                phase_.store(Phase::Stopped);
+                stopping_.store(true);
+                executor_.stop();
+                transport_->stop();
+                link_.stop();
+                SR_LOG_ERROR("worker agent did not start: {}; no thread is left running",
+                             result.message);
+            }
+            return result;
+        }
+
+        void WorkerAgent::Impl::close_master() noexcept
+        {
+            try
+            {
+                const std::optional<PeerId> master = link_.master();
+                if (!master)
+                    return;
+
+                transport_->close_peer(*master);
+                std::unique_lock<std::mutex> lock(mutex_);
+                const bool closed = connection_changed_.wait_for(
+                    lock, K_CLOSE_LIMIT, [&] { return connected_ != *master; });
+                if (!closed)
+                    SR_LOG_WARN("master {} did not take the worker's last frames within {} ms; "
+                                "GOODBYE may be lost and the master then waits for its liveness "
+                                "timeout",
+                                endpoint_, K_CLOSE_LIMIT.count());
+            }
+            catch (const std::exception& error)
+            {
+                SR_LOG_WARN("could not close the master's connection in order: {}; the "
+                            "transport's stop closes it",
+                            error.what());
+            }
+        }
+
+        void WorkerAgent::Impl::log_statistics() const noexcept
+        {
+            try
+            {
+                const WorkerStatistics counters = statistics();
+                SR_LOG_INFO("worker stopped: {} tasks run; failed: {} kernel, {} output "
+                            "allocation, {} input unavailable, {} unknown operation, {} shutting "
+                            "down; cache {} bytes, {} evictions; {} reconnects",
+                            counters.tasks_run, counters.tasks_failed_kernel,
+                            counters.tasks_failed_output_allocation,
+                            counters.tasks_failed_input_unavailable,
+                            counters.tasks_failed_unknown_operation,
+                            counters.tasks_failed_shutting_down, counters.cache_bytes,
+                            counters.cache_evictions, counters.reconnects);
+            }
+            catch (const std::exception& error)
+            {
+                SR_LOG_WARN("could not log the worker's statistics: {}", error.what());
+            }
+        }
+
+        void WorkerAgent::Impl::stop() noexcept
+        {
+            Phase expected = Phase::Started;
+            if (!phase_.compare_exchange_strong(expected, Phase::Stopped))
+            {
+                expected = Phase::Built;
+                (void)phase_.compare_exchange_strong(expected, Phase::Stopped);
+                return;
+            }
+
+            stopping_.store(true);
+            executor_.stop();
+            link_.say_goodbye();
+            close_master();
+            transport_->stop();
+            link_.stop();
+            log_statistics();
+        }
+
+        WorkerEnd WorkerAgent::Impl::wait_for_end(std::chrono::milliseconds timeout)
+        {
+            return link_.wait_for_end(timeout);
+        }
+
+        WorkerStatistics WorkerAgent::Impl::statistics() const noexcept
+        {
+            WorkerStatistics counters = executor_.statistics();
+            counters.cache_bytes = cache_.bytes();
+            counters.cache_evictions = cache_.evictions();
+            counters.reconnects = link_.reconnects();
+            return counters;
+        }
+
+        void WorkerAgent::Impl::on_peer_connected(PeerId peer, const PeerInfo& info)
+        {
+            if (stopping_.load())
+            {
+                transport_->close_peer(peer);
+                return;
+            }
+
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                connected_ = peer;
+                endpoint_ = info.endpoint;
+            }
+
+            SR_LOG_INFO("connected to master {} (peer {})", info.endpoint, peer.value);
+            link_.on_connected(peer);
+        }
+
+        void WorkerAgent::Impl::on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+                                         Payload payload)
+        {
+            link_.note_frame(peer);
+            if (router_.route(type, peer, flags, payload) == Wire::RouteStatus::Unhandled)
+                SR_LOG_DEBUG("master {} sent a {} frame, which a worker does not take; ignored",
+                             endpoint_of(peer), message_type_name(type));
+        }
+
+        void WorkerAgent::Impl::on_peer_lost(PeerId peer, const PeerLoss& loss)
+        {
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                if (connected_ == peer)
+                    connected_ = PeerId{};
+            }
+            connection_changed_.notify_all();
+
+            if (stopping_.load())
+            {
+                SR_LOG_DEBUG("connection to the master (peer {}) closed while the worker stops",
+                             peer.value);
+                return;
+            }
+
+            apply(link_.on_lost(peer, loss));
+        }
+
+        void WorkerAgent::Impl::on_connect_abandoned(const std::string& cause)
+        {
+            if (stopping_.load())
+                return;
+
+            SR_LOG_WARN("the transport gave up on the master: {}; this worker stops serving",
+                        cause);
+            apply(link_.on_connect_abandoned());
+        }
+
+        WorkerAgent::WorkerAgent(Execution::RuntimeContext& context,
+                                 std::shared_ptr<ITransport> transport,
+                                 sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
+            : impl_(std::make_unique<Impl>(context, std::move(transport), std::move(kernels),
+                                           std::move(options)))
+        {
+
+        }
+
+        WorkerAgent::~WorkerAgent()
+        {
+            impl_->stop();
+        }
+
+        TransportResult WorkerAgent::start()
+        {
+            return impl_->start();
+        }
+
+        WorkerEnd WorkerAgent::wait_for_end(std::chrono::milliseconds timeout)
+        {
+            return impl_->wait_for_end(timeout);
+        }
+
+        void WorkerAgent::stop() noexcept
+        {
+            impl_->stop();
+        }
+
+        WorkerStatistics WorkerAgent::statistics() const noexcept
+        {
+            return impl_->statistics();
         }
 
     } // namespace Distributed

@@ -25,18 +25,16 @@
  * @author Mustafa Garip
  */
 
-// The Microsoft C runtime marks std::getenv deprecated unless this is defined first.
-#define _CRT_SECURE_NO_WARNINGS
-
 #include <SushiRuntime/distributed/shared_secret.hpp>
 
-#include <cstdlib>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include <utility>
 
 #include <SushiRuntime/core/error.hpp>
 
+#include "environment.hpp"
 #include "hmac_sha256.hpp"
 
 namespace SushiRuntime
@@ -139,11 +137,11 @@ namespace SushiRuntime
 
         SharedSecret SharedSecret::from_environment(const std::string& variable_name)
         {
-            const char* value = std::getenv(variable_name.c_str());
-            if (value == nullptr || *value == '\0')
+            const std::optional<std::string> value = read_environment(variable_name.c_str());
+            if (!value || value->empty())
                 return SharedSecret();
 
-            const std::filesystem::path path(value);
+            const std::filesystem::path path(*value);
             return SharedSecret(read_secret_file(
                 path, describe_file(path) + " (named by " + variable_name + ")"));
         }

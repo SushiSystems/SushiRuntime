@@ -143,6 +143,12 @@ namespace SushiRuntime
         resolve_addresses(const Endpoint& endpoint, std::vector<std::string>& addresses);
 
         /**
+         * @brief Returns the name the OS gives this machine.
+         * @return An empty string when the OS reports none.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API std::string host_name();
+
+        /**
          * @brief Holds helpers the two platform sources share.
          */
         namespace Detail
