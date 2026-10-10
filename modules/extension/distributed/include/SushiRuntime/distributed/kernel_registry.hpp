@@ -21,87 +21,79 @@
 
 /**
  * @file kernel_registry.hpp
- * @brief Declares KernelRegistry, which resolves an OpID to a pre-compiled kernel.
+ * @brief Declares KernelRegistry, which maps an operation id to the kernel that runs it.
  * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
  */
 
 #pragma once
 
-#include <vector>
+#include <cstdint>
 #include <functional>
 #include <unordered_map>
-#include <SushiRuntime/core/span.hpp>
+#include <vector>
+
 #include <sycl/sycl.hpp>
+
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
+#include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/distributed/buffer_view.hpp>
 
 namespace SushiRuntime
 {
     namespace Distributed
     {
         /**
-         * @brief Resolves an OpID to a pre-compiled kernel for distributed execution.
+         * @brief Maps an operation id to a kernel compiled into this binary.
          *
-         * Each node maintains an identical local registry of kernels, so the network
-         * only transmits IDs instead of compiled code.
+         * Master and worker each build their own registry, so only the id crosses the wire.
+         * Register every kernel before the registry is given to a WorkerAgent, run_worker()
+         * or a Cluster; from then on it is only read, by any thread.
          */
         class SUSHIRUNTIME_API KernelRegistry : public Core::RefCounted
         {
             public:
                 /**
-                 * @brief Defines the kernel signature that runs on network-resolved local buffers.
-                 * @param inputs Local USM pointers providing read-only input data.
-                 * @param outputs Local USM pointers providing writeable output data.
-                 * @param meta Serialized scalar parameters of the task.
+                 * @brief Names a kernel: it submits work on @p queue and returns its event.
+                 *
+                 * The views name the task's buffers in the order the task lists them and are
+                 * valid until the returned event completes. A kernel may throw; the worker
+                 * then reports the task as failed.
                  */
+                using Kernel = std::function<sycl::event(
+                    sycl::queue& queue, SushiRuntime::span<const BufferView> inputs,
+                    SushiRuntime::span<const BufferView> outputs,
+                    const Graph::TaskMetadata& metadata)>;
+
+                /** @brief Names the kernel form that receives addresses without their sizes. */
                 using RemoteKernel = std::function<sycl::event(
-                    sycl::queue&            queue,
-                    SushiRuntime::span<void* const>  inputs,
-                    SushiRuntime::span<void* const>  outputs,
-                    const Graph::TaskMetadata& meta)>;
+                    sycl::queue& queue, SushiRuntime::span<void* const> inputs,
+                    SushiRuntime::span<void* const> outputs, const Graph::TaskMetadata& metadata)>;
+
+                /** @brief Sets the kernel of an operation, replacing the one set before. */
+                void register_kernel(Graph::OpID id, Kernel kernel);
+
+                /** @brief Wraps a pointer-form kernel in a Kernel and registers the wrapper. */
+                [[deprecated("register a kernel that takes span<const BufferView>")]]
+                void register_kernel(Graph::OpID id, RemoteKernel kernel);
+
+                /** @brief Returns whether an operation has a kernel. */
+                [[nodiscard]] bool has(Graph::OpID id) const;
 
                 /**
-                 * @brief Registers or replaces a kernel implementation for a specific operation ID.
-                 *
-                 * Stores the callable inside the internal map using the operation ID as the key for later retrieval.
-                 *
-                 * @param id The unique identifier for the operation.
-                 * @param fn The callable kernel implementation to register.
+                 * @brief Returns the kernel of an operation.
+                 * @return Null when the operation has none; valid while the registry lives.
                  */
-                void register_kernel(Graph::OpID id, RemoteKernel fn);
+                [[nodiscard]] const Kernel* find(Graph::OpID id) const;
 
-                /**
-                 * @brief Checks whether a kernel implementation exists for the specified operation ID.
-                 *
-                 * Queries the internal registry map to confirm the presence of the operation.
-                 *
-                 * @param id The unique identifier for the operation to check.
-                 * @return True if a kernel is registered, false otherwise.
-                 */
-                bool has(Graph::OpID id) const;
-
-                /**
-                 * @brief Retrieves the registered kernel implementation for a given operation ID.
-                 *
-                 * Looks up the ID in the internal registry and returns a pointer to the callable if found.
-                 *
-                 * @param id The unique identifier for the operation to find.
-                 * @return A pointer to the kernel if found, or nullptr if the operation is unregistered.
-                 */
-                const RemoteKernel* find(Graph::OpID id) const;
-
-                /**
-                 * @brief Extracts a list of all currently registered operation IDs.
-                 *
-                 * Iterates through the internal registry and collects the keys into a flat list.
-                 *
-                 * @return A vector containing all registered operation IDs.
-                 */
-                std::vector<Graph::OpID> known_ops() const;
+                /** @brief Returns the id of every operation that has a kernel, in no set order. */
+                [[nodiscard]] std::vector<Graph::OpID> known_ops() const;
 
             private:
-                std::unordered_map<uint32_t, RemoteKernel> kernels_;
+                /** @brief Holds the kernels by the value of their operation id. */
+                std::unordered_map<std::uint32_t, Kernel> kernels_;
         };
 
     } // namespace Distributed

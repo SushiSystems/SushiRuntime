@@ -30,7 +30,7 @@
 
 #include <cstdint>
 
-namespace SushiRuntime::Distributed::Wire
+namespace SushiRuntime::Distributed
 {
     /**
      * @brief Identifies one shared buffer across the master and its workers.
@@ -73,4 +73,13 @@ namespace SushiRuntime::Distributed::Wire
         /** @brief Holds the buffer's size in bytes. */
         std::uint64_t size_bytes = 0;
     };
-} // namespace SushiRuntime::Distributed::Wire
+
+    /**
+     * @brief Holds the private codec of protocol version 2; these names reach it unqualified.
+     */
+    namespace Wire
+    {
+        using Distributed::BufferHandle;
+        using Distributed::GlobalBufferID;
+    } // namespace Wire
+} // namespace SushiRuntime::Distributed

@@ -21,182 +21,232 @@
 
 /**
  * @file in_process_transport.hpp
- * @brief Declares InProcessFabric and InProcessTransport, an in-process simulated transport.
+ * @brief Declares InProcessFabric and InProcessTransport, a transport inside one process.
  * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
  */
 
 #pragma once
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
+
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/message_type.hpp>
 
 namespace SushiRuntime
 {
     namespace Distributed
     {
         /**
-         * @brief Dictates how the transport simulation handles an in-flight message.
-         *
-         * Permits deterministic injection of network failures like packet loss or reordering.
+         * @brief Names what the fabric does with one frame in flight.
          */
-        enum class FaultAction
+        enum class FaultAction : std::uint8_t
         {
-            Deliver,    /**< Normal: route the message to its destination. */
-            Drop,       /**< Silently discard it (a lost packet). */
-            Duplicate,  /**< Deliver it twice (a spurious retransmit). */
-            Hold        /**< Park it until flush_held(); models an arbitrarily slow peer. */
+            Deliver,   /**< Pass the frame to its destination. */
+            Drop,      /**< Discard it, as a lost packet. */
+            Duplicate, /**< Deliver it twice, as a repeated transmission. */
+            Hold,      /**< Park it until flush_held(), as an arbitrarily slow link. */
         };
 
         /**
-         * @brief Callback determining the fault action for each transmitted message.
-         *
-         * @param from_peer The ID of the sending node.
-         * @param to_peer The ID of the destination node.
-         * @param type The kind of message being transmitted.
-         * @return The action to apply to the message, defaulting to delivery.
+         * @brief Names the way a frame travels on the fabric.
          */
-        using FaultPolicy =
-            std::function<FaultAction(int from_peer, int to_peer, MsgType type)>;
+        enum class FrameDirection : std::uint8_t
+        {
+            MasterToWorker, /**< Sent by the master endpoint. */
+            WorkerToMaster, /**< Sent by a worker endpoint. */
+        };
 
         /**
-         * @brief Simulates a complete cluster network within a single process.
-         *
-         * Connects local endpoints via asynchronous queues, providing a testbed for distributed logic without real networking.
+         * @brief Describes one frame of protocol version 2 to a fault policy.
          */
-        class SUSHIRUNTIME_API InProcessFabric
+        struct FaultedFrame
+        {
+            /** @brief Holds the way the frame travels. */
+            FrameDirection direction = FrameDirection::MasterToWorker;
+
+            /** @brief Holds the index of the worker endpoint that sends or receives it. */
+            std::size_t worker_index = 0;
+
+            /** @brief Holds the frame's type. */
+            MessageType type = MessageType::Hello;
+
+            /** @brief Holds the frame's flag byte. */
+            std::uint8_t flags = 0;
+
+            /** @brief Holds the payload; valid during the policy call only. */
+            SushiRuntime::span<const std::byte> payload;
+        };
+
+        /**
+         * @brief Decides the fate of each frame, control or stream, as it enters the fabric.
+         *
+         * Called on the thread that moves the frame, several at once, with no fabric lock
+         * held. It does not call the fabric or an endpoint.
+         */
+        using FaultPolicy = std::function<FaultAction(const FaultedFrame& frame)>;
+
+        /**
+         * @brief Joins one master endpoint and any number of worker endpoints in one process.
+         *
+         * The endpoints share the fabric's state, so the fabric and its endpoints may be
+         * destroyed in any order. Every member may be called from any thread.
+         * @see modules/extension/distributed/README.md
+         */
+        class SUSHIRUNTIME_API InProcessFabric final
         {
             public:
-                /**
-                 * @brief Constructs a new simulated network fabric.
-                 *
-                 * @param worker_count The number of simulated worker nodes to provision.
-                 */
-                explicit InProcessFabric(int worker_count);
+                /** @brief Builds a fabric with no endpoint, no fault policy and no partition. */
+                InProcessFabric();
 
-                /**
-                 * @brief Destroys the simulated network fabric.
-                 *
-                 * Cleans up shared routing state.
-                 */
+                /** @brief Releases the fabric's share of the state. */
                 ~InProcessFabric();
 
                 InProcessFabric(const InProcessFabric&) = delete;
                 InProcessFabric& operator=(const InProcessFabric&) = delete;
+                InProcessFabric(InProcessFabric&&) = delete;
+                InProcessFabric& operator=(InProcessFabric&&) = delete;
+
+                /** @brief Returns the number of worker endpoints made on this fabric. */
+                [[nodiscard]] std::size_t worker_count() const;
 
                 /**
-                 * @brief Retrieves the number of worker nodes managed by this fabric.
-                 *
-                 * @return The simulated worker count.
-                 */
-                int worker_count() const;
-
-                /**
-                 * @brief Configures the active failure injection strategy.
-                 *
-                 * Applied thread-safely to all subsequent messages. Passing nullptr disables fault injection.
-                 *
-                 * @param policy The fault decision callback to enforce.
+                 * @brief Sets the policy every later frame is put to; an empty one delivers all.
                  */
                 void set_fault_policy(FaultPolicy policy);
 
                 /**
-                 * @brief Delivers all messages currently detained by a hold policy.
-                 *
-                 * Emulates the sudden arrival of delayed packets, potentially scrambling ordering.
-                 *
-                 * @param shuffle_seed Seed for randomized delivery order; 0 preserves FIFO.
+                 * @brief Delivers every held frame.
+                 * @param shuffle_seed Seed of the delivery order; 0 keeps the order of arrival.
                  */
-                void flush_held(uint64_t shuffle_seed = 0);
+                void flush_held(std::uint64_t shuffle_seed = 0);
+
+                /** @brief Returns the number of frames the policy has parked. */
+                [[nodiscard]] std::size_t held_count() const;
 
                 /**
-                 * @brief Counts the messages currently parked by the fault policy.
+                 * @brief Cuts or restores the link of one worker endpoint.
                  *
-                 * @return The number of detained messages.
+                 * While cut, frames to and from the worker are discarded and neither side is
+                 * told, as on a half-open link; the connection stays open.
+                 * @param worker_index Index in the order the worker endpoints were made.
                  */
-                std::size_t held_count() const;
+                void set_partitioned(std::size_t worker_index, bool partitioned);
 
-                /**
-                 * @brief Isolates or reconnects a worker to simulate network partitions.
-                 *
-                 * All traffic to and from the isolated worker is silently dropped.
-                 *
-                 * @param worker The target worker ID.
-                 * @param partitioned True to sever connectivity, false to restore it.
-                 */
-                void set_partitioned(int worker, bool partitioned);
+            private:
+                friend class InProcessTransport;
 
                 struct Impl;
-                /** @brief Internal shared routing state (public for endpoint access). */
+
+                /** @brief Holds the routing state the endpoints share. */
                 std::shared_ptr<Impl> impl_;
         };
 
         /**
-         * @brief A single communication endpoint attached to an in-process fabric.
+         * @brief Holds the settings of a master endpoint on a fabric.
+         */
+        struct InProcessMasterOptions
+        {
+            /** @brief Caps the control frames queued per peer; send() then returns QueueFull. */
+            std::size_t control_queue_frames = 4096;
+        };
+
+        /**
+         * @brief Holds the settings of a worker endpoint on a fabric.
+         */
+        struct InProcessWorkerOptions
+        {
+            /** @brief Connects again after the master closes the peer or stops. */
+            bool reconnect = true;
+
+            /** @brief Holds the wait before a connection attempt is repeated. */
+            std::chrono::milliseconds reconnect_delay{1};
+
+            /** @brief Bounds the wait for a started master; 0 waits without a limit. */
+            std::chrono::milliseconds connect_timeout{0};
+
+            /** @brief Caps the control frames queued for the master. */
+            std::size_t control_queue_frames = 4096;
+        };
+
+        /**
+         * @brief Attaches one endpoint to an InProcessFabric and keeps the ITransport contract.
          *
-         * Provides the standard transport interface over simulated local queues.
+         * Each endpoint runs one pump thread, which delivers its inbound frames and makes its
+         * events. A worker endpoint connects once it and the master endpoint are both started,
+         * and each connection is a new PeerId on both sides.
+         * @see modules/extension/distributed/README.md
          */
         class SUSHIRUNTIME_API InProcessTransport final : public ITransport
         {
             public:
-                /**
-                 * @brief Constructs a simulated transport endpoint.
-                 *
-                 * @param fabric The shared routing switchboard to attach to.
-                 * @param node_id The identity of this endpoint (-1 for master, 0..N-1 for workers).
-                 */
-                InProcessTransport(InProcessFabric& fabric, int node_id);
-
-                /**
-                 * @brief Destroys the simulated transport endpoint.
-                 *
-                 * Detaches from the shared fabric.
-                 */
-                ~InProcessTransport() override;
-
-                /**
-                 * @brief Transmits a framed message to a target peer via the simulated fabric.
-                 *
-                 * @param peer_id The destination node ID.
-                 * @param type The semantic kind of the message.
-                 * @param payload The serialized data to transmit.
-                 */
-                void send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload) override;
-
-                /**
-                 * @brief Registers the callback responsible for handling all inbound messages.
-                 *
-                 * @param handler The function to invoke upon message receipt.
-                 */
-                void on_message(MessageHandler handler) override;
-
-                /**
-                 * @brief Activates the simulated transport endpoint.
-                 *
-                 * Spawns the local delivery thread to process the asynchronous incoming queue.
-                 */
-                void start() override;
-
-                /**
-                 * @brief Halts the simulated transport endpoint.
-                 *
-                 * Safely drains the local queue and terminates the delivery thread.
-                 */
-                void stop() override;
-
-                /**
-                 * @brief Retrieves the number of reachable endpoints on the fabric.
-                 *
-                 * @return The worker count for the master, or 1 for a worker node.
-                 */
-                int peer_count() const override;
-
-                /** @brief Per-endpoint state; public so the fabric can hold weak refs to endpoints. */
                 struct Impl;
 
+                /**
+                 * @brief Creates the master endpoint of a fabric.
+                 * @pre The fabric has no master endpoint yet.
+                 * @return Never null.
+                 */
+                [[nodiscard]] static std::shared_ptr<InProcessTransport> make_master(
+                    InProcessFabric& fabric,
+                    InProcessMasterOptions options = InProcessMasterOptions());
+
+                /**
+                 * @brief Creates a worker endpoint; the fabric gives it the next worker index.
+                 * @return Never null.
+                 */
+                [[nodiscard]] static std::shared_ptr<InProcessTransport> make_worker(
+                    InProcessFabric& fabric,
+                    InProcessWorkerOptions options = InProcessWorkerOptions());
+
+                /** @brief Stops the endpoint and detaches it from the fabric. */
+                ~InProcessTransport() override;
+
+                InProcessTransport(const InProcessTransport&) = delete;
+                InProcessTransport& operator=(const InProcessTransport&) = delete;
+                InProcessTransport(InProcessTransport&&) = delete;
+                InProcessTransport& operator=(InProcessTransport&&) = delete;
+
+                /** @brief Starts the pump thread; a worker then connects when the master runs. */
+                [[nodiscard]] TransportResult start(TransportEvents& events) override;
+
+                /** @brief Closes the endpoint's connections and joins the pump thread. */
+                void stop() noexcept override;
+
+                /** @brief Queues a control frame, which the fault policy sees as it leaves. */
+                [[nodiscard]] SendStatus send(PeerId peer, MessageType type,
+                                              SushiRuntime::span<const std::byte> payload) override;
+
+                /** @brief Adds a stream the pump pulls one frame at a time. */
+                [[nodiscard]] SendStatus send_stream(PeerId peer,
+                                                     std::unique_ptr<FrameSource> source) override;
+
+                /** @brief Closes one connection; the other end hears ClosedByPeer. */
+                void close_peer(PeerId peer) noexcept override;
+
+                /** @brief Returns Loopback. */
+                [[nodiscard]] TransportExposure exposure() const noexcept override;
+
+                /** @brief Returns the payload bytes moved, plus 12 per frame. */
+                [[nodiscard]] TransportStatistics statistics() const noexcept override;
+
+                /**
+                 * @brief Returns the index the fabric gave this worker endpoint.
+                 * @pre This is a worker endpoint.
+                 */
+                [[nodiscard]] std::size_t worker_index() const noexcept;
+
             private:
+                /** @brief Wraps the state a factory built. */
+                explicit InProcessTransport(std::shared_ptr<Impl> impl) noexcept;
+
+                /** @brief Holds the endpoint's queues; the fabric keeps a weak reference to it. */
                 std::shared_ptr<Impl> impl_;
         };
 

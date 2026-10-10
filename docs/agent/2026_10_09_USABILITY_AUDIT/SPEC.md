@@ -3517,3 +3517,108 @@ One change to the task lists: D10 (the per-run offloaded count) leaves phase D's
 - On Windows it is not known whether a `select` in one thread wakes when another thread shuts
   the socket down; `Unit_SocketTest.ShutdownEndsAWaitingRead` decides it at the first run.
 
+
+`Unit_SocketTest.ShutdownEndsAWaitingRead` passed at the first run in 0.03 s: on Windows a waiting
+read does wake when another thread shuts the socket down.
+
+### Decisions of the contract headers (T5)
+
+The headers under `modules/extension/distributed/include/SushiRuntime/distributed/` and the brick
+headers under `source/` are the contract of phase D from here on; where they and the design above
+differ, the headers win. What they decided beyond the design:
+
+1. The message type enum is `MessageType`, in `Distributed`; `Wire::MessageType` still resolves.
+2. `PeerId` is a struct naming one connection: numbered from 1, never reused, 0 is no peer. A
+   reconnect is a new id on both sides, and a worker learns the master's id from
+   `on_peer_connected`. Registration belongs to a connection.
+3. A worker's id is its `PeerId::value`; `WorkerStats::worker_id`, `WELCOME.worker_id` and
+   `WorkerSnapshot::id` carry the same number.
+4. `start(TransportEvents&)` takes the receiver and returns `TransportResult{status, message}`.
+5. A master binds inside `start()`; `local_endpoint()` is valid only after `attach`.
+6. A fourth event, `on_connect_abandoned(cause)`: a worker transport calls it once when it stops
+   trying, so `run_worker` can tell exit 2 from exit 5.
+7. `stop()` reports no `on_peer_lost`; the coordinator drains `PendingTasks` after the transport
+   stops.
+8. `FrameSource` yields whole typed frames. A control frame can overtake a stream, so the worker's
+   output stream ends with `TASK_RESULT` and the master's pull stream ends with `BUFFER_ABORT` when
+   the registry reports Stale or Gone.
+9. `source/task_resubmission.hpp`, `resubmit_tasks()`: the one sequence the monitor, the peer-lost
+   handler and `stop()` share (bump outputs, forget transfer progress, lower inflight,
+   `sink.resubmit`).
+10. A lost result needs two heartbeats: `note_heartbeat` counts misses and `take_overdue` reaps at
+    `K_LOST_RESULT_HEARTBEATS = 2`, because a heartbeat can overtake the stream that carries a
+    result.
+11. Task ids come from `PendingTasks::allocate_task_id()`.
+12. The output fence has two halves: `PendingTasks::expects_output()`, then
+    `BufferRegistry::write()` at the exact version. Whoever removes a task bumps its outputs before
+    resubmitting.
+13. `BufferRegistry` returns no address: `read` and `write` copy under its lock, and
+    `unregister_buffer` returns the id so the coordinator can send `BUFFER_RELEASE`.
+14. `WorkerDirectory` owns the handshake state and verifies proofs; it returns decisions and the
+    coordinator's handlers send the frames. `admits(peer, type)` drops frames from unregistered
+    peers.
+15. `pick()` offers the policy only workers below their `max_jobs`; the wire has no "queue full"
+    status.
+16. Each brick keeps the counters it causes behind a `statistics()` over atomics.
+17. `alive_workers()` returns `std::size_t` and `wait_for_workers` takes one.
+18. `attach(runtime, transport, {})` is ambiguous while the deprecated overloads exist; pass an
+    explicit `ClusterOptions` or nothing.
+19. `ClusterOptions::kernels` only keeps a registry alive; `add_registered_task` takes the registry
+    as an argument.
+20. `WorkerOptions` is flat, one field per flag; `WorkerAgentOptions` is separate.
+21. `WorkerExitCode` includes `SecondSignal = 130`; `StopSignal::request()` lets a test reach exit
+    code 0 without raising a signal.
+22. TCP options: `max_peers` 64, `write_idle_timeout` 5 s, `attempt_timeout`, `backoff_initial`,
+    `backoff_ceiling`, `close_linger` 1 s. `ClusterMonitorOptions::period` is 250 ms and is the
+    ping interval in `WELCOME`.
+23. The fault policy takes a `FaultedFrame` (direction, worker index, type, flags, payload); the
+    worker index is the fabric's, assigned in `make_worker` order and stable across reconnects.
+24. `PeerConnection` holds its `Outbox` as a member, the one place a brick contains another.
+25. `WorkerBufferCache` takes a `CacheAllocator` (two callables), so its tests need no SYCL device.
+
+Two sources beyond the design's list: `environment.cpp` and `task_resubmission.cpp`.
+
+What each later task must know that its headers do not say:
+
+- **T6 transports** (`outbox.hpp`, `peer_connection.hpp`, `tcp_transport.hpp`,
+  `in_process_transport.hpp`): `Outbox::pop` releases its mutex around `FrameSource::next()` and
+  around destroying a source. On a version mismatch the reader queues `REJECT(version)`, closes the
+  outbox, then reports the loss. A connection above `max_peers` gets `REJECT(busy)` and no event.
+  `on_peer_lost` runs on the reader thread, so finished connections are reaped from the accept or
+  connect thread. `exposure()` decides loopback itself (`127.0.0.0/8`, `::1`, `localhost`). The
+  connector logs the "cannot reach master" WARN; no event carries it.
+- **T7 `PendingTasks`**: `take(task_id, worker)` returns nothing for a foreign worker;
+  `note_heartbeat` clears the miss count of every task at or above the oldest held id;
+  `take_for_worker` also forgets the worker's chunk time and heartbeat state; `PendingTask::cause`
+  is meaningful only out of `take_overdue`.
+- **T8 `WorkerDirectory`**: the wire carries nonces as `std::array<std::byte, 32>` and
+  `handshake.hpp` uses `HandshakeNonce` over `std::uint8_t`; a second `HELLO` from an unregistered
+  peer restarts its handshake; `take_silent` marks a worker not alive and keeps the entry until
+  `remove_peer`.
+- **T9 registry and exchange**: the pull source writes the 37-byte chunk prefix, then resizes the
+  payload and lets `read()` copy behind it, so one copy is made. Every transfer ends with a
+  last-chunk frame; a 0-byte buffer is one empty chunk. `apply_output_chunk` assumes the caller
+  checked `expects_output`.
+- **T10 worker bricks**: a task is held until its `TASK_RESULT` frame has been pulled by the writer
+  or queued; the idle value of `oldest_held_task_id` is the largest handed-over id plus one. The
+  output stream's source holds the cache pins and unpins in its destructor, which may run on a
+  transport thread. On `QueueFull` the worker sends nothing and the master reaps the task as
+  unacknowledged. `MasterLink`, once ended, closes every new connection without `HELLO`. The
+  deprecated `register_kernel` wraps the pointer kernel in a `Kernel`.
+- **T11 master composition**: the coordinator takes `(BufferRegistry&, transport, ClusterOptions)`
+  and keeps the secret alive for the directory's span. `on_release` is `noexcept`, sends
+  `BUFFER_RELEASE` and needs a plain catch around the encode. At the attempt cap the dispatcher
+  declines without clearing `offloadable`; `complete_local` and `complete_remote` reset `attempts`.
+  The dispatch branch also declines a late-bound node disabled for the step, and a node whose work
+  threw is not settled as written.
+- **T12 worker composition and entry**: `environment.cpp` is the one reader of an environment
+  variable (`shared_secret.cpp` moves onto it). `run_worker` builds its own runtime.
+  `WorkerAgent::wait_for_end` is what the 100 ms poll calls.
+- **T13 existing tests**: the tree compiles with `-Werror`, so a test that calls a deprecated form
+  on purpose silences the warning locally. `InProcessFabric` takes no worker count; the
+  `WorkerAgent` setters became `WorkerAgentOptions`; a fake worker implements `TransportEvents`;
+  `send` and `start` are `[[nodiscard]]`.
+- **T14 TCP fault tests**: the port is known only after `attach`; `write_idle_timeout` is a
+  transport option, separate from the cluster's liveness.
+- **T15 applications**: `distributed_demo.cpp` and `benchmark_distributed_offload.cpp` use the old
+  factories, the old `WorkerAgent` and the pointer kernel.

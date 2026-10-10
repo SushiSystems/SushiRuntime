@@ -29,7 +29,7 @@
 #pragma once
 
 #include <vector>
-#include <SushiRuntime/distributed/protocol.hpp>
+#include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 
 namespace SushiRuntime
