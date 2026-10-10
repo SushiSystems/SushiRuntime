@@ -280,7 +280,7 @@ caller and not hang.
 The file covers the per-graph profiling switch: section B of
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`, built as task 4 of
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`. It checks that
-`set_profiling_requested()` is independent across graphs, that the plan recompiles once, and that
+`set_profiling()` is independent across graphs, that the plan recompiles once, and that
 every device-dispatch branch the scheduler can route to a profiling queue does so.
 
 ### `NumaFallbackBranchUsesProfilingQueue`

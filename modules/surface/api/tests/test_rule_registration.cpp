@@ -100,7 +100,7 @@ namespace
 
         record_grouped_rule(r.graph.recorder(), r.first, r.second, r.third);
         r.grouped = r.graph.last_rule();
-        r.graph.set_profiling_requested(true);
+        r.graph.set_profiling(true);
         return r;
     }
 } // namespace

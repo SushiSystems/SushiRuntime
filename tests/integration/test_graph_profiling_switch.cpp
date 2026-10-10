@@ -58,13 +58,13 @@ TEST(Integration_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
     int* pb = b.data();
 
     auto requested = rt.graph();
-    requested.set_profiling_requested(true);
-    EXPECT_TRUE(requested.profiling_requested());
+    requested.set_profiling(true);
+    EXPECT_TRUE(requested.is_profiling_requested());
     requested.add(API::Reads{}, API::Writes(a), N,
                   [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
 
     auto plain = rt.graph();
-    EXPECT_FALSE(plain.profiling_requested());
+    EXPECT_FALSE(plain.is_profiling_requested());
     plain.add(API::Reads{}, API::Writes(b), N,
               [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
 
@@ -98,7 +98,7 @@ TEST(Integration_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
     const std::size_t compiles_after_first_run = g.compile_count();
     EXPECT_EQ(compiles_after_first_run, 1u);
 
-    g.set_profiling_requested(true);
+    g.set_profiling(true);
     auto rep_on = g.run();
     EXPECT_FALSE(rep_on.node_timings.empty());
     EXPECT_EQ(g.compile_count(), compiles_after_first_run + 1)
@@ -123,7 +123,7 @@ TEST(Integration_GraphProfilingSwitch, NumaFallbackBranchUsesProfilingQueue)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.set_profiling_requested(true);
+    g.set_profiling(true);
     g.add(API::Reads{}, API::Writes{}, N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto rep = g.run();

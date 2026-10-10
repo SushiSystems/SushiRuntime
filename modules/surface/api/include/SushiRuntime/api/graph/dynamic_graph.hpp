@@ -165,27 +165,6 @@ namespace SushiRuntime
                  */
                 std::size_t region_count() const noexcept { return regions_.size(); }
 
-                /**
-                 * @brief Requests or withdraws per-node device timing for this graph.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                void set_profiling_requested(bool requested)
-                {
-                    if (requested == profiling_requested_)
-                        return;
-                    profiling_requested_ = requested;
-                    plan_.profiling = requested;
-                    for (const auto& kv : regions_)
-                        dirty_regions_.insert(kv.first);
-                }
-
-                /**
-                 * @brief Reports whether this graph currently requests profiling.
-                 * @return The last value set by set_profiling_requested(), or the
-                 *         runtime's RuntimeSettings::profiling default.
-                 */
-                bool profiling_requested() const noexcept { return profiling_requested_; }
-
                 /** @brief Returns how many rules the live regions hold together. */
                 [[nodiscard]] std::size_t size() const noexcept
                 {
@@ -257,6 +236,22 @@ namespace SushiRuntime
                 Execution::RuntimeContext& run_context() noexcept { return *ctx_; }
 
                 /**
+                 * @brief Records the profiling request; the next run rebuilds every region.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                void request_profiling(bool requested) noexcept
+                {
+                    if (requested == profiling_requested_)
+                        return;
+                    profiling_requested_ = requested;
+                    plan_.profiling = requested;
+                    rebuild_every_region_ = true;
+                }
+
+                /** @brief Returns whether the next plan requests per-node device timing. */
+                bool profiling_request() const noexcept { return profiling_requested_; }
+
+                /**
                  * @brief Returns a region's recorder for reading.
                  *
                  * The graph reads through here, because Region::recorder() on a non-const region
@@ -294,6 +289,12 @@ namespace SushiRuntime
                 /** @brief Composes the plan from the changed regions and clears the pending set. */
                 void rebuild_plan()
                 {
+                    if (rebuild_every_region_)
+                    {
+                        for (const auto& kv : regions_)
+                            dirty_regions_.insert(kv.first);
+                        rebuild_every_region_ = false;
+                    }
                     commit(dirty_regions_, dropped_,
                            [this](RegionKey key) -> const Recorder*
                            {
@@ -332,7 +333,8 @@ namespace SushiRuntime
                 /** @brief Returns whether a structural change or new tasks require a recompose. */
                 bool needs_commit() const
                 {
-                    return !composed() || !dirty_regions_.empty() || !dropped_.empty();
+                    return !composed() || rebuild_every_region_ || !dirty_regions_.empty() ||
+                           !dropped_.empty();
                 }
 
                 /** @brief Marks dirty each region written to whose recording really changed. */
@@ -361,6 +363,7 @@ namespace SushiRuntime
                     dirty_regions_ = std::exchange(other.dirty_regions_, {});
                     dropped_ = std::exchange(other.dropped_, {});
                     steps_ = std::exchange(other.steps_, detail::StepMachinery());
+                    rebuild_every_region_ = std::exchange(other.rebuild_every_region_, false);
                 }
 
                 /**
@@ -397,6 +400,9 @@ namespace SushiRuntime
 
                 /** @brief Defaults from RuntimeSettings::profiling; mirrors plan_.profiling. */
                 bool profiling_requested_ = false;
+
+                /** @brief Set by a change of the profiling request, cleared by the next build. */
+                bool rebuild_every_region_ = false;
         };
 
     } // namespace API

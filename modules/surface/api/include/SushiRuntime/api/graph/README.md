@@ -20,7 +20,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `backing_graph.hpp` | BackingGraph and is_graph_emitter_v |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_emitter(), add_host(), name_last(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
-| `step_driver.hpp` | StepDriver: run(), try_run(), run_for(), run_until(), run_async(), cancel() and the step loop |
+| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, cancel(), set_profiling() and the step loop |
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
@@ -41,10 +41,10 @@ A Graph moves and does not copy. The source of a move is an empty graph on the s
 size(), node_count() and compile_count() are zero, a run is refused with `invalid_graph`, and add()
 records onto it again. The plan moves with the rules, so the destination does not recompile.
 
-A graph must not be moved while a step started with run_async() is pending. The RunHandle holds the
-address of the graph that started the step, and the pending flag lives in StepDriver, which is
-copied by the move. After such a move the destination refuses every run as still in flight, and the
-handle settles against the emptied source, so no State advances. Wait on the handle first.
+A graph must not be moved while a step started with run_async() is pending: the RunHandle holds the
+address of the graph that started the step. A debug build asserts on such a move. A release build
+gives it the result the "StepDriver: moves" section describes: the move waits for the step, and the
+handle then owns nothing.
 
 ### rule_registration
 
@@ -447,7 +447,7 @@ by holding it at 1 across a multi-step run whose sizes and enable flags change e
 
 StepDriver is the run surface and the step loop, written once for Graph and DynamicGraph. The
 owner derives from StepDriver\<Owner> and befriends it. The driver owns nothing but the marker of a
-pending asynchronous step.
+pending asynchronous step and the number of the last step it started.
 
 ### What the owner supplies
 
@@ -461,7 +461,49 @@ pending asynchronous step.
 | `run_plan()`, `run_steps()` | The plan a step runs and the per-step hooks around it |
 | `rearm_plan()` | Restores the plan's per-run state before each step |
 | `runs_chained()` | Whether the steps run as an in-order chain from the calling thread |
-| `size()` | The count a report multiplies by the steps run; it is the rule count |
+| `node_count()` | The count a report multiplies by the steps run |
+| `request_profiling()`, `profiling_request()` | Stores and returns the profiling request behind set_profiling() |
+
+### Run entries
+
+Graph and DynamicGraph take every run entry from the driver, so the two cannot differ:
+
+| Throwing | Returning a value | Runs |
+| --- | --- | --- |
+| `run()`, `run(reuse)` | `try_run()`, `try_run(reuse)` | One step |
+| `run(steps)`, `run(steps, reuse)` | `try_run(steps)`, `try_run(steps, reuse)` | A fixed number of steps |
+| `run_for(budget)`, `run_for(budget, reuse)` | `try_run_for(budget)`, `try_run_for(budget, reuse)` | Steps until the wall-clock budget elapses; at least one |
+| `run_until(done)`, `run_until(done, reuse)` | `try_run_until(done)`, `try_run_until(done, reuse)` | Steps until `done()` is true |
+| `run_async()` | `try_run_async()` | One step, without waiting |
+
+A try_ form is `noexcept` and returns a `Result`: the report, a pointer to the caller's report, or
+the RunHandle. The throwing form calls its try_ form and throws the Error it got as a
+`Core::SushiException`, so both report a failure with the same code and text.
+`modules/surface/api/tests/test_run_driver.cpp` holds the list as `static_assert`s over both types.
+
+### guarded
+
+guarded() is the one place an exception becomes an Error. It runs a callable inside a catch ladder
+and builds the Error in the handler that caught, with no rethrow: on the Windows intel-llvm
+toolchain a rethrow from a helper called inside a catch block crashes the process.
+
+| Thrown | While the plan is built | Once a step may have started |
+| --- | --- | --- |
+| `Core::SushiException` | Its own Error | Its own Error |
+| `sycl::exception` | `kernel_failed` | `kernel_failed` |
+| Any other exception, such as one a host task throws | `compile_failed` | `kernel_failed` |
+
+The build phase is plan_is_stale(), rebuild_plan() and prepare_run(). Everything after it is the
+step phase, and RunHandle::try_wait() settles a step through the same ladder, so a throwing host
+task is `kernel_failed` from try_run() and from try_wait() alike. The try blocks surround the whole
+loop, not one step.
+
+### entry_refusal
+
+entry_refusal() answers before anything touches the plan. A graph with nothing recorded is
+`invalid_graph`. A graph with a pending asynchronous step is `invalid_state`: a synchronous run
+re-arms every node's in-degree, and doing that while the workers walk the DAG would rewrite the
+scheduling state under them. A graph whose recorded handle was freed is `dangling_resource`.
 
 ### run(steps)
 
@@ -507,6 +549,10 @@ plan be destroyed underneath the workers, as the RunHandle section describes.
 On a DynamicGraph a pending structural change (a region added or dropped) is committed before the
 step is submitted, exactly as a synchronous run does.
 
+try_run_async() returns the handle or the Error that kept the step from starting: the refusals of
+entry_refusal(), `unsupported` from an engine that cannot start a run without blocking, and a build
+or submission failure mapped by guarded(). run_async() throws that Error.
+
 ### run_async: pre-step order
 
 run_async() follows the same pre-step order as the synchronous driver: point the State views at
@@ -520,11 +566,42 @@ cancel() is safe to call concurrently with a blocking run(), run_for() or run_un
 another thread: the active step drains its remaining tasks without launching new kernels and
 returns, the driver stops before the next step, and the resulting RunReport has cancelled set. It
 does nothing when no run is active; the flag is cleared when the next run starts. Cancellation is a
-clean stop, not an error, and it does not throw.
+clean stop, not an error, and cancel() is `noexcept`: the engine sets one atomic flag.
+
+### set_profiling
+
+set_profiling() asks for per-node device timing on this graph and returns the graph, so it chains
+with the calls around it. It is `noexcept` on both graph types and allocates nothing: the owner
+stores the request, and the next run rebuilds the plan with it. is_profiling_requested() reads the
+request back. set_profiling_requested() and profiling_requested() are the deprecated spellings and
+forward to these two.
+
+### StepDriver: moves
+
+The marker of a pending step never moves, and the driver's move operations leave no step pending
+on either side. Moving a graph whose step is pending breaks a precondition, so a debug build
+asserts. A release build waits for the step in the move, advances the States as wait() would, and
+drops the outcome, which is what destroying the handle does. Both graphs are then runnable. The
+handle still names the source, and its wait() returns `invalid_state`, because the step it was
+given is over.
+
+Copying the marker to the destination, which the defaulted move did, left a destination that
+refused every run for good. Leaving the marker behind without waiting would let the destination
+re-arm a plan the workers still walk. The driver's move runs before the plan and the recorder
+move, so the step ends on an intact graph.
+
+### settle_async_step
+
+settle_async_step() is what a handle calls to wait. It first checks that the handle's step is the
+one pending here: each run_async() numbers its step, the handle carries the number, and a handle
+whose step a move already ended gets `invalid_state`. It then clears the marker before the blocking
+call, because the step is over however it ends and the graph must be runnable again; one throwing
+kernel must not make the graph refuse every later run. The wait and finish_async_step() run under
+guarded().
 
 ### finish_async_step
 
-finish_async_step() is the tail of drive_impl's loop body plus its report building, split out
+finish_async_step() is the tail of the synchronous loop body plus its report building, split out
 because those happen in a different call from the submission. Advancing every State in it, and not
 at submit, is what makes an asynchronous step observationally identical to a synchronous one: the
 just-written field becomes current only after the step has genuinely finished. `state` is what
@@ -533,18 +610,18 @@ run_async() recorded when it submitted the step.
 On a DynamicGraph every live region's States advance here, because the driver runs the hooks
 aggregated from all of them.
 
+### Offloaded count
+
+`tasks_offloaded_to_network` in a report is the number of dispatches a worker accepted during that
+run. The coordinator's counter is cumulative, so the driver reads it before the first step and the
+report builder subtracts. The reading happens once per run, and it is one null check when no
+coordinator is installed.
+
 ### drive: report reset
 
 drive() resets the report before any early return. A caller reusing one report across ticks must
 never read the previous run's numbers back out of a run that failed; fill_run_report sets the flag
 back on success.
-
-### drive: pending asynchronous step
-
-drive() settles a pending asynchronous step before anything touches the plan. A synchronous run
-re-arms every node's in-degree, so letting one start while an asynchronous step is still executing
-would rewrite the scheduling state of the DAG the workers are walking. That is a much worse failure
-than the engine's own reentrancy rejection, which only fires later, after the damage.
 
 ### run_chained
 
@@ -556,7 +633,9 @@ only for cancellation.
 ### async_step_pending_
 
 async_step_pending_ is true between run_async() and the settling of its handle. It guards the plan
-against a second run re-arming nodes the workers are still walking, and drive() checks it.
+against a second run re-arming nodes the workers are still walking, and entry_refusal() checks it.
+async_step_serial_ counts the steps run_async() started; settle_async_step() compares it with the
+number in the handle.
 
 ## dynamic_graph.hpp
 
@@ -590,7 +669,7 @@ Buffer::region({offset, count}) and passes it to Reads(...)/Writes(...) exactly 
 Runtime::dynamic_graph() returns a DynamicGraph. It moves and does not copy. The source of a move
 has no region and a compose count of zero on the same runtime, and takes regions again; the regions
 and the log they report to move together. As for Graph, it must not be moved while a step started
-with run_async() is pending.
+with run_async() is pending; the "StepDriver: moves" section gives the result in each build.
 
 ### region
 
@@ -614,12 +693,13 @@ drop() takes effect on the structure immediately: region() and has_region no lon
 The boundary it leaves is re-stitched at the next run, so a region is never removed from a DAG that
 is mid-step. Dropping an absent region does nothing.
 
-### set_profiling_requested
+### request_profiling
 
-set_profiling_requested() stamps `plan_.profiling` immediately, so it reads correctly even with no
-regions to recompose, and marks every live region for a full recompose so the next commit renumbers
-every node's public registration index. The setting is independent of every other graph on the same
-runtime.
+request_profiling() stores the request behind set_profiling(). It stamps `plan_.profiling` at once,
+so the flag reads correctly even with no region to compose, and sets a marker that makes the next
+build mark every live region dirty, so that commit renumbers every node's public registration
+index. The marking waits for the build because it allocates and the setter is `noexcept`. The
+setting is independent of every other graph on the same runtime.
 
 ### refresh_updaters
 
@@ -805,7 +885,8 @@ recorder(), so a function written over a Recorder records onto either.
 A synchronous run reads its "before" counters and its start time as locals, because the whole run
 happens inside one function. An asynchronous run does not: the step is submitted in one call and
 settled in another, so the same values have to travel in the handle. Every member of AsyncRunState
-is a plain value, so the handle owns no resources and stays cheap to move.
+is a plain value, so the handle owns no resources and stays cheap to move. `serial` is the number
+the driver gave the step, by which the driver recognises the handle when it waits.
 
 ### RunHandle
 
@@ -840,7 +921,8 @@ it. The moved-from handle owns nothing afterwards.
 
 The handle keeps the address of the graph that started the step, so that graph must neither be
 destroyed nor moved while the handle is pending. Graph and DynamicGraph state it as a precondition
-of their move operations.
+of their move operations, and the "StepDriver: moves" section says what a move does when it is
+broken.
 
 ### ready
 
@@ -851,9 +933,17 @@ step's state advance has not happened yet.
 ### wait()
 
 wait() completes the step's lifecycle, in which every State advances to the field it just wrote, and
-consumes the handle, so a second call throws instead of waiting on a step that is no longer running.
-A task exception propagates out of wait(), and the state advance is skipped in that case, exactly as
-a failed synchronous run leaves its states untouched.
+consumes the handle, so a second call throws `invalid_state` instead of waiting on a step that is no
+longer running. wait() calls try_wait() and throws the Error it got as a `Core::SushiException`. A
+task exception therefore arrives as `kernel_failed` carrying the task's text, the same as from
+run(), and the state advance is skipped in that case, exactly as a failed synchronous run leaves
+its states untouched.
+
+### try_wait
+
+try_wait() is the implementation of every wait: it resets the report, consumes the handle and asks
+the driver to settle the step. It is `noexcept` and returns the report or the Error that ended the
+step.
 
 ### wait(Core::RunReport&)
 
@@ -864,23 +954,18 @@ from the previous step can never survive into this one.
 
 ### wait: consuming the handle
 
-wait() consumes the handle before the blocking call: if a task threw, the step is still over, and a
-destructor that tried to wait again would block forever on a latch nobody will signal.
+try_wait() consumes the handle before the blocking call: if a task threw, the step is still over,
+and a destructor that tried to wait again would block forever on a latch nobody will signal.
 
 ### wait: clearing the report
 
-wait() clears the report before the blocking call, so a step that ends in a task exception cannot
-leave the previous step's numbers readable in a report the caller reuses. finish_async_step sets the
-flag back on success.
-
-### wait: releasing the owner
-
-The step is over either way. wait() releases the owner's in-flight marker before propagating, or one
-throwing kernel would leave the graph refusing every later run. The failure of a step must not
-become the failure of the graph.
+try_wait() clears the report before anything else, so a step that ends in a task exception, or a
+handle that owns no step, cannot leave the previous step's numbers readable in a report the caller
+reuses. finish_async_step sets the flag back on success.
 
 ### settle
 
-settle() finishes a step nobody waited for. A destructor may not throw, so the outcome, including a
-task exception, is dropped; that is the documented cost of discarding a handle, and it is still far
-better than returning while workers hold pointers into the plan.
+settle() finishes a step nobody waited for by calling try_wait() into a report it discards. A
+destructor may not throw, so the outcome, including a task exception, is dropped; that is the
+documented cost of discarding a handle, and it is still far better than returning while workers
+hold pointers into the plan.
