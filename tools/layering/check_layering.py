@@ -21,10 +21,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.checker import Checker, Issue, run  # noqa: E402
 
 K_TIER_ORDER: tuple[str, ...] = ("foundation", "platform", "engine", "surface", "extension")
+K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset({
+    ("logging", "core"),
+    ("scheduler", "task"),
+    ("graph", "task"),
+    ("execution", "task"),
+    ("execution", "scheduler"),
+    ("execution", "graph"),
+    ("api", "interop"),
+})
 K_SOURCE_SUFFIXES = frozenset({".h", ".hpp", ".cpp", ".glsl", ".comp", ".vert", ".frag"})
 K_ANGLE_INCLUDE = re.compile(r'^\s*#\s*include\s*<[^/>]+/([^/>]+)/[^>]+>')
 K_QUOTED_INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')
 K_CMAKE_SOURCE_REACH = re.compile(r"(?:^|[/\s\"'])([A-Za-z0-9_]+)/source\b")
+K_CMAKE_COMMENT = re.compile(r"#.*")
+K_CMAKE_MODULE_CALL = re.compile(r"\bsushiruntime_add_module\s*\(([^)]*)\)")
+K_CMAKE_KEYWORD = re.compile(r"[A-Z][A-Z_]*")
+K_PUBLIC_DEPENDS = "DEPENDS"
+K_PRIVATE_DEPENDS = "PRIVATE_DEPENDS"
+K_PUBLIC_FOLDER = "include"
+K_BUILT_FOLDERS = frozenset({"include", "source"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +92,32 @@ def _source_lines(module: Module) -> Iterator[tuple[Path, int, str]]:
                 yield path, number, line
 
 
+def _module_includes(tree: ModuleTree, module: Module) -> Iterator[tuple[Path, int, Module]]:
+    """Yields each include, in a module's include/ or source/, of another module of the tree."""
+    for path, number, line in _source_lines(module):
+        if path.relative_to(module.folder).parts[0] not in K_BUILT_FOLDERS:
+            continue
+        match = K_ANGLE_INCLUDE.match(line)
+        target = tree.modules.get(match.group(1)) if match else None
+        if target is not None and target.name != module.name:
+            yield path, number, target
+
+
+def _declared_dependencies(module: Module) -> dict[str, frozenset[str]]:
+    """Returns the modules a module's build file names, keyed by DEPENDS and PRIVATE_DEPENDS."""
+    declared: dict[str, set[str]] = {K_PUBLIC_DEPENDS: set(), K_PRIVATE_DEPENDS: set()}
+    build_file = module.folder / "CMakeLists.txt"
+    text = build_file.read_text(encoding="utf-8") if build_file.is_file() else ""
+    call = K_CMAKE_MODULE_CALL.search(K_CMAKE_COMMENT.sub("", text))
+    keyword = ""
+    for token in call.group(1).split() if call else []:
+        if K_CMAKE_KEYWORD.fullmatch(token):
+            keyword = token
+        elif keyword in declared:
+            declared[keyword].add(token)
+    return {keyword: frozenset(names) for keyword, names in declared.items()}
+
+
 def rule_declared_tiers(tree: ModuleTree) -> Iterator[Issue]:
     """Yields an issue for each tier folder missing from the declared order."""
     if not tree.tier_order:
@@ -116,6 +158,27 @@ def rule_private_reach(tree: ModuleTree) -> Iterator[Issue]:
                     yield Issue(build_file, number, f"reaches into {name}/source")
 
 
+def rule_same_tier_includes(tree: ModuleTree) -> Iterator[Issue]:
+    """Yields an issue for each include of a same-tier module whose edge is not listed."""
+    for module in tree.modules.values():
+        for path, number, target in _module_includes(tree, module):
+            if target.tier == module.tier and (module.name, target.name) not in K_SAME_TIER_EDGES:
+                yield Issue(path, number, f"{module.tier}/{module.name} includes {target.name}, "
+                                          "an edge K_SAME_TIER_EDGES does not list")
+
+
+def rule_declared_dependencies(tree: ModuleTree) -> Iterator[Issue]:
+    """Yields an issue for each include of a module the including module's build file omits."""
+    for module in tree.modules.values():
+        declared = _declared_dependencies(module)
+        for path, number, target in _module_includes(tree, module):
+            public = path.relative_to(module.folder).parts[0] == K_PUBLIC_FOLDER
+            keywords = (K_PUBLIC_DEPENDS,) if public else (K_PUBLIC_DEPENDS, K_PRIVATE_DEPENDS)
+            if not any(target.name in declared[keyword] for keyword in keywords):
+                yield Issue(path, number, f"{module.name} includes {target.name}, which its "
+                                          f"CMakeLists.txt does not name in {' or '.join(keywords)}")
+
+
 K_CHECKER = Checker(
     description="Checks module dependencies against the declared tier order.",
     collect=collect,
@@ -123,6 +186,8 @@ K_CHECKER = Checker(
         "rule_declared_tiers": rule_declared_tiers,
         "rule_upward_includes": rule_upward_includes,
         "rule_private_reach": rule_private_reach,
+        "rule_same_tier_includes": rule_same_tier_includes,
+        "rule_declared_dependencies": rule_declared_dependencies,
     },
 )
 
