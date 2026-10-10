@@ -546,7 +546,8 @@ no clock samples in this loop.
 
 ##### The offload branch
 
-With no coordinator installed the offload branch is one load of `offload_` and a branch
+The branch is `OffloadGate::offer()` of `offload_gate.hpp`, which the scheduler holds by value.
+With no coordinator installed it is one load of the gate's pointer and a branch
 never taken; the node's offload state is not read. With one installed, only nodes its
 `prepare()` marked offloadable at `compile()` reach `try_offload()`, one virtual call each.
 The run's failed and cancelled flags are read inside that branch, after the offloadable test,
@@ -554,11 +555,11 @@ so a node that is not offloadable pays nothing for them. An offloadable node of 
 run is not offered; it goes to `execute_task()`, which skips it.
 On a successful offload the scheduling reference passes to the coordinator and is released
 when it returns the node through `complete_remote()` or `resubmit()`, so the loop neither
-executes nor releases the task.
+executes nor releases the task. Those two members are defined in `source/offload_return.cpp`.
 
-`offload_` sits with the scheduler's read-mostly members, after the allocator reference,
-away from the counters workers write. It is a plain pointer: `set_offload_coordinator()`
-writes it only while the pool runs no node.
+The gate sits with the scheduler's read-mostly members, after the allocator reference,
+away from the counters workers write. It holds a plain pointer: `set_offload_coordinator()`
+writes it through `install()` only while the pool runs no node.
 
 An offloaded node has left the local poll path and will not be reaped there, so its
 quiescence count is retired at once. Its remote completion re-triggers successors through
