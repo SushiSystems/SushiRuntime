@@ -8,6 +8,7 @@ sushiruntime_add_module(
     NAME scheduler TIER engine
     SYCL
     SOURCES
+        dispatch_placement.cpp
         failure_naming.cpp
         task_scheduler.cpp
     DEPENDS core logging observability task
