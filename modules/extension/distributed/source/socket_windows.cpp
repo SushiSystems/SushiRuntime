@@ -249,6 +249,47 @@ namespace SushiRuntime
                 return ready == 0 ? SocketStatus::Timeout : SocketStatus::Ok;
             }
 
+            /** @brief Longest single wait of a read or a write before it reads the shut flag. */
+            constexpr std::chrono::milliseconds K_SHUT_POLL{100};
+
+            /**
+             * @brief Waits like wait_ready(), and ends with Closed once @p is_shut is set.
+             *
+             * select() on Windows does not wake when another thread shuts the socket and the
+             * peer never answers, so the wait runs in slices of K_SHUT_POLL.
+             * @return Ok, Timeout, Closed or Failed.
+             */
+            SocketStatus wait_ready_or_shut(SOCKET socket, Readiness readiness,
+                                            std::chrono::milliseconds timeout,
+                                            const std::atomic<bool>& is_shut,
+                                            int& os_error) noexcept
+            {
+                using Clock = std::chrono::steady_clock;
+
+                const bool              is_bounded = timeout.count() >= 0;
+                const Clock::time_point deadline =
+                    Clock::now() + (is_bounded ? timeout : K_SHUT_POLL);
+                for (;;)
+                {
+                    if (is_shut.load(std::memory_order_acquire))
+                        return SocketStatus::Closed;
+
+                    std::chrono::milliseconds slice = K_SHUT_POLL;
+                    if (is_bounded)
+                    {
+                        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            deadline - Clock::now());
+                        if (left.count() <= 0)
+                            return SocketStatus::Timeout;
+                        slice = std::min(slice, left);
+                    }
+
+                    const SocketStatus status = wait_ready(socket, readiness, slice, os_error);
+                    if (status != SocketStatus::Timeout)
+                        return status;
+                }
+            }
+
             /**
              * @brief Reads the error a non-blocking connect ended with.
              * @return 0 when the connection stands.
@@ -497,7 +538,8 @@ namespace SushiRuntime
                 if (error == WSAEWOULDBLOCK)
                 {
                     error  = 0;
-                    status = wait_ready(socket, Readiness::Readable, idle_timeout, error);
+                    status = wait_ready_or_shut(socket, Readiness::Readable, idle_timeout,
+                                                shut_down_, error);
                     if (status == SocketStatus::Ok)
                         continue;
                 }
@@ -543,7 +585,8 @@ namespace SushiRuntime
                 if (error == WSAEWOULDBLOCK)
                 {
                     error  = 0;
-                    status = wait_ready(socket, Readiness::Writable, idle_timeout, error);
+                    status = wait_ready_or_shut(socket, Readiness::Writable, idle_timeout,
+                                                shut_down_, error);
                     if (status == SocketStatus::Ok)
                         continue;
                 }
@@ -581,6 +624,7 @@ namespace SushiRuntime
          */
         void Socket::shutdown() noexcept
         {
+            shut_down_.store(true, std::memory_order_release);
             if (is_open())
                 (void)::shutdown(to_native(handle_), SD_BOTH);
         }

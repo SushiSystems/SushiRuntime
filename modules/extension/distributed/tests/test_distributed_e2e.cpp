@@ -1617,14 +1617,21 @@ TEST(Integration_DistributedE2ETest, AttemptCapDoesNotOutliveTheRun)
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "always_fails_remotely", a, b, out);
     CompiledGraph compiled = graph.compile();
+    compiled.capture_base_state();
 
     // Every dispatch fails on the worker, so each run spends the cap and then runs locally.
     for (std::size_t round = 1; round <= K_RUNS; ++round)
     {
         SCOPED_TRACE(round);
         out.fill(K_UNWRITTEN);
+        compiled.rearm();
         BackgroundRun run(master_context, compiled);
-        ASSERT_TRUE(run.wait());
+        const bool is_finished = run.wait();
+        const ClusterStatistics seen = cluster.statistics();
+        ASSERT_TRUE(is_finished)
+            << "dispatches " << worker.dispatch_count() << ", offloaded " << seen.offloaded
+            << ", declined " << seen.declined << ", redispatched " << seen.redispatched
+            << ", pending " << seen.pending_tasks << ", alive " << seen.alive_workers;
 
         expect_sum(out, a, b);
         EXPECT_EQ(worker.dispatch_count(), round * K_MAXIMUM_OFFLOAD_ATTEMPTS);

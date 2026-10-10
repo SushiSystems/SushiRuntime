@@ -79,8 +79,8 @@ namespace SushiRuntime
              * @brief Restores every node's per-run state to its compiled baseline.
              *
              * Resets in_degree (nodes + sentinel) from the snapshot capture_base_state()
-             * took, and clears any distributed offload bookkeeping, so the cached plan
-             * is ready to run again. Safe to call only after capture_base_state().
+             * took, so the cached plan is ready to run again. Safe to call only after
+             * capture_base_state().
              */
             void rearm() noexcept;
 

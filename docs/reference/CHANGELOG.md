@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- 2026-10-10 — distributed: Changed the wire protocol to version 2: a 12-byte frame with magic and version, 16 message types and a 1 MiB payload bound; a version 1 peer is refused (`wire_frame.hpp`, `wire_messages.hpp`).
+- 2026-10-10 — distributed: Added a mutual HMAC-SHA256 handshake over a shared secret; an empty secret is refused on a transport other machines reach (`handshake.hpp`, `shared_secret.hpp`, `cluster.cpp`).
+- 2026-10-10 — distributed: Changed `Cluster::attach` to take `ClusterOptions`, bind 127.0.0.1 by default and keep the cluster attached before when the new one does not start (`cluster.hpp`, `tcp_transport.hpp`).
+- 2026-10-10 — distributed: Changed `ITransport` to an event interface with per-peer sends, streams and a loss cause; the old receive callback is gone (`i_transport.hpp`).
+- 2026-10-10 — distributed: Changed buffer transfer to chunks of 256 KiB by default, written in place and fenced by version, so a buffer above the frame bound crosses (`buffer_exchange.hpp`).
+- 2026-10-10 — distributed: Changed the kernel signature to a span of `BufferView` with sizes, and removed the pointer form of `register_kernel` and the `RemoteKernel` alias (`kernel_registry.hpp`).
+- 2026-10-10 — distributed: Added `run_worker`, the worker's flags and exit codes, a stop signal, and reconnection with backoff (`worker_main.hpp`, `worker_agent.hpp`).
+- 2026-10-10 — distributed: Added `ClusterStatistics` with the reap, handshake and transfer counters, `completed_remote` and `peers_closed_malformed` (`cluster_statistics.hpp`).
+- 2026-10-10 — distributed: Added `add_registered_task`, which adds a node whose kernel comes from the registry on either side (`registered_task.hpp`).
+- 2026-10-10 — distributed: Fixed a write to a closed peer ending the process, a stray connection taking a worker slot, and a slow link being read as a dead worker (`socket.hpp`, `peer_connection.cpp`).
+- 2026-10-10 — distributed: Fixed pending nodes being lost at `stop()`, a task reaped at the deadline keeping its inflight count, and a stalled link never being reported lost on Windows (`socket_windows.cpp`).
+- 2026-10-10 — distributed: Changed the demo into a master program and added `distributed_worker`, a worker program of eight lines around `run_worker` (`distributed_demo.cpp`, `distributed_worker.cpp`).
 - 2026-10-10 — api: Added `try_run_for`, `try_run_until`, `try_run_async` and the reuse forms of the timed runs to both graphs; the dynamic graph gains `try_run` (`step_driver.hpp`).
 - 2026-10-10 — api: Changed a throwing host task to report the kernel-failed code and a run during a pending step the invalid-state code; `RunHandle::wait` throws `SushiException` only (`step_driver.hpp`, `run_handle.hpp`).
 - 2026-10-10 — api: Changed the run handle and `run_async()` to nodiscard, and deprecated `set_profiling_requested` and `profiling_requested` for `set_profiling` and `is_profiling_requested`.

@@ -225,7 +225,8 @@ namespace SushiRuntime
                  */
                 Socket(Socket&& other) noexcept
                     : handle_(std::exchange(other.handle_, K_INVALID_SOCKET_HANDLE)),
-                      write_closed_(other.write_closed_.load())
+                      write_closed_(other.write_closed_.load()),
+                      shut_down_(other.shut_down_.load())
                 {
 
                 }
@@ -240,6 +241,7 @@ namespace SushiRuntime
                         close();
                         handle_ = std::exchange(other.handle_, K_INVALID_SOCKET_HANDLE);
                         write_closed_.store(other.write_closed_.load());
+                        shut_down_.store(other.shut_down_.load());
                     }
                     return *this;
                 }
@@ -276,7 +278,8 @@ namespace SushiRuntime
                 [[nodiscard]] SocketResult peer_endpoint(Endpoint& peer) const;
 
                 /**
-                 * @brief Ends both directions; a read or a write waiting on another thread returns.
+                 * @brief Ends both directions; a read or a write waiting on another thread returns
+                 *        Closed within 100 ms, whether or not the peer answers.
                  */
                 void shutdown() noexcept;
 
@@ -300,6 +303,9 @@ namespace SushiRuntime
 
                 /** @brief Set by the first write_all() that does not return Ok. */
                 std::atomic<bool> write_closed_{false};
+
+                /** @brief Set by shutdown(); a waiting read or write reads it between waits. */
+                std::atomic<bool> shut_down_{false};
         };
 
         /**

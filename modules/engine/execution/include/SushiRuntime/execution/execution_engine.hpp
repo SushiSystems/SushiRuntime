@@ -93,8 +93,8 @@ namespace SushiRuntime
 
             /**
              * @brief Runs a compiled graph in place and blocks until completion.
-             * @param graph The graph to run; its nodes' per-run state must be reset before the next
-             *        run.
+             * @param graph The graph to run. Before it runs again, CompiledGraph::rearm() restores
+             *        its nodes' per-run state from what capture_base_state() recorded.
              * @see modules/engine/execution/README.md
              */
             virtual void execute(CompiledGraph& graph) = 0;
