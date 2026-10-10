@@ -21,36 +21,224 @@
 
 /**
  * @file test_logger.cpp
- * @brief Tests that an info log formats without throwing and SR_THROW_IF throws only when true.
+ * @brief Tests the log level gate, the sink, both delivery modes and SR_THROW_IF.
+ * @see modules/foundation/logging/tests/README.md
  * @author Mustafa Garip
  */
 
+#include <cstddef>
+#include <stdexcept>
 #include <string>
-#include <iostream>
+#include <string_view>
+#include <thread>
+#include <vector>
+
 #include <gtest/gtest.h>
+
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 
 using namespace SushiRuntime;
 
-/**
- * @brief Tests basic info logging formatting.
- *
- * We cannot easily capture the log stream here, but we can verify formatting runs
- * without throwing exceptions.
- */
-TEST(Unit_LoggerTest, BasicInfoLog)
+namespace
 {
-    SR_LOGGER_SET_SYNC_MODE(true);
-    EXPECT_NO_THROW({ SR_LOG_INFO("Testing logger: {}", "Success"); });
+    /** @brief Holds what a test sink saw of one record. */
+    struct SeenRecord
+    {
+        Core::LogLevel level;   /**< The level the sink was called with. */
+        std::string line;       /**< A copy of the line. */
+        std::thread::id thread; /**< The thread the sink ran on. */
+    };
+
+    /** @brief Collects the records a test sink receives. */
+    using SeenRecords = std::vector<SeenRecord>;
+
+    /** @brief Returns a sink that appends each record to @p records; see README.md. */
+    Core::LogSink collect_into(SeenRecords* records)
+    {
+        return [records](Core::LogLevel level, std::string_view line)
+        {
+            records->push_back(SeenRecord{level, std::string(line), std::this_thread::get_id()});
+        };
+    }
+
+    /** @brief Puts the logger in synchronous mode and restores the level and the sink. */
+    class Unit_LoggerTest : public ::testing::Test
+    {
+        protected:
+            void SetUp() override
+            {
+                saved_level_ = Core::log_level();
+                Core::set_log_synchronous(true);
+                Core::set_log_level(Core::LogLevel::Warn);
+            }
+
+            void TearDown() override
+            {
+                Core::set_log_synchronous(true);
+                Core::set_log_sink(nullptr);
+                Core::set_log_level(saved_level_);
+            }
+
+        private:
+            /// @brief The level the process had when the test began.
+            Core::LogLevel saved_level_ = Core::LogLevel::Warn;
+    };
 }
 
-/**
- * @brief Tests that SR_THROW_IF throws on a true condition and stays silent on false.
- *
- * Validates the behavior of the throw-if macro.
- */
-TEST(Unit_LoggerTest, ThrowIfMacro)
+/** @brief Tests that a call above the process level leaves its arguments unevaluated. */
+TEST_F(Unit_LoggerTest, DisabledLevelDoesNotEvaluateItsArguments)
 {
-    EXPECT_THROW({ SR_THROW_IF(true, "Expected failure {}", 404); }, std::runtime_error);
-    EXPECT_NO_THROW({ SR_THROW_IF(false, "Should not fail"); });
+    SeenRecords records;
+    Core::set_log_sink(collect_into(&records));
+    int evaluations = 0;
+
+    Core::set_log_level(Core::LogLevel::Error);
+    SR_LOG_WARN("evaluated {} times", ++evaluations);
+    EXPECT_EQ(evaluations, 0);
+    EXPECT_TRUE(records.empty());
+
+    Core::set_log_level(Core::LogLevel::Warn);
+    SR_LOG_WARN("evaluated {} times", ++evaluations);
+    EXPECT_EQ(evaluations, 1);
+    EXPECT_EQ(records.size(), 1u);
+}
+
+/** @brief Tests that set_log_level decides which calls reach the sink. */
+TEST_F(Unit_LoggerTest, SetLogLevelTakesEffect)
+{
+    SeenRecords records;
+    Core::set_log_sink(collect_into(&records));
+
+    Core::set_log_level(Core::LogLevel::Warn);
+    EXPECT_EQ(Core::log_level(), Core::LogLevel::Warn);
+    SR_LOG_INFO("below the level");
+    EXPECT_TRUE(records.empty());
+
+    Core::set_log_level(Core::LogLevel::Info);
+    EXPECT_EQ(Core::log_level(), Core::LogLevel::Info);
+    SR_LOG_INFO("at the level");
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].level, Core::LogLevel::Info);
+
+    Core::set_log_level(Core::LogLevel::Off);
+    SR_LOG_ERROR("nothing passes Off");
+    EXPECT_EQ(records.size(), 1u);
+}
+
+/** @brief Tests that the sink receives the level and the formatted line, on the caller. */
+TEST_F(Unit_LoggerTest, SinkReceivesLevelAndText)
+{
+    SeenRecords records;
+    Core::set_log_sink(collect_into(&records));
+
+    SR_LOG_WARN("value {} of {}", 3, "seven");
+
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].level, Core::LogLevel::Warn);
+    EXPECT_NE(records[0].line.find("value 3 of seven"), std::string::npos) << records[0].line;
+    EXPECT_NE(records[0].line.find("[WARN]"), std::string::npos) << records[0].line;
+    EXPECT_NE(records[0].line.find("test_logger.cpp"), std::string::npos) << records[0].line;
+    EXPECT_EQ(records[0].line.find('\n'), std::string::npos);
+    EXPECT_EQ(records[0].thread, std::this_thread::get_id());
+}
+
+/** @brief Tests that log_write hands its line to the sink unchanged and unfiltered. */
+TEST_F(Unit_LoggerTest, LogWriteBypassesTheLevel)
+{
+    SeenRecords records;
+    Core::set_log_sink(collect_into(&records));
+    Core::set_log_level(Core::LogLevel::Off);
+
+    Core::log_write(Core::LogLevel::Debug, std::string("a finished line"));
+
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].level, Core::LogLevel::Debug);
+    EXPECT_EQ(records[0].line, "a finished line");
+}
+
+/** @brief Tests that an empty sink sends records to stderr and retires the old sink. */
+TEST_F(Unit_LoggerTest, EmptySinkRestoresTheDefault)
+{
+    SeenRecords records;
+    Core::set_log_sink(collect_into(&records));
+    SR_LOG_ERROR("to the test sink");
+    ASSERT_EQ(records.size(), 1u);
+
+    Core::set_log_sink(nullptr);
+    testing::internal::CaptureStdout();
+    testing::internal::CaptureStderr();
+    SR_LOG_ERROR("restored {}", 1);
+    const std::string standard_error = testing::internal::GetCapturedStderr();
+    const std::string standard_output = testing::internal::GetCapturedStdout();
+
+    EXPECT_EQ(records.size(), 1u);
+    EXPECT_NE(standard_error.find("restored 1\n"), std::string::npos) << standard_error;
+    EXPECT_TRUE(standard_output.empty()) << standard_output;
+}
+
+/** @brief Tests that a record whose sink throws is written to stderr and the call returns. */
+TEST_F(Unit_LoggerTest, ThrowingSinkLeavesTheRecordOnStderr)
+{
+    Core::set_log_sink([](Core::LogLevel, std::string_view)
+    {
+        throw Core::SushiException(Core::Error{Core::Errc::invalid_state, "sink failure"});
+    });
+
+    testing::internal::CaptureStderr();
+    EXPECT_NO_THROW({ SR_LOG_ERROR("kept {}", 2); });
+    const std::string standard_error = testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(standard_error.find("sink failure"), std::string::npos) << standard_error;
+    EXPECT_NE(standard_error.find("kept 2\n"), std::string::npos) << standard_error;
+}
+
+/** @brief Tests that asynchronous records run the sink on another thread, in order. */
+TEST_F(Unit_LoggerTest, AsynchronousRecordsArriveBeforeSynchronousModeReturns)
+{
+    SeenRecords records;
+    Core::set_log_sink(collect_into(&records));
+
+    Core::set_log_synchronous(false);
+    SR_LOG_WARN("record {}", 0);
+    SR_LOG_WARN("record {}", 1);
+    SR_LOG_WARN("record {}", 2);
+    Core::set_log_synchronous(true);
+
+    ASSERT_EQ(records.size(), 3u);
+    for (std::size_t i = 0; i < records.size(); ++i)
+    {
+        const std::string expected = "record " + std::to_string(i);
+        EXPECT_NE(records[i].line.find(expected), std::string::npos) << records[i].line;
+        EXPECT_NE(records[i].thread, std::this_thread::get_id());
+    }
+}
+
+/** @brief Tests that SR_THROW_IF throws invalid_state, logs once and is silent on false. */
+TEST_F(Unit_LoggerTest, ThrowIfThrowsSushiExceptionWithInvalidState)
+{
+    SeenRecords records;
+    Core::set_log_sink(collect_into(&records));
+
+    try
+    {
+        SR_THROW_IF(true, "Expected failure {}", 404);
+        FAIL() << "SR_THROW_IF did not throw on a true condition";
+    }
+    catch (const Core::SushiException& error)
+    {
+        EXPECT_EQ(error.error().code, Core::Errc::invalid_state);
+        EXPECT_STREQ(error.what(), "Expected failure 404");
+    }
+
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].level, Core::LogLevel::Error);
+    EXPECT_NE(records[0].line.find("Expected failure 404"), std::string::npos);
+
+    EXPECT_THROW({ SR_THROW_IF(true, "Caught through the base"); }, std::runtime_error);
+
+    int evaluations = 0;
+    EXPECT_NO_THROW({ SR_THROW_IF(false, "Should not fail {}", ++evaluations); });
+    EXPECT_EQ(evaluations, 0);
+    EXPECT_EQ(records.size(), 2u);
 }
