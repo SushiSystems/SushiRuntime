@@ -117,6 +117,9 @@ namespace SushiRuntime
                 [[nodiscard]] OffloadDispatcherStatistics statistics() const noexcept;
 
             private:
+                /** @brief Counts one refused dispatch and returns false. */
+                [[nodiscard]] bool decline() noexcept;
+
                 /// @brief Names and versions of the shared buffers.
                 BufferRegistry& registry_;
 

@@ -31,9 +31,12 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
+#include <vector>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
@@ -135,6 +138,25 @@ namespace SushiRuntime
                 /** @brief Runs passes until stop(). */
                 void run() noexcept;
 
+                /** @brief Runs one pass: pings, silent peers, handshake limits, task limits. */
+                void run_pass();
+
+                /** @brief Sends PING to every alive worker, with the send time as the token. */
+                void ping_workers();
+
+                /** @brief Closes the workers silent past the liveness timeout. */
+                void close_silent_workers(std::chrono::steady_clock::time_point now);
+
+                /** @brief Closes the peers that did not finish the handshake in time. */
+                void close_handshake_overdue(std::chrono::steady_clock::time_point now);
+
+                /** @brief Takes the tasks past a limit, resubmits them and counts each cause. */
+                void reap_overdue_tasks(std::chrono::steady_clock::time_point now);
+
+                /** @brief Logs the reaped tasks, at most one line per worker per second. */
+                void log_reaped_tasks(const std::vector<PendingTask>& reaped,
+                                      std::chrono::steady_clock::time_point now);
+
                 /// @brief Sessions, liveness and handshake deadlines.
                 WorkerDirectory& directory_;
 
@@ -185,6 +207,19 @@ namespace SushiRuntime
 
                 /// @brief Tasks the monitor resubmitted.
                 std::atomic<std::uint64_t> redispatched_{0};
+
+                /// @brief The peers one step of a pass lists; touched by the monitor thread only.
+                std::vector<PeerId> peers_;
+
+                /// @brief The tasks one pass took back; touched by the monitor thread only.
+                std::vector<PendingTask> tasks_;
+
+                /// @brief The encoded PING or GOODBYE; touched by the monitor thread only.
+                std::vector<std::byte> payload_;
+
+                /// @brief The time of the last reap warning per worker id value.
+                std::unordered_map<std::uint32_t, std::chrono::steady_clock::time_point>
+                    last_reap_warning_;
         };
 
     } // namespace Distributed

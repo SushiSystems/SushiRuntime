@@ -29,19 +29,23 @@
 #include <SushiRuntime/distributed/cluster.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <thread>
+#include <string>
 #include <utility>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
-#include <SushiRuntime/distributed/buffer_registry.hpp>
-#include <SushiRuntime/distributed/distributed_coordinator.hpp>
+
+#include "buffer_registry.hpp"
+#include "distributed_coordinator.hpp"
 
 namespace SushiRuntime
 {
@@ -49,9 +53,6 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief How often wait_for_workers() reads the worker count. */
-            constexpr std::chrono::milliseconds K_WORKER_POLL_PERIOD{5};
-
             /**
              * @brief Stops the coordinator a context holds and removes it from the allocator
              *        and the scheduler.
@@ -66,6 +67,25 @@ namespace SushiRuntime
                 context.memory().set_release_observer(nullptr);
                 context.install_offload(nullptr);
             }
+
+            /**
+             * @brief Refuses options a master cannot be attached with.
+             * @throws Core::SushiException Naming the option and the value that is allowed.
+             */
+            void check_options(const ITransport& transport, const ClusterOptions& options)
+            {
+                SR_THROW_IF(options.secret.empty() &&
+                                transport.exposure() == TransportExposure::Network,
+                            "Cluster::attach: the transport can be reached from other machines "
+                            "and ClusterOptions::secret is empty; load one with "
+                            "SharedSecret::from_file(), or bind the master to a loopback "
+                            "address.");
+                SR_THROW_IF(options.chunk_bytes < K_MINIMUM_CHUNK_BYTES ||
+                                options.chunk_bytes > K_MAXIMUM_CHUNK_BYTES,
+                            "Cluster::attach: ClusterOptions::chunk_bytes is {}; it must be "
+                            "between {} and {}.",
+                            options.chunk_bytes, K_MINIMUM_CHUNK_BYTES, K_MAXIMUM_CHUNK_BYTES);
+            }
         } // namespace
 
         /**
@@ -77,15 +97,16 @@ namespace SushiRuntime
             class Attachment;
 
             /** @brief Builds the registry, then the coordinator that reads it. */
-            State(sushi_ptr<KernelRegistry> kernels,
-                  std::shared_ptr<ITransport> transport,
-                  std::shared_ptr<IOffloadPolicy> policy)
-                : coordinator(std::move(kernels), buffers, std::move(transport), std::move(policy))
+            State(std::shared_ptr<ITransport> transport, ClusterOptions options)
+                : coordinator(buffers, std::move(transport), std::move(options))
             {
+
             }
 
             State(const State&) = delete;
             State& operator=(const State&) = delete;
+            State(State&&) = delete;
+            State& operator=(State&&) = delete;
 
             /** @brief Master-side buffer ids and versions; declared first, destroyed last. */
             BufferRegistry buffers;
@@ -109,6 +130,7 @@ namespace SushiRuntime
                 explicit Attachment(std::shared_ptr<State> state) noexcept
                     : state_(std::move(state))
                 {
+
                 }
 
                 /** @brief Marks the state as released by its context. */
@@ -130,66 +152,63 @@ namespace SushiRuntime
         Cluster::Cluster(std::shared_ptr<State> state) noexcept
             : state_(std::move(state))
         {
+
         }
 
-        Cluster Cluster::attach(API::Runtime& runtime,
-                                std::shared_ptr<ITransport> transport,
-                                sushi_ptr<KernelRegistry> kernels,
-                                std::shared_ptr<IOffloadPolicy> policy)
+        Cluster Cluster::attach(API::Runtime& runtime, std::shared_ptr<ITransport> transport,
+                                ClusterOptions options)
         {
-            return attach(runtime.unsafe_context(), std::move(transport), std::move(kernels),
-                          std::move(policy));
+            return attach(runtime.unsafe_context(), std::move(transport), std::move(options));
         }
 
         Cluster Cluster::attach(Execution::RuntimeContext& context,
-                                std::shared_ptr<ITransport> transport,
-                                sushi_ptr<KernelRegistry> kernels,
-                                std::shared_ptr<IOffloadPolicy> policy)
+                                std::shared_ptr<ITransport> transport, ClusterOptions options)
         {
-            SR_THROW_IF(!transport, "Cluster::attach requires a transport.");
-
-            if (!policy)
-                policy = std::make_shared<LeastLoadedOffloadPolicy>();
+            SR_THROW_IF(!transport,
+                        "Cluster::attach: the transport is null; pass a master-side transport "
+                        "that was never started.");
+            check_options(*transport, options);
 
             release_installed(context);
 
-            auto state = std::make_shared<State>(std::move(kernels), std::move(transport),
-                                                 std::move(policy));
+            auto state = std::make_shared<State>(std::move(transport), std::move(options));
             state->context = &context;
             context.memory().set_release_observer(&state->coordinator);
 
-            // The coordinator is installed before its monitor starts (modules/extension/distributed/README.md).
+            // The scheduler binds the coordinator here, before its transport and monitor start.
             auto attachment = std::make_shared<State::Attachment>(state);
             context.install_offload(std::shared_ptr<Graph::OffloadCoordinator>(
                 std::move(attachment), &state->coordinator));
-            state->coordinator.start();
 
-            SR_LOG_INFO("Distributed master attached to the runtime context.");
+            const TransportResult started = state->coordinator.start();
+            if (!started.is_ok())
+            {
+                // Releasing the context's share destroys the attachment; the state dies here.
+                release_installed(context);
+                throw Core::SushiException(Core::Error{
+                    Core::Errc::invalid_state,
+                    "Cluster::attach: the master did not start: " + started.message +
+                        "; nothing stays installed on the runtime."});
+            }
+
             return Cluster(std::move(state));
         }
 
         void Cluster::detach()
         {
-            // A non-null context still holds this state's coordinator (modules/extension/distributed/README.md).
+            // A non-null context still holds this state's coordinator.
             if (state_->context != nullptr)
                 release_installed(*state_->context);
         }
 
-        bool Cluster::wait_for_workers(int count, std::chrono::milliseconds timeout)
+        bool Cluster::wait_for_workers(std::size_t count, std::chrono::milliseconds timeout)
         {
-            const auto deadline = std::chrono::steady_clock::now() + timeout;
-            while (alive_workers() < count)
-            {
-                if (std::chrono::steady_clock::now() >= deadline)
-                    return false;
-                std::this_thread::sleep_for(K_WORKER_POLL_PERIOD);
-            }
-            return true;
+            return state_->coordinator.wait_for_workers(count, timeout);
         }
 
-        int Cluster::alive_workers() const
+        std::size_t Cluster::alive_workers() const
         {
-            return state_->coordinator.alive_worker_count();
+            return state_->coordinator.statistics().alive_workers;
         }
 
         Cluster& Cluster::liveness_timeout(std::chrono::milliseconds timeout)
@@ -204,24 +223,29 @@ namespace SushiRuntime
             return *this;
         }
 
+        ClusterStatistics Cluster::statistics() const
+        {
+            return state_->coordinator.cluster_statistics();
+        }
+
         std::uint64_t Cluster::offloaded() const
         {
-            return state_->coordinator.offloaded_count();
+            return state_->coordinator.statistics().offloaded;
         }
 
         std::uint64_t Cluster::declined() const
         {
-            return state_->coordinator.declined_count();
+            return state_->coordinator.statistics().declined;
         }
 
         std::uint64_t Cluster::redispatched() const
         {
-            return state_->coordinator.redispatched_count();
+            return state_->coordinator.statistics().redispatched;
         }
 
         std::uint64_t Cluster::stale_writebacks() const
         {
-            return state_->coordinator.stale_writeback_count();
+            return state_->coordinator.statistics().stale_writebacks;
         }
 
         bool Cluster::supports(Graph::OpID op) const
@@ -231,7 +255,8 @@ namespace SushiRuntime
 
         void Cluster::bump_buffer(void* address)
         {
-            state_->buffers.bump_version(address);
+            void* const addresses[] = {address};
+            state_->buffers.bump_addresses(SushiRuntime::span<void* const>(addresses, 1));
         }
 
         std::optional<BufferHandle> Cluster::buffer_handle(void* address) const

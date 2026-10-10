@@ -48,6 +48,9 @@ namespace SushiRuntime
             /** @brief Room for a decimal port and its end. */
             constexpr std::size_t K_PORT_TEXT_SIZE = 8;
 
+            /** @brief Room for a machine name of 255 bytes and its end. */
+            constexpr std::size_t K_HOST_NAME_SIZE = 256;
+
             /** @brief Direction wait_ready() waits for. */
             enum class Readiness : std::uint8_t
             {
@@ -419,6 +422,22 @@ namespace SushiRuntime
                     addresses.push_back(std::move(numeric.host));
             }
             return SocketResult();
+        }
+
+        /**
+         * @brief Returns the name Winsock gives this machine, or an empty string.
+         */
+        std::string host_name()
+        {
+            if (startup_error() != 0)
+                return std::string();
+
+            char buffer[K_HOST_NAME_SIZE] = "";
+            if (::gethostname(buffer, static_cast<int>(sizeof(buffer))) != 0)
+                return std::string();
+
+            buffer[sizeof(buffer) - 1] = '\0';
+            return std::string(buffer);
         }
 
         /**

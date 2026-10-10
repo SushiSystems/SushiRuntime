@@ -705,3 +705,127 @@ the loss that follows reports `Disconnected` and leaves the link running.
 A reconnect to the same `session_id` reports `Registered` and the cache and the seen ids stay. A
 reconnect to another session reports `RegisteredNewSession`, on which the test clears both, as the
 agent does.
+
+## test_worker_main.cpp
+
+The parser tests pass an `EnvironmentReader` over a table, so no test changes the environment of
+the test process. The exit-code tests call `run_worker(options, kernels)`, which always builds a TCP
+transport, so they run over loopback: a fake master listens on port 0 with
+`TcpTransport::make_master()`, plays the frames of one script and holds an empty secret. Each of
+those tests builds a runtime. The worker runs on a second thread and the test waits for its exit
+code, bounded at 60 s.
+
+### `MasterAloneGivesTheDefaults`, `EveryFlagIsRead`
+
+`--master` alone leaves every other setting at the default of the flag table. The second test gives
+every flag, half as `--flag value` and half as `--flag=value`, and reads each field back.
+
+### `EnvironmentFillsWhatNoFlagGives`, `FlagBeatsEnvironmentBeatsDefault`, `EmptyVariableCountsAsUnset`
+
+With no flag, each of the eight variables sets its field. With `--max-jobs 3` and
+`SR_WORKER_MAX_JOBS` set to text that is not a number, the flag wins and the variable is never
+parsed. A variable set to nothing leaves the default.
+
+### `HelpListsEveryFlagAndVariable`, `VersionNeedsNoMaster`
+
+`--help` and `--version` are answered without `--master`. The usage text names all twelve flags and
+all eight variables.
+
+### `EachRefusalNamesWhatWasWrong`, `NameAbove255BytesIsRefused`
+
+Nineteen command lines the parser refuses: no master, a flag without its value, an endpoint
+without a port, port 0, an unbracketed IPv6 address in `SR_MASTER`, an unknown flag, a stray word,
+a value given to `--no-reconnect`, and a number that is zero where one is needed, too large,
+negative, fractional, empty or not a number. Each message is one line, and a refused value's line
+starts with the flag or the variable it came from.
+
+### `ReadsASetVariableAndReportsAnUnsetOne`
+
+`read_environment("PATH")` returns text; a name nobody sets returns nothing.
+
+### `RequestSetsTheFlagAndANewObjectClearsIt`
+
+A `StopSignal` starts clear, `request()` sets the flag, and the next `StopSignal` starts clear
+again.
+
+### `UnreadableSecretFileExitsOne`, `ShortSecretFileExitsOne`, `UnknownLogLevelExitsOne`, `BadFlagExitsOne`
+
+Exit code 1. Each test captures the error stream and finds the file name, `31 bytes` and
+`at least 32`, the five level names, or the parser's line. All four return before a runtime is
+built.
+
+### `VersionPrintsTheProtocolAndExitsZero`
+
+`--version` prints `protocol v2` and the build, and returns 0.
+
+### `SignalStopsWithExitZero`
+
+Exit code 0. The fake master welcomes the worker and waits for its first `HEARTBEAT`, which a
+worker sends only once it is registered. The test then raises SIGTERM in its own process. The
+`StopSignal` lives inside `run_worker()`, so `request()` cannot reach it from a test; the handlers
+are installed before the worker connects, so a registered worker has them. The worker returns 0
+and the master receives `GOODBYE`.
+
+### `AuthenticationRejectExitsThree`, `VersionRejectExitsFour`
+
+The fake master answers `HELLO` with `REJECT(authentication)` or `REJECT(version)`. The worker
+returns 3 or 4 and does not reconnect.
+
+### `MasterNotReachedExitsTwo`
+
+Exit code 2. The fake master is stopped before the worker starts, so nothing listens on its port,
+and the connect timeout is 1 s. The test takes at least that long.
+
+### `MasterLostWithoutReconnectExitsFive`
+
+Exit code 5. The fake master sends `WELCOME` and closes the connection; the worker runs with
+reconnecting off.
+
+## test_offload_dispatcher.cpp
+
+The file tests `OffloadDispatcher` of `modules/extension/distributed/source/offload_dispatcher.hpp`
+over a real `BufferRegistry`, `WorkerDirectory` and `PendingTasks`. The transport is a fake that
+records each `send()` and answers with a status the test sets; the policy is a fake that picks the
+first worker offered and counts its calls. The one worker registers through `accept_hello` and
+`accept_proof` under the empty secret. A buffer is a `std::array<float, 16>` whose address is
+shared; no byte of it is read, so the file needs no device and no thread.
+
+### `AttemptCapDeclinesWithoutClearingOffloadable`
+
+With `attempts` at `K_MAXIMUM_OFFLOAD_ATTEMPTS` the dispatcher returns false before it asks the
+policy, and `offloadable` and the count stay as they were. `complete_local` sets the count to 0 and
+the next `try_offload` dispatches. This pins finding N3: the cap holds for one run, not for good.
+
+### `RefusedSendUndoesThePendingEntry`
+
+The transport answers `QueueFull`. The frame was offered once, the pending table is empty, the
+worker's inflight count is 0, `try_offload` returned false and `send_queue_full` and `declined` are
+1. The output keeps the version the frame named, one above the version before the call.
+
+### `StoppedCoordinatorDeclines`
+
+`DistributedCoordinator::stop()` closes the pending table, then the directory. After the first
+close the policy is asked once, `insert` refuses and the worker's inflight count goes back to 0.
+After the second the policy is not asked. No frame reaches the transport in either state and
+`offloadable` stays set.
+
+### `DynamicNodeResolvesItsLiveLists`
+
+A node with `live_reads` and `live_writes` gets no payload from `prepare`. Its dispatch names the
+buffers of the live lists; after the two lists swap, the next dispatch names them the other way
+round, though `io_reads_` and `io_writes_` did not change. `complete_local` then raises the
+version of the buffer in `live_writes` and leaves the other alone, which pins finding D3.
+
+### `PrepareWarnsOnceForLocalOnlyOps`
+
+One `prepare` over an offloadable node, a node whose operation no worker has, a node with an
+unshared output, an untagged node and a null slot logs one WARN, captured through
+`Core::set_log_sink`: `2 of 3 op-tagged nodes will run locally: 1 no live worker for the op, 1
+buffer not shared (first: op 502)`. A second `prepare` over the offloadable node alone logs
+nothing.
+
+### `LocalNodeBumpsOnlyItsSharedWrites`
+
+A node that stays local and writes a shared buffer keeps that buffer's handle, and
+`complete_local` raises its version. A node that writes no shared buffer gets no `OffloadState`,
+so its completion returns after one null check and takes no lock.

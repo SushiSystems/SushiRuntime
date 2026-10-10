@@ -58,6 +58,15 @@ attach() refuses an empty secret when the transport's exposure() is Network. Whe
 does not start, attach() removes what it installed and throws an exception that carries the
 transport's message.
 
+attach() checks, in this order, that the transport is not null, that the secret is not empty on a
+Network transport and that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. Then it stops and
+removes the coordinator the runtime held before, sets the release observer, installs the new
+coordinator, which is where the scheduler binds its sink, and calls
+DistributedCoordinator::start(). start() starts the transport, then the monitor, and logs
+`distributed master listening on a loopback transport, protocol v2, authentication off` with the
+exposure and the authentication state of this master. The line does not name the address:
+ITransport has no member that returns it.
+
 The handle is a view. Copies name the same master and destroying one changes nothing. attach() is
 `[[nodiscard]]`, so a caller that wants no handle says so with a cast to void. The runtime shares
 ownership of the master, stops it when the runtime is destroyed and releases it after its engine
@@ -175,6 +184,8 @@ lifetime.
 | `dispatch_executor.hpp` | `DispatchExecutor` | the job queue, the exec thread, held task ids | reader thread enqueues, its own thread runs |
 | `stop_signal.hpp` | `StopSignal` | the process's stop handlers and their flag | signal handler, main thread |
 | `environment.hpp` | `read_environment()` | the one read of an environment variable | caller's thread |
+| `worker_options_parser.hpp` | `parse_worker_options()` | the table of flags, variables and defaults | caller's thread |
+| `worker_session.hpp` | `serve_worker()`, `exit_code_of()` | one agent on a given transport, from start to exit code | caller's thread |
 
 ### Transport and codec
 
@@ -232,6 +243,234 @@ reported an oldest held id above it.
 
 `stop()` is `noexcept`. Nothing in the module rethrows or nests an exception: on this toolchain a
 rethrow inside a helper and `std::throw_with_nested` crash at run time.
+
+### Frame handlers
+
+The coordinator's `Impl` is the transport's `TransportEvents` receiver. `on_frame()` asks
+`WorkerDirectory::admits()`, refreshes the peer's liveness and hands the frame to a
+`Wire::MessageRouter`. Each handler is set once, in the constructor, through one template that
+decodes the payload and calls a member; a payload that does not decode closes the peer.
+
+| Frame | Handler does |
+| --- | --- |
+| `HELLO` | draws a nonce, `accept_hello()`, sends `CHALLENGE` with the session id |
+| `PROOF` | `accept_proof()`; sends `WELCOME` and logs the registration, or sends `REJECT`, counts `handshake_rejected_auth` and closes the peer |
+| `TASK_ACCEPTED` | `PendingTasks::acknowledge()` |
+| `TASK_RESULT` | `PendingTasks::take()`; nothing more when the task is not pending. Otherwise `sink.complete_remote()` when the status is `Succeeded` and `BufferExchange::finish_task()` says every output arrived whole, `resubmit_tasks()` when not |
+| `BUFFER_REQUEST` | `send_stream()` with the source `BufferExchange::serve_pull()` makes |
+| `BUFFER_CHUNK` | `PendingTasks::expects_output()`, then `BufferExchange::apply_output_chunk()`; a chunk the first check refuses counts as a stale writeback |
+| `BUFFER_ABORT` | forgets the transfer progress of a task that is still pending on that worker |
+| `PONG` | `WorkerDirectory::note_pong()` with the round trip measured from the token |
+| `HEARTBEAT` | `WorkerDirectory::note_heartbeat()` and `PendingTasks::note_heartbeat()` |
+| `GOODBYE` | closes the peer and returns its tasks at once |
+
+A registered worker that sends any other type is closed. The source holds no `switch` and no
+mutex; what it changes after construction is `sink`, two lifecycle flags and five counters.
+
+### Losing a peer
+
+One function, `retire_peer()`, handles every way a peer leaves: `on_peer_lost()`, `GOODBYE`, a
+failed proof, a malformed or unexpected frame. It calls `WorkerDirectory::remove_peer()` and, for
+a registered worker, `PendingTasks::take_for_worker()` and `resubmit_tasks()`. The directory
+forgets a peer once, so the second call for the same peer finds it unknown and does nothing. The
+caller logs one line with the worker id, its name, its endpoint, the cause and the number of
+tasks returned. A handler that closes a peer calls `close_peer()` first: from then on a dispatch
+to that peer fails in `send()` and is undone by `try_offload()`.
+
+### Counters
+
+`statistics()` reads atomics only. `redispatched` is the monitor's count plus the tasks the
+handlers and `stop()` resubmitted. `stale_writebacks` is the exchange's count of chunks the
+registry refused plus the chunks `expects_output()` refused.
+
+## offload_dispatcher.hpp
+
+### prepare
+
+`prepare()` decides each node of a compiled graph and stores an `OffloadHandles` payload
+(`offload_handles.hpp`) on a fixed-buffer node.
+
+| Node | `offloadable` | Payload |
+| --- | --- | --- |
+| op-tagged, an alive worker has the kernel, every buffer shared | true | input handles, then output handles |
+| any other node that writes a shared buffer | false | the handles of the shared buffers it writes |
+| any other node | false | none, and no `OffloadState` is created for it |
+| double-buffered (`live_reads` or `live_writes` set) | true when tagged, supported and every live address is shared | none |
+
+One WARN per call names how many op-tagged nodes stay local, how many for each reason and the
+first operation id.
+
+### try_offload
+
+The steps run in this order, and no lock is held across two of them.
+
+1. Decline when the node has no `OffloadState`, when its `LateBindings::enabled` is false, or when
+   `attempts` has reached `K_MAXIMUM_OFFLOAD_ATTEMPTS`. `offloadable` is not cleared.
+2. `attempts` rises by one.
+3. Registry lock: a fixed-buffer node refreshes the versions of its stored handles, a
+   double-buffered node resolves the addresses of its live lists.
+4. Directory lock: `WorkerDirectory::pick()`.
+5. Registry lock: `bump()` on the outputs. The dispatch is encoded.
+6. Pending lock: `PendingTasks::insert()`. From here the dispatcher does not read or write the
+   node.
+7. `ITransport::send()`. On any status but `Queued` it calls `take()`; with the task back it
+   lowers the worker's inflight count and returns false, without it a removal owns the node and
+   the answer is true.
+
+The addresses, the handles, the `TaskDispatchMessage` and the encoded payload live in one
+thread-local scratch per pool thread, so the dispatcher's own code allocates nothing once the
+scratch has grown. `PendingTasks::insert()` allocates the entry and its copy of the output handles,
+and `ITransport::send()` copies the payload into the peer's queue.
+
+### Local completion
+
+`complete_local()` returns after one null check for a node without an `OffloadState`. Otherwise it
+sets `attempts` to 0 and bumps what the node wrote: the addresses in `live_writes` for a
+double-buffered node, the stored output handles for a fixed-buffer one. A fixed-buffer node whose
+payload lists no output takes no lock.
+
+## cluster_monitor.hpp
+
+### A pass
+
+1. `PING` to every alive worker; the token is the monotonic clock in microseconds.
+2. `take_silent()`: each worker listed gets `GOODBYE(liveness)` and `close_peer()`. The
+   transport then reports the loss and the coordinator returns the worker's tasks.
+3. `take_handshake_overdue()`: each peer listed is closed.
+4. `take_overdue()`, then `resubmit_tasks()`. Each cause has its counter. A WARN names the task
+   and the cause, at most one per worker per second.
+
+The monitor's mutex guards only its sleep. An exception out of a pass is logged and the next pass
+runs; tasks a failed `take_overdue()` left in the monitor's list are resubmitted by that next pass.
+
+### Period
+
+`period()` is the smaller of `ClusterMonitorOptions::period` (250 ms) and a quarter of the
+tightest timeout in force (the liveness timeout, or the task deadline when it is not 0), and at
+least 1 ms. `set_liveness_timeout()` and `set_task_deadline()` wake the thread, so a shorter
+timeout applies from the next pass. `WELCOME` carries the period a worker registered under.
+
+## frame_sending.hpp
+
+`send_message(transport, peer, message, scratch)` encodes a wire message into a buffer the caller
+reuses and queues it with `ITransport::send()`; the three-argument form uses a buffer of its own.
+The coordinator and the monitor send every control frame through it.
+
+## worker_agent.hpp
+
+### What the agent composes
+
+`WorkerAgent` builds `WorkerBufferCache`, `DispatchDeduplicator`, `MasterLink` and
+`DispatchExecutor` over one transport and one `RuntimeContext`, and is the transport's only event
+receiver. Kernels run on the queue of device 0 of that context. The cache allocates shared USM on
+the same device through `RuntimeContext::memory()`, so the context's allocator records every
+cached buffer. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that
+reports no size gets 1 GiB and one WARN.
+
+Every frame goes to `MasterLink::note_frame()` first and then through a `MessageRouter`. The agent
+decodes the payload and calls the brick that owns the message:
+
+| Message | Goes to |
+| --- | --- |
+| `CHALLENGE`, `WELCOME`, `REJECT` | `MasterLink`, whose `LinkChange` the agent then acts on |
+| `GOODBYE`, `PING` | `MasterLink` |
+| `TASK_DISPATCH` | `DispatchDeduplicator::mark_seen()`, then `DispatchExecutor::enqueue()` |
+| `BUFFER_CHUNK` with purpose `PullReply` | `WorkerBufferCache::accept_chunk()` |
+| `BUFFER_ABORT` | `WorkerBufferCache::abort_transfer()` |
+| `BUFFER_RELEASE` | `WorkerBufferCache::release()` |
+
+A payload that does not decode closes the connection with one WARN that names the master, the
+type, the length and the offset of the field. A dispatch from a connection the link is not
+registered on is ignored. On `RegisteredNewSession` the agent clears the cache and the seen ids; on
+`Disconnected` it drops the queued jobs. The executor sends `TASK_ACCEPTED` itself.
+
+The agent logs `connected to master <address:port>` when a connection opens and the transport's
+cause when the transport gives up. `MasterLink` logs registration and loss by peer number.
+
+### Threads
+
+| Thread | Runs |
+| --- | --- |
+| Transport reader | every `on_` call of the agent, so the routing table and the handlers above |
+| Exec (`DispatchExecutor`) | one kernel at a time, input pulls, output pins |
+| Heartbeat (`MasterLink`) | `HEARTBEAT`, the handshake restart, the master watch |
+| Transport writer | output streams; an output stream's destructor returns its cache pins here |
+| Caller | `start()`, `wait_for_end()`, `stop()`, `statistics()` |
+
+### Stop order
+
+1. A flag makes `on_peer_connected()` close any connection that opens from here on.
+2. `DispatchExecutor::stop()`: no more jobs, a `ShuttingDown` result per queued job, the running
+   kernel finishes, the exec thread is joined.
+3. `MasterLink::say_goodbye()` queues `GOODBYE`.
+4. `close_peer()` on the registered connection, then a wait of at most 2 s for its
+   `on_peer_lost()`. A transport's `stop()` drops queued control frames, and this is what gets the
+   results and the `GOODBYE` onto the wire. The loss and a transport that then gives up are
+   expected here, so the agent does not pass them to the link.
+5. `ITransport::stop()`: every reader and writer is joined and every kept stream is destroyed,
+   which returns the last cache pins.
+6. `MasterLink::stop()` joins the heartbeat thread; a `Running` end becomes `Stopped`.
+7. One INFO line with the worker's counters. The cache is freed when the agent is destroyed.
+
+A `start()` that fails stops the three in the same order and leaves no thread. An agent that ended
+for a reason other than `stop()` still needs `stop()`.
+
+## worker_main.hpp
+
+`run_worker(argc, argv, kernels)` parses the command line and calls
+`run_worker(options, kernels)`, which is the whole worker process: it sets the log level, reads the
+secret file, installs `StopSignal`, builds a `RuntimeContext` and a TCP worker transport, and hands
+them to `serve_worker()`. An application's `main()` registers its kernels and returns the call.
+
+`serve_worker()` (`source/worker_session.hpp`) takes the context, any worker transport, the
+registry, the agent's options and the stop signal. It builds the `WorkerAgent`, calls
+`wait_for_end()` every 100 ms until the stop flag is set or the agent ends, stops the agent and
+returns the exit code `exit_code_of()` maps the end to. A test drives it with an in-process
+transport and `StopSignal::request()`.
+
+### Flags
+
+| Flag | Environment | Default |
+| --- | --- | --- |
+| `--master host:port` | `SR_MASTER` | required; port 0 is refused |
+| `--secret-file path` | `SR_CLUSTER_SECRET_FILE` | none |
+| `--name text` | `SR_WORKER_NAME` | the machine's host name, else `worker` |
+| `--max-jobs n` | `SR_WORKER_MAX_JOBS` | 1024; from 1 to 4294967295 |
+| `--cache-bytes n` | `SR_WORKER_CACHE_BYTES` | 0, half of device memory |
+| `--heartbeat-ms n` | `SR_WORKER_HEARTBEAT_MS` | 1000; at least 1 |
+| `--pull-idle-timeout-ms n` | `SR_WORKER_PULL_IDLE_TIMEOUT_MS` | 5000; 0 waits without a limit |
+| `--connect-timeout-s n` | `SR_WORKER_CONNECT_TIMEOUT_S` | 60; 0 waits without a limit |
+| `--no-reconnect` | | reconnect on |
+| `--log-level name` | | unchanged; `off`, `error`, `warn`, `info`, `debug` |
+| `--version`, `--help` | | print and exit 0 |
+
+A flag beats its variable, which beats the default. A variable set to nothing counts as unset. A
+value follows its flag as the next argument or after `=`. `parse_worker_options()` holds this
+table once; the usage text of `--help` is generated from it. The parser takes the environment
+through an `EnvironmentReader`, and `read_environment()` is the one it gets in a worker process.
+
+The default name is what `host_name()` of the socket seam returns, the name the OS gives the
+machine; a machine that reports none is named `worker`.
+
+### Exit codes
+
+| Code | When |
+| --- | --- |
+| 0 | the stop flag was set and the agent stopped in order; also `--help` and `--version` |
+| 1 | a bad flag or value, a missing master, an unknown log level, a secret file that cannot be read or holds fewer than 32 bytes; one line on the error stream says which |
+| 2 | the transport gave up before the first registration (`WorkerEnd::MasterUnreachable`) |
+| 3 | `REJECT(authentication)`, or a `CHALLENGE` whose proof is wrong |
+| 4 | `REJECT(version)`, a frame of another version, or bytes that are not a frame |
+| 5 | the master was lost after a registration and `--no-reconnect` was given |
+| 70 | an exception reached `run_worker()`, the agent did not start, or the registry is null |
+| 130 | a second signal; the handler ends the process without running destructors |
+
+### Signals
+
+`StopSignal` installs one handler for SIGINT, SIGTERM and, where the C runtime defines it,
+SIGBREAK, through `std::signal`. The handler sets one lock-free flag and arms itself again; a
+signal that finds the flag set calls `std::_Exit(130)`. `request()` sets the same flag from a test.
+The flag is one per process, which is why at most one `StopSignal` exists at a time.
 
 ## Protocol versions
 

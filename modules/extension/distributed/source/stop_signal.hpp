@@ -28,6 +28,9 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
+
 #include <SushiRuntime/core/export.hpp>
 
 namespace SushiRuntime
@@ -67,6 +70,16 @@ namespace SushiRuntime
                  * A signal that arrives afterwards counts as the second.
                  */
                 void request() noexcept;
+
+            private:
+                /** @brief Names a handler as the C runtime stores it. */
+                using Handler = void (*)(int);
+
+                /** @brief Counts the signals a platform can have a stop handler for. */
+                static constexpr std::size_t K_MAXIMUM_SIGNALS = 3;
+
+                /// @brief The handlers that were installed before, in the order of the signals.
+                std::array<Handler, K_MAXIMUM_SIGNALS> previous_{};
         };
 
     } // namespace Distributed

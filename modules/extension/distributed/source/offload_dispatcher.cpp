@@ -1,0 +1,426 @@
+/**************************************************************************/
+/* offload_dispatcher.cpp                                                 */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file offload_dispatcher.cpp
+ * @brief Implements OffloadDispatcher: which nodes may leave, and the dispatch of one.
+ * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
+ */
+
+#include "offload_dispatcher.hpp"
+
+#include <chrono>
+#include <cstddef>
+#include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/task/late_bindings.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/offload_state.hpp>
+#include <SushiRuntime/distributed/buffer_handle.hpp>
+#include <SushiRuntime/distributed/message_type.hpp>
+
+#include "offload_handles.hpp"
+#include "wire_codec.hpp"
+#include "wire_messages.hpp"
+
+namespace SushiRuntime
+{
+    namespace Distributed
+    {
+        namespace
+        {
+            /**
+             * @brief Holds what one dispatch builds; each pool thread owns one and reuses it.
+             */
+            struct DispatchScratch
+            {
+                /** @brief Holds a dynamic node's live addresses: reads, then writes. */
+                std::vector<void*> addresses;
+
+                /** @brief Holds the node's current handles: inputs, then outputs. */
+                std::vector<BufferHandle> handles;
+
+                /** @brief Holds the dispatch being encoded; its lists keep their capacity. */
+                Wire::TaskDispatchMessage message;
+
+                /** @brief Holds the encoded dispatch. */
+                std::vector<std::byte> payload;
+            };
+
+            /** @brief Names what prepare() decided about one node. */
+            enum class Placement : std::uint8_t
+            {
+                Untagged,    /**< The node names no operation; it was never a candidate. */
+                Offloadable, /**< A worker may run the node. */
+                NoWorker,    /**< No alive worker has a kernel for the operation. */
+                NotShared,   /**< A buffer the node touches is not shared. */
+            };
+
+            /** @brief Counts the op-tagged nodes one prepare() left local, by reason. */
+            struct LocalOnlyCount
+            {
+                std::size_t tagged = 0;     /**< Nodes that name an operation. */
+                std::size_t no_worker = 0;  /**< Of those, left local as NoWorker. */
+                std::size_t not_shared = 0; /**< Of those, left local as NotShared. */
+                std::uint32_t first_op = 0; /**< The operation of the first one left local. */
+            };
+
+            /** @brief Returns the calling thread's scratch. */
+            DispatchScratch& dispatch_scratch()
+            {
+                thread_local DispatchScratch scratch;
+                return scratch;
+            }
+
+            /** @brief Returns whether every address of a live list is shared; null is true. */
+            bool is_all_shared(const BufferRegistry& registry,
+                               const std::shared_ptr<std::vector<void*>>& addresses)
+            {
+                if (!addresses)
+                    return true;
+
+                for (void* address : *addresses)
+                    if (!registry.lookup(address).has_value())
+                        return false;
+                return true;
+            }
+
+            /** @brief Decides a double-buffered node, whose handles are resolved per dispatch. */
+            Placement place_dynamic(const BufferRegistry& registry,
+                                    const WorkerDirectory& directory, const Graph::Node& node,
+                                    Graph::OffloadState& state)
+            {
+                state.offloadable = false;
+                state.payload.reset();
+                state.attempts.store(0, std::memory_order_relaxed);
+
+                const Graph::OpID operation = node.metadata.op_id;
+                if (operation.value == 0)
+                    return Placement::Untagged;
+                if (!directory.supports(operation))
+                    return Placement::NoWorker;
+                if (!is_all_shared(registry, state.live_reads) ||
+                    !is_all_shared(registry, state.live_writes))
+                    return Placement::NotShared;
+
+                state.offloadable = true;
+                return Placement::Offloadable;
+            }
+
+            /**
+             * @brief Decides a fixed-buffer node and stores its handles on it.
+             *
+             * A node that stays local keeps the handles of the shared buffers it writes; a
+             * node that writes none keeps no payload, and gets no OffloadState for it.
+             */
+            Placement place_fixed(const BufferRegistry& registry, const WorkerDirectory& directory,
+                                  Graph::Node& node)
+            {
+                const Graph::OpID operation = node.metadata.op_id;
+                const bool is_tagged = operation.value != 0;
+                const bool is_supported = is_tagged && directory.supports(operation);
+
+                auto baked = std::make_unique<OffloadHandles>();
+                bool every_buffer_shared = true;
+                if (is_supported)
+                {
+                    baked->handles.reserve(node.io_reads_.size() + node.io_writes_.size());
+                    for (const Core::ResourceRegion& region : node.io_reads_)
+                    {
+                        const std::optional<BufferHandle> handle = registry.lookup(region.base);
+                        if (!handle.has_value())
+                        {
+                            every_buffer_shared = false;
+                            break;
+                        }
+                        baked->handles.push_back(*handle);
+                    }
+                }
+
+                if (!every_buffer_shared)
+                    baked->handles.clear();
+                baked->input_count = baked->handles.size();
+
+                for (const Core::ResourceRegion& region : node.io_writes_)
+                {
+                    const std::optional<BufferHandle> handle = registry.lookup(region.base);
+                    if (handle.has_value())
+                        baked->handles.push_back(*handle);
+                    else
+                        every_buffer_shared = false;
+                }
+
+                const bool is_offloadable = is_supported && every_buffer_shared;
+                if (!is_offloadable)
+                {
+                    // A local node keeps only what complete_local() bumps: its shared writes.
+                    baked->handles.erase(
+                        baked->handles.begin(),
+                        baked->handles.begin() + static_cast<std::ptrdiff_t>(baked->input_count));
+                    baked->input_count = 0;
+                }
+
+                if (is_offloadable || !baked->handles.empty())
+                {
+                    Graph::OffloadState& state = node.offload();
+                    state.payload = std::move(baked);
+                    state.offloadable = is_offloadable;
+                    state.attempts.store(0, std::memory_order_relaxed);
+                }
+                else if (Graph::OffloadState* state = node.offload_state())
+                {
+                    state->offloadable = false;
+                    state->payload.reset();
+                    state->attempts.store(0, std::memory_order_relaxed);
+                }
+
+                if (!is_tagged)
+                    return Placement::Untagged;
+                if (is_offloadable)
+                    return Placement::Offloadable;
+                return is_supported ? Placement::NotShared : Placement::NoWorker;
+            }
+
+            /**
+             * @brief Writes a node's current handles into the scratch under one registry lock.
+             *
+             * A double-buffered node resolves the addresses of its live lists; a fixed-buffer
+             * node refreshes the versions of the handles prepare() stored.
+             * @return The number of leading handles that are inputs, or nothing when a buffer
+             *         is not shared any more.
+             */
+            std::optional<std::size_t> snapshot_handles(const BufferRegistry& registry,
+                                                        const Graph::OffloadState& state,
+                                                        DispatchScratch& scratch)
+            {
+                if (state.live_reads || state.live_writes)
+                {
+                    scratch.addresses.clear();
+                    if (state.live_reads)
+                        scratch.addresses.insert(scratch.addresses.end(),
+                                                 state.live_reads->begin(),
+                                                 state.live_reads->end());
+                    const std::size_t input_count = scratch.addresses.size();
+                    if (state.live_writes)
+                        scratch.addresses.insert(scratch.addresses.end(),
+                                                 state.live_writes->begin(),
+                                                 state.live_writes->end());
+
+                    const SushiRuntime::span<void* const> addresses(scratch.addresses.data(),
+                                                                    scratch.addresses.size());
+                    if (!registry.resolve(addresses, scratch.handles))
+                        return std::nullopt;
+                    return input_count;
+                }
+
+                const auto* baked = static_cast<const OffloadHandles*>(state.payload.get());
+                if (baked == nullptr)
+                    return std::nullopt;
+
+                scratch.handles.assign(baked->handles.begin(), baked->handles.end());
+                const SushiRuntime::span<BufferHandle> handles(scratch.handles.data(),
+                                                               scratch.handles.size());
+                if (!registry.refresh(handles))
+                    return std::nullopt;
+                return baked->input_count;
+            }
+        } // namespace
+
+        OffloadDispatcher::OffloadDispatcher(BufferRegistry& registry, WorkerDirectory& directory,
+                                             PendingTasks& pending, ITransport& transport)
+            : registry_(registry), directory_(directory), pending_(pending), transport_(transport)
+        {
+
+        }
+
+        void OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Graph::Node>> nodes)
+        {
+            LocalOnlyCount local;
+            for (const sushi_ptr<Graph::Node>& slot : nodes)
+            {
+                Graph::Node* node = slot.get();
+                if (node == nullptr)
+                    continue;
+
+                Graph::OffloadState* state = node->offload_state();
+                const bool is_dynamic =
+                    state != nullptr && (state->live_reads || state->live_writes);
+                const Placement placement =
+                    is_dynamic ? place_dynamic(registry_, directory_, *node, *state)
+                               : place_fixed(registry_, directory_, *node);
+                if (placement == Placement::Untagged)
+                    continue;
+
+                ++local.tagged;
+                if (placement == Placement::Offloadable)
+                    continue;
+
+                if (local.no_worker + local.not_shared == 0)
+                    local.first_op = node->metadata.op_id.value;
+                if (placement == Placement::NoWorker)
+                    ++local.no_worker;
+                else
+                    ++local.not_shared;
+            }
+
+            const std::size_t left_local = local.no_worker + local.not_shared;
+            if (left_local != 0)
+                SR_LOG_WARN("{} of {} op-tagged nodes will run locally: {} no live worker for "
+                            "the op, {} buffer not shared (first: op {})",
+                            left_local, local.tagged, local.no_worker, local.not_shared,
+                            local.first_op);
+        }
+
+        bool OffloadDispatcher::try_offload(Graph::Node& node)
+        {
+            Graph::OffloadState* state = node.offload_state();
+            if (state == nullptr)
+                return decline();
+
+            // A late-bound node disabled for the step completes at once in the pool.
+            if (node.bindings_ && !node.bindings_->enabled.load(std::memory_order_relaxed))
+                return decline();
+
+            if (state->attempts.load(std::memory_order_relaxed) >= K_MAXIMUM_OFFLOAD_ATTEMPTS)
+                return decline();
+            state->attempts.fetch_add(1, std::memory_order_relaxed);
+
+            DispatchScratch& scratch = dispatch_scratch();
+            const std::optional<std::size_t> input_count =
+                snapshot_handles(registry_, *state, scratch);
+            if (!input_count.has_value())
+                return decline();
+
+            std::uint64_t estimated_bytes = 0;
+            for (std::size_t index = 0; index < *input_count; ++index)
+                estimated_bytes += scratch.handles[index].size_bytes;
+
+            const std::optional<PeerId> worker = directory_.pick(node, estimated_bytes);
+            if (!worker.has_value())
+                return decline();
+
+            const SushiRuntime::span<BufferHandle> outputs(
+                scratch.handles.data() + *input_count, scratch.handles.size() - *input_count);
+            registry_.bump(outputs);
+
+            const std::uint64_t task_id = pending_.allocate_task_id();
+            const auto first_output =
+                scratch.handles.begin() + static_cast<std::ptrdiff_t>(*input_count);
+            scratch.message.task_id = task_id;
+            scratch.message.metadata = node.metadata;
+            scratch.message.inputs.assign(scratch.handles.begin(), first_output);
+            scratch.message.outputs.assign(first_output, scratch.handles.end());
+
+            scratch.payload.clear();
+            const bool is_encoded =
+                scratch.message.encode(scratch.payload) == Wire::CodecStatus::Ok;
+            const bool is_inserted =
+                is_encoded &&
+                pending_.insert(task_id, node, *worker,
+                                SushiRuntime::span<const BufferHandle>(outputs.data(),
+                                                                       outputs.size()),
+                                std::chrono::steady_clock::now());
+            if (!is_inserted)
+            {
+                directory_.release_inflight(*worker);
+                return decline();
+            }
+
+            // The pending table owns the node from here; this thread reads and writes it no more.
+            const SendStatus sent = transport_.send(
+                *worker, MessageType::TaskDispatch,
+                SushiRuntime::span<const std::byte>(scratch.payload.data(),
+                                                    scratch.payload.size()));
+            if (sent == SendStatus::Queued)
+            {
+                offloaded_.fetch_add(1, std::memory_order_relaxed);
+                SR_LOG_DEBUG("task {} queued for worker {}", task_id, worker->value);
+                return true;
+            }
+
+            if (sent == SendStatus::QueueFull)
+                send_queue_full_.fetch_add(1, std::memory_order_relaxed);
+
+            // A removal that got there first owns the node and resubmits it.
+            const std::optional<PendingTask> undone = pending_.take(task_id, *worker);
+            if (!undone.has_value())
+            {
+                offloaded_.fetch_add(1, std::memory_order_relaxed);
+                return true;
+            }
+
+            directory_.release_inflight(*worker);
+            return decline();
+        }
+
+        void OffloadDispatcher::complete_local(Graph::Node& node) noexcept
+        {
+            Graph::OffloadState* state = node.offload_state();
+            if (state == nullptr)
+                return;
+
+            state->attempts.store(0, std::memory_order_relaxed);
+
+            if (state->live_writes)
+            {
+                registry_.bump_addresses(SushiRuntime::span<void* const>(
+                    state->live_writes->data(), state->live_writes->size()));
+                return;
+            }
+
+            auto* baked = static_cast<OffloadHandles*>(state->payload.get());
+            if (baked == nullptr)
+                return;
+
+            const SushiRuntime::span<BufferHandle> written = baked->outputs();
+            if (!written.empty())
+                registry_.bump(written);
+        }
+
+        void OffloadDispatcher::complete_remote(Graph::Node& node) noexcept
+        {
+            if (Graph::OffloadState* state = node.offload_state())
+                state->attempts.store(0, std::memory_order_relaxed);
+        }
+
+        OffloadDispatcherStatistics OffloadDispatcher::statistics() const noexcept
+        {
+            OffloadDispatcherStatistics snapshot;
+            snapshot.offloaded = offloaded_.load(std::memory_order_relaxed);
+            snapshot.declined = declined_.load(std::memory_order_relaxed);
+            snapshot.send_queue_full = send_queue_full_.load(std::memory_order_relaxed);
+            return snapshot;
+        }
+
+        bool OffloadDispatcher::decline() noexcept
+        {
+            declined_.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+
+    } // namespace Distributed
+} // namespace SushiRuntime
