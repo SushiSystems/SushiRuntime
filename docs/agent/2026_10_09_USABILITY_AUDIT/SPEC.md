@@ -3863,3 +3863,23 @@ None of these is verified by a run. Owner: T19, unless marked.
    behaviour; the guide says so. Owner: T17.
 7. Every open connection counts toward `max_peers`, registered or not. Floods are out of scope
    for a trusted LAN; the guide says so. Owner: T17.
+
+### What the defect pass left open (T19)
+
+1. `PeerConnection::close()` shuts the socket itself only when the writer has spent `close_linger`
+   (1 s) inside one socket write; a writer that waited less still runs to `write_idle_timeout`. A
+   stalled transfer is therefore lost on time with the default 5 s liveness and late with a
+   liveness under about 1 s. The fix is `Socket::shutdown_receive()` in the socket seam: `close()`
+   wakes the reader, which waits for the writer for `close_linger` and then shuts both directions.
+2. A failed `attach` still removes the cluster that was installed before it. The engine has to
+   offer the sink before a coordinator is installed: `RuntimeContext::offload_sink()`. Then
+   `attach` binds and starts the new coordinator first and replaces the old one only on success.
+3. A worker with a wrong secret that already sent five `HELLO` on one connection is not rejected on
+   that connection; the master's handshake timeout closes it and the next connection rejects it.
+4. Comments that the stalled-writer rule made incomplete: `peer_connection.hpp` (`close()`),
+   `tcp_transport.hpp:146`, `i_transport.hpp:333-339`, `cluster_monitor.cpp:211`.
+   `docs/architecture/ARCHITECTURE.md:1018` names the removed `RemoteKernel`. Owner: T17.
+5. `K_LOSS_CAUSE_WORDS` of the coordinator and `loss_cause_name()` of the link are two tables for
+   one enum.
+6. No test covers the WARN of `Buffer::distributed()` without a cluster, nor a `WorkerAgent` built
+   on an `API::Runtime`.

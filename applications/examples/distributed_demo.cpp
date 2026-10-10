@@ -254,14 +254,6 @@ namespace
         return true;
     }
 
-    /** @brief Returns how many dispatches a worker finished: those queued less those taken back. */
-    std::uint64_t finished_on_workers(const Distributed::ClusterStatistics& statistics)
-    {
-        if (statistics.offloaded <= statistics.redispatched)
-            return 0;
-        return statistics.offloaded - statistics.redispatched;
-    }
-
     /** @brief Prints one line per registered worker. */
     void print_workers(const Distributed::ClusterStatistics& statistics)
     {
@@ -274,7 +266,7 @@ namespace
     void print_outcome(const Distributed::ClusterStatistics& statistics)
     {
         std::printf("  ran on: %s\n",
-                    finished_on_workers(statistics) > 0 ? "a worker" : "this machine");
+                    statistics.completed_remote > 0 ? "a worker" : "this machine");
         std::printf("  offloaded=%llu declined=%llu redispatched=%llu stale_writebacks=%llu\n",
                     static_cast<unsigned long long>(statistics.offloaded),
                     static_cast<unsigned long long>(statistics.declined),

@@ -386,10 +386,11 @@ namespace
             }
 
             /** @brief Attaches a master that listens on a free loopback port. */
-            void start_master(ClusterOptions options = ClusterOptions())
+            void start_master(ClusterOptions options = ClusterOptions(),
+                              const TcpMasterOptions& transport = TcpMasterOptions())
             {
                 options.policy = std::make_shared<FirstWorkerPolicy>();
-                master_transport_ = TcpTransport::make_master();
+                master_transport_ = TcpTransport::make_master(transport);
                 cluster_.emplace(
                     Cluster::attach(*master_context_, master_transport_, std::move(options)));
             }
@@ -438,6 +439,15 @@ namespace
                                                        kernels, std::move(options));
                 const TransportResult started = agent_->start();
                 ASSERT_TRUE(started.is_ok()) << started.message;
+            }
+
+            /** @brief Returns whether the master counted @p count peers closed for a bad frame. */
+            [[nodiscard]] bool malformed_peers_reach(std::uint64_t count)
+            {
+                return eventually([&]
+                {
+                    return cluster_->statistics().peers_closed_malformed == count;
+                });
             }
 
             /** @brief Returns whether one worker registered with the master within K_WAIT. */
@@ -627,11 +637,15 @@ TEST_F(Integration_DistributedTcpFaultsTest, GarbageBytesClosedMasterLives)
 
     EXPECT_TRUE(is_ended(ended)) << describe(ended);
     EXPECT_EQ(ended.transferred, 0u);
+    EXPECT_TRUE(malformed_peers_reach(1));
     ASSERT_NO_FATAL_FAILURE(start_worker(master_endpoint()));
     ASSERT_TRUE(worker_registered());
     EXPECT_TRUE(run_mask_task(4 * K_KIBIBYTE, 4 * K_KIBIBYTE));
     EXPECT_EQ(runs_.worker.load(), 1);
-    EXPECT_EQ(cluster_->statistics().handshake_rejected_version, 0u);
+    const ClusterStatistics statistics = cluster_->statistics();
+    EXPECT_EQ(statistics.handshake_rejected_version, 0u);
+    EXPECT_EQ(statistics.peers_closed_malformed, 1u);
+    EXPECT_EQ(statistics.completed_remote, 1u);
 }
 
 /** @brief Tests that a frame of protocol version 1, a length and a type byte, is refused. */
@@ -650,6 +664,8 @@ TEST_F(Integration_DistributedTcpFaultsTest, V1FrameRejected)
 
     EXPECT_TRUE(is_ended(ended)) << describe(ended);
     EXPECT_EQ(ended.transferred, 0u);
+    EXPECT_TRUE(malformed_peers_reach(1));
+    EXPECT_EQ(cluster_->statistics().handshake_rejected_version, 0u);
     EXPECT_EQ(cluster_->alive_workers(), 0u);
     ASSERT_NO_FATAL_FAILURE(start_worker(master_endpoint()));
     EXPECT_TRUE(worker_registered());
@@ -668,10 +684,12 @@ TEST_F(Integration_DistributedTcpFaultsTest, OversizedLengthClosesPeerNotProcess
 
     EXPECT_TRUE(is_ended(ended)) << describe(ended);
     EXPECT_EQ(ended.transferred, 0u);
+    EXPECT_TRUE(malformed_peers_reach(1));
     ASSERT_NO_FATAL_FAILURE(start_worker(master_endpoint()));
     ASSERT_TRUE(worker_registered());
     EXPECT_TRUE(run_mask_task(4 * K_KIBIBYTE, 4 * K_KIBIBYTE));
     EXPECT_EQ(runs_.worker.load(), 1);
+    EXPECT_EQ(cluster_->statistics().peers_closed_malformed, 1u);
 }
 
 /** @brief Tests that a worker and a raw peer that hold another secret are both kept out. */
@@ -783,11 +801,11 @@ TEST_F(Integration_DistributedTcpFaultsTest, WorkerCutMidChunkTaskFinishesLocall
     EXPECT_TRUE(is_masked(task));
     EXPECT_EQ(runs_.worker.load(), 0);
     EXPECT_EQ(runs_.local.load(), 1);
-    EXPECT_TRUE(eventually([&]
-    {
-        const ClusterStatistics statistics = cluster_->statistics();
-        return statistics.peers_lost == 1 && statistics.redispatched == 1;
-    }));
+
+    // Both counters rise before the node goes back, so a finished run already shows them.
+    const ClusterStatistics statistics = cluster_->statistics();
+    EXPECT_EQ(statistics.peers_lost, 1u);
+    EXPECT_EQ(statistics.redispatched, 1u);
     EXPECT_EQ(cluster_->offloaded(), 1u);
     EXPECT_EQ(cluster_->alive_workers(), 0u);
 }
@@ -817,6 +835,54 @@ TEST_F(Integration_DistributedTcpFaultsTest, StalledLinkReapedThenWorkerRejoins)
     EXPECT_TRUE(eventually([&] { return agent_->statistics().reconnects >= 1; }));
     EXPECT_TRUE(run_mask_task(4 * K_KIBIBYTE, 4 * K_KIBIBYTE));
     EXPECT_EQ(runs_.worker.load(), 1);
+}
+
+/**
+ * @brief Tests that a link stalled in the middle of a large transfer is lost when liveness
+ *        closes it, not when the write idle timeout ends, and that its task finishes locally.
+ */
+TEST_F(Integration_DistributedTcpFaultsTest, LinkStalledMidTransferLostAtLivenessClose)
+{
+    // The writer must have waited longer than the connection's 1 s linger when liveness closes.
+    constexpr std::chrono::milliseconds K_LIVENESS{2000};
+    constexpr std::uint64_t K_BYTES_BEFORE_THE_STALL = K_MEBIBYTE;
+    ClusterOptions options;
+    options.liveness_timeout = K_LIVENESS;
+    options.task_deadline = std::chrono::milliseconds(0);
+    TcpMasterOptions master_transport;
+    master_transport.write_idle_timeout = 10 * K_WAIT;
+    start_master(std::move(options), master_transport);
+    ASSERT_NO_FATAL_FAILURE(start_proxy());
+    WorkerAgentOptions worker;
+    worker.heartbeat_interval = std::chrono::milliseconds(50);
+    ASSERT_NO_FATAL_FAILURE(start_worker(proxy_->endpoint(), std::move(worker)));
+    ASSERT_TRUE(worker_registered());
+    const MaskTask task = make_mask_task(32 * K_MEBIBYTE, 4 * K_KIBIBYTE);
+    const std::uint64_t forwarded_before =
+        proxy_->forwarded_bytes(FlowDirection::MasterToWorker);
+
+    proxy_->set_fault(FlowDirection::MasterToWorker, Fault::throttle(8 * K_MEBIBYTE));
+    launch(task);
+    ASSERT_TRUE(eventually([&]
+    {
+        return proxy_->forwarded_bytes(FlowDirection::MasterToWorker) >=
+               forwarded_before + K_BYTES_BEFORE_THE_STALL;
+    }));
+    proxy_->set_fault(Fault::stall());
+
+    // The master's writer waits in a socket write that would end 10 minutes from here.
+    ASSERT_TRUE(eventually([&]
+    {
+        const ClusterStatistics statistics = cluster_->statistics();
+        return statistics.peers_lost == 1 && statistics.redispatched == 1;
+    })) << "the stalled peer was not lost when liveness closed it";
+    ASSERT_TRUE(finish_run());
+    EXPECT_TRUE(is_masked(task));
+    EXPECT_EQ(runs_.worker.load(), 0);
+    EXPECT_EQ(runs_.local.load(), 1);
+    const ClusterStatistics statistics = cluster_->statistics();
+    EXPECT_EQ(statistics.completed_remote, 0u);
+    EXPECT_EQ(statistics.pending_tasks, 0u);
 }
 
 /** @brief Tests that 8 MiB at 4 MiB/s crosses under a 500 ms liveness timeout. */
@@ -868,6 +934,7 @@ TEST_F(Integration_DistributedTcpFaultsTest, ManyChunkBufferCrossesIntact)
     EXPECT_EQ(runs_.worker.load(), 1);
     EXPECT_EQ(runs_.local.load(), 0);
     const ClusterStatistics statistics = cluster_->statistics();
+    EXPECT_EQ(statistics.completed_remote, 1u);
     EXPECT_EQ(statistics.chunks_sent, K_MEBIBYTE / K_MINIMUM_CHUNK_BYTES);
     EXPECT_EQ(statistics.chunks_received, K_MEBIBYTE / K_MINIMUM_CHUNK_BYTES);
     EXPECT_EQ(statistics.transfers_aborted, 0u);

@@ -303,6 +303,10 @@ namespace SushiRuntime
         {
             closed_locally_.store(true);
             outbox_.close();
+
+            // A healthy write returns and lingers; this one would hold the loss back.
+            if (has_spent_linger())
+                socket_.shutdown();
         }
 
         void PeerConnection::stop() noexcept
@@ -431,14 +435,9 @@ namespace SushiRuntime
                 if (is_coalesced)
                     head.insert(head.end(), frame.payload.begin(), frame.payload.end());
 
-                SocketResult written = socket_.write_all({head.data(), head.size()}, limit);
-                bytes_sent_.fetch_add(written.transferred, std::memory_order_relaxed);
+                SocketResult written = write_timed({head.data(), head.size()}, limit);
                 if (written.is_ok() && !is_coalesced)
-                {
-                    written = socket_.write_all({frame.payload.data(), frame.payload.size()},
-                                                limit);
-                    bytes_sent_.fetch_add(written.transferred, std::memory_order_relaxed);
-                }
+                    written = write_timed({frame.payload.data(), frame.payload.size()}, limit);
                 if (written.is_ok())
                     continue;
 
@@ -450,6 +449,31 @@ namespace SushiRuntime
             outbox_.close();
             socket_.shutdown();
             running_threads_.fetch_sub(1);
+        }
+
+        SocketResult PeerConnection::write_timed(SushiRuntime::span<const std::byte> bytes,
+                                                 std::chrono::milliseconds limit)
+        {
+            using Clock = std::chrono::steady_clock;
+
+            write_began_ticks_.store(Clock::now().time_since_epoch().count(),
+                                     std::memory_order_release);
+            SocketResult written = socket_.write_all(bytes, limit);
+            write_began_ticks_.store(0, std::memory_order_release);
+
+            bytes_sent_.fetch_add(written.transferred, std::memory_order_relaxed);
+            return written;
+        }
+
+        bool PeerConnection::has_spent_linger() const noexcept
+        {
+            using Clock = std::chrono::steady_clock;
+
+            const Clock::rep began = write_began_ticks_.load(std::memory_order_acquire);
+            if (began == 0)
+                return false;
+            return Clock::now() - Clock::time_point(Clock::duration(began)) >=
+                   options_.close_linger;
         }
 
     } // namespace Distributed

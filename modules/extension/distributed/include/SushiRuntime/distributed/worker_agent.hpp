@@ -42,6 +42,7 @@
 
 namespace SushiRuntime
 {
+    namespace API { class Runtime; }
     namespace Execution { class RuntimeContext; }
 
     namespace Distributed
@@ -110,9 +111,19 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Builds an agent; nothing runs until start().
-                 * @param context Supplies the queue kernels run on and the cache's memory;
+                 * @brief Builds an agent on a runtime; nothing runs until start().
+                 * @param runtime Supplies the queue kernels run on and the cache's memory;
                  *        outlives the agent.
+                 * @param transport A worker-side transport that was never started; not null.
+                 * @param kernels Not null; read from the exec thread.
+                 */
+                WorkerAgent(API::Runtime& runtime, std::shared_ptr<ITransport> transport,
+                            sushi_ptr<KernelRegistry> kernels,
+                            WorkerAgentOptions options = WorkerAgentOptions());
+
+                /**
+                 * @brief Builds an agent on a bare context; the Runtime overload forwards here.
+                 * @param context Outlives the agent.
                  * @param transport A worker-side transport that was never started; not null.
                  * @param kernels Not null; read from the exec thread.
                  */

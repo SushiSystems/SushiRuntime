@@ -37,9 +37,10 @@ Headers under `include/SushiRuntime/distributed/`. Everything is in `SushiRuntim
 private codec uses.
 
 Deprecated and forwarding: the four-argument `Cluster::attach()` overloads, which attach with an
-empty secret, and `KernelRegistry::register_kernel()` for a `RemoteKernel`, which wraps the
-pointer-form kernel. The tree compiles with `-Werror`, so a caller of either has to switch or
-silence the warning where it calls.
+empty secret. The tree compiles with `-Werror`, so a caller has to switch or silence the warning
+where it calls. `KernelRegistry::register_kernel()` has one form, the one that takes
+`span<const BufferView>`; the pointer form and its `RemoteKernel` alias are removed, so a generic
+lambda registers without a cast.
 
 ## cluster.hpp
 
@@ -48,8 +49,9 @@ silence the warning where it calls.
 Cluster::attach() is the way into the layer. It builds a master on a runtime, installs it as the
 runtime's Graph::OffloadCoordinator and as the allocator's release observer, starts it and its
 transport, and returns a handle to its knobs and counters. Until attach() runs, the runtime is a
-single machine: no header of `api` or `execution` names a transport, and Buffer::distributed() does
-nothing.
+single machine: no header of `api` or `execution` names a transport, and Buffer::distributed()
+shares nothing. The first such call in a process logs one WARN that says the buffer stays local
+and that attach() must come first.
 
 One overload takes an API::Runtime and the other an Execution::RuntimeContext. The first forwards
 to the second through Runtime::unsafe_context(); the second serves code that drives a bare context.
@@ -128,6 +130,13 @@ of the same stream. `QueueFull` means the control queue is at its bound and noth
 **Closing.** `close_peer()` returns at once. Sends to the peer return `UnknownPeer` from that
 point, queued control frames are still written, streams are dropped, and `on_peer_lost()` reports
 `ClosedLocally`.
+
+Over TCP the writer gets `close_linger` (1 s) to write those frames. A writer that has already
+waited that long inside one socket write when `close_peer()` is called has had its time:
+`PeerConnection::close()` shuts the socket itself, the reader reports the loss at once and the
+queued frames are dropped. A write that has waited for less runs on until it ends or
+`write_idle_timeout` passes. The in-process transport has no such wait: its pump never blocks in a
+send, `Outbox::close()` drops the streams, and the next round of the pump reports the loss.
 
 **A worker that cannot connect.** `on_connect_abandoned()` is called once when a worker-side
 transport stops trying: the time allowed for the first connection ran out, or the master was lost
@@ -255,7 +264,7 @@ decodes the payload and calls a member; a payload that does not decode closes th
 
 | Frame | Handler does |
 | --- | --- |
-| `HELLO` | draws a nonce, `accept_hello()`, sends `CHALLENGE` with the session id |
+| `HELLO` | draws a nonce, `accept_hello()`, sends `CHALLENGE` with the session id; from a worker that is already registered it sends `WELCOME` again and changes nothing else |
 | `PROOF` | `accept_proof()`; sends `WELCOME` and logs the registration with what `WorkerDirectory::identity()` returns (name, endpoint, the build id of `HELLO`), or sends `REJECT`, counts `handshake_rejected_auth` and closes the peer |
 | `TASK_ACCEPTED` | `PendingTasks::acknowledge()` |
 | `TASK_RESULT` | `PendingTasks::take()`; nothing more when the task is not pending. Otherwise `sink.complete_remote()` when the status is `Succeeded` and `BufferExchange::finish_task()` says every output arrived whole, `resubmit_tasks()` when not |
@@ -267,7 +276,15 @@ decodes the payload and calls a member; a payload that does not decode closes th
 | `GOODBYE` | closes the peer and returns its tasks at once |
 
 A registered worker that sends any other type is closed. The source holds no `switch` and no
-mutex; what it changes after construction is `sink`, two lifecycle flags and five counters.
+mutex; what it changes after construction is `sink`, two lifecycle flags and seven counters.
+
+### A lost WELCOME
+
+The master registers a peer on `PROOF`. A worker whose `WELCOME` is lost stays in its handshake,
+answers no `PING` and says `HELLO` again every heartbeat interval. `WorkerDirectory::admits()`
+passes that `HELLO`, so it refreshes the peer's liveness, and `accept_hello()` answers
+`AlreadyRegistered`: the session, the worker id, the kernels and the inflight count stay as they
+are, and the coordinator sends `WELCOME` again.
 
 ### Losing a peer
 
@@ -284,6 +301,17 @@ to that peer fails in `send()` and is undone by `try_offload()`.
 `statistics()` reads atomics only. `redispatched` is the monitor's count plus the tasks the
 handlers and `stop()` resubmitted. `stale_writebacks` is the exchange's count of chunks the
 registry refused plus the chunks `expects_output()` refused.
+
+`completed_remote` counts the tasks whose result was `Succeeded` with every output whole. The
+coordinator keeps it, since `Graph::OffloadStatistics` has no field for it.
+`peers_closed_malformed` counts the peers closed for bad magic, a malformed header or a payload
+that does not decode.
+
+The handlers raise `completed_remote`, `redispatched` and `peers_lost` before they hand the node
+to the sink, so a caller that reads the statistics when its run returns sees them.
+`handshake_rejected_version`, `peers_closed_malformed` and the line that reports the peer rise and
+log together, for a peer the directory still knows; a peer it has forgotten was counted and logged
+when it was dropped.
 
 ## offload_dispatcher.hpp
 
@@ -378,7 +406,8 @@ it.
 
 `WorkerAgent` builds `WorkerBufferCache`, `DispatchDeduplicator`, `MasterLink` and
 `DispatchExecutor` over one transport and one `RuntimeContext`, and is the transport's only event
-receiver. Kernels run on the queue of device 0 of that context. The cache allocates shared USM on
+receiver. One constructor takes an `API::Runtime` and forwards to the other through
+`Runtime::unsafe_context()`, as the two `Cluster::attach()` overloads do. Kernels run on the queue of device 0 of that context. The cache allocates shared USM on
 the same device through `RuntimeContext::memory()`, so the context's allocator records every
 cached buffer. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that
 reports no size gets 1 GiB and one WARN.
@@ -411,7 +440,7 @@ cause when the transport gives up. `MasterLink` logs registration and loss by pe
 | --- | --- |
 | Transport reader | every `on_` call of the agent, so the routing table and the handlers above |
 | Exec (`DispatchExecutor`) | one kernel at a time, input pulls, output pins |
-| Heartbeat (`MasterLink`) | `HEARTBEAT`, the handshake restart, the master watch |
+| Heartbeat (`MasterLink`) | `HEARTBEAT`, the handshake restart, the master watch, `ITransport::stop()` for a link that ended |
 | Transport writer | output streams; an output stream's destructor returns its cache pins here |
 | Caller | `start()`, `wait_for_end()`, `stop()`, `statistics()` |
 
@@ -444,6 +473,27 @@ loss the worker's own, so every composer of a link gets the rule, and the agent 
 and each abandon to the link without a filter. The agent logs the transport's cause at WARN only
 when the link answers `Ended`. A master that goes away while `DispatchExecutor::stop()` still
 drains, before `say_goodbye()`, is a real loss and is logged as one.
+
+### A link that ended
+
+A link ends for good as `MasterUnreachable`, `RejectedAuthentication`, `ProtocolMismatch` or
+`MasterLost`. `MasterLink` then stops the transport from its heartbeat thread, once, so the
+connector makes no further connection. The link holds the rule because `finish()` is the one place
+an end becomes final, and because an event cannot call `ITransport::stop()`, which joins the
+thread the event runs on; the heartbeat thread is no transport thread. A stopped transport reports
+no loss, so the link forgets its connection itself. The agent's `stop()` still runs the whole stop
+order, and its `ITransport::stop()` is then the second call, which does nothing.
+
+### Handshake frames the link ignores
+
+`on_ping()` answers only on the connection the link is registered on. A `PONG` sent during the
+handshake would keep a master waiting on a worker that takes no dispatch.
+
+The link remembers the nonces of its last four `HELLO`s. A `CHALLENGE` whose proof matches none of
+them ends the link as `RejectedAuthentication` only while every `HELLO` of the connection is still
+remembered. Once a fifth `HELLO` has gone out the proof may answer a forgotten one, so the link
+logs it at DEBUG and waits for the answer to its next `HELLO`. A worker with the wrong secret that
+gets there is closed by the master's handshake timeout and rejected on its next connection.
 
 ## worker_main.hpp
 

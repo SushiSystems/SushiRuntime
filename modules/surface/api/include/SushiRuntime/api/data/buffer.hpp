@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -39,6 +40,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/core/span.hpp>
@@ -112,6 +114,23 @@ namespace SushiRuntime
 
         namespace detail
         {
+            /**
+             * @brief Logs, the first time it is called, that distributed() found no offload
+             *        coordinator.
+             *
+             * One flag serves every element type, so a program gets the line once.
+             */
+            inline void warn_distributed_without_coordinator()
+            {
+                static std::atomic_flag is_logged = ATOMIC_FLAG_INIT;
+                if (is_logged.test_and_set(std::memory_order_relaxed))
+                    return;
+
+                SR_LOG_WARN("distributed() was called on a runtime with no offload coordinator, "
+                            "so the buffer stays local and its tasks run on this machine; call "
+                            "Cluster::attach() before distributed(). Later calls are not logged");
+            }
+
             /**
              * @brief Allocates USM of the given residency on one device queue.
              * @param ctx          Runtime context that performs and records the allocation.
@@ -548,13 +567,15 @@ namespace SushiRuntime
                                         range.count * sizeof(T)};
                 }
 
-                /** @brief Hands the allocation to the installed offload coordinator, if any. */
+                /** @brief Hands the allocation to the installed offload coordinator, or warns. */
                 void share_with_offload()
                 {
                     if (!ctx_ || !data())
                         return;
                     if (auto* offload = ctx_->offload())
                         offload->share(data(), size_ * sizeof(T));
+                    else
+                        detail::warn_distributed_without_coordinator();
                 }
 
                 /** @brief Throws an invalid_access error when host indexing is invalid. */

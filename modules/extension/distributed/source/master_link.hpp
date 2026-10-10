@@ -268,6 +268,14 @@ namespace SushiRuntime
                 bool stopping_ = false;
 
                 /**
+                 * @brief Set once the link's thread has stopped the transport of an ended link.
+                 *
+                 * An event cannot call ITransport::stop(), so the thread does it when finish()
+                 * wakes it; a transport that is stopped connects no more.
+                 */
+                bool transport_stopped_ = false;
+
+                /**
                  * @brief Set by say_goodbye() and stop(): the worker is leaving on its own.
                  *
                  * From then on a loss or an abandoned connect is what the worker asked for:
@@ -295,6 +303,9 @@ namespace SushiRuntime
 
                 /// @brief How many entries of sent_nonces_ are set.
                 std::size_t sent_nonce_count_ = 0;
+
+                /// @brief How many HELLOs went out on that connection, remembered or not.
+                std::size_t hello_count_ = 0;
 
                 /// @brief Whether a PROOF went out on that connection.
                 bool proof_sent_ = false;

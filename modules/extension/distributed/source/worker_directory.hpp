@@ -68,6 +68,7 @@ namespace SushiRuntime
             UnknownPeer,          /**< The peer is not in the directory; drop the frame. */
             OutOfOrder,           /**< Not the frame this peer owes; drop it. */
             AuthenticationFailed, /**< The worker's proof is wrong; send REJECT and close. */
+            AlreadyRegistered,    /**< HELLO from a registered worker; send WELCOME again. */
         };
 
         /**
@@ -155,7 +156,7 @@ namespace SushiRuntime
                 /**
                  * @brief Returns whether a frame of this type is to be handled for this peer.
                  *
-                 * HELLO and PROOF pass for a peer that owes them, GOODBYE for any known peer,
+                 * HELLO and GOODBYE pass for any known peer, PROOF for a peer that owes it,
                  * every other type only for a registered worker. The rest is dropped unread.
                  */
                 [[nodiscard]] bool admits(PeerId peer, MessageType type) const;
@@ -164,7 +165,8 @@ namespace SushiRuntime
                  * @brief Records a HELLO and computes the master's proof for CHALLENGE.
                  *
                  * A second HELLO from a peer that is not registered restarts its handshake
-                 * with the new nonces, which is how a worker recovers a lost frame.
+                 * with the new nonces. From a registered worker, which lost its WELCOME, it
+                 * changes nothing and answers AlreadyRegistered.
                  * @param master_nonce Fresh for this call; the caller sends the same bytes.
                  */
                 [[nodiscard]] HelloReply accept_hello(PeerId peer, const Wire::HelloMessage& hello,

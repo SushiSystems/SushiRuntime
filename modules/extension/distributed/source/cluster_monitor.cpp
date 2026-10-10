@@ -245,19 +245,22 @@ namespace SushiRuntime
             if (tasks_.empty())
                 return;
 
+            // The counters rise before the nodes return, so a run that ends on them reads them.
+            std::atomic<std::uint64_t>* const counters[] = {
+                &reaped_deadline_, &reaped_unacknowledged_, &reaped_lost_result_};
+            for (const PendingTask& task : tasks_)
+                counters[static_cast<std::size_t>(task.cause)]->fetch_add(
+                    1, std::memory_order_relaxed);
+
+            const std::size_t taken = tasks_.size();
+            redispatched_.fetch_add(taken, std::memory_order_relaxed);
             const std::size_t resubmitted = resubmit_tasks(
                 SushiRuntime::span<PendingTask>(tasks_.data(), tasks_.size()), registry_,
                 exchange_, directory_, *sink_);
-            redispatched_.fetch_add(resubmitted, std::memory_order_relaxed);
+            redispatched_.fetch_sub(taken - resubmitted, std::memory_order_relaxed);
 
             std::vector<PendingTask> reaped;
             reaped.swap(tasks_);
-
-            std::atomic<std::uint64_t>* const counters[] = {
-                &reaped_deadline_, &reaped_unacknowledged_, &reaped_lost_result_};
-            for (const PendingTask& task : reaped)
-                counters[static_cast<std::size_t>(task.cause)]->fetch_add(
-                    1, std::memory_order_relaxed);
 
             log_reaped_tasks(reaped, now);
 

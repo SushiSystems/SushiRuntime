@@ -293,14 +293,13 @@ TEST_F(Unit_WorkerDirectory, UnregisteredPeerMessagesDropped)
                   at(milliseconds(1))),
               HandshakeStep::Accepted);
 
-    std::vector<int> every_type_but_the_handshake;
+    std::vector<int> every_type_but_proof;
     for (int type = K_FIRST_MESSAGE_TYPE; type <= K_LAST_MESSAGE_TYPE; ++type)
     {
-        if (type != static_cast<int>(MessageType::Hello) &&
-            type != static_cast<int>(MessageType::Proof))
-            every_type_but_the_handshake.push_back(type);
+        if (type != static_cast<int>(MessageType::Proof))
+            every_type_but_proof.push_back(type);
     }
-    EXPECT_EQ(admitted_types(directory_, K_FIRST), every_type_but_the_handshake);
+    EXPECT_EQ(admitted_types(directory_, K_FIRST), every_type_but_proof);
 
     const RemovedPeer removed = directory_.remove_peer(K_FIRST);
     EXPECT_TRUE(removed.known);
@@ -468,7 +467,7 @@ TEST_F(Unit_WorkerDirectory, SecondHelloRestartsTheHandshake)
     // A registered worker owes no handshake frame, and sending one costs it nothing.
     EXPECT_EQ(directory_.accept_hello(K_SECOND, hello_with(first_worker_nonce),
                                       first_master_nonce).step,
-              HandshakeStep::OutOfOrder);
+              HandshakeStep::AlreadyRegistered);
     EXPECT_EQ(directory_.accept_proof(
                   K_SECOND,
                   proof_with(secret(), second_worker_nonce, second_master_nonce, {}, 4),
@@ -649,12 +648,38 @@ TEST_F(Unit_WorkerDirectory, IdentityCarriesTheBuildOfTheLastHello)
     EXPECT_EQ(worker->endpoint, "10.0.0.1:7000");
     EXPECT_EQ(worker->build_id, "build-b");
 
-    // A registered worker's HELLO is out of order and leaves what it registered with.
+    // A registered worker's HELLO leaves what it registered with.
     ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(first_worker_nonce, "build-c"),
                                       first_master_nonce).step,
-              HandshakeStep::OutOfOrder);
+              HandshakeStep::AlreadyRegistered);
     EXPECT_EQ(directory_.identity(K_FIRST)->build_id, "build-b");
 
     EXPECT_TRUE(directory_.remove_peer(K_FIRST).registered);
     EXPECT_FALSE(directory_.identity(K_FIRST).has_value());
+}
+
+TEST_F(Unit_WorkerDirectory, HelloFromARegisteredWorkerRegistersNothingTwice)
+{
+    ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
+              HandshakeStep::Accepted);
+    ASSERT_TRUE(directory_.pick(*make_sushi<Graph::Node>(), 0).has_value());
+
+    // The worker lost its WELCOME and says HELLO again with a nonce of its own choosing.
+    ASSERT_TRUE(directory_.admits(K_FIRST, MessageType::Hello));
+    const HelloReply again =
+        directory_.accept_hello(K_FIRST, hello_with(nonce_of(0x77), "build-z"), nonce_of(0x88));
+
+    EXPECT_EQ(again.step, HandshakeStep::AlreadyRegistered);
+    EXPECT_EQ(directory_.alive_count(), 1u);
+    EXPECT_TRUE(directory_.supports(K_RARE_OPERATION));
+    EXPECT_TRUE(directory_.admits(K_FIRST, MessageType::TaskResult));
+    EXPECT_FALSE(directory_.admits(K_FIRST, MessageType::Proof))
+        << "the repeated HELLO reopened the handshake";
+
+    std::vector<WorkerSnapshot> workers;
+    directory_.snapshot(at(milliseconds(1)), workers);
+    ASSERT_EQ(workers.size(), 1u);
+    EXPECT_EQ(workers[0].id, K_FIRST.value);
+    EXPECT_EQ(workers[0].inflight, 1u) << "the repeated HELLO forgot a task that is out";
+    EXPECT_EQ(directory_.identity(K_FIRST)->build_id, K_BUILD);
 }

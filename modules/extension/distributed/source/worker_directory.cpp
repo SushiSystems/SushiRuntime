@@ -102,10 +102,8 @@ namespace SushiRuntime
                 return false;
 
             const Phase phase = position->second.phase;
-            if (type == MessageType::Goodbye)
+            if (type == MessageType::Goodbye || type == MessageType::Hello)
                 return true;
-            if (type == MessageType::Hello)
-                return phase != Phase::Registered;
             if (type == MessageType::Proof)
                 return phase == Phase::AwaitsProof;
 
@@ -129,7 +127,7 @@ namespace SushiRuntime
             Session& session = position->second;
             if (session.phase == Phase::Registered)
             {
-                reply.step = HandshakeStep::OutOfOrder;
+                reply.step = HandshakeStep::AlreadyRegistered;
                 return reply;
             }
 

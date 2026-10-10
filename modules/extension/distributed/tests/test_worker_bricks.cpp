@@ -91,7 +91,11 @@ namespace
 
             void stop() noexcept override
             {
-
+                {
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    ++stops_;
+                }
+                changed_.notify_all();
             }
 
             [[nodiscard]] SendStatus send(PeerId peer, MessageType type,
@@ -201,6 +205,20 @@ namespace
                                          });
             }
 
+            /** @brief Waits until stop() was called. */
+            [[nodiscard]] bool wait_for_stop()
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                return changed_.wait_for(lock, K_WAIT, [this] { return stops_ > 0; });
+            }
+
+            /** @brief Returns the number of stop() calls. */
+            [[nodiscard]] std::size_t stop_count() const
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                return stops_;
+            }
+
             /** @brief Returns whether a peer was closed. */
             [[nodiscard]] bool is_closed(PeerId peer) const
             {
@@ -288,6 +306,9 @@ namespace
 
             /// @brief Whether send_stream() keeps a stream.
             bool keep_streams_ = false;
+
+            /// @brief Calls of stop().
+            std::size_t stops_ = 0;
     };
 
     /**
@@ -487,14 +508,15 @@ namespace
         return std::vector<std::uint8_t>(32, value);
     }
 
-    /** @brief Returns the CHALLENGE a master holding @p secret sends for K_WORKER_NONCE. */
+    /** @brief Returns the CHALLENGE a master holding @p secret sends for a worker's nonce. */
     Wire::ChallengeMessage challenge_of(const std::vector<std::uint8_t>& secret,
-                                        std::uint64_t session_id)
+                                        std::uint64_t session_id,
+                                        const HandshakeNonce& worker_nonce = K_WORKER_NONCE)
     {
         const Sha256Digest proof =
             compute_proof(HandshakeRole::Master,
                           span<const std::uint8_t>(secret.data(), secret.size()),
-                          K_WORKER_NONCE, K_MASTER_NONCE);
+                          worker_nonce, K_MASTER_NONCE);
 
         Wire::ChallengeMessage challenge;
         std::memcpy(challenge.master_nonce.data(), K_MASTER_NONCE.bytes.data(),
@@ -770,26 +792,16 @@ TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
     EXPECT_EQ(std::memcmp(first.data.data(), bytes.data(), 8), 0);
 }
 
-TEST(Unit_DispatchExecutorTest, LegacyKernelSignatureStillRuns)
+TEST(Unit_DispatchExecutorTest, GenericLambdaRegistersAsAKernel)
 {
     Worker worker;
     const Graph::OpID op(14);
-    KernelRegistry::RemoteKernel legacy = [](sycl::queue&, span<void* const>,
-                                             span<void* const> outputs,
-                                             const Graph::TaskMetadata&)
-    {
-        std::memset(outputs[0], 0x5a, 4);
-        return sycl::event{};
-    };
-
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-    worker.kernels->register_kernel(op, std::move(legacy));
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+    worker.kernels->register_kernel(
+        op, [](auto& /*queue*/, auto /*inputs*/, auto outputs, const auto& /*metadata*/)
+            {
+                std::memset(outputs[0].data, 0x5a, outputs[0].size_bytes);
+                return sycl::event{};
+            });
     worker.executor.start();
 
     ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(1, op, {}, {handle_of(8, 1, 4)}),
@@ -1001,6 +1013,77 @@ TEST(Unit_MasterLinkTest, WrongMasterProofEndsTheLink)
     link.on_connected(next);
     EXPECT_EQ(transport.count(MessageType::Hello), 1u) << "an ended link sent HELLO";
     EXPECT_TRUE(transport.is_closed(next));
+}
+
+TEST(Unit_MasterLinkTest, EndedLinkStopsItsTransport)
+{
+    FakeTransport transport;
+    const std::vector<std::uint8_t> secret = secret_of(0x42);
+    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
+                    link_options(std::chrono::milliseconds(60000)), fixed_nonces());
+    const PeerId peer{1};
+    link.start();
+
+    link.on_connected(peer);
+    EXPECT_EQ(transport.stop_count(), 0u) << "a running link stopped its transport";
+    ASSERT_EQ(link.on_challenge(peer, challenge_of(secret_of(0x43), 7)), LinkChange::Ended);
+
+    ASSERT_TRUE(transport.wait_for_stop())
+        << "the transport of a rejected link keeps connecting";
+    link.stop();
+    EXPECT_EQ(transport.stop_count(), 1u);
+    EXPECT_EQ(link.end(), WorkerEnd::RejectedAuthentication);
+}
+
+TEST(Unit_MasterLinkTest, PingGetsNoPongBeforeRegistration)
+{
+    FakeTransport transport;
+    const std::vector<std::uint8_t> secret = secret_of(0x42);
+    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
+                    link_options(std::chrono::milliseconds(1000)), fixed_nonces());
+    const PeerId peer{1};
+    Wire::PingMessage ping;
+    ping.token = 99;
+
+    // The master registered this worker on PROOF, but its WELCOME has not arrived.
+    link.on_connected(peer);
+    ASSERT_EQ(link.on_challenge(peer, challenge_of(secret, 7)), LinkChange::None);
+    link.on_ping(peer, ping);
+    EXPECT_EQ(transport.count(MessageType::Pong), 0u)
+        << "a link that is not registered told the master it is alive";
+
+    Wire::WelcomeMessage welcome;
+    welcome.worker_id = peer.value;
+    welcome.chunk_bytes = 4096;
+    ASSERT_EQ(link.on_welcome(peer, welcome), LinkChange::RegisteredNewSession);
+    link.on_ping(peer, ping);
+
+    const std::vector<SentFrame> pongs = transport.frames_of(MessageType::Pong);
+    ASSERT_EQ(pongs.size(), 1u);
+    EXPECT_EQ(decode<Wire::PongMessage>(pongs[0]).token, 99u);
+}
+
+TEST(Unit_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
+{
+    constexpr std::size_t K_HELLOS = 5;
+    FakeTransport transport;
+    const std::vector<std::uint8_t> secret = secret_of(0x42);
+    std::atomic<std::uint8_t> drawn{0};
+    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
+                    link_options(std::chrono::milliseconds(1)),
+                    [&drawn] { return nonce_of(++drawn); });
+    const PeerId peer{1};
+    link.start();
+
+    // The link remembers four nonces; the fifth HELLO forgets the nonce of the first.
+    link.on_connected(peer);
+    ASSERT_TRUE(transport.wait_for(MessageType::Hello, K_HELLOS));
+    link.stop();
+
+    EXPECT_EQ(link.on_challenge(peer, challenge_of(secret, 7, nonce_of(1))), LinkChange::None)
+        << "a CHALLENGE for a forgotten HELLO was taken for a wrong secret";
+    EXPECT_EQ(transport.count(MessageType::Proof), 0u);
+    EXPECT_FALSE(transport.is_closed(peer));
 }
 
 TEST(Unit_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskId)
