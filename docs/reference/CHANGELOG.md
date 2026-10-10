@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — cli: Added `--jobs` / `-j` to `sr build` (`cli.py`, `project.py`).
 - 2026-10-11 — tools: Added the same-tier and declared-dependency rules to the layering checker, and a test that compares its tables with the CMake tier table (`check_layering.py`, `test_tier_table.py`).
 - 2026-10-11 — task: Moved the promotion of `_op`, `OpID` and `TaskMetadata` into `task/task_types.hpp` and removed `api/vocabulary/op_literal.hpp`, which no release shipped.
 - 2026-10-11 — build: Added `SR_BUILD_EXAMPLES`, off when a parent project adds the tree, and `SR_INSTALL`; a parent no longer gets the runtime's CPack settings (`SushiRuntimeOptions.cmake`).

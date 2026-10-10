@@ -92,6 +92,7 @@ def toolchain(
     epilog="sr build\n"
            "sr build --type debug --clean  # Rebuild from an empty tree\n"
            "sr build --no-cuda  # Portable CPU/OpenCL path\n"
+           "sr build --jobs 8  # Compile with eight parallel jobs\n"
            "sr build --distributed --no-test",
 )
 def build(
@@ -112,9 +113,14 @@ def build(
     no_test: bool = typer.Option(
         False, "--no-test",
         help="Skip compiling the test suite (SR_BUILD_TESTS=OFF). Tests are built by default."),
+    jobs: Optional[int] = typer.Option(
+        None, "--jobs", "-j", min=1,
+        help="Parallel compile jobs. When omitted the build tool decides, and "
+             "CMAKE_BUILD_PARALLEL_LEVEL is honoured."),
 ):
     """Configure and build the project."""
-    raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force, tests=not no_test))
+    raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force,
+                                       tests=not no_test, jobs=jobs))
 
 
 @app.command(

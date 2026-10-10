@@ -123,6 +123,7 @@ sr build --distributed    # also compile the optional master-worker layer
 sr build --no-cuda        # build the portable CPU/OpenCL path instead of detecting accelerators
 sr build --no-test        # skip compiling the test suite (SR_BUILD_TESTS=OFF)
 sr build --clean          # delete the build tree first, then build from scratch
+sr build --jobs 8         # compile with eight parallel jobs (-j 8)
 sr build --force          # fall back to clang++/clang if the selected toolchain's
                           # compiler is missing, instead of stopping
 ```
@@ -131,6 +132,9 @@ The `--type` (`-t`) option accepts `release`, `debug`, `relwithdebinfo`, or
 `asan`. The `asan` type is special: it builds into an isolated `build-asan/`
 directory with CUDA disabled, so it never collides with your normal `build/`
 tree. Flags can be combined, e.g. `sr build --type debug --clean`.
+
+`--jobs N` (`-j N`) passes `--parallel N` to the compile step. Without it the
+build tool picks the job count, and `CMAKE_BUILD_PARALLEL_LEVEL` applies if set.
 
 The ASan tree also excludes the benchmark suite. That suite installs a global
 `operator new`/`delete` replacement to count allocations, which is exactly what
