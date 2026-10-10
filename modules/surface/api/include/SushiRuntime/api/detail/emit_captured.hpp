@@ -40,7 +40,7 @@
 
 #include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
-#include <SushiRuntime/api/graph/backing_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -78,13 +78,14 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             template <class Launch, class Pointers, class F>
-            auto captured_node(std::vector<Core::ResourceRegion> reads,
-                               std::vector<Core::ResourceRegion> writes,
+            auto captured_node(std::vector<Memory::ResourceRegion> reads,
+                               std::vector<Memory::ResourceRegion> writes,
                                Launch launch, Pointers pointers, F&& fn, std::size_t width)
             {
                 return [fn = std::forward<F>(fn), launch, reads = std::move(reads),
                         writes = std::move(writes), pointers, width]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     bg.add_node([fn, launch, pointers](sycl::handler& h)
                     {
@@ -92,8 +93,7 @@ namespace SushiRuntime
                         {
                             submit_launch(h, launch, fn, pointer...);
                         }, pointers);
-                    }, reads, writes, {}, registration);
-                    bg.width_last_node(width);
+                    }, reads, writes, {}, registration).baked_width = width;
                 };
             }
         } // namespace detail

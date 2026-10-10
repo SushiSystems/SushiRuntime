@@ -214,7 +214,7 @@ bound the index the way a State's does.
 ### Replay callables
 
 Each emit header builds the replay callable of one node shape: a lambda invoked as
-emit(BackingGraph&, registration) every time a Recorder replays. The lambda adds one node, hands
+emit(Graph::TaskGraph&, registration) every time a Recorder replays. The lambda adds one node, hands
 the registration through (empty means the backing graph draws a fresh index) and stamps the launch
 width where the shape has one. None of them knows the Recorder, so a shape can be read, changed or
 added without touching the recording state.

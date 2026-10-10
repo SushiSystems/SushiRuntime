@@ -26,9 +26,7 @@
  * @see applications/examples/README.md
  */
 
-#include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/distributed/kernel_registry.hpp>
-#include <SushiRuntime/distributed/worker_main.hpp>
+#include <SushiRuntime/distributed/distributed.hpp>
 
 #include "distributed_kernels.hpp"
 

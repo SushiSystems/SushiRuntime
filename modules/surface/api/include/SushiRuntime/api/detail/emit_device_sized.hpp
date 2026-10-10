@@ -37,8 +37,8 @@
 
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/graph/device_sized.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -55,12 +55,13 @@ namespace SushiRuntime
              * @pre The reads name the regions launch.live_width and launch.live_words lie in.
              */
             template <class F>
-            auto device_sized_node(std::vector<Core::ResourceRegion> reads,
-                                   std::vector<Core::ResourceRegion> writes,
+            auto device_sized_node(std::vector<Memory::ResourceRegion> reads,
+                                   std::vector<Memory::ResourceRegion> writes,
                                    DeviceSized launch, F fn, std::size_t width)
             {
                 return [fn, launch, reads = std::move(reads), writes = std::move(writes), width]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     bg.add_node([fn, launch](sycl::handler& h)
                     {
@@ -89,8 +90,7 @@ namespace SushiRuntime
                                 fn(t);
                             }
                         });
-                    }, reads, writes, {}, registration);
-                    bg.width_last_node(width);
+                    }, reads, writes, {}, registration).baked_width = width;
                 };
             }
         } // namespace detail

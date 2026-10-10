@@ -186,7 +186,7 @@ namespace SushiRuntime
                  * @brief Wires the plan's event ledger for the round about to run.
                  * @param ledger The plan's ledger, or null when it does not profile.
                  */
-                void set_ledger(Core::ProfilingLedger* ledger) noexcept
+                void set_ledger(Observability::ProfilingLedger* ledger) noexcept
                 {
                     ledger_.store(ledger, std::memory_order_release);
                 }
@@ -248,7 +248,7 @@ namespace SushiRuntime
                 /** @brief Whether to accumulate per-node kernel timing on completion. */
                 std::atomic<bool> profiling_{false};
                 /** @brief The armed round's event ledger, or null when it does not profile. */
-                std::atomic<Core::ProfilingLedger*> ledger_{nullptr};
+                std::atomic<Observability::ProfilingLedger*> ledger_{nullptr};
                 /** @brief Maximum value for the backoff counter. */
                 static constexpr size_t MAX_BACKOFF = 64;
                 /** @brief No-progress polls before forcing a blocking wait. */
@@ -372,12 +372,13 @@ namespace SushiRuntime
                     if (!pe.task)
                         return;
 
-                    Core::EventTimestamps times;
-                    const bool have_start_end = pe.has_event && Core::read_event_timestamps(pe.event, times);
+                    Observability::EventTimestamps times;
+                    const bool have_start_end = pe.has_event && Observability::read_event_timestamps(pe.event, times);
 
                     if (have_start_end)
                     {
-                        if (Core::ProfilingLedger* ledger = ledger_.load(std::memory_order_acquire))
+                        if (Observability::ProfilingLedger* ledger =
+                                ledger_.load(std::memory_order_acquire))
                         {
                             if (times.has_submit && ledger->is_pairing_owner(pe.task))
                                 ledger->set_pairing_event_ns(times.submit_ns);
@@ -386,9 +387,9 @@ namespace SushiRuntime
                             {
                                 auto* node = static_cast<SushiRuntime::Graph::Node*>(pe.task);
                                 const std::uint32_t slot = ledger->claim_slot(node->registration_index);
-                                if (slot != Core::ProfilingLedger::npos)
+                                if (slot != Observability::ProfilingLedger::npos)
                                 {
-                                    Core::NodeEventRecord rec{};
+                                    Observability::NodeEventRecord rec{};
                                     rec.node_index = node->registration_index;
                                     rec.invocation = pe.step;
                                     rec.launched_width = pe.widths.launched;

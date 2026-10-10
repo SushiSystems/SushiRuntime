@@ -66,7 +66,7 @@ namespace
     {
         std::uint32_t* live =
             recorder.scratch<std::uint32_t>(2, marks.device_index(), marks.residency());
-        const Core::ResourceRegion live_region{live, 0, 2 * sizeof(std::uint32_t)};
+        const Memory::ResourceRegion live_region{live, 0, 2 * sizeof(std::uint32_t)};
         std::uint32_t* words = marks.data();
 
         auto rule = recorder.rule();
@@ -104,7 +104,8 @@ namespace
     struct Recording
     {
         std::vector<std::uint32_t> digests;                           /**< One word per step. */
-        Core::ExecutionLayer layer = Core::ExecutionLayer::Scheduler; /**< Layer the run took. */
+        /** @brief Layer the run took. */
+        Observability::ExecutionLayer layer = Observability::ExecutionLayer::Scheduler;
     };
 
     /**
@@ -203,9 +204,9 @@ namespace
         const Recording chained = workload(chained_rt);
         const Recording scheduled = workload(scheduled_rt);
 
-        EXPECT_EQ(chained.layer, Core::ExecutionLayer::Chain)
+        EXPECT_EQ(chained.layer, Observability::ExecutionLayer::Chain)
             << "a plan of device-sized launches and kernels must take the chain";
-        EXPECT_EQ(scheduled.layer, Core::ExecutionLayer::Scheduler);
+        EXPECT_EQ(scheduled.layer, Observability::ExecutionLayer::Scheduler);
         ASSERT_EQ(chained.digests.size(), scheduled.digests.size());
         EXPECT_EQ(std::memcmp(chained.digests.data(), scheduled.digests.data(),
                               chained.digests.size() * sizeof(std::uint32_t)), 0);
@@ -270,7 +271,7 @@ TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksT
     API::Recorder& recorder = g.recorder();
     std::uint32_t* word =
         recorder.scratch<std::uint32_t>(1, plain.device_index(), plain.residency());
-    const Core::ResourceRegion word_region{word, 0, sizeof(std::uint32_t)};
+    const Memory::ResourceRegion word_region{word, 0, sizeof(std::uint32_t)};
     std::uint32_t* p = plain.data();
     std::uint32_t* w = worded.data();
 
@@ -395,5 +396,5 @@ TEST(Integration_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
     record_marking_rule(valid.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
     const auto report = valid.run(2);
     EXPECT_TRUE(report.is_successful);
-    EXPECT_EQ(report.layer, Core::ExecutionLayer::Chain);
+    EXPECT_EQ(report.layer, Observability::ExecutionLayer::Chain);
 }

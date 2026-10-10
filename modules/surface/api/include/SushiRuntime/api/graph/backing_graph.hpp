@@ -21,14 +21,12 @@
 
 /**
  * @file backing_graph.hpp
- * @brief Names the lower-level graph builder the fluent layer records onto.
+ * @brief Keeps BackingGraph, the name the engine's TaskGraph had in this layer before v0.4.0.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
  */
 
 #pragma once
-
-#include <type_traits>
 
 #include <SushiRuntime/graph/task_graph.hpp>
 
@@ -36,12 +34,9 @@ namespace SushiRuntime
 {
     namespace API
     {
-        /** @brief Names the lower-level graph builder this layer wraps. */
-        using BackingGraph = ::SushiRuntime::Graph::TaskGraph;
-
-        /** @brief A graph emitter that records nodes on a backing graph: void(BackingGraph&). */
-        template <class F>
-        inline constexpr bool is_graph_emitter_v = std::is_invocable_v<F, BackingGraph&>;
+        /** @brief Names Graph::TaskGraph by its spelling before v0.4.0. */
+        using BackingGraph [[deprecated("use SushiRuntime::Graph::TaskGraph")]] =
+            ::SushiRuntime::Graph::TaskGraph;
 
     } // namespace API
 } // namespace SushiRuntime

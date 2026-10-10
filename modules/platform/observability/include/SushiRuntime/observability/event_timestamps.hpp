@@ -23,7 +23,7 @@
  * @file event_timestamps.hpp
  * @brief Declares EventTimestamps and the function that reads them from a SYCL event.
  * @author Mustafa Garip
- * @see modules/foundation/core/README.md
+ * @see modules/platform/observability/README.md
  */
 
 #pragma once
@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    namespace Observability
     {
         /** @brief Holds one event's profiling timestamps on the backend's event clock. */
         struct EventTimestamps
@@ -49,7 +49,7 @@ namespace SushiRuntime
          * @param event A completed event from a queue built with enable_profiling.
          * @param out Filled only when the function returns true.
          * @return True when start and end were read.
-         * @see modules/foundation/core/README.md
+         * @see modules/platform/observability/README.md
          */
         inline bool read_event_timestamps(const sycl::event& event, EventTimestamps& out) noexcept
         {
@@ -74,6 +74,22 @@ namespace SushiRuntime
                 out.has_submit = false;
             }
             return true;
+        }
+
+    } // namespace Observability
+
+    namespace Core
+    {
+        /** @brief Names Observability::EventTimestamps by its spelling before v0.4.0. */
+        using EventTimestamps [[deprecated("use Observability::EventTimestamps")]] =
+            Observability::EventTimestamps;
+
+        /** @brief Forwards to Observability::read_event_timestamps(). */
+        [[deprecated("use Observability::read_event_timestamps")]]
+        inline bool read_event_timestamps(const sycl::event& event,
+                                          Observability::EventTimestamps& out) noexcept
+        {
+            return Observability::read_event_timestamps(event, out);
         }
 
     } // namespace Core

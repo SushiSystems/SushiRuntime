@@ -131,8 +131,8 @@ namespace SushiRuntime
              * @brief Hold the USM read and write regions this node touches.
              * @see modules/engine/graph/README.md
              */
-            std::vector<SushiRuntime::Core::ResourceRegion> io_reads_;
-            std::vector<SushiRuntime::Core::ResourceRegion> io_writes_;
+            std::vector<SushiRuntime::Memory::ResourceRegion> io_reads_;
+            std::vector<SushiRuntime::Memory::ResourceRegion> io_writes_;
 
             /**
              * @brief Tells whether the node's data has been checked for co-location.
@@ -171,8 +171,8 @@ namespace SushiRuntime
              */
             std::size_t plan_index = 0;
 
-            /** @brief Elements this node's dispatch launches over, or Core::WIDTH_UNKNOWN. */
-            std::size_t baked_width = Core::WIDTH_UNKNOWN;
+            /** @brief Elements this node launches over, or Observability::WIDTH_UNKNOWN. */
+            std::size_t baked_width = Observability::WIDTH_UNKNOWN;
 
             /**
              * @brief Identifies the public add() call that registered this node; zero until

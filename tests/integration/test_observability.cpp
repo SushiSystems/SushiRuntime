@@ -198,7 +198,7 @@ TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
     g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
     auto rep = g.run(16);
 
-    EXPECT_EQ(rep.layer, Core::ExecutionLayer::Scheduler);
+    EXPECT_EQ(rep.layer, Observability::ExecutionLayer::Scheduler);
     ASSERT_FALSE(rep.worker_timings.empty());
     EXPECT_GE(rep.scheduling_overhead_ms, 0.0);
 

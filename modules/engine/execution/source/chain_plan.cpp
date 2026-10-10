@@ -70,7 +70,7 @@ namespace SushiRuntime
             {
                 int owner = -1;
                 Memory::UsmAllocator& memory = ctx.memory();
-                auto visit = [&](const std::vector<Core::ResourceRegion>& regions)
+                auto visit = [&](const std::vector<Memory::ResourceRegion>& regions)
                 {
                     for (const auto& r : regions)
                     {

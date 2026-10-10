@@ -47,10 +47,10 @@ namespace SushiRuntime
         namespace
         {
             /** @brief Returns the whole-buffer region of each view, in the views' order. */
-            std::vector<Core::ResourceRegion> regions_of(
+            std::vector<Memory::ResourceRegion> regions_of(
                 SushiRuntime::span<const BufferView> views)
             {
-                std::vector<Core::ResourceRegion> regions;
+                std::vector<Memory::ResourceRegion> regions;
                 regions.reserve(views.size());
                 for (const BufferView& view : views)
                     regions.emplace_back(view.data);

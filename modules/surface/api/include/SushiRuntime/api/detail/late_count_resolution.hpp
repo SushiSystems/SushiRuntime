@@ -52,13 +52,13 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             inline bool gather_device_read(const LateCount& count,
-                                           std::vector<Core::ResourceRegion>& reads,
-                                           std::vector<Core::LivenessObserver>& lives)
+                                           std::vector<Memory::ResourceRegion>& reads,
+                                           std::vector<Memory::LivenessObserver>& lives)
             {
                 if (LateCountAccess::slot(count) == nullptr)
                     return false;
                 reads.push_back(LateCountAccess::slot_region(count));
-                const Core::LivenessObserver& life = LateCountAccess::slot_life(count);
+                const Memory::LivenessObserver& life = LateCountAccess::slot_life(count);
                 if (!life.expired())
                     lives.push_back(life);
                 return true;

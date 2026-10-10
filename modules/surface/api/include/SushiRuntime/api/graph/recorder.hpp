@@ -63,7 +63,6 @@
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/detail/usm_scratch.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
-#include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/graph/device_sized.hpp>
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/api/launch/extent.hpp>
@@ -74,6 +73,7 @@
 #include <SushiRuntime/api/vocabulary/placement.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -255,7 +255,7 @@ namespace SushiRuntime
                     detail::adopt_device_bindings(*bindings, window, access.reads);
                     std::uint32_t* fault = fault_record_for(window);
                     const std::size_t width =
-                        options.width == Core::WIDTH_UNKNOWN ? capacity : options.width;
+                        options.width == Observability::WIDTH_UNKNOWN ? capacity : options.width;
 
                     record(detail::dynamic_node(bindings, fault, std::move(access.reads),
                                                 std::move(access.writes), capacity,
@@ -305,14 +305,14 @@ namespace SushiRuntime
 
                 /**
                  * @brief Records an emitter that adds its own nodes at every replay.
-                 * @param fn Callable invoked as fn(BackingGraph&); it only adds nodes.
+                 * @param fn Callable invoked as fn(TaskGraph&); it only adds nodes.
                  */
                 template <class F>
                 void emitter(F&& fn)
                 {
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     record([emit = std::forward<F>(fn)]
-                           (BackingGraph& bg, std::optional<std::uint32_t>)
+                           (::SushiRuntime::Graph::TaskGraph& bg, std::optional<std::uint32_t>)
                            {
                                emit(bg);
                            }, lives);
@@ -332,7 +332,7 @@ namespace SushiRuntime
                 void untracked_kernel(std::size_t count, F&& fn,
                                       const On& placement = On(DeviceIndex{0}))
                 {
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     const std::size_t device = placed_device(placement, lives);
                     record(detail::untracked_launch_node(count, device, std::forward<F>(fn)),
                            lives);
@@ -349,7 +349,7 @@ namespace SushiRuntime
                 void untracked_kernel(std::size_t count, F&& fn,
                                       const On& placement = On(DeviceIndex{0}))
                 {
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     const std::size_t device = placed_device(placement, lives);
                     record(detail::untracked_range_node(count, device, std::forward<F>(fn)),
                            lives);
@@ -366,7 +366,7 @@ namespace SushiRuntime
                 void untracked_kernel(Extent<N> extent, F&& fn,
                                       const On& placement = On(DeviceIndex{0}))
                 {
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     const std::size_t device = placed_device(placement, lives);
                     record(detail::untracked_launch_node(extent, device, std::forward<F>(fn)),
                            lives);
@@ -384,7 +384,7 @@ namespace SushiRuntime
                 void untracked_kernel(NdRange<N> range, F&& fn,
                                       const On& placement = On(DeviceIndex{0}))
                 {
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     const std::size_t device = placed_device(placement, lives);
                     record(detail::untracked_launch_node(range, device, std::forward<F>(fn)),
                            lives);
@@ -400,7 +400,7 @@ namespace SushiRuntime
                 template <class F>
                 void untracked_raw_kernel(F&& fn, const On& placement = On(DeviceIndex{0}))
                 {
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     const std::size_t device = placed_device(placement, lives);
                     record(detail::untracked_raw_node(device, std::forward<F>(fn)), lives);
                 }
@@ -414,7 +414,7 @@ namespace SushiRuntime
                 void state_rule(State<T>& state, F&& fn)
                 {
                     auto view = steps_.view_for(state);
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, state);
                     record(detail::state_node(view, &state, std::forward<F>(fn)), lives);
                     steps_.register_advance(state, view);
@@ -434,7 +434,7 @@ namespace SushiRuntime
                     detail::require_launch_within(launch, state.size(), "add(launch, state, fn)",
                                                   next_rule(), "the State");
                     auto view = steps_.view_for(state);
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, state);
                     record(detail::state_launch_node(view, &state, launch, std::forward<F>(fn)),
                            lives);
@@ -453,11 +453,11 @@ namespace SushiRuntime
                     auto view = steps_.view_for(state);
                     auto bindings = std::make_shared<::SushiRuntime::Graph::LateBindings>();
 
-                    std::vector<Core::ResourceRegion> reads{ detail::HandleAccess::read_key(state) };
+                    std::vector<Memory::ResourceRegion> reads{ detail::HandleAccess::read_key(state) };
                     detail::adopt_device_bindings(*bindings, window, reads);
                     std::uint32_t* fault = fault_record_for(window);
 
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, state);
                     record(detail::dynamic_state_node(view, &state, bindings, fault,
                                                       std::move(reads),
@@ -481,7 +481,7 @@ namespace SushiRuntime
                     (detail::require_launch_within(out.size(), inputs.size(),
                                                    "add(Coupled(out, in0, ...), fn)", next_rule(),
                                                    "a State read"), ...);
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, out);
                     (detail::gather_life(lives, inputs), ...);
 
@@ -509,7 +509,7 @@ namespace SushiRuntime
                                                   "the State written");
                     (detail::require_launch_within(launch, inputs.size(), K_CALL, next_rule(),
                                                    "a State read"), ...);
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, out);
                     (detail::gather_life(lives, inputs), ...);
 
@@ -552,7 +552,7 @@ namespace SushiRuntime
                     auto live_writes = std::make_shared<std::vector<void*>>(
                         std::vector<void*>{ detail::HandleAccess::write_key(state) });
 
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, state);
                     record(detail::offload_state_node(op, view, &state, live_reads, live_writes,
                                                       std::forward<F>(local), std::move(params)),
@@ -577,7 +577,7 @@ namespace SushiRuntime
                 void resolve(const std::array<LateCount, K>& counts, DeviceIndex device,
                              Access access, Fill fill, NodeOptions options = {})
                 {
-                    std::vector<Core::LivenessObserver> lives;
+                    std::vector<Memory::LivenessObserver> lives;
                     bool reads_device = false;
                     for (const LateCount& count : counts)
                         reads_device =
@@ -669,7 +669,7 @@ namespace SushiRuntime
                  * @param visit Called as visit(rule, node) once node is added and named.
                  */
                 template <class Visit>
-                void replay(BackingGraph& target, Visit&& visit) const
+                void replay(::SushiRuntime::Graph::TaskGraph& target, Visit&& visit) const
                 {
                     std::uint32_t stamped = detail::NodeSpec::K_NO_RULE;
                     std::optional<std::uint32_t> reserved;
@@ -689,7 +689,7 @@ namespace SushiRuntime
                 }
 
                 /** @brief Adds every recorded node to a backing graph, in recording order. */
-                void replay(BackingGraph& target) const
+                void replay(::SushiRuntime::Graph::TaskGraph& target) const
                 {
                     replay(target, [](std::size_t, std::size_t) {});
                 }
@@ -700,11 +700,11 @@ namespace SushiRuntime
             private:
                 /**
                  * @brief Appends one node; every recording member ends here.
-                 * @param emit  Replay callable invoked as emit(BackingGraph&, registration).
+                 * @param emit  Replay callable invoked as emit(TaskGraph&, registration).
                  * @param lives Observers of the handles the node names; moved from.
                  */
                 template <class Emit>
-                void record(Emit&& emit, std::vector<Core::LivenessObserver>& lives)
+                void record(Emit&& emit, std::vector<Memory::LivenessObserver>& lives)
                 {
                     detail::NodeSpec spec(std::forward<Emit>(emit));
                     if (!scope_open_ || !scope_has_node_)
@@ -713,7 +713,7 @@ namespace SushiRuntime
                     spec.rule = static_cast<std::uint32_t>(rule_names_.size() - 1);
 
                     specs_.push_back(std::move(spec));
-                    for (Core::LivenessObserver& life : lives)
+                    for (Memory::LivenessObserver& life : lives)
                         watch(std::move(life));
                     ++generation_;
                 }
@@ -733,7 +733,7 @@ namespace SushiRuntime
                  *         does not have.
                  */
                 std::size_t placed_device(const On& placement,
-                                          std::vector<Core::LivenessObserver>& lives) const
+                                          std::vector<Memory::LivenessObserver>& lives) const
                 {
                     const std::size_t device = placement.device.value();
                     const std::size_t count = context_->devices().count();
@@ -753,11 +753,11 @@ namespace SushiRuntime
                  * @brief Keeps one observer per allocation, however many nodes name it.
                  * @param life Observer of a handle a node names.
                  */
-                void watch(Core::LivenessObserver life)
+                void watch(Memory::LivenessObserver life)
                 {
                     // observers_ is sorted by owner; the binary search below depends on it.
                     const auto at = std::lower_bound(observers_.begin(), observers_.end(), life,
-                                                     std::owner_less<Core::LivenessObserver>());
+                                                     std::owner_less<Memory::LivenessObserver>());
                     if (at == observers_.end() || life.owner_before(*at))
                         observers_.insert(at, std::move(life));
                 }
@@ -832,7 +832,7 @@ namespace SushiRuntime
                 std::unordered_set<std::string> labels_;
 
                 /** @brief One liveness observer per allocation the nodes name, sorted by owner. */
-                std::vector<Core::LivenessObserver> observers_;
+                std::vector<Memory::LivenessObserver> observers_;
 
                 /** @brief The per-step hooks of the recorded nodes. */
                 detail::StepMachinery steps_;
@@ -848,4 +848,7 @@ namespace SushiRuntime
         };
 
     } // namespace API
+
+    using API::Recorder;
+
 } // namespace SushiRuntime

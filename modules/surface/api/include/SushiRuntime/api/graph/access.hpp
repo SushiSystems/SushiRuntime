@@ -64,15 +64,15 @@ namespace SushiRuntime
              * @param read_regions  Regions the node reads; the caller keeps them alive.
              * @param write_regions Regions the node writes; the caller keeps them alive.
              */
-            Access(std::vector<Core::ResourceRegion> read_regions,
-                   std::vector<Core::ResourceRegion> write_regions)
+            Access(std::vector<Memory::ResourceRegion> read_regions,
+                   std::vector<Memory::ResourceRegion> write_regions)
                 : reads(std::move(read_regions)), writes(std::move(write_regions))
             {
             }
 
-            std::vector<Core::ResourceRegion> reads;    /**< Read regions, in the order given. */
-            std::vector<Core::ResourceRegion> writes;   /**< Write regions, in the order given. */
-            std::vector<Core::LivenessObserver> lives;  /**< Observers a run checks first. */
+            std::vector<Memory::ResourceRegion> reads;    /**< Read regions, in the order given. */
+            std::vector<Memory::ResourceRegion> writes;   /**< Write regions, in the order given. */
+            std::vector<Memory::LivenessObserver> lives;  /**< Observers a run checks first. */
         };
 
     } // namespace API

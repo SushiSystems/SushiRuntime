@@ -44,8 +44,10 @@ namespace SushiRuntime
             /** @brief Narrows @p value to uint32_t, or WIDTH_UNKNOWN when it does not fit. */
             std::uint32_t narrow_width(std::size_t value) noexcept
             {
-                constexpr std::size_t max_u32 = static_cast<std::size_t>(Core::WIDTH_UNKNOWN);
-                return value <= max_u32 ? static_cast<std::uint32_t>(value) : Core::WIDTH_UNKNOWN;
+                constexpr std::size_t max_u32 =
+                    static_cast<std::size_t>(Observability::WIDTH_UNKNOWN);
+                return value <= max_u32 ? static_cast<std::uint32_t>(value)
+                                        : Observability::WIDTH_UNKNOWN;
             }
         } // namespace
 

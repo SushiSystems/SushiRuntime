@@ -37,7 +37,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/detail/emit_launch.hpp>
-#include <SushiRuntime/api/graph/backing_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 
 namespace SushiRuntime
 {
@@ -55,7 +55,8 @@ namespace SushiRuntime
             auto untracked_launch_node(Launch launch, std::size_t device, F&& fn)
             {
                 return [fn = std::forward<F>(fn), launch, device]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     bg.add_node([fn, launch](sycl::handler& h)
                     {
@@ -72,7 +73,8 @@ namespace SushiRuntime
             auto untracked_range_node(std::size_t n, std::size_t device, F&& fn)
             {
                 return [fn = std::forward<F>(fn), n, device]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     bg.add_node([fn, n](sycl::handler& h)
                     {
@@ -89,7 +91,8 @@ namespace SushiRuntime
             auto untracked_raw_node(std::size_t device, F&& fn)
             {
                 return [fn = std::forward<F>(fn), device]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     bg.add_node(fn, std::vector<sycl::event>{}, registration).place_on(device);
                 };

@@ -41,8 +41,9 @@ namespace
     /** @brief Records one device task on @p bg running @p kernel over [0, n), ordered by regions. */
     template <class Kernel>
     void record_device_task(Graph::TaskGraph& bg, const char* name,
-                            std::vector<Core::ResourceRegion> reads,
-                            std::vector<Core::ResourceRegion> writes, std::size_t n, Kernel kernel)
+                            std::vector<Memory::ResourceRegion> reads,
+                            std::vector<Memory::ResourceRegion> writes, std::size_t n,
+                            Kernel kernel)
     {
         Graph::TaskMetadata meta{};
         meta.name = name;

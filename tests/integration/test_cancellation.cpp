@@ -129,7 +129,7 @@ namespace
      */
     template <class GraphType>
     void cancel_unbounded_run(GraphType& graph, std::size_t predicate_calls,
-                              Core::RunReport& report)
+                              Observability::RunReport& report)
     {
         RunProgress progress;
         auto run = std::async(std::launch::async, [&graph, &progress]
@@ -167,7 +167,7 @@ TEST(Integration_Cancellation, CancelStopsRunUntilFromAnotherThread)
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     // The second predicate call follows the first whole step, so the report holds one.
-    Core::RunReport report;
+    Observability::RunReport report;
     ASSERT_NO_FATAL_FAILURE(cancel_unbounded_run(g, 2, report));
 
     EXPECT_TRUE(report.cancelled);
@@ -187,7 +187,7 @@ TEST(Integration_Cancellation, NextRunIsNotCancelledAfterReset)
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
-    Core::RunReport cancelled_report;
+    Observability::RunReport cancelled_report;
     ASSERT_NO_FATAL_FAILURE(cancel_unbounded_run(g, 1, cancelled_report));
     EXPECT_TRUE(cancelled_report.cancelled);
 

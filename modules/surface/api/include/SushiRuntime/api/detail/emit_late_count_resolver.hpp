@@ -38,8 +38,8 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/detail/late_count_resolution.hpp>
-#include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -59,12 +59,13 @@ namespace SushiRuntime
             template <std::size_t K, class Fill>
             auto late_count_resolver_node(const std::array<LateCount, K>& counts,
                                           std::uint32_t* fault, Fill fill,
-                                          std::vector<Core::ResourceRegion> reads,
-                                          std::vector<Core::ResourceRegion> writes,
+                                          std::vector<Memory::ResourceRegion> reads,
+                                          std::vector<Memory::ResourceRegion> writes,
                                           std::size_t width)
             {
                 return [counts, fault, fill, reads = std::move(reads), writes = std::move(writes),
-                        width](BackingGraph& bg, std::optional<std::uint32_t> registration)
+                        width](::SushiRuntime::Graph::TaskGraph& bg,
+                               std::optional<std::uint32_t> registration)
                 {
                     bg.add_node([counts, fault, fill](sycl::handler& h)
                     {
@@ -78,8 +79,7 @@ namespace SushiRuntime
                                 live[k] = read_live_count(sources[k], fault);
                             fill(live);
                         });
-                    }, reads, writes, {}, registration);
-                    bg.width_last_node(width);
+                    }, reads, writes, {}, registration).baked_width = width;
                 };
             }
         } // namespace detail

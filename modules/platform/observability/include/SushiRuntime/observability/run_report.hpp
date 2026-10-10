@@ -23,7 +23,7 @@
  * @file run_report.hpp
  * @brief Declares RunReport and the statistics records it carries.
  * @author Mustafa Garip
- * @see modules/foundation/core/README.md
+ * @see modules/platform/observability/README.md
  */
 
 #pragma once
@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    namespace Observability
     {
         /**
          * @brief Describes the per-NUMA-node execution and work-stealing metrics.
@@ -109,7 +109,7 @@ namespace SushiRuntime
 
         /**
          * @brief Times one dispatch of one node, in nanoseconds on the backend's event clock.
-         * @see modules/foundation/core/README.md
+         * @see modules/platform/observability/README.md
          */
         struct NodeEventRecord
         {
@@ -187,7 +187,7 @@ namespace SushiRuntime
 
             /**
              * @brief Returns the report to its as-constructed state, keeping capacity.
-             * @see modules/foundation/core/README.md
+             * @see modules/platform/observability/README.md
              */
             void reset() noexcept
             {
@@ -215,5 +215,43 @@ namespace SushiRuntime
             }
         };
 
+    } // namespace Observability
+
+    namespace Core
+    {
+        /** @brief Names Observability::NumaNodeStatistics by its spelling before v0.4.0. */
+        using NumaNodeStatistics [[deprecated("use Observability::NumaNodeStatistics")]] =
+            Observability::NumaNodeStatistics;
+
+        /** @brief Names Observability::DistributedStatistics by its spelling before v0.4.0. */
+        using DistributedStatistics [[deprecated("use Observability::DistributedStatistics")]] =
+            Observability::DistributedStatistics;
+
+        /** @brief Names Observability::NodeTiming by its spelling before v0.4.0. */
+        using NodeTiming [[deprecated("use Observability::NodeTiming")]] =
+            Observability::NodeTiming;
+
+        /** @brief Names Observability::WorkerTiming by its spelling before v0.4.0. */
+        using WorkerTiming [[deprecated("use Observability::WorkerTiming")]] =
+            Observability::WorkerTiming;
+
+        /** @brief Names Observability::NodeEventRecord by its spelling before v0.4.0. */
+        using NodeEventRecord [[deprecated("use Observability::NodeEventRecord")]] =
+            Observability::NodeEventRecord;
+
+        /** @brief Names Observability::ClockPairing by its spelling before v0.4.0. */
+        using ClockPairing [[deprecated("use Observability::ClockPairing")]] =
+            Observability::ClockPairing;
+
+        /** @brief Names Observability::ExecutionLayer by its spelling before v0.4.0. */
+        using ExecutionLayer [[deprecated("use Observability::ExecutionLayer")]] =
+            Observability::ExecutionLayer;
+
+        /** @brief Names Observability::RunReport by its spelling before v0.4.0. */
+        using RunReport [[deprecated("use Observability::RunReport")]] = Observability::RunReport;
+
     } // namespace Core
+
+    using Observability::RunReport;
+
 } // namespace SushiRuntime

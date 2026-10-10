@@ -23,7 +23,7 @@
  * @file resource_liveness.hpp
  * @brief Declares the liveness token a data handle owns and a graph weakly observes.
  * @author Mustafa Garip
- * @see modules/foundation/core/README.md
+ * @see modules/platform/memory/README.md
  */
 
 #pragma once
@@ -32,7 +32,7 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    namespace Memory
     {
         /**
          * @brief An empty object whose lifetime mirrors a data handle's allocation.
@@ -56,6 +56,27 @@ namespace SushiRuntime
         inline LivenessToken make_liveness()
         {
             return std::make_shared<Liveness>();
+        }
+
+    } // namespace Memory
+
+    namespace Core
+    {
+        /** @brief Names Memory::Liveness by its spelling before v0.4.0. */
+        using Liveness [[deprecated("use Memory::Liveness")]] = Memory::Liveness;
+
+        /** @brief Names Memory::LivenessToken by its spelling before v0.4.0. */
+        using LivenessToken [[deprecated("use Memory::LivenessToken")]] = Memory::LivenessToken;
+
+        /** @brief Names Memory::LivenessObserver by its spelling before v0.4.0. */
+        using LivenessObserver [[deprecated("use Memory::LivenessObserver")]] =
+            Memory::LivenessObserver;
+
+        /** @brief Forwards to Memory::make_liveness(). */
+        [[deprecated("use Memory::make_liveness")]]
+        inline Memory::LivenessToken make_liveness()
+        {
+            return Memory::make_liveness();
         }
 
     } // namespace Core

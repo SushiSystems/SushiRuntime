@@ -31,9 +31,17 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    namespace Observability
     {
         /** @brief Marks a dispatch whose element count the runtime does not carry. */
         inline constexpr std::uint32_t WIDTH_UNKNOWN = 0xFFFFFFFFu;
+    } // namespace Observability
+
+    namespace Core
+    {
+        /** @brief Equals Observability::WIDTH_UNKNOWN, by its spelling before v0.4.0. */
+        [[deprecated("use Observability::WIDTH_UNKNOWN")]]
+        inline constexpr std::uint32_t WIDTH_UNKNOWN = Observability::WIDTH_UNKNOWN;
+
     } // namespace Core
 } // namespace SushiRuntime

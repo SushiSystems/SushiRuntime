@@ -298,7 +298,7 @@ g.add(Reads(src), Writes(dst), [ps, pd](sycl::handler& h) { /* ... */ });
 auto report = g.run();      // throws SushiException on error
 auto result = g.try_run();  // non-throwing: Result<RunReport, Error>
 
-Core::RunReport reused;     // and the allocation-free form for a frame loop:
+RunReport reused;     // and the allocation-free form for a frame loop:
 g.run(reused);              // reset and refilled in place, no per-tick allocation
 
 // report.total_tasks_executed, report.total_duration_ms,
@@ -314,7 +314,7 @@ graph may be in flight.
 ```cpp
 auto step = sim.run_async();
 // ... host-side work that touches nothing the step writes ...
-Core::RunReport r = step.wait();
+RunReport r = step.wait();
 ```
 
 Name a rule with `name_last()` chained onto any `add()`. The name is what a task

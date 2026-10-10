@@ -47,6 +47,7 @@
 #include <SushiRuntime/api/vocabulary/coupled.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
+#include <SushiRuntime/api/vocabulary/op_literal.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/task/task_types.hpp>
@@ -540,7 +541,7 @@ namespace SushiRuntime
                 static Access whole_buffers(const std::vector<void*>& reads,
                                             const std::vector<void*>& writes)
                 {
-                    using Regions = std::vector<Core::ResourceRegion>;
+                    using Regions = std::vector<Memory::ResourceRegion>;
                     return Access(Regions(reads.begin(), reads.end()),
                                   Regions(writes.begin(), writes.end()));
                 }

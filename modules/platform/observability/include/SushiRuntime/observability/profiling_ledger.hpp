@@ -23,7 +23,7 @@
  * @file profiling_ledger.hpp
  * @brief Declares ProfilingLedger, the per-plan store of node event records.
  * @author Mustafa Garip
- * @see modules/foundation/core/README.md
+ * @see modules/platform/observability/README.md
  */
 
 #pragma once
@@ -38,11 +38,11 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    namespace Observability
     {
         /**
          * @brief Stores one run's node event records per plan, at a high-water-mark size.
-         * @see modules/foundation/core/README.md
+         * @see modules/platform/observability/README.md
          */
         class ProfilingLedger
         {
@@ -93,7 +93,7 @@ namespace SushiRuntime
              * @brief Grows the ledger for a new run and resets its per-run state.
              * @param multiplicities Count of internal nodes per registration index; its size is the
              *        row count.
-             * @see modules/foundation/core/README.md
+             * @see modules/platform/observability/README.md
              */
             void reserve(const std::vector<std::uint32_t>& multiplicities,
                         std::uint32_t expected_invocations) noexcept
@@ -247,6 +247,14 @@ namespace SushiRuntime
             std::atomic<std::uint64_t> pairing_event_ns_{0};       /**< Pairing submission's command_submit, at reap. */
             std::uint64_t run_start_steady_ns_ = 0; /**< Fallback identity pairing for an all-native run; driver-thread-only. */
         };
+
+    } // namespace Observability
+
+    namespace Core
+    {
+        /** @brief Names Observability::ProfilingLedger by its spelling before v0.4.0. */
+        using ProfilingLedger [[deprecated("use Observability::ProfilingLedger")]] =
+            Observability::ProfilingLedger;
 
     } // namespace Core
 } // namespace SushiRuntime

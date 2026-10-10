@@ -78,7 +78,7 @@ TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
     // The caller is still running: this is the work a frame would overlap.
     released.store(true, std::memory_order_release);
 
-    const Core::RunReport report = step.wait();
+    const Observability::RunReport report = step.wait();
 
     EXPECT_TRUE(saw_release.load())
         << "the step's task never observed the flag, so run_async() blocked";

@@ -181,7 +181,7 @@ namespace SushiRuntime
          */
         void ChainRun::submit_profiled(Graph::Node& node, std::uint32_t step)
         {
-            Core::ProfilingLedger& ledger = graph_.profiling_ledger;
+            Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
             const Scheduler::Task* task = &node;
             const bool is_kernel = node.get_execution_mode() == Scheduler::Task::ExecutionMode::KERNEL;
             const bool owns_pairing = is_kernel && !pairing_claimed_ && ledger.claim_pairing_owner(task);
@@ -205,11 +205,11 @@ namespace SushiRuntime
          */
         void ChainRun::record_events()
         {
-            Core::ProfilingLedger& ledger = graph_.profiling_ledger;
+            Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
             for (const PendingEvent& pe : graph_.chain.pending_events)
             {
-                Core::EventTimestamps times;
-                if (!Core::read_event_timestamps(pe.event, times))
+                Observability::EventTimestamps times;
+                if (!Observability::read_event_timestamps(pe.event, times))
                     continue;
 
                 const Scheduler::Task* task = pe.node;
@@ -218,10 +218,10 @@ namespace SushiRuntime
 
                 const std::uint32_t index = pe.node->registration_index;
                 const std::uint32_t slot = ledger.claim_slot(index);
-                if (slot == Core::ProfilingLedger::npos)
+                if (slot == Observability::ProfilingLedger::npos)
                     continue;
 
-                Core::NodeEventRecord rec{};
+                Observability::NodeEventRecord rec{};
                 rec.node_index = index;
                 rec.invocation = pe.step;
                 rec.launched_width = pe.widths.launched;

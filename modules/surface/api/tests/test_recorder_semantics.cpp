@@ -85,10 +85,10 @@ namespace
     }
 
     /** @brief Counts the node timing rows of report that carry name. */
-    std::size_t rows_named(const Core::RunReport& report, const std::string& name)
+    std::size_t rows_named(const Observability::RunReport& report, const std::string& name)
     {
         std::size_t rows = 0;
-        for (const Core::NodeTiming& row : report.node_timings)
+        for (const Observability::NodeTiming& row : report.node_timings)
             rows += row.name == name ? 1u : 0u;
         return rows;
     }
@@ -179,7 +179,7 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     EXPECT_EQ(graph.node_count(), RULE_NODES);
     EXPECT_EQ(graph.last_rule(), 0u);
 
-    Core::RunReport report;
+    Observability::RunReport report;
     graph.run(1, report);
 
     // The nodes of a rule share one registration, and the report holds one row per registration.
@@ -206,7 +206,7 @@ TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     EXPECT_EQ(world.node_count(), 1u + RULE_NODES);
     EXPECT_EQ(world.rule_registration(CELL + 1, 0), API::DynamicGraph::NO_REGISTRATION);
 
-    Core::RunReport report;
+    Observability::RunReport report;
     world.run(1, report);
 
     EXPECT_EQ(rows_named(report, "pipeline"), 1u);
@@ -233,7 +233,7 @@ TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
     graph.name(std::string("integrate_") + std::to_string(CELL));
     graph.set_profiling(true);
 
-    Core::RunReport report;
+    Observability::RunReport report;
     graph.run(1, report);
 
     ASSERT_EQ(report.node_timings.size(), 2u);
@@ -250,13 +250,13 @@ TEST(Integration_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
     graph.set_profiling(true);
-    Core::RunReport unnamed;
+    Observability::RunReport unnamed;
     graph.run(1, unnamed);
     ASSERT_EQ(unnamed.node_timings.size(), 1u);
 
     const char* absent = nullptr;
     graph.name("named").name(absent);
-    Core::RunReport report;
+    Observability::RunReport report;
     graph.run(1, report);
 
     ASSERT_EQ(report.node_timings.size(), 1u);

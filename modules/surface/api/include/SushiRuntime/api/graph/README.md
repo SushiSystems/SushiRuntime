@@ -17,7 +17,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
 | `node_options.hpp` | NodeOptions |
-| `backing_graph.hpp` | BackingGraph and is_graph_emitter_v |
+| `backing_graph.hpp` | BackingGraph, the deprecated name of `Graph::TaskGraph` |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_host(), add_emitter(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
 | `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, cancel(), set_profiling() and the step loop |
@@ -412,7 +412,8 @@ Device work an emitter records must wait on the dependency events it is handed
 (`h.depends_on(deps)`); a chained plan relies on that for its order.
 
 The parameter type was spelled `BackingGraph` up to v0.3. The alias named nothing a caller could
-look up, so the contract now names the engine type.
+look up, so the contract now names the engine type. `API::BackingGraph` is deprecated in v0.4.0 and
+names the same type.
 
 ### extend
 
@@ -470,7 +471,7 @@ compiles.
 
 build() builds a fresh backing graph by replaying the recorder, compiles it, and caches the plan.
 The compiled plan snapshots its own replay baseline (in-degrees) so the fluent layer never touches
-Node's scheduler-internal state. compile() drains its builder, so a fresh BackingGraph is built
+Node's scheduler-internal state. compile() drains its builder, so a fresh TaskGraph is built
 whenever the topology changes.
 
 ### rearm
@@ -560,14 +561,14 @@ The graph is compiled on the first run (and after any mutation), then the compil
 for each step: node dependency state is reset, the plan re-executed, and every State advanced to its
 next field. Compilation happens at most once per call.
 
-### run(Core::RunReport&)
+### run(Observability::RunReport&)
 
-run(Core::RunReport&) is the allocation-free form of run(). A fixed-step loop keeps one report alive
+run(Observability::RunReport&) is the allocation-free form of run(). A fixed-step loop keeps one report alive
 and passes it every tick; the report is reset and refilled in place, so after the first run the
 per-run vectors are reused and not reallocated:
 
 ```cpp
-Core::RunReport report;
+Observability::RunReport report;
 while (running)
     simulation.run(report);
 ```
@@ -585,7 +586,7 @@ the returned handle:
 ```cpp
 auto step = simulation.run_async();
 extract_previous_frame();
-Core::RunReport report = step.wait();
+Observability::RunReport report = step.wait();
 ```
 
 It runs one step only. The multi-step drivers (run(n), run_for, run_until) stay synchronous, because
@@ -948,7 +949,7 @@ extract and then settle up:
 ```cpp
 auto step = simulation.run_async();
 extract_previous_frame();          // overlaps with the step
-Core::RunReport report = step.wait();
+Observability::RunReport report = step.wait();
 ```
 
 The handle is move-only and owns the obligation to finish the step: its destructor waits if `wait()`
@@ -994,9 +995,9 @@ try_wait() is the implementation of every wait: it resets the report, consumes t
 the driver to settle the step. It is `noexcept` and returns the report or the Error that ended the
 step.
 
-### wait(Core::RunReport&)
+### wait(Observability::RunReport&)
 
-wait(Core::RunReport&) is the allocation-free counterpart of wait(), for the same reason
+wait(Observability::RunReport&) is the allocation-free counterpart of wait(), for the same reason
 Graph::run(RunReport&) exists: an overlapped frame loop settles a step every tick, and a report it
 already owns costs nothing to refill. The report is reset before it is written, so a stale field
 from the previous step can never survive into this one.

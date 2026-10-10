@@ -42,7 +42,7 @@
 #include <SushiRuntime/api/detail/callable_traits.hpp>
 #include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
-#include <SushiRuntime/api/graph/backing_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 
 namespace SushiRuntime
 {
@@ -56,7 +56,8 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             template <typename T, class Launch, class F>
-            void add_state_node(BackingGraph& bg, std::optional<std::uint32_t> registration,
+            void add_state_node(::SushiRuntime::Graph::TaskGraph& bg,
+                                std::optional<std::uint32_t> registration,
                                 const std::shared_ptr<StateView<T>>& view, const State<T>& state,
                                 const Launch& launch, const F& fn)
             {
@@ -78,7 +79,8 @@ namespace SushiRuntime
             auto state_node(std::shared_ptr<StateView<T>> view, State<T>* state, F&& fn)
             {
                 return [fn = std::forward<F>(fn), view, state]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     add_state_node(bg, registration, view, *state, state->size(), fn);
                 };
@@ -93,7 +95,8 @@ namespace SushiRuntime
                                    Launch launch, F&& fn)
             {
                 return [fn = std::forward<F>(fn), view, state, launch]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     add_state_node(bg, registration, view, *state, launch, fn);
                 };
@@ -106,7 +109,8 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             template <typename T, class Views, class States, class Launch, class F>
-            void add_coupled_node(BackingGraph& bg, std::optional<std::uint32_t> registration,
+            void add_coupled_node(::SushiRuntime::Graph::TaskGraph& bg,
+                                  std::optional<std::uint32_t> registration,
                                   const std::shared_ptr<StateView<T>>& out_view,
                                   const State<T>& out, const Views& views, const States& states,
                                   const Launch& launch, const F& fn)
@@ -135,7 +139,8 @@ namespace SushiRuntime
                               Views views, States states, F&& fn)
             {
                 return [fn = std::forward<F>(fn), out_view, views, states, out]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     add_coupled_node(bg, registration, out_view, *out, views, states,
                                      out->size(), fn);
@@ -151,7 +156,8 @@ namespace SushiRuntime
                                      Views views, States states, Launch launch, F&& fn)
             {
                 return [fn = std::forward<F>(fn), out_view, views, states, out, launch]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     add_coupled_node(bg, registration, out_view, *out, views, states, launch, fn);
                 };

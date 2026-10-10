@@ -372,4 +372,7 @@ namespace SushiRuntime
         }
 
     } // namespace API
+
+    using API::Dynamic;
+
 } // namespace SushiRuntime

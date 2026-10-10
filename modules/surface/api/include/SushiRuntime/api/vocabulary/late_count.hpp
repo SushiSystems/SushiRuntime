@@ -104,7 +104,7 @@ namespace SushiRuntime
                     const detail::DeviceSlot checked =
                         detail::checked_device_slot(slot, index, "LateCount::from_device");
                     count.slot_ = checked.words + checked.index;
-                    count.slot_region_ = Core::ResourceRegion(detail::HandleAccess::key(slot));
+                    count.slot_region_ = Memory::ResourceRegion(detail::HandleAccess::key(slot));
                     count.slot_life_ = detail::HandleAccess::liveness(slot);
                     return count;
                 }
@@ -140,10 +140,10 @@ namespace SushiRuntime
                 const std::uint32_t* slot_ = nullptr;
 
                 /** @brief Region of the buffer that holds slot_, which the resolver reads. */
-                Core::ResourceRegion slot_region_;
+                Memory::ResourceRegion slot_region_;
 
                 /** @brief Observer of the buffer that holds slot_; empty when slot_ is null. */
-                Core::LivenessObserver slot_life_;
+                Memory::LivenessObserver slot_life_;
         };
 
         namespace detail
@@ -167,13 +167,13 @@ namespace SushiRuntime
                 }
 
                 /** @brief Returns the region a resolver of a device count reads. */
-                static const Core::ResourceRegion& slot_region(const LateCount& count) noexcept
+                static const Memory::ResourceRegion& slot_region(const LateCount& count) noexcept
                 {
                     return count.slot_region_;
                 }
 
                 /** @brief Returns the observer of the device slot's buffer. */
-                static const Core::LivenessObserver& slot_life(const LateCount& count) noexcept
+                static const Memory::LivenessObserver& slot_life(const LateCount& count) noexcept
                 {
                     return count.slot_life_;
                 }
@@ -181,4 +181,7 @@ namespace SushiRuntime
         } // namespace detail
 
     } // namespace API
+
+    using API::LateCount;
+
 } // namespace SushiRuntime

@@ -205,7 +205,7 @@ namespace SushiRuntime
                 if (is_supported)
                 {
                     baked->handles.reserve(node.io_reads_.size() + node.io_writes_.size());
-                    for (const Core::ResourceRegion& region : node.io_reads_)
+                    for (const Memory::ResourceRegion& region : node.io_reads_)
                     {
                         const std::optional<BufferHandle> handle = registry.lookup(region.base);
                         if (!handle.has_value())
@@ -221,7 +221,7 @@ namespace SushiRuntime
                     baked->handles.clear();
                 baked->input_count = baked->handles.size();
 
-                for (const Core::ResourceRegion& region : node.io_writes_)
+                for (const Memory::ResourceRegion& region : node.io_writes_)
                 {
                     const std::optional<BufferHandle> handle = registry.lookup(region.base);
                     if (handle.has_value())

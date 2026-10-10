@@ -132,7 +132,7 @@ namespace SushiRuntime
                  * @throws Core::SushiException With the error try_wait() would return.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                Core::RunReport wait()
+                Observability::RunReport wait()
                 {
                     auto waited = try_wait();
                     if (!waited)
@@ -146,7 +146,7 @@ namespace SushiRuntime
                  * @throws Core::SushiException With the error try_wait() would return.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                Core::RunReport& wait(Core::RunReport& reuse)
+                Observability::RunReport& wait(Observability::RunReport& reuse)
                 {
                     auto waited = try_wait(reuse);
                     if (!waited)
@@ -159,9 +159,10 @@ namespace SushiRuntime
                  * @return The report, or the Error that ended the step.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                [[nodiscard]] Core::Result<Core::RunReport, Core::Error> try_wait() noexcept
+                [[nodiscard]] Core::Result<Observability::RunReport, Core::Error>
+                try_wait() noexcept
                 {
-                    Core::RunReport report;
+                    Observability::RunReport report;
                     auto waited = try_wait(report);
                     if (!waited)
                         return Core::make_error(std::move(waited.error()));
@@ -174,8 +175,8 @@ namespace SushiRuntime
                  * @return A pointer to reuse, or the Error that ended the step.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
-                try_wait(Core::RunReport& reuse) noexcept
+                [[nodiscard]] Core::Result<Observability::RunReport*, Core::Error>
+                try_wait(Observability::RunReport& reuse) noexcept
                 {
                     // Cleared before anything else, so a failed step shows no old numbers.
                     reuse.reset();
@@ -213,7 +214,7 @@ namespace SushiRuntime
                 {
                     if (owner_ == nullptr)
                         return;
-                    Core::RunReport dropped;
+                    Observability::RunReport dropped;
                     static_cast<void>(try_wait(dropped));
                 }
 
@@ -225,4 +226,7 @@ namespace SushiRuntime
         };
 
     } // namespace API
+
+    using API::RunHandle;
+
 } // namespace SushiRuntime

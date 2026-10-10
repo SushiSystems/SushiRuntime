@@ -68,7 +68,7 @@ namespace SushiRuntime
                  * @return A RunReport summarising the run.
                  * @throws Core::SushiException With the error try_run() would return.
                  */
-                Core::RunReport run() { return unwrap(try_run()); }
+                Observability::RunReport run() { return unwrap(try_run()); }
 
                 /**
                  * @brief Runs the given number of successive steps and blocks until they finish.
@@ -76,7 +76,7 @@ namespace SushiRuntime
                  * @throws Core::SushiException With the error try_run() would return.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                Core::RunReport run(std::size_t steps) { return unwrap(try_run(steps)); }
+                Observability::RunReport run(std::size_t steps) { return unwrap(try_run(steps)); }
 
                 /**
                  * @brief Runs the graph once into a report the caller owns.
@@ -84,7 +84,10 @@ namespace SushiRuntime
                  * @throws Core::SushiException With the error try_run() would return.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                Core::RunReport& run(Core::RunReport& reuse) { return unwrap(try_run(reuse)); }
+                Observability::RunReport& run(Observability::RunReport& reuse)
+                {
+                    return unwrap(try_run(reuse));
+                }
 
                 /**
                  * @brief Runs the given number of steps into a report the caller owns.
@@ -92,7 +95,7 @@ namespace SushiRuntime
                  * @return A reference to reuse.
                  * @throws Core::SushiException With the error try_run() would return.
                  */
-                Core::RunReport& run(std::size_t steps, Core::RunReport& reuse)
+                Observability::RunReport& run(std::size_t steps, Observability::RunReport& reuse)
                 {
                     return unwrap(try_run(steps, reuse));
                 }
@@ -104,7 +107,7 @@ namespace SushiRuntime
                  * @throws Core::SushiException With the error try_run_for() would return.
                  */
                 template <class Rep, class Period>
-                Core::RunReport run_for(std::chrono::duration<Rep, Period> budget)
+                Observability::RunReport run_for(std::chrono::duration<Rep, Period> budget)
                 {
                     return unwrap(try_run_for(budget));
                 }
@@ -117,8 +120,8 @@ namespace SushiRuntime
                  * @throws Core::SushiException With the error try_run_for() would return.
                  */
                 template <class Rep, class Period>
-                Core::RunReport& run_for(std::chrono::duration<Rep, Period> budget,
-                                         Core::RunReport& reuse)
+                Observability::RunReport& run_for(std::chrono::duration<Rep, Period> budget,
+                                                  Observability::RunReport& reuse)
                 {
                     return unwrap(try_run_for(budget, reuse));
                 }
@@ -131,7 +134,7 @@ namespace SushiRuntime
                  * @throws Core::SushiException With the error try_run_until() would return.
                  */
                 template <class Predicate>
-                Core::RunReport run_until(Predicate done)
+                Observability::RunReport run_until(Predicate done)
                 {
                     return unwrap(try_run_until(std::move(done)));
                 }
@@ -144,7 +147,7 @@ namespace SushiRuntime
                  * @throws Core::SushiException With the error try_run_until() would return.
                  */
                 template <class Predicate>
-                Core::RunReport& run_until(Predicate done, Core::RunReport& reuse)
+                Observability::RunReport& run_until(Predicate done, Observability::RunReport& reuse)
                 {
                     return unwrap(try_run_until(std::move(done), reuse));
                 }
@@ -154,7 +157,7 @@ namespace SushiRuntime
                  * @return The RunReport, or the Error that ended the run.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                [[nodiscard]] Core::Result<Core::RunReport, Core::Error> try_run() noexcept
+                [[nodiscard]] Core::Result<Observability::RunReport, Core::Error> try_run() noexcept
                 {
                     return try_run(std::size_t{1});
                 }
@@ -163,7 +166,7 @@ namespace SushiRuntime
                  * @brief Runs the given number of steps and returns the outcome as a value.
                  * @return The RunReport, or the Error that ended the run.
                  */
-                [[nodiscard]] Core::Result<Core::RunReport, Core::Error>
+                [[nodiscard]] Core::Result<Observability::RunReport, Core::Error>
                 try_run(std::size_t steps) noexcept
                 {
                     return drive(for_steps(steps), steps, StepSync::AtEnd);
@@ -174,8 +177,8 @@ namespace SushiRuntime
                  * @param reuse The report to overwrite; its previous contents are lost.
                  * @return A pointer to reuse, or the Error that ended the run.
                  */
-                [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
-                try_run(Core::RunReport& reuse) noexcept
+                [[nodiscard]] Core::Result<Observability::RunReport*, Core::Error>
+                try_run(Observability::RunReport& reuse) noexcept
                 {
                     return try_run(std::size_t{1}, reuse);
                 }
@@ -186,8 +189,8 @@ namespace SushiRuntime
                  * @param reuse The report to overwrite; its previous contents are lost.
                  * @return A pointer to reuse, or the Error that ended the run.
                  */
-                [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
-                try_run(std::size_t steps, Core::RunReport& reuse) noexcept
+                [[nodiscard]] Core::Result<Observability::RunReport*, Core::Error>
+                try_run(std::size_t steps, Observability::RunReport& reuse) noexcept
                 {
                     return drive(for_steps(steps), reuse, steps, StepSync::AtEnd);
                 }
@@ -198,7 +201,7 @@ namespace SushiRuntime
                  * @return The RunReport, or the Error that ended the run.
                  */
                 template <class Rep, class Period>
-                [[nodiscard]] Core::Result<Core::RunReport, Core::Error>
+                [[nodiscard]] Core::Result<Observability::RunReport, Core::Error>
                 try_run_for(std::chrono::duration<Rep, Period> budget) noexcept
                 {
                     return drive(within(budget), 1, StepSync::EveryStep);
@@ -212,9 +215,9 @@ namespace SushiRuntime
                  * @return A pointer to reuse, or the Error that ended the run.
                  */
                 template <class Rep, class Period>
-                [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
+                [[nodiscard]] Core::Result<Observability::RunReport*, Core::Error>
                 try_run_for(std::chrono::duration<Rep, Period> budget,
-                            Core::RunReport& reuse) noexcept
+                            Observability::RunReport& reuse) noexcept
                 {
                     return drive(within(budget), reuse, 1, StepSync::EveryStep);
                 }
@@ -226,7 +229,7 @@ namespace SushiRuntime
                  * @return The RunReport, or the Error that ended the run.
                  */
                 template <class Predicate>
-                [[nodiscard]] Core::Result<Core::RunReport, Core::Error>
+                [[nodiscard]] Core::Result<Observability::RunReport, Core::Error>
                 try_run_until(Predicate done) noexcept
                 {
                     return drive(until(std::move(done)), 1, StepSync::EveryStep);
@@ -241,8 +244,8 @@ namespace SushiRuntime
                  * @return A pointer to reuse, or the Error that ended the run.
                  */
                 template <class Predicate>
-                [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
-                try_run_until(Predicate done, Core::RunReport& reuse) noexcept
+                [[nodiscard]] Core::Result<Observability::RunReport*, Core::Error>
+                try_run_until(Predicate done, Observability::RunReport& reuse) noexcept
                 {
                     return drive(until(std::move(done)), reuse, 1, StepSync::EveryStep);
                 }
@@ -416,7 +419,8 @@ namespace SushiRuntime
                 }
 
                 /** @brief Throws the carried error, or returns the report. */
-                static Core::RunReport unwrap(Core::Result<Core::RunReport, Core::Error> driven)
+                static Observability::RunReport
+                unwrap(Core::Result<Observability::RunReport, Core::Error> driven)
                 {
                     if (!driven)
                         throw Core::SushiException(std::move(driven.error()));
@@ -424,7 +428,8 @@ namespace SushiRuntime
                 }
 
                 /** @brief Throws the carried error, or returns the report the caller owns. */
-                static Core::RunReport& unwrap(Core::Result<Core::RunReport*, Core::Error> driven)
+                static Observability::RunReport&
+                unwrap(Core::Result<Observability::RunReport*, Core::Error> driven)
                 {
                     if (!driven)
                         throw Core::SushiException(std::move(driven.error()));
@@ -565,7 +570,7 @@ namespace SushiRuntime
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 Core::Error settle_async_step(const detail::AsyncRunState& state,
-                                              Core::RunReport& report) noexcept
+                                              Observability::RunReport& report) noexcept
                 {
                     if (!owns_step(state))
                         return Core::Error{Core::Errc::invalid_state,
@@ -588,7 +593,7 @@ namespace SushiRuntime
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 void finish_async_step(const detail::AsyncRunState& state,
-                                       Core::RunReport& report)
+                                       Observability::RunReport& report)
                 {
                     const auto finished = std::chrono::steady_clock::now();
                     Owner& self = owner();
@@ -647,11 +652,11 @@ namespace SushiRuntime
                  * @return The report, or the Error that ended the run.
                  */
                 template <class KeepGoing>
-                Core::Result<Core::RunReport, Core::Error>
+                Core::Result<Observability::RunReport, Core::Error>
                 drive(KeepGoing keep_going, std::size_t expected_invocations,
                       StepSync sync) noexcept
                 {
-                    Core::RunReport report;
+                    Observability::RunReport report;
                     auto driven = drive(std::move(keep_going), report, expected_invocations, sync);
                     if (!driven)
                         return Core::make_error(std::move(driven.error()));
@@ -667,8 +672,8 @@ namespace SushiRuntime
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 template <class KeepGoing>
-                Core::Result<Core::RunReport*, Core::Error>
-                drive(KeepGoing keep_going, Core::RunReport& report,
+                Core::Result<Observability::RunReport*, Core::Error>
+                drive(KeepGoing keep_going, Observability::RunReport& report,
                       std::size_t expected_invocations, StepSync sync) noexcept
                 {
                     // Reset before any early return, so a failed run shows no old numbers.
@@ -702,7 +707,7 @@ namespace SushiRuntime
                  * @throws Whatever a step throws; drive() maps it.
                  */
                 template <class KeepGoing>
-                void execute_steps(KeepGoing& keep_going, Core::RunReport& report,
+                void execute_steps(KeepGoing& keep_going, Observability::RunReport& report,
                                    double compile_ms, std::size_t expected_invocations,
                                    StepSync sync)
                 {
@@ -746,8 +751,8 @@ namespace SushiRuntime
                         report, context, before, after, offloaded_before, total_tasks,
                         compile_ms, std::chrono::duration<double, std::milli>(t1 - t0).count());
                     report.cancelled = engine.is_cancelled();
-                    report.layer = chained ? Core::ExecutionLayer::Chain
-                                           : Core::ExecutionLayer::Scheduler;
+                    report.layer = chained ? Observability::ExecutionLayer::Chain
+                                           : Observability::ExecutionLayer::Scheduler;
 
                     // Only explicit transfers are counted; implicit USM migration is not.
                     report.device_to_host_bytes = transfers.device_to_host() - d2h_before;

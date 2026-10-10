@@ -212,7 +212,7 @@ namespace SushiRuntime
              * @param report The report whose profiling rows are populated.
              */
             virtual void collect_profiling(CompiledGraph& /*graph*/,
-                                           Core::RunReport& /*report*/) const {}
+                                           Observability::RunReport& /*report*/) const {}
         };
 
         /**
@@ -317,7 +317,8 @@ namespace SushiRuntime
              * @param report The report to populate; left untouched for nodes that did not run.
              * @see modules/engine/execution/README.md
              */
-            void collect_profiling(CompiledGraph& graph, Core::RunReport& report) const override;
+            void collect_profiling(CompiledGraph& graph,
+                                   Observability::RunReport& report) const override;
 
             /**
              * @brief Forwards to the scheduler's set_offload_coordinator().

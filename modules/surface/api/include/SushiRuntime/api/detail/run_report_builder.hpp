@@ -61,7 +61,7 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             inline void fill_run_report(
-                Core::RunReport&                   report,
+                Observability::RunReport&                   report,
                 Execution::RuntimeContext&         ctx,
                 const Execution::ExecutionMetrics& before,
                 const Execution::ExecutionMetrics& after,
@@ -77,7 +77,7 @@ namespace SushiRuntime
                 report.total_duration_ms = total_ms;
 
                 // The device class comes from the runtime's own inventory, which does not allocate.
-                Core::NumaNodeStatistics node;
+                Observability::NumaNodeStatistics node;
                 const Device::DeviceQueueSet& devices = ctx.devices();
                 if (devices.count() > 0 && devices.is_gpu(0))
                     node.gpu_tasks_executed = total_tasks;

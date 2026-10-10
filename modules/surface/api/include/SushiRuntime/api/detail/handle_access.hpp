@@ -92,14 +92,14 @@ namespace SushiRuntime
                  * @return An empty observer for a handle that owns no allocation.
                  */
                 template <typename T>
-                static Core::LivenessObserver liveness(const Buffer<T>& buffer) noexcept
+                static Memory::LivenessObserver liveness(const Buffer<T>& buffer) noexcept
                 {
                     return buffer.liveness_;
                 }
 
                 /** @brief Returns the observer of the State's current field. */
                 template <typename T>
-                static Core::LivenessObserver liveness(const State<T>& state) noexcept
+                static Memory::LivenessObserver liveness(const State<T>& state) noexcept
                 {
                     return liveness(state.cur_);
                 }

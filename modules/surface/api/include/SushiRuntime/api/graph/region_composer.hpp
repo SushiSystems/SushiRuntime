@@ -39,11 +39,11 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/graph/boundary_access.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
@@ -181,14 +181,14 @@ namespace SushiRuntime
                 /**
                  * @brief Returns the registration index a rule of a region carries in the plan.
                  * @param rule Position in the region's recording order, one per rule.
-                 * @return The index, or BackingGraph::NO_REGISTRATION before the region is built.
+                 * @return The index, or TaskGraph::NO_REGISTRATION before the region is built.
                  */
                 [[nodiscard]] std::uint32_t registration_of(RegionKey key, std::size_t rule) const
                 {
                     const auto found = states_.find(key);
                     if (found == states_.end() || rule >= found->second.rule_nodes.size() ||
                         found->second.rule_nodes[rule] == nullptr)
-                        return BackingGraph::NO_REGISTRATION;
+                        return ::SushiRuntime::Graph::TaskGraph::NO_REGISTRATION;
                     return found->second.rule_nodes[rule]->registration_index;
                 }
 
@@ -227,7 +227,7 @@ namespace SushiRuntime
 
             private:
                 using Node = ::SushiRuntime::Graph::Node;
-                using Base = ::SushiRuntime::Core::ResourceId;  // allocation identity (void*)
+                using Base = ::SushiRuntime::Memory::ResourceId;  // allocation identity (void*)
                 using Pin = detail::Pin;
                 using BaseAccess = detail::BaseAccess;
 
@@ -238,7 +238,7 @@ namespace SushiRuntime
                 struct BoundaryPin
                 {
                     Node* node = nullptr;
-                    std::vector<Core::ResourceRegion> regions;
+                    std::vector<Memory::ResourceRegion> regions;
                 };
 
                 /**
@@ -346,13 +346,13 @@ namespace SushiRuntime
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 static void retire_covered(std::vector<BoundaryPin>& pins,
-                                           const std::vector<Core::ResourceRegion>& covers)
+                                           const std::vector<Memory::ResourceRegion>& covers)
                 {
                     for (auto it = pins.begin(); it != pins.end(); )
                     {
                         auto& regions = it->regions;
                         regions.erase(std::remove_if(regions.begin(), regions.end(),
-                            [&covers](const Core::ResourceRegion& r)
+                            [&covers](const Memory::ResourceRegion& r)
                             {
                                 return detail::covered_by_any(r, covers);
                             }), regions.end());
@@ -407,7 +407,7 @@ namespace SushiRuntime
                                         add_cross_edge(r.node, in.node, b);   // WAR
                         }
 
-                        std::vector<Core::ResourceRegion> covering;
+                        std::vector<Memory::ResourceRegion> covering;
                         for (const Pin& e : a.exit)
                             covering.insert(covering.end(), e.writes.begin(), e.writes.end());
 
@@ -432,7 +432,7 @@ namespace SushiRuntime
                 void build_region(RegionKey k, const Recorder& recorder,
                                   ::SushiRuntime::Graph::OffloadCoordinator* offload)
                 {
-                    BackingGraph bg(offload);
+                    ::SushiRuntime::Graph::TaskGraph bg(offload);
                     RegionState st;
                     st.generation = recorder.generation();
                     st.rule_nodes.assign(recorder.rule_count(), nullptr);

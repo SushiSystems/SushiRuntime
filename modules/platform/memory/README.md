@@ -2,6 +2,11 @@
 
 Allocation ownership, the USM registry and epoch-based reclamation.
 
+Everything is in `SushiRuntime::Memory`. `ResourceRegion`, `ResourceId`, `Liveness`,
+`LivenessToken`, `LivenessObserver` and `make_liveness` were `Core::` names in v0.3;
+`resource_region.hpp` and `resource_liveness.hpp` keep each `Core::` spelling as a deprecated
+forwarder.
+
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
 

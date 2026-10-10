@@ -151,4 +151,7 @@ namespace SushiRuntime
         };
 
     } // namespace API
+
+    using API::Region;
+
 } // namespace SushiRuntime
