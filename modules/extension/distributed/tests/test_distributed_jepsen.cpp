@@ -21,33 +21,46 @@
 
 /**
  * @file test_distributed_jepsen.cpp
- * @brief Tests that an offload graph under seeded message faults ends byte-equal to a clean run.
+ * @brief Tests that an offload graph under seeded message faults ends equal to a clean run.
  * @see modules/extension/distributed/tests/README.md
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/core/span.hpp>
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <random>
+#include <stdexcept>
+#include <string>
 #include <thread>
+#include <utility>
 #include <vector>
+
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/distributed/in_process_transport.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/kernel_registry.hpp>
-#include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/in_process_transport.hpp>
+#include <SushiRuntime/distributed/kernel_registry.hpp>
+#include <SushiRuntime/distributed/message_type.hpp>
+#include <SushiRuntime/distributed/worker_agent.hpp>
 
 #include "test_helpers.hpp"
 
@@ -59,299 +72,575 @@ using namespace SushiRuntime::Distributed;
 
 namespace
 {
-    constexpr auto VEC_DOUBLE = "vec.double"_op;
+    /** @brief Names the doubling operation: out[i] = in[i] * 2. */
+    constexpr auto K_VEC_DOUBLE = "vec.double"_op;
+
+    /** @brief Holds the elements of each buffer. */
+    constexpr std::size_t K_COUNT = 128;
+
+    /** @brief Holds how long a test waits for a cluster to assemble. */
+    constexpr std::chrono::seconds K_WAIT{10};
+
+    /** @brief Holds how long a run under faults may take before it counts as hung. */
+    constexpr std::chrono::seconds K_RUN_LIMIT{30};
+
+    /** @brief Holds the tolerance of every float comparison; see README.md. */
+    constexpr float K_TOLERANCE = 0.0f;
+
+    /** @brief Holds the value an output holds before any task wrote it. */
+    constexpr float K_UNWRITTEN = -1.0f;
+
+    /** @brief Holds the wait between two flushes of the frames the fault policy parked. */
+    constexpr std::chrono::milliseconds K_FLUSH_PERIOD{25};
+
+    /** @brief Holds how long the nemesis keeps one worker's link cut. */
+    constexpr std::chrono::milliseconds K_PARTITION_LENGTH{60};
+
+    /** @brief Holds the value mixed into a seed for the nemesis's own random source. */
+    constexpr std::uint64_t K_NEMESIS_SALT = 0x9e3779b97f4a7c15ull;
+
+    /** @brief Returns the value in[i] holds: i + 1. */
+    constexpr float input_value(std::size_t index) noexcept
+    {
+        return static_cast<float>(index) + 1.0f;
+    }
 
     /**
-     * @brief Registers the vec.double kernel.
-     *
-     * Computes o[i] = a[i] * 2 over network-resolved local USM buffers.
-     * @param reg The registry to register the kernel with.
+     * @brief Owns one shared USM allocation of K_COUNT floats on a queue.
      */
-    void register_vec_double(KernelRegistry& reg)
+    class UsmFloats final
     {
-        reg.register_kernel(VEC_DOUBLE,
-            [](sycl::queue& q, SushiRuntime::span<void* const> ins, SushiRuntime::span<void* const> outs,
-               const TaskMetadata& meta) -> sycl::event
+        public:
+            /**
+             * @brief Allocates the floats and sets each to @p value.
+             * @throws std::runtime_error When the device gives no memory.
+             */
+            UsmFloats(sycl::queue& queue, float value)
+                : queue_(queue), data_(sycl::malloc_shared<float>(K_COUNT, queue))
             {
-                auto* a = static_cast<const float*>(ins[0]);
-                auto* o = static_cast<float*>(outs[0]);
-                const size_t n = meta.get_param<uint64_t>(0);
-                return q.submit([&](sycl::handler& h)
+                if (data_ == nullptr)
+                    throw std::runtime_error("sycl::malloc_shared returned null for a test buffer");
+                std::fill_n(data_, K_COUNT, value);
+            }
+
+            /** @brief Frees the allocation. */
+            ~UsmFloats()
+            {
+                sycl::free(data_, queue_);
+            }
+
+            UsmFloats(const UsmFloats&) = delete;
+            UsmFloats& operator=(const UsmFloats&) = delete;
+            UsmFloats(UsmFloats&&) = delete;
+            UsmFloats& operator=(UsmFloats&&) = delete;
+
+            /** @brief Returns the base address. */
+            [[nodiscard]] float* data() const noexcept
+            {
+                return data_;
+            }
+
+        private:
+            /// @brief The queue the allocation belongs to.
+            sycl::queue& queue_;
+
+            /// @brief The base address.
+            float* data_;
+    };
+
+    /** @brief Returns an input buffer whose element i holds input_value(i). */
+    std::unique_ptr<UsmFloats> make_input(sycl::queue& queue)
+    {
+        auto input = std::make_unique<UsmFloats>(queue, 0.0f);
+        for (std::size_t index = 0; index < K_COUNT; ++index)
+            input->data()[index] = input_value(index);
+        return input;
+    }
+
+    /** @brief Returns the index of the first element that is not twice its input, or K_COUNT. */
+    std::size_t first_wrong_element(const UsmFloats& output)
+    {
+        for (std::size_t index = 0; index < K_COUNT; ++index)
+            if (std::abs(output.data()[index] - 2.0f * input_value(index)) > K_TOLERANCE)
+                return index;
+        return K_COUNT;
+    }
+
+    /**
+     * @brief Returns a registry that holds the doubling kernel.
+     * @param runs Counts the kernel's runs; outlives the registry.
+     */
+    sushi_ptr<KernelRegistry> vec_double_kernels(std::atomic<int>& runs)
+    {
+        sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
+        kernels->register_kernel(
+            K_VEC_DOUBLE,
+            [&runs](sycl::queue& queue, span<const BufferView> inputs,
+                    span<const BufferView> outputs, const TaskMetadata&) -> sycl::event
+            {
+                const float* in = inputs[0].as<const float>();
+                float* out = outputs[0].as<float>();
+                const std::size_t count = outputs[0].size_bytes / sizeof(float);
+                std::atomic<int>* counter = &runs;
+
+                return queue.submit([&](sycl::handler& handler)
                 {
-                    SushiRuntime::detail::enqueue_host_task(h, [=]
+                    SushiRuntime::detail::enqueue_host_task(handler, [=]
                     {
-                        for (size_t i = 0; i < n; ++i) o[i] = a[i] * 2.0f;
+                        for (std::size_t index = 0; index < count; ++index)
+                            out[index] = in[index] * 2.0f;
+                        counter->fetch_add(1, std::memory_order_relaxed);
+                    });
+                });
+            });
+        return kernels;
+    }
+
+    /** @brief Adds an op-tagged task out = in * 2 whose local fallback computes the same. */
+    void add_vec_double(TaskGraph& graph, const UsmFloats& input, const UsmFloats& output)
+    {
+        TaskMetadata metadata{};
+        metadata.name = "double";
+        metadata.op_id = K_VEC_DOUBLE;
+
+        float* in = input.data();
+        float* out = output.data();
+        graph.add_task(
+            metadata, {in}, {out},
+            [in, out](sycl::queue& queue, const std::vector<sycl::event>&) -> sycl::event
+            {
+                return queue.submit([&](sycl::handler& handler)
+                {
+                    SushiRuntime::detail::enqueue_host_task(handler, [=]
+                    {
+                        for (std::size_t index = 0; index < K_COUNT; ++index)
+                            out[index] = in[index] * 2.0f;
                     });
                 });
             });
     }
 
     /**
-     * @brief Runs one randomized Jepsen scenario.
-     * @param seed The random seed for the nemesis fault injector.
-     * @return Empty string on success, or a failure reason description.
+     * @brief Runs a compiled graph on its own thread, so a run that never returns is
+     *        reported and not waited for.
      */
-    std::string run_one_scenario(uint64_t seed)
+    class BackgroundRun final
     {
-        constexpr int    W = 2;     // workers
-        constexpr int    K = 4;     // independent offloadable tasks
-        constexpr size_t N = 128;   // elements per buffer
+        public:
+            /** @brief Starts the run; @p context and @p graph outlive this object. */
+            BackgroundRun(RuntimeContext& context, CompiledGraph& graph)
+            {
+                auto done = std::make_shared<std::promise<void>>();
+                finished_ = done->get_future();
+                thread_ = std::thread([&context, &graph, done]
+                {
+                    context.get_execution_engine().execute(graph);
+                    done->set_value();
+                });
+            }
 
-        auto master_ctx = std::make_unique<RuntimeContext>();
-        auto w0_ctx = std::make_unique<RuntimeContext>();
-        auto w1_ctx = std::make_unique<RuntimeContext>();
+            /** @brief Joins a run that returned and detaches one that did not. */
+            ~BackgroundRun()
+            {
+                if (!thread_.joinable())
+                    return;
 
-        sycl::queue& mq = master_ctx->devices().queue(0);
-        float* in = sycl::malloc_shared<float>(N, mq);
-        std::vector<float*> y(K, nullptr);
-        if (!in) return "alloc in failed";
-        for (int k = 0; k < K; ++k)
+                if (finished_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+                    thread_.join();
+                else
+                    thread_.detach();
+            }
+
+            BackgroundRun(const BackgroundRun&) = delete;
+            BackgroundRun& operator=(const BackgroundRun&) = delete;
+            BackgroundRun(BackgroundRun&&) = delete;
+            BackgroundRun& operator=(BackgroundRun&&) = delete;
+
+            /** @brief Returns whether the run returned within @p limit, and joins it if so. */
+            [[nodiscard]] bool wait(std::chrono::milliseconds limit)
+            {
+                if (finished_.wait_for(limit) != std::future_status::ready)
+                    return false;
+
+                if (thread_.joinable())
+                    thread_.join();
+                return true;
+            }
+
+        private:
+            /// @brief Becomes ready when execute() returned.
+            std::future<void> finished_;
+
+            /// @brief The thread that calls execute().
+            std::thread thread_;
+    };
+
+    /**
+     * @brief Runs one real worker: its own context and the agent that serves a fabric.
+     */
+    class LocalWorker final
+    {
+        public:
+            /** @brief Builds the worker on the next worker endpoint of @p fabric. */
+            LocalWorker(InProcessFabric& fabric, std::atomic<int>& runs,
+                        WorkerAgentOptions options)
+                : agent_(context_, InProcessTransport::make_worker(fabric),
+                         vec_double_kernels(runs), std::move(options))
+            {
+
+            }
+
+            /** @brief Starts the agent and returns whether its transport started. */
+            [[nodiscard]] bool start()
+            {
+                return agent_.start().is_ok();
+            }
+
+            /** @brief Stops the agent. */
+            void stop() noexcept
+            {
+                agent_.stop();
+            }
+
+        private:
+            /// @brief The worker's own runtime; declared first, destroyed last.
+            RuntimeContext context_;
+
+            /// @brief The agent under test.
+            WorkerAgent agent_;
+    };
+
+    /** @brief Returns worker options with a short HELLO retry and a short pull timeout. */
+    WorkerAgentOptions impatient_worker()
+    {
+        WorkerAgentOptions options;
+        options.heartbeat_interval = std::chrono::milliseconds(40);
+        options.pull_idle_timeout = std::chrono::milliseconds(120);
+        return options;
+    }
+
+    /** @brief Returns master options that offload any task and give up on a worker quickly. */
+    ClusterOptions impatient_master()
+    {
+        ClusterOptions options;
+        options.policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
+        options.liveness_timeout = std::chrono::milliseconds(250);
+        options.task_deadline = std::chrono::milliseconds(300);
+        return options;
+    }
+
+    /**
+     * @brief Returns a policy that drops 8 frames in 100, repeats 4 and parks 8, by @p seed.
+     *
+     * The fabric calls a policy from several threads at once, so the policy locks its
+     * random source.
+     */
+    FaultPolicy seeded_faults(std::uint64_t seed)
+    {
+        /** @brief Holds the random source of one policy and the mutex that guards it. */
+        struct Source
         {
-            y[k] = sycl::malloc_shared<float>(N, mq);
-            if (!y[k]) return "alloc y failed";
-        }
-        for (size_t i = 0; i < N; ++i) { in[i] = float(i) + 1.0f; for (int k = 0; k < K; ++k) y[k][i] = -1.0f; }
+            /** @brief Guards random. */
+            std::mutex mutex;
 
-        InProcessFabric fabric(W);
-        auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-        auto wt0 = std::make_shared<InProcessTransport>(fabric, 0);
-        auto wt1 = std::make_shared<InProcessTransport>(fabric, 1);
+            /** @brief Draws the fate of each frame. */
+            std::mt19937_64 random;
+        };
 
-        auto k0 = make_sushi<KernelRegistry>();
-        auto k1 = make_sushi<KernelRegistry>();
-        register_vec_double(*k0);
-        register_vec_double(*k1);
-        WorkerAgent a0(*w0_ctx, wt0, k0);
-        WorkerAgent a1(*w1_ctx, wt1, k1);
-        a0.set_heartbeat_interval(std::chrono::milliseconds(40));
-        a1.set_heartbeat_interval(std::chrono::milliseconds(40));
-        a0.set_pull_timeout(std::chrono::milliseconds(120));
-        a1.set_pull_timeout(std::chrono::milliseconds(120));
+        auto source = std::make_shared<Source>();
+        source->random.seed(seed);
+        return [source](const FaultedFrame&)
+        {
+            const std::lock_guard<std::mutex> lock(source->mutex);
+            const std::uint64_t draw = source->random() % 100;
+            if (draw < 8)
+                return FaultAction::Drop;
+            if (draw < 12)
+                return FaultAction::Duplicate;
+            if (draw < 20)
+                return FaultAction::Hold;
+            return FaultAction::Deliver;
+        };
+    }
 
-        auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-        auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
-                                                    make_sushi<KernelRegistry>(), policy);
-        cluster.liveness_timeout(std::chrono::milliseconds(250));
-        cluster.task_deadline(std::chrono::milliseconds(300));
-        a0.start();
-        a1.start();
+    /**
+     * @brief Returns a policy that drops the first frame of each given type and delivers
+     *        every other frame.
+     * @param dropped Counts the frames the policy dropped.
+     */
+    FaultPolicy drop_first_of(const std::vector<MessageType>& types,
+                              std::shared_ptr<std::atomic<int>> dropped)
+    {
+        auto is_owed = std::make_shared<std::array<std::atomic<bool>, K_MESSAGE_TYPE_COUNT + 1>>();
+        for (std::atomic<bool>& flag : *is_owed)
+            flag.store(false);
+        for (const MessageType type : types)
+            (*is_owed)[static_cast<std::size_t>(type)].store(true);
+
+        return [is_owed, dropped = std::move(dropped)](const FaultedFrame& frame)
+        {
+            if (!(*is_owed)[static_cast<std::size_t>(frame.type)].exchange(false))
+                return FaultAction::Deliver;
+
+            dropped->fetch_add(1, std::memory_order_relaxed);
+            return FaultAction::Drop;
+        };
+    }
+
+    /**
+     * @brief Puts a fabric under a seeded fault policy and, on its own thread, flushes
+     *        parked frames in a shuffled order and cuts one worker's link now and then.
+     */
+    class Nemesis final
+    {
+        public:
+            /** @brief Installs the policy and starts the thread. */
+            Nemesis(InProcessFabric& fabric, std::uint64_t seed, std::size_t worker_count)
+                : fabric_(fabric), worker_count_(worker_count)
+            {
+                fabric_.set_fault_policy(seeded_faults(seed));
+                thread_ = std::thread(&Nemesis::run, this, seed ^ K_NEMESIS_SALT);
+            }
+
+            /** @brief Heals the fabric if heal() was not called. */
+            ~Nemesis()
+            {
+                heal();
+            }
+
+            Nemesis(const Nemesis&) = delete;
+            Nemesis& operator=(const Nemesis&) = delete;
+            Nemesis(Nemesis&&) = delete;
+            Nemesis& operator=(Nemesis&&) = delete;
+
+            /** @brief Joins the thread, restores every link, removes the policy and flushes. */
+            void heal()
+            {
+                {
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    stopping_ = true;
+                }
+                changed_.notify_all();
+                if (thread_.joinable())
+                    thread_.join();
+
+                for (std::size_t worker = 0; worker < worker_count_; ++worker)
+                    fabric_.set_partitioned(worker, false);
+                fabric_.set_fault_policy(FaultPolicy());
+                fabric_.flush_held();
+            }
+
+        private:
+            /** @brief Waits for @p length and returns whether the nemesis should keep running. */
+            [[nodiscard]] bool pause(std::chrono::milliseconds length)
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                return !changed_.wait_for(lock, length, [&] { return stopping_; });
+            }
+
+            /** @brief Flushes and partitions until heal() asks the thread to end. */
+            void run(std::uint64_t seed)
+            {
+                std::mt19937_64 random(seed);
+                while (pause(K_FLUSH_PERIOD))
+                {
+                    fabric_.flush_held(random());
+                    if ((random() & 7u) != 0)
+                        continue;
+
+                    const std::size_t worker = random() % worker_count_;
+                    fabric_.set_partitioned(worker, true);
+                    const bool keeps_running = pause(K_PARTITION_LENGTH);
+                    fabric_.set_partitioned(worker, false);
+                    if (!keeps_running)
+                        return;
+                }
+            }
+
+            /// @brief The fabric under faults.
+            InProcessFabric& fabric_;
+
+            /// @brief The number of worker endpoints the nemesis may cut.
+            std::size_t worker_count_;
+
+            /// @brief Guards stopping_.
+            std::mutex mutex_;
+
+            /// @brief Wakes a pause when heal() is called.
+            std::condition_variable changed_;
+
+            /// @brief Set by heal().
+            bool stopping_ = false;
+
+            /// @brief The thread that flushes and partitions.
+            std::thread thread_;
+    };
+
+    /**
+     * @brief Runs four independent offloadable tasks on two workers under the faults of one
+     *        seed.
+     * @return An empty string when the run returned and every output is right, else the reason.
+     */
+    std::string run_one_scenario(std::uint64_t seed)
+    {
+        constexpr std::size_t K_WORKERS = 2;
+        constexpr std::size_t K_TASKS = 4;
+
+        std::atomic<int> worker_runs{0};
+        RuntimeContext master_context;
+        sycl::queue& queue = master_context.devices().queue(0);
+        const std::unique_ptr<UsmFloats> input = make_input(queue);
+        std::vector<std::unique_ptr<UsmFloats>> outputs;
+        for (std::size_t task = 0; task < K_TASKS; ++task)
+            outputs.push_back(std::make_unique<UsmFloats>(queue, K_UNWRITTEN));
+
+        InProcessFabric fabric;
+        LocalWorker first(fabric, worker_runs, impatient_worker());
+        LocalWorker second(fabric, worker_runs, impatient_worker());
+        Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                          impatient_master());
 
         // The cluster assembles before any fault is injected; see README.md.
-        bool both = false;
-        for (int i = 0; i < 500 && !both; ++i)
+        if (!first.start() || !second.start() || !cluster.wait_for_workers(K_WORKERS, K_WAIT))
+            return "the cluster did not assemble";
+
+        OffloadCoordinator* master = master_context.offload();
+        master->share(input->data(), K_COUNT * sizeof(float));
+        TaskGraph graph(master);
+        for (const std::unique_ptr<UsmFloats>& output : outputs)
         {
-            both = cluster.alive_workers() == W;
-            if (!both) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            master->share(output->data(), K_COUNT * sizeof(float));
+            add_vec_double(graph, *input, *output);
         }
-        if (!both) { a0.stop(); a1.stop(); sycl::free(in, mq); for (auto p : y) sycl::free(p, mq);
-                     return "cluster did not assemble"; }
+        CompiledGraph compiled = graph.compile();
 
-        master_ctx->offload()->share(in, N * sizeof(float));
-        for (int k = 0; k < K; ++k)
-            master_ctx->offload()->share(y[k], N * sizeof(float));
+        Nemesis nemesis(fabric, seed, K_WORKERS);
+        BackgroundRun run(master_context, compiled);
+        const bool returned = run.wait(K_RUN_LIMIT);
+        nemesis.heal();
 
-        // The fabric mutex serializes the fault policy, so one shared RNG is safe; see README.md.
-        auto rng = std::make_shared<std::mt19937_64>(seed);
-        fabric.set_fault_policy([rng](int, int, MsgType) -> FaultAction
-        {
-            std::uniform_int_distribution<int> d(0, 99);
-            int r = d(*rng);
-            if (r < 8)  return FaultAction::Drop;       // 8%  lost
-            if (r < 12) return FaultAction::Duplicate;  // 4%  retransmit
-            if (r < 20) return FaultAction::Hold;       // 8%  delayed/reordered
-            return FaultAction::Deliver;
-        });
-
-        // Background nemesis: drains held traffic (reordered) and flaps partitions.
-        std::atomic<bool> nem_running{true};
-        std::thread nemesis([&]
-        {
-            std::mt19937_64 nrng(seed ^ 0x9e3779b97f4a7c15ull);
-            while (nem_running.load())
-            {
-                fabric.flush_held(nrng());
-                if ((nrng() & 7) == 0)
-                {
-                    int w = static_cast<int>(nrng() % W);
-                    fabric.set_partitioned(w, true);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(60));
-                    fabric.set_partitioned(w, false);
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(25));
-            }
-        });
-
-        TaskGraph graph(master_ctx->offload());
-        for (int k = 0; k < K; ++k)
-        {
-            float* yk = y[k];
-            TaskMetadata m{};
-            m.name  = "double";
-            m.op_id = VEC_DOUBLE;
-            m.set_param<uint64_t>(0, N);
-            graph.add_task(m, {in}, {yk},
-                [in, yk](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
-                {
-                    return q.submit([&](sycl::handler& h)
-                    {
-                        SushiRuntime::detail::enqueue_host_task(h, [=]
-                        {
-                            for (size_t i = 0; i < N; ++i) yk[i] = in[i] * 2.0f;
-                        });
-                    });
-                });
-        }
-
-        // A side thread runs the graph, so a liveness regression fails by timeout; see README.md.
-        auto compiled = std::make_shared<CompiledGraph>(graph.compile());
-        std::promise<void> done;
-        auto fut = done.get_future();
-        std::thread runner([&]
-        {
-            master_ctx->get_execution_engine().execute(*compiled);
-            done.set_value();
-        });
-
-        const bool returned = fut.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
-
-        // In-flight deliveries settle before results are read and memory is freed; see README.md.
-        nem_running.store(false);
-        if (nemesis.joinable()) nemesis.join();
-        for (int w = 0; w < W; ++w) fabric.set_partitioned(w, false);
-        fabric.set_fault_policy(nullptr);
-        fabric.flush_held();
-        std::string result;
+        // Stopping the master returns every node it holds, so a hung run can still end.
         if (!returned)
-        {
-            result = "execute() hung under faults (liveness violation)";
-            runner.detach(); // already failed; do not join a wedged thread
-        }
-        else
-        {
-            runner.join();
-            a0.stop();
-            a1.stop();
-            std::this_thread::sleep_for(std::chrono::milliseconds(30)); // drain late delivery
-            for (int k = 0; k < K && result.empty(); ++k)
-                for (size_t i = 0; i < N; ++i)
-                    if (y[k][i] != (float(i) + 1.0f) * 2.0f)
-                    {
-                        result = "safety violation: y[" + std::to_string(k) + "][" +
-                                 std::to_string(i) + "] = " + std::to_string(y[k][i]);
-                        break;
-                    }
-        }
+            master->stop();
+        const bool ended = returned || run.wait(K_WAIT);
 
-        if (returned) { /* agents already stopped */ }
-        sycl::free(in, mq);
-        for (auto p : y) sycl::free(p, mq);
-        return result;
+        // No worker and no master thread writes an output once all three have stopped.
+        first.stop();
+        second.stop();
+        cluster.detach();
+
+        if (!returned)
+            return ended ? "execute() did not return under faults until the master was stopped"
+                         : "execute() did not return under faults, nor after the master stopped";
+
+        for (std::size_t task = 0; task < K_TASKS; ++task)
+        {
+            const std::size_t wrong = first_wrong_element(*outputs[task]);
+            if (wrong != K_COUNT)
+                return "output " + std::to_string(task) + " element " + std::to_string(wrong) +
+                       " is " + std::to_string(outputs[task]->data()[wrong]);
+        }
+        return std::string();
     }
-}
 
-/**
- * @brief Soaks across several random seeds to assert determinism.
- *
- * Every randomized fault schedule must end with the correct (fault-free) result and a run that actually returned.
- */
+    /** @brief Holds what one run on a one-worker cluster with a lossy handshake left behind. */
+    struct LossyRegistration
+    {
+        bool assembled = false;       /**< The master counted the worker as registered. */
+        bool returned = false;        /**< execute() returned within the limit. */
+        int frames_dropped = 0;       /**< Frames the fault policy dropped. */
+        int worker_runs = 0;          /**< Runs of the worker's kernel. */
+        std::size_t wrong = K_COUNT;  /**< The first wrong output element, or K_COUNT. */
+    };
+
+    /**
+     * @brief Registers one worker while the first frame of each given type is lost, then
+     *        runs one offloadable task.
+     */
+    LossyRegistration register_under_loss(const std::vector<MessageType>& lost_types)
+    {
+        LossyRegistration outcome;
+        std::atomic<int> worker_runs{0};
+        const auto dropped = std::make_shared<std::atomic<int>>(0);
+
+        RuntimeContext master_context;
+        sycl::queue& queue = master_context.devices().queue(0);
+        const std::unique_ptr<UsmFloats> input = make_input(queue);
+        UsmFloats output(queue, K_UNWRITTEN);
+
+        InProcessFabric fabric;
+        fabric.set_fault_policy(drop_first_of(lost_types, dropped));
+
+        LocalWorker worker(fabric, worker_runs, impatient_worker());
+        Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                          impatient_master());
+        outcome.assembled = worker.start() && cluster.wait_for_workers(1, K_WAIT);
+        outcome.frames_dropped = dropped->load(std::memory_order_relaxed);
+        if (!outcome.assembled)
+            return outcome;
+
+        OffloadCoordinator* master = master_context.offload();
+        master->share(input->data(), K_COUNT * sizeof(float));
+        master->share(output.data(), K_COUNT * sizeof(float));
+        TaskGraph graph(master);
+        add_vec_double(graph, *input, output);
+        CompiledGraph compiled = graph.compile();
+
+        BackgroundRun run(master_context, compiled);
+        outcome.returned = run.wait(K_RUN_LIMIT);
+        if (!outcome.returned)
+            master->stop();
+
+        worker.stop();
+        cluster.detach();
+        outcome.worker_runs = worker_runs.load(std::memory_order_relaxed);
+        if (outcome.returned)
+            outcome.wrong = first_wrong_element(output);
+        return outcome;
+    }
+} // namespace
+
+/** @brief Tests that eight seeded fault schedules each end with the outputs of a clean run. */
 TEST(Integration_DistributedJepsenTest, DeterminismUnderRandomFaults)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    for (uint64_t seed = 1; seed <= 8; ++seed)
+    for (std::uint64_t seed = 1; seed <= 8; ++seed)
     {
-        std::string r = run_one_scenario(seed);
-        EXPECT_TRUE(r.empty()) << "seed " << seed << ": " << r;
+        const std::string failure = run_one_scenario(seed);
+        EXPECT_TRUE(failure.empty()) << "seed " << seed << ": " << failure;
     }
 }
 
-/**
- * @brief Tests that registration survives severe message loss.
- *
- * A fault policy drops traffic before the worker connects. The worker must keep re-announcing until acknowledged, and the offloaded task must still produce the correct result.
- */
+/** @brief Tests that a worker registers although HELLO, CHALLENGE and PROOF are each lost once. */
 TEST(Integration_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    auto master_ctx = std::make_unique<RuntimeContext>();
-    auto worker_ctx = std::make_unique<RuntimeContext>();
+    const LossyRegistration outcome = register_under_loss(
+        {MessageType::Hello, MessageType::Challenge, MessageType::Proof});
 
-    constexpr size_t N = 128;
-    sycl::queue& mq = master_ctx->devices().queue(0);
-    float* in  = sycl::malloc_shared<float>(N, mq);
-    float* out = sycl::malloc_shared<float>(N, mq);
-    ASSERT_NE(in, nullptr);
-    ASSERT_NE(out, nullptr);
-    for (size_t i = 0; i < N; ++i) { in[i] = float(i) + 1.0f; out[i] = -1.0f; }
+    ASSERT_TRUE(outcome.assembled) << "the worker never registered after the lost frames";
+    EXPECT_EQ(outcome.frames_dropped, 3) << "the handshake did not meet each of the three losses";
+    ASSERT_TRUE(outcome.returned) << "execute() did not return after a lossy registration";
+    EXPECT_EQ(outcome.worker_runs, 1) << "the registered worker did not run the task";
+    EXPECT_EQ(outcome.wrong, K_COUNT) << "output element " << outcome.wrong << " is wrong";
+}
 
-    InProcessFabric fabric(1);
-    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-    auto wt = std::make_shared<InProcessTransport>(fabric, 0);
+/** @brief Tests that a worker whose WELCOME is lost registers again and runs the task. */
+TEST(Integration_DistributedJepsenTest, RegistrationSurvivesALostWelcome)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
 
-    // Drop ~20% of everything, from the very start — registration included.
-    auto rng = std::make_shared<std::mt19937_64>(12345);
-    fabric.set_fault_policy([rng](int, int, MsgType) -> FaultAction
-    {
-        std::uniform_int_distribution<int> d(0, 99);
-        return d(*rng) < 20 ? FaultAction::Drop : FaultAction::Deliver;
-    });
+    const LossyRegistration outcome = register_under_loss({MessageType::Welcome});
 
-    auto kernels = make_sushi<KernelRegistry>();
-    register_vec_double(*kernels);
-    WorkerAgent agent(*worker_ctx, wt, kernels);
-    agent.set_heartbeat_interval(std::chrono::milliseconds(30)); // fast HELLO retry
-    agent.set_pull_timeout(std::chrono::milliseconds(150));
-
-    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
-                                                make_sushi<KernelRegistry>(), policy);
-    cluster.task_deadline(std::chrono::milliseconds(300));
-    agent.start();
-
-    // The HELLO retry must punch through the loss within a generous window.
-    bool up = false;
-    for (int i = 0; i < 500 && !up; ++i)
-    {
-        up = cluster.alive_workers() == 1;
-        if (!up) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    ASSERT_TRUE(up) << "Cluster never assembled under registration loss.";
-
-    master_ctx->offload()->share(in,  N * sizeof(float));
-    master_ctx->offload()->share(out, N * sizeof(float));
-
-    TaskGraph graph(master_ctx->offload());
-    TaskMetadata m{};
-    m.name  = "double";
-    m.op_id = VEC_DOUBLE;
-    m.set_param<uint64_t>(0, N);
-    graph.add_task(m, {in}, {out},
-        [in, out](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
-        {
-            return q.submit([&](sycl::handler& h)
-            {
-                SushiRuntime::detail::enqueue_host_task(h, [=]
-                { for (size_t i = 0; i < N; ++i) out[i] = in[i] * 2.0f; });
-            });
-        });
-
-    auto compiled = std::make_shared<CompiledGraph>(graph.compile());
-    std::promise<void> done;
-    auto fut = done.get_future();
-    std::thread runner([&] { master_ctx->get_execution_engine().execute(*compiled); done.set_value(); });
-    const bool returned = fut.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
-    EXPECT_TRUE(returned) << "execute() hung under registration loss.";
-    if (returned) runner.join(); else runner.detach();
-
-    fabric.set_fault_policy(nullptr);
-    agent.stop();
-    if (returned)
-        for (size_t i = 0; i < N; ++i)
-            ASSERT_EQ(out[i], (float(i) + 1.0f) * 2.0f) << "wrong result at " << i;
-
-    sycl::free(in, mq);
-    sycl::free(out, mq);
+    ASSERT_TRUE(outcome.assembled);
+    EXPECT_EQ(outcome.frames_dropped, 1);
+    ASSERT_TRUE(outcome.returned) << "execute() did not return after the lost WELCOME";
+    EXPECT_EQ(outcome.wrong, K_COUNT) << "output element " << outcome.wrong << " is wrong";
+    EXPECT_EQ(outcome.worker_runs, 1)
+        << "the master counts a worker that never learned it was registered";
 }

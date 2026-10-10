@@ -800,8 +800,9 @@ Dropping one of two regions composes once more, and the dropped region's rule do
 ### `AThreeNodeRuleIsOneRuleWithOneName`
 
 The acceptance case of the rule count. A graph whose only rule has three nodes reports `size() == 1`
-and `node_count() == 3`, all three `NodeTiming` rows carry the name given by one `name_last()`, and
-`rule_registration(1)` names no rule.
+and `node_count() == 3`. The three nodes share one registration, so the report holds one
+`NodeTiming` row, which carries the name given by one `name_last()`, and `rule_registration(1)`
+names no rule.
 
 ### `ARegionRuleReportsItsRegistrationAndName`
 

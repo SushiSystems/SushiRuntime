@@ -21,36 +21,61 @@
 
 /**
  * @file test_distributed_e2e.cpp
- * @brief Tests end-to-end offload between a master and in-process workers on a real SYCL device.
+ * @brief Tests kernel offload from a master to workers, end to end, on a SYCL device.
  * @see modules/extension/distributed/tests/README.md
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/core/span.hpp>
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
-#include <cstring>
+#include <cmath>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <future>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <stdexcept>
+#include <string>
 #include <thread>
+#include <utility>
 #include <vector>
+
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
-#include <SushiRuntime/api/fluent.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/distributed/in_process_transport.hpp>
-#include <SushiRuntime/distributed/tcp_transport.hpp>
+#include <SushiRuntime/task/offload_state.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/api/fluent.hpp>
+#include <SushiRuntime/distributed/buffer_handle.hpp>
+#include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/kernel_registry.hpp>
-#include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/in_process_transport.hpp>
+#include <SushiRuntime/distributed/kernel_registry.hpp>
+#include <SushiRuntime/distributed/registered_task.hpp>
+#include <SushiRuntime/distributed/shared_secret.hpp>
+#include <SushiRuntime/distributed/tcp_transport.hpp>
+#include <SushiRuntime/distributed/worker_agent.hpp>
 
 #include "test_helpers.hpp"
+
+#include "frame_sending.hpp"
+#include "handshake.hpp"
+#include "offload_dispatcher.hpp"
+#include "wire_frame.hpp"
+#include "wire_messages.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
@@ -60,929 +85,1251 @@ using namespace SushiRuntime::Distributed;
 
 namespace
 {
-    /**
-     * @brief Bumped once per kernel run on the worker.
-     *
-     * Used to prove the task ran remotely rather than through the local host fallback.
-     */
-    std::atomic<int> g_worker_runs{0};
+    /** @brief Names the vector-add operation: out[i] = a[i] + b[i]. */
+    constexpr auto K_VEC_ADD = "vec.add"_op;
 
-    constexpr auto VEC_ADD = "vec.add"_op;
+    /** @brief Names the State-step operation: next[i] = cur[i] + (i % 7). */
+    constexpr auto K_STATE_STEP = "state.step"_op;
 
-    /**
-     * @brief Registers the vector-add kernel.
-     *
-     * Computes out[i] = a[i] + b[i] over network-resolved local USM buffers.
-     * @param reg The kernel registry to register with.
-     */
-    void register_vec_add(KernelRegistry& reg)
+    /** @brief Holds how long a test waits for a condition before it fails. */
+    constexpr std::chrono::seconds K_WAIT{10};
+
+    /** @brief Holds the tolerance of every float comparison; see README.md. */
+    constexpr float K_TOLERANCE = 0.0f;
+
+    /** @brief Holds the value an output holds before any task wrote it. */
+    constexpr float K_UNWRITTEN = -1.0f;
+
+    /** @brief Returns whether a condition became true within K_WAIT, yielding between checks. */
+    template <typename Predicate>
+    [[nodiscard]] bool eventually(Predicate is_met)
     {
-        reg.register_kernel(VEC_ADD,
-            [](sycl::queue& q, SushiRuntime::span<void* const> ins, SushiRuntime::span<void* const> outs,
-               const TaskMetadata& meta) -> sycl::event
-            {
-                auto* a = static_cast<const float*>(ins[0]);
-                auto* b = static_cast<const float*>(ins[1]);
-                auto* o = static_cast<float*>(outs[0]);
-                const size_t n = meta.get_param<uint64_t>(0);
+        const auto deadline = std::chrono::steady_clock::now() + K_WAIT;
+        while (!is_met())
+        {
+            if (std::chrono::steady_clock::now() >= deadline)
+                return false;
+            std::this_thread::yield();
+        }
+        return true;
+    }
 
-                return q.submit([&](sycl::handler& h)
+    /**
+     * @brief Owns one shared USM allocation of floats on a queue.
+     */
+    class UsmFloats final
+    {
+        public:
+            /**
+             * @brief Allocates @p count floats and sets each to @p value.
+             * @throws std::runtime_error When the device gives no memory.
+             */
+            UsmFloats(sycl::queue& queue, std::size_t count, float value)
+                : queue_(queue), data_(sycl::malloc_shared<float>(count, queue)), count_(count)
+            {
+                if (data_ == nullptr)
+                    throw std::runtime_error("sycl::malloc_shared returned null for a test buffer");
+                std::fill_n(data_, count_, value);
+            }
+
+            /** @brief Frees the allocation. */
+            ~UsmFloats()
+            {
+                sycl::free(data_, queue_);
+            }
+
+            UsmFloats(const UsmFloats&) = delete;
+            UsmFloats& operator=(const UsmFloats&) = delete;
+            UsmFloats(UsmFloats&&) = delete;
+            UsmFloats& operator=(UsmFloats&&) = delete;
+
+            /** @brief Sets element i to @p step times i. */
+            void ramp(float step)
+            {
+                for (std::size_t index = 0; index < count_; ++index)
+                    data_[index] = step * static_cast<float>(index);
+            }
+
+            /** @brief Sets every element to @p value. */
+            void fill(float value)
+            {
+                std::fill_n(data_, count_, value);
+            }
+
+            /** @brief Returns the base address. */
+            [[nodiscard]] float* data() const noexcept
+            {
+                return data_;
+            }
+
+            /** @brief Returns the number of elements. */
+            [[nodiscard]] std::size_t count() const noexcept
+            {
+                return count_;
+            }
+
+            /** @brief Returns the size of the allocation in bytes. */
+            [[nodiscard]] std::size_t size_bytes() const noexcept
+            {
+                return count_ * sizeof(float);
+            }
+
+            /** @brief Returns the allocation as the view a kernel receives. */
+            [[nodiscard]] BufferView view() const noexcept
+            {
+                return BufferView{data_, size_bytes()};
+            }
+
+        private:
+            /// @brief The queue the allocation belongs to.
+            sycl::queue& queue_;
+
+            /// @brief The base address.
+            float* data_;
+
+            /// @brief The number of elements.
+            std::size_t count_;
+    };
+
+    /**
+     * @brief Expects every element to equal what @p expected returns for its index, and
+     *        reports only the first one that does not.
+     */
+    template <typename Element, typename Expected>
+    void expect_elements(const Element* actual, std::size_t count, Expected expected)
+    {
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            const Element wanted = static_cast<Element>(expected(index));
+            if (std::abs(actual[index] - wanted) <= static_cast<Element>(K_TOLERANCE))
+                continue;
+
+            ADD_FAILURE() << "element " << index << " is " << actual[index] << ", expected "
+                          << wanted;
+            return;
+        }
+    }
+
+    /** @brief Expects out[i] == a[i] + b[i] for every element. */
+    void expect_sum(const UsmFloats& out, const UsmFloats& a, const UsmFloats& b)
+    {
+        const float* left = a.data();
+        const float* right = b.data();
+        expect_elements(out.data(), out.count(),
+                        [left, right](std::size_t index) { return left[index] + right[index]; });
+    }
+
+    /** @brief Returns the vector-add kernel; it counts each run in @p runs. */
+    KernelRegistry::Kernel vec_add_kernel(std::atomic<int>& runs)
+    {
+        return [&runs](sycl::queue& queue, span<const BufferView> inputs,
+                       span<const BufferView> outputs, const TaskMetadata&) -> sycl::event
+        {
+            const float* left = inputs[0].as<const float>();
+            const float* right = inputs[1].as<const float>();
+            float* sum = outputs[0].as<float>();
+            const std::size_t count = outputs[0].size_bytes / sizeof(float);
+            std::atomic<int>* counter = &runs;
+
+            return queue.submit([&](sycl::handler& handler)
+            {
+                SushiRuntime::detail::enqueue_host_task(handler, [=]
                 {
-                    SushiRuntime::detail::enqueue_host_task(h, [=]
+                    for (std::size_t index = 0; index < count; ++index)
+                        sum[index] = left[index] + right[index];
+                    counter->fetch_add(1, std::memory_order_relaxed);
+                });
+            });
+        };
+    }
+
+    /**
+     * @brief Returns a registry that holds the vector-add kernel.
+     * @param runs Counts the kernel's runs; outlives the registry.
+     */
+    sushi_ptr<KernelRegistry> vec_add_kernels(std::atomic<int>& runs)
+    {
+        sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
+        kernels->register_kernel(K_VEC_ADD, vec_add_kernel(runs));
+        return kernels;
+    }
+
+    /**
+     * @brief Returns a registry that holds the State-step kernel.
+     * @param runs Counts the kernel's runs; outlives the registry.
+     */
+    sushi_ptr<KernelRegistry> state_step_kernels(std::atomic<int>& runs)
+    {
+        sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
+        kernels->register_kernel(
+            K_STATE_STEP,
+            [&runs](sycl::queue& queue, span<const BufferView> inputs,
+                    span<const BufferView> outputs, const TaskMetadata&) -> sycl::event
+            {
+                const int* current = inputs[0].as<const int>();
+                int* next = outputs[0].as<int>();
+                const std::size_t count = outputs[0].size_bytes / sizeof(int);
+                std::atomic<int>* counter = &runs;
+
+                return queue.submit([&](sycl::handler& handler)
+                {
+                    SushiRuntime::detail::enqueue_host_task(handler, [=]
                     {
-                        for (size_t i = 0; i < n; ++i)
-                            o[i] = a[i] + b[i];
-                        g_worker_runs.fetch_add(1, std::memory_order_relaxed);
+                        for (std::size_t index = 0; index < count; ++index)
+                            next[index] = current[index] + static_cast<int>(index % 7);
+                        counter->fetch_add(1, std::memory_order_relaxed);
+                    });
+                });
+            });
+        return kernels;
+    }
+
+    /** @brief Returns options whose policy sends a task of any size to a worker. */
+    ClusterOptions eager_options()
+    {
+        ClusterOptions options;
+        options.policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
+        return options;
+    }
+
+    /** @brief Shares a buffer with the workers of the master installed on @p context. */
+    void share(RuntimeContext& context, const UsmFloats& buffer)
+    {
+        context.offload()->share(buffer.data(), buffer.size_bytes());
+    }
+
+    /**
+     * @brief Adds an op-tagged task out = a + b whose local fallback computes the same sum.
+     * @return The node added; valid while the graph or its compiled plan lives.
+     */
+    Graph::Node& add_vec_add(TaskGraph& graph, const char* name, const UsmFloats& a,
+                             const UsmFloats& b, const UsmFloats& out)
+    {
+        TaskMetadata metadata{};
+        metadata.name = name;
+        metadata.op_id = K_VEC_ADD;
+
+        float* left = a.data();
+        float* right = b.data();
+        float* sum = out.data();
+        const std::size_t count = out.count();
+        return graph.add_task(
+            metadata, {left, right}, {sum},
+            [left, right, sum, count](sycl::queue& queue,
+                                      const std::vector<sycl::event>&) -> sycl::event
+            {
+                return queue.submit([&](sycl::handler& handler)
+                {
+                    SushiRuntime::detail::enqueue_host_task(handler, [=]
+                    {
+                        for (std::size_t index = 0; index < count; ++index)
+                            sum[index] = left[index] + right[index];
                     });
                 });
             });
     }
 
     /**
-     * @brief Bumped once per State-step kernel run on the worker.
-     *
-     * Proves the distributed State step ran remotely, not via the local fallback.
+     * @brief Runs a compiled graph on its own thread, so a run that never returns fails a
+     *        test by timeout.
      */
-    std::atomic<int> g_state_worker_runs{0};
-
-    constexpr auto STATE_STEP = "state.step"_op;
-
-    /** @brief Registers the State-step kernel next[i] = cur[i] + (i % 7). */
-    void register_state_step(KernelRegistry& reg)
+    class BackgroundRun final
     {
-        reg.register_kernel(STATE_STEP,
-            [](sycl::queue& q, SushiRuntime::span<void* const> ins, SushiRuntime::span<void* const> outs,
-               const TaskMetadata& meta) -> sycl::event
+        public:
+            /** @brief Starts the run; @p context and @p graph outlive this object. */
+            BackgroundRun(RuntimeContext& context, CompiledGraph& graph)
             {
-                auto* cur  = static_cast<const int*>(ins[0]);
-                auto* next = static_cast<int*>(outs[0]);
-                const size_t n = meta.get_param<uint64_t>(0);
-
-                return q.submit([&](sycl::handler& h)
+                auto done = std::make_shared<std::promise<void>>();
+                finished_ = done->get_future();
+                thread_ = std::thread([&context, &graph, done]
                 {
-                    SushiRuntime::detail::enqueue_host_task(h, [=]
-                    {
-                        for (size_t i = 0; i < n; ++i)
-                            next[i] = cur[i] + static_cast<int>(i % 7);
-                        g_state_worker_runs.fetch_add(1, std::memory_order_relaxed);
-                    });
+                    context.get_execution_engine().execute(graph);
+                    done->set_value();
                 });
-            });
+            }
+
+            /** @brief Joins a run that returned and detaches one that did not. */
+            ~BackgroundRun()
+            {
+                if (!thread_.joinable())
+                    return;
+
+                if (finished_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+                    thread_.join();
+                else
+                    thread_.detach();
+            }
+
+            BackgroundRun(const BackgroundRun&) = delete;
+            BackgroundRun& operator=(const BackgroundRun&) = delete;
+            BackgroundRun(BackgroundRun&&) = delete;
+            BackgroundRun& operator=(BackgroundRun&&) = delete;
+
+            /** @brief Returns whether the run returned within K_WAIT, and joins it if so. */
+            [[nodiscard]] bool wait()
+            {
+                if (finished_.wait_for(K_WAIT) != std::future_status::ready)
+                    return false;
+
+                if (thread_.joinable())
+                    thread_.join();
+                return true;
+            }
+
+        private:
+            /// @brief Becomes ready when execute() returned.
+            std::future<void> finished_;
+
+            /// @brief The thread that calls execute().
+            std::thread thread_;
+    };
+
+    /**
+     * @brief Runs one real worker: its own context and the agent that serves a transport.
+     */
+    class LocalWorker final
+    {
+        public:
+            /** @brief Builds the worker; nothing runs until start(). */
+            LocalWorker(std::shared_ptr<ITransport> transport, sushi_ptr<KernelRegistry> kernels,
+                        WorkerAgentOptions options = WorkerAgentOptions())
+                : agent_(context_, std::move(transport), std::move(kernels), std::move(options))
+            {
+
+            }
+
+            /** @brief Starts the agent and returns whether its transport started. */
+            [[nodiscard]] bool start()
+            {
+                return agent_.start().is_ok();
+            }
+
+            /** @brief Stops the agent. */
+            void stop() noexcept
+            {
+                agent_.stop();
+            }
+
+            /** @brief Returns the agent's counters. */
+            [[nodiscard]] WorkerStatistics statistics() const noexcept
+            {
+                return agent_.statistics();
+            }
+
+        private:
+            /// @brief The worker's own runtime; declared first, destroyed last.
+            RuntimeContext context_;
+
+            /// @brief The agent under test.
+            WorkerAgent agent_;
+    };
+
+    /** @brief Returns handshake octets as the bytes a wire message carries. */
+    std::array<std::byte, Wire::K_NONCE_BYTES> to_wire(
+        const std::array<std::uint8_t, Wire::K_NONCE_BYTES>& octets)
+    {
+        std::array<std::byte, Wire::K_NONCE_BYTES> bytes{};
+        std::transform(octets.begin(), octets.end(), bytes.begin(),
+                       [](std::uint8_t octet) { return std::byte{octet}; });
+        return bytes;
+    }
+
+    /** @brief Returns the bytes of a wire nonce as handshake octets. */
+    HandshakeNonce to_nonce(const std::array<std::byte, Wire::K_NONCE_BYTES>& bytes)
+    {
+        HandshakeNonce nonce{};
+        std::transform(bytes.begin(), bytes.end(), nonce.bytes.begin(),
+                       [](std::byte value) { return static_cast<std::uint8_t>(value); });
+        return nonce;
+    }
+
+    /** @brief Returns the bytes of a float vector as a chunk carries them. */
+    span<const std::byte> bytes_of(const std::vector<float>& values)
+    {
+        return span<const std::byte>(reinterpret_cast<const std::byte*>(values.data()),
+                                     values.size() * sizeof(float));
+    }
+
+    /** @brief Returns the frame of one output chunk that carries a whole buffer. */
+    OutboundFrame output_chunk_frame(std::uint64_t task_id, const BufferHandle& handle,
+                                     span<const std::byte> bytes)
+    {
+        Wire::BufferChunkMessage chunk;
+        chunk.purpose = Wire::ChunkPurpose::TaskOutput;
+        chunk.task_id = task_id;
+        chunk.handle = handle;
+        chunk.data = bytes;
+
+        OutboundFrame frame;
+        frame.type = MessageType::BufferChunk;
+        frame.flags = Wire::K_FRAME_FLAG_LAST_CHUNK;
+        EXPECT_EQ(chunk.encode(frame.payload), Wire::CodecStatus::Ok);
+        return frame;
+    }
+
+    /** @brief Returns the frame of a result that reports a task as succeeded. */
+    OutboundFrame success_frame(const Wire::TaskDispatchMessage& dispatch)
+    {
+        Wire::TaskResultMessage result;
+        result.task_id = dispatch.task_id;
+        result.status = Wire::TaskResultStatus::Succeeded;
+        result.outputs = dispatch.outputs;
+
+        OutboundFrame frame;
+        frame.type = MessageType::TaskResult;
+        EXPECT_EQ(result.encode(frame.payload), Wire::CodecStatus::Ok);
+        return frame;
     }
 
     /**
-     * @brief Evolves a distributed State<int> on a one-worker in-process cluster and returns its
-     *        final field.
+     * @brief Yields a fixed list of frames as one stream, in order.
      */
-    std::vector<int> evolve_distributed_state(std::size_t n, std::size_t steps,
+    class ScriptedFrames final : public FrameSource
+    {
+        public:
+            /** @brief Takes the frames the stream yields. */
+            explicit ScriptedFrames(std::vector<OutboundFrame> frames) noexcept
+                : frames_(std::move(frames))
+            {
+
+            }
+
+            /** @brief Hands over the next frame without copying its payload. */
+            [[nodiscard]] FrameSourceStatus next(OutboundFrame& frame) noexcept override
+            {
+                if (next_ == frames_.size())
+                    return FrameSourceStatus::Finished;
+
+                frame.type = frames_[next_].type;
+                frame.flags = frames_[next_].flags;
+                frame.payload.swap(frames_[next_].payload);
+                ++next_;
+                return next_ == frames_.size() ? FrameSourceStatus::FinalFrame
+                                               : FrameSourceStatus::Frame;
+            }
+
+        private:
+            /// @brief The frames, in the order they leave.
+            std::vector<OutboundFrame> frames_;
+
+            /// @brief The index of the frame the next call hands over.
+            std::size_t next_ = 0;
+    };
+
+    /** @brief Names what a scripted worker does with a dispatch. */
+    enum class DispatchAnswer : std::uint8_t
+    {
+        Accept,     /**< Confirms the dispatch and holds the task until the test answers. */
+        Fail,       /**< Confirms the dispatch, then reports that the kernel failed. */
+        FallSilent, /**< Sends nothing from the dispatch on, not even PONG. */
+    };
+
+    /**
+     * @brief Registers with a master as a worker and answers dispatches as a test scripts.
+     *
+     * It speaks the wire protocol itself, with no WorkerAgent, and runs no kernel.
+     */
+    class ScriptedWorker final : public TransportEvents
+    {
+        public:
+            /** @brief Builds a worker that claims a kernel for @p operation. */
+            ScriptedWorker(InProcessFabric& fabric, Graph::OpID operation, DispatchAnswer answer)
+                : transport_(InProcessTransport::make_worker(fabric, single_connection())),
+                  operation_(operation), answer_(answer)
+            {
+                worker_nonce_.bytes.fill(0x11);
+            }
+
+            /** @brief Stops the transport, after which no event reaches this object. */
+            ~ScriptedWorker()
+            {
+                transport_->stop();
+            }
+
+            ScriptedWorker(const ScriptedWorker&) = delete;
+            ScriptedWorker& operator=(const ScriptedWorker&) = delete;
+            ScriptedWorker(ScriptedWorker&&) = delete;
+            ScriptedWorker& operator=(ScriptedWorker&&) = delete;
+
+            /** @brief Starts the transport and returns whether it started. */
+            [[nodiscard]] bool start()
+            {
+                return transport_->start(*this).is_ok();
+            }
+
+            /** @brief Waits until @p count dispatches arrived, or K_WAIT. */
+            [[nodiscard]] bool wait_for_dispatches(std::size_t count)
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                return changed_.wait_for(lock, K_WAIT,
+                                         [&] { return dispatches_.size() >= count; });
+            }
+
+            /** @brief Returns the number of dispatches that arrived. */
+            [[nodiscard]] std::size_t dispatch_count() const
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                return dispatches_.size();
+            }
+
+            /**
+             * @brief Returns a copy of one dispatch.
+             * @pre @p index is below dispatch_count().
+             */
+            [[nodiscard]] Wire::TaskDispatchMessage dispatch(std::size_t index) const
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                return dispatches_.at(index);
+            }
+
+            /** @brief Returns the number of frames the transport did not queue. */
+            [[nodiscard]] int refused_sends() const noexcept
+            {
+                return refused_sends_.load(std::memory_order_relaxed);
+            }
+
+            /** @brief Hands the master a stream of the given frames. */
+            [[nodiscard]] SendStatus send_stream(std::vector<OutboundFrame> frames)
+            {
+                PeerId master;
+                {
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    master = master_;
+                }
+                return transport_->send_stream(
+                    master, std::make_unique<ScriptedFrames>(std::move(frames)));
+            }
+
+            /** @brief Opens the handshake on a new connection. */
+            void on_peer_connected(PeerId peer, const PeerInfo& /*info*/) override
+            {
+                {
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    master_ = peer;
+                }
+
+                Wire::HelloMessage hello;
+                hello.worker_nonce = to_wire(worker_nonce_.bytes);
+                hello.build_id = "scripted";
+                hello.node_name = "scripted-worker";
+                send(peer, hello);
+            }
+
+            /** @brief Answers CHALLENGE, PING and TASK_DISPATCH until the worker falls silent. */
+            void on_frame(PeerId peer, MessageType type, std::uint8_t /*flags*/,
+                          span<const std::byte> payload) override
+            {
+                if (is_silent())
+                    return;
+
+                if (type == MessageType::Challenge)
+                    answer_challenge(peer, payload);
+                else if (type == MessageType::Ping)
+                    answer_ping(peer, payload);
+                else if (type == MessageType::TaskDispatch)
+                    take_dispatch(peer, payload);
+            }
+
+            /** @brief Ignores a loss; the transport does not reconnect. */
+            void on_peer_lost(PeerId /*peer*/, const PeerLoss& /*loss*/) override
+            {
+
+            }
+
+            /** @brief Ignores the end of connecting, which follows every loss here. */
+            void on_connect_abandoned(const std::string& /*cause*/) override
+            {
+
+            }
+
+        private:
+            /** @brief Returns options under which a lost connection is not opened again. */
+            [[nodiscard]] static InProcessWorkerOptions single_connection()
+            {
+                InProcessWorkerOptions options;
+                options.reconnect = false;
+                return options;
+            }
+
+            /** @brief Returns whether a FallSilent worker has taken its dispatch. */
+            [[nodiscard]] bool is_silent() const
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                return silent_;
+            }
+
+            /** @brief Queues one control frame and counts it when the transport refuses. */
+            template <typename Message>
+            void send(PeerId peer, const Message& message)
+            {
+                if (send_message(*transport_, peer, message) != SendStatus::Queued)
+                    refused_sends_.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            /** @brief Decodes a payload, or records a test failure and returns false. */
+            template <typename Message>
+            [[nodiscard]] static bool decode(span<const std::byte> payload, Message& message)
+            {
+                if (Message::decode(payload, message).ok())
+                    return true;
+
+                ADD_FAILURE() << "the master sent a " << message_type_name(Message::K_TYPE)
+                              << " frame that does not decode";
+                return false;
+            }
+
+            /** @brief Proves the empty secret and names the operation the worker claims. */
+            void answer_challenge(PeerId peer, span<const std::byte> payload)
+            {
+                Wire::ChallengeMessage challenge;
+                if (!decode(payload, challenge))
+                    return;
+
+                Wire::ProofMessage proof;
+                proof.worker_proof = to_wire(
+                    compute_proof(HandshakeRole::Worker, span<const std::uint8_t>(),
+                                  worker_nonce_, to_nonce(challenge.master_nonce)));
+                proof.ops = {operation_};
+                proof.max_jobs = 16;
+                send(peer, proof);
+            }
+
+            /** @brief Echoes the token of a PING. */
+            void answer_ping(PeerId peer, span<const std::byte> payload)
+            {
+                Wire::PingMessage ping;
+                if (!decode(payload, ping))
+                    return;
+
+                Wire::PongMessage pong;
+                pong.token = ping.token;
+                send(peer, pong);
+            }
+
+            /** @brief Records a dispatch, wakes the test and answers as scripted. */
+            void take_dispatch(PeerId peer, span<const std::byte> payload)
+            {
+                Wire::TaskDispatchMessage dispatch;
+                if (!decode(payload, dispatch))
+                    return;
+
+                {
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    silent_ = answer_ == DispatchAnswer::FallSilent;
+                    dispatches_.push_back(dispatch);
+                }
+                changed_.notify_all();
+
+                if (answer_ == DispatchAnswer::FallSilent)
+                    return;
+
+                Wire::TaskAcceptedMessage accepted;
+                accepted.task_id = dispatch.task_id;
+                send(peer, accepted);
+
+                if (answer_ != DispatchAnswer::Fail)
+                    return;
+
+                Wire::TaskResultMessage result;
+                result.task_id = dispatch.task_id;
+                result.status = Wire::TaskResultStatus::KernelFailed;
+                result.outputs = dispatch.outputs;
+                send(peer, result);
+            }
+
+            /// @brief The worker endpoint; this object is its only event receiver.
+            std::shared_ptr<InProcessTransport> transport_;
+
+            /// @brief The operation the worker says it has a kernel for.
+            Graph::OpID operation_;
+
+            /// @brief What the worker does with a dispatch.
+            DispatchAnswer answer_;
+
+            /// @brief The nonce the worker sends in HELLO.
+            HandshakeNonce worker_nonce_{};
+
+            /// @brief Guards master_, silent_ and dispatches_.
+            mutable std::mutex mutex_;
+
+            /// @brief Wakes wait_for_dispatches() on every dispatch.
+            std::condition_variable changed_;
+
+            /// @brief The master's peer id on the open connection.
+            PeerId master_;
+
+            /// @brief Set when a FallSilent worker took its dispatch.
+            bool silent_ = false;
+
+            /// @brief The dispatches that arrived, in order.
+            std::vector<Wire::TaskDispatchMessage> dispatches_;
+
+            /// @brief Frames the transport did not queue.
+            std::atomic<int> refused_sends_{0};
+    };
+
+    /**
+     * @brief Answers start() with a fixed result and reports a fixed exposure; carries no frame.
+     */
+    class StubTransport final : public ITransport
+    {
+        public:
+            /** @brief Sets what exposure() and start() return. */
+            StubTransport(TransportExposure exposure, TransportResult start_result)
+                : exposure_(exposure), start_result_(std::move(start_result))
+            {
+
+            }
+
+            /** @brief Counts the call and returns the fixed result. */
+            [[nodiscard]] TransportResult start(TransportEvents& /*events*/) override
+            {
+                start_calls_.fetch_add(1, std::memory_order_relaxed);
+                return start_result_;
+            }
+
+            /** @brief Does nothing; the transport owns no thread. */
+            void stop() noexcept override
+            {
+
+            }
+
+            /** @brief Refuses every frame; the transport has no peer. */
+            [[nodiscard]] SendStatus send(PeerId /*peer*/, MessageType /*type*/,
+                                          span<const std::byte> /*payload*/) override
+            {
+                return SendStatus::UnknownPeer;
+            }
+
+            /** @brief Refuses every stream; the source is destroyed with the argument. */
+            [[nodiscard]] SendStatus send_stream(PeerId /*peer*/,
+                                                 std::unique_ptr<FrameSource> /*source*/) override
+            {
+                return SendStatus::UnknownPeer;
+            }
+
+            /** @brief Does nothing; the transport holds no connection. */
+            void close_peer(PeerId /*peer*/) noexcept override
+            {
+
+            }
+
+            /** @brief Returns the fixed exposure. */
+            [[nodiscard]] TransportExposure exposure() const noexcept override
+            {
+                return exposure_;
+            }
+
+            /** @brief Reports that no byte moved. */
+            [[nodiscard]] TransportStatistics statistics() const noexcept override
+            {
+                return TransportStatistics();
+            }
+
+            /** @brief Returns how often start() was called. */
+            [[nodiscard]] int start_calls() const noexcept
+            {
+                return start_calls_.load(std::memory_order_relaxed);
+            }
+
+        private:
+            /// @brief What exposure() returns.
+            TransportExposure exposure_;
+
+            /// @brief What start() returns.
+            TransportResult start_result_;
+
+            /// @brief Calls to start().
+            std::atomic<int> start_calls_{0};
+    };
+
+    /**
+     * @brief Evolves a distributed State<int> for @p steps steps on a cluster with one
+     *        worker and returns its final field.
+     * @param offloaded Receives the master's count of offloaded dispatches.
+     */
+    std::vector<int> evolve_distributed_state(std::size_t count, std::size_t steps,
                                               std::uint64_t& offloaded)
     {
-        InProcessFabric fabric(1);
-        auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-        auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+        std::atomic<int> runs{0};
+        InProcessFabric fabric;
+        Runtime runtime = Runtime::create();
+        LocalWorker worker(InProcessTransport::make_worker(fabric), state_step_kernels(runs));
 
-        RuntimeContext worker_ctx;            // throws if no device
-        Runtime rt = Runtime::create();       // throws if no device
+        Cluster cluster =
+            Cluster::attach(runtime, InProcessTransport::make_master(fabric), eager_options());
+        EXPECT_TRUE(worker.start());
+        if (!cluster.wait_for_workers(1, K_WAIT))
+            throw std::runtime_error("the worker did not register with the cluster");
 
-        auto worker_kernels = make_sushi<KernelRegistry>();
-        register_state_step(*worker_kernels);
-        WorkerAgent agent(worker_ctx, worker_transport, worker_kernels);
-
-        auto cluster = Distributed::Cluster::attach(rt, master_transport,
-                                                    make_sushi<KernelRegistry>(),
-                                                    std::make_shared<LeastLoadedOffloadPolicy>(0));
-        agent.start();
-        if (!cluster.wait_for_workers(1, std::chrono::seconds(3)))
-            throw std::runtime_error("worker never registered with the cluster");
-
-        auto field = rt.state<int>(n).distributed();
-        for (std::size_t i = 0; i < n; ++i)
+        auto field = runtime.state<int>(count).distributed();
+        for (std::size_t index = 0; index < count; ++index)
         {
-            field.current()[i] = static_cast<int>(i);
-            field.next()[i]    = static_cast<int>(i);
+            field.current()[index] = static_cast<int>(index);
+            field.next()[index] = static_cast<int>(index);
         }
 
-        auto g = rt.graph();
-        g.add(STATE_STEP, field,
-              [](std::size_t i, const int* cur, int* next)
-              { next[i] = cur[i] + static_cast<int>(i % 7); },
-              { static_cast<std::uint64_t>(n) });
-        g.run(steps);
+        auto graph = runtime.graph();
+        graph.add(K_STATE_STEP, field,
+                  [](std::size_t index, const int* current, int* next)
+                  { next[index] = current[index] + static_cast<int>(index % 7); },
+                  {static_cast<std::uint64_t>(count)});
+        graph.run(steps);
 
-        std::vector<int> result(n);
-        for (std::size_t i = 0; i < n; ++i)
-            result[i] = field[i];
+        std::vector<int> result(count);
+        for (std::size_t index = 0; index < count; ++index)
+            result[index] = field[index];
 
         offloaded = cluster.offloaded();
-        agent.stop();
+        worker.stop();
         return result;
     }
-}
 
-/**
- * @brief Tests a full offload vector-add round trip.
- *
- * Data goes master->worker, the kernel runs on the worker, results come back, and the graph completes.
- */
+    /** @brief Holds what one run of the registered vector-add left behind. */
+    struct RegisteredSum
+    {
+        std::vector<float> values;   /**< The output buffer after the run. */
+        int local_runs = 0;          /**< Runs of the master's own kernel. */
+        int worker_runs = 0;         /**< Runs of the worker's kernel. */
+        std::uint64_t offloaded = 0; /**< Dispatches the master sent to a worker. */
+    };
+
+    /**
+     * @brief Runs out = a + b as a task added by add_registered_task(), with no lambda.
+     * @param with_worker Attaches a cluster with one worker and shares the buffers.
+     */
+    RegisteredSum run_registered_sum(std::size_t count, bool with_worker)
+    {
+        std::atomic<int> local_runs{0};
+        std::atomic<int> worker_runs{0};
+
+        RuntimeContext master_context;
+        sycl::queue& queue = master_context.devices().queue(0);
+        UsmFloats a(queue, count, 0.0f);
+        UsmFloats b(queue, count, 0.0f);
+        UsmFloats out(queue, count, K_UNWRITTEN);
+        a.ramp(1.0f);
+        b.ramp(2.0f);
+
+        InProcessFabric fabric;
+        std::optional<LocalWorker> worker;
+        std::optional<Cluster> cluster;
+        if (with_worker)
+        {
+            worker.emplace(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+            cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+            EXPECT_TRUE(worker->start());
+            EXPECT_TRUE(cluster->wait_for_workers(1, K_WAIT));
+            share(master_context, a);
+            share(master_context, b);
+            share(master_context, out);
+        }
+
+        const sushi_ptr<KernelRegistry> kernels = vec_add_kernels(local_runs);
+        TaskMetadata metadata{};
+        metadata.name = "registered_sum";
+        metadata.op_id = K_VEC_ADD;
+        const BufferView inputs[] = {a.view(), b.view()};
+        const BufferView outputs[] = {out.view()};
+
+        TaskGraph graph(master_context.offload());
+        add_registered_task(graph, *kernels, metadata, span<const BufferView>(inputs, 2),
+                            span<const BufferView>(outputs, 1));
+        master_context.get_execution_engine().execute(graph.compile());
+
+        RegisteredSum sum;
+        sum.values.assign(out.data(), out.data() + out.count());
+        sum.local_runs = local_runs.load(std::memory_order_relaxed);
+        sum.worker_runs = worker_runs.load(std::memory_order_relaxed);
+        sum.offloaded = cluster.has_value() ? cluster->offloaded() : 0;
+        if (worker.has_value())
+            worker->stop();
+        return sum;
+    }
+} // namespace
+
+/** @brief Tests that inputs reach a worker, its kernel runs there and the output returns. */
 TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    auto master_ctx = std::make_unique<RuntimeContext>();
-    auto worker_ctx = std::make_unique<RuntimeContext>();
+    constexpr std::size_t K_COUNT = 1024;
+    std::atomic<int> worker_runs{0};
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats a(queue, K_COUNT, 0.0f);
+    UsmFloats b(queue, K_COUNT, 0.0f);
+    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    a.ramp(1.0f);
+    b.ramp(2.0f);
 
-    g_worker_runs.store(0, std::memory_order_relaxed);
+    InProcessFabric fabric;
+    LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+    EXPECT_TRUE(cluster.supports(K_VEC_ADD));
 
-    constexpr size_t N = 1024;
-    sycl::queue& mq = master_ctx->devices().queue(0);
+    share(master_context, a);
+    share(master_context, b);
+    share(master_context, out);
 
-    float* a   = sycl::malloc_shared<float>(N, mq);
-    float* b   = sycl::malloc_shared<float>(N, mq);
-    float* out = sycl::malloc_shared<float>(N, mq);
-    ASSERT_NE(a, nullptr);
-    ASSERT_NE(b, nullptr);
-    ASSERT_NE(out, nullptr);
-    for (size_t i = 0; i < N; ++i)
-    {
-        a[i]   = float(i);
-        b[i]   = float(2 * i);
-        out[i] = -1.0f;
-    }
+    TaskGraph graph(master_context.offload());
+    add_vec_add(graph, "vec_add", a, b, out);
+    master_context.get_execution_engine().execute(graph.compile());
 
-    // The master serves before the worker starts, or the worker's HELLO is lost; see README.md.
-    InProcessFabric fabric(1);
-    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+    EXPECT_EQ(worker_runs.load(), 1) << "the task ran on the local fallback, not on the worker";
+    EXPECT_EQ(cluster.offloaded(), 1u);
+    expect_sum(out, a, b);
 
-    auto worker_kernels = make_sushi<KernelRegistry>();
-    register_vec_add(*worker_kernels);
-    WorkerAgent agent(*worker_ctx, worker_transport, worker_kernels);
-
-    auto master_kernels = make_sushi<KernelRegistry>();
-    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0); // min_offload_bytes=0
-    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
-                                                master_kernels, policy);
-
-    agent.start();
-
-    // Wait until the worker's HELLO has registered VEC_ADD with the coordinator.
-    bool supported = false;
-    for (int i = 0; i < 300 && !supported; ++i)
-    {
-        supported = cluster.supports(VEC_ADD);
-        if (!supported)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    ASSERT_TRUE(supported) << "Worker never registered the kernel with the master.";
-
-    master_ctx->offload()->share(a,   N * sizeof(float));
-    master_ctx->offload()->share(b,   N * sizeof(float));
-    master_ctx->offload()->share(out, N * sizeof(float));
-
-    TaskGraph graph(master_ctx->offload());
-    TaskMetadata meta{};
-    meta.name  = "vec_add";
-    meta.op_id = VEC_ADD;
-    meta.set_param<uint64_t>(0, N);
-
-    // Host fallback (same math) — only used if the task is NOT offloaded.
-    graph.add_task(meta, {a, b}, {out},
-        [a, b, out](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
-        {
-            return q.submit([&](sycl::handler& h)
-            {
-                SushiRuntime::detail::enqueue_host_task(h, [=]
-                {
-                    for (size_t i = 0; i < N; ++i)
-                        out[i] = a[i] + b[i];
-                });
-            });
-        });
-
-    auto compiled = graph.compile();
-    master_ctx->get_execution_engine().execute(std::move(compiled));
-
-    EXPECT_EQ(g_worker_runs.load(std::memory_order_relaxed), 1)
-        << "Task should have run on the worker, not the local fallback.";
-
-    bool correct = true;
-    for (size_t i = 0; i < N; ++i)
-    {
-        if (out[i] != a[i] + b[i])
-        {
-            correct = false;
-            break;
-        }
-    }
-    EXPECT_TRUE(correct) << "Offloaded result written back to the master is wrong.";
-
-    agent.stop();
-    sycl::free(a, mq);
-    sycl::free(b, mq);
-    sycl::free(out, mq);
+    worker.stop();
 }
 
-/**
- * @brief Tests fan-out of offloadable tasks across multiple workers.
- *
- * Two independent offloadable tasks fan out to two distinct workers: the policy spreads the load and each worker runs its share.
- */
+/** @brief Tests that two independent tasks both run on the workers of a two-worker cluster. */
 TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    auto master_ctx = std::make_unique<RuntimeContext>();
-    auto w0_ctx = std::make_unique<RuntimeContext>();
-    auto w1_ctx = std::make_unique<RuntimeContext>();
+    constexpr std::size_t K_COUNT = 256;
+    std::atomic<int> first_runs{0};
+    std::atomic<int> second_runs{0};
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats in(queue, K_COUNT, 0.0f);
+    UsmFloats first_out(queue, K_COUNT, K_UNWRITTEN);
+    UsmFloats second_out(queue, K_COUNT, K_UNWRITTEN);
+    in.ramp(1.0f);
 
-    // The per-worker counters record which worker ran which task; see README.md.
-    std::atomic<int> c0{0}, c1{0};
-    auto make_kernel = [](std::atomic<int>* counter)
-    {
-        return [counter](sycl::queue& q, SushiRuntime::span<void* const> ins, SushiRuntime::span<void* const> outs,
-                         const TaskMetadata& meta) -> sycl::event
-        {
-            auto* a = static_cast<const float*>(ins[0]);
-            auto* o = static_cast<float*>(outs[0]);
-            const size_t n = meta.get_param<uint64_t>(0);
-            return q.submit([&](sycl::handler& h)
-            {
-                SushiRuntime::detail::enqueue_host_task(h, [=]
-                {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                    for (size_t i = 0; i < n; ++i)
-                        o[i] = a[i] + a[i];
-                    counter->fetch_add(1, std::memory_order_relaxed);
-                });
-            });
-        };
-    };
+    InProcessFabric fabric;
+    LocalWorker first(InProcessTransport::make_worker(fabric), vec_add_kernels(first_runs));
+    LocalWorker second(InProcessTransport::make_worker(fabric), vec_add_kernels(second_runs));
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+    ASSERT_TRUE(first.start());
+    ASSERT_TRUE(second.start());
+    ASSERT_TRUE(cluster.wait_for_workers(2, K_WAIT));
+    EXPECT_EQ(cluster.alive_workers(), 2u);
 
-    constexpr size_t N = 256;
-    sycl::queue& mq = master_ctx->devices().queue(0);
-    float* in = sycl::malloc_shared<float>(N, mq);
-    float* y0 = sycl::malloc_shared<float>(N, mq);
-    float* y1 = sycl::malloc_shared<float>(N, mq);
-    ASSERT_NE(in, nullptr);
-    ASSERT_NE(y0, nullptr);
-    ASSERT_NE(y1, nullptr);
-    for (size_t i = 0; i < N; ++i)
-    {
-        in[i] = float(i);
-        y0[i] = -1.0f;
-        y1[i] = -1.0f;
-    }
+    share(master_context, in);
+    share(master_context, first_out);
+    share(master_context, second_out);
 
-    InProcessFabric fabric(2);
-    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-    auto w0_transport     = std::make_shared<InProcessTransport>(fabric, 0);
-    auto w1_transport     = std::make_shared<InProcessTransport>(fabric, 1);
-
-    auto k0 = make_sushi<KernelRegistry>();
-    auto k1 = make_sushi<KernelRegistry>();
-    k0->register_kernel(VEC_ADD, make_kernel(&c0));
-    k1->register_kernel(VEC_ADD, make_kernel(&c1));
-    WorkerAgent a0(*w0_ctx, w0_transport, k0);
-    WorkerAgent a1(*w1_ctx, w1_transport, k1);
-
-    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
-                                                make_sushi<KernelRegistry>(), policy);
-    a0.start();
-    a1.start();
-
-    // Wait until BOTH workers have registered, so the policy can spread the work.
-    bool both = false;
-    for (int i = 0; i < 500 && !both; ++i)
-    {
-        both = cluster.alive_workers() == 2;
-        if (!both)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    ASSERT_TRUE(both) << "Both workers should have registered.";
-
-    master_ctx->offload()->share(in, N * sizeof(float));
-    master_ctx->offload()->share(y0, N * sizeof(float));
-    master_ctx->offload()->share(y1, N * sizeof(float));
-
-    TaskGraph graph(master_ctx->offload());
-    for (float* y : {y0, y1})
-    {
-        TaskMetadata m{};
-        m.name  = "fanout";
-        m.op_id = VEC_ADD;
-        m.set_param<uint64_t>(0, N);
-        graph.add_task(m, {in}, {y},
-            [in, y](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
-            {
-                return q.submit([&](sycl::handler& h)
-                {
-                    SushiRuntime::detail::enqueue_host_task(h, [=]
-                    {
-                        for (size_t i = 0; i < N; ++i)
-                            y[i] = in[i] + in[i];
-                    });
-                });
-            });
-    }
-
-    auto compiled = graph.compile();
-    master_ctx->get_execution_engine().execute(std::move(compiled));
+    TaskGraph graph(master_context.offload());
+    add_vec_add(graph, "fan_out_first", in, in, first_out);
+    add_vec_add(graph, "fan_out_second", in, in, second_out);
+    master_context.get_execution_engine().execute(graph.compile());
 
     EXPECT_EQ(cluster.offloaded(), 2u);
-    // Only the total is asserted, because which worker gets which task is a race; see README.md.
-    EXPECT_EQ(c0.load() + c1.load(), 2) << "Both tasks should have run on workers.";
+    EXPECT_EQ(first_runs.load() + second_runs.load(), 2);
+    expect_sum(first_out, in, in);
+    expect_sum(second_out, in, in);
 
-    bool ok0 = true, ok1 = true;
-    for (size_t i = 0; i < N; ++i)
-    {
-        if (y0[i] != 2.0f * in[i])
-            ok0 = false;
-        if (y1[i] != 2.0f * in[i])
-            ok1 = false;
-    }
-    EXPECT_TRUE(ok0);
-    EXPECT_TRUE(ok1);
-
-    a0.stop();
-    a1.stop();
-    sycl::free(in, mq);
-    sycl::free(y0, mq);
-    sycl::free(y1, mq);
+    first.stop();
+    second.stop();
 }
 
-/**
- * @brief Tests automatic version bumping across a local write followed by an offloaded read.
- *
- * Proves the local write auto-bumps X's version (so the worker pulls fresh data) and the offloaded result reflects the locally written values.
- */
+/** @brief Tests that a local write raises a shared buffer's version and the worker reads it. */
 TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloadedRead)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    auto master_ctx = std::make_unique<RuntimeContext>();
-    auto worker_ctx = std::make_unique<RuntimeContext>();
+    constexpr std::size_t K_COUNT = 512;
+    std::atomic<int> worker_runs{0};
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats x(queue, K_COUNT, -7.0f);
+    UsmFloats y(queue, K_COUNT, K_UNWRITTEN);
 
-    g_worker_runs.store(0, std::memory_order_relaxed);
+    InProcessFabric fabric;
+    LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
-    constexpr size_t N = 512;
-    sycl::queue& mq = master_ctx->devices().queue(0);
-    float* x = sycl::malloc_shared<float>(N, mq);
-    float* y = sycl::malloc_shared<float>(N, mq);
-    ASSERT_NE(x, nullptr);
-    ASSERT_NE(y, nullptr);
-    for (size_t i = 0; i < N; ++i)
-    {
-        x[i] = -7.0f;
-        y[i] = 0.0f;
-    }
+    share(master_context, x);
+    share(master_context, y);
+    const std::optional<BufferHandle> before = cluster.buffer_handle(x.data());
+    ASSERT_TRUE(before.has_value());
 
-    InProcessFabric fabric(1);
-    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
-
-    auto worker_kernels = make_sushi<KernelRegistry>();
-    register_vec_add(*worker_kernels);
-    WorkerAgent agent(*worker_ctx, worker_transport, worker_kernels);
-
-    auto master_kernels = make_sushi<KernelRegistry>();
-    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
-                                                master_kernels, policy);
-    agent.start();
-
-    bool supported = false;
-    for (int i = 0; i < 300 && !supported; ++i)
-    {
-        supported = cluster.supports(VEC_ADD);
-        if (!supported)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    ASSERT_TRUE(supported);
-
-    master_ctx->offload()->share(x, N * sizeof(float));
-    master_ctx->offload()->share(y, N * sizeof(float));
-
-    const auto x_before = cluster.buffer_handle(x);
-    ASSERT_TRUE(x_before.has_value());
-
-    TaskGraph graph(master_ctx->offload());
-
-    // Task A: LOCAL writer (no op_id) — fills x[i] = i + 1.
-    TaskMetadata write_meta{};
-    write_meta.name = "local_fill";
-    graph.add_task(write_meta, {}, {x},
-        [x](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
+    TaskGraph graph(master_context.offload());
+    TaskMetadata fill_metadata{};
+    fill_metadata.name = "local_fill";
+    float* values = x.data();
+    Graph::Node& writer = graph.add_task(
+        fill_metadata, {}, {values},
+        [values](sycl::queue& local_queue, const std::vector<sycl::event>&) -> sycl::event
         {
-            return q.submit([&](sycl::handler& h)
+            return local_queue.submit([&](sycl::handler& handler)
             {
-                SushiRuntime::detail::enqueue_host_task(h, [=]
+                SushiRuntime::detail::enqueue_host_task(handler, [=]
                 {
-                    for (size_t i = 0; i < N; ++i)
-                        x[i] = float(i + 1);
+                    for (std::size_t index = 0; index < K_COUNT; ++index)
+                        values[index] = static_cast<float>(index + 1);
                 });
             });
         });
+    add_vec_add(graph, "double_on_worker", x, x, y);
 
-    // Task B: OFFLOADED reader — y = x + x. Depends on A via the RAW hazard on x.
-    TaskMetadata add_meta{};
-    add_meta.name  = "double_via_offload";
-    add_meta.op_id = VEC_ADD;
-    add_meta.set_param<uint64_t>(0, N);
-    graph.add_task(add_meta, {x, x}, {y},
-        [x, y](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
-        {
-            return q.submit([&](sycl::handler& h)
-            {
-                SushiRuntime::detail::enqueue_host_task(h, [=]
-                {
-                    for (size_t i = 0; i < N; ++i)
-                        y[i] = x[i] + x[i];
-                });
-            });
-        });
+    CompiledGraph compiled = graph.compile();
+    const OffloadState* writer_state = writer.offload_state();
+    ASSERT_NE(writer_state, nullptr) << "a local node that writes a shared buffer keeps a state";
+    EXPECT_FALSE(writer_state->offloadable);
 
-    auto compiled = graph.compile();
-    master_ctx->get_execution_engine().execute(std::move(compiled));
+    master_context.get_execution_engine().execute(compiled);
 
-    const auto x_after = cluster.buffer_handle(x);
-    ASSERT_TRUE(x_after.has_value());
-    EXPECT_GT(x_after->version, x_before->version)
-        << "Local write to a registered buffer should auto-bump its version.";
+    const std::optional<BufferHandle> after = cluster.buffer_handle(x.data());
+    ASSERT_TRUE(after.has_value());
+    EXPECT_GT(after->version, before->version);
+    EXPECT_EQ(worker_runs.load(), 1);
+    expect_elements(y.data(), y.count(),
+                    [](std::size_t index) { return 2.0f * static_cast<float>(index + 1); });
 
-    EXPECT_EQ(g_worker_runs.load(std::memory_order_relaxed), 1);
-    bool correct = true;
-    for (size_t i = 0; i < N; ++i)
-    {
-        if (y[i] != 2.0f * float(i + 1))
-        {
-            correct = false;
-            break;
-        }
-    }
-    EXPECT_TRUE(correct) << "Offloaded reader did not see the locally-written values.";
-
-    agent.stop();
-    sycl::free(x, mq);
-    sycl::free(y, mq);
+    worker.stop();
 }
 
-/**
- * @brief Tests vector-add offload over a real raw-socket TCP transport.
- *
- * Exercises the wire path a real cluster uses over 127.0.0.1 loopback.
- */
+/** @brief Tests the vector-add offload over TCP on the loopback address. */
 TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    auto master_ctx = std::make_unique<RuntimeContext>();
-    auto worker_ctx = std::make_unique<RuntimeContext>();
+    constexpr std::size_t K_COUNT = 1024;
+    std::atomic<int> worker_runs{0};
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats a(queue, K_COUNT, 0.0f);
+    UsmFloats b(queue, K_COUNT, 0.0f);
+    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    a.ramp(1.0f);
+    b.ramp(3.0f);
 
-    g_worker_runs.store(0, std::memory_order_relaxed);
+    // The default options bind 127.0.0.1 on a port the OS picks, known once attach() returns.
+    const std::shared_ptr<TcpTransport> master_transport =
+        TcpTransport::make_master(TcpMasterOptions());
+    Cluster cluster = Cluster::attach(master_context, master_transport, eager_options());
+    const Endpoint listening = master_transport->local_endpoint();
+    ASSERT_NE(listening.port, 0);
 
-    constexpr size_t N = 1024;
-    sycl::queue& mq = master_ctx->devices().queue(0);
-    float* a   = sycl::malloc_shared<float>(N, mq);
-    float* b   = sycl::malloc_shared<float>(N, mq);
-    float* out = sycl::malloc_shared<float>(N, mq);
-    ASSERT_NE(a, nullptr);
-    ASSERT_NE(b, nullptr);
-    ASSERT_NE(out, nullptr);
-    for (size_t i = 0; i < N; ++i)
-    {
-        a[i]   = float(i);
-        b[i]   = float(3 * i);
-        out[i] = -1.0f;
-    }
+    LocalWorker worker(TcpTransport::make_worker(listening), vec_add_kernels(worker_runs));
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
-    // Master binds an OS-assigned port; the worker connects over loopback.
-    auto master_transport = TcpTransport::make_master(0, 1);
-    const uint16_t port   = master_transport->bound_port();
-    ASSERT_NE(port, 0);
-    auto worker_transport = TcpTransport::make_worker("127.0.0.1", port);
+    share(master_context, a);
+    share(master_context, b);
+    share(master_context, out);
 
-    auto worker_kernels = make_sushi<KernelRegistry>();
-    register_vec_add(*worker_kernels);
-    WorkerAgent agent(*worker_ctx, worker_transport, worker_kernels);
+    TaskGraph graph(master_context.offload());
+    add_vec_add(graph, "vec_add_tcp", a, b, out);
+    master_context.get_execution_engine().execute(graph.compile());
 
-    auto master_kernels = make_sushi<KernelRegistry>();
-    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
-                                                master_kernels, policy);
-    agent.start();
+    EXPECT_EQ(worker_runs.load(), 1);
+    expect_sum(out, a, b);
+    const ClusterStatistics statistics = cluster.statistics();
+    EXPECT_GT(statistics.bytes_sent, 2 * a.size_bytes());
+    EXPECT_GT(statistics.bytes_received, out.size_bytes());
 
-    bool supported = false;
-    for (int i = 0; i < 500 && !supported; ++i)
-    {
-        supported = cluster.supports(VEC_ADD);
-        if (!supported)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    ASSERT_TRUE(supported) << "Worker never registered over TCP.";
-
-    master_ctx->offload()->share(a,   N * sizeof(float));
-    master_ctx->offload()->share(b,   N * sizeof(float));
-    master_ctx->offload()->share(out, N * sizeof(float));
-
-    TaskGraph graph(master_ctx->offload());
-    TaskMetadata meta{};
-    meta.name  = "vec_add_tcp";
-    meta.op_id = VEC_ADD;
-    meta.set_param<uint64_t>(0, N);
-    graph.add_task(meta, {a, b}, {out},
-        [a, b, out](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
-        {
-            return q.submit([&](sycl::handler& h)
-            {
-                SushiRuntime::detail::enqueue_host_task(h, [=]
-                {
-                    for (size_t i = 0; i < N; ++i)
-                        out[i] = a[i] + b[i];
-                });
-            });
-        });
-
-    auto compiled = graph.compile();
-    master_ctx->get_execution_engine().execute(std::move(compiled));
-
-    EXPECT_EQ(g_worker_runs.load(std::memory_order_relaxed), 1);
-    bool correct = true;
-    for (size_t i = 0; i < N; ++i)
-    {
-        if (out[i] != a[i] + b[i])
-        {
-            correct = false;
-            break;
-        }
-    }
-    EXPECT_TRUE(correct) << "Offloaded-over-TCP result is wrong.";
-
-    agent.stop();
-    sycl::free(a, mq);
-    sycl::free(b, mq);
-    sycl::free(out, mq);
+    worker.stop();
 }
 
-/**
- * @brief Tests master resilience and local fallback upon worker death.
- *
- * A worker accepts an offloaded task then dies without replying. The master must not hang: the liveness monitor declares it dead, re-dispatches the task, and runs it locally.
- */
+/** @brief Tests that a task whose worker falls silent is taken back and finishes locally. */
 TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    auto master_ctx = std::make_unique<RuntimeContext>();
+    constexpr std::size_t K_COUNT = 1024;
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats a(queue, K_COUNT, 0.0f);
+    UsmFloats b(queue, K_COUNT, 0.0f);
+    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    a.ramp(1.0f);
+    b.ramp(2.0f);
 
-    constexpr size_t N = 1024;
-    sycl::queue& mq = master_ctx->devices().queue(0);
-    float* a   = sycl::malloc_shared<float>(N, mq);
-    float* b   = sycl::malloc_shared<float>(N, mq);
-    float* out = sycl::malloc_shared<float>(N, mq);
-    ASSERT_NE(a, nullptr);
-    ASSERT_NE(b, nullptr);
-    ASSERT_NE(out, nullptr);
-    for (size_t i = 0; i < N; ++i)
-    {
-        a[i]   = float(i);
-        b[i]   = float(2 * i);
-        out[i] = -1.0f;
-    }
+    InProcessFabric fabric;
+    ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::FallSilent);
+    ClusterOptions options = eager_options();
+    options.liveness_timeout = std::chrono::milliseconds(300);
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      std::move(options));
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
-    InProcessFabric fabric(1);
-    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+    share(master_context, a);
+    share(master_context, b);
+    share(master_context, out);
 
-    // The fake worker heartbeats until its first dispatch, then never answers; see README.md.
-    std::atomic<bool> got_dispatch{false};
-    std::atomic<bool> hb_running{true};
-    worker_transport->on_message(
-        [&](int, MsgType type, SushiRuntime::span<const std::byte>)
-        {
-            if (type == MsgType::TASK_DISPATCH)
-                got_dispatch.store(true, std::memory_order_relaxed);
-        });
+    TaskGraph graph(master_context.offload());
+    add_vec_add(graph, "vec_add_death", a, b, out);
+    CompiledGraph compiled = graph.compile();
+    BackgroundRun run(master_context, compiled);
+    ASSERT_TRUE(run.wait()) << "execute() did not return after the worker fell silent";
 
-    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
-                                                make_sushi<KernelRegistry>(), policy);
-    cluster.liveness_timeout(std::chrono::milliseconds(300));
-
-    worker_transport->start();
-    {
-        ByteWriter w;
-        w.put<uint32_t>(PROTOCOL_VERSION);
-        w.put<uint32_t>(1);
-        w.put<uint32_t>(VEC_ADD.value);
-        worker_transport->send(0, MsgType::REGISTER_HELLO, w.view());
-    }
-
-    // Keep the worker "alive" only until the dispatch lands, then fall silent.
-    std::thread heartbeat([&]
-    {
-        while (hb_running.load() && !got_dispatch.load(std::memory_order_relaxed))
-        {
-            worker_transport->send(0, MsgType::HEARTBEAT, {});
-            std::this_thread::sleep_for(std::chrono::milliseconds(40));
-        }
-    });
-
-    bool supported = false;
-    for (int i = 0; i < 300 && !supported; ++i)
-    {
-        supported = cluster.supports(VEC_ADD);
-        if (!supported)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    ASSERT_TRUE(supported) << "Fake worker never registered the kernel.";
-
-    master_ctx->offload()->share(a,   N * sizeof(float));
-    master_ctx->offload()->share(b,   N * sizeof(float));
-    master_ctx->offload()->share(out, N * sizeof(float));
-
-    TaskGraph graph(master_ctx->offload());
-    TaskMetadata meta{};
-    meta.name  = "vec_add_death";
-    meta.op_id = VEC_ADD;
-    meta.set_param<uint64_t>(0, N);
-    graph.add_task(meta, {a, b}, {out},
-        [a, b, out](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
-        {
-            return q.submit([&](sycl::handler& h)
-            {
-                SushiRuntime::detail::enqueue_host_task(h, [=]
-                {
-                    for (size_t i = 0; i < N; ++i)
-                        out[i] = a[i] + b[i];
-                });
-            });
-        });
-
-    // This call must return although the worker the task went to never answered; see README.md.
-    master_ctx->get_execution_engine().execute(graph.compile());
-
-    EXPECT_TRUE(got_dispatch.load(std::memory_order_relaxed))
-        << "Task should have been offloaded before the worker died.";
-    EXPECT_GE(cluster.redispatched(), 1u)
-        << "The dead worker's task should have been re-dispatched.";
-
-    bool correct = true;
-    for (size_t i = 0; i < N; ++i)
-    {
-        if (out[i] != a[i] + b[i])
-        {
-            correct = false;
-            break;
-        }
-    }
-    EXPECT_TRUE(correct) << "Local fallback after worker death produced a wrong result.";
-
-    hb_running.store(false);
-    if (heartbeat.joinable())
-        heartbeat.join();
-    worker_transport->stop();
-    sycl::free(a, mq);
-    sycl::free(b, mq);
-    sycl::free(out, mq);
+    EXPECT_GE(worker.dispatch_count(), 1u) << "the task never reached the worker";
+    EXPECT_GE(cluster.redispatched(), 1u);
+    expect_sum(out, a, b);
 }
 
-/**
- * @brief Tests that stale writebacks from zombie workers are fenced out.
- *
- * Proves that a late writeback from a superseded worker does not clobber the master's authoritative buffer, preventing data-corruption races.
- */
+/** @brief Tests that the output fence refuses a chunk of an old version and takes a current one. */
 TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    auto master_ctx = std::make_unique<RuntimeContext>();
+    constexpr std::size_t K_COUNT = 16;
+    constexpr float K_AUTHORITATIVE = 7.0f;
+    constexpr float K_POISON = 999.0f;
+    constexpr float K_FRESH = 42.0f;
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats a(queue, K_COUNT, 1.0f);
+    UsmFloats b(queue, K_COUNT, 2.0f);
+    UsmFloats out(queue, K_COUNT, K_AUTHORITATIVE);
 
-    constexpr size_t N = 16;
-    sycl::queue& mq = master_ctx->devices().queue(0);
-    float* out = sycl::malloc_shared<float>(N, mq);
-    ASSERT_NE(out, nullptr);
-    for (size_t i = 0; i < N; ++i) out[i] = 7.0f; // authoritative good value
+    InProcessFabric fabric;
+    ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
-    InProcessFabric fabric(1);
-    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+    share(master_context, a);
+    share(master_context, b);
+    share(master_context, out);
 
-    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
-                                                make_sushi<KernelRegistry>(), policy);
-    worker_transport->start();
+    TaskGraph graph(master_context.offload());
+    add_vec_add(graph, "fenced", a, b, out);
+    CompiledGraph compiled = graph.compile();
+    BackgroundRun run(master_context, compiled);
+    ASSERT_TRUE(worker.wait_for_dispatches(1));
 
-    master_ctx->offload()->share(out, N * sizeof(float)); // version 1
-    cluster.bump_buffer(out);                             // -> 2
-    cluster.bump_buffer(out);                             // -> 3
-    auto cur = cluster.buffer_handle(out);
-    ASSERT_TRUE(cur.has_value());
-    ASSERT_EQ(cur->version, 3u);
+    const Wire::TaskDispatchMessage dispatch = worker.dispatch(0);
+    ASSERT_EQ(dispatch.outputs.size(), 1u);
+    const BufferHandle current = dispatch.outputs[0];
+    ASSERT_GT(current.version, 1u);
+    BufferHandle stale = current;
+    stale.version = current.version - 1;
 
-    // Stale writeback: an older version carrying poison. Must be rejected.
-    {
-        BufferPushMsg push;
-        push.handle = *cur;
-        push.handle.version = 2; // < current (3)
-        std::vector<float> poison(N, 999.0f);
-        push.data.resize(N * sizeof(float));
-        std::memcpy(push.data.data(), poison.data(), N * sizeof(float));
-        worker_transport->send(0, MsgType::BUFFER_PUSH, push.serialize());
-    }
+    const std::vector<float> poison(K_COUNT, K_POISON);
+    ASSERT_EQ(worker.send_stream({output_chunk_frame(dispatch.task_id, stale, bytes_of(poison))}),
+              SendStatus::Queued);
+    ASSERT_TRUE(eventually([&] { return cluster.stale_writebacks() >= 1; }))
+        << "the chunk of the old version was not refused";
+    expect_elements(out.data(), out.count(), [](std::size_t) { return K_AUTHORITATIVE; });
 
-    // Wait until the fence has observed and rejected it.
-    bool fenced = false;
-    for (int i = 0; i < 300 && !fenced; ++i)
-    {
-        fenced = cluster.stale_writebacks() >= 1;
-        if (!fenced) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    EXPECT_TRUE(fenced) << "Stale writeback should have been rejected by the version fence.";
-    for (size_t i = 0; i < N; ++i)
-        EXPECT_EQ(out[i], 7.0f) << "Stale writeback clobbered the authoritative buffer at " << i;
+    const std::vector<float> fresh(K_COUNT, K_FRESH);
+    ASSERT_EQ(worker.send_stream({output_chunk_frame(dispatch.task_id, current, bytes_of(fresh)),
+                                  success_frame(dispatch)}),
+              SendStatus::Queued);
+    ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
 
-    // Fresh writeback at the current version: must be accepted.
-    {
-        BufferPushMsg push;
-        push.handle = *cur;
-        push.handle.version = 3; // == current
-        std::vector<float> good(N, 42.0f);
-        push.data.resize(N * sizeof(float));
-        std::memcpy(push.data.data(), good.data(), N * sizeof(float));
-        worker_transport->send(0, MsgType::BUFFER_PUSH, push.serialize());
-    }
-    bool applied = false;
-    for (int i = 0; i < 300 && !applied; ++i)
-    {
-        applied = out[0] == 42.0f;
-        if (!applied) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    EXPECT_TRUE(applied) << "A current-version writeback should have been accepted.";
-
-    worker_transport->stop();
-    sycl::free(out, mq);
+    expect_elements(out.data(), out.count(), [](std::size_t) { return K_FRESH; });
+    const ClusterStatistics statistics = cluster.statistics();
+    EXPECT_EQ(statistics.stale_writebacks, 1u);
+    EXPECT_EQ(statistics.chunks_received, 1u);
+    EXPECT_EQ(statistics.redispatched, 0u);
+    EXPECT_EQ(worker.refused_sends(), 0);
 }
 
-/**
- * @brief Tests that a lost buffer push times out cleanly.
- *
- * A worker that never receives the buffer it pulls must time out, failing the task cleanly without hanging the master's execute thread.
- */
+/** @brief Tests that a task whose input chunks are all lost fails remotely and runs locally. */
 TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHanging)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    auto master_ctx = std::make_unique<RuntimeContext>();
-    auto worker_ctx = std::make_unique<RuntimeContext>();
+    constexpr std::size_t K_COUNT = 64;
+    std::atomic<int> worker_runs{0};
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats a(queue, K_COUNT, 0.0f);
+    UsmFloats b(queue, K_COUNT, 0.0f);
+    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    a.ramp(1.0f);
+    b.ramp(2.0f);
 
-    constexpr size_t N = 64;
-    sycl::queue& mq = master_ctx->devices().queue(0);
-    float* a   = sycl::malloc_shared<float>(N, mq);
-    float* b   = sycl::malloc_shared<float>(N, mq);
-    float* out = sycl::malloc_shared<float>(N, mq);
-    ASSERT_NE(a, nullptr);
-    ASSERT_NE(b, nullptr);
-    ASSERT_NE(out, nullptr);
-    for (size_t i = 0; i < N; ++i) { a[i] = float(i); b[i] = float(2 * i); out[i] = -1.0f; }
-
-    InProcessFabric fabric(1);
-    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
-
-    // With every buffer push dropped, the worker's input pull can never complete; see README.md.
-    fabric.set_fault_policy([](int from, int to, MsgType type)
+    InProcessFabric fabric;
+    fabric.set_fault_policy([](const FaultedFrame& frame)
     {
-        if (from == -1 && to == 0 && type == MsgType::BUFFER_PUSH)
-            return FaultAction::Drop;
-        return FaultAction::Deliver;
+        const bool is_pull_reply = frame.direction == FrameDirection::MasterToWorker &&
+                                   frame.type == MessageType::BufferChunk;
+        return is_pull_reply ? FaultAction::Drop : FaultAction::Deliver;
     });
 
-    auto worker_kernels = make_sushi<KernelRegistry>();
-    register_vec_add(*worker_kernels);
-    WorkerAgent agent(*worker_ctx, worker_transport, worker_kernels);
-    agent.set_pull_timeout(std::chrono::milliseconds(200)); // fail fast for the test
+    WorkerAgentOptions worker_options;
+    worker_options.pull_idle_timeout = std::chrono::milliseconds(200);
+    LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs),
+                       std::move(worker_options));
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
-    auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-    auto cluster = Distributed::Cluster::attach(*master_ctx, master_transport,
-                                                make_sushi<KernelRegistry>(), policy);
-    agent.start();
+    share(master_context, a);
+    share(master_context, b);
+    share(master_context, out);
 
-    bool supported = false;
-    for (int i = 0; i < 300 && !supported; ++i)
-    {
-        supported = cluster.supports(VEC_ADD);
-        if (!supported) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    ASSERT_TRUE(supported);
+    TaskGraph graph(master_context.offload());
+    add_vec_add(graph, "vec_add_lost_chunks", a, b, out);
+    CompiledGraph compiled = graph.compile();
+    BackgroundRun run(master_context, compiled);
+    ASSERT_TRUE(run.wait()) << "execute() did not return although the worker's pull timed out";
 
-    master_ctx->offload()->share(a,   N * sizeof(float));
-    master_ctx->offload()->share(b,   N * sizeof(float));
-    master_ctx->offload()->share(out, N * sizeof(float));
+    EXPECT_EQ(worker_runs.load(), 0) << "the kernel ran without its inputs";
+    EXPECT_GE(worker.statistics().tasks_failed_input_unavailable, 1u);
+    EXPECT_GE(cluster.redispatched(), 1u);
+    expect_sum(out, a, b);
 
-    TaskGraph graph(master_ctx->offload());
-    TaskMetadata meta{};
-    meta.name  = "vec_add_lost_push";
-    meta.op_id = VEC_ADD;
-    meta.set_param<uint64_t>(0, N);
-    graph.add_task(meta, {a, b}, {out},
-        [a, b, out](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
-        {
-            return q.submit([&](sycl::handler& h)
-            {
-                SushiRuntime::detail::enqueue_host_task(h, [=]
-                {
-                    for (size_t i = 0; i < N; ++i) out[i] = a[i] + b[i];
-                });
-            });
-        });
-
-    // A side thread runs the graph so that a hang fails the test by timeout; see README.md.
-    auto compiled = std::make_shared<CompiledGraph>(graph.compile());
-    std::promise<void> done;
-    auto fut = done.get_future();
-    std::thread runner([&]
-    {
-        master_ctx->get_execution_engine().execute(*compiled);
-        done.set_value();
-    });
-
-    const auto status = fut.wait_for(std::chrono::seconds(10));
-    EXPECT_EQ(status, std::future_status::ready)
-        << "execute() hung: a lost buffer push must time out, not block forever.";
-
-    if (status == std::future_status::ready)
-        runner.join();
-    else
-        runner.detach(); // leak rather than join a wedged thread; the test already failed
-
-    agent.stop();
-    sycl::free(a, mq);
-    sycl::free(b, mq);
-    sycl::free(out, mq);
+    worker.stop();
 }
 
-/**
- * @brief Tests the fluent API for cluster offload.
- *
- * Proves the fluent surface can build and run a distributed graph end to end with a local fallback without dropping to the low-level TaskGraph.
- */
+/** @brief Tests that the fluent surface builds and runs an offloaded task. */
 TEST(Integration_DistributedE2ETest, FluentClusterOffload)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    g_worker_runs.store(0, std::memory_order_relaxed);
+    constexpr std::size_t K_COUNT = 1024;
+    std::atomic<int> worker_runs{0};
+    InProcessFabric fabric;
+    Runtime runtime = Runtime::create();
+    LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+    Cluster cluster =
+        Cluster::attach(runtime, InProcessTransport::make_master(fabric), eager_options());
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
-    InProcessFabric fabric(1);
-    auto master_transport = std::make_shared<InProcessTransport>(fabric, -1);
-    auto worker_transport = std::make_shared<InProcessTransport>(fabric, 0);
+    auto a = runtime.buffer<float>(K_COUNT).distributed();
+    auto b = runtime.buffer<float>(K_COUNT).distributed();
+    auto out = runtime.buffer<float>(K_COUNT).distributed();
+    for (std::size_t index = 0; index < K_COUNT; ++index)
+    {
+        a[index] = static_cast<float>(index);
+        b[index] = static_cast<float>(2 * index);
+        out[index] = K_UNWRITTEN;
+    }
 
-    auto worker_ctx = std::make_unique<RuntimeContext>();
-    auto rt = std::make_unique<Runtime>(Runtime::create());
+    const float* left = a.data();
+    const float* right = b.data();
+    float* sum = out.data();
+    auto graph = runtime.graph();
+    graph.add(K_VEC_ADD, K_COUNT, {a.dependency_key(), b.dependency_key()},
+              {out.dependency_key()},
+              [left, right, sum](std::size_t index) { sum[index] = left[index] + right[index]; },
+              {static_cast<std::uint64_t>(K_COUNT)});
+    graph.run();
 
-    auto worker_kernels = make_sushi<KernelRegistry>();
-    register_vec_add(*worker_kernels);
-    WorkerAgent agent(*worker_ctx, worker_transport, worker_kernels);
+    EXPECT_GE(cluster.offloaded(), 1u);
+    EXPECT_GE(worker_runs.load(), 1);
+    expect_elements(sum, K_COUNT,
+                    [left, right](std::size_t index) { return left[index] + right[index]; });
 
-    auto cluster = Distributed::Cluster::attach(*rt, master_transport,
-                                                make_sushi<KernelRegistry>(),
-                                                std::make_shared<LeastLoadedOffloadPolicy>(0));
-    agent.start();
-    ASSERT_TRUE(cluster.wait_for_workers(1, std::chrono::seconds(3)))
-        << "Worker never registered with the fluent cluster.";
-
-    constexpr size_t N = 1024;
-    auto a   = rt->buffer<float>(N).distributed();
-    auto b   = rt->buffer<float>(N).distributed();
-    auto out = rt->buffer<float>(N).distributed();
-    for (size_t i = 0; i < N; ++i) { a[i] = float(i); b[i] = float(2 * i); out[i] = -1.0f; }
-
-    float* ap = a.data();
-    float* bp = b.data();
-    float* op = out.data();
-
-    auto g = rt->graph();
-    g.add(VEC_ADD, N,
-          { a.dependency_key(), b.dependency_key() }, { out.dependency_key() },
-          [ap, bp, op](std::size_t i) { op[i] = ap[i] + bp[i]; },
-          { static_cast<std::uint64_t>(N) });
-    g.run();
-
-    EXPECT_GE(cluster.offloaded(), 1u) << "Fluent task should have been offloaded.";
-    bool correct = true;
-    for (size_t i = 0; i < N; ++i)
-        if (out[i] != a[i] + b[i]) { correct = false; break; }
-    EXPECT_TRUE(correct) << "Fluent offloaded result is wrong.";
-
-    agent.stop();
+    worker.stop();
 }
 
 /** @brief Tests offload of a double-buffered State across even and odd step counts. */
@@ -991,27 +1338,24 @@ TEST(Integration_DistributedE2ETest, FluentDistributedStateParity)
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    constexpr std::size_t N = 1024;
+    constexpr std::size_t K_COUNT = 1024;
+    constexpr std::size_t K_EVEN_STEPS = 4;
+    constexpr std::size_t K_ODD_STEPS = 5;
+    std::uint64_t offloaded_even = 0;
+    std::uint64_t offloaded_odd = 0;
+    const std::vector<int> even = evolve_distributed_state(K_COUNT, K_EVEN_STEPS, offloaded_even);
+    const std::vector<int> odd = evolve_distributed_state(K_COUNT, K_ODD_STEPS, offloaded_odd);
 
-    std::vector<int> even_result, odd_result;
-    std::uint64_t off_even = 0, off_odd = 0;
-    g_state_worker_runs.store(0, std::memory_order_relaxed);
-    even_result = evolve_distributed_state(N, 4, off_even);   // even step count
-    g_state_worker_runs.store(0, std::memory_order_relaxed);
-    odd_result  = evolve_distributed_state(N, 5, off_odd);    // odd step count
-
-    EXPECT_GE(off_even, 1u) << "Even-step State should have offloaded at least once.";
-    EXPECT_GE(off_odd, 1u)  << "Odd-step State should have offloaded at least once.";
-
-    for (std::size_t i = 0; i < N; ++i)
+    EXPECT_GE(offloaded_even, 1u);
+    EXPECT_GE(offloaded_odd, 1u);
+    expect_elements(even.data(), even.size(), [](std::size_t index)
     {
-        const int base = static_cast<int>(i);
-        const int step = static_cast<int>(i % 7);
-        EXPECT_EQ(even_result[i], base + 4 * step)
-            << "Even-step distributed State result wrong at " << i;
-        EXPECT_EQ(odd_result[i], base + 5 * step)
-            << "Odd-step distributed State result wrong at " << i;
-    }
+        return static_cast<int>(index + K_EVEN_STEPS * (index % 7));
+    });
+    expect_elements(odd.data(), odd.size(), [](std::size_t index)
+    {
+        return static_cast<int>(index + K_ODD_STEPS * (index % 7));
+    });
 }
 
 /** @brief Tests detach() and the displacement of one master by a later attach(). */
@@ -1020,39 +1364,37 @@ TEST(Integration_DistributedE2ETest, ClusterDetachAndDisplacement)
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    auto master_ctx = std::make_unique<RuntimeContext>();
-    EXPECT_EQ(master_ctx->offload(), nullptr);
+    RuntimeContext master_context;
+    EXPECT_EQ(master_context.offload(), nullptr);
 
-    auto attach_master = [&master_ctx](InProcessFabric& fabric)
+    const auto attach_master = [&master_context](InProcessFabric& fabric)
     {
-        return Distributed::Cluster::attach(*master_ctx,
-                                            std::make_shared<InProcessTransport>(fabric, -1),
-                                            make_sushi<KernelRegistry>());
+        return Cluster::attach(master_context, InProcessTransport::make_master(fabric));
     };
 
-    InProcessFabric first_fabric(1);
-    auto first = attach_master(first_fabric);
-    EXPECT_NE(master_ctx->offload(), nullptr);
+    InProcessFabric first_fabric;
+    Cluster first = attach_master(first_fabric);
+    EXPECT_NE(master_context.offload(), nullptr);
 
     first.detach();
-    EXPECT_EQ(master_ctx->offload(), nullptr);
+    EXPECT_EQ(master_context.offload(), nullptr);
     first.detach();
-    EXPECT_EQ(master_ctx->offload(), nullptr) << "A second detach() must do nothing.";
+    EXPECT_EQ(master_context.offload(), nullptr) << "a second detach() must do nothing";
 
-    InProcessFabric second_fabric(1);
-    auto second = attach_master(second_fabric);
-    const auto* second_installed = master_ctx->offload();
+    InProcessFabric second_fabric;
+    Cluster second = attach_master(second_fabric);
+    const OffloadCoordinator* second_installed = master_context.offload();
     ASSERT_NE(second_installed, nullptr);
 
-    InProcessFabric third_fabric(1);
-    auto third = attach_master(third_fabric);
-    const auto* third_installed = master_ctx->offload();
+    InProcessFabric third_fabric;
+    Cluster third = attach_master(third_fabric);
+    const OffloadCoordinator* third_installed = master_context.offload();
     ASSERT_NE(third_installed, nullptr);
     EXPECT_NE(third_installed, second_installed);
 
     second.detach();
-    EXPECT_EQ(master_ctx->offload(), third_installed)
-        << "A displaced handle must not remove the master that replaced it.";
+    EXPECT_EQ(master_context.offload(), third_installed)
+        << "a displaced handle removed the master that replaced it";
 }
 
 /** @brief Tests that a handle outlives its runtime and that its detach() then does nothing. */
@@ -1061,16 +1403,280 @@ TEST(Integration_DistributedE2ETest, ClusterHandleOutlivesRuntime)
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    InProcessFabric fabric(1);
-    auto master_ctx = std::make_unique<RuntimeContext>();
-    auto cluster = Distributed::Cluster::attach(*master_ctx,
-                                                std::make_shared<InProcessTransport>(fabric, -1),
-                                                make_sushi<KernelRegistry>());
-    const auto copy = cluster;
+    InProcessFabric fabric;
+    auto master_context = std::make_unique<RuntimeContext>();
+    Cluster cluster = Cluster::attach(*master_context, InProcessTransport::make_master(fabric));
+    const Cluster copy = cluster;
 
-    master_ctx.reset();
+    master_context.reset();
 
     cluster.detach();
-    EXPECT_EQ(copy.alive_workers(), 0);
+    EXPECT_EQ(copy.alive_workers(), 0u);
     EXPECT_EQ(copy.offloaded(), 0u);
+}
+
+/** @brief Tests that stopping the master returns a task still out on a worker to the scheduler. */
+TEST(Integration_DistributedE2ETest, StopResubmitsPendingNodes)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    constexpr std::size_t K_COUNT = 128;
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats a(queue, K_COUNT, 0.0f);
+    UsmFloats b(queue, K_COUNT, 0.0f);
+    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    a.ramp(1.0f);
+    b.ramp(2.0f);
+
+    InProcessFabric fabric;
+    ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+
+    share(master_context, a);
+    share(master_context, b);
+    share(master_context, out);
+
+    TaskGraph graph(master_context.offload());
+    add_vec_add(graph, "held_by_worker", a, b, out);
+    CompiledGraph compiled = graph.compile();
+    BackgroundRun run(master_context, compiled);
+    ASSERT_TRUE(worker.wait_for_dispatches(1));
+    EXPECT_EQ(cluster.statistics().pending_tasks, 1u);
+
+    master_context.offload()->stop();
+
+    ASSERT_TRUE(run.wait()) << "the run hung on a node the stopped master still held";
+    expect_sum(out, a, b);
+    const ClusterStatistics statistics = cluster.statistics();
+    EXPECT_EQ(statistics.offloaded, 1u);
+    EXPECT_EQ(statistics.redispatched, 1u);
+    EXPECT_EQ(statistics.pending_tasks, 0u);
+}
+
+/** @brief Tests that a stopped master offloads nothing and the graph runs locally. */
+TEST(Integration_DistributedE2ETest, TryOffloadAfterStopRunsLocally)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    constexpr std::size_t K_COUNT = 128;
+    std::atomic<int> worker_runs{0};
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats a(queue, K_COUNT, 0.0f);
+    UsmFloats b(queue, K_COUNT, 0.0f);
+    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    a.ramp(1.0f);
+    b.ramp(2.0f);
+
+    InProcessFabric fabric;
+    LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+
+    share(master_context, a);
+    share(master_context, b);
+    share(master_context, out);
+
+    TaskGraph graph(master_context.offload());
+    Graph::Node& node = add_vec_add(graph, "after_stop", a, b, out);
+    CompiledGraph compiled = graph.compile();
+    const OffloadState* state = node.offload_state();
+    ASSERT_NE(state, nullptr);
+    ASSERT_TRUE(state->offloadable) << "the node must be one the scheduler offers";
+
+    master_context.offload()->stop();
+
+    BackgroundRun run(master_context, compiled);
+    ASSERT_TRUE(run.wait());
+
+    EXPECT_EQ(worker_runs.load(), 0);
+    EXPECT_EQ(cluster.offloaded(), 0u);
+    EXPECT_GE(cluster.declined(), 1u);
+    expect_sum(out, a, b);
+
+    worker.stop();
+}
+
+/** @brief Tests that each local step of a State bumps the buffer that step wrote. */
+TEST(Integration_DistributedE2ETest, DynamicStateBumpsTheLiveBufferAfterSwap)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    constexpr std::size_t K_COUNT = 64;
+    constexpr std::size_t K_STEPS = 2;
+    InProcessFabric fabric;
+    Runtime runtime = Runtime::create();
+    Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric));
+
+    auto field = runtime.state<int>(K_COUNT).distributed();
+    for (std::size_t index = 0; index < K_COUNT; ++index)
+    {
+        field.current()[index] = static_cast<int>(index);
+        field.next()[index] = static_cast<int>(index);
+    }
+
+    void* front = field.current();
+    void* back = field.next();
+    const std::optional<BufferHandle> front_before = cluster.buffer_handle(front);
+    const std::optional<BufferHandle> back_before = cluster.buffer_handle(back);
+    ASSERT_TRUE(front_before.has_value());
+    ASSERT_TRUE(back_before.has_value());
+
+    // No worker is attached, so both steps run locally: the first writes back, the second front.
+    auto graph = runtime.graph();
+    graph.add(K_STATE_STEP, field,
+              [](std::size_t index, const int* current, int* next)
+              { next[index] = current[index] + static_cast<int>(index % 7); },
+              {static_cast<std::uint64_t>(K_COUNT)});
+    graph.run(K_STEPS);
+
+    const std::optional<BufferHandle> front_after = cluster.buffer_handle(front);
+    const std::optional<BufferHandle> back_after = cluster.buffer_handle(back);
+    ASSERT_TRUE(front_after.has_value());
+    ASSERT_TRUE(back_after.has_value());
+    EXPECT_GT(front_after->version, front_before->version)
+        << "the step after the swap did not bump the buffer it wrote";
+    EXPECT_GT(back_after->version, back_before->version);
+    EXPECT_EQ(front_after->version - front_before->version,
+              back_after->version - back_before->version)
+        << "two steps wrote each buffer once, so both versions rise by the same amount";
+
+    EXPECT_EQ(cluster.offloaded(), 0u);
+    for (std::size_t index = 0; index < K_COUNT; ++index)
+        ASSERT_EQ(field[index], static_cast<int>(index + K_STEPS * (index % 7)));
+}
+
+/** @brief Tests that an attach whose transport does not start throws and installs nothing. */
+TEST(Integration_DistributedE2ETest, AttachStartFailureLeavesNothingInstalled)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    const std::string refusal = "cannot listen on 127.0.0.1:9: the stub refuses";
+    RuntimeContext master_context;
+    const auto transport = std::make_shared<StubTransport>(
+        TransportExposure::Loopback, TransportResult{TransportStatus::BindFailed, refusal});
+
+    std::string message;
+    try
+    {
+        const Cluster cluster = Cluster::attach(master_context, transport);
+        ADD_FAILURE() << "attach() returned although the transport did not start";
+    }
+    catch (const Core::SushiException& error)
+    {
+        message = error.what();
+    }
+
+    EXPECT_NE(message.find(refusal), std::string::npos) << "the exception says: " << message;
+    EXPECT_EQ(transport->start_calls(), 1);
+    EXPECT_EQ(master_context.offload(), nullptr);
+
+    InProcessFabric fabric;
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric));
+    EXPECT_NE(master_context.offload(), nullptr) << "the context takes no master after a failure";
+    cluster.detach();
+}
+
+/** @brief Tests that the attempt cap of one run does not keep a node local in the next run. */
+TEST(Integration_DistributedE2ETest, AttemptCapDoesNotOutliveTheRun)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    constexpr std::size_t K_COUNT = 128;
+    constexpr std::size_t K_RUNS = 2;
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats a(queue, K_COUNT, 0.0f);
+    UsmFloats b(queue, K_COUNT, 0.0f);
+    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    a.ramp(1.0f);
+    b.ramp(2.0f);
+
+    InProcessFabric fabric;
+    ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Fail);
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+
+    share(master_context, a);
+    share(master_context, b);
+    share(master_context, out);
+
+    TaskGraph graph(master_context.offload());
+    add_vec_add(graph, "always_fails_remotely", a, b, out);
+    CompiledGraph compiled = graph.compile();
+
+    // Every dispatch fails on the worker, so each run spends the cap and then runs locally.
+    for (std::size_t round = 1; round <= K_RUNS; ++round)
+    {
+        SCOPED_TRACE(round);
+        out.fill(K_UNWRITTEN);
+        BackgroundRun run(master_context, compiled);
+        ASSERT_TRUE(run.wait());
+
+        expect_sum(out, a, b);
+        EXPECT_EQ(worker.dispatch_count(), round * K_MAXIMUM_OFFLOAD_ATTEMPTS);
+        EXPECT_EQ(cluster.declined(), round);
+        EXPECT_EQ(cluster.redispatched(), round * K_MAXIMUM_OFFLOAD_ATTEMPTS);
+    }
+}
+
+/** @brief Tests that attach() refuses an empty secret on a transport other machines reach. */
+TEST(Integration_DistributedE2ETest, RefusesEmptySecretOnNetworkExposure)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    RuntimeContext master_context;
+    const auto exposed =
+        std::make_shared<StubTransport>(TransportExposure::Network, TransportResult());
+
+    EXPECT_THROW(static_cast<void>(Cluster::attach(master_context, exposed)),
+                 Core::SushiException);
+    EXPECT_EQ(exposed->start_calls(), 0) << "the transport was started before the refusal";
+    EXPECT_EQ(master_context.offload(), nullptr);
+
+    const std::vector<std::uint8_t> key(SharedSecret::K_MINIMUM_BYTES, 0x42);
+    ClusterOptions options;
+    options.secret = SharedSecret::from_bytes(span<const std::uint8_t>(key.data(), key.size()));
+    Cluster cluster = Cluster::attach(master_context, exposed, std::move(options));
+    EXPECT_EQ(exposed->start_calls(), 1);
+    EXPECT_NE(master_context.offload(), nullptr);
+    cluster.detach();
+}
+
+/** @brief Tests that a task added with no lambda gives one result with a worker and with none. */
+TEST(Integration_DistributedE2ETest, RegisteredTaskRunsWithAndWithoutAWorker)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    constexpr std::size_t K_COUNT = 512;
+    const RegisteredSum local = run_registered_sum(K_COUNT, false);
+    const RegisteredSum remote = run_registered_sum(K_COUNT, true);
+
+    EXPECT_EQ(local.local_runs, 1);
+    EXPECT_EQ(local.worker_runs, 0);
+    EXPECT_EQ(remote.local_runs, 0) << "the registered kernel ran locally beside a worker";
+    EXPECT_EQ(remote.worker_runs, 1);
+    EXPECT_EQ(remote.offloaded, 1u);
+
+    ASSERT_EQ(local.values.size(), K_COUNT);
+    ASSERT_EQ(remote.values.size(), K_COUNT);
+    expect_elements(local.values.data(), K_COUNT,
+                    [](std::size_t index) { return 3.0f * static_cast<float>(index); });
+    expect_elements(remote.values.data(), K_COUNT,
+                    [&local](std::size_t index) { return local.values[index]; });
 }

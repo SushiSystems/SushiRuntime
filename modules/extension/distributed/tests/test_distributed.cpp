@@ -21,380 +21,591 @@
 
 /**
  * @file test_distributed.cpp
- * @brief Tests the wire protocol, in-process transport, master-side registries and offload policy.
+ * @brief Tests codec round trips and fuzz, the in-process transport and the offload policy.
  * @see modules/extension/distributed/tests/README.md
  * @author Mustafa Garip
  */
 
-#include <future>
+#include <algorithm>
 #include <chrono>
-#include <vector>
-#include <cstring>
+#include <condition_variable>
+#include <cstddef>
 #include <cstdint>
-#include <limits>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <random>
+#include <string>
+#include <vector>
+
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/distributed/protocol.hpp>
-#include <SushiRuntime/distributed/in_process_transport.hpp>
-#include <SushiRuntime/distributed/buffer_registry.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/distributed/buffer_handle.hpp>
+#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/in_process_transport.hpp>
+#include <SushiRuntime/distributed/message_type.hpp>
+
+#include "wire_codec.hpp"
+#include "wire_frame.hpp"
+#include "wire_messages.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
-using namespace SushiRuntime::Graph::Literals;
+using namespace SushiRuntime::Distributed::Wire;
 
 namespace
 {
-    /**
-     * @brief Converts a byte vector to a read-only span.
-     *
-     * @param v The byte vector.
-     * @return A span covering the vector's data.
-     */
-    SushiRuntime::span<const std::byte> as_bytes(const std::vector<std::byte>& v)
+    /** @brief Names the bytes of a payload or a frame. */
+    using Bytes = std::vector<std::byte>;
+
+    /** @brief Holds the seed of every random source in this file. */
+    constexpr std::uint64_t K_SEED = 20261010u;
+
+    /** @brief Holds the number of random dispatches the round trip encodes. */
+    constexpr int K_ROUND_TRIPS = 200;
+
+    /** @brief Holds the number of mutations the fuzz applies to each sample payload. */
+    constexpr int K_MUTATIONS_PER_SAMPLE = 500;
+
+    /** @brief Holds the number of random headers the header fuzz decodes. */
+    constexpr int K_RANDOM_HEADERS = 4000;
+
+    /** @brief Holds how long a transport test waits for an event. */
+    constexpr std::chrono::seconds K_EVENT_LIMIT{10};
+
+    /** @brief Returns a read-only view of a byte vector. */
+    span<const std::byte> view_of(const Bytes& bytes)
     {
-        return { v.data(), v.size() };
+        return span<const std::byte>(bytes.data(), bytes.size());
+    }
+
+    /** @brief Returns a random handle; every field takes any value of its width. */
+    BufferHandle random_handle(std::mt19937_64& random)
+    {
+        BufferHandle handle;
+        handle.id.value = random();
+        handle.version = static_cast<std::uint32_t>(random());
+        handle.size_bytes = random();
+        return handle;
+    }
+
+    /** @brief Returns a list of up to @p most random handles. */
+    std::vector<BufferHandle> random_handles(std::mt19937_64& random, std::size_t most)
+    {
+        std::vector<BufferHandle> handles(random() % (most + 1));
+        for (BufferHandle& handle : handles)
+            handle = random_handle(random);
+        return handles;
+    }
+
+    /** @brief Returns a dispatch whose every wire field is drawn from @p random. */
+    TaskDispatchMessage random_dispatch(std::mt19937_64& random)
+    {
+        const auto first_type = static_cast<std::uint64_t>(Graph::TaskType::NONE);
+        const auto last_type = static_cast<std::uint64_t>(Graph::TaskType::CONTROL_FLOW);
+
+        TaskDispatchMessage message;
+        message.task_id = random();
+        message.metadata.name = "never_on_the_wire";
+        message.metadata.op_id = Graph::OpID(static_cast<std::uint32_t>(random()));
+        message.metadata.task_type = static_cast<Graph::TaskType>(
+            first_type + random() % (last_type - first_type + 1));
+        message.metadata.priority = static_cast<std::int32_t>(random());
+        message.metadata.numa_affinity = static_cast<std::int32_t>(random());
+
+        // A parameter is zero one time in four, so the trailing-zero cut is exercised.
+        for (std::uint64_t& parameter : message.metadata.params)
+            parameter = random() % 4 == 0 ? 0 : random();
+
+        message.inputs = random_handles(random, 6);
+        message.outputs = random_handles(random, 4);
+        return message;
+    }
+
+    /** @brief Expects two handle lists to hold the same handles in the same order. */
+    void expect_same_handles(const std::vector<BufferHandle>& actual,
+                             const std::vector<BufferHandle>& expected)
+    {
+        ASSERT_EQ(actual.size(), expected.size());
+        for (std::size_t index = 0; index < expected.size(); ++index)
+        {
+            EXPECT_EQ(actual[index].id, expected[index].id) << "handle " << index;
+            EXPECT_EQ(actual[index].version, expected[index].version) << "handle " << index;
+            EXPECT_EQ(actual[index].size_bytes, expected[index].size_bytes)
+                << "handle " << index;
+        }
+    }
+
+    /** @brief Decodes a payload as @p Message and returns only the outcome. */
+    template <typename Message>
+    DecodeResult decode_as(span<const std::byte> payload)
+    {
+        Message message;
+        return Message::decode(payload, message);
+    }
+
+    /** @brief Holds one well-formed payload and the decoder of its message. */
+    struct Sample
+    {
+        /** @brief The message the payload encodes. */
+        MessageType type = MessageType::Hello;
+
+        /** @brief The encoded payload. */
+        Bytes payload;
+
+        /** @brief The decoder of the message. */
+        DecodeResult (*decode)(span<const std::byte>) = nullptr;
+    };
+
+    /** @brief Returns the sample of one message; a message that does not encode fails. */
+    template <typename Message>
+    Sample sample_of(const Message& message)
+    {
+        Sample sample;
+        sample.type = Message::K_TYPE;
+        sample.decode = &decode_as<Message>;
+        EXPECT_EQ(message.encode(sample.payload), CodecStatus::Ok)
+            << message_type_name(Message::K_TYPE);
+        return sample;
+    }
+
+    /** @brief Returns one well-formed payload for each of the sixteen messages. */
+    std::vector<Sample> every_sample()
+    {
+        std::mt19937_64 random(K_SEED);
+        const Bytes chunk_data(48, std::byte{0x5A});
+
+        HelloMessage hello;
+        hello.build_id = "build-1";
+        hello.node_name = "worker-a";
+
+        ProofMessage proof;
+        proof.ops = {Graph::OpID(7), Graph::OpID(8), Graph::OpID(9)};
+        proof.max_jobs = 16;
+        proof.cache_budget = 1u << 20;
+
+        RejectMessage reject;
+        reject.reason = RejectReason::Authentication;
+        reject.sender_version = K_PROTOCOL_VERSION;
+        reject.text = "the proof does not match";
+
+        GoodbyeMessage goodbye;
+        goodbye.text = "worker stopping";
+
+        TaskResultMessage result;
+        result.task_id = 11;
+        result.outputs = random_handles(random, 3);
+
+        BufferChunkMessage chunk;
+        chunk.purpose = ChunkPurpose::TaskOutput;
+        chunk.task_id = 11;
+        chunk.handle = BufferHandle{GlobalBufferID{3}, 2, chunk_data.size()};
+        chunk.data = view_of(chunk_data);
+
+        std::vector<Sample> samples;
+        samples.push_back(sample_of(hello));
+        samples.push_back(sample_of(ChallengeMessage()));
+        samples.push_back(sample_of(proof));
+        samples.push_back(sample_of(WelcomeMessage()));
+        samples.push_back(sample_of(reject));
+        samples.push_back(sample_of(goodbye));
+        samples.push_back(sample_of(random_dispatch(random)));
+        samples.push_back(sample_of(TaskAcceptedMessage()));
+        samples.push_back(sample_of(result));
+        samples.push_back(sample_of(BufferRequestMessage()));
+        samples.push_back(sample_of(chunk));
+        samples.push_back(sample_of(BufferAbortMessage()));
+        samples.push_back(sample_of(BufferReleaseMessage()));
+        samples.push_back(sample_of(PingMessage()));
+        samples.push_back(sample_of(PongMessage()));
+        samples.push_back(sample_of(HeartbeatMessage()));
+        return samples;
+    }
+
+    /** @brief Returns a random byte. */
+    std::byte random_byte(std::mt19937_64& random)
+    {
+        return static_cast<std::byte>(random() & 0xFFu);
+    }
+
+    /**
+     * @brief Returns a payload damaged in one of four ways: a byte replaced, the tail cut,
+     *        bytes appended, or four bytes in a row set to 0xFF.
+     */
+    Bytes mutated(const Bytes& payload, std::mt19937_64& random)
+    {
+        Bytes damaged = payload;
+        const std::uint64_t way = random() % 4;
+        if (way == 0 && !damaged.empty())
+        {
+            damaged[random() % damaged.size()] = random_byte(random);
+        }
+        else if (way == 1)
+        {
+            damaged.resize(random() % (damaged.size() + 1));
+        }
+        else if (way == 2)
+        {
+            const std::size_t extra = 1 + random() % 8;
+            for (std::size_t index = 0; index < extra; ++index)
+                damaged.push_back(random_byte(random));
+        }
+        else if (!damaged.empty())
+        {
+            const std::size_t first = random() % damaged.size();
+            const std::size_t end = std::min(damaged.size(), first + 4);
+            std::fill(damaged.begin() + static_cast<std::ptrdiff_t>(first),
+                      damaged.begin() + static_cast<std::ptrdiff_t>(end), std::byte{0xFF});
+        }
+        return damaged;
+    }
+
+    /** @brief Holds one frame a transport delivered. */
+    struct ReceivedFrame
+    {
+        /** @brief The peer the frame came from. */
+        PeerId peer;
+
+        /** @brief The type the header carried. */
+        MessageType type = MessageType::Hello;
+
+        /** @brief The flag byte the header carried. */
+        std::uint8_t flags = 0;
+
+        /** @brief A copy of the payload. */
+        Bytes payload;
+    };
+
+    /**
+     * @brief Records the connections and the frames of one endpoint and wakes a waiting test.
+     */
+    class RecordingEvents final : public TransportEvents
+    {
+        public:
+            /** @brief Records the peer of a connection that opened. */
+            void on_peer_connected(PeerId peer, const PeerInfo& /*info*/) override
+            {
+                {
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    connected_.push_back(peer);
+                }
+                changed_.notify_all();
+            }
+
+            /** @brief Records a copy of a frame. */
+            void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+                          span<const std::byte> payload) override
+            {
+                {
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    frames_.push_back(
+                        ReceivedFrame{peer, type, flags, Bytes(payload.begin(), payload.end())});
+                }
+                changed_.notify_all();
+            }
+
+            /** @brief Ignores a loss; the test stops both endpoints itself. */
+            void on_peer_lost(PeerId /*peer*/, const PeerLoss& /*loss*/) override
+            {
+
+            }
+
+            /** @brief Ignores an abandoned connect; the test sets no connect timeout. */
+            void on_connect_abandoned(const std::string& /*cause*/) override
+            {
+
+            }
+
+            /** @brief Waits for the first connection and returns its peer, or nothing. */
+            [[nodiscard]] std::optional<PeerId> wait_for_peer()
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                if (!changed_.wait_for(lock, K_EVENT_LIMIT, [&] { return !connected_.empty(); }))
+                    return std::nullopt;
+                return connected_.front();
+            }
+
+            /** @brief Waits for the first frame and returns it, or nothing. */
+            [[nodiscard]] std::optional<ReceivedFrame> wait_for_frame()
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                if (!changed_.wait_for(lock, K_EVENT_LIMIT, [&] { return !frames_.empty(); }))
+                    return std::nullopt;
+                return frames_.front();
+            }
+
+        private:
+            /// @brief Guards the two lists.
+            std::mutex mutex_;
+
+            /// @brief Wakes a waiting test on every event.
+            std::condition_variable changed_;
+
+            /// @brief The peers that connected, in order.
+            std::vector<PeerId> connected_;
+
+            /// @brief The frames that arrived, in order.
+            std::vector<ReceivedFrame> frames_;
+    };
+
+    /** @brief Holds a payload size above the default 64 KiB gate of the policy: 1 MiB. */
+    constexpr std::uint64_t K_LARGE_PAYLOAD = 1u << 20;
+
+    /** @brief Holds a free-memory figure no test payload exhausts: 1 GiB. */
+    constexpr std::uint64_t K_AMPLE_MEMORY = 1ull << 30;
+
+    /** @brief Returns the statistics of a live worker as a policy sees them. */
+    WorkerStats live_worker(int id, std::uint32_t inflight, std::uint64_t free_memory,
+                            std::uint32_t round_trip_micros)
+    {
+        WorkerStats worker;
+        worker.worker_id = id;
+        worker.alive = true;
+        worker.inflight = inflight;
+        worker.free_mem = free_memory;
+        worker.rtt_micros = round_trip_micros;
+        return worker;
+    }
+
+    /** @brief Asks the default policy to place a task of @p bytes on one of @p workers. */
+    std::optional<int> pick(const std::vector<WorkerStats>& workers, std::uint64_t bytes)
+    {
+        LeastLoadedOffloadPolicy policy;
+        const sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+        return policy.pick_worker(
+            *node, span<const WorkerStats>(workers.data(), workers.size()), bytes);
+    }
+} // namespace
+
+/** @brief Tests that random dispatches cross a whole frame with every wire field intact. */
+TEST(Unit_DistributedTest, SeededDispatchesSurviveAWholeFrame)
+{
+    std::mt19937_64 random(K_SEED);
+    Bytes frame;
+    for (int round = 0; round < K_ROUND_TRIPS; ++round)
+    {
+        SCOPED_TRACE(round);
+        const TaskDispatchMessage sent = random_dispatch(random);
+
+        frame.clear();
+        ASSERT_EQ(append_frame(sent, 0, frame), CodecStatus::Ok);
+
+        FrameHeader header;
+        ASSERT_EQ(decode_frame_header(view_of(frame), header), FrameStatus::Ok);
+        EXPECT_EQ(header.type, MessageType::TaskDispatch);
+        EXPECT_EQ(header.flags, 0u);
+        ASSERT_EQ(header.payload_length, frame.size() - K_FRAME_HEADER_BYTES);
+
+        TaskDispatchMessage received;
+        const DecodeResult decoded = TaskDispatchMessage::decode(
+            view_of(frame).subspan(K_FRAME_HEADER_BYTES, header.payload_length), received);
+        ASSERT_TRUE(decoded.ok()) << "offset " << decoded.offset;
+
+        EXPECT_EQ(received.task_id, sent.task_id);
+        EXPECT_EQ(received.metadata.op_id.value, sent.metadata.op_id.value);
+        EXPECT_EQ(received.metadata.task_type, sent.metadata.task_type);
+        EXPECT_EQ(received.metadata.priority, sent.metadata.priority);
+        EXPECT_EQ(received.metadata.numa_affinity, sent.metadata.numa_affinity);
+        for (std::size_t index = 0; index < Graph::TaskMetadata::K_MAX_PARAMS; ++index)
+            EXPECT_EQ(received.metadata.params[index], sent.metadata.params[index])
+                << "parameter " << index;
+        EXPECT_STRNE(received.metadata.name, sent.metadata.name);
+        expect_same_handles(received.inputs, sent.inputs);
+        expect_same_handles(received.outputs, sent.outputs);
     }
 }
 
-/**
- * @brief Tests that a TaskDispatchMsg survives serialization/deserialization byte-for-byte.
- *
- * Verifies the contract that lets OpID and handles cross the wire while the
- * code and pointers never do.
- */
-TEST(Unit_DistributedTest, ProtocolRoundTrip)
-{
-    TaskDispatchMsg msg;
-    msg.task_id       = 42;
-    msg.op_id         = "blas.gemm"_op;
-    msg.meta.name     = "gemm";
-    msg.meta.priority = 7;
-    msg.meta.set_param<double>(0, 2.5);
-    msg.inputs.push_back(BufferHandle{ GlobalBufferID{1}, 3, 256 });
-    msg.inputs.push_back(BufferHandle{ GlobalBufferID{2}, 1, 512 });
-    msg.outputs.push_back(BufferHandle{ GlobalBufferID{3}, 1, 128 });
-
-    auto bytes = msg.serialize();
-    auto back  = TaskDispatchMsg::deserialize(as_bytes(bytes));
-
-    EXPECT_EQ(back.task_id, 42u);
-    EXPECT_EQ(back.op_id.value, ("blas.gemm"_op).value);
-    EXPECT_EQ(back.meta.priority, 7);
-    EXPECT_DOUBLE_EQ(back.meta.get_param<double>(0), 2.5);
-    ASSERT_EQ(back.inputs.size(), 2u);
-    EXPECT_EQ(back.inputs[0].id.value, 1u);
-    EXPECT_EQ(back.inputs[0].version, 3u);
-    EXPECT_EQ(back.inputs[1].size_bytes, 512u);
-    ASSERT_EQ(back.outputs.size(), 1u);
-    EXPECT_EQ(back.outputs[0].id.value, 3u);
-}
-
-/**
- * @brief Tests that the raw-bytes payload of a buffer push preserves its blob.
- *
- * Checks that BufferPushMsg serialization maintains the byte data and handle.
- */
-TEST(Unit_DistributedTest, BufferPushRoundTrip)
-{
-    BufferPushMsg push;
-    push.handle = BufferHandle{ GlobalBufferID{9}, 5, 4 };
-    push.data   = { std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF} };
-
-    auto bytes = push.serialize();
-    auto back  = BufferPushMsg::deserialize(as_bytes(bytes));
-
-    EXPECT_EQ(back.handle.id.value, 9u);
-    EXPECT_EQ(back.handle.version, 5u);
-    ASSERT_EQ(back.data.size(), 4u);
-    EXPECT_EQ(back.data[3], std::byte{0xEF});
-}
-
-/**
- * @brief Tests that in-process transport routes messages correctly in both directions.
- *
- * master->worker and worker->master messages arrive on the peer's handler with
- * the correct peer id, simulating a real protocol on one machine.
- */
+/** @brief Tests that frames of both directions arrive with the sender's peer id and type. */
 TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
 {
-    InProcessFabric fabric(1);
-    InProcessTransport master(fabric, -1);
-    InProcessTransport worker(fabric, 0);
+    RecordingEvents master_events;
+    RecordingEvents worker_events;
+    InProcessFabric fabric;
+    const std::shared_ptr<InProcessTransport> master = InProcessTransport::make_master(fabric);
+    const std::shared_ptr<InProcessTransport> worker = InProcessTransport::make_worker(fabric);
+    EXPECT_EQ(fabric.worker_count(), 1u);
+    EXPECT_EQ(worker->worker_index(), 0u);
 
-    std::promise<std::pair<int, MsgType>> worker_got;
-    std::promise<std::pair<int, MsgType>> master_got;
-    auto worker_fut = worker_got.get_future();
-    auto master_fut = master_got.get_future();
+    ASSERT_TRUE(master->start(master_events).is_ok());
+    ASSERT_TRUE(worker->start(worker_events).is_ok());
 
-    worker.on_message([&](int peer, MsgType type, SushiRuntime::span<const std::byte>)
-    {
-        worker_got.set_value({ peer, type });
-    });
-    master.on_message([&](int peer, MsgType type, SushiRuntime::span<const std::byte>)
-    {
-        master_got.set_value({ peer, type });
-    });
+    const std::optional<PeerId> worker_as_seen = master_events.wait_for_peer();
+    const std::optional<PeerId> master_as_seen = worker_events.wait_for_peer();
+    ASSERT_TRUE(worker_as_seen.has_value());
+    ASSERT_TRUE(master_as_seen.has_value());
+    EXPECT_TRUE(worker_as_seen->valid());
+    EXPECT_TRUE(master_as_seen->valid());
 
-    master.start();
-    worker.start();
+    const Bytes outbound = {std::byte{0x01}, std::byte{0x02}, std::byte{0x03}};
+    const Bytes inbound = {std::byte{0x0A}, std::byte{0x0B}};
+    ASSERT_EQ(master->send(*worker_as_seen, MessageType::TaskDispatch, view_of(outbound)),
+              SendStatus::Queued);
+    ASSERT_EQ(worker->send(*master_as_seen, MessageType::TaskResult, view_of(inbound)),
+              SendStatus::Queued);
 
-    std::vector<std::byte> empty;
-    master.send(0, MsgType::TASK_DISPATCH, as_bytes(empty));
-    worker.send(0, MsgType::TASK_RESULT,   as_bytes(empty));
+    const std::optional<ReceivedFrame> at_worker = worker_events.wait_for_frame();
+    const std::optional<ReceivedFrame> at_master = master_events.wait_for_frame();
+    ASSERT_TRUE(at_worker.has_value());
+    ASSERT_TRUE(at_master.has_value());
 
-    ASSERT_EQ(worker_fut.wait_for(std::chrono::seconds(2)), std::future_status::ready);
-    ASSERT_EQ(master_fut.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(at_worker->peer, *master_as_seen);
+    EXPECT_EQ(at_worker->type, MessageType::TaskDispatch);
+    EXPECT_EQ(at_worker->flags, 0u);
+    EXPECT_EQ(at_worker->payload, outbound);
 
-    auto [wpeer, wtype] = worker_fut.get();
-    auto [mpeer, mtype] = master_fut.get();
+    EXPECT_EQ(at_master->peer, *worker_as_seen);
+    EXPECT_EQ(at_master->type, MessageType::TaskResult);
+    EXPECT_EQ(at_master->flags, 0u);
+    EXPECT_EQ(at_master->payload, inbound);
 
-    EXPECT_EQ(wpeer, -1);                       // worker sees the master
-    EXPECT_EQ(wtype, MsgType::TASK_DISPATCH);
-    EXPECT_EQ(mpeer, 0);                         // master sees worker 0
-    EXPECT_EQ(mtype, MsgType::TASK_RESULT);
-
-    worker.stop();
-    master.stop();
+    worker->stop();
+    master->stop();
 }
 
-/**
- * @brief Tests buffer registration stability and version bumping.
- *
- * Registration is stable per pointer; re-registration bumps the version
- * (USM address reuse detection); a write bump increments further; lookup_by_id
- * round-trips id -> pointer.
- */
-TEST(Unit_DistributedTest, BufferRegistryVersioning)
-{
-    BufferRegistry reg;
-    int storage = 0;
-    void* p = &storage;
-
-    auto h1 = reg.register_buffer(p, sizeof(storage));
-    EXPECT_TRUE(h1.id.valid());
-    EXPECT_EQ(h1.version, 1u);
-
-    // Registering the same pointer again bumps the version and keeps the id; see README.md.
-    auto h1b = reg.register_buffer(p, sizeof(storage));
-    EXPECT_EQ(h1b.id.value, h1.id.value);
-    EXPECT_EQ(h1b.version, 2u);
-
-    reg.bump_version(p);
-    auto looked = reg.lookup(p);
-    ASSERT_TRUE(looked.has_value());
-    EXPECT_EQ(looked->version, 3u);
-
-    auto by_id = reg.lookup_by_id(h1.id);
-    ASSERT_TRUE(by_id.has_value());
-    EXPECT_EQ(by_id->ptr, p);
-    EXPECT_EQ(by_id->handle.version, 3u);
-
-    EXPECT_FALSE(reg.lookup(nullptr).has_value());
-}
-
-// The policy tests call pick_worker() with synthetic WorkerStats and no cluster; see README.md.
-namespace
-{
-    /** @brief Returns synthetic WorkerStats for a live worker. */
-    WorkerStats live_worker(int id, uint32_t inflight, uint64_t free_mem, uint32_t rtt_us)
-    {
-        WorkerStats w;
-        w.worker_id  = id;
-        w.alive      = true;
-        w.inflight   = inflight;
-        w.free_mem   = free_mem;
-        w.rtt_micros = rtt_us;
-        return w;
-    }
-
-    constexpr uint64_t BIG_PAYLOAD = 1u << 20;   // 1 MiB, well over the 64 KiB gate
-    constexpr uint64_t AMPLE_MEM   = 1ull << 30; // 1 GiB headroom
-}
-
-/**
- * @brief Tests that a payload below min_offload_bytes never offloads.
- *
- * Even with an idle worker, the payload is kept local if it is too small.
- */
+/** @brief Tests that a payload below the policy's byte gate stays local. */
 TEST(Unit_DistributedTest, PolicyKeepsTinyPayloadLocal)
 {
-    LeastLoadedOffloadPolicy policy; // default 64 KiB gate
-    Graph::Node node;
-    std::vector<WorkerStats> workers{ live_worker(0, 0, AMPLE_MEM, 50) };
+    const std::vector<WorkerStats> workers{live_worker(1, 0, K_AMPLE_MEMORY, 50)};
 
-    auto pick = policy.pick_worker(node, workers, 1024);
-    EXPECT_FALSE(pick.has_value());
+    EXPECT_FALSE(pick(workers, 1024).has_value());
 }
 
-/**
- * @brief Tests that the nearer worker is picked when load and headroom are equal.
- *
- * The policy prefers the worker with the lower round-trip time (RTT).
- */
+/** @brief Tests that the worker with the shorter round trip wins when load is equal. */
 TEST(Unit_DistributedTest, PolicyPicksLowerRttWorker)
 {
-    LeastLoadedOffloadPolicy policy;
-    Graph::Node node;
-    std::vector<WorkerStats> workers{
-        live_worker(0, 0, AMPLE_MEM, 50000), // far
-        live_worker(1, 0, AMPLE_MEM, 100),   // near
+    const std::vector<WorkerStats> workers{
+        live_worker(1, 0, K_AMPLE_MEMORY, 50000),
+        live_worker(2, 0, K_AMPLE_MEMORY, 100),
     };
 
-    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
-    ASSERT_TRUE(pick.has_value());
-    EXPECT_EQ(*pick, 1);
+    const std::optional<int> picked = pick(workers, K_LARGE_PAYLOAD);
+    ASSERT_TRUE(picked.has_value());
+    EXPECT_EQ(*picked, 2);
 }
 
-/**
- * @brief Tests that the emptier queue wins when RTT and headroom are equal.
- *
- * Prefers the worker with fewer in-flight tasks.
- */
+/** @brief Tests that the worker with fewer tasks in flight wins when round trips are equal. */
 TEST(Unit_DistributedTest, PolicyPrefersLessLoadedWhenEquallyNear)
 {
-    LeastLoadedOffloadPolicy policy;
-    Graph::Node node;
-    std::vector<WorkerStats> workers{
-        live_worker(0, 5, AMPLE_MEM, 200),
-        live_worker(1, 1, AMPLE_MEM, 200),
+    const std::vector<WorkerStats> workers{
+        live_worker(1, 5, K_AMPLE_MEMORY, 200),
+        live_worker(2, 1, K_AMPLE_MEMORY, 200),
     };
 
-    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
-    ASSERT_TRUE(pick.has_value());
-    EXPECT_EQ(*pick, 1);
+    const std::optional<int> picked = pick(workers, K_LARGE_PAYLOAD);
+    ASSERT_TRUE(picked.has_value());
+    EXPECT_EQ(*picked, 2);
 }
 
-/**
- * @brief Tests that a worker with less free memory than the payload is excluded.
- *
- * If no candidate has sufficient headroom, the task falls back to local execution.
- */
+/** @brief Tests that a worker with less free memory than the payload is not picked. */
 TEST(Unit_DistributedTest, PolicyRejectsInsufficientHeadroom)
 {
-    LeastLoadedOffloadPolicy policy;
-    Graph::Node node;
-    std::vector<WorkerStats> workers{
-        live_worker(0, 0, BIG_PAYLOAD / 2, 100),
-    };
+    const std::vector<WorkerStats> workers{live_worker(1, 0, K_LARGE_PAYLOAD / 2, 100)};
 
-    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
-    EXPECT_FALSE(pick.has_value());
+    EXPECT_FALSE(pick(workers, K_LARGE_PAYLOAD).has_value());
 }
 
-/**
- * @brief Tests that execution falls back to local when there are no live workers.
- *
- * Ensures transparent local fallback.
- */
+/** @brief Tests that the policy picks nobody when no worker is alive. */
 TEST(Unit_DistributedTest, PolicyFallsBackLocalWhenNoLiveWorker)
 {
-    LeastLoadedOffloadPolicy policy;
-    Graph::Node node;
-    WorkerStats dead = live_worker(0, 0, AMPLE_MEM, 100);
+    WorkerStats dead = live_worker(1, 0, K_AMPLE_MEMORY, 100);
     dead.alive = false;
-    std::vector<WorkerStats> workers{ dead };
+    const std::vector<WorkerStats> workers{dead};
 
-    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
-    EXPECT_FALSE(pick.has_value());
+    EXPECT_FALSE(pick(workers, K_LARGE_PAYLOAD).has_value());
 }
 
-/**
- * @brief Tests that zero free memory means "no headroom info", keeping the worker eligible.
- *
- * The policy treats free_mem == 0 as unknown rather than out of memory.
- */
+/** @brief Tests that a free-memory figure of zero counts as unknown and keeps the worker. */
 TEST(Unit_DistributedTest, PolicyTreatsZeroFreeMemAsUnknown)
 {
-    LeastLoadedOffloadPolicy policy;
-    Graph::Node node;
-    std::vector<WorkerStats> workers{ live_worker(0, 0, 0, 100) };
+    const std::vector<WorkerStats> workers{live_worker(1, 0, 0, 100)};
 
-    auto pick = policy.pick_worker(node, workers, BIG_PAYLOAD);
-    ASSERT_TRUE(pick.has_value());
-    EXPECT_EQ(*pick, 0);
+    const std::optional<int> picked = pick(workers, K_LARGE_PAYLOAD);
+    ASSERT_TRUE(picked.has_value());
+    EXPECT_EQ(*picked, 1);
 }
 
-// The tests below feed malformed wire input to the deserialize paths; see README.md.
-
-/** @brief Tests that a blob length prefix that would wrap pos_ + bytes is rejected. */
-TEST(Unit_DistributedProtocolFuzz, GetBlobRejectsOverflowingLength)
+/** @brief Tests that a result naming more outputs than its payload holds is refused. */
+TEST(Unit_DistributedProtocolFuzz, TaskResultRefusesACountItCannotHold)
 {
-    ByteWriter w;
-    w.put<uint64_t>(std::numeric_limits<uint64_t>::max()); // absurd length prefix
-    w.put<uint8_t>(0x11);                                  // one real trailing byte
-    auto bytes = w.take();
+    Bytes payload;
+    FieldWriter writer(payload);
+    writer.put_u64(99);
+    writer.put_enum(TaskResultStatus::Succeeded);
+    writer.put_u32(1000);
+    ASSERT_EQ(writer.status(), CodecStatus::Ok);
 
-    ByteReader r(as_bytes(bytes));
-    auto blob = r.get_blob();
-    EXPECT_TRUE(blob.empty());   // no giant span handed back
-    EXPECT_FALSE(r.ok());        // reader is poisoned, not advanced past the end
+    TaskResultMessage message;
+    const DecodeResult result = TaskResultMessage::decode(view_of(payload), message);
+    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
+    EXPECT_EQ(result.offset, 9u);
+    EXPECT_TRUE(message.outputs.empty());
 }
 
-/** @brief Tests that a blob length prefix larger than what remains is rejected. */
-TEST(Unit_DistributedProtocolFuzz, GetBlobRejectsOversizedLength)
+/** @brief Tests that every decoder refuses or accepts a damaged payload without leaving it. */
+TEST(Unit_DistributedProtocolFuzz, SeededMutationsDecodeOrFailInsideThePayload)
 {
-    ByteWriter w;
-    w.put<uint64_t>(1024);       // claims 1 KiB...
-    w.put<uint8_t>(0x22);        // ...but only 1 byte follows
-    auto bytes = w.take();
+    std::mt19937_64 random(K_SEED);
+    const std::vector<Sample> samples = every_sample();
+    ASSERT_EQ(samples.size(), K_MESSAGE_TYPE_COUNT);
 
-    ByteReader r(as_bytes(bytes));
-    auto blob = r.get_blob();
-    EXPECT_TRUE(blob.empty());
-    EXPECT_FALSE(r.ok());
+    for (const Sample& sample : samples)
+    {
+        SCOPED_TRACE(message_type_name(sample.type));
+        ASSERT_TRUE(sample.decode(view_of(sample.payload)).ok());
+
+        for (int round = 0; round < K_MUTATIONS_PER_SAMPLE; ++round)
+        {
+            const Bytes damaged = mutated(sample.payload, random);
+            const DecodeResult result = sample.decode(view_of(damaged));
+            EXPECT_LE(result.offset, damaged.size()) << "mutation " << round;
+            if (result.ok())
+                EXPECT_EQ(result.offset, 0u) << "mutation " << round;
+        }
+    }
 }
 
-/**
- * @brief Tests that BufferPushMsg::deserialize yields an empty payload for an overflowing blob
- *        length.
- */
-TEST(Unit_DistributedProtocolFuzz, BufferPushSurvivesOverflowingBlobLength)
+/** @brief Tests that a random header passes only with every field inside its range. */
+TEST(Unit_DistributedProtocolFuzz, SeededHeadersPassOnlyInsideTheirRanges)
 {
-    ByteWriter w;
-    w.put(BufferHandle{ GlobalBufferID{7}, 1, 16 });        // handle says 16 bytes
-    w.put<uint64_t>(std::numeric_limits<uint64_t>::max());  // blob says ~2^64
-    auto bytes = w.take();
+    std::mt19937_64 random(K_SEED);
+    int accepted = 0;
+    for (int round = 0; round < K_RANDOM_HEADERS; ++round)
+    {
+        Bytes bytes(K_FRAME_HEADER_BYTES);
+        for (std::byte& value : bytes)
+            value = random_byte(random);
 
-    BufferPushMsg m = BufferPushMsg::deserialize(as_bytes(bytes)); // must not crash
-    EXPECT_TRUE(m.data.empty());
-}
+        // Three headers in four carry the magic and this build's version, so the later checks run.
+        if (round % 4 != 0)
+        {
+            std::copy(K_FRAME_MAGIC.begin(), K_FRAME_MAGIC.end(), bytes.begin());
+            bytes[4] = static_cast<std::byte>(K_PROTOCOL_VERSION & 0xFFu);
+            bytes[5] = static_cast<std::byte>(K_PROTOCOL_VERSION >> 8);
+            bytes[6] = static_cast<std::byte>(random() % (K_LAST_MESSAGE_TYPE + 2u));
+            bytes[7] = static_cast<std::byte>(random() % 3);
+            bytes[10] = static_cast<std::byte>(random() % 0x12);
+            bytes[11] = std::byte{0x00};
+        }
 
-/** @brief Tests that a truncated stream deserializes to an empty payload. */
-TEST(Unit_DistributedProtocolFuzz, BufferPushSurvivesTruncatedStream)
-{
-    ByteWriter w;
-    w.put(BufferHandle{ GlobalBufferID{3}, 1, 128 });  // handle, then nothing
-    auto bytes = w.take();
+        FrameHeader header;
+        if (decode_frame_header(view_of(bytes), header) != FrameStatus::Ok)
+            continue;
 
-    BufferPushMsg m = BufferPushMsg::deserialize(as_bytes(bytes));
-    EXPECT_TRUE(m.data.empty());
-}
+        ++accepted;
+        EXPECT_EQ(header.version, K_PROTOCOL_VERSION);
+        EXPECT_TRUE(is_message_type(static_cast<std::uint8_t>(header.type)));
+        EXPECT_LE(header.payload_length, K_MAX_FRAME_PAYLOAD);
+        if (header.flags != 0)
+        {
+            EXPECT_EQ(header.flags, K_FRAME_FLAG_LAST_CHUNK);
+            EXPECT_EQ(header.type, MessageType::BufferChunk);
+        }
+    }
 
-/**
- * @brief Tests that a TaskResultMsg claiming more outputs than it holds stops at the first failed
- *        extraction.
- */
-TEST(Unit_DistributedProtocolFuzz, TaskResultSurvivesTruncatedOutputs)
-{
-    ByteWriter w;
-    w.put<uint64_t>(99);   // task_id
-    w.put<uint8_t>(1);     // success
-    w.put<uint32_t>(1000); // claims 1000 outputs, but the stream ends here
-    auto bytes = w.take();
-
-    TaskResultMsg m = TaskResultMsg::deserialize(as_bytes(bytes)); // must not crash
-    EXPECT_LT(m.outputs.size(), 1000u);
-    EXPECT_EQ(m.outputs.size(), m.output_data.size());
-}
-
-/** @brief Tests that deserializing an empty payload yields empty fields. */
-TEST(Unit_DistributedProtocolFuzz, DeserializeEmptyPayloadIsSafe)
-{
-    std::vector<std::byte> empty;
-    BufferPushMsg  bp = BufferPushMsg::deserialize(as_bytes(empty));
-    TaskResultMsg  tr = TaskResultMsg::deserialize(as_bytes(empty));
-    EXPECT_TRUE(bp.data.empty());
-    EXPECT_TRUE(tr.outputs.empty());
+    EXPECT_GT(accepted, 0) << "no random header passed, so the checks above never ran";
 }
