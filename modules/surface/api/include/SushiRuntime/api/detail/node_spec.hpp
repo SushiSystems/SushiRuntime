@@ -43,12 +43,12 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief Holds one recorded node: its replay callable, its name and its rule.
+             * @brief Holds one recorded node: its replay callable and the rule it belongs to.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             struct NodeSpec
             {
-                /** @brief Marks a node recorded outside every rule scope. */
+                /** @brief Stands for "no rule": the value a replay starts from. */
                 static constexpr std::uint32_t K_NO_RULE = static_cast<std::uint32_t>(-1);
 
                 /**
@@ -65,11 +65,11 @@ namespace SushiRuntime
                 /** @brief Adds this node to a backing graph; no registration draws a fresh one. */
                 std::function<void(BackingGraph&, std::optional<std::uint32_t>)> emit;
 
-                /** @brief Label stamped on the node at replay; borrowed, or null for none. */
-                const char* name = nullptr;
-
-                /** @brief Rule scope this node was recorded in, or K_NO_RULE. */
+                /** @brief Position of this node's rule in the recorder's rule order. */
                 std::uint32_t rule = K_NO_RULE;
+
+                /** @brief Whether replay stamps the rule's index; false if emit stamps its own. */
+                bool takes_rule_registration = true;
             };
         } // namespace detail
     } // namespace API

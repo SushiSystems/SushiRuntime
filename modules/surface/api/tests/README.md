@@ -71,6 +71,63 @@ be false while the step is held open and true once the step has finished.
 The region-partitioned graph behaves the same way: a step overlaps the caller, and a pending
 structural change is committed before the step is submitted.
 
+## test_data_handles.cpp
+
+The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what
+an allocation does with a count it cannot hold, and the queries both answer. Every handle is shared
+USM on device 0, so the file needs no GPU.
+
+### `error_of`, `expect_window_rejected`, `expect_every_range_call_rejects`
+
+`error_of` runs a call and returns the `Core::Error` of the `SushiException` it throws, or an error
+of code `ok`. `expect_window_rejected` checks one such error for `invalid_access` and for a message
+that holds the call, `offset <n>`, `count <n>` and `size <n>`. `expect_every_range_call_rejects`
+applies it to `read_range`, `write_range` and `region` of one handle, which is how the Buffer test
+and the State test stay the same test.
+
+### `BufferRejectsAWindowPastTheEnd`, `StateRejectsAWindowPastTheEnd`
+
+A window `{size, 1}` starts one past the end, and `{size - 2, 5}` starts inside and runs over. All
+three range calls throw `invalid_access` for both, and the message holds the offset, the count and
+the size.
+
+### `WindowWhoseEndWrapsIsRejected`
+
+An offset or a count near the largest `std::size_t` makes `offset + count` wrap to a small number.
+The window is rejected all the same.
+
+### `RejectedWriteCopiesNothing`
+
+A write whose window runs over the end throws and leaves every element as it was, the ones inside
+the handle included.
+
+### `EmptyWindowAtTheEndIsAccepted`
+
+A window `{size, 0}` is valid on a Buffer and on a State: `read_range` returns an empty vector,
+`write_range` accepts an empty span with a null pointer, and `region` returns a zero-length region
+at the end.
+
+### `FittingWindowRoundTrips`
+
+The last five elements are written and read back, and the element before the window keeps its
+value.
+
+### `NullOrShortSourceWithACountThrows`
+
+`write_range` with a count of four throws `invalid_access` for a null source, on a Buffer and on a
+State, and for a source of two elements.
+
+### `OverflowingElementCountThrowsBeforeAllocating`
+
+The count is chosen so that `count * sizeof(double)` wraps to eight bytes, a size any allocator
+grants. `Runtime::buffer` and `Runtime::state` throw `allocation_failed` with the count in the
+message.
+
+### `StateAndBufferAnswerTheSharedQueriesAlike`
+
+`device_index`, `size`, `empty`, `residency` and `is_host_accessible` return the same on a State and
+on a Buffer allocated alike, and `State::region` names a window of the current field.
+
 ## test_device_count.cpp
 
 The file covers `API::sized_from_device`: a task whose iteration size is a count that a predecessor
@@ -710,9 +767,76 @@ back to the baseline.
 ### `RegionsRecordRulesWithScratch`
 
 Two regions of a `DynamicGraph` each record the rule through `Region::recorder()`, the second
-reading what the first wrote. Before the last round the test asks for region 1 again, which marks
-it for a rebuild, so the composer replays its nodes onto a new sub-graph with the scratch they
-captured.
+reading what the first wrote. Before the last round the test renames the rule of region 1, which
+changes its recording, so the composer replays its nodes onto a new sub-graph with the scratch they
+captured. Asking for the region would not do it: `region(key)` is not a mutation.
+
+## test_recorder_semantics.cpp
+
+The file covers what the recorder's words mean: a rule against a node, a name, a move, a region
+access and a liveness observer. `add_increment` adds one rule that adds a step to every word of a
+buffer, so a wrong plan shows as a wrong sum. `record_three_node_rule` records three such kernels
+inside one `Recorder::rule()` scope.
+
+### `ReadingARegionBetweenRunsDoesNotRecompose`
+
+`world.region(k).size()` and `node_count()` between two runs leave `compose_count()` at one, and
+the second run still executes the rule.
+
+### `ARecordingThroughAHeldRegionRecomposes`
+
+A `Region&` taken before the first run records a second rule after it. The next run composes
+again and executes both rules, so a recording is seen without a second `region(key)` call.
+
+### `ClearingARegionReplacesItsWork`
+
+`Region::clear()` empties the region, a new rule is recorded, and the next run executes only the
+new one.
+
+### `ADropBetweenRunsRecomposes`
+
+Dropping one of two regions composes once more, and the dropped region's rule does not run again.
+
+### `AThreeNodeRuleIsOneRuleWithOneName`
+
+The acceptance case of the rule count. A graph whose only rule has three nodes reports `size() == 1`
+and `node_count() == 3`, all three `NodeTiming` rows carry the name given by one `name_last()`, and
+`rule_registration(1)` names no rule.
+
+### `ARegionRuleReportsItsRegistrationAndName`
+
+The same rule in the second of two regions. `DynamicGraph::rule_registration(key, rule)` reports no
+index before the first run, then index 0 for the first region's rule and 1 for the three-node rule,
+because a commit numbers rules by region key and then by `add()` order.
+
+### `NameLastOwnsItsText`
+
+One rule is named from a string that is overwritten and destroyed before the run, another from two
+temporaries in a row. The report carries the first name intact and the last of the two.
+
+### `ANullOrEmptyNameLeavesTheDefault`
+
+A rule named and then given a null `const char*` reports the name an unnamed rule reports.
+
+### `MovedFromGraphIsEmpty`
+
+After a move the source reports no rule, no node and no compile, refuses a run with
+`invalid_graph`, and then records and runs a new rule. The destination runs without compiling again.
+
+### `MovedFromDynamicGraphHasNoRegions`
+
+The same for a `DynamicGraph`. The destination also composes again when its region is recorded on,
+which shows that the region still reports to the graph that owns it after the move.
+
+### `OneObserverPerAllocation`
+
+Sixteen rules over one buffer leave `Recorder::watched_allocation_count()` at one; a second buffer
+raises it to two, and naming the first again leaves it there.
+
+### `ADroppedBufferIsStillDetected`, `ADroppedBufferIsStillDetectedInARegion`
+
+A buffer named by the first and the last of six rules is destroyed after a good run. The next run
+is refused with `dangling_resource`, on a `Graph` and on a `DynamicGraph`.
 
 ## test_region_emitter.cpp
 
@@ -751,16 +875,22 @@ Four steps advance both, so the form is not specific to regions and survives a c
 ## test_rule_registration.cpp
 
 `Graph::rule_registration` is the only way a caller can read the node events of a `RunReport`. The
-events number nodes by registration index, and the `add()` order a caller thinks in is a different
+events number nodes by registration index, and the rule order a caller thinks in is a different
 sequence. These cases check the mapping between the two.
 
 `record` adds three plain kernels and then `record_grouped_rule`, three kernels inside one
-`Recorder::rule()` scope, each reading what the one before it wrote.
+`Recorder::rule()` scope, each reading what the one before it wrote. The graph therefore holds four
+rules and six nodes, and `last_rule()` gives the position of the scope.
 
-### `TheNodesOfOneRuleScopeShareOneIndex`
+### `ARuleCarriesNoIndexUntilTheGraphCompiles`
 
-Each plain `add()` takes an index of its own. The three nodes of the scope share one, which no
-plain kernel has, and the recorder counts four rules.
+`size()` is four, `node_count()` is six, and every rule reports `no_registration` before the first
+run.
+
+### `ARuleScopeTakesOneIndexOfItsOwn`
+
+Each plain `add()` takes an index of its own. The scope takes one more, which no plain kernel has,
+and exactly three node events carry it. A position past the last rule reports `no_registration`.
 
 ### `ARulesNodesReportOneIndexOnEveryStep`
 
@@ -819,3 +949,45 @@ call without holding both.
 
 The asynchronous path settles into a caller-owned report too. The overlapped frame loop is the one
 that most wants the overload.
+
+## test_runtime_entry.cpp
+
+The file covers `Runtime::create()`, `RuntimeConfig` and the `AdvancedControls` view. Four
+`static_assert` lines at the top state that a `Runtime` moves without throwing and does not copy, so
+a copy constructor that returns fails the compile and not a test.
+
+### `OneStructConfiguresAndTheViewOutlivesTheRuntime`
+
+One `RuntimeConfig` with `worker_count` 2 must produce a pool of two workers. The view is taken
+while the `Runtime` lives and questioned again after the `Runtime` is destroyed: it shares ownership
+of the context, so it must give the same device count. A view that held a reference would read a
+destroyed context here, which AddressSanitizer reports.
+
+### `DevicesListsEveryDeviceInOrder`
+
+`devices()` must hold one entry per device, and entry `i` must describe the device `DeviceIndex{i}`
+selects. The test compares each entry's name with the name the SYCL device behind queue `i` reports,
+then allocates a buffer with no `DeviceIndex` and asks the allocator which device owns it: that is
+entry 0.
+
+### `DefaultConfigCreates`
+
+`create()` with no argument must yield a runtime with profiling and the rebalancer off that runs a
+graph. Every factory is called through a `const Runtime`, so a factory that lost its `const` fails
+the compile.
+
+### `EveryFieldReachesTheRuntime`
+
+Each field of `RuntimeConfig` but `first_core` is set away from its default and read back from the
+runtime; `tests/integration/test_co_tenancy.cpp` reads `first_core` back on a machine with cores to
+reserve. The api struct is mapped to the engine's settings by hand in one function, so a field that
+function forgets would otherwise keep its default silently.
+
+### `TheDeprecatedTwoArgumentCreateStillWorks`
+
+The two-argument `create(devices, config)` must build what the one-struct form builds. The call sits
+between pragmas that silence the deprecation warning, because the tree compiles with `-Werror`.
+
+### `AMovedRuntimeKeepsItsContext`
+
+A move hands the context over and does not build a second one.

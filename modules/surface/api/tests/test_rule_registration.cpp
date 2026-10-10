@@ -21,7 +21,7 @@
 
 /**
  * @file test_rule_registration.cpp
- * @brief Tests Graph::rule_registration, which maps an add() call to its registration index.
+ * @brief Tests Graph::rule_registration, which maps a rule to its registration index.
  * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
@@ -43,7 +43,7 @@ namespace
     constexpr std::size_t PLAIN_RULES = 3;
     constexpr std::size_t RULE_NODES = 3;
 
-    /** @brief Holds one graph, the buffers it names and where the grouped rule starts. */
+    /** @brief Holds one graph, the buffers it names and the position of the grouped rule. */
     struct Recorded
     {
         API::Graph graph;                  /**< The graph under test. */
@@ -51,7 +51,7 @@ namespace
         API::Buffer<std::uint32_t> first;  /**< The rule's input and final output. */
         API::Buffer<std::uint32_t> second; /**< What the rule's first node writes. */
         API::Buffer<std::uint32_t> third;  /**< What the rule's second node writes. */
-        std::size_t grouped_first = 0;     /**< Position of the rule's first node. */
+        std::size_t grouped = 0;           /**< Position of the three-node rule. */
     };
 
     /**
@@ -98,8 +98,8 @@ namespace
             r.graph.add(Reads(r.values), Writes(r.values), WIDTH,
                         [v](std::size_t i) { v[i] = v[i] * 1.000001f; });
 
-        r.grouped_first = r.graph.recorder().node_count();
         record_grouped_rule(r.graph.recorder(), r.first, r.second, r.third);
+        r.grouped = r.graph.last_rule();
         r.graph.set_profiling_requested(true);
         return r;
     }
@@ -109,15 +109,15 @@ TEST(Integration_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
 {
     auto rt = Runtime::create();
     Recorded r = record(rt);
-    const std::size_t nodes = r.graph.recorder().node_count();
 
-    ASSERT_EQ(nodes, PLAIN_RULES + RULE_NODES);
-    for (std::size_t node = 0; node < nodes; ++node)
-        EXPECT_EQ(r.graph.rule_registration(node), API::Graph::no_registration)
-            << "node " << node << " reported an index before the first run";
+    ASSERT_EQ(r.graph.size(), PLAIN_RULES + 1u);
+    ASSERT_EQ(r.graph.node_count(), PLAIN_RULES + RULE_NODES);
+    for (std::size_t rule = 0; rule < r.graph.size(); ++rule)
+        EXPECT_EQ(r.graph.rule_registration(rule), API::Graph::no_registration)
+            << "rule " << rule << " reported an index before the first run";
 }
 
-TEST(Integration_RuleRegistration, TheNodesOfOneRuleScopeShareOneIndex)
+TEST(Integration_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
 {
     auto rt = Runtime::create();
     Recorded r = record(rt);
@@ -126,21 +126,25 @@ TEST(Integration_RuleRegistration, TheNodesOfOneRuleScopeShareOneIndex)
     ASSERT_TRUE(report.is_successful);
 
     std::set<std::uint32_t> plain;
-    for (std::size_t node = 0; node < PLAIN_RULES; ++node)
+    for (std::size_t rule = 0; rule < PLAIN_RULES; ++rule)
     {
-        const std::uint32_t index = r.graph.rule_registration(node);
+        const std::uint32_t index = r.graph.rule_registration(rule);
         EXPECT_NE(index, API::Graph::no_registration);
         plain.insert(index);
     }
     EXPECT_EQ(plain.size(), PLAIN_RULES) << "a plain add() must take an index of its own";
 
-    const std::uint32_t shared = r.graph.rule_registration(r.grouped_first);
+    ASSERT_EQ(r.grouped, PLAIN_RULES) << "the rule scope is the rule after the plain ones";
+    const std::uint32_t shared = r.graph.rule_registration(r.grouped);
     EXPECT_NE(shared, API::Graph::no_registration);
-    for (std::size_t node = r.grouped_first; node < r.grouped_first + RULE_NODES; ++node)
-        EXPECT_EQ(r.graph.rule_registration(node), shared)
-            << "node " << node << " of one rule scope took a different index";
     EXPECT_EQ(plain.count(shared), 0u) << "the rule must not reuse a plain add()'s index";
-    EXPECT_EQ(r.graph.recorder().rule_count(), PLAIN_RULES + 1u);
+    EXPECT_EQ(r.graph.rule_registration(r.graph.size()), API::Graph::no_registration)
+        << "a position past the last rule names no rule";
+
+    std::size_t reported = 0;
+    for (const Core::NodeEventRecord& event : report.node_events)
+        reported += event.node_index == shared ? 1u : 0u;
+    EXPECT_EQ(reported, RULE_NODES) << "every node of the rule scope must report its one index";
 }
 
 TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
@@ -153,8 +157,8 @@ TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
     ASSERT_FALSE(report.node_events.empty()) << "profiling was requested, so events must exist";
 
     std::set<std::uint32_t> recorded;
-    for (std::size_t node = 0; node < r.graph.recorder().node_count(); ++node)
-        recorded.insert(r.graph.rule_registration(node));
+    for (std::size_t rule = 0; rule < r.graph.size(); ++rule)
+        recorded.insert(r.graph.rule_registration(rule));
 
     for (const Core::NodeEventRecord& event : report.node_events)
         EXPECT_EQ(recorded.count(event.node_index), 1u)
@@ -172,7 +176,7 @@ TEST(Integration_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
     ASSERT_TRUE(report.is_successful);
     ASSERT_EQ(report.node_events.size(), (PLAIN_RULES + RULE_NODES) * STEPS);
 
-    const std::uint32_t shared = r.graph.rule_registration(r.grouped_first);
+    const std::uint32_t shared = r.graph.rule_registration(r.grouped);
     std::vector<std::size_t> per_invocation(STEPS, 0);
     for (const Core::NodeEventRecord& event : report.node_events)
     {

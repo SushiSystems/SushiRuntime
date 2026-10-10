@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include <SushiRuntime/api/graph/backing_graph.hpp>
@@ -44,6 +45,8 @@ namespace SushiRuntime
     {
         /**
          * @brief Keeps the plan compiled from one recorder and tells when it must be rebuilt.
+         *
+         * A move leaves the source with no plan and a compile count of zero.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         class PlanCache
@@ -85,8 +88,27 @@ namespace SushiRuntime
                 {
                 }
 
-                PlanCache(PlanCache&&) = default;
-                PlanCache& operator=(PlanCache&&) = default;
+                /**
+                 * @brief Takes over another cache's plan.
+                 * @param other Left with no plan, stale, and a compile count of zero.
+                 */
+                PlanCache(PlanCache&& other) noexcept
+                    : profiling_requested_(other.profiling_requested_)
+                {
+                    take(other);
+                }
+
+                /**
+                 * @brief Replaces this cache's plan with another's.
+                 * @param other Left with no plan, stale, and a compile count of zero.
+                 */
+                PlanCache& operator=(PlanCache&& other) noexcept
+                {
+                    if (this != &other)
+                        take(other);
+                    return *this;
+                }
+
                 PlanCache(const PlanCache&) = delete;
                 PlanCache& operator=(const PlanCache&) = delete;
                 ~PlanCache() = default;
@@ -104,10 +126,10 @@ namespace SushiRuntime
                 void build(const Recorder& recorder, Execution::RuntimeContext& context)
                 {
                     BackingGraph bg(context.offload());
-                    registrations_.assign(recorder.node_count(), BackingGraph::NO_REGISTRATION);
-                    recorder.replay(bg, [this, &bg](std::size_t node)
+                    registrations_.assign(recorder.rule_count(), BackingGraph::NO_REGISTRATION);
+                    recorder.replay(bg, [this, &bg](std::size_t rule, std::size_t)
                     {
-                        registrations_[node] = bg.last_registration_index();
+                        registrations_[rule] = bg.last_registration_index();
                     });
                     plan_ = bg.compile();
                     plan_.profiling = profiling_requested_;
@@ -128,13 +150,13 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Returns the registration index a node took at the last build.
-                 * @param node Position in recording order.
-                 * @return The index, or BackingGraph::NO_REGISTRATION for a node no build has seen.
+                 * @brief Returns the registration index a rule took at the last build.
+                 * @param rule Position in recording order, one per rule.
+                 * @return The index, or BackingGraph::NO_REGISTRATION for a rule no build has seen.
                  */
-                std::uint32_t registration_of(std::size_t node) const noexcept
+                [[nodiscard]] std::uint32_t registration_of(std::size_t rule) const noexcept
                 {
-                    return node < registrations_.size() ? registrations_[node]
+                    return rule < registrations_.size() ? registrations_[rule]
                                                         : BackingGraph::NO_REGISTRATION;
                 }
 
@@ -142,7 +164,21 @@ namespace SushiRuntime
                 ::SushiRuntime::Graph::CompiledGraph plan_;
 
             private:
-                /** @brief Registration index of each node, as the last build stamped it. */
+                /**
+                 * @brief Moves other's plan and counters here and leaves other with none.
+                 * @param other Cache to empty; its profiling request is copied, not cleared.
+                 */
+                void take(PlanCache& other) noexcept
+                {
+                    plan_ = std::exchange(other.plan_, {});
+                    registrations_ = std::exchange(other.registrations_, {});
+                    built_generation_ = std::exchange(other.built_generation_, 0);
+                    compiles_ = std::exchange(other.compiles_, 0);
+                    dirty_ = std::exchange(other.dirty_, true);
+                    profiling_requested_ = other.profiling_requested_;
+                }
+
+                /** @brief Registration index of each rule, as the last build stamped it. */
                 std::vector<std::uint32_t> registrations_;
 
                 /** @brief Recorder generation the plan was built at. */

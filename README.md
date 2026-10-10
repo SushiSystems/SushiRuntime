@@ -317,7 +317,7 @@ auto step = sim.run_async();
 Core::RunReport r = step.wait();
 ```
 
-Name a node with `name_last()` chained onto any `add()`. The name is what a task
+Name a rule with `name_last()` chained onto any `add()`. The name is what a task
 shows up as in `RunReport` and in profiling output, so a graph worth measuring is
 worth naming:
 
@@ -439,8 +439,7 @@ The fluent entry point that most users should start from:
   first element from the host or from a slot a predecessor kernel wrote; an
   `OpID` overload marks a task offloadable with a local fallback.
   `recorder()` is where a domain library adds its own node kinds. `name_last()` names the
-  node just
-  added, which is the name it carries in `RunReport` and profiling output.
+  rule just added, which is the name its nodes carry in `RunReport` and profiling output.
   `run_async()` starts a step on the worker pool and returns a `RunHandle` whose
   `wait()` / `try_wait()` settles it. `buffer()`/`state()` take an optional
   `Residency` for device-resident data. `run()` / `run(n)` / `run_for()` /

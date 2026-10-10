@@ -187,9 +187,9 @@ TEST(Integration_RecorderScratch, RegionsRecordRulesWithScratch)
     for (std::uint32_t round = 0; round < 3; ++round)
     {
         fill(in, round * 7u);
-        // Asking for a region marks it for a rebuild, so the last round replays region 1.
+        // Renaming a rule changes the recording, so the last round replays region 1.
         if (round == 2)
-            EXPECT_EQ(world.region(1).recorder().node_count(), 2u);
+            world.region(1).name_last("staged");
         world.run();
         for (std::size_t i = 0; i < COUNT; ++i)
         {
@@ -197,4 +197,6 @@ TEST(Integration_RecorderScratch, RegionsRecordRulesWithScratch)
             ASSERT_EQ(out[i], staged(staged(in[i]))) << "round " << round << ", i = " << i;
         }
     }
+    EXPECT_EQ(world.region(1).node_count(), 2u);
+    EXPECT_EQ(world.compose_count(), 2u) << "the rename must have rebuilt region 1 once";
 }

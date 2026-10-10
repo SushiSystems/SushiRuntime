@@ -68,6 +68,7 @@ namespace SushiRuntime
          * @brief Owns a step that was started but not yet waited for, and finishes it on
          *        destruction.
          * @tparam Owner The graph type that produced this handle: Graph or DynamicGraph.
+         * @pre The graph that produced a pending handle is neither destroyed nor moved.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         template <class Owner>

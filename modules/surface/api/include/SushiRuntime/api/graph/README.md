@@ -11,14 +11,14 @@ symbol or passage it explains, and that header's file block cites this page.
 | --- | --- |
 | `graph.hpp` | Graph: a Recorder, a PlanCache and the run entries of StepDriver |
 | `dynamic_graph.hpp` | DynamicGraph: the regions by key, the pending changes and the run entries of StepDriver |
-| `region.hpp` | Region: a Recorder behind the add() surface |
+| `region.hpp` | Region: a Recorder behind the add() surface, and RegionChangeLog |
 | `run_handle.hpp` | RunHandle and AsyncRunState |
 | `recorder.hpp` | Recorder and Recorder::RuleScope |
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
 | `node_options.hpp` | NodeOptions |
 | `backing_graph.hpp` | BackingGraph and is_graph_emitter_v |
-| `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_emitter(), add_host() and name_last() |
+| `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_emitter(), add_host(), name_last(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
 | `step_driver.hpp` | StepDriver: run(), try_run(), run_for(), run_until(), run_async(), cancel() and the step loop |
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
@@ -32,15 +32,32 @@ The replay callable of each node shape is in `detail/emit_*.hpp`.
 
 Graph is three bricks behind one name. The Recorder owns what add() recorded. PlanCache, a
 private base, owns the plan compiled from it. StepDriver, a public base, gives the run entries and
-drives the step loop. Graph itself holds the context, forwards size() and rule_registration(), and
-answers the questions the driver asks.
+drives the step loop. Graph itself holds the context, forwards rule_registration(), and answers the
+questions the driver asks.
+
+### Graph: moves
+
+A Graph moves and does not copy. The source of a move is an empty graph on the same runtime:
+size(), node_count() and compile_count() are zero, a run is refused with `invalid_graph`, and add()
+records onto it again. The plan moves with the rules, so the destination does not recompile.
+
+A graph must not be moved while a step started with run_async() is pending. The RunHandle holds the
+address of the graph that started the step, and the pending flag lives in StepDriver, which is
+copied by the move. After such a move the destination refuses every run as still in flight, and the
+handle settles against the emptied source, so no State advances. Wait on the handle first.
 
 ### rule_registration
 
-RunReport numbers a node event by registration index, and the several nodes one add() lowers to
-share one index, so rule_registration() is how a caller maps a record back to the call that recorded
-it. The indices are drawn when the graph compiles, so every rule reports `no_registration` until the
-first run, and a recompile may renumber them.
+A rule is what one add(), add_untracked(), add_host() or add_emitter() call records, or what one
+Recorder::rule() scope records. size() counts rules, node_count() counts the nodes they lowered to,
+and rule_registration(rule) takes a position below size(); last_rule() is the position of the rule
+just added. RunReport numbers a node event by registration index, and every node of a rule carries
+the rule's index, so rule_registration() maps a record back to the call that recorded it. The
+indices are drawn when the graph compiles, so every rule reports `no_registration` until the first
+run, and a recompile may renumber them.
+
+DynamicGraph::rule_registration(key, rule) answers the same for a rule of one region. A commit
+renumbers every region, so the answer is read from the node at the time of the call.
 
 ### Friends
 
@@ -53,19 +70,42 @@ Region::recorder().
 
 ### Recorder
 
-A Recorder is the single owner of recorded work: the nodes in recording order, the liveness
-observers of the handles they name, the USM scratch they use and their per-step hooks. Graph and
-Region each hold one. Every recording member builds a replay callable and ends in the private
-record(), which appends the node, attaches it to the open rule, takes the observers and advances
-generation(). A domain library records through the public members and needs no friendship.
+A Recorder is the single owner of recorded work: the nodes in recording order, the rules they
+belong to and the rules' names, one liveness observer per allocation the nodes name, the USM scratch
+they use and their per-step hooks. Graph and Region each hold one. Every recording member builds a
+replay callable and ends in the private record(), which appends the node, attaches it to the open
+rule or starts a rule for it, takes the observers and advances generation(). A domain library
+records through the public members and needs no friendship.
+
+### Recorder: moves
+
+The source of a move is an empty recorder on the same context: no node, no rule, no scratch, no
+observer, and generation() back at zero. It keeps the context so that it can record again. No rule
+scope may be open on either side, because a RuleScope holds the recorder's address.
 
 ### RuleScope
 
-rule() opens a scope, and the nodes recorded until it ends form one rule: at replay the recorder
-reserves one registration index on the backing graph when the first of them is added and stamps it
-on all of them. The nodes of a scope are contiguous, so replay() needs two locals and no
-allocation. A node recorded outside a scope draws its own index. An emitter stamps its own nodes
-and takes none.
+Every node belongs to one rule. rule() opens a scope, and the nodes recorded until it ends form one
+rule; a node recorded outside a scope is a rule of its own. At replay the recorder reserves one
+registration index on the backing graph when the first node of a rule is added and stamps it on all
+of them. The nodes of a rule are contiguous, so replay() needs two locals and no allocation. An
+emitter stamps its own nodes and takes none. A scope that records nothing adds no rule.
+
+### name_last_rule
+
+name_last_rule() names the last rule and copies the text, so the caller's string may be a temporary.
+The copies live in a node-based set, one per distinct label: a compiled node keeps a `const char*`
+to its name, and an entry of that set never moves when another label is added or the recorder is
+moved. The rule keeps the pointer. replay() stamps it on every node the rule lowers to, which is
+why a name given after the last node of a scope still reaches the first. A rename advances
+generation(), so the next run rebuilds the plan with the new name.
+
+### clear
+
+clear() forgets the nodes, the rules, the labels, the observers, the hooks and the scratch, and
+advances generation() instead of resetting it, so a plan built before the call is seen as stale.
+The scratch is freed at once: a plan built from the cleared nodes must not run again, which the
+owner guarantees by rebuilding whenever generation() changed.
 
 ### record: liveness
 
@@ -74,18 +114,24 @@ handle freed before it ran. An Access built from Reads and Writes carries them; 
 bare regions carries none, because naming data by raw pointer opts out of lifetime tracking, by
 design.
 
+The recorder keeps one observer per allocation. The list is sorted by owner (the control block two
+observers of one handle share), so a node that names a handle already watched costs one binary
+search and adds nothing. A graph of 10 000 nodes over three buffers holds three observers.
+watched_allocation_count() reports the length.
+
 ### has_dangling_resource
 
 has_dangling_resource() is true when the allocation behind any recorded handle has been freed. The
 graph checks it once per run, so a graph that outlives its data fails cleanly instead of dispatching
-against released memory.
+against released memory. The walk is as long as the number of distinct allocations.
 
 ### replay
 
-replay() adds every recorded node to a backing graph in recording order and stamps each name.
-PlanCache::build() and RegionComposer::build_region() both call it, so a static graph and a region
-are replayed by the same code. The visitor overload reports each node once it is added; PlanCache
-uses it to read back the registration index.
+replay() adds every recorded node to a backing graph in recording order and stamps each with its
+rule's name. PlanCache::build() and RegionComposer::build_region() both call it, so a static graph
+and a region are replayed by the same code. The visitor overload reports each node, with the
+position of its rule, once it is added; PlanCache uses it to read back the registration index of
+each rule, and the composer to remember a node of each rule.
 
 ### kernel(DeviceSized, ...)
 
@@ -315,7 +361,8 @@ no ordering against other tasks. It runs natively, with no SYCL submission.
 ### name_last
 
 Without a name a node reports as "unnamed_task" in RunReport::NodeTiming, which makes a profile of a
-real graph a list of identical labels. Chaining name_last() onto any add() fixes that:
+real graph a list of identical labels. Chaining name_last() onto any add() names the rule that call
+added:
 
 ```cpp
 sim.add(API::Reads(a), API::Writes(b), n, integrate).name_last("integrate");
@@ -326,7 +373,10 @@ whose last element is the callable: add(Extent, captures..., fn) and add(State, 
 defaulted trailing name cannot be expressed there. One spelling that works for every shape,
 including any added later, beats a trailing argument on most of them and an exception for the rest.
 
-In a rule of several nodes, name_last() names the node recorded last.
+name_last() copies the label, so a temporary string is a valid argument. Every node of the rule
+reports the name; an emitter is the exception, because the backing graph can name only the last
+node an emitter added. An empty label, or a null `const char*`, returns the rule to the default
+name. The `const char*` overload exists so that a null pointer is not turned into a string view.
 
 ### add(State out, State in0, rest..., fn): the trailing pack
 
@@ -363,7 +413,9 @@ worker.
 
 PlanCache holds the plan compiled from one recorder. It is stale until the first build, after a
 change of the profiling request, and whenever the recorder's generation() differs from the one the
-plan was built at. `plan_` is protected because the test seams of the owning Graph read it.
+plan was built at. `plan_` is protected because the test seams of the owning Graph read it. It
+keeps one registration index per rule. The source of a move has no plan, is stale, and counts zero
+compiles.
 
 ### build
 
@@ -409,7 +461,7 @@ pending asynchronous step.
 | `run_plan()`, `run_steps()` | The plan a step runs and the per-step hooks around it |
 | `rearm_plan()` | Restores the plan's per-run state before each step |
 | `runs_chained()` | Whether the steps run as an in-order chain from the calling thread |
-| `size()` | The task count a report multiplies by the steps run |
+| `size()` | The count a report multiplies by the steps run; it is the rule count |
 
 ### run(steps)
 
@@ -535,12 +587,26 @@ islands are disjoint index ranges of a shared entity column, not separate alloca
 allocation-granular boundary would serialize islands that never meet. A caller names a slice with
 Buffer::region({offset, count}) and passes it to Reads(...)/Writes(...) exactly as within one graph.
 
-Runtime::dynamic_graph() returns a DynamicGraph. It is moveable, not copyable.
+Runtime::dynamic_graph() returns a DynamicGraph. It moves and does not copy. The source of a move
+has no region and a compose count of zero on the same runtime, and takes regions again; the regions
+and the log they report to move together. As for Graph, it must not be moved while a step started
+with run_async() is pending.
 
 ### region
 
-The returned region records work with the same add() surface as a static graph. Accessing a region
-marks it to be built or rebuilt at the next step boundary, since the caller accesses it to add work.
+The returned region records work with the same add() surface as a static graph. region(key) is not
+a mutation: reading a region (`world.region(k).size()`) between two runs leaves compose_count()
+unchanged. A region is rebuilt at the next run when it was created, when something was recorded on
+it, when it was cleared or when one of its rules was renamed.
+
+### plan_is_stale
+
+A Region lists itself in the graph's RegionChangeLog the first time its recorder is reached for
+writing after a run. plan_is_stale(), which the driver calls once per run entry, walks that list
+and marks dirty each listed region whose recorder generation differs from the generation the
+composer built. The cost follows the regions written to since the last run, not the size of the
+world, and nothing runs per step. A recording through a `Region&` held across runs is therefore
+seen, because it passes through Region::recorder().
 
 ### drop
 
@@ -572,6 +638,11 @@ order.
 regions_ holds the live regions (the recorders), ordered by key for deterministic composition.
 unique_ptr keeps Region addresses stable, so the per-step hooks a region owns can be referenced
 by address across a recompose.
+
+### changes_
+
+changes_ is held by unique_ptr because every region keeps its address, and a DynamicGraph moves.
+It is created with the first region.
 
 ## region_composer.hpp
 
@@ -640,6 +711,16 @@ freeing torn-down nodes leaves no dangling pointer in any other node's boundary 
 commit() groups registration indices by value, not by consecutive run, so one add() call's local
 index maps to exactly one global index even if its nodes are not contiguous in st.nodes.
 
+### RegionState: generation and rule_nodes
+
+build_region() stores the recorder generation it built from, which is_current() compares, and the
+last node of each rule, from which registration_of() reads the index that the latest commit wrote.
+
+### RegionComposer: moves
+
+The source of a move has no region state, no plan and no sentinel; commit() creates a sentinel when
+it finds none, so the source composes again.
+
 ### rearm
 
 rearm() re-arms every node's live in-degree from the two-layer baseline and refreshes the per-step
@@ -696,6 +777,20 @@ of the world. A Region is a Recorder behind the add() surface of BuilderSurface,
 of recording tasks. It has no run() family: its owning DynamicGraph composes every live region's
 nodes into one plan and steps them together. DynamicGraph::region() returns one.
 
+A Region is neither copyable nor movable: its graph holds it by address, and so do the per-step
+hooks the graph aggregates. clear() empties it so that its work can be recorded afresh without
+drop() and region().
+
+### RegionChangeLog
+
+RegionChangeLog is the line from a region to its graph. Region::recorder(), the non-const one that
+every add() and clear() goes through, lists the region's key in the log, once per interval between
+two runs; each region keeps the interval it was last listed in, so a second recording costs one
+compare. The const recorder() lists nothing, which is why size() and node_count() are free, and
+DynamicGraph reads every region through its private recorded(), which takes the region as const. A
+`Recorder&` taken from a region must not be kept across a run: a recording through it is not listed.
+A Region built without a log belongs to no graph and lists nothing.
+
 ### Shared surface
 
 Region and Graph take every add() overload (per-element, N-D, State, capture, tracked, dynamic,
@@ -740,6 +835,12 @@ rejected rather than silently interleaved.
 
 Assigning over a pending handle would otherwise abandon a running step with nobody left to wait for
 it. The moved-from handle owns nothing afterwards.
+
+### RunHandle: the owner's address
+
+The handle keeps the address of the graph that started the step, so that graph must neither be
+destroyed nor moved while the handle is pending. Graph and DynamicGraph state it as a precondition
+of their move operations.
 
 ### ready
 
