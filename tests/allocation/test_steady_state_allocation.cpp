@@ -112,7 +112,7 @@ namespace
      */
     std::size_t allocations_for_reuse_ticks(API::Graph& g, std::size_t ticks)
     {
-        Core::RunReport report;
+        Observability::RunReport report;
         for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
             g.run(report);
 
@@ -135,7 +135,7 @@ namespace
         g_counting_this_thread = true;
         for (std::size_t i = 0; i < ticks; ++i)
         {
-            const Core::RunReport report = g.run();
+            const Observability::RunReport report = g.run();
             (void)report;
         }
         g_counting_this_thread = false;
@@ -276,7 +276,7 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
     g.add(N, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<float>(i) * 0.25f; });
 
-    Core::RunReport report;
+    Observability::RunReport report;
     for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
     {
         auto step = g.run_async();

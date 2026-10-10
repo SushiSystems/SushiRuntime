@@ -75,17 +75,6 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief Calls fn(idx, ptr0, ptr1, ...) by unpacking the captured pointer tuple;
-             *        device-safe.
-             */
-            template <class Fn, int N, class Tuple, std::size_t... Is>
-            inline void invoke_with_pointers(const Fn& fn, sycl::id<N> idx,
-                                             const Tuple& ptrs, std::index_sequence<Is...>)
-            {
-                fn(idx, std::get<Is>(ptrs)...);
-            }
-
-            /**
              * @brief Reads each coupled-input view's current pointer into a tuple, host-side at
              *        submit time.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
@@ -97,26 +86,14 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Calls fn(i, cur, next, in0, in1, ...) by unpacking the read-input pointer
-             *        tuple.
-             */
-            template <class Fn, class T, class Tuple, std::size_t... Is>
-            inline void invoke_state(const Fn& fn, std::size_t i,
-                                     const T* cur, T* next,
-                                     const Tuple& ins, std::index_sequence<Is...>)
-            {
-                fn(i, cur, next, std::get<Is>(ins)...);
-            }
-
-            /**
              * @brief Gathers the read keys of a tuple of State pointers, in order.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             template <class StatesTuple, std::size_t... Is>
-            inline std::vector<Core::ResourceRegion> read_keys_of(const StatesTuple& states,
-                                                                  std::index_sequence<Is...>)
+            inline std::vector<Memory::ResourceRegion> read_keys_of(const StatesTuple& states,
+                                                                    std::index_sequence<Is...>)
             {
-                return std::vector<Core::ResourceRegion>{
+                return std::vector<Memory::ResourceRegion>{
                     HandleAccess::read_key(*std::get<Is>(states))... };
             }
         } // namespace detail

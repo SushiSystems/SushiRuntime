@@ -38,11 +38,7 @@
 #include <utility>
 
 #include <SushiRuntime/SushiRuntime.h>
-#include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/endpoint.hpp>
-#include <SushiRuntime/distributed/shared_secret.hpp>
-#include <SushiRuntime/distributed/tcp_transport.hpp>
+#include <SushiRuntime/distributed/distributed.hpp>
 
 #include "distributed_kernels.hpp"
 

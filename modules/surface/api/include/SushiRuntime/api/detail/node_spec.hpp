@@ -34,7 +34,7 @@
 #include <type_traits>
 #include <utility>
 
-#include <SushiRuntime/api/graph/backing_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 
 namespace SushiRuntime
 {
@@ -52,7 +52,7 @@ namespace SushiRuntime
                 static constexpr std::uint32_t K_NO_RULE = static_cast<std::uint32_t>(-1);
 
                 /**
-                 * @brief Wraps a callable invoked as emit(BackingGraph&, registration) per replay.
+                 * @brief Wraps a callable invoked as emit(TaskGraph&, registration) per replay.
                  * @param f The replay callable; it adds the node and stamps the registration given.
                  */
                 template <class F,
@@ -63,7 +63,8 @@ namespace SushiRuntime
                 }
 
                 /** @brief Adds this node to a backing graph; no registration draws a fresh one. */
-                std::function<void(BackingGraph&, std::optional<std::uint32_t>)> emit;
+                std::function<void(::SushiRuntime::Graph::TaskGraph&,
+                                   std::optional<std::uint32_t>)> emit;
 
                 /** @brief Position of this node's rule in the recorder's rule order. */
                 std::uint32_t rule = K_NO_RULE;

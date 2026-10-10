@@ -27,9 +27,9 @@ include that pulls them together.
 | --- | --- |
 | `data/` | The data handles (Buffer, State) |
 | `launch/` | The iteration geometry (Extent, NdRange) |
-| `vocabulary/` | The data-flow DSL (Reads/Writes, In/Out/InOut, Dynamic) and LateCount |
+| `vocabulary/` | The data-flow DSL (Reads/Writes, In/Out/InOut, Coupled, On, Dynamic), LateCount and the `_op` literal |
 | `graph/` | The chainable builders (Graph, Region, DynamicGraph), the Recorder they record onto, and RunHandle, the receipt for a step started asynchronously |
-| `runtime/` | The Runtime entry point and RuntimeConfig |
+| `runtime/` | The Runtime entry point, RuntimeConfig, AdvancedControls, and the error and logging names promoted for it |
 | `detail/` | Callable traits, the replay callable of each node shape, the per-step StepMachinery, report building |
 
 ### Adding a node kind from a domain library
@@ -47,7 +47,7 @@ void record_scaled_copy(API::Recorder& recorder, const API::Buffer<float>& in,
                         const API::Buffer<float>& out, std::size_t count, float factor)
 {
     float* stage = recorder.scratch<float>(count, in.device_index(), in.residency());
-    const Core::ResourceRegion staged{stage, 0, count * sizeof(float)};
+    const Memory::ResourceRegion staged{stage, 0, count * sizeof(float)};
     const float* source = in.data();
     float* target = out.data();
 
@@ -64,7 +64,23 @@ A caller writes `record_scaled_copy(graph.recorder(), in, out, n, 2.0f);`, and t
 
 ### Promoted names
 
-fluent.hpp promotes the entry points into the SushiRuntime namespace so users write
-`Runtime::create()` after `using namespace SushiRuntime;`. The graph type stays API::Graph (reached
-through auto) because the name Graph already denotes a namespace at this scope. The data and launch
-handles carry their own promotions in their leaf headers.
+Each leaf header promotes the public names it declares into the SushiRuntime namespace, in a
+closing `using` block. fluent.hpp promotes none. A program that includes
+`SushiRuntime/SushiRuntime.h` writes `SushiRuntime::Runtime`, `SushiRuntime::Buffer<T>`,
+`SushiRuntime::Reads` and `SushiRuntime::RunReport`.
+
+Three headers declare nothing and only promote. `runtime/errors.hpp` promotes `Error`, `Errc`,
+`Result` and `SushiException`; `runtime/logging.hpp` promotes `LogLevel`, `set_log_level` and
+`set_log_sink`; `vocabulary/op_literal.hpp` promotes the `_op` literal. `RunReport` is promoted by
+`observability/run_report.hpp`, the header that declares it.
+
+The graph type stays `API::Graph`, because `SushiRuntime::Graph` is the engine's namespace. `when`,
+`sized`, `based_at` and their device forms stay in `API`, so `using namespace SushiRuntime` does not
+bring `when` into scope.
+
+## SushiRuntime.h
+
+`SushiRuntime/SushiRuntime.h` includes `core/version.hpp` and `api/fluent.hpp`, and nothing else.
+Up to v0.3 it also included seventeen engine headers. A program that used the scheduler, the
+dependency tracker, epoch reclamation, hardware discovery or the logger through it now includes that
+module's header.

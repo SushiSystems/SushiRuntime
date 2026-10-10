@@ -258,7 +258,7 @@ namespace SushiRuntime
                 std::atomic<bool> profiling_active_{false};
 
                 /** @brief The armed round's event ledger, or null when it does not profile. */
-                std::atomic<Core::ProfilingLedger*> active_ledger_{nullptr};
+                std::atomic<Observability::ProfilingLedger*> active_ledger_{nullptr};
 
                 /** @brief Counter arm_for_execution() draws the next round's step from. */
                 std::atomic<std::uint32_t> next_dispatch_step_{0};
@@ -361,7 +361,7 @@ namespace SushiRuntime
                  * @param ledger The plan's ledger, or null when it does not profile.
                  * @see modules/engine/scheduler/README.md
                  */
-                void set_profiling_ledger(Core::ProfilingLedger* ledger) noexcept;
+                void set_profiling_ledger(Observability::ProfilingLedger* ledger) noexcept;
 
                 /** @brief Resets the per-run step counter, to 0. */
                 void reset_dispatch_step() noexcept { next_dispatch_step_.store(0, std::memory_order_release); }

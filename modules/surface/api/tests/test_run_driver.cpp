@@ -63,7 +63,7 @@ namespace
     template <class G>
     struct RunEntries
     {
-        using Report = Core::RunReport;
+        using Report = Observability::RunReport;
         using Owned = Core::Result<Report, Core::Error>;
         using Lent = Core::Result<Report*, Core::Error>;
         using Budget = std::chrono::milliseconds;
@@ -165,7 +165,7 @@ namespace
         EXPECT_EQ(run.error().code, Core::Errc::kernel_failed);
         EXPECT_NE(run.error().message.find(K_TASK_FAILURE), std::string::npos);
 
-        Core::RunReport report;
+        Observability::RunReport report;
         const auto reused = graph.try_run(report);
         ASSERT_FALSE(reused.has_value());
         EXPECT_EQ(reused.error().code, Core::Errc::kernel_failed);
@@ -187,7 +187,7 @@ namespace
     template <class G>
     void expect_every_try_entry_runs(G& graph)
     {
-        Core::RunReport report;
+        Observability::RunReport report;
         int calls = 0;
         const auto after_two_steps = [&calls]() { return ++calls > 2; };
 
@@ -428,13 +428,13 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
     auto g = rt.graph();
     g.add_host(API::Reads{}, API::Writes(buf), [counter]() { counter->accept(PER_STEP); });
 
-    const Core::RunReport first = g.run();
+    const Observability::RunReport first = g.run();
     EXPECT_EQ(first.distributed_statistics.tasks_offloaded_to_network, PER_STEP);
     EXPECT_EQ(first.distributed_statistics.remote_nodes_involved, 1u);
 
-    const Core::RunReport second = g.run(std::size_t{2});
+    const Observability::RunReport second = g.run(std::size_t{2});
     EXPECT_EQ(second.distributed_statistics.tasks_offloaded_to_network, 2 * PER_STEP);
 
-    const Core::RunReport third = g.run_async().wait();
+    const Observability::RunReport third = g.run_async().wait();
     EXPECT_EQ(third.distributed_statistics.tasks_offloaded_to_network, PER_STEP);
 }

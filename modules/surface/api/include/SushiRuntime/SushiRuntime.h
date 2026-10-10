@@ -21,45 +21,12 @@
 
 /**
  * @file SushiRuntime.h
- * @brief Includes every public module of the SushiRuntime library.
+ * @brief Includes the release version and the fluent API of the SushiRuntime library.
  * @author Mustafa Garip
+ * @see modules/surface/api/README.md
  */
 
 #pragma once
 
-// Core Infrastructure
 #include <SushiRuntime/core/version.hpp>
-#include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/core/common.hpp>
-#include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/core/ref_counted.hpp>
-#include <SushiRuntime/logging/logger.hpp>
-
-// Hardware Topology & Discovery
-#include <SushiRuntime/topology/hw_discovery.hpp>
-#include <SushiRuntime/topology/numa_mapper.hpp>
-#include <SushiRuntime/topology/affinity.hpp>
-
-// Memory Management
-#include <SushiRuntime/memory/epoch_reclamation.hpp>
-#include <SushiRuntime/memory/usm_registry.hpp>
-
-// Execution & Context
-#include <SushiRuntime/execution/execution_engine.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-
-// Task Graph & Scheduling
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/task/node_widths.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
-
-// Scheduler Components
-#include <SushiRuntime/scheduler/task_scheduler.hpp>
-#include <SushiRuntime/task/task.hpp>
-#include <SushiRuntime/scheduler/range_task.hpp>
-#include <SushiRuntime/scheduler/event_polling.hpp>
-#include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
-
-// The fluent v1 API is the surface most users program against.
 #include <SushiRuntime/api/fluent.hpp>

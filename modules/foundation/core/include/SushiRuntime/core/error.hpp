@@ -125,7 +125,7 @@ namespace SushiRuntime
                 Error err_; /**< The structured failure detail. */
         };
 
-        // RunReport, the success value of try_run()'s Result, lives in core/run_report.hpp.
+        // RunReport, the success value of try_run()'s Result, lives in observability/run_report.hpp.
 
     } // namespace Core
 } // namespace SushiRuntime

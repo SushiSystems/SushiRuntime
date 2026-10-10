@@ -230,7 +230,7 @@ namespace SushiRuntime
                 /** @brief Forwards to detail::HandleAccess::liveness(). */
                 [[deprecated("internal to the graph layer; declare the access with Reads or "
                              "Writes")]]
-                Core::LivenessObserver liveness() const noexcept
+                Memory::LivenessObserver liveness() const noexcept
                 {
                     return detail::HandleAccess::liveness(*this);
                 }

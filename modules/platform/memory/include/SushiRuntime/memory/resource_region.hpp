@@ -23,7 +23,7 @@
  * @file resource_region.hpp
  * @brief Declares ResourceRegion, a byte interval within one tracked allocation.
  * @author Mustafa Garip
- * @see modules/foundation/core/README.md
+ * @see modules/platform/memory/README.md
  */
 
 #pragma once
@@ -32,7 +32,7 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    namespace Memory
     {
         /**
          * @brief Identity of the allocation a resource region belongs to.
@@ -45,7 +45,7 @@ namespace SushiRuntime
 
         /**
          * @brief Describes a half-open byte interval within one tracked allocation.
-         * @see modules/foundation/core/README.md
+         * @see modules/platform/memory/README.md
          */
         struct ResourceRegion
         {
@@ -83,7 +83,7 @@ namespace SushiRuntime
             /**
              * @brief Reports whether two regions of the same allocation intersect.
              * @return True if the regions share a base and any byte.
-             * @see modules/foundation/core/README.md
+             * @see modules/platform/memory/README.md
              */
             constexpr bool overlaps(const ResourceRegion& o) const noexcept
             {
@@ -102,7 +102,7 @@ namespace SushiRuntime
 
             /**
              * @brief Reports whether this region fully covers another.
-             * @see modules/foundation/core/README.md
+             * @see modules/platform/memory/README.md
              */
             constexpr bool contains(const ResourceRegion& r) const noexcept
             {
@@ -113,6 +113,16 @@ namespace SushiRuntime
                 return r.offset + r.length <= offset + length;
             }
         };
+
+    } // namespace Memory
+
+    namespace Core
+    {
+        /** @brief Names Memory::ResourceId by its spelling before v0.4.0. */
+        using ResourceId [[deprecated("use Memory::ResourceId")]] = Memory::ResourceId;
+
+        /** @brief Names Memory::ResourceRegion by its spelling before v0.4.0. */
+        using ResourceRegion [[deprecated("use Memory::ResourceRegion")]] = Memory::ResourceRegion;
 
     } // namespace Core
 } // namespace SushiRuntime

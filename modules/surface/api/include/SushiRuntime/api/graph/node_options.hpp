@@ -43,7 +43,7 @@ namespace SushiRuntime
         struct NodeOptions
         {
             /** @brief Launch width stamped into the node's event records. */
-            std::size_t width = Core::WIDTH_UNKNOWN;
+            std::size_t width = Observability::WIDTH_UNKNOWN;
         };
 
     } // namespace API

@@ -40,7 +40,8 @@ using namespace SushiRuntime;
 namespace
 {
     /** @brief Checks that the report holds one event per expected width, in recording order. */
-    void expect_widths(const Core::RunReport& report, const std::vector<std::uint32_t>& expected)
+    void expect_widths(const Observability::RunReport& report,
+                       const std::vector<std::uint32_t>& expected)
     {
         ASSERT_EQ(report.node_events.size(), expected.size());
         for (std::size_t i = 0; i < expected.size(); ++i)
@@ -103,7 +104,7 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
         API::Recorder& recorder = g.recorder();
         std::uint32_t* live =
             recorder.scratch<std::uint32_t>(1, out.device_index(), out.residency());
-        const Core::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
+        const Memory::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
 
         auto rule = recorder.rule();
         recorder.resolve(std::array<LateCount, 1>{count}, out.device_index(),

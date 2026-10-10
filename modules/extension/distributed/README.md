@@ -15,6 +15,7 @@ Headers under `include/SushiRuntime/distributed/`. Everything is in `SushiRuntim
 
 | Header | Declares |
 | --- | --- |
+| `distributed.hpp` | Nothing; it includes what a master or a worker program needs |
 | `cluster.hpp` | `Cluster`, `ClusterOptions`, the chunk size limits |
 | `cluster_statistics.hpp` | `ClusterStatistics`, `WorkerSnapshot` |
 | `shared_secret.hpp` | `SharedSecret` |
@@ -33,6 +34,10 @@ Headers under `include/SushiRuntime/distributed/`. Everything is in `SushiRuntim
 
 `MessageType`, `GlobalBufferID` and `BufferHandle` are also reachable as `Wire::` names, which the
 private codec uses.
+
+`distributed.hpp` includes every header of the table except `in_process_transport.hpp` and
+`message_type.hpp`, and the `_op` literal of `api/vocabulary/op_literal.hpp`. A worker program
+includes it alone; a master includes it beside `SushiRuntime/SushiRuntime.h`.
 
 Deprecated and forwarding: the four-argument `Cluster::attach()` overloads, which attach with an
 empty secret. The tree compiles with `-Werror`, so a caller has to switch or silence the warning

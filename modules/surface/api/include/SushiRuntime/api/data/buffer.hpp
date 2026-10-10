@@ -94,7 +94,7 @@ namespace SushiRuntime
         };
 
         /** @brief Names the byte window of one allocation that region() returns. */
-        using BufferRegion = Core::ResourceRegion;
+        using BufferRegion = Memory::ResourceRegion;
 
         /**
          * @brief Names a residency as its enumerator spelling, for messages.
@@ -434,7 +434,7 @@ namespace SushiRuntime
                 /** @brief Forwards to detail::HandleAccess::liveness(). */
                 [[deprecated("internal to the graph layer; declare the access with Reads, Writes, "
                              "In, Out or InOut")]]
-                Core::LivenessObserver liveness() const noexcept
+                Memory::LivenessObserver liveness() const noexcept
                 {
                     return detail::HandleAccess::liveness(*this);
                 }
@@ -459,7 +459,7 @@ namespace SushiRuntime
                       size_(count),
                       device_index_(device_index),
                       residency_(residency),
-                      liveness_(Core::make_liveness())
+                      liveness_(Memory::make_liveness())
                 {
                     const std::size_t bytes =
                         detail::checked_byte_count("Buffer allocation", count, sizeof(T));
@@ -493,7 +493,7 @@ namespace SushiRuntime
                       size_(count),
                       device_index_(device_index),
                       residency_(residency),
-                      liveness_(Core::make_liveness())
+                      liveness_(Memory::make_liveness())
                 {
                     const std::size_t bytes =
                         detail::checked_byte_count("Buffer adoption", count, sizeof(T));
@@ -604,7 +604,7 @@ namespace SushiRuntime
                 std::size_t size_ = 0;
                 DeviceIndex device_index_ = DeviceIndex{0};
                 Residency residency_ = Residency::Shared;
-                Core::LivenessToken liveness_;
+                Memory::LivenessToken liveness_;
         };
 
     } // namespace API

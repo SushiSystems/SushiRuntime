@@ -324,7 +324,7 @@ namespace SushiRuntime
         /**
          * @brief Wires the plan's event ledger for the round about to be armed.
          */
-        void TaskScheduler::set_profiling_ledger(Core::ProfilingLedger* ledger) noexcept
+        void TaskScheduler::set_profiling_ledger(Observability::ProfilingLedger* ledger) noexcept
         {
             active_ledger_.store(ledger, std::memory_order_release);
             event_poller.set_ledger(ledger);
@@ -743,9 +743,9 @@ namespace SushiRuntime
                         if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
                         {
                             const std::uint32_t slot = ledger->claim_slot(node->registration_index);
-                            if (slot != Core::ProfilingLedger::npos)
+                            if (slot != Observability::ProfilingLedger::npos)
                             {
-                                Core::NodeEventRecord rec{};
+                                Observability::NodeEventRecord rec{};
                                 rec.node_index = node->registration_index;
                                 rec.invocation = step;
                                 // A host node submits no dispatch: launched_width and live_width stay WIDTH_UNKNOWN.
@@ -775,7 +775,7 @@ namespace SushiRuntime
                     bool spans = false;
                     if (anchor_ctx >= 0)
                     {
-                        auto off_anchor = [&](const std::vector<Core::ResourceRegion>& regs)
+                        auto off_anchor = [&](const std::vector<Memory::ResourceRegion>& regs)
                         {
                             for (const auto& r : regs)
                             {
@@ -842,7 +842,7 @@ namespace SushiRuntime
                 else
                 {
                     // The first device submission to reach here claims the run's clock pairing.
-                    Core::ProfilingLedger* pairing_ledger = nullptr;
+                    Observability::ProfilingLedger* pairing_ledger = nullptr;
                     std::chrono::steady_clock::time_point pairing_t0;
                     if (profiling_active_.load(std::memory_order_acquire))
                     {

@@ -50,7 +50,7 @@ namespace SushiRuntime
         {
             Node* task;
             bool is_write;
-            SushiRuntime::Core::ResourceRegion region; /**< Byte interval this access touches. */
+            SushiRuntime::Memory::ResourceRegion region; /**< Byte interval this access touches. */
             AccessNode* prev; // Immutable once linked to the history
         };
 
@@ -95,7 +95,7 @@ namespace SushiRuntime
                  * @brief Maps an allocation's identity to a shard index with a SplitMix64 hash.
                  * @see modules/engine/graph/README.md
                  */
-                inline size_t get_shard_idx(SushiRuntime::Core::ResourceId base) const
+                inline size_t get_shard_idx(SushiRuntime::Memory::ResourceId base) const
                 {
                     uint64_t z = reinterpret_cast<uint64_t>(base);
                     z += 0x9e3779b97f4a7c15;
@@ -131,7 +131,7 @@ namespace SushiRuntime
                  * @param region The byte interval accessed; a bare base pointer names the whole
                  *        buffer.
                  */
-                void resolve(Node* node, const SushiRuntime::Core::ResourceRegion& region, bool is_write);
+                void resolve(Node* node, const SushiRuntime::Memory::ResourceRegion& region, bool is_write);
 
                 /**
                  * @brief Enforces an explicit execution ordering constraint between two tasks.

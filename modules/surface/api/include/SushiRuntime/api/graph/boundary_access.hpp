@@ -58,8 +58,8 @@ namespace SushiRuntime
             struct Pin
             {
                 GraphNode* node = nullptr;
-                std::vector<Core::ResourceRegion> reads;
-                std::vector<Core::ResourceRegion> writes;
+                std::vector<Memory::ResourceRegion> reads;
+                std::vector<Memory::ResourceRegion> writes;
             };
 
             /**
@@ -89,8 +89,8 @@ namespace SushiRuntime
             }
 
             // True when any interval in @p a intersects any interval in @p b.
-            inline bool overlaps_any(const std::vector<Core::ResourceRegion>& a,
-                                     const std::vector<Core::ResourceRegion>& b)
+            inline bool overlaps_any(const std::vector<Memory::ResourceRegion>& a,
+                                     const std::vector<Memory::ResourceRegion>& b)
             {
                 for (const auto& x : a)
                     for (const auto& y : b)
@@ -100,8 +100,8 @@ namespace SushiRuntime
             }
 
             /** @brief Returns whether one interval in covers fully contains r. */
-            inline bool covered_by_any(const Core::ResourceRegion& r,
-                                       const std::vector<Core::ResourceRegion>& covers)
+            inline bool covered_by_any(const Memory::ResourceRegion& r,
+                                       const std::vector<Memory::ResourceRegion>& covers)
             {
                 for (const auto& c : covers)
                     if (c.contains(r))
@@ -114,16 +114,16 @@ namespace SushiRuntime
              *        byte interval.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            inline std::map<Core::ResourceId, BaseAccess> compute_boundary_access(
+            inline std::map<Memory::ResourceId, BaseAccess> compute_boundary_access(
                 const std::vector<sushi_ptr<GraphNode>>& nodes)
             {
-                std::map<Core::ResourceId, BaseAccess> access;
+                std::map<Memory::ResourceId, BaseAccess> access;
                 struct Acc
                 {
-                    std::vector<Core::ResourceRegion> reads;
-                    std::vector<Core::ResourceRegion> writes;
+                    std::vector<Memory::ResourceRegion> reads;
+                    std::vector<Memory::ResourceRegion> writes;
                 };
-                std::map<Core::ResourceId, std::unordered_map<GraphNode*, Acc>> per_base;
+                std::map<Memory::ResourceId, std::unordered_map<GraphNode*, Acc>> per_base;
 
                 for (const auto& np : nodes)
                 {
@@ -136,12 +136,12 @@ namespace SushiRuntime
 
                 for (auto& bm : per_base)
                 {
-                    const Core::ResourceId b = bm.first;
+                    const Memory::ResourceId b = bm.first;
                     auto& m = bm.second;   // node -> Acc for this base
 
                     // Both maps are keyed by node and filled per base b.
                     std::unordered_set<GraphNode*> has_overlapping_pred;
-                    std::unordered_map<GraphNode*, std::vector<Core::ResourceRegion>> shadowing;
+                    std::unordered_map<GraphNode*, std::vector<Memory::ResourceRegion>> shadowing;
 
                     for (auto& nm : m)
                     {
@@ -167,7 +167,7 @@ namespace SushiRuntime
                         });
                     }
 
-                    const std::vector<Core::ResourceRegion> nothing_shadows;
+                    const std::vector<Memory::ResourceRegion> nothing_shadows;
 
                     BaseAccess ba;
                     for (auto& nm : m)
@@ -179,7 +179,7 @@ namespace SushiRuntime
                             ba.entry.push_back(Pin{ n, acc.reads, acc.writes });
 
                         auto sit = shadowing.find(n);
-                        const std::vector<Core::ResourceRegion>& covers =
+                        const std::vector<Memory::ResourceRegion>& covers =
                             (sit == shadowing.end()) ? nothing_shadows : sit->second;
 
                         Pin ex;

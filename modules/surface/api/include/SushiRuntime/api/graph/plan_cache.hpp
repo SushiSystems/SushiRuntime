@@ -33,11 +33,11 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 
 namespace SushiRuntime
 {
@@ -128,11 +128,14 @@ namespace SushiRuntime
                  */
                 void build(const Recorder& recorder, Execution::RuntimeContext& context)
                 {
-                    BackingGraph bg(context.offload());
-                    registrations_.assign(recorder.rule_count(), BackingGraph::NO_REGISTRATION);
+                    ::SushiRuntime::Graph::TaskGraph bg(context.offload());
+                    registrations_.assign(recorder.rule_count(),
+                                          ::SushiRuntime::Graph::TaskGraph::NO_REGISTRATION);
                     recorder.replay(bg, [this, &bg](std::size_t rule, std::size_t)
                     {
-                        registrations_[rule] = bg.last_registration_index();
+                        const ::SushiRuntime::Graph::Node* added = bg.last_node_added();
+                        if (added)
+                            registrations_[rule] = added->registration_index;
                     });
                     plan_ = bg.compile();
                     plan_.profiling = profiling_requested_;
@@ -155,12 +158,12 @@ namespace SushiRuntime
                 /**
                  * @brief Returns the registration index a rule took at the last build.
                  * @param rule Position in recording order, one per rule.
-                 * @return The index, or BackingGraph::NO_REGISTRATION for a rule no build has seen.
+                 * @return The index, or TaskGraph::NO_REGISTRATION for a rule no build has seen.
                  */
                 [[nodiscard]] std::uint32_t registration_of(std::size_t rule) const noexcept
                 {
-                    return rule < registrations_.size() ? registrations_[rule]
-                                                        : BackingGraph::NO_REGISTRATION;
+                    return rule < registrations_.size()
+                        ? registrations_[rule] : ::SushiRuntime::Graph::TaskGraph::NO_REGISTRATION;
                 }
 
                 /** @brief The compiled plan, valid while stale() is false; test seams read it. */

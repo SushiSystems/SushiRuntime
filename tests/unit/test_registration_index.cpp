@@ -144,7 +144,7 @@ namespace
     {
         std::uint32_t* live = recorder.scratch<std::uint32_t>(
             1, stages.first.device_index(), stages.first.residency());
-        const Core::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
+        const Memory::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
         std::uint32_t* a = stages.first.data();
         std::uint32_t* b = stages.second.data();
         std::uint32_t* c = stages.third.data();
@@ -308,7 +308,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
         << "'after' must be before+2: the group draws exactly one index.";
 }
 
-/** @brief Tests that a rule scope's group survives a rebuild onto a fresh BackingGraph. */
+/** @brief Tests that a rule scope's group survives a rebuild onto a fresh TaskGraph. */
 TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
 {
     using API::detail::RegistrationIndexTestAccess;

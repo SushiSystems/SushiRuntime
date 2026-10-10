@@ -47,9 +47,6 @@ using namespace SushiRuntime::Graph;
 static_assert(std::is_same<decltype(Node::baked_width), std::size_t>::value,
               "Node::baked_width must stay std::size_t; Task 3 widens NodeEventRecord "
               "from it and relies on this exact type.");
-static_assert(noexcept(std::declval<TaskGraph&>().width_last_node(std::size_t{0})),
-              "width_last_node must stay noexcept, like its name_last_node sibling.");
-
 // Node is a non-literal type, so Node{} cannot be a static_assert operand.
 
 namespace
@@ -80,9 +77,18 @@ namespace
 TEST(Unit_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
 {
     const Node node;
-    EXPECT_EQ(node.baked_width, std::size_t{Core::WIDTH_UNKNOWN});
+    EXPECT_EQ(node.baked_width, std::size_t{Observability::WIDTH_UNKNOWN});
 }
 
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
+static_assert(noexcept(std::declval<TaskGraph&>().width_last_node(std::size_t{0})),
+              "width_last_node must stay noexcept, like its name_last_node sibling.");
+
+/** @brief Tests that last_node_width(), deprecated in v0.4.0, reports an unstamped node. */
 TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 {
     RuntimeContext ctx;
@@ -90,7 +96,7 @@ TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 
     graph.add_node(noop_work());
 
-    EXPECT_EQ(graph.last_node_width(), std::size_t{Core::WIDTH_UNKNOWN});
+    EXPECT_EQ(graph.last_node_width(), std::size_t{Observability::WIDTH_UNKNOWN});
 }
 
 TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsTheNodeNameLastNodeNames)
@@ -122,7 +128,7 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsOnlyTheMostRecentNode)
     Graph::CompiledGraph plan = graph.compile();
     ASSERT_EQ(plan.all_nodes.size(), 2u);
 
-    EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Core::WIDTH_UNKNOWN});
+    EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Observability::WIDTH_UNKNOWN});
     EXPECT_EQ(find_named(plan, "second").baked_width, std::size_t{4096});
 }
 
@@ -133,9 +139,13 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeOnAnEmptyGraphLeavesTheWidthUnknown)
 
     graph.width_last_node(4096);
 
-    EXPECT_EQ(graph.last_node_width(), std::size_t{Core::WIDTH_UNKNOWN});
+    EXPECT_EQ(graph.last_node_width(), std::size_t{Observability::WIDTH_UNKNOWN});
     EXPECT_EQ(graph.last_node_added(), nullptr);
 }
+
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 /**
  * @brief Tests that a node without late bindings reports its baked width as both launched and live.
@@ -144,8 +154,7 @@ TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
 {
     RuntimeContext ctx;
     Graph::TaskGraph graph;
-    graph.add_node([](sycl::handler&) {});
-    graph.width_last_node(1024);
+    graph.add_node([](sycl::handler&) {}).baked_width = 1024;
 
     const Graph::NodeWidths widths = Graph::snapshot_widths(*graph.last_node_added());
     EXPECT_EQ(widths.launched, 1024u);
@@ -160,8 +169,7 @@ TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
 
     RuntimeContext ctx;
     Graph::TaskGraph graph;
-    graph.add_node([](sycl::handler&) {}, {}, {}, bindings);
-    graph.width_last_node(1024);
+    graph.add_node([](sycl::handler&) {}, {}, {}, bindings).baked_width = 1024;
 
     const Graph::NodeWidths widths = Graph::snapshot_widths(*graph.last_node_added());
     EXPECT_EQ(widths.launched, 1024u);
@@ -176,8 +184,7 @@ TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
 
     RuntimeContext ctx;
     Graph::TaskGraph graph;
-    graph.add_node([](sycl::handler&) {}, {}, {}, bindings);
-    graph.width_last_node(1024);
+    graph.add_node([](sycl::handler&) {}, {}, {}, bindings).baked_width = 1024;
 
     EXPECT_EQ(Graph::snapshot_widths(*graph.last_node_added()).live, 1024u);
 }
@@ -187,10 +194,9 @@ TEST(Unit_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
 {
     RuntimeContext ctx;
     Graph::TaskGraph graph;
-    graph.add_node([](sycl::handler&) {});
-    graph.width_last_node(std::size_t{0xFFFFFFFFu} + 1);
+    graph.add_node([](sycl::handler&) {}).baked_width = std::size_t{0xFFFFFFFFu} + 1;
 
     const Graph::NodeWidths widths = Graph::snapshot_widths(*graph.last_node_added());
-    EXPECT_EQ(widths.launched, Core::WIDTH_UNKNOWN);
-    EXPECT_EQ(widths.live, Core::WIDTH_UNKNOWN);
+    EXPECT_EQ(widths.launched, Observability::WIDTH_UNKNOWN);
+    EXPECT_EQ(widths.live, Observability::WIDTH_UNKNOWN);
 }

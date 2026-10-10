@@ -38,7 +38,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/data/state.hpp>
-#include <SushiRuntime/api/graph/backing_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 
@@ -68,13 +68,14 @@ namespace SushiRuntime
             /** @brief Builds the replay of an offloadable per-element task. */
             template <class F>
             auto offload_node(::SushiRuntime::Graph::OpID op, std::size_t n,
-                              std::vector<Core::ResourceRegion> reads,
-                              std::vector<Core::ResourceRegion> writes,
+                              std::vector<Memory::ResourceRegion> reads,
+                              std::vector<Memory::ResourceRegion> writes,
                               F&& local, std::vector<std::uint64_t> params)
             {
                 return [fn = std::forward<F>(local), n, op, reads = std::move(reads),
                         writes = std::move(writes), params = std::move(params)]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     bg.add_task(offload_metadata("fluent_offload", op, params), reads, writes,
                         [fn, n](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
@@ -102,7 +103,8 @@ namespace SushiRuntime
             {
                 return [fn = std::forward<F>(local), view, state, op, params = std::move(params),
                         live_reads, live_writes]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     const std::size_t n = state->size();
                     bg.add_offload_dynamic(offload_metadata("fluent_offload_state", op, params),

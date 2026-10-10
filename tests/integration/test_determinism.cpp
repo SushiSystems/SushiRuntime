@@ -71,7 +71,7 @@ namespace
                             const API::Buffer<float>& total)
     {
         float* partials = recorder.scratch<float>(TILES, input.device_index(), input.residency());
-        const Core::ResourceRegion partial_region{partials, 0, TILES * sizeof(float)};
+        const Memory::ResourceRegion partial_region{partials, 0, TILES * sizeof(float)};
         const float* in = input.data();
         float* out = total.data();
 

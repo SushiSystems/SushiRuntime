@@ -44,7 +44,7 @@ namespace SushiRuntime
         struct On
         {
             DeviceIndex device;          /**< Device the kernel runs on. */
-            Core::LivenessObserver life; /**< Observer of the handle named, or empty. */
+            Memory::LivenessObserver life; /**< Observer of the handle named, or empty. */
 
             /**
              * @brief Places the kernel on a device by index.

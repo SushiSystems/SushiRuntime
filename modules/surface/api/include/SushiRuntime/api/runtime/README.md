@@ -116,3 +116,19 @@ is enough. The reference stays valid while any handle of the runtime lives.
 
 The distributed layer sits above this one and enters through it: `Distributed::Cluster::attach()`
 takes the Runtime and installs its master on this context, so no header here names a transport.
+
+## errors.hpp
+
+### Promoted error names
+
+errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp` and promotes
+`Error`, `Errc`, `Result` and `SushiException` into `SushiRuntime`, so a program that handles a
+failed `try_run()` spells them without `Core::`. The foundation modules sit below the public surface
+and promote nothing themselves.
+
+## logging.hpp
+
+### Promoted logging names
+
+logging.hpp declares nothing. It includes `logging/log_level.hpp` and `logging/log_sink.hpp` and
+promotes `LogLevel`, `set_log_level` and `set_log_sink` into `SushiRuntime`.

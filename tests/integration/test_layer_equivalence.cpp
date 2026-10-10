@@ -73,7 +73,7 @@ namespace
         std::vector<const char*> names; /**< One label per image, for failure messages. */
         std::vector<Image> images;      /**< The output buffers, in the order they were taken. */
         /** @brief Layer the last blocking run reported. */
-        Core::ExecutionLayer layer = Core::ExecutionLayer::Scheduler;
+        Observability::ExecutionLayer layer = Observability::ExecutionLayer::Scheduler;
     };
 
     /** @brief Appends one named output to a snapshot. */
@@ -135,7 +135,7 @@ namespace
     {
         if (how == Drive::Blocking)
         {
-            const Core::RunReport report = graph.run(steps);
+            const Observability::RunReport report = graph.run(steps);
             EXPECT_TRUE(report.is_successful);
             shot.layer = report.layer;
             return;
@@ -660,9 +660,9 @@ TEST(Integration_LayerEquivalence, DynamicRegionsMatchOneStaticGraph)
     const Snapshot dynamic_default   = run_dynamic_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot dynamic_scheduled = run_dynamic_tiles(scheduled_rt, script, Drive::Blocking);
 
-    EXPECT_EQ(static_chained.layer, Core::ExecutionLayer::Chain)
+    EXPECT_EQ(static_chained.layer, Observability::ExecutionLayer::Chain)
         << "the static graph of tracked kernels must take the chain";
-    EXPECT_EQ(static_scheduled.layer, Core::ExecutionLayer::Scheduler);
+    EXPECT_EQ(static_scheduled.layer, Observability::ExecutionLayer::Scheduler);
 
     expect_identical(static_chained, static_scheduled, "static chain vs static scheduler");
     expect_identical(static_chained, dynamic_default, "static chain vs dynamic");
@@ -683,8 +683,8 @@ TEST(Integration_LayerEquivalence, DroppedAndReaddedRegionMatchesStaticGraphs)
     const Snapshot dynamic_default   = run_dynamic_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot dynamic_scheduled = run_dynamic_tiles(scheduled_rt, script, Drive::Blocking);
 
-    EXPECT_EQ(static_chained.layer, Core::ExecutionLayer::Chain);
-    EXPECT_EQ(static_scheduled.layer, Core::ExecutionLayer::Scheduler);
+    EXPECT_EQ(static_chained.layer, Observability::ExecutionLayer::Chain);
+    EXPECT_EQ(static_scheduled.layer, Observability::ExecutionLayer::Scheduler);
 
     expect_identical(static_chained, static_scheduled, "static chain vs static scheduler");
     expect_identical(static_chained, dynamic_default, "static chain vs dynamic");
@@ -702,8 +702,8 @@ TEST(Integration_LayerEquivalence, HostTasksAmongKernelsMatchAcrossLayers)
     const Snapshot host_scheduled = run_pass_chain(scheduled_rt, PassSite::Host);
     const Snapshot device_chained = run_pass_chain(default_rt, PassSite::Device);
 
-    EXPECT_EQ(host_scheduled.layer, Core::ExecutionLayer::Scheduler);
-    EXPECT_EQ(device_chained.layer, Core::ExecutionLayer::Chain)
+    EXPECT_EQ(host_scheduled.layer, Observability::ExecutionLayer::Scheduler);
+    EXPECT_EQ(device_chained.layer, Observability::ExecutionLayer::Chain)
         << "the same chain written as kernels only must take the chain";
 
     expect_identical(host_default, host_scheduled, "host tasks: default vs forced scheduler");
@@ -723,8 +723,8 @@ TEST(Integration_LayerEquivalence, AsyncStepsMatchBlockingRun)
     const Snapshot async_default      = run_static_tiles(chained_rt, script, Drive::Asynchronous);
     const Snapshot async_scheduled    = run_static_tiles(scheduled_rt, script, Drive::Asynchronous);
 
-    EXPECT_EQ(blocking_chained.layer, Core::ExecutionLayer::Chain);
-    EXPECT_EQ(blocking_scheduled.layer, Core::ExecutionLayer::Scheduler);
+    EXPECT_EQ(blocking_chained.layer, Observability::ExecutionLayer::Chain);
+    EXPECT_EQ(blocking_scheduled.layer, Observability::ExecutionLayer::Scheduler);
 
     expect_identical(blocking_chained, async_default, "run(N) on the chain vs run_async");
     expect_identical(blocking_scheduled, async_scheduled, "run(N) vs run_async, forced scheduler");
@@ -754,9 +754,9 @@ TEST(Integration_LayerEquivalence, OffsetLaunchFormsMatchAcrossLayers)
     const Snapshot chained   = run_tracked_launches(chained_rt);
     const Snapshot scheduled = run_tracked_launches(scheduled_rt);
 
-    EXPECT_EQ(chained.layer, Core::ExecutionLayer::Chain)
+    EXPECT_EQ(chained.layer, Observability::ExecutionLayer::Chain)
         << "tracked Extent and NdRange kernels on one device must take the chain";
-    EXPECT_EQ(scheduled.layer, Core::ExecutionLayer::Scheduler);
+    EXPECT_EQ(scheduled.layer, Observability::ExecutionLayer::Scheduler);
 
     expect_identical(reference, chained, "host reference vs chain");
     expect_identical(reference, scheduled, "host reference vs forced scheduler");
@@ -773,7 +773,7 @@ TEST(Integration_LayerEquivalence, UntrackedOffsetLaunchesMatchAcrossLayers)
     const Snapshot default_layer   = run_untracked_launches(default_rt);
     const Snapshot scheduler_layer = run_untracked_launches(scheduled_rt);
 
-    EXPECT_EQ(scheduler_layer.layer, Core::ExecutionLayer::Scheduler);
+    EXPECT_EQ(scheduler_layer.layer, Observability::ExecutionLayer::Scheduler);
 
     expect_identical(reference, default_layer, "host reference vs default layer");
     expect_identical(reference, scheduler_layer, "host reference vs forced scheduler");
@@ -790,7 +790,7 @@ TEST(Integration_LayerEquivalence, PlacedUntrackedLaunchesMatchAcrossLayers)
     const Snapshot default_layer   = run_placed_untracked_launches(default_rt);
     const Snapshot scheduler_layer = run_placed_untracked_launches(scheduled_rt);
 
-    EXPECT_EQ(scheduler_layer.layer, Core::ExecutionLayer::Scheduler);
+    EXPECT_EQ(scheduler_layer.layer, Observability::ExecutionLayer::Scheduler);
 
     expect_identical(reference, default_layer, "host reference vs default layer");
     expect_identical(reference, scheduler_layer, "host reference vs forced scheduler");

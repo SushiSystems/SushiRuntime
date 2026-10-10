@@ -107,8 +107,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_node(TaskWork work,
-                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                               const std::vector<Memory::ResourceRegion>& read_access,
+                               const std::vector<Memory::ResourceRegion>& write_access,
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
 
@@ -121,8 +121,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_node(TaskWork work,
-                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                               const std::vector<Memory::ResourceRegion>& read_access,
+                               const std::vector<Memory::ResourceRegion>& write_access,
                                std::shared_ptr<LateBindings> bindings,
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
@@ -141,12 +141,14 @@ namespace SushiRuntime
                  * @pre Compilation is single-threaded, so "most recently added" names
                  *      one node; a parallel compiler must stamp width at the add call.
                  */
+                [[deprecated("set baked_width on the Node& an add call returns")]]
                 void width_last_node(std::size_t width) noexcept;
 
                 /**
                  * @brief Returns the element count stamped on the last node added.
-                 * @return The width, or Core::WIDTH_UNKNOWN while the graph holds no node.
+                 * @return The width, or Observability::WIDTH_UNKNOWN while the graph holds no node.
                  */
+                [[deprecated("read last_node_added()->baked_width")]]
                 std::size_t last_node_width() const noexcept;
 
                 /**
@@ -169,6 +171,7 @@ namespace SushiRuntime
                  *
                  * @return The index, or @ref NO_REGISTRATION while the graph holds no node.
                  */
+                [[deprecated("read last_node_added()->registration_index")]]
                 std::uint32_t last_registration_index() const noexcept;
 
                 /**
@@ -179,8 +182,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_task(const TaskMetadata& meta,
-                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                               const std::vector<Memory::ResourceRegion>& read_access,
+                               const std::vector<Memory::ResourceRegion>& write_access,
                                TaskWork device_work,
                                HostWork fallback_work,
                                const std::vector<sycl::event>& dependencies = {},
@@ -194,8 +197,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_task(const TaskMetadata& meta,
-                               const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                               const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                               const std::vector<Memory::ResourceRegion>& read_access,
+                               const std::vector<Memory::ResourceRegion>& write_access,
                                HostWork fallback_work,
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
@@ -223,8 +226,8 @@ namespace SushiRuntime
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                Node& add_native(const std::vector<SushiRuntime::Core::ResourceRegion>& read_access,
-                                 const std::vector<SushiRuntime::Core::ResourceRegion>& write_access,
+                Node& add_native(const std::vector<Memory::ResourceRegion>& read_access,
+                                 const std::vector<Memory::ResourceRegion>& write_access,
                                  std::function<void()> work,
                                  const std::vector<sycl::event>& dependencies = {},
                                  std::optional<std::uint32_t> registration = std::nullopt);

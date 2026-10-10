@@ -58,11 +58,11 @@ and the one index every other node must share.
 
 ### `RuleScopeGroupSurvivesRebuild`
 
-The group of a rule scope must survive a rebuild onto a fresh `BackingGraph`, whose registration
+The group of a rule scope must survive a rebuild onto a fresh `TaskGraph`, whose registration
 counter restarts at 0.
 
 The test adds a plain node after the rule, which marks the graph dirty, and then runs twice, so
-that the plan cache replays every recorded node into a second `BackingGraph`. The nodes of the
+that the plan cache replays every recorded node into a second `TaskGraph`. The nodes of the
 rule must still share one index, distinct from the index of every other node, and the indices of
 all nodes must be dense from 0 to n-1 in registration order.
 

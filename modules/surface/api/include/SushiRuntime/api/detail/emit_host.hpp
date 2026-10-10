@@ -34,7 +34,7 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/api/graph/backing_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -45,15 +45,15 @@ namespace SushiRuntime
         {
             /** @brief Builds the replay of a nullary host task ordered by the regions it names. */
             template <class F>
-            auto host_node(std::vector<Core::ResourceRegion> reads,
-                           std::vector<Core::ResourceRegion> writes, F&& fn, std::size_t width)
+            auto host_node(std::vector<Memory::ResourceRegion> reads,
+                           std::vector<Memory::ResourceRegion> writes, F&& fn, std::size_t width)
             {
                 return [fn = std::forward<F>(fn), reads = std::move(reads),
                         writes = std::move(writes), width]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
-                    bg.add_native(reads, writes, fn, {}, registration);
-                    bg.width_last_node(width);
+                    bg.add_native(reads, writes, fn, {}, registration).baked_width = width;
                 };
             }
         } // namespace detail

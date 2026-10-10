@@ -173,7 +173,7 @@ TEST(Unit_DependencyTrackerTest, NoSelfDependency)
     tracker.reset();
 }
 
-using SushiRuntime::Core::ResourceRegion;
+using SushiRuntime::Memory::ResourceRegion;
 
 /**
  * @brief Tests that writes to disjoint sub-regions of one allocation stay parallel.

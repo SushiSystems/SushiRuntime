@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Changed `SushiRuntime.h` to include only `core/version.hpp` and `api/fluent.hpp`; an engine type taken through it now needs its module header.
+- 2026-10-10 — api: Promoted every public name of the fluent API into `SushiRuntime::`, each from its own header, with the `_op` literal (`op_literal.hpp`, `errors.hpp`, `logging.hpp`).
+- 2026-10-10 — memory: Moved `ResourceRegion` and the liveness types to `SushiRuntime::Memory`; the `Core::` spellings forward and are deprecated (`resource_region.hpp`, `resource_liveness.hpp`).
+- 2026-10-10 — observability: Moved `RunReport` and the timing and ledger types to `SushiRuntime::Observability`; the `Core::` spellings forward and are deprecated (`run_report.hpp`).
+- 2026-10-10 — graph: Deprecated `width_last_node`, `last_node_width` and `last_registration_index` of the task graph for the `Node&` an add call returns (`task_graph.hpp`).
+- 2026-10-10 — api: Deprecated `API::BackingGraph` for `Graph::TaskGraph` and removed three unused helpers, `is_graph_emitter_v` among them (`backing_graph.hpp`, `callable_traits.hpp`).
+- 2026-10-10 — distributed: Added one header that includes what a master or a worker program needs, and moved the two example programs to it (`distributed.hpp`).
 - 2026-10-10 — docs: Rewrote the distributed guide for protocol version 2 and replaced the layer's entries in the known issues and the backlog (`DISTRIBUTED_GUIDE.md`, `KNOWN_ISSUES.md`).
 - 2026-10-10 — api: Changed `add()` and `add_untracked()` to take the launch first, as a count, an `Extent` or an `NdRange`; the old argument orders forward and are deprecated (`builder_surface.hpp`).
 - 2026-10-10 — api: Added `Coupled` and `On` to the vocabulary and `extend()` and `name()` to the builder; name_last() forwards to name() and is deprecated (`builder_surface.hpp`).

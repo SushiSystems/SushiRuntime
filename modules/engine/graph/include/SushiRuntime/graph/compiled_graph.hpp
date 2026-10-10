@@ -93,7 +93,7 @@ namespace SushiRuntime
             bool profiling = false;
 
             /** @brief Per-run node event records and clock pairing, live only while profiling is on. */
-            Core::ProfilingLedger profiling_ledger;
+            Observability::ProfilingLedger profiling_ledger;
 
             /**
              * @brief Per-registration-index count of internal nodes sharing it (F5).

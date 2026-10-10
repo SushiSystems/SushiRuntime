@@ -50,7 +50,7 @@
 namespace
 {
     using SushiRuntime::Core::Errc;
-    using SushiRuntime::Core::ResourceRegion;
+    using SushiRuntime::Memory::ResourceRegion;
     using SushiRuntime::Core::SushiException;
     using SushiRuntime::Graph::CompiledGraph;
     using SushiRuntime::Graph::HostWork;
@@ -164,13 +164,13 @@ TEST(Unit_TaskGraph, AReturnedNodeTakesItsRegistrationAndConfiguration)
     EXPECT_EQ(stamped.registration_index, 41u);
 
     Node& drawn = graph.add_node(idle_work());
-    EXPECT_EQ(drawn.registration_index, graph.last_registration_index());
+    EXPECT_EQ(drawn.registration_index, graph.last_node_added()->registration_index);
 
     // The node is configured through the reference, with no "last node" call.
     drawn.metadata.name = "configured";
     drawn.baked_width = 128;
     drawn.place_on(1);
-    EXPECT_EQ(graph.last_node_width(), 128u);
+    EXPECT_EQ(graph.last_node_added()->baked_width, 128u);
     EXPECT_STREQ(graph.last_node_added()->get_name(), "configured");
     EXPECT_EQ(graph.last_node_added()->stated_placement(), std::optional<std::size_t>(1));
 }

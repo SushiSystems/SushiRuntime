@@ -40,8 +40,8 @@
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/detail/late_window.hpp>
-#include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 
@@ -56,9 +56,9 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             inline void register_device_slot(const std::uint32_t* slot, std::size_t index,
-                                             std::vector<Core::ResourceRegion>& reads)
+                                             std::vector<Memory::ResourceRegion>& reads)
             {
-                reads.push_back(Core::ResourceRegion{
+                reads.push_back(Memory::ResourceRegion{
                     const_cast<void*>(static_cast<const void*>(slot)),
                     index * sizeof(std::uint32_t),
                     sizeof(std::uint32_t)});
@@ -71,7 +71,7 @@ namespace SushiRuntime
              */
             inline void adopt_device_bindings(::SushiRuntime::Graph::LateBindings& lb,
                                               const Dynamic& dyn,
-                                              std::vector<Core::ResourceRegion>& reads)
+                                              std::vector<Memory::ResourceRegion>& reads)
             {
                 const DeviceSlot count = DynamicAccess::count_slot(dyn);
                 if (count.words != nullptr)
@@ -99,19 +99,19 @@ namespace SushiRuntime
             template <class F>
             auto dynamic_node(std::shared_ptr<::SushiRuntime::Graph::LateBindings> lb,
                               std::uint32_t* fault,
-                              std::vector<Core::ResourceRegion> reads,
-                              std::vector<Core::ResourceRegion> writes,
+                              std::vector<Memory::ResourceRegion> reads,
+                              std::vector<Memory::ResourceRegion> writes,
                               std::size_t capacity, F&& fn, std::size_t width)
             {
                 return [fn = std::forward<F>(fn), capacity, lb, fault, reads = std::move(reads),
                         writes = std::move(writes), width]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     bg.add_node([fn, capacity, lb, fault](sycl::handler& h)
                     {
                         submit_late_window(h, *lb, capacity, fault, fn);
-                    }, reads, writes, lb, {}, registration);
-                    bg.width_last_node(width);
+                    }, reads, writes, lb, {}, registration).baked_width = width;
                 };
             }
 
@@ -123,10 +123,11 @@ namespace SushiRuntime
             auto dynamic_state_node(std::shared_ptr<StateView<T>> view, State<T>* state,
                                     std::shared_ptr<::SushiRuntime::Graph::LateBindings> lb,
                                     std::uint32_t* fault,
-                                    std::vector<Core::ResourceRegion> reads, F&& fn)
+                                    std::vector<Memory::ResourceRegion> reads, F&& fn)
             {
                 return [fn = std::forward<F>(fn), view, state, lb, fault, reads = std::move(reads)]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
                 {
                     const std::size_t capacity = state->size();
                     bg.add_node([fn, view, lb, capacity, fault](sycl::handler& h)
@@ -135,8 +136,8 @@ namespace SushiRuntime
                         T* next = view->next;
                         submit_late_window(h, *lb, capacity, fault,
                                            [fn, cur, next](std::size_t i) { fn(i, cur, next); });
-                    }, reads, { HandleAccess::write_key(*state) }, lb, {}, registration);
-                    bg.width_last_node(capacity);
+                    }, reads, { HandleAccess::write_key(*state) }, lb, {},
+                    registration).baked_width = capacity;
                 };
             }
         } // namespace detail

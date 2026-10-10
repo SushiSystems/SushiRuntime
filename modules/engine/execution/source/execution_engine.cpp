@@ -300,7 +300,7 @@ namespace SushiRuntime
          * @brief Reads the accumulators into a report's profiling breakdown.
          */
         void ExecutionEngine::collect_profiling(CompiledGraph& graph,
-                                                Core::RunReport& report) const
+                                                Observability::RunReport& report) const
         {
             // One capture path (F4): node_timings below is aggregated from these same records.
             graph.profiling_ledger.collect(report);
@@ -342,7 +342,7 @@ namespace SushiRuntime
             {
                 if (agg[idx].invocations == 0) continue;
 
-                Core::NodeTiming t;
+                Observability::NodeTiming t;
                 for (auto& n : graph.all_nodes)
                     if (!n->is_sentinel && n->registration_index == idx) { t.plan_index = n->plan_index; t.name = n->metadata.name; break; }
                 t.invocations = static_cast<std::size_t>(agg[idx].invocations);
@@ -356,7 +356,7 @@ namespace SushiRuntime
             for (std::size_t i = 0; i < workers; ++i)
             {
                 const auto s = impl_->scheduler.get_worker_times(static_cast<int>(i));
-                Core::WorkerTiming w;
+                Observability::WorkerTiming w;
                 w.worker_id   = static_cast<int>(i);
                 w.busy_ms     = s.busy_ns / 1.0e6;
                 w.stealing_ms = s.stealing_ns / 1.0e6;

@@ -18,6 +18,10 @@ repository.
 The first four were `core/` headers in v0.3; their old include paths forward here until
 v0.5.0 (`cmake/SushiRuntimeMovedHeaders.cmake`).
 
+Everything is in `SushiRuntime::Observability`. What the first four headers declare was in `Core`
+in v0.3, and each of them keeps the `Core::` spelling as a deprecated forwarder. `run_report.hpp`
+also promotes `RunReport` into `SushiRuntime`.
+
 ## event_timestamps.hpp
 
 ### read_event_timestamps

@@ -33,14 +33,12 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/task/task_types.hpp>
-#include <SushiRuntime/distributed/buffer_view.hpp>
-#include <SushiRuntime/distributed/kernel_registry.hpp>
+#include <SushiRuntime/distributed/distributed.hpp>
 
 /** @brief Holds what the master and the worker of the distributed demo must agree on. */
 namespace DistributedDemo
 {
-    using SushiRuntime::Graph::Literals::operator""_op;
+    using SushiRuntime::operator""_op;
 
     /** @brief Names the operation that adds two float vectors element by element. */
     inline constexpr SushiRuntime::Graph::OpID K_VECTOR_ADD = "demo.vector_add"_op;
