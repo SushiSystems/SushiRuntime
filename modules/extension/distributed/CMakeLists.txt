@@ -60,6 +60,7 @@ sushiruntime_add_module_tests(
         test_distributed.cpp
         test_distributed_e2e.cpp
         test_distributed_jepsen.cpp
+        test_distributed_tcp_faults.cpp
         test_handshake.cpp
         test_offload_dispatcher.cpp
         test_pending_tasks.cpp
