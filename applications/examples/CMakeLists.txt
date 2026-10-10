@@ -64,5 +64,6 @@ sushiruntime_add_example(sr_game_engine_demo       game_engine_demo.cpp)
 sushiruntime_add_example(sr_streaming_world_demo   streaming_world_demo.cpp)
 
 if(SR_ENABLE_DISTRIBUTED)
-    sushiruntime_add_example(sr_distributed_demo distributed_demo.cpp)
+    sushiruntime_add_example(sr_distributed_demo   distributed_demo.cpp)
+    sushiruntime_add_example(sr_distributed_worker distributed_worker.cpp)
 endif()
