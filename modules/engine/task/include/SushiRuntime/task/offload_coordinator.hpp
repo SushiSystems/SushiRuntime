@@ -69,8 +69,9 @@ namespace SushiRuntime
                 /**
                  * @brief Receives the sink that takes offloaded nodes back.
                  *
-                 * Called once, by the thread that installs the coordinator, while the pool
-                 * runs no node. The implementer stores the address and does not block.
+                 * Called by the thread that installs the coordinator, while the pool runs no
+                 * node, and possibly once before that with the same sink. The implementer
+                 * stores the address and does not block.
                  * @param sink Outlives every call the coordinator makes before stop() returns.
                  */
                 virtual void bind(OffloadSink& sink) = 0;

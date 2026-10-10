@@ -45,7 +45,7 @@
 namespace SushiRuntime
 {
 
-    namespace Graph { class OffloadCoordinator; }
+    namespace Graph { class OffloadCoordinator; class OffloadSink; }
 
     namespace Execution
     {
@@ -163,7 +163,7 @@ namespace SushiRuntime
              * driver then stops launching further steps. Default no-op so test
              * doubles need not implement it.
              */
-            virtual void cancel() {}
+            virtual void cancel() noexcept {}
 
             /**
              * @brief Reports whether the current/last run was cancelled.
@@ -284,7 +284,7 @@ namespace SushiRuntime
             void shutdown() override;
 
             /** @brief Requests cancellation of the active run via the scheduler. */
-            void cancel() override;
+            void cancel() noexcept override;
 
             /** @brief Reports whether the active run has been cancelled. */
             bool is_cancelled() const override;
@@ -325,6 +325,9 @@ namespace SushiRuntime
              * @param offload Not owned; null removes the installed one.
              */
             void install_offload(Graph::OffloadCoordinator* offload);
+
+            /** @brief Returns the sink an offload coordinator hands its nodes back to. */
+            [[nodiscard]] Graph::OffloadSink& offload_sink() noexcept;
 
         private:
             struct Impl;

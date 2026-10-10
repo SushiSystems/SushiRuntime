@@ -48,7 +48,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { class OffloadCoordinator; }
+    namespace Graph { class OffloadCoordinator; class OffloadSink; }
 
     namespace Execution
     {
@@ -137,6 +137,14 @@ namespace SushiRuntime
 
                 /** @brief Returns the installed offload coordinator, or nullptr for none. */
                 [[nodiscard]] Graph::OffloadCoordinator* offload() const noexcept;
+
+                /**
+                 * @brief Returns the sink an offload coordinator hands its nodes back to.
+                 *
+                 * A coordinator may be bound to it and started before install_offload(), so a
+                 * start that fails leaves the installed one in place.
+                 */
+                [[nodiscard]] Graph::OffloadSink& offload_sink();
 
                 // Every member from here to the template malloc_shared forwards to a part above and is deprecated.
 
