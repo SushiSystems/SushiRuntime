@@ -176,27 +176,23 @@ A counter the host cannot read at every moment of a run is rejected where it is 
 middle of a run. `Device` memory is never host-addressable, and `Shared` memory is managed memory
 the host may not touch while a kernel runs on some backends.
 
-### `AcceptsAnInteriorPointerIntoAHostSlot`
+### `ReadsTheCountAtTheGivenIndex`
 
-A caller with one plan array per device offsets into the array and hands over the interior address.
-Nothing else resolves an interior pointer to its allocation kind, so `add()` must resolve the
-pointer to the allocation it lies in before judging it.
+A caller with one plan array per device names an element of the array by index. The consumer must
+read that element: element 5 holds 3, and exactly three elements run.
 
-### `AcceptsAnInteriorPointerIntoAHostBaseSlot`
+### `AcceptsABaseSlotAtTheGivenIndex`
 
-`based_at_device` reads its slot on the host exactly as `sized_from_device` does, through the same
-check, so an offset base slot resolves the same way.
+`based_at_device` reads its slot exactly as `sized_from_device` does, through the same check, so a
+base slot at a non-zero index is accepted at `add()`.
 
-### `RefusesARawSlotThatIsNotHostResident`
+### `MemberSettersRefuseASlotThatIsNotHostResident`
 
-The raw-pointer setters take a bare address, so the residency check at `add()` is all that stands
-between a device slot and a host read of it in the middle of a run. The refusal has to say which of
-the two is wrong.
-
-### `RefusesASlotThisRuntimeNeverAllocated`
-
-A pointer from another runtime or from the stack has no residency this context can read. That is a
-different fault from a device slot, and it gets a different message.
+The members `Dynamic::sized_from_device` and `Dynamic::based_at_device` take the `Buffer` and check
+it as the free builders do. A device-resident slot and an index one past the buffer are refused
+where the member is called, and each message names the call. Up to v0.3 the members took a bare
+pointer, and the tests here that handed them an interior pointer, a device address and a stack
+address have no call left to make.
 
 ## test_device_sized_launch.cpp
 
@@ -640,10 +636,79 @@ rule out.
 `based_at_device` rejects a slot it could not read at dispatch, and it does so at the call site, not
 in the middle of a run.
 
-### `RawSharedSlotIsRejectedAtAdd`
+### `SharedSlotIsRejectedByTheMemberSetter`
 
-The raw-pointer setter takes no buffer, so `add()` checks the pointer: a slot inside `Shared` memory
-is rejected before the graph records the task.
+`Dynamic::sized_from_device` on a named Dynamic rejects a slot inside `Shared` memory where it is
+called, with `invalid_access`, as the free builder does.
+
+## test_late_bound_vocabulary.cpp
+
+The file covers what `LateCount` and `Dynamic` let a caller write and what they reject when they are
+built. Eight `static_assert` lines at the top state the shape: a `LateCount` has no default
+constructor and no assignable `capacity`, it copies, and its `Provider` is `Dynamic::CountProvider`;
+a `Dynamic` has no public `when_pred`, no setter that takes a bare pointer, and moves without
+copying. A field made public again, or a raw-pointer overload added back, fails the compile.
+
+### `error_of`, `record_live_count_copy`, `count_elements_run`
+
+`error_of` runs a call and returns the `Core::Error` of the `SushiException` it throws.
+`record_live_count_copy` records a resolver whose fill copies the live count into a buffer the test
+reads back. `count_elements_run` adds one late-bound task that sets `marks[i]` to one, runs it once
+and returns how many elements were set.
+
+### `FromDeviceRejectsAnIndexPastTheSlot`
+
+`LateCount::from_device(64, slot, slot.size())` on a slot of three elements throws `invalid_access`
+where it is called, and the message holds the call, `index 3` and `3 elements`. The last valid
+index is accepted. Up to v0.3 the index was a public field nobody checked until the first run.
+
+### `FromDeviceRejectsASlotThatIsNotHostResident`
+
+A `Device` slot and a `Shared` slot are both refused with `invalid_access`, and the message names
+`Residency::Host`.
+
+### `FromHostRejectsAnEmptyProvider`
+
+An empty provider would read as a fixed count, which `fixed()` already spells, so `from_host`
+throws `invalid_access`.
+
+### `EveryFactoryRejectsACapacityPastAUint32`
+
+A capacity one above the largest uint32 throws `invalid_graph` from all three factories, and the
+largest uint32 itself is accepted. The test is skipped where `std::size_t` is no wider than a
+uint32.
+
+### `CapacityReportsThePlanSize`
+
+`capacity()` returns the first argument of each factory.
+
+### `ARecordedCopyKeepsTheHostProvider`
+
+A count is built, copied and recorded inside a scope that then ends. Two runs with two different
+live values must both reach the fill: the recorded copy shares the provider and does not point into
+the destroyed original.
+
+### `FromDeviceReadsTheWordAtItsIndex`
+
+Element 2 of a four-word slot holds 77 and the others hold 5. A count built with index 2 resolves
+to 77.
+
+### `TheSizeSourceSetLastWins`
+
+A device slot holds 3 and a host provider returns 5. `sized_from_device(counter).sized(host)` runs
+five elements and `sized(host).sized_from_device(counter)` runs three. Up to v0.3 the first form ran
+three, because `and_sized()` left the device slot in place.
+
+### `MembersChainOnANamedDynamic`
+
+`when`, `sized` and `based_at` chain on a named `Dynamic`, which then moves into `add()`. Elements
+10 to 13 run once, and a second run with the predicate false runs none.
+
+### `DeprecatedSettersForwardToTheirReplacements`
+
+`and_when`, `and_sized` and `and_based_at` still set the three controls: elements 20 to 25 run. The
+calls sit between pragmas that silence the deprecation warning, because the tree compiles with
+`-Werror`.
 
 ## test_late_count.cpp
 
@@ -651,9 +716,9 @@ The file covers where `Recorder::resolve()` takes the live value of a `LateCount
 reads it. Every case records `record_live_count_copy`, a resolver whose fill copies the live count
 into a buffer the test reads back.
 
-### `DefaultResolvesToCapacity`
+### `FixedResolvesToItsCount`
 
-With neither a host provider nor a device slot the live count is the capacity, as in a fixed call.
+A `LateCount::fixed` count has no live source, so the live count is the count it was built with.
 
 ### `ChangingHostCountKeepsOneCompile`
 
@@ -675,11 +740,10 @@ A `Residency::Host` device slot resolves to the value written into it, exactly a
 A device count above the capacity fails the run on a default runtime and on one that forces the
 scheduler. A second graph with a count that fits then runs clean on the same runtime.
 
-### `NonHostDeviceSlotIsRejectedAtRegistration`
+### `NonHostDeviceSlotIsRejectedAtConstruction`
 
-A device slot that is not `Residency::Host` is rejected by `Recorder::resolve()`, the way
-`require_host_device_slots()` rejects a non-host slot of `sized_from_device()`. Nothing is
-recorded, and the failure does not wait for the first run.
+A device slot that is not `Residency::Host` is rejected by `LateCount::from_device` with
+`invalid_access`, before a recorder sees the count.
 
 ### `ResolverSeesTheCountItsPredecessorJustWrote`
 
@@ -736,7 +800,7 @@ so a stamp that read the size of either buffer and not the stated width fails.
 ### `ResolverAndDeviceSizedNodeReportTheirStatedWidths`
 
 A resolver states a width of one and a device-sized kernel states its capacity. The `LateCount` is
-left at its default, so the live count is the capacity and every work-item writes.
+built with `LateCount::fixed`, so the live count is the capacity and every work-item writes.
 
 ## test_recorder_scratch.cpp
 
@@ -897,6 +961,69 @@ and exactly three node events carry it. A position past the last rule reports `n
 
 Over `run(4)` the report holds one event per node per step, and on every step exactly three events
 carry the index of the rule.
+
+## test_run_driver.cpp
+
+The file covers the run entries `StepDriver` gives `Graph` and `DynamicGraph`: that both types
+expose the same ones, which `Errc` each kind of failure carries, and what a report counts.
+
+### `RunEntries`
+
+`RunEntries<G>` is the list of run entries as `static_assert`s: the eight throwing forms, their
+eight `try_` twins, `run_async()`, `try_run_async()`, `cancel()`, `set_profiling()` and
+`is_profiling_requested()`, each with its return type, and `noexcept` where the contract has it.
+The template is instantiated for `API::Graph` and for `API::DynamicGraph`, so an entry missing from
+either, or declared differently, fails the compile.
+
+### `expect_kernel_failed_everywhere`, `code_thrown_by`
+
+`expect_kernel_failed_everywhere` runs a graph whose host task throws `std::runtime_error` through
+`try_run()`, `try_run(report)`, `try_run_async()` with `try_wait()`, `run()` and
+`run_async().wait()`, and expects `Errc::kernel_failed` with the task's text from each.
+`code_thrown_by` returns the code of the `SushiException` a call throws; any other exception type
+leaves the helper and fails the test.
+
+### `GraphReportsAThrowingHostTaskAsKernelFailed`, `DynamicGraphReportsAThrowingHostTaskAsKernelFailed`
+
+A host task that throws is a failed step, so both graph types report `kernel_failed` from the
+synchronous and the asynchronous path. `try_run()` used to report `compile_failed` for it, and
+`wait()` used to let the task's own exception through.
+
+### `AThrowingBuildIsCompileFailed`
+
+An emitter runs when the plan is built. One that throws must yield `compile_failed` from `try_run()`
+and from `try_run_async()`, which shows that the code follows the phase and not the exception type.
+
+### `EveryTryEntryRunsOnBothGraphs`
+
+`expect_every_try_entry_runs` calls the eight `try_` entries once each on a graph whose single host
+task counts its runs. The count must be twelve on a `Graph` and on a `DynamicGraph`: one, two, one
+and two steps from the `try_run` forms, one each from the two `try_run_for` forms with a zero
+budget, and two each from the two `try_run_until` forms.
+
+### `ARunWhileAStepIsPendingIsInvalidState`
+
+While a step is held open at a gate, `try_run()` and `try_run_async()` must return `invalid_state`,
+and so must a second `try_wait()` on the handle once the step has been waited for.
+
+### `SetProfilingChainsAndReadsBack`
+
+`set_profiling()` returns the graph it was called on and `is_profiling_requested()` reads the
+request back, on both graph types.
+
+### `MovingAGraphWithAPendingStepEndsTheStep`
+
+Moving a graph while its step is pending breaks a precondition. A debug build asserts, so the test
+is skipped there. In a release build the move must wait for the step, the handle's `try_wait()` must
+return `invalid_state`, and the destination must run. The gate is released before the move, so the
+move returns as soon as the task has run.
+
+### `CountingCoordinator`, `OffloadedCountIsOfThisRun`
+
+`CountingCoordinator` offloads nothing and reports as offloaded a count the test moves. The test
+sets it to five before any run, and the graph's host task adds three per step. A one-step run must
+report three, a two-step run six and an asynchronous step three; a report that copied the
+coordinator's cumulative count would say eight, fourteen and seventeen.
 
 ## test_run_report_reuse.cpp
 

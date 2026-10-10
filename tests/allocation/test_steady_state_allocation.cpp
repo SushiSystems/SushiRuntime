@@ -317,7 +317,7 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.set_profiling_requested(true);
+    g.set_profiling(true);
     g.add(API::Reads{}, API::Writes(buf), N, kernel(p));
 
     const std::size_t reuse_short = allocations_for_reuse_ticks(g, TICKS);
@@ -351,7 +351,7 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
     auto scheduled_buf = scheduled_rt.buffer<int>(N);
 
     auto sg = scheduled_rt.graph();
-    sg.set_profiling_requested(true);
+    sg.set_profiling(true);
     sg.add(API::Reads{}, API::Writes(scheduled_buf), N, kernel(scheduled_buf.data()));
 
     const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, TICKS);

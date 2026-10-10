@@ -127,18 +127,8 @@ namespace SushiRuntime
                 }
 
                 using PlanCache::compile_count;
-                using PlanCache::profiling_requested;
-                using PlanCache::set_profiling_requested;
-                using StepDriver<Graph>::try_run;
-
-                /**
-                 * @brief Non-throwing single run.
-                 * @return The RunReport on success, or an Error on failure.
-                 */
-                [[nodiscard]] Core::Result<Core::RunReport, Core::Error> try_run() noexcept
-                {
-                    return try_run(std::size_t{1});
-                }
+                using StepDriver<Graph>::profiling_requested;
+                using StepDriver<Graph>::set_profiling_requested;
 
             private:
                 friend class Runtime;
@@ -161,6 +151,18 @@ namespace SushiRuntime
 
                 /** @brief Returns the context whose engine runs this graph. */
                 Execution::RuntimeContext& run_context() noexcept { return *ctx_; }
+
+                /** @brief Records the profiling request; the next run rebuilds the plan. */
+                void request_profiling(bool requested) noexcept
+                {
+                    PlanCache::set_profiling_requested(requested);
+                }
+
+                /** @brief Returns whether the next plan requests per-node device timing. */
+                bool profiling_request() const noexcept
+                {
+                    return PlanCache::profiling_requested();
+                }
 
                 /** @brief Returns whether any task has been recorded. */
                 bool has_work() const noexcept { return recorder_.node_count() != 0; }

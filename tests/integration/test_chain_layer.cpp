@@ -210,7 +210,7 @@ TEST(Integration_ChainLayer, ProfiledChainRecordsEveryDispatch)
     int* pb = b.data();
 
     auto g = rt.graph();
-    g.set_profiling_requested(true);
+    g.set_profiling(true);
     g.add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i) { pa[i] += 1; });
     g.add(API::Reads(a), API::Writes(b), N, [pa, pb](std::size_t i) { pb[i] += pa[i]; });
 

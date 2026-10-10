@@ -204,7 +204,7 @@ TEST(Integration_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
     auto step = g.run_async();
 
     EXPECT_THROW(g.run(), SushiException) << "a synchronous run must be refused";
-    EXPECT_THROW(g.run_async(), SushiException) << "a second async step must be refused";
+    EXPECT_THROW(static_cast<void>(g.run_async()), SushiException) << "a second async step must be refused";
 
     released.store(true, std::memory_order_release);
     step.wait();

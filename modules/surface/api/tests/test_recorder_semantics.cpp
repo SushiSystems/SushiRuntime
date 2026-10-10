@@ -173,7 +173,7 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     auto graph = rt.graph();
     record_three_node_rule(graph.recorder(), values);
     graph.name_last("pipeline");
-    graph.set_profiling_requested(true);
+    graph.set_profiling(true);
 
     EXPECT_EQ(graph.size(), 1u);
     EXPECT_EQ(graph.node_count(), RULE_NODES);
@@ -197,7 +197,7 @@ TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     auto first = zeroed(rt);
     auto second = zeroed(rt);
     auto world = rt.dynamic_graph();
-    world.set_profiling_requested(true);
+    world.set_profiling(true);
     add_increment(world.region(CELL), first, 1u);
     record_three_node_rule(world.region(CELL + 1).recorder(), second);
     world.region(CELL + 1).name_last("pipeline");
@@ -231,7 +231,7 @@ TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
     add_increment(graph, values, 1u);
     graph.name_last(std::string("a label that is ") + "replaced by the next call");
     graph.name_last(std::string("integrate_") + std::to_string(CELL));
-    graph.set_profiling_requested(true);
+    graph.set_profiling(true);
 
     Core::RunReport report;
     graph.run(1, report);
@@ -249,7 +249,7 @@ TEST(Integration_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
     auto values = zeroed(rt);
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
-    graph.set_profiling_requested(true);
+    graph.set_profiling(true);
     Core::RunReport unnamed;
     graph.run(1, unnamed);
     ASSERT_EQ(unnamed.node_timings.size(), 1u);

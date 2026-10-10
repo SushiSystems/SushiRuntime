@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Added `try_run_for`, `try_run_until`, `try_run_async` and the reuse forms of the timed runs to both graphs; the dynamic graph gains `try_run` (`step_driver.hpp`).
+- 2026-10-10 — api: Changed a throwing host task to report the kernel-failed code and a run during a pending step the invalid-state code; `RunHandle::wait` throws `SushiException` only (`step_driver.hpp`, `run_handle.hpp`).
+- 2026-10-10 — api: Changed the run handle and `run_async()` to nodiscard, and deprecated `set_profiling_requested` and `profiling_requested` for `set_profiling` and `is_profiling_requested`.
+- 2026-10-10 — api: Fixed the run report's offloaded count being cumulative; it counts the dispatches of the reported run (`run_report_builder.hpp`).
 - 2026-10-10 — api: Changed `LateCount` to a class built by `LateCount::fixed`, `from_host` or `from_device`; its fields and default constructor are gone and a bad slot throws at construction (`late_count.hpp`).
 - 2026-10-10 — api: Made the fields of `Dynamic` private and added the members `when`, `sized` and `based_at`; the three forms with the and prefix are deprecated (`dynamic.hpp`).
 - 2026-10-10 — api: Removed the raw-pointer setters `and_sized_from_device` and `and_based_at_device`; pass the buffer to `sized_from_device` or `based_at_device` (`dynamic.hpp`).

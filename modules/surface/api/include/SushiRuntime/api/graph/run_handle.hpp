@@ -30,10 +30,8 @@
 
 #include <chrono>
 #include <cstddef>
-#include <exception>
+#include <cstdint>
 #include <utility>
-
-#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -55,9 +53,11 @@ namespace SushiRuntime
                 Execution::ExecutionMetrics before{};      /**< Scheduler counters at submit. */
                 std::size_t device_to_host_before = 0;     /**< Transfer counter at submit. */
                 std::size_t host_to_device_before = 0;     /**< Transfer counter at submit. */
+                std::uint64_t offloaded_before = 0;        /**< Offload counter at submit. */
                 std::chrono::steady_clock::time_point started{}; /**< When the roots went in. */
                 double compile_ms = 0.0;                   /**< Time spent compiling, if it did. */
                 std::size_t task_count = 0;                /**< Tasks this step dispatched. */
+                std::uint32_t serial = 0;                  /**< Number the driver gave the step. */
             };
         } // namespace detail
 
@@ -72,14 +72,14 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         template <class Owner>
-        class RunHandle
+        class [[nodiscard]] RunHandle
         {
             public:
                 /** @brief Constructs an empty handle that owns no step. */
                 RunHandle() = default;
 
                 /**
-                 * @brief Takes over @p other's pending step, leaving it empty.
+                 * @brief Takes over other's pending step, leaving it empty.
                  * @param other Handle to take the step from; owns nothing afterwards.
                  */
                 RunHandle(RunHandle&& other) noexcept
@@ -111,79 +111,53 @@ namespace SushiRuntime
                 ~RunHandle() { settle(); }
 
                 /**
-                 * @brief Whether this handle still owns a step that must be waited for.
-                 * @return True until wait()/try_wait() consumes it, or it is moved from.
+                 * @brief Returns whether this handle still owns a step that must be waited for.
+                 * @return True until wait() or try_wait() consumes it, or it is moved from.
                  */
-                bool pending() const noexcept { return owner_ != nullptr; }
+                [[nodiscard]] bool pending() const noexcept { return owner_ != nullptr; }
 
                 /**
                  * @brief Returns whether waiting would return immediately.
                  * @return True when the step is done, or the handle owns no step.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                bool ready() const
+                [[nodiscard]] bool ready() const
                 {
-                    return owner_ == nullptr || owner_->async_engine().run_finished();
+                    return owner_ == nullptr || owner_->async_step_finished();
                 }
 
                 /**
                  * @brief Blocks until the step finishes, advances every State and returns the
                  *        report.
-                 * @throws Core::SushiException If the handle owns no step.
-                 * @throws The first exception a task threw during the step.
+                 * @throws Core::SushiException With the error try_wait() would return.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 Core::RunReport wait()
                 {
-                    Core::RunReport report;
-                    wait(report);
-                    return report;
+                    auto waited = try_wait();
+                    if (!waited)
+                        throw Core::SushiException(std::move(waited.error()));
+                    return std::move(*waited);
                 }
 
                 /**
                  * @brief Blocks until the step finishes and reports into reuse.
                  * @param reuse The report to overwrite; its previous contents are lost.
-                 * @throws Core::SushiException If the handle owns no step.
-                 * @throws The first exception a task threw during the step.
+                 * @throws Core::SushiException With the error try_wait() would return.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 Core::RunReport& wait(Core::RunReport& reuse)
                 {
-                    if (owner_ == nullptr)
-                        throw Core::SushiException(Core::Error{
-                            Core::Errc::invalid_graph,
-                            "RunHandle::wait(): this handle owns no step — it was "
-                            "already waited for, or moved from."});
-
-                    // The handle is consumed before the blocking call, even when a task throws.
-                    Owner* owner = owner_;
-                    owner_ = nullptr;
-
-                    // Cleared before the blocking call, so a failed step shows no old numbers.
-                    reuse.reset();
-                    reuse.is_successful = false;
-
-                    try
-                    {
-                        owner->async_engine().complete();
-                    }
-                    catch (...)
-                    {
-                        // The owner's in-flight marker is released before the exception propagates.
-                        owner->discard_async_step();
-                        throw;
-                    }
-                    owner->finish_async_step(state_, reuse);
+                    auto waited = try_wait(reuse);
+                    if (!waited)
+                        throw Core::SushiException(std::move(waited.error()));
                     return reuse;
                 }
 
                 /**
-                 * @brief Non-throwing wait.
-                 *
-                 * The counterpart to try_run() for the asynchronous path: the same
-                 * failures, reported as a value.
-                 *
-                 * @return The report on success, or the error that ended the step.
+                 * @brief Blocks until the step finishes and returns the outcome as a value.
+                 * @return The report, or the Error that ended the step.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 [[nodiscard]] Core::Result<Core::RunReport, Core::Error> try_wait() noexcept
                 {
@@ -195,41 +169,34 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Non-throwing wait into a report the caller owns.
-                 *
+                 * @brief Blocks until the step finishes and reports into reuse, without throwing.
                  * @param reuse The report to overwrite; its previous contents are lost.
-                 * @return A pointer to @p reuse on success, or the error that ended
-                 *         the step.
+                 * @return A pointer to reuse, or the Error that ended the step.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 [[nodiscard]] Core::Result<Core::RunReport*, Core::Error>
                 try_wait(Core::RunReport& reuse) noexcept
                 {
-                    try
-                    {
-                        wait(reuse);
-                        return &reuse;
-                    }
-                    catch (const Core::SushiException& e)
-                    {
-                        return Core::make_error(e.error());
-                    }
-                    catch (const sycl::exception& e)
-                    {
-                        return Core::make_error(Core::Error{Core::Errc::kernel_failed, e.what()});
-                    }
-                    catch (const std::exception& e)
-                    {
-                        return Core::make_error(Core::Error{Core::Errc::kernel_failed, e.what()});
-                    }
-                    catch (...)
-                    {
-                        return Core::make_error(Core::Error{Core::Errc::kernel_failed,
-                                                            "unknown exception"});
-                    }
+                    // Cleared before anything else, so a failed step shows no old numbers.
+                    reuse.reset();
+                    reuse.is_successful = false;
+
+                    if (owner_ == nullptr)
+                        return Core::make_error(Core::Error{Core::Errc::invalid_state,
+                            "RunHandle::wait(): this handle owns no step, because it was "
+                            "already waited for or moved from; start a step with run_async()."});
+
+                    // The handle is consumed before the blocking call, even when the step fails.
+                    Owner* owner = owner_;
+                    owner_ = nullptr;
+
+                    Core::Error failure = owner->settle_async_step(state_, reuse);
+                    if (failure.code != Core::Errc::ok)
+                        return Core::make_error(std::move(failure));
+                    return &reuse;
                 }
 
             private:
-                friend Owner;
                 // The driver of the owner starts the step this handle settles.
                 friend class StepDriver<Owner>;
 
@@ -239,24 +206,21 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Finishes a step nobody waited for and drops its outcome without throwing.
+                 * @brief Finishes a step nobody waited for and drops its outcome.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 void settle() noexcept
                 {
                     if (owner_ == nullptr)
                         return;
-                    try
-                    {
-                        wait();
-                    }
-                    catch (...)
-                    {
-                        // Deliberately swallowed; see above.
-                    }
+                    Core::RunReport dropped;
+                    static_cast<void>(try_wait(dropped));
                 }
 
+                /** @brief The graph whose step this handle settles; null when it owns none. */
                 Owner* owner_ = nullptr;
+
+                /** @brief What run_async() recorded when it submitted the step. */
                 detail::AsyncRunState state_{};
         };
 

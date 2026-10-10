@@ -85,7 +85,7 @@ TEST(Integration_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
     int* p = buf.data();
 
     auto world = rt.dynamic_graph();
-    EXPECT_FALSE(world.profiling_requested());
+    EXPECT_FALSE(world.is_profiling_requested());
     world.region(0).add(API::Reads{}, API::Writes(buf), N,
                         [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
@@ -106,7 +106,7 @@ TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRe
     int* pb = b.data();
 
     auto world = rt.dynamic_graph();
-    world.set_profiling_requested(true);
+    world.set_profiling(true);
     world.region(0).add(API::Reads{}, API::Writes(a), N,
                         [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name_last("A");
     world.region(1).add(API::Reads{}, API::Writes(b), N,
@@ -140,7 +140,7 @@ TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrde
     int* pc = c.data();
 
     auto world = rt.dynamic_graph();
-    world.set_profiling_requested(true);
+    world.set_profiling(true);
 
     // Region 5 is keyed above region 2, so its two calls land after region 2's one; see README.md.
     world.region(5).add(API::Reads{}, API::Writes(a), N,
@@ -175,7 +175,7 @@ TEST(Integration_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
     int* pb = b.data();
 
     auto world = rt.dynamic_graph();
-    world.set_profiling_requested(true);
+    world.set_profiling(true);
 
     world.region(0).add(API::Reads{}, API::Writes(a), N,
                         [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name_last("kept");
@@ -214,7 +214,7 @@ TEST(Integration_DynamicGraphNodeEvents, RequestToggleRecompilesOnce)
     world.run();
     const std::size_t compiles_before = world.compile_count();
 
-    world.set_profiling_requested(true);
+    world.set_profiling(true);
     world.run();
     EXPECT_EQ(world.compile_count(), compiles_before + 1)
         << "the toggle must force exactly one recompose";

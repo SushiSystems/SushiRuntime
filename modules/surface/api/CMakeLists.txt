@@ -34,6 +34,7 @@ sushiruntime_add_module_tests(
         test_fluent_hardening.cpp
         test_fluent_lifecycle.cpp
         test_late_bindings.cpp
+        test_late_bound_vocabulary.cpp
         test_late_count.cpp
         test_native_cpu_path.cpp
         test_node_options_width.cpp
@@ -41,5 +42,6 @@ sushiruntime_add_module_tests(
         test_recorder_semantics.cpp
         test_region_emitter.cpp
         test_rule_registration.cpp
+        test_run_driver.cpp
         test_run_report_reuse.cpp
         test_runtime_entry.cpp)
