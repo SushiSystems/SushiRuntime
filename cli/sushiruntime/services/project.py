@@ -387,7 +387,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
 
 def build(build_type: BuildType, distributed: bool = False,
           no_cuda: bool = False, clean: bool = False, force: bool = False,
-          tests: bool = True) -> int:
+          tests: bool = True, jobs: int | None = None) -> int:
     console.header("Project Build")
     root = find_project_root()
     cfg = load_config()
@@ -446,7 +446,7 @@ def build(build_type: BuildType, distributed: bool = False,
         (build_dir / STAMP_NAME).write_text(stamp_key)
 
     console.info("Building...")
-    rc = _DRIVER.compile(cfg, build_dir, cwd=root, env=env, config=cmake_build_type)
+    rc = _DRIVER.compile(cfg, build_dir, cwd=root, env=env, config=cmake_build_type, jobs=jobs)
     if rc == 0:
         console.success("Build completed successfully!")
     else:
