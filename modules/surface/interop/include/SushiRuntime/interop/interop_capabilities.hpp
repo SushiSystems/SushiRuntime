@@ -42,9 +42,9 @@ namespace SushiRuntime
          */
         struct InteropCapabilities
         {
-            bool host_export = false;              /**< Reports whether the device can export host memory for another API to import. */
-            bool device_import = false;             /**< Reports whether the device can import another API's exported device memory. */
-            std::optional<DeviceUuid> device_uuid;  /**< Holds the device's UUID, or nothing when it lacks the aspect. */
+            bool host_export = false;   /**< Reports whether the device's queue offers host USM. */
+            bool device_import = false; /**< Reports whether the device imports exported memory. */
+            std::optional<DeviceUuid> device_uuid; /**< Holds the device's UUID, when it has one. */
         };
 
     } // namespace Interop

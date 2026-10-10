@@ -4,5 +4,50 @@ The tests of the `interop` module, built into one program, `sr_interop_tests`, w
 `modules/surface/interop/CMakeLists.txt` declares. `sr test` runs it with the rest;
 `sr run sr_interop_tests -- --gtest_filter='<pattern>'` runs it alone.
 
-No test file in this folder has notes yet. A section, when one is written, is named after its test
-file.
+A section is named after a test file, and a subsection after the test, helper or topic it describes.
+
+## test_interop_import.cpp
+
+The file covers what `import_device` refuses and what `capabilities()` reports. It builds a
+`Runtime` over the devices of the machine it runs on. No test imports memory: every descriptor here
+holds a handle of zero and is refused before the handle is used.
+
+### `first_device_where_import_is`
+
+Three tests need a device that imports external memory, which means a GPU on a toolchain with the
+bindless-images extension. One needs a device that does not. The helper finds either, and a test
+whose device is missing is reported as skipped.
+
+### `acceptable_descriptor`
+
+`acceptable_descriptor` builds a descriptor with this platform's handle kind, an allocation of 64
+bytes and the UUID of the chosen device. Each test then breaks one field, so the refusal it sees
+can only come from that field.
+
+### `HostExportReportsWhetherTheQueueOffersHostUsm`
+
+`host_export` equals `sycl::aspect::usm_host_allocations` of the device behind the queue.
+
+### `ADeviceWithoutImportIsRefusedByItsIndex`
+
+The capability is checked before the descriptor. The refusal is `Errc::unsupported` and its
+message carries the device index.
+
+### `AHandleKindOfAnotherPlatformIsRefusedByName`
+
+Windows imports `OpaqueWin32` handles and every other platform imports `OpaqueFd`. The other kind is
+refused with `Errc::invalid_access`.
+
+### `ARegionPastTheAllocationIsRefusedWithItsNumbers`
+
+Four floats at offset 60 end at byte 76 of a 64-byte allocation. The message carries the byte
+count, the offset and the allocation size.
+
+The second case puts the offset past the allocation and asks for zero bytes. The check compares the
+offset first, so the subtraction that follows cannot wrap.
+
+### `AnotherDevicesUuidIsRefusedWithBothUuids`
+
+The descriptor carries the device's own UUID with the last byte inverted. The message spells both
+UUIDs in hexadecimal. A device that reports no UUID is refused with its own message; no test
+reaches that case, because a device cannot be made to drop its UUID.

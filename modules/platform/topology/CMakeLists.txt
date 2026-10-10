@@ -18,4 +18,4 @@ sushiruntime_add_module(
 
 sushiruntime_add_module_tests(
     MODULE topology
-    SOURCES test_affinity.cpp test_topology_view.cpp)
+    SOURCES test_affinity.cpp test_hw_discovery.cpp test_topology_view.cpp)

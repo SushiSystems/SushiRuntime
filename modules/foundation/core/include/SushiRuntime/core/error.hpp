@@ -51,7 +51,8 @@ namespace SushiRuntime
             device_lost,        /**< The target device disappeared or became unusable. */
             invalid_access,     /**< A handle was accessed in a way its residency forbids. */
             dangling_resource,  /**< A run referenced a handle whose allocation was freed. */
-            unsupported         /**< The active implementation does not offer the requested capability. */
+            unsupported,        /**< The implementation does not offer the requested capability. */
+            invalid_state       /**< The call is not allowed in the object's current state. */
         };
 
         /**
@@ -62,7 +63,7 @@ namespace SushiRuntime
          * @param code The specific error code to translate.
          * @return A null-terminated static string literal representing the error name.
          */
-        inline const char* to_string(Errc code) noexcept
+        [[nodiscard]] inline const char* to_string(Errc code) noexcept
         {
             switch (code)
             {
@@ -75,6 +76,7 @@ namespace SushiRuntime
                 case Errc::invalid_access:    return "invalid_access";
                 case Errc::dangling_resource: return "dangling_resource";
                 case Errc::unsupported:       return "unsupported";
+                case Errc::invalid_state:     return "invalid_state";
             }
             return "unknown";
         }
@@ -117,7 +119,7 @@ namespace SushiRuntime
                  *
                  * @return A constant reference to the underlying structured error.
                  */
-                const Error& error() const noexcept { return err_; }
+                [[nodiscard]] const Error& error() const noexcept { return err_; }
 
             private:
                 Error err_; /**< The structured failure detail. */

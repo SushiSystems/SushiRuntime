@@ -28,8 +28,9 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
-#include <stdexcept>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 
 namespace SushiRuntime
@@ -48,14 +49,20 @@ namespace SushiRuntime
                  *
                  * Initializes the internal distance matrix and validates its dimensions.
                  * @param matrix The square distance matrix representing NUMA node latencies (takes ownership).
-                 * @throws std::invalid_argument If the provided matrix is not square.
+                 * @throws Core::SushiException With Errc::invalid_access for a ragged matrix.
                  */
                 explicit MatrixDistanceModel(std::vector<std::vector<int>> matrix)
                     : matrix_(std::move(matrix))
                 {
-                    for (const auto& row : matrix_)
-                        if (row.size() != matrix_.size())
-                            throw std::invalid_argument("MatrixDistanceModel: matrix must be square.");
+                    for (std::size_t row = 0; row < matrix_.size(); ++row)
+                        if (matrix_[row].size() != matrix_.size())
+                            throw Core::SushiException(Core::Error{
+                                Core::Errc::invalid_access,
+                                "MatrixDistanceModel: row " + std::to_string(row) + " holds " +
+                                    std::to_string(matrix_[row].size()) +
+                                    " entries and the matrix has " +
+                                    std::to_string(matrix_.size()) +
+                                    " rows; every row must be as long as the matrix."});
                 }
 
                 /**

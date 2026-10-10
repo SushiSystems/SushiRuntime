@@ -26,10 +26,11 @@
  */
 
 #include <memory>
-#include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 #include <gtest/gtest.h>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
@@ -37,9 +38,30 @@
 #include <SushiRuntime/topology/topology_view.hpp>
 
 using namespace SushiRuntime::Topology;
+using SushiRuntime::Core::Errc;
+using SushiRuntime::Core::Error;
+using SushiRuntime::Core::SushiException;
 
 namespace
 {
+    /**
+     * @brief Runs @p build and returns the Error it throws, failing when it throws none.
+     */
+    template <typename Build>
+    Error refusal_of(Build&& build)
+    {
+        try
+        {
+            build();
+            ADD_FAILURE() << "the constructor accepted its argument";
+        }
+        catch (const SushiException& refusal)
+        {
+            return refusal.error();
+        }
+        return Error{};
+    }
+
     /// @brief Remote cost of the two-node matrix; differs from the model's fallback of 21.
     constexpr int K_REMOTE_COST = 32;
 
@@ -195,7 +217,37 @@ TEST(Unit_TopologyView, NullDistanceModelIsRejected)
 {
     FixedTopologyProvider provider({0, 1});
 
-    EXPECT_THROW(TopologyView(provider, nullptr), std::invalid_argument);
+    const Error refusal = refusal_of([&] { TopologyView view(provider, nullptr); });
+
+    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_NE(refusal.message.find("distance model is null"), std::string::npos)
+        << refusal.message;
+}
+
+/**
+ * @brief Verifies that a remapping over no provider is rejected.
+ */
+TEST(Unit_TopologyView, NullInnerProviderIsRejected)
+{
+    const Error refusal = refusal_of([] { RemappingTopologyProvider provider(nullptr, 2); });
+
+    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_NE(refusal.message.find("inner provider is null"), std::string::npos)
+        << refusal.message;
+}
+
+/**
+ * @brief Verifies that a ragged matrix is rejected with the row and both sizes.
+ */
+TEST(Unit_TopologyView, RaggedDistanceMatrixIsRejectedWithItsRow)
+{
+    const Error refusal =
+        refusal_of([] { MatrixDistanceModel model({{10, 21, 21}, {21, 10}, {21, 21, 10}}); });
+
+    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_NE(refusal.message.find("row 1 holds 2 entries"), std::string::npos)
+        << refusal.message;
+    EXPECT_NE(refusal.message.find("has 3 rows"), std::string::npos) << refusal.message;
 }
 
 /**

@@ -69,8 +69,8 @@ namespace SushiRuntime
              * @brief Imports device memory another API exported.
              * @param descriptor Names the exported handle and its device.
              * @throws Core::SushiException With unsupported when the device cannot import
-             *        external memory, or invalid_access when @p descriptor names a
-             *        different device.
+             *        external memory, or invalid_access when @p descriptor names another
+             *        platform's handle kind, a region past its allocation or another device.
              */
             SUSHIRUNTIME_API Memory::Allocation import_device_memory(
                 const std::shared_ptr<Execution::RuntimeContext>& context,

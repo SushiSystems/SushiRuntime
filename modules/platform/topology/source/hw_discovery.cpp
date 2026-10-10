@@ -31,7 +31,9 @@
 #include <cstdio>
 #include <hwloc.h>
 #include <regex>
+#include <string>
 #include <unordered_set>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 
@@ -39,6 +41,76 @@ namespace SushiRuntime
 {
     namespace Topology
     {
+        namespace
+        {
+            /** @brief Loads the machine's hwloc topology and destroys it on scope exit. */
+            class LoadedHwlocTopology final
+            {
+                public:
+                    /** @brief Loads the topology; get() returns null when hwloc refuses. */
+                    LoadedHwlocTopology() noexcept
+                    {
+                        if (hwloc_topology_init(&topology_) < 0)
+                        {
+                            topology_ = nullptr;
+                            return;
+                        }
+                        hwloc_topology_set_flags(topology_, HWLOC_TOPOLOGY_FLAG_INCLUDE_DISALLOWED);
+                        hwloc_topology_set_io_types_filter(topology_, HWLOC_TYPE_FILTER_KEEP_ALL);
+                        if (hwloc_topology_load(topology_) < 0)
+                        {
+                            hwloc_topology_destroy(topology_);
+                            topology_ = nullptr;
+                        }
+                    }
+
+                    /** @brief Destroys the topology, if one was loaded. */
+                    ~LoadedHwlocTopology()
+                    {
+                        if (topology_ != nullptr)
+                            hwloc_topology_destroy(topology_);
+                    }
+
+                    LoadedHwlocTopology(const LoadedHwlocTopology&) = delete;
+                    LoadedHwlocTopology& operator=(const LoadedHwlocTopology&) = delete;
+                    LoadedHwlocTopology(LoadedHwlocTopology&&) = delete;
+                    LoadedHwlocTopology& operator=(LoadedHwlocTopology&&) = delete;
+
+                    /** @brief Returns the loaded topology, or null when hwloc refused. */
+                    [[nodiscard]] hwloc_topology_t get() const noexcept { return topology_; }
+
+                private:
+                    /** @brief Holds the loaded topology, or null. */
+                    hwloc_topology_t topology_ = nullptr;
+            };
+
+            /** @brief Spells a filter as "cpu=yes, gpu=no, accelerator=no, require_fp64=no". */
+            std::string describe(const HardwareFilterConfig& config)
+            {
+                std::string text = "cpu=";
+                text += config.include_cpu ? "yes" : "no";
+                text += ", gpu=";
+                text += config.include_gpu ? "yes" : "no";
+                text += ", accelerator=";
+                text += config.include_accelerator ? "yes" : "no";
+                text += ", require_fp64=";
+                text += config.require_fp64 ? "yes" : "no";
+                return text;
+            }
+
+            /** @brief Builds the exception for a SYCL enumeration that threw. */
+            Core::SushiException enumeration_error(const HardwareFilterConfig& config,
+                                                   const char* sycl_text)
+            {
+                return Core::SushiException(Core::Error{
+                    Core::Errc::unsupported,
+                    std::string("HardwareDiscovery::probe_all_devices: SYCL device enumeration "
+                                "failed: ") + sycl_text + ". Active filter: " + describe(config) +
+                        ". Check that the device drivers are installed and that one SYCL runtime "
+                        "is on the loader path; a second one beside it breaks enumeration."});
+            }
+        } // namespace
+
         /** 
          * @brief Triggers an expanded hardware probe to find all compute units. 
          * @param config The filter configuration to use during the probe.
@@ -62,11 +134,11 @@ namespace SushiRuntime
          */
         void HardwareDiscovery::discover_sycl_devices(std::vector<HardwareNode>& nodes, const HardwareFilterConfig& config) 
         {
-            hwloc_topology_t topology;
-            hwloc_topology_init(&topology);
-            hwloc_topology_set_flags(topology, HWLOC_TOPOLOGY_FLAG_INCLUDE_DISALLOWED);
-            hwloc_topology_set_io_types_filter(topology, HWLOC_TYPE_FILTER_KEEP_ALL);
-            hwloc_topology_load(topology);
+            const LoadedHwlocTopology loaded_topology;
+            const hwloc_topology_t topology = loaded_topology.get();
+            if (topology == nullptr)
+                SR_LOG_WARN("hwloc could not load the machine topology; CPU devices keep NUMA -1 "
+                            "and a GPU's PCI address comes from SYCL alone.");
 
             try 
             {
@@ -103,7 +175,9 @@ namespace SushiRuntime
                     if (dev.is_cpu())
                     {
                         // Use HWLOC to find NUMA node for CPU
-                        hwloc_obj_t pu = hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, 0);
+                        hwloc_obj_t pu = topology != nullptr
+                            ? hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, 0)
+                            : nullptr;
                         if (pu) {
                             hwloc_obj_t numa = hwloc_get_ancestor_obj_by_type(topology, HWLOC_OBJ_NUMANODE, pu);
                             if (numa) node.numa_node_id = numa->os_index;
@@ -149,7 +223,7 @@ namespace SushiRuntime
                                 } catch (...) {}
 
                                 // Fallback 2: hwloc PCI tree, by GPU name (modules/platform/topology/README.md).
-                                if (pci_str.empty())
+                                if (pci_str.empty() && topology != nullptr)
                                 {
                                     std::string dev_name = node.name;
                                     hwloc_obj_t osdev = nullptr;
@@ -218,11 +292,8 @@ namespace SushiRuntime
             }
             catch (const sycl::exception& e) 
             {
-                hwloc_topology_destroy(topology);
-                SR_LOG_ERROR("SYCL exception: {}", e.what());
-                throw std::runtime_error("hardware discovery failed.");
+                throw enumeration_error(config, e.what());
             }
-            hwloc_topology_destroy(topology);
         }
         
     } // namespace Topology

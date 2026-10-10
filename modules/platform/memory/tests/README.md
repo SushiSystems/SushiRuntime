@@ -40,6 +40,26 @@ When the thread exits, its destructor donates the remaining retire list to the g
 The main thread then drains. Each guarded retire triggers `check_and_reclaim`, which pulls in the
 orphaned nodes and frees those past the safe epoch.
 
+### `K_EPOCH_SLOTS`
+
+`EpochManager` holds `Core::MAX_WORKER_THREADS + 32` thread slots, 288 of them. The constant
+repeats that sum because the manager keeps its own private.
+
+### `ThreadPark`
+
+`ThreadPark` counts the threads that have reported and blocks each one until the test releases
+them. It replaces a sleep: the test waits for a count, not for time.
+
+### `AThreadPastTheSlotLimitIsRefusedWithTheLimit`
+
+A thread takes a slot at its first `EpochGuard` and returns it when the thread exits, not when the
+guard is destroyed. The test starts one thread more than there are slots and parks every one of
+them, so at least one finds no slot, whether or not the main thread already holds one. That thread
+gets `SushiException` with `Errc::unsupported` and a message that carries the slot count.
+
+After the parked threads exit, one more thread takes a guard without a throw, which shows the
+slots came back.
+
 ## test_usm_registry.cpp
 
 ### `fake`

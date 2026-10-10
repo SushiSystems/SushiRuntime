@@ -29,8 +29,9 @@
 #pragma once
 
 #include <atomic>
-#include <stdexcept>
+#include <string>
 #include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/error.hpp>
 
 namespace SushiRuntime 
 {
@@ -161,7 +162,7 @@ namespace SushiRuntime
             /**
              * @brief Registers the calling thread and returns its slot id.
              * @return Slot index in [0, MAX_EPOCH_THREADS).
-             * @throws std::runtime_error if all slots are occupied.
+             * @throws Core::SushiException With Errc::unsupported if every slot is held.
              */
             int register_thread()
             {
@@ -180,7 +181,11 @@ namespace SushiRuntime
                         return i;
                     }
                 }
-                throw std::runtime_error("EBR: Maximum thread limit reached.");
+                throw Core::SushiException(Core::Error{
+                    Core::Errc::unsupported,
+                    "EpochManager::register_thread: all " + std::to_string(MAX_EPOCH_THREADS) +
+                        " epoch slots are held by live threads. A thread frees its slot when it "
+                        "exits; lower the number of threads that use the runtime at once."});
             }
 
             /**

@@ -50,7 +50,7 @@ namespace SushiRuntime
                  * @brief Reads the core map from the provider once and keeps the distance model.
                  * @param provider Queried during construction only; not stored.
                  * @param distance_model Shared with the view; must not be null.
-                 * @throws std::invalid_argument If distance_model is null.
+                 * @throws Core::SushiException With invalid_access if distance_model is null.
                  */
                 TopologyView(const ITopologyProvider& provider,
                              std::shared_ptr<const INumaDistanceModel> distance_model);
