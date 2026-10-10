@@ -1,10 +1,10 @@
 # tests/benchmark
 
-Performance benchmarks under `performance/` and stress tests under `stress/`. A benchmark
+Performance benchmarks and stress tests, one `benchmark_*.cpp` file each. A benchmark
 prints its figures and asserts correctness and forward progress; it asserts a speed only where
 a section below says so. The helpers the files share are in `tests/common/`.
 
-## performance/test_async_overlap_perf.cpp
+## benchmark_async_overlap.cpp
 
 The benchmark measures CPU and GPU concurrency. Two kernels dispatched without a wait between
 them run together, so the wall time approaches `max(T_cpu, T_gpu)` instead of the serial sum.
@@ -31,7 +31,7 @@ time enough to miss the 0.75 bar on a Pascal card even while the devices overlap
 is inconclusive there, and bare-metal CI still enforces the bar. `running_under_wsl` exists to
 relax the check on that host, not to remove it.
 
-## performance/test_chain_dispatch_perf.cpp
+## benchmark_chain_dispatch.cpp
 
 This is the baseline for the graph-replay design, `docs/design/GRAPH_REPLAY.md`, sections 0 and
 G (P0). Node i reads buffer i and writes buffer i+1, so every node depends on the one before it
@@ -41,7 +41,7 @@ the successor, with no fan-out to hide it behind. The benchmark sweeps the chain
 reports milliseconds per node. Layer 0, which removes the per-node allocation in
 `SmallEventVector::to_vector()`, and the later layers are measured against that number.
 
-## performance/test_distributed_offload_perf.cpp
+## benchmark_distributed_offload.cpp
 
 The benchmark reports throughput and per-task latency of the master-to-worker offload path,
 and the policy's load split across two workers. It is built only with `SR_ENABLE_DISTRIBUTED`.
@@ -49,7 +49,7 @@ It uses `InProcessTransport`, so the software round trip (encode, pull, remote k
 writeback, release) is measured deterministically. Every task does a verified vector add, and
 each worker increments its own counter, so the reported split is what ran where.
 
-## performance/test_dynamic_graph_perf.cpp
+## benchmark_dynamic_graph.cpp
 
 A scale probe for the dynamic region graph: 256 regions stream in, 16 of them mutate between
 steps, and the world keeps running correctly. The test asserts the composition contract at
@@ -61,7 +61,7 @@ The final check rebuilds the expected count per cell. Every region ran the initi
 one step per run, and a mutated region gained one more increment on each run from the one that
 streamed its second task in.
 
-## performance/test_graph_compile_perf.cpp
+## benchmark_graph_compile.cpp
 
 The file closes two gaps: how `TaskGraph::compile()` scales with graph size, and whether
 overlapping host-to-device and device-to-host transfers with compute helps. Both tests do
@@ -71,7 +71,7 @@ run made progress, because real overlap needs a discrete GPU with copy engines.
 `min_compile_us` uses a rolling set of 16 buffers so that consecutive tasks form real
 dependencies, which is what exercises the dependency tracker.
 
-## performance/test_profiling_queue_perf.cpp
+## benchmark_profiling_queue.cpp
 
 This is the benchmark behind section E, item 7 of
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`. That item decided
@@ -83,7 +83,7 @@ The warm-up round is untimed so that the first submission's driver and JIT costs
 queue's timed rounds. The queue that goes first alternates each round, so a systematic drift,
 thermal or driver warm-up, does not always favour the same queue.
 
-## performance/test_recompose_churn_perf.cpp
+## benchmark_recompose_churn.cpp
 
 The gate benchmark for the "allocation-per-node churn on the recompose path" theme, audit
 Tier B. The substrate commits work proportional to the changed region every step: a dirty
@@ -118,7 +118,7 @@ commit that streamed its second task in. The test asserts forward progress and t
 contract and does not rebuild the exact count per cell, which the `Integration_DynamicGraph`
 tests own. A nonzero value that is uniform across a region is enough here.
 
-## performance/test_root_fanout_perf.cpp
+## benchmark_root_fanout.cpp
 
 The gate benchmark for the batched root injector, audit ds-1. Each replayed step re-injects
 every root node. The old path took one `pending_mutex` acquire and one condition-variable
@@ -132,7 +132,7 @@ step. Injection is O(1) per step whatever R is, so as R grows the per-root cost 
 towards the cost of executing and completing one task, and should not stay pinned to a lock
 and a notify per root. Correctness and forward progress are asserted; speed is not.
 
-## performance/test_scheduler_dispatch_perf.cpp
+## benchmark_scheduler_dispatch.cpp
 
 The benchmark measures dispatch overhead per task. Both sides do the same work, one relaxed
 atomic increment, so the only difference is the path: inline in a tight loop, which is the
@@ -140,7 +140,7 @@ floor, or wrapped in a task and run through the work-stealing scheduler. The del
 amortized cost of submit, steal and dispatch. The test reports it and asserts correctness and
 forward progress, not speed.
 
-## performance/test_steal_locality_perf.cpp
+## benchmark_steal_locality.cpp
 
 A real-hardware benchmark for NUMA-aware hierarchical stealing. It drives the scheduler with a
 large batch of host tasks and reports throughput and the split between local and remote
@@ -150,7 +150,7 @@ machine or under WSL; `NumaStealTest` holds the logic check.
 Locality is asserted only above 1000 steals. Below that the ratio means little, and a
 perfectly balanced drain can legitimately produce few steals.
 
-## performance/test_steal_numa_effect_perf.cpp
+## benchmark_steal_numa_effect.cpp
 
 The benchmark compares NUMA-aware with NUMA-blind stealing on the same hardware. One workload
 runs once on the real, flat topology and once on a synthetic two-node topology, and the test
@@ -165,7 +165,7 @@ fraction below the 0.5 bar with every toolchain; 0.46 to 0.48 was observed.
 `Unit_NumaStealTest` verifies the locality ordering deterministically, so the assertion made
 during timing fires only on real multi-socket hardware.
 
-## performance/test_wide_fanout_perf.cpp
+## benchmark_wide_fanout.cpp
 
 The gate benchmark for the deque-steal fast path, audit steal-1, and the global quiescence
 counter, audit sched-1. It profiles them in the substrate's characteristic shape: many small
@@ -176,12 +176,12 @@ empty peers, and steal-1 removes a `seq_cst` fence from each empty attempt. It i
 
 The benchmark reports drain latency per step and nanoseconds per task. That isolates the fixed
 overhead per step that dominates the substrate, and complements the single sustained stream of
-`test_scheduler_dispatch_perf.cpp`. Attributing steal-1's fence removal and sched-1's line
+`benchmark_scheduler_dispatch.cpp`. Attributing steal-1's fence removal and sched-1's line
 contention in full needs hardware counters, `perf stat` and `perf c2c`. This benchmark is the
 portable guard on throughput and latency, and the harness those counters attach to. It asserts
 correctness and forward progress only.
 
-## stress/test_epoch_stress.cpp
+## benchmark_epoch_stress.cpp
 
 A high-churn stress test for epoch-based reclamation. Many threads enter and leave critical
 sections and retire objects, while threads spawn and exit to exercise the orphan handoff.

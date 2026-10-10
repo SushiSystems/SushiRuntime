@@ -22,7 +22,7 @@
 /**
  * @file test_steady_state_allocation.cpp
  * @brief Tests that a tick's calling-thread allocations do not scale beyond bare SYCL's own.
- * @see tests/integration/README.md
+ * @see tests/allocation/README.md
  * @author Mustafa Garip
  */
 

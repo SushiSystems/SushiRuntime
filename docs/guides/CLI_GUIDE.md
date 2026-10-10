@@ -250,7 +250,7 @@ sr docs bundle --release 1.0.0   # pack the manual and the reference for docs.su
 ```
 
 `sr docs` runs Doxygen against the repo-root `Doxyfile` (scoped to the
-public `include/SushiRuntime/api` surface). Doxygen is an external tool, not
+public `modules/surface/api/include/SushiRuntime/api` surface). Doxygen is an external tool, not
 vendored: install it (`winget install DimitriVanHeesch.Doxygen` on Windows,
 `apt-get install doxygen graphviz` on Linux, `brew install doxygen graphviz` on
 macOS) or point `doxygen_exe` in `cli/config.local.toml` at an existing binary.

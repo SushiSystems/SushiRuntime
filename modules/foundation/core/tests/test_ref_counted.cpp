@@ -22,7 +22,7 @@
 /**
  * @file test_ref_counted.cpp
  * @brief Tests the intrusive RefCounted count and the sushi_ptr that manages it.
- * @see tests/unit/README.md
+ * @see modules/foundation/core/tests/README.md
  * @author Mustafa Garip
  */
 

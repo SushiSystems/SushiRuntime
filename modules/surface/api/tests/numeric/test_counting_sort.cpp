@@ -22,7 +22,7 @@
 /**
  * @file test_counting_sort.cpp
  * @brief Tests add_counting_sort(): stability, digit boundaries, late-bound replay, node indexing.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

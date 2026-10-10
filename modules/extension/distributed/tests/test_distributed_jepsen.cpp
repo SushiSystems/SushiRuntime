@@ -22,7 +22,7 @@
 /**
  * @file test_distributed_jepsen.cpp
  * @brief Tests that an offload graph under seeded message faults ends byte-equal to a clean run.
- * @see tests/integration/README.md
+ * @see modules/extension/distributed/tests/README.md
  * @author Mustafa Garip
  */
 

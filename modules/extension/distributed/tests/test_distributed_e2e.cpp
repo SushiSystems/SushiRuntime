@@ -22,7 +22,7 @@
 /**
  * @file test_distributed_e2e.cpp
  * @brief Tests end-to-end offload between a master and in-process workers on a real SYCL device.
- * @see tests/integration/README.md
+ * @see modules/extension/distributed/tests/README.md
  * @author Mustafa Garip
  */
 

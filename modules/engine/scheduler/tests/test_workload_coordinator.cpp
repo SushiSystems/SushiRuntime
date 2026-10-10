@@ -22,7 +22,7 @@
 /**
  * @file test_workload_coordinator.cpp
  * @brief Tests the WorkloadCoordinator heartbeat loop with fake telemetry, migrator and strategy.
- * @see tests/integration/README.md
+ * @see modules/engine/scheduler/tests/README.md
  * @author Mustafa Garip
  */
 

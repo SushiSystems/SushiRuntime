@@ -22,7 +22,7 @@
 /**
  * @file test_range_task.cpp
  * @brief Tests RangeTask::split for its grain threshold and distinct chunks until exhaustion.
- * @see tests/unit/README.md
+ * @see modules/engine/scheduler/tests/README.md
  * @author Mustafa Garip
  */
 

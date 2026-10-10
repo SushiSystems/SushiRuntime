@@ -22,7 +22,7 @@
 /**
  * @file test_sycl_execution.cpp
  * @brief Tests an end-to-end vector addition and a multi-stage chain through the TaskGraph.
- * @see tests/integration/README.md
+ * @see modules/engine/execution/tests/README.md
  * @author Mustafa Garip
  */
 

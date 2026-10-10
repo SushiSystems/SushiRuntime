@@ -22,7 +22,7 @@
 /**
  * @file test_transfer_counters.cpp
  * @brief Tests TransferCounters' starting values, per-counter adds and concurrent totals.
- * @see tests/unit/README.md
+ * @see modules/platform/observability/tests/README.md
  * @author Mustafa Garip
  */
 

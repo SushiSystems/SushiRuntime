@@ -59,8 +59,7 @@ cmake -B build -G Ninja -DSR_ENABLE_DISTRIBUTED=ON ...
 cmake --build build
 ```
 
-When the flag is off, none of `include/SushiRuntime/distributed/` or
-`src/distributed/` is compiled — zero code, zero extra third-party dependencies
+When the flag is off, nothing under `modules/extension/distributed/` is compiled — zero code, zero extra third-party dependencies
 (the TCP transport is raw sockets: POSIX + Winsock), and zero ABI surface.
 
 The distributed unit/integration tests join the functional suite only when the

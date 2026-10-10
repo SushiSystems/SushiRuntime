@@ -168,7 +168,7 @@ WP-4 (`SIMULATION_ENGINE_SUBSTRATE_PLAN.md`) states the requirement and its own 
 > state-affecting reductions on GPU must use an explicit fixed-order kernel (segmented tree reduce
 > over a fixed layout)."*
 
-It is unbuilt. There is no reduction header in `include/SushiRuntime/api/`, and the tree contains no
+It is unbuilt. There is no reduction header in `modules/surface/api/include/SushiRuntime/api/`, and the tree contains no
 `sycl::reduction` and no floating-point `atomic_ref` (the only `atomic_ref` mention is a comment in
 `scheduler/work_stealing_deque.hpp:61` about a C++17 replacement).
 

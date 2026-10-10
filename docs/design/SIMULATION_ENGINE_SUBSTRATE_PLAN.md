@@ -97,11 +97,11 @@ deterministic executor and preserves throughput.
 
 ## 1. What the runtime actually is, mechanically
 
-The fluent API (`include/SushiRuntime/api/runtime.hpp`) is the intended entry
+The fluent API (`modules/surface/api/include/SushiRuntime/api/runtime/runtime.hpp`) is the intended entry
 point. The mechanical pipeline underneath it is:
 
 1. **Allocate data as handles.** `Buffer<T>` and `State<T>`
-   (`include/SushiRuntime/api/buffer.hpp`) own USM allocations.
+   (`modules/surface/api/include/SushiRuntime/api/data/buffer.hpp`) own USM allocations.
    `State<T>` is a double buffer (`current()` / `next()`, swapped by `advance()`,
    `buffer.hpp:281`). The dependency-tracking identity of a buffer is **its base
    pointer** (`buffer.hpp:164`); a `State` exposes its current-buffer pointer as
@@ -770,7 +770,7 @@ return values, and runnable usage snippets.
   overloads, WP-6 residency tags, etc. each add their pages when they land).
 
 **Files:** a `docs/` site config (generator of choice), a Doxyfile scoped to
-`include/SushiRuntime/api/`, CI job to build+publish (e.g. GitHub Pages).
+`modules/surface/api/include/SushiRuntime/api/`, CI job to build+publish (e.g. GitHub Pages).
 
 **Risks:** low. Main cost is choosing the generator and writing the hand-authored
 manual pages. It must track the API, so it is *not* a one-shot: every public-seam WP

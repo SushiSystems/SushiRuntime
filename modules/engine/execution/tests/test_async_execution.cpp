@@ -22,7 +22,7 @@
 /**
  * @file test_async_execution.cpp
  * @brief Tests that CPU and GPU work on per-device queues runs concurrently and race-free.
- * @see tests/integration/README.md
+ * @see modules/engine/execution/tests/README.md
  * @author Mustafa Garip
  */
 

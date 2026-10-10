@@ -22,7 +22,7 @@
 /**
  * @file test_late_count_ordering.cpp
  * @brief Tests that a device LateCount resolves when its consumer dispatches, after its producer.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

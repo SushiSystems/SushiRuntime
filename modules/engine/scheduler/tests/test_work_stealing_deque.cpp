@@ -22,7 +22,7 @@
 /**
  * @file test_work_stealing_deque.cpp
  * @brief Tests that the Chase-Lev deque returns every pushed task exactly once past its capacity.
- * @see tests/unit/README.md
+ * @see modules/engine/scheduler/tests/README.md
  * @author Mustafa Garip
  */
 

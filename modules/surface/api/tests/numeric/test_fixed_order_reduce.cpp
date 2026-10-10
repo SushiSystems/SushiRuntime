@@ -22,7 +22,7 @@
 /**
  * @file test_fixed_order_reduce.cpp
  * @brief Tests that add_reduce and add_segmented_reduce combine values in a layout-fixed order.
- * @see tests/unit/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

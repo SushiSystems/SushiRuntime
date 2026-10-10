@@ -22,7 +22,7 @@
 /**
  * @file test_distributed.cpp
  * @brief Tests the wire protocol, in-process transport, master-side registries and offload policy.
- * @see tests/unit/README.md
+ * @see modules/extension/distributed/tests/README.md
  * @author Mustafa Garip
  */
 

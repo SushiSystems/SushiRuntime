@@ -22,7 +22,7 @@
 /**
  * @file test_device_sized_primitives.cpp
  * @brief Tests that device-count-sized primitives match the forced scheduler as the count changes.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

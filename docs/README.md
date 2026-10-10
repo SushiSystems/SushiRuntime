@@ -13,7 +13,7 @@ What SushiRuntime is, its requirements and its build line are in the root
 
 | Document | Holds |
 | --- | --- |
-| [Architecture](architecture/ARCHITECTURE.md) | The layers under `include/SushiRuntime/`, the execution model, build-time configuration and the directory map |
+| [Architecture](architecture/ARCHITECTURE.md) | The modules under `modules/`, the execution model, build-time configuration and the directory map |
 
 ## Guides
 

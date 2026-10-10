@@ -22,7 +22,7 @@
 /**
  * @file test_affinity.cpp
  * @brief Tests that pinning to a valid core, an invalid core or one core repeatedly does not throw.
- * @see tests/unit/README.md
+ * @see modules/platform/topology/tests/README.md
  * @author Mustafa Garip
  */
 

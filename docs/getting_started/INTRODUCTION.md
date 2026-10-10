@@ -520,7 +520,7 @@ int main()
 ### Compiling and running it
 
 The project links example programs against the `sushiruntime` library and
-applies the SYCL flags for you. Drop your `.cpp` into `examples/` and add it to
+applies the SYCL flags for you. Drop your `.cpp` into `applications/examples/` and add it to
 `applications/examples/CMakeLists.txt`, following the same pattern the project already uses:
 
 ```cmake
@@ -973,7 +973,7 @@ you express an in-place update, and it keeps the task correctly ordered between
 - **[README](../../README.md)** — requirements, the full architecture (memory
   pool, work-stealing scheduler, topology mapping), CMake options, and the
   optional distributed master-worker layer.
-- **`tests/functional/integration/`** — runnable, real-world usage of every
+- **`tests/integration/` and the modules' `tests/` folders** — runnable, real-world usage of every
   feature in this guide. `test_fluent_lifecycle.cpp` covers the fluent API
   (handles, stepping, coupling); `test_sycl_execution.cpp` and `test_graph.cpp`
   are the best starting points for the lower-level API.

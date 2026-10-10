@@ -3,7 +3,7 @@
 SushiRuntime is an **orchestration runtime**: it decides *when, where, and in what
 order* work runs across CPUs and GPUs, while your code decides *what* is computed.
 This site is the reference for its one public surface — the **C++ fluent API** in
-`include/SushiRuntime/api`. Everything you program against lives in namespace
+`modules/surface/api/include/SushiRuntime/api`. Everything you program against lives in namespace
 `SushiRuntime::API`.
 
 For the architecture beneath this layer (the scheduler, the lock-free graph, the

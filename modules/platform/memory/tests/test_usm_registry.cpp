@@ -22,7 +22,7 @@
 /**
  * @file test_usm_registry.cpp
  * @brief Tests UsmRegistry's record, take, owner and containing-allocation lookups.
- * @see tests/unit/README.md
+ * @see modules/platform/memory/tests/README.md
  * @author Mustafa Garip
  */
 

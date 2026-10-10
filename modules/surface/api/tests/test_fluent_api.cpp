@@ -22,7 +22,7 @@
 /**
  * @file test_fluent_api.cpp
  * @brief Tests the fluent API surface that test_fluent_lifecycle.cpp does not exercise.
- * @see tests/integration/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 

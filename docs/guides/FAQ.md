@@ -12,7 +12,7 @@ and writes. The runtime detects the read-after-write, write-after-read and write
 hazards between tasks, orders only the tasks that conflict, and runs the rest in parallel on
 the devices it discovers.
 
-The entry point is the fluent API under `include/SushiRuntime/api/`. You allocate data as
+The entry point is the fluent API under `modules/surface/api/include/SushiRuntime/api/`. You allocate data as
 `Buffer<T>` or `State<T>` handles, add work with `Graph::add()`, and call `run()`. The graph
 compiles on its first run and the compiled plan is replayed for every later step. The
 [introduction](../getting_started/INTRODUCTION.md) has complete programs, and

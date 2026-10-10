@@ -22,7 +22,7 @@
 /**
  * @file test_delegate.cpp
  * @brief Tests Core::Delegate: empty state, invocation, argument forwarding, moves and destruction.
- * @see tests/unit/README.md
+ * @see modules/foundation/core/tests/README.md
  * @author Mustafa Garip
  */
 

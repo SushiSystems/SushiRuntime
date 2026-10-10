@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-10 — docs: Moved the notes of each test beside the test, one page per module and one for the allocation program, and pointed each test source at its page (`tests/README.md`, `tests/allocation/README.md`).
+- 2026-10-10 — docs: Described the module layout in the project layout, the architecture map and the pages that named the old folders (`README.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `REMAINING_WORK.md`).
 - 2026-10-10 — scheduler: Removed the export macro from `RangeTask`, which is defined whole in its header (`range_task.hpp`).
 - 2026-10-10 — build: Moved every header and source to a folder per module under a tier, compiled with the include roots of its declared dependencies (`cmake/SushiRuntimeTiers.cmake`, `SushiRuntimeModule.cmake`, `modules/CMakeLists.txt`).
 - 2026-10-10 — build: Generated the forwarding headers of 15 moved include paths from one table; nine headers left the core folder for logging, sycl, memory and observability (`SushiRuntimeMovedHeaders.cmake`, `SushiRuntimeLibrary.cmake`).

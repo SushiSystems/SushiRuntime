@@ -22,7 +22,7 @@
 /**
  * @file test_epoch_reclamation.cpp
  * @brief Tests that epoch reclamation frees retired objects once and adopts dead threads' orphans.
- * @see tests/unit/README.md
+ * @see modules/platform/memory/tests/README.md
  * @author Mustafa Garip
  */
 

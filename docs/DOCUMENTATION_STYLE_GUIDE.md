@@ -15,7 +15,7 @@ to SushiRuntime.
 | `design/` | Whoever continues the work | The decision, its evidence and its status |
 
 `architecture/ARCHITECTURE.md` names only classes, constants and algorithms that exist in
-`include/` or `src/`. A name that leaves the code leaves the page in the same commit.
+a module's `include/` or `source/`. A name that leaves the code leaves the page in the same commit.
 
 ## Code in a page
 
