@@ -46,9 +46,10 @@ lambda registers without a cast.
 
 ### Cluster
 
-Cluster::attach() is the way into the layer. It builds a master on a runtime, installs it as the
-runtime's Graph::OffloadCoordinator and as the allocator's release observer, starts it and its
-transport, and returns a handle to its knobs and counters. Until attach() runs, the runtime is a
+Cluster::attach() is the way into the layer. It builds a master on a runtime, binds it to the
+runtime's offload sink, starts it and its transport, then installs it as the runtime's
+Graph::OffloadCoordinator and as the allocator's release observer, and returns a handle to its
+knobs and counters. Until attach() runs, the runtime is a
 single machine: no header of `api` or `execution` names a transport, and Buffer::distributed()
 shares nothing. The first such call in a process logs one WARN that says the buffer stays local
 and that attach() must come first.
@@ -57,8 +58,8 @@ One overload takes an API::Runtime and the other an Execution::RuntimeContext. T
 to the second through Runtime::unsafe_context(); the second serves code that drives a bare context.
 
 attach() refuses an empty secret when the transport's exposure() is Network. When the transport
-does not start, attach() removes what it installed and throws an exception that carries the
-transport's message.
+does not start, attach() installs nothing and throws an exception that carries the transport's
+message; a cluster attached before stays installed and keeps working.
 
 attach() checks, in this order, that the transport is not null, that the secret is not empty on a
 Network transport and that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. Then it stops and

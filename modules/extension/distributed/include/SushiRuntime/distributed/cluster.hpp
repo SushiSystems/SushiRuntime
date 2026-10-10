@@ -109,7 +109,7 @@ namespace SushiRuntime
                  * @pre No run is in flight on @p runtime; @p transport was never started.
                  * @throws Core::SushiException When @p transport is null, the secret is empty on
                  *         a Network transport, chunk_bytes is out of range, or the transport
-                 *         does not start; nothing stays installed.
+                 *         does not start; a cluster attached before stays installed.
                  */
                 [[nodiscard]] static Cluster attach(API::Runtime& runtime,
                                                     std::shared_ptr<ITransport> transport,
