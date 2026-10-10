@@ -637,6 +637,8 @@ misconfigured fails again on a later run. Cross-device execution itself needs re
 ownership and halo exchange, which the runtime does not have; the check enforces the
 co-location contract the layer above must honour.
 
+Both steps are `place_for_dispatch()` of `source/dispatch_placement.cpp`, a function of the node,
+the allocator and the device count that execute_task() calls for a node it has not placed yet.
 The first dispatch asks `placement_of()` once, after the co-location check, and caches the
 answer on the node as `cached_queue_index_`. Steady-state replay then routes through
 `DeviceQueueSet::queue(index)`, an indexed read, and calls neither `placement_of()` nor

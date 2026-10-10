@@ -50,6 +50,7 @@
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include "dispatch_placement.hpp"
 #include "failure_naming.hpp"
 #include "work_stealing_deque.hpp"
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
@@ -69,13 +70,6 @@ namespace SushiRuntime
         {
             /** @brief NUMA node whose devices serve a task that is not a graph node. */
             constexpr int K_TASK_NUMA_NODE = 0;
-
-            /** @brief Returns the device an address is recorded on, or -1 when it has no record. */
-            int recorded_device_index(const Memory::UsmAllocator& memory, void* address)
-            {
-                const std::optional<std::size_t> device = memory.device_of(address);
-                return device ? static_cast<int>(*device) : -1;
-            }
 
             /**
              * @brief Builds the ready event of a task whose work did not run to its end.
@@ -674,49 +668,9 @@ namespace SushiRuntime
                     return;
                 }
 
-                // A node's regions must share one device context (modules/engine/scheduler/README.md).
+                // A node is placed once, at its first dispatch (modules/engine/scheduler/README.md).
                 if (node && !node->locality_checked_)
-                {
-                    void* anchor = nullptr;
-                    if (!node->io_writes_.empty())     anchor = node->io_writes_.front().base;
-                    else if (!node->io_reads_.empty()) anchor = node->io_reads_.front().base;
-
-                    const int anchor_ctx = recorded_device_index(memory_, anchor);
-                    bool spans = false;
-                    if (anchor_ctx >= 0)
-                    {
-                        auto off_anchor = [&](const std::vector<Memory::ResourceRegion>& regs)
-                        {
-                            for (const auto& r : regs)
-                            {
-                                if (!r.base) continue;
-                                const int c = recorded_device_index(memory_, r.base);
-                                if (c >= 0 && c != anchor_ctx) return true;
-                            }
-                            return false;
-                        };
-                        spans = off_anchor(node->io_reads_) || off_anchor(node->io_writes_);
-                    }
-                    if (spans)
-                        // A failure is not cached, so it recurs each run (modules/engine/scheduler/README.md).
-                        throw Core::SushiException(Core::Error{
-                            Core::Errc::invalid_graph,
-                            "its buffers span multiple device contexts; co-locate them on "
-                            "one device (cross-device execution is not yet supported)."});
-
-                    // The placement found here holds for every later step of the node.
-                    const std::size_t placement = SushiRuntime::Graph::placement_of(*node, memory_);
-                    if (placement >= devices_.count())
-                        throw Core::SushiException(Core::Error{
-                            Core::Errc::invalid_graph,
-                            Core::Detail::sr_format(
-                                "it is placed on device {}, but the runtime holds {} device(s); "
-                                "pass place_on() an index below {}.",
-                                placement, devices_.count(), devices_.count())});
-
-                    node->cached_queue_index_ = static_cast<int>(placement);
-                    node->locality_checked_ = true; // co-located; never re-check
-                }
+                    place_for_dispatch(*node, memory_, devices_.count());
 
                 // Every branch resolves an index and funnels through dispatch_queue().
                 sycl::queue& q = [&]() -> sycl::queue&
