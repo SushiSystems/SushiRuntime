@@ -125,3 +125,19 @@ the same way, and the slot is registered as one of the consuming task's reads so
 necessarily ordered first.
 
 It replaces any based_at() provider on the same Dynamic; when() and the size controls still compose.
+
+## late_count.hpp
+
+### LateCount
+
+A LateCount plans a tiled pass for `capacity` at registration; the live count read each run must not
+exceed it. Leaving `host` empty and `device` null makes the live count `capacity` itself, matching a
+fixed-count call. `host` takes precedence over `device` when both are set, which callers should not
+do; exactly one should be set.
+
+A fixed-count call spells its plain capacity as `LateCount lc; lc.capacity = n;`. Plain brace init
+(`LateCount{n}`) trips `-Wmissing-field-initializers`, and this type stays an aggregate, so it takes
+no constructor. The designator form (`LateCount{.capacity = n}`) reads better but is a C++20
+feature. On the non-MSVC compiler path this tree builds with (clang++, `-pedantic -Werror`,
+`cmake/CompilerWarnings.cmake`), it fails as `-Wc++20-designator`, confirmed against that compiler,
+so it is not offered as the idiom.

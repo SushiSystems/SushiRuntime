@@ -57,13 +57,6 @@ The function is pure, so the layout can be asserted in a test without a device.
 Every level but the last parks its partials in scratch; the last writes the caller's output, so its
 window is never allocated. At REDUCE_TILE = 256 this is under half a percent of the input.
 
-### make_reduce_scratch
-
-make_reduce_scratch() allocates on the same device and with the same residency as the data being
-reduced, so the reduction never straddles a device context and a device-resident field is not
-dragged into host-addressable memory. The returned pointer owns the allocation through a deleter
-that keeps the context alive, so scratch cannot outlive the runtime that owns it.
-
 ### fold_tile
 
 fold_tile() holds the whole ordering contract in one function: the accumulator is seeded with the
@@ -176,3 +169,92 @@ aggregate_from() references another machinery's per-step hooks from this one, so
 every live region's hooks without copying them (the hooks are move-only). The referenced machinery
 must outlive every run driven through this one. It is the region's own, owned for the region's
 lifetime.
+
+## emit_dynamic.hpp
+
+### adopt_device_bindings
+
+adopt_device_bindings() copies a Dynamic's device count source onto the node's bindings and
+registers that slot as a read. Registering inside adopt_device_bindings(), and not asking the caller
+for it, is what makes "the producer runs first" a property of the graph instead of a documented
+convention: the read region orders this node behind whoever writes the count.
+
+### register_device_slot
+
+register_device_slot() names one four-byte slot as a read of the node that will consume it. It names
+just the one element, not the whole buffer, so two nodes reading different slots out of one buffer
+stay unordered against each other.
+
+## emit_*.hpp
+
+### Replay callables
+
+Each emit header builds the replay callable of one node shape: a lambda invoked as
+emit(BackingGraph&, registration) every time a Recorder replays. The lambda adds one node, hands
+the registration through (empty means the backing graph draws a fresh index) and stamps the launch
+width where the shape has one. None of them knows the Recorder, so a shape can be read, changed or
+added without touching the recording state.
+
+## host_slot_check.hpp
+
+### require_host_slot
+
+require_host_slot() asks the slot's own address first. When that answers anything but host, it
+resolves the address to the allocation containing it and asks again: a caller offsetting into a plan
+array hands over an interior pointer, which SYCL reports as unknown. It runs while add() builds a
+node, so the containment search never meets a dispatch. A null slot passes.
+
+## late_count_resolution.hpp
+
+### resolve_late_count
+
+resolve_late_count() is the one resolution point every verb built on LateCount shares: a host
+provider wins when set, then a device slot, and with neither the live count is the capacity, so a
+LateCount left at its default behaves like a fixed count. The result is never larger than
+`lc.capacity`.
+
+### validate_late_count
+
+validate_late_count() mirrors require_host_device_slots(): a device slot must be Residency::Host,
+checked before add() mutates the graph and not inside the run loop. It also rejects a capacity too
+wide for the uint32 live-count slots the late-bound verbs resolve into.
+
+## late_window.hpp
+
+### LiveRange
+
+A LiveRange is the half-open element window a late-bound node iterates this step: where it starts
+and how many elements it covers. The two are resolved and validated together, because only their
+combination says whether the node stays inside the buffers it was compiled for.
+
+### submit_live_range
+
+submit_live_range() submits a late-bound node's kernel over its live size. A step with nothing to do
+is ordinary (a tick with no contacts), and a zero-width parallel_for is not portable across SYCL
+backends, so an empty count submits an empty kernel instead: the node still completes and still
+releases its successors.
+
+### submit_live_range: base offset
+
+submit_live_range() applies the offset itself and does not leave it to the caller, so a kernel
+written against absolute indices stays correct whether or not its node happens to carry a base.
+
+## node_spec.hpp
+
+### NodeSpec
+
+NodeSpecs are the recorded task specifications: each replays one add() onto a fresh backing graph.
+The fluent Graph is the source of truth so it can rebuild and recompile when mutated. A spec is
+recorded as {emitter, name, rule} and not as a bare callable: the name is handed to the emitter when
+the plan is built, not captured when the task is recorded, which is what lets name_last() attach one
+after the add() call has already returned.
+
+## usm_scratch.hpp
+
+### make_usm_scratch
+
+make_usm_scratch() allocates on the device and with the residency the caller names. A primitive
+passes those of the data it works on, so its nodes never straddle a device context and a
+device-resident field is not dragged into host-addressable memory. The returned pointer owns the
+allocation through a deleter that keeps the context alive, so scratch cannot outlive the runtime
+that owns it.

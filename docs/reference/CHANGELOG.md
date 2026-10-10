@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Split the two graph headers into one header per symbol and built the graph, the region and the dynamic graph on one recorder (`recorder.hpp`, `builder_surface.hpp`, `step_driver.hpp`, `plan_cache.hpp`).
+- 2026-10-10 — api: Moved the reduce, segmented reduce, prefix scan and counting sort bodies onto the public recorder interface; the add members forward to them (`primitives/reduce.hpp`, `primitives/primitive_members.hpp`).
 - 2026-10-10 — distributed: Added the protocol v2 frame and message codec, pinned by golden bytes (`wire_frame.hpp`, `wire_messages.hpp`, `wire_codec.hpp`, `test_wire_format.cpp`).
 - 2026-10-10 — distributed: Added the shared secret and the HMAC-SHA256 challenge-response a master and a worker prove it with (`shared_secret.hpp`, `handshake.hpp`, `hmac_sha256.hpp`, `sha256.hpp`).
 - 2026-10-10 — distributed: Added the endpoint type and one socket seam over POSIX and Winsock with host name resolution and a status for every failure (`endpoint.hpp`, `socket.hpp`, `socket_posix.cpp`, `socket_windows.cpp`).

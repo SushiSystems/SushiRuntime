@@ -33,6 +33,8 @@
 #include <exception>
 #include <utility>
 
+#include <sycl/sycl.hpp>
+
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/observability/run_report.hpp>
@@ -58,6 +60,9 @@ namespace SushiRuntime
                 std::size_t task_count = 0;                /**< Tasks this step dispatched. */
             };
         } // namespace detail
+
+        template <class Owner>
+        class StepDriver;
 
         /**
          * @brief Owns a step that was started but not yet waited for, and finishes it on
@@ -224,6 +229,8 @@ namespace SushiRuntime
 
             private:
                 friend Owner;
+                // The driver of the owner starts the step this handle settles.
+                friend class StepDriver<Owner>;
 
                 RunHandle(Owner* owner, const detail::AsyncRunState& state) noexcept
                     : owner_(owner), state_(state)
