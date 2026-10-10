@@ -35,10 +35,12 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/observability/dispatch_width.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node_profiling.hpp>
@@ -138,8 +140,18 @@ namespace SushiRuntime
              */
             bool locality_checked_ = false;
 
+            /** @brief Stands for "no device stated" in placement_. */
+            static constexpr std::uint16_t NO_PLACEMENT = 0xFFFF;
+
             /**
-             * @brief Caches the owning-queue index of this node's anchor USM, or -1.
+             * @brief Holds the device place_on() stated, or NO_PLACEMENT.
+             * @see modules/engine/graph/README.md
+             */
+            std::uint16_t placement_ = NO_PLACEMENT;
+
+            /**
+             * @brief Caches the index of the device queue this node dispatches to; -1 until
+             *        the first dispatch.
              * @see modules/engine/graph/README.md
              */
             int cached_queue_index_ = -1;
@@ -177,6 +189,34 @@ namespace SushiRuntime
              * @see modules/engine/task/README.md
              */
             std::unique_ptr<OffloadState> offload_state_;
+
+            /**
+             * @brief States the device a node that names no owned region runs on.
+             * @param device Index into the runtime's device set; must be below NO_PLACEMENT.
+             * @pre The node has not been dispatched yet.
+             * @throws Core::SushiException With Errc::invalid_graph and the index, when
+             *         @p device is NO_PLACEMENT or above.
+             * @see modules/engine/graph/README.md
+             */
+            void place_on(std::size_t device)
+            {
+                if (device >= NO_PLACEMENT)
+                    throw Core::SushiException(Core::Error{
+                        Core::Errc::invalid_graph,
+                        "Node::place_on(" + std::to_string(device) + "): a device index must be "
+                            "below " + std::to_string(NO_PLACEMENT) + "; pass the index of a "
+                            "device of the runtime."});
+
+                placement_ = static_cast<std::uint16_t>(device);
+            }
+
+            /** @brief Returns the device place_on() stated, or nothing when none was stated. */
+            std::optional<std::size_t> stated_placement() const noexcept
+            {
+                if (placement_ == NO_PLACEMENT)
+                    return std::nullopt;
+                return static_cast<std::size_t>(placement_);
+            }
 
             /**
              * @brief Registers target as a successor of this node.

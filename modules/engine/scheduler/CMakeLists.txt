@@ -15,6 +15,7 @@ sushiruntime_add_module_tests(
     MODULE scheduler
     SOURCES
         test_event_polling.cpp
+        test_node_placement.cpp
         test_offload_seam.cpp
         test_range_task.cpp
         test_thermal_rebalance.cpp

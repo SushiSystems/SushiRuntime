@@ -7,5 +7,9 @@
 sushiruntime_add_module(
     NAME task TIER engine
     SYCL
-    SOURCES node_widths.cpp
+    SOURCES node_placement.cpp node_widths.cpp
     DEPENDS core memory observability)
+
+sushiruntime_add_module_tests(
+    MODULE task
+    SOURCES test_node_placement.cpp)

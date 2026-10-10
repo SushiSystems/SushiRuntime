@@ -49,26 +49,24 @@ namespace
 
         size_t get_worker_count() const override         { return queue.size(); }
         size_t get_queue_size(int w) const override       { return queue[static_cast<size_t>(w)]; }
-        size_t get_completion_rate(int w) const override  { return completed[static_cast<size_t>(w)]; }
+        size_t completed_task_count(int w) const override  { return completed[static_cast<size_t>(w)]; }
     };
 
     /**
      * @brief A stub task migrator that records migration requests.
      *
-     * Captures the source, destination, and task count of the most recent migration to verify rebalancer decisions.
+     * Captures the source and task count of the most recent migration to verify rebalancer decisions.
      */
     class RecordingMigrator : public ITaskMigrator
     {
     public:
         std::atomic<int> calls{0};
         int from = -1;
-        int to = -1;
         size_t count = 0;
 
-        void migrate_tasks(int f, int t, size_t c) override
+        void migrate_tasks(int f, size_t c) override
         {
             from  = f;
-            to    = t;
             count = c;
             calls.fetch_add(1, std::memory_order_relaxed);
         }
@@ -93,7 +91,6 @@ TEST(Unit_ThermalRebalanceTest, RescuesThrottledWorker)
 
     ASSERT_EQ(migrator.calls.load(), 1) << "A throttled, backed-up worker must trigger one migration.";
     EXPECT_EQ(migrator.from, 0);
-    EXPECT_EQ(migrator.to, 1);
     EXPECT_EQ(migrator.count, 50u) << "Should move half the (max-min) queue imbalance.";
 }
 

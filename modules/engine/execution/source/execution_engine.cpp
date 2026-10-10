@@ -273,7 +273,7 @@ namespace SushiRuntime
         WorkerPoolInfo ExecutionEngine::worker_pool() const
         {
             Scheduler::WorkerPoolInfo info;
-            info.count      = impl_->scheduler.num_workers;
+            info.count      = impl_->scheduler.get_worker_count();
             info.first_core = impl_->scheduler.first_core();
             info.pinning    = impl_->scheduler.pinning();
             return info;
@@ -384,7 +384,7 @@ namespace SushiRuntime
             m.remote_steals = impl_->scheduler.get_remote_steal_count();
             const size_t workers = impl_->scheduler.get_worker_count();
             for (size_t i = 0; i < workers; ++i)
-                m.tasks_completed += impl_->scheduler.get_completion_rate(static_cast<int>(i));
+                m.tasks_completed += impl_->scheduler.completed_task_count(static_cast<int>(i));
             return m;
         }
 

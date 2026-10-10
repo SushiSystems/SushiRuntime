@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-10 — scheduler: Fixed a node without a region rotating over devices; it runs on the device given to `Node::place_on`, else on device 0 (`node_placement.hpp`, `task_scheduler.cpp`).
+- 2026-10-10 — graph: Changed every `TaskGraph::add_*` to return the node it added, and the compile errors to `SushiException` with `invalid_graph` (`task_graph.hpp`, `task_graph.cpp`).
+- 2026-10-10 — scheduler: Made `TaskScheduler::num_workers` and `dispatch_loop` private; the rebalancer interfaces gain `completed_task_count` and a two-argument `migrate_tasks` (`rebalancer_interfaces.hpp`).
 - 2026-10-10 — logging: Added `set_log_level`, `set_log_sink` and the SR_LOG_LEVEL variable, and moved the logger's state into the library (`log_level.hpp`, `log_sink.hpp`, `logger.cpp`).
 - 2026-10-10 — logging: Changed the default level to Warn and the default sink to stderr for every level; a runtime no longer prints its device lines unless asked (`logger.cpp`).
 - 2026-10-10 — logging: Changed `SR_THROW_IF` to throw a typed exception with the invalid-state code, and deprecated the log type alias and `ACTIVE_LOG_LEVEL` for `LogLevel` and `K_LOG_LEVEL_CEILING` (`logger.hpp`).

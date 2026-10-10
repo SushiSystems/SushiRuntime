@@ -53,6 +53,7 @@
 #include "work_stealing_deque.hpp"
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/node_placement.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
@@ -144,6 +145,9 @@ namespace SushiRuntime
                 return failure;
             }
 
+            /** @brief NUMA node whose devices serve a task that is not a graph node. */
+            constexpr int K_TASK_NUMA_NODE = 0;
+
             /** @brief Returns the device an address is recorded on, or -1 when it has no record. */
             int recorded_device_index(const Memory::UsmAllocator& memory, void* address)
             {
@@ -181,24 +185,24 @@ namespace SushiRuntime
             if (threads > Core::MAX_WORKER_THREADS) threads = Core::MAX_WORKER_THREADS;
             if (threads == 0) threads = 1;
 
-            num_workers = threads;
+            num_workers_ = threads;
             pinning_ = pool.pinning;
             first_core_ = pool.first_core;
 
             // A core range past the last core is clamped and logged (modules/engine/scheduler/README.md).
-            if (pinning_ == PinPolicy::Pin && first_core_ + num_workers > machine_cores)
+            if (pinning_ == PinPolicy::Pin && first_core_ + num_workers_ > machine_cores)
             {
-                const size_t last = first_core_ + num_workers;
+                const size_t last = first_core_ + num_workers_;
                 first_core_ = first_core_ < machine_cores ? first_core_ : 0;
-                if (first_core_ + num_workers > machine_cores)
-                    num_workers = machine_cores > first_core_ ? machine_cores - first_core_ : 1;
+                if (first_core_ + num_workers_ > machine_cores)
+                    num_workers_ = machine_cores > first_core_ ? machine_cores - first_core_ : 1;
 
                 SR_LOG_WARN("Worker core range [{}, {}) exceeds the machine's {} cores; "
                             "clamped to {} workers starting at core {}.",
-                            pool.first_core, last, machine_cores, num_workers, first_core_);
+                            pool.first_core, last, machine_cores, num_workers_, first_core_);
             }
 
-            for(size_t i=0; i<num_workers; ++i)
+            for(size_t i=0; i<num_workers_; ++i)
             {
                 worker_queues[i] = make_sushi<Deque>();
             }
@@ -211,11 +215,11 @@ namespace SushiRuntime
             if (pinning_ == PinPolicy::Pin)
             {
                 SR_LOG_INFO("Task scheduler initialized with {} workers pinned to cores [{}, {}).",
-                            num_workers, first_core_, first_core_ + num_workers);
+                            num_workers_, first_core_, first_core_ + num_workers_);
             }
             else
             {
-                SR_LOG_INFO("Task scheduler initialized with {} unpinned workers.", num_workers);
+                SR_LOG_INFO("Task scheduler initialized with {} unpinned workers.", num_workers_);
             }
         }
 
@@ -226,10 +230,10 @@ namespace SushiRuntime
         {
             const std::vector<int>& core_to_numa = topology_.core_to_numa();
 
-            worker_numa_.assign(num_workers, 0);
+            worker_numa_.assign(num_workers_, 0);
             if (pinning_ == PinPolicy::Pin)
             {
-                for (size_t i = 0; i < num_workers; ++i)
+                for (size_t i = 0; i < num_workers_; ++i)
                 {
                     // Worker i is pinned to core first_core_ + i; an unknown core maps to node 0.
                     const size_t core = first_core_ + i;
@@ -238,20 +242,20 @@ namespace SushiRuntime
                 }
             }
 
-            victim_order_.assign(num_workers, {});
-            local_tier_len_.assign(num_workers, 0);
+            victim_order_.assign(num_workers_, {});
+            local_tier_len_.assign(num_workers_, 0);
 
             std::mt19937 rng(0x51515151u);
-            for (size_t th = 0; th < num_workers; ++th)
+            for (size_t th = 0; th < num_workers_; ++th)
             {
                 const int my_node = worker_numa_[th];
 
                 struct Victim { int id; int dist; uint64_t key; };
                 std::vector<Victim> victims;
-                victims.reserve(num_workers > 0 ? num_workers - 1 : 0);
+                victims.reserve(num_workers_ > 0 ? num_workers_ - 1 : 0);
 
                 int local = 0;
-                for (size_t j = 0; j < num_workers; ++j)
+                for (size_t j = 0; j < num_workers_; ++j)
                 {
                     if (j == th) continue;
                     const int dist = topology_.numa_distance(my_node, worker_numa_[j]);
@@ -289,7 +293,7 @@ namespace SushiRuntime
             }
 
             // Workers wait; arm_for_execution() precedes submitted work (modules/engine/scheduler/README.md).
-            for(size_t i=0; i<num_workers; ++i)
+            for(size_t i=0; i<num_workers_; ++i)
             {
                 workers[i] = std::thread([this, i] { dispatch_loop(static_cast<int>(i)); });
             }
@@ -380,11 +384,11 @@ namespace SushiRuntime
                 running.store(false, std::memory_order_release);
             }
             pending_cv.notify_all();
-            for (size_t i = 0; i < num_workers; ++i)
+            for (size_t i = 0; i < num_workers_; ++i)
                 if (workers[i].joinable()) workers[i].join();   
 
 
-            for (size_t i = 0; i < num_workers; ++i)
+            for (size_t i = 0; i < num_workers_; ++i)
             {
                 if (worker_queues[i])
                 {
@@ -442,7 +446,7 @@ namespace SushiRuntime
          */
         void TaskScheduler::drain_pending_submissions(int thread_id)
         {
-            if (thread_id < 0 || static_cast<size_t>(thread_id) >= num_workers)
+            if (thread_id < 0 || static_cast<size_t>(thread_id) >= num_workers_)
                 return;
 
             auto& my_queue = worker_queues[thread_id];
@@ -489,7 +493,7 @@ namespace SushiRuntime
          */
         void TaskScheduler::dispatch_loop(int thread_id) 
         {
-            if (static_cast<size_t>(thread_id) >= num_workers) 
+            if (static_cast<size_t>(thread_id) >= num_workers_) 
             {
                 SR_LOG_ERROR("Dispatch loop thread_id {} out of bounds!", thread_id);
                 return;
@@ -710,17 +714,11 @@ namespace SushiRuntime
             {
                 SR_LOG_DEBUG("Executing task: {}", task->get_name());
                 
-                int target_numa_id = 0;
                 SushiRuntime::Graph::Node* node = nullptr;
 
                 // The downcast uses the is_graph_node() tag, not RTTI (modules/engine/scheduler/README.md).
                 if (task->is_graph_node())
-                {
                     node = static_cast<SushiRuntime::Graph::Node*>(task);
-
-                    if (node->metadata.numa_affinity >= 0)
-                        target_numa_id = node->metadata.numa_affinity;
-                }
 
                 // A pure-CPU host task needs no queue and runs inline (see design spec §0).
                 if (node && node->get_execution_mode() == Task::ExecutionMode::HOST &&
@@ -766,17 +764,13 @@ namespace SushiRuntime
                     return;
                 }
 
-                // The queue is the one whose context owns the node's USM (modules/engine/scheduler/README.md).
-                void* anchor = nullptr;
-                if (node)
-                {
-                    if (!node->io_writes_.empty())     anchor = node->io_writes_.front().base;
-                    else if (!node->io_reads_.empty()) anchor = node->io_reads_.front().base;
-                }
-
                 // A node's regions must share one device context (modules/engine/scheduler/README.md).
                 if (node && !node->locality_checked_)
                 {
+                    void* anchor = nullptr;
+                    if (!node->io_writes_.empty())     anchor = node->io_writes_.front().base;
+                    else if (!node->io_reads_.empty()) anchor = node->io_reads_.front().base;
+
                     const int anchor_ctx = recorded_device_index(memory_, anchor);
                     bool spans = false;
                     if (anchor_ctx >= 0)
@@ -800,24 +794,29 @@ namespace SushiRuntime
                             "its buffers span multiple device contexts; co-locate them on "
                             "one device (cross-device execution is not yet supported)."});
 
-                    // Only a registry hit is cached as the queue index (modules/engine/scheduler/README.md).
-                    node->cached_queue_index_ = anchor_ctx;
+                    // The placement found here holds for every later step of the node.
+                    const std::size_t placement = SushiRuntime::Graph::placement_of(*node, memory_);
+                    if (placement >= devices_.count())
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::invalid_graph,
+                            Core::Detail::sr_format(
+                                "it is placed on device {}, but the runtime holds {} device(s); "
+                                "pass place_on() an index below {}.",
+                                placement, devices_.count(), devices_.count())});
+
+                    node->cached_queue_index_ = static_cast<int>(placement);
                     node->locality_checked_ = true; // co-located; never re-check
                 }
 
                 // Every branch resolves an index and funnels through dispatch_queue().
                 sycl::queue& q = [&]() -> sycl::queue&
                 {
-                    if (node && node->cached_queue_index_ >= 0)
+                    // The first dispatch of a node cached its placement in the block above.
+                    if (node)
                         return dispatch_queue(static_cast<std::size_t>(node->cached_queue_index_));
 
-                    // The device that owns the anchor's USM is routed by index.
-                    if (anchor)
-                        if (const std::optional<std::size_t> owner = memory_.owning_device(anchor))
-                            return dispatch_queue(*owner);
-
                     sycl::queue& picked =
-                        devices_.queue_or_numa_local(std::nullopt, target_numa_id);
+                        devices_.queue_or_numa_local(std::nullopt, K_TASK_NUMA_NODE);
 
                     // Skips the index lookup entirely on the default (non-profiled) path.
                     if (!profiling_active_.load(std::memory_order_acquire))
@@ -941,7 +940,7 @@ namespace SushiRuntime
         TaskScheduler::get_worker_times(int worker_id) const noexcept
         {
             WorkerTimeSplit s;
-            if (worker_id < 0 || static_cast<size_t>(worker_id) >= num_workers)
+            if (worker_id < 0 || static_cast<size_t>(worker_id) >= num_workers_)
                 return s;
             const auto& b = worker_time_[worker_id];
             s.busy_ns     = b.busy_ns.load(std::memory_order_relaxed);
@@ -972,7 +971,7 @@ namespace SushiRuntime
          */
         Task* TaskScheduler::find_task_to_steal(int th_id)
         {
-            if (th_id < 0 || static_cast<size_t>(th_id) >= num_workers)
+            if (th_id < 0 || static_cast<size_t>(th_id) >= num_workers_)
                 return nullptr;
 
             const std::vector<int>& order = victim_order_[th_id];
@@ -1113,7 +1112,7 @@ namespace SushiRuntime
          */
         size_t TaskScheduler::get_worker_count() const 
         {
-            return num_workers;
+            return num_workers_;
         }
 
         /**
@@ -1123,7 +1122,7 @@ namespace SushiRuntime
          */
         size_t TaskScheduler::get_queue_size(int worker_id) const 
         {
-            if (worker_id < 0 || worker_id >= static_cast<int>(num_workers)) return 0;
+            if (worker_id < 0 || worker_id >= static_cast<int>(num_workers_)) return 0;
             if (worker_queues[worker_id]) return worker_queues[worker_id]->size();
             return 0;
         }
@@ -1133,21 +1132,20 @@ namespace SushiRuntime
          * @param worker_id The ID of the worker.
          * @return The number of completed tasks.
          */
-        size_t TaskScheduler::get_completion_rate(int worker_id) const 
+        size_t TaskScheduler::completed_task_count(int worker_id) const 
         {
-            if (worker_id < 0 || worker_id >= static_cast<int>(num_workers)) return 0;
+            if (worker_id < 0 || worker_id >= static_cast<int>(num_workers_)) return 0;
             return worker_completed_tasks[worker_id].value.load(std::memory_order_relaxed);
         }
 
         /**
-         * @brief Migrates tasks from a congested worker to other workers.
+         * @brief Moves tasks from a congested worker onto the global priority queue.
          * @param from_worker_id The ID of the heavily loaded worker.
-         * @param to_worker_id Unused in this implementation (relies on global priority queue).
          * @param count The number of tasks to migrate.
          */
-        void TaskScheduler::migrate_tasks(int from_worker_id, int /*to_worker_id*/, size_t count) 
+        void TaskScheduler::migrate_tasks(int from_worker_id, size_t count) 
         {
-            if (from_worker_id < 0 || from_worker_id >= static_cast<int>(num_workers)) return;
+            if (from_worker_id < 0 || from_worker_id >= static_cast<int>(num_workers_)) return;
             if (!worker_queues[from_worker_id]) return;
 
             // 1. Steal tasks lock-free from the congested (hot) worker.

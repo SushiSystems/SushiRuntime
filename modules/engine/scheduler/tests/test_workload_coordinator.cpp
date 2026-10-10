@@ -49,7 +49,7 @@ namespace
     public:
         size_t get_worker_count() const override       { return 1; }
         size_t get_queue_size(int) const override       { return 0; }
-        size_t get_completion_rate(int) const override  { return 0; }
+        size_t completed_task_count(int) const override  { return 0; }
     };
 
     /**
@@ -62,7 +62,7 @@ namespace
     {
     public:
         std::atomic<int> calls{0};
-        void migrate_tasks(int, int, size_t) override { calls.fetch_add(1, std::memory_order_relaxed); }
+        void migrate_tasks(int, size_t) override { calls.fetch_add(1, std::memory_order_relaxed); }
     };
 
     /**
@@ -84,7 +84,7 @@ namespace
         {
             evaluations->fetch_add(1, std::memory_order_relaxed);
             if (request_migration)
-                migrator.migrate_tasks(0, 0, 1);
+                migrator.migrate_tasks(0, 1);
         }
     };
 

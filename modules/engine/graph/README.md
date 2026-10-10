@@ -136,15 +136,26 @@ locality_checked_ so later steps pay nothing. A node is dispatched serially acro
 flag needs no synchronisation. Cross-device execution is a WP-5 concern; until then co-location is
 the contract this guard enforces.
 
+### placement_ and place_on
+
+A node that names no region gives the scheduler nothing to route by, so place_on() lets its builder
+state the device, and a node that states none runs on device 0. A node that names a region a device
+owns runs on that owner whatever it states. `modules/engine/scheduler/README.md`, under "Queue
+selection", holds the rule, and `Graph::placement_of()` applies it.
+
+placement_ is a 16-bit field with NO_PLACEMENT for "none stated". It sits in the padding between
+locality_checked_ and cached_queue_index_, so sizeof(Node) does not grow. place_on() throws
+`Errc::invalid_graph` for an index the field cannot hold; whether the index names a device of the
+runtime is checked at the node's first dispatch, where the device count is known.
+
 ### cached_queue_index_
 
-cached_queue_index_ is resolved once on the node's first dispatch, alongside locality_checked_ and
-from the same context_index_for_ptr lookup, when the anchor is a pointer this context allocated.
-Later steps route straight to RuntimeContext::get_queue(index) instead of get_queue_for_ptr(), which
-takes a process-global mutex on every device dispatch. A value of -1 keeps the introspection and
-NUMA round-robin fallback for pointers this context did not allocate, which is rare. The index is
-stable across replay: all_queues never changes and the node's anchor buffer is fixed, so it cannot
-go stale. A node is dispatched serially, so a plain int needs no synchronisation.
+cached_queue_index_ is the node's placement, resolved once on its first dispatch, alongside
+locality_checked_, by `Graph::placement_of()`. Later steps route straight to
+`DeviceQueueSet::queue(index)`, an indexed read. It is -1 only until that first dispatch. The index
+is stable across replay: the device set never changes and the node's anchor buffer and stated
+placement are fixed, so it cannot go stale. A node is dispatched serially, so a plain int needs no
+synchronisation.
 
 ### bindings_
 
@@ -205,6 +216,14 @@ count reaches zero has no dependencies left and goes to the sink. The decrement 
 freed successor sees every write the predecessors made.
 
 ## task_graph.hpp
+
+### The node an add call returns
+
+Every add_\* call returns the node it added, so a builder configures that node directly: its name,
+its width, its placement. The reference stays valid while the graph holds the node and, after
+compile() or take_nodes(), while the plan or the vector that took it over holds it. A parallel
+builder needs the reference, because "the last node added" names one node only while a single thread
+adds.
 
 ### add_node(work, dependencies, registration)
 
@@ -278,6 +297,10 @@ and transfers node ownership to the returned CompiledGraph. It does not submit a
 
 compile() is not thread-safe with respect to add_node() and add_task(). All nodes must be inserted
 before it is called.
+
+A graph with no root, or with a cycle behind a root, throws `Core::SushiException` with
+`Errc::invalid_graph`. The message gives the node counts and names one node that cannot run, by its
+label and registration index.
 
 ### take_nodes
 
@@ -381,7 +404,7 @@ double-buffer swap without recompiling.
 `all_nodes` is a LIFO stack, so its head is the last node pushed. `name_last_node()` is
 called during graph description on the thread that just added the node, which is why a
 relaxed load is enough: there is no other writer to order against. `width_last_node()`
-mirrors it.
+mirrors it. A caller that kept the reference its add call returned needs neither.
 
 #### compile
 

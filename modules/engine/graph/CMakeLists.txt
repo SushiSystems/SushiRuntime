@@ -13,4 +13,4 @@ sushiruntime_add_module(
 
 sushiruntime_add_module_tests(
     MODULE graph
-    SOURCES test_dependency_tracker.cpp)
+    SOURCES test_dependency_tracker.cpp test_task_graph.cpp)
