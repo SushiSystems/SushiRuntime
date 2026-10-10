@@ -10,6 +10,7 @@ sushiruntime_add_module(
     SOURCES
         dispatch_placement.cpp
         failure_naming.cpp
+        offload_return.cpp
         task_scheduler.cpp
     DEPENDS core logging observability task
     PRIVATE_DEPENDS sycl topology memory device)

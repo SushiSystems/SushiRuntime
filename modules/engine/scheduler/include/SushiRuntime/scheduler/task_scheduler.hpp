@@ -45,6 +45,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
+#include <SushiRuntime/scheduler/offload_gate.hpp>
 #include <SushiRuntime/scheduler/pin_policy.hpp>
 #include <SushiRuntime/scheduler/quiescence_latch.hpp>
 #include <SushiRuntime/scheduler/run_outcome.hpp>
@@ -194,10 +195,10 @@ namespace SushiRuntime
                 /** @brief Allocator asked which device owns a node's USM. */
                 const Memory::UsmAllocator& memory_;
                 /**
-                 * @brief Offered each offloadable node at dispatch; null when none is installed.
+                 * @brief Offers each offloadable node to the installed coordinator at dispatch.
                  * @see modules/engine/scheduler/README.md
                  */
-                Graph::OffloadCoordinator* offload_ = nullptr;
+                OffloadGate offload_gate_;
 
                 /**
                  * @brief Holds whether workers bind to cores, copied from WorkerPoolSettings.
