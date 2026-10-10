@@ -1,15 +1,13 @@
 # distributed
 
 The master and worker layer that ships named kernels and buffer references across machines. It is
-compiled only under SR_DISTRIBUTED.
+built only when the CMake option `SR_ENABLE_DISTRIBUTED` is on, which `sr build --distributed`
+sets.
 
-**The sources are being moved onto the headers described here, and the module does not build at
-this commit.** The wire codec, the handshake, the secret, the endpoint and the socket seam compile
-and are tested; `distributed_coordinator.cpp`, `worker_agent.cpp`, `tcp_transport.cpp`,
-`in_process_transport.cpp`, `cluster.cpp`, `kernel_registry.cpp`, `buffer_registry.cpp` and the
-three older test files still hold the code written against the headers this commit replaced.
-
-The design is `docs/agent/2026_10_09_USABILITY_AUDIT/SPEC.md`, phase D.
+How to run a master and a worker is in
+[`DISTRIBUTED_GUIDE.md`](../../../docs/guides/DISTRIBUTED_GUIDE.md); this page describes the code.
+The tests are described in [`tests/README.md`](tests/README.md). The design is
+`docs/agent/2026_10_09_USABILITY_AUDIT/SPEC.md`, phase D.
 
 ## Public surface
 
@@ -62,10 +60,11 @@ does not start, attach() installs nothing and throws an exception that carries t
 message; a cluster attached before stays installed and keeps working.
 
 attach() checks, in this order, that the transport is not null, that the secret is not empty on a
-Network transport and that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. Then it stops and
-removes the coordinator the runtime held before, sets the release observer, installs the new
-coordinator, which is where the scheduler binds its sink, and calls
-DistributedCoordinator::start(). start() starts the transport, then the monitor, and logs
+Network transport and that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. It then builds the
+new master, binds it to `RuntimeContext::offload_sink()` and calls
+DistributedCoordinator::start(). Only when that returns `Ok` does it stop and remove the
+coordinator the runtime held before, set the release observer and install the new coordinator.
+start() starts the transport, then the monitor, and logs
 `distributed master listening on 127.0.0.1:7000, protocol v2, authentication off`. The endpoint is
 the message of the `TransportResult` the transport's `start()` returned: the bound `address:port`
 for TCP, so a bind to port 0 shows the port the OS chose, and `in-process` for a fabric.
@@ -129,15 +128,16 @@ before the stream's frames. A result that must follow its output bytes is theref
 of the same stream. `QueueFull` means the control queue is at its bound and nothing was queued.
 
 **Closing.** `close_peer()` returns at once. Sends to the peer return `UnknownPeer` from that
-point, queued control frames are still written, streams are dropped, and `on_peer_lost()` reports
-`ClosedLocally`.
+point, streams are dropped, queued control frames are written for a bounded time, and
+`on_peer_lost()` reports `ClosedLocally`.
 
 Over TCP the writer gets `close_linger` (1 s) to write those frames. A writer that has already
 waited that long inside one socket write when `close_peer()` is called has had its time:
 `PeerConnection::close()` shuts the socket itself, the reader reports the loss at once and the
 queued frames are dropped. A write that has waited for less runs on until it ends or
-`write_idle_timeout` passes. The in-process transport has no such wait: its pump never blocks in a
-send, `Outbox::close()` drops the streams, and the next round of the pump reports the loss.
+`write_idle_timeout` passes, and in the second case the loss is reported as `WriteStalled`. The
+in-process transport has no such wait: its pump never blocks in a send, `Outbox::close()` drops
+the streams, and the next round of the pump reports the loss.
 
 **A worker that cannot connect.** `on_connect_abandoned()` is called once when a worker-side
 transport stops trying: the time allowed for the first connection ran out, or the master was lost
@@ -148,6 +148,97 @@ and reconnecting is off.
 `exposure()` is `Loopback` for an in-process fabric and for a TCP endpoint whose bind address or
 master host is a loopback address, and `Network` otherwise. `TcpMasterOptions::bind` defaults to
 `127.0.0.1`.
+
+## tcp_transport.hpp
+
+`TcpTransport::make_master(TcpMasterOptions)` and `make_worker(Endpoint, TcpWorkerOptions)` make
+the two ends. Nothing is bound or connected until `start()`.
+
+A master runs one accept thread. It polls `accept` every 100 ms, so `stop()` takes up to that
+long, and it joins finished connections between two accepts. Every open connection counts
+towards `max_peers` (64), whether or not its peer has registered. A connection that arrives at
+the cap gets no `PeerId` and makes no event: the acceptor writes `REJECT(busy)` with a 250 ms
+bound, shuts the socket and logs a WARN for the first refusal and every tenth after it. The
+write is best effort, since the socket is shut straight after it.
+
+A worker runs one connect thread. Each attempt resolves the master's host again and gives each
+resolved address `attempt_timeout` (3 s). After a failure it waits `backoff_initial` (100 ms),
+doubling up to `backoff_ceiling` (5 s), and logs `cannot reach master` at WARN for the first
+attempt and every tenth. `connect_timeout` bounds only the time before the first connection.
+After a connection is lost the thread connects again while `reconnect` is set; a connection that
+lasted at least `backoff_ceiling` starts the backoff over. The transport does not stop
+connecting on its own after a version mismatch or bad magic: `MasterLink` stops it (see "A link
+that ended").
+
+Each connection is a `PeerConnection` with a reader thread, a writer thread and an `Outbox`
+(4096 control frames by default). A write in which no byte leaves for `write_idle_timeout`
+(5 s) ends the connection with `WriteStalled`. `Socket::shutdown()` ends a read or a write that
+waits on another thread within 100 ms on every platform, which is what lets `stop()` and
+`close()` end a connection whose peer has stopped answering.
+
+`statistics()` sums the byte counts of the open connections and of those that have left, under
+the peer table's mutex.
+
+## shared_secret.hpp and the handshake
+
+`SharedSecret` owns the key bytes, wipes them when it dies and does not copy implicitly. A
+secret holds 32 bytes to 1 MiB, read from a file byte for byte, or nothing. `from_environment()`
+reads the file a variable names. No stream operator prints one.
+
+The handshake runs above the transport, in `WorkerDirectory` on the master and `MasterLink` on
+the worker, so the in-process fabric exercises the same code as TCP.
+
+| Step | Frame | Carries |
+| --- | --- | --- |
+| 1 | `HELLO`, worker to master | a 32-byte worker nonce, the build id, the node name |
+| 2 | `CHALLENGE`, master to worker | a 32-byte master nonce, the master's proof, the session id |
+| 3 | `PROOF`, worker to master | the worker's proof, its operation ids, `max_jobs`, its cache budget |
+| 4 | `WELCOME`, master to worker | the worker id, the liveness timeout, the ping interval, `chunk_bytes` |
+
+A proof is `HMAC-SHA256(secret, label || worker_nonce || master_nonce)`, where the label is
+`SRDP2 master` or `SRDP2 worker`, so one side's proof cannot be replayed as the other's
+(`handshake.hpp`). Proofs are compared in constant time. The worker verifies the master's proof
+before it sends its own, so a worker with another secret closes the connection without `PROOF`:
+the master counts nothing for it and logs only that the peer closed before it registered. An
+empty secret runs the same exchange under an empty key.
+
+Until `WELCOME` a peer is not a worker. `WorkerDirectory::admits()` passes `HELLO` and `GOODBYE`
+from any connected peer, `PROOF` from a peer that owes one, and every other type from a
+registered worker only. A peer that has not registered within `handshake_timeout` of connecting
+is closed by the monitor; a repeated `HELLO` restarts the handshake and not that clock.
+
+SHA-256 and HMAC are written in the module (`sha256.hpp`, `hmac_sha256.hpp`) and pinned by the
+FIPS 180-4 and RFC 4231 vectors in `tests/test_handshake.cpp`. Nonces come from
+`std::random_device`. Frames after the handshake carry no MAC and are not encrypted.
+
+## i_offload_policy.hpp
+
+`WorkerDirectory::pick()` offers the policy the registered, alive workers that are below their
+`max_jobs` and registered the kernel of the task's operation, under the directory's mutex. It
+does not call the policy when no such worker has room, and an answer that names a worker it did
+not offer counts as no pick. Workers of one cluster may therefore hold different kernels.
+
+`LeastLoadedOffloadPolicy` is the default. It returns nothing, which runs the task locally, when
+the task's inputs total fewer bytes than `min_offload_bytes` (64 KiB unless the constructor is
+given another value). It skips a worker whose `free_mem` is not 0 and is below the input size.
+Among the rest it picks the lowest cost, in microseconds: `rtt_micros`, plus the input bytes
+divided by 1000, plus 1000 per inflight task. The two constants are in
+`source/i_offload_policy.cpp`.
+
+## cluster_statistics.hpp
+
+`Cluster::statistics()` returns `ClusterStatistics`, which the coordinator assembles from the
+brick that causes each count. What each field means to a user is in §9 of the guide.
+
+| Fields | Kept by |
+| --- | --- |
+| `offloaded`, `declined`, `send_queue_full` | `OffloadDispatcher` |
+| `tasks_reaped_deadline`, `tasks_reaped_unacknowledged`, `tasks_reaped_lost_result`, part of `redispatched` | `ClusterMonitor` |
+| `chunks_sent`, `chunks_received`, `transfers_aborted`, part of `stale_writebacks` | `BufferExchange` |
+| `completed_remote`, `handshake_rejected_auth`, `handshake_rejected_version`, `peers_lost`, `peers_closed_malformed`, the rest of `redispatched` and `stale_writebacks` | `DistributedCoordinator` |
+| `bytes_sent`, `bytes_received` | the transport |
+| `alive_workers`, `workers` | `WorkerDirectory` |
+| `pending_tasks` | `PendingTasks` |
 
 ## in_process_transport.hpp
 
@@ -299,9 +390,12 @@ to that peer fails in `send()` and is undone by `try_offload()`.
 
 ### Counters
 
-`statistics()` reads atomics only. `redispatched` is the monitor's count plus the tasks the
-handlers and `stop()` resubmitted. `stale_writebacks` is the exchange's count of chunks the
-registry refused plus the chunks `expects_output()` refused.
+`statistics()` reads atomics only. `offloaded` is the dispatcher's count of dispatches whose
+`TASK_DISPATCH` frame a worker's queue took. `redispatched` is the monitor's count plus the tasks
+the handlers and `stop()` resubmitted. `stale_writebacks` is the exchange's count of chunks the
+registry refused plus the chunks `expects_output()` refused. `cluster_statistics()` also asks the
+transport for its byte counts, and `TcpTransport::statistics()` takes the peer table's mutex for
+that.
 
 `completed_remote` counts the tasks whose result was `Succeeded` with every output whole. The
 coordinator keeps it, since `Graph::OffloadStatistics` has no field for it.
@@ -408,9 +502,9 @@ it.
 `WorkerAgent` builds `WorkerBufferCache`, `DispatchDeduplicator`, `MasterLink` and
 `DispatchExecutor` over one transport and one `RuntimeContext`, and is the transport's only event
 receiver. One constructor takes an `API::Runtime` and forwards to the other through
-`Runtime::unsafe_context()`, as the two `Cluster::attach()` overloads do. Kernels run on the queue of device 0 of that context. The cache allocates shared USM on
-the same device through `RuntimeContext::memory()`, so the context's allocator records every
-cached buffer. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that
+`Runtime::unsafe_context()`, as the two `Cluster::attach()` overloads do. Kernels run on the queue
+of device 0 of that context. The cache allocates shared USM on the same device through
+`RuntimeContext::memory()`, so the context's allocator records every cached buffer. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that
 reports no size gets 1 GiB and one WARN.
 
 Every frame goes to `MasterLink::note_frame()` first and then through a `MessageRouter`. The agent
@@ -538,7 +632,7 @@ machine; a machine that reports none is named `worker`.
 | Code | When |
 | --- | --- |
 | 0 | the stop flag was set and the agent stopped in order; also `--help` and `--version` |
-| 1 | a bad flag or value, a missing master, an unknown log level, a secret file that cannot be read or holds fewer than 32 bytes; one line on the error stream says which |
+| 1 | a bad or unknown flag or value, a missing master, an unknown log level, a secret file that cannot be read or holds fewer than 32 bytes or more than 1 MiB; one line on the error stream, prefixed `sushiruntime worker: `, says which |
 | 2 | the transport gave up before the first registration (`WorkerEnd::MasterUnreachable`) |
 | 3 | `REJECT(authentication)`, or a `CHALLENGE` whose proof is wrong |
 | 4 | `REJECT(version)`, a frame of another version, or bytes that are not a frame |
@@ -555,10 +649,13 @@ The flag is one per process, which is why at most one `StopSignal` exists at a t
 
 ## Protocol versions
 
-| Version | Frame | State |
+| Version | Release | What changed |
 | --- | --- | --- |
-| 1 | `[u32 length][u8 type]`, raw structs | removed with `protocol.hpp` |
-| 2 | 12-byte header: magic `SRDP`, version, type, flags, payload length; 16 messages | current |
+| 1 | v0.3.0 and earlier | Frame `[u32 length][u8 type]` in native byte order, payloads written as raw structs, nine message types. No authentication, and a buffer travelled whole in one frame. Removed with `protocol.hpp` |
+| 2 | unreleased | 12-byte little-endian header: magic `SRDP`, version, type, flags, payload length of at most 1 MiB. Sixteen messages with fixed-width fields. A four-message handshake with HMAC-SHA256 proofs in both directions. Buffers travel in chunks, and a task's output chunks precede its result. `TASK_ACCEPTED`, `BUFFER_ABORT`, `BUFFER_RELEASE`, `REJECT` and `GOODBYE` are new |
 
-Master and worker must carry the same version. The header and the first three fields of REJECT and
-GOODBYE are frozen for every later version.
+`Wire::K_PROTOCOL_VERSION` in `source/wire_frame.hpp` holds the current number. Master and worker
+must carry the same version: the reader checks it on every frame and there is no negotiation. The
+header and the first three fields of REJECT and GOODBYE are frozen for every later version, so two
+versions can always refuse each other in words. `test_wire_format.cpp` holds the golden bytes of
+every message and fails on a layout change, which is when the number and this table move.

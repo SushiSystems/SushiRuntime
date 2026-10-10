@@ -322,7 +322,7 @@ step); the scheduler skips a disabled node by routing it through the poller as
 instantly complete (its successors still fire, so the DAG drains), and the kernel
 reads `count` for its range. The fluent surface exposes this through `API::when()`
 / `API::sized()` (see the `Dynamic` tag). This generalises the distributed layer's
-`live_reads_`/`live_writes_` late-pointer mechanism to size and enablement, so an
+`live_reads`/`live_writes` late-pointer mechanism to size and enablement, so an
 ECS-style graph that spawns/destroys entities or sleeps subsystems per frame
 compiles once — `Graph::compile_count()` stays 1. Bindings may change size/enable
 but **not** which resources a node touches, since that would invalidate the
@@ -686,8 +686,9 @@ Builds and analyzes the task DAG.
   inline;
 - `std::unique_ptr<NodeExtensions> ext_` — one **unconditional** pointer to lazily
   allocated optional state, so `Node`'s layout never depends on a build flag. The
-  distributed `OffloadState` (`offloadable`, `remote_op`, the buffer handles, the
-  `attempts` retry cap) lives in `NodeExtensions` and is reached through
+  distributed `OffloadState` (`offloadable`, the `attempts` count, the `live_reads` and
+  `live_writes` lists of a double-buffered node, the coordinator's `payload`) lives in
+  `NodeExtensions` and is reached through
   `Node::offload()` (mutable, allocates on first use) and `Node::offload_state()`
   (read, nullable). A standalone build never allocates it and pulls in no distributed
   symbol; either way `sizeof(Node)` is identical, so the flag no longer changes the
@@ -748,8 +749,8 @@ either a host-work body or a device body + host fallback.
 - moves all `Node`s into a `CompiledGraph { roots, sentinel, all_nodes }`, which
   *owns* every node (`sushi_ptr`) to keep them alive for the whole run — internal
   dependencies use raw `Node*`, so premature destruction would be use-after-free;
-- in Master mode (distributed builds), also **stamps** which nodes are offloadable
-  and initializes `offload.attempts`.
+- when an offload coordinator is installed, calls its `prepare()`, which marks the
+  nodes a worker may run and resets their `attempts`.
 
 ---
 
@@ -842,9 +843,11 @@ where no event made progress. When `stall_polls_` reaches
 `STALL_DRIVE_THRESHOLD = 32`, the poller forces a blocking `wait()` on the oldest
 outstanding event to break the stall, then resets the counter.
 
-`set_completion_observer()` (distributed builds only) installs a per-node callback
-fired by `trigger_successors`; the `DistributedCoordinator` uses this to bump
-buffer versions and release remote successors in sync with local ones.
+The poller reports every node the pool ran to the installed offload coordinator
+through `on_local_completion()`, before the node's successors are released. The
+distributed master raises the versions of the shared buffers the node wrote there.
+A node a worker ran comes back through `OffloadSink::complete_remote()`, which
+releases its successors on the same path.
 
 ### 9.4 `Task` / `RangeTask` — divisible work
 
@@ -902,8 +905,9 @@ The top-level owner (Pimpl, for a stable ABI; non-copyable, non-movable). It:
 `install_offload()` installs one and `offload()` returns it, or `nullptr`. The
 type is the same in every build. With `SR_ENABLE_DISTRIBUTED`,
 `Distributed::Cluster::attach()` builds the buffer registry and the coordinator,
-installs them, and returns the handle that carries the knobs, the telemetry and
-the buffer version calls.
+binds the coordinator to `offload_sink()`, starts it, and only then installs it in
+place of any coordinator installed before. It returns the handle that carries the
+knobs, the statistics and the buffer version calls.
 
 **The cross-context invariant.** USM is pinned to the device/context it was
 allocated on. Running a kernel on a sibling device's queue (e.g. CPU USM on a
@@ -988,69 +992,89 @@ A few cross-cutting rules the codebase follows consistently:
 
 ## 12. Distributed (`distributed/`, optional)
 
-Guarded entirely behind `SR_ENABLE_DISTRIBUTED` (CMake) / `SR_DISTRIBUTED`
-(macro). When off, none of it compiles — zero code, zero dependencies, zero ABI.
-Full operational detail is in [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md); the
-architectural essentials:
+Built only with `SR_ENABLE_DISTRIBUTED` (CMake), which also defines `SR_DISTRIBUTED`
+for consumers. When off, none of it compiles and no header of another module names
+it. How to run it is in [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md); how
+each class works is in `modules/extension/distributed/README.md`. What the rest of
+the runtime needs to know:
 
-- **The core constraint:** compiled code can't travel the wire. So nothing is
-  serialized except *references*: a task ships its `OpID` (a kernel already
-  compiled into every node) plus `BufferHandle`s (`GlobalBufferID` + `version` +
-  `size_bytes`). Closures and pointers never cross the network.
+- **Only references cross the wire.** A task ships its `OpID`, which names a kernel
+  compiled into the worker, and `BufferHandle`s (`GlobalBufferID`, `version`,
+  `size_bytes`). Closures and pointers do not travel.
 
-- **`protocol.hpp`** defines the wire format: a `[4B length][1B type][payload]`
-  frame. `MsgType` enum: `REGISTER_HELLO` / `REGISTER_ACK` / `TASK_DISPATCH` /
-  `BUFFER_REQUEST` / `BUFFER_PUSH` / `TASK_RESULT` / `HEARTBEAT` / `PING` /
-  `PONG`. `ByteWriter` and `ByteReader` are the serializer/deserializer pair used
-  by all message encode/decode paths.
+- **The seam is in the engine.** The scheduler, the graph and the context know one
+  interface, `Graph::OffloadCoordinator` (`task/offload_coordinator.hpp`):
+  `prepare()` at compile, `try_offload()` at dispatch for a node whose
+  `OffloadState::offloadable` is set, `on_local_completion()` after a local run,
+  `share()` for a buffer, `stop()` at shutdown. With no coordinator installed the
+  dispatch loop pays one null test per node. A coordinator hands nodes back through `Graph::OffloadSink`
+  (`complete_remote()`, `resubmit()`), which the scheduler implements.
+  `Distributed::Cluster::attach()` installs the one implementer,
+  `DistributedCoordinator`, a private class of the module.
 
-- **`ITransport`** abstracts the wire with `send` / `on_message` / `start` /
-  `stop` / `peer_count`. Two implementations:
-  - `InProcessFabric` — a shared switchboard that owns N endpoints for a
-    same-process multi-node simulation. Each `InProcessTransport` holds a reference
-    to the fabric and a `node_id`; the fabric routes between them. This is the
-    network analogue of `RemappingTopologyProvider` — the same substitution pattern
-    used in topology for deterministic multi-NUMA testing.
-  - `TcpTransport` — a dependency-free raw-socket transport (POSIX + Winsock) for
-    real clusters. Factory: `TcpTransport::make_master(port)` /
-    `TcpTransport::make_worker(host, port)`.
+- **Protocol version 2** is a private codec (`source/wire_frame.hpp`,
+  `source/wire_messages.hpp`): a 12-byte little-endian header with a magic, the
+  version, the type, flags and a payload length of at most 1 MiB, then one of the
+  sixteen messages `MessageType` names. Fields have fixed widths, so the frame
+  layout does not depend on the machine. Buffer bytes travel in `BUFFER_CHUNK`
+  frames of 256 KiB by default, so a buffer is not bounded by a frame.
 
-- **`KernelRegistry`** maps `OpID` to `RemoteKernel` — the local function that
-  executes when a dispatched task arrives. Workers register their kernels on
-  startup; the master sends only the `OpID`.
+- **The handshake authenticates both ends.** `HELLO`, `CHALLENGE`, `PROOF` and
+  `WELCOME` carry two nonces and two HMAC-SHA256 proofs over a `SharedSecret`.
+  SHA-256 and HMAC are written in the module. Frames after the handshake are
+  neither encrypted nor signed; the layer is for a trusted LAN.
 
-- **`BufferRegistry`** is the master-authoritative versioned buffer cache. A write
-  bumps the `version`, so stale worker caches re-pull. `GlobalBufferID` + `version`
-  is what crosses the wire; workers resolve handles to local USM.
+- **`ITransport`** moves frames and reports what it sees through `TransportEvents`:
+  `on_peer_connected()`, `on_frame()`, `on_peer_lost()`, `on_connect_abandoned()`.
+  `send()` queues a control frame and `send_stream()` hands over a `FrameSource`
+  that yields the frames of one bulk transfer; neither waits for a socket. Two
+  implementations:
+  - `InProcessTransport` over an `InProcessFabric`, which joins a master and any
+    number of workers inside one process and takes a `FaultPolicy`. It is the
+    network analogue of `RemappingTopologyProvider`.
+  - `TcpTransport` over the platform's sockets, with a reader thread and a writer
+    thread per connection: `TcpTransport::make_master(TcpMasterOptions)` and
+    `TcpTransport::make_worker(Endpoint, TcpWorkerOptions)`.
 
-- **`WorkerStats`** (`i_offload_policy.hpp`) carries per-worker live state for the
-  offload policy: `worker_id`, `alive`, `inflight` tasks, `free_mem` bytes,
-  `rtt_micros` (round-trip time estimate).
+- **`KernelRegistry`** maps an `OpID` to a `KernelRegistry::Kernel`, a function
+  that receives the task's buffers as `span<const BufferView>` and returns a SYCL
+  event. A worker registers its kernels before it starts; the master sends only
+  the `OpID`.
 
-- **`DistributedCoordinator`** (master, Pimpl) is the only distributed object the
-  scheduler touches: for each node `compile()` flagged offloadable, the dispatch
-  loop calls `try_offload()` behind a single `[[unlikely]]` branch. It serves the
-  versioned `BufferRegistry`, and on `TASK_RESULT` fires the
-  `set_completion_observer()` callback registered on `EventPolling`, so the
-  scheduler releases successors in the same path as local completion. A liveness
-  monitor (default 5 s, configurable) triggers a `ResubmitHook` on a dead worker
-  — re-injecting orphaned nodes into the scheduler for local or re-remote
-  execution. Telemetry: `offloaded_count()`, `declined_count()`,
-  `redispatched_count()`, `alive_worker_count()`.
+- **The master is composed of bricks**, each a private class with at most one
+  mutex: `BufferRegistry` (ids and versions of the shared buffers),
+  `WorkerDirectory` (sessions and the handshake state), `PendingTasks` (the tasks
+  out on a worker and their nodes), `BufferExchange` (chunks in and out),
+  `OffloadDispatcher` (`prepare` and `try_offload`) and `ClusterMonitor` (pings,
+  liveness, deadlines). `DistributedCoordinator` builds them and routes frames to
+  them.
 
-- **`WorkerAgent`** (worker, Pimpl) is a thin shell around a normal local
-  `RuntimeContext`: HELLO with its `OpID` set, run dispatched kernels through the
-  existing NUMA-aware scheduler, reply with results. `set_heartbeat_interval()`
-  sets the PING period (default 1 s; pass 0 to disable for unit tests).
+- **The master owns every shared buffer.** A write raises the buffer's `version`. A
+  worker caches what it pulled and pulls again when the version has moved. A
+  worker's output chunks are written into the master's buffer in place, and only
+  while their task is still out and their version is the one dispatched.
 
-- **`IOffloadPolicy`** decides where (or whether) to offload. The default
-  `LeastLoadedOffloadPolicy` ranks live workers by estimated completion cost
-  (RTT + transfer time + queue backlog via `WorkerStats`), gates on free device
-  memory, and keeps payloads below `min_offload_bytes` (default 64 KiB) local.
-  Declining is always safe: the task runs locally.
+- **A task that cannot be trusted to finish comes back.** The monitor closes a
+  worker that is silent for the liveness timeout (5 s by default) and takes back a
+  task past its deadline (30 s), one no worker confirmed, or one a worker stopped
+  holding. A lost worker's tasks are taken back at once. Each goes to
+  `OffloadSink::resubmit()`, and after `K_MAXIMUM_OFFLOAD_ATTEMPTS` (2) dispatches
+  in one run the node runs locally. `ClusterStatistics` counts each of these.
 
-A declined or failed offload is a transparent local fallback — the standalone
-execution path is never compromised by the distributed layer being present.
+- **`WorkerAgent`** runs on a `RuntimeContext` of its own: it registers with the
+  master, pulls the inputs of each dispatched task into a cache, runs the kernel on
+  the queue of device 0, one task at a time, and streams the outputs back.
+  `run_worker()` wraps it in a whole process: flags, the secret file, signals,
+  reconnection and exit codes.
+
+- **`IOffloadPolicy`** decides where a task goes, or that it stays. The default
+  `LeastLoadedOffloadPolicy` keeps a task whose inputs total under
+  `min_offload_bytes` (64 KiB) local, skips a worker without the free device memory
+  for the inputs, and picks the lowest estimate of round trip, transfer time and
+  backlog from `WorkerStats`. Declining is always safe: the task runs locally.
+
+A declined or failed offload falls back to the local path, which is the same path a
+standalone build runs.
 
 ---
 
@@ -1263,15 +1287,15 @@ modules/<tier>/<module>/   README.md, CMakeLists.txt, include/SushiRuntime/<modu
   surface/     interop     DeviceUuid, ExternalMemoryDescriptor, InteropCapabilities
                api         Runtime, Buffer/State, API::Graph, API::DynamicGraph / Region,
                            API::Interop, the umbrella header SushiRuntime.h
-  extension/   distributed (optional) protocol, ByteWriter/ByteReader, transports,
-                           KernelRegistry, BufferRegistry, coordinator, worker agent,
-                           IOffloadPolicy, WorkerStats, Cluster
+  extension/   distributed (optional) Cluster, ITransport and its two transports,
+                           KernelRegistry, IOffloadPolicy, WorkerAgent, run_worker;
+                           privately the wire codec, the handshake and the bricks
 cmake/                     build functions; SushiRuntimeTiers.cmake states the tier order
                            and the edges allowed inside a tier
 tests/                     tests that cross modules: unit/, integration/, regression/,
                            allocation/, benchmark/, package/
 applications/examples/     fluent tutorials: quickstart + *_demo (always built);
-                           distributed_demo (distributed builds only)
+                           distributed_demo, distributed_worker (distributed builds only)
 docs/                      the manual, indexed by docs/README.md
 ```
 

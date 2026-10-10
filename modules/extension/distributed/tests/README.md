@@ -189,9 +189,10 @@ null. A second `attach` on the same context must then succeed.
 
 ### `AttemptCapDoesNotOutliveTheRun`
 
-A `Fail` worker fails every dispatch. One compiled graph runs twice. In each run the worker must
-receive `K_MAXIMUM_OFFLOAD_ATTEMPTS` dispatches before the task runs locally, so the second run
-proves the cap of the first did not pin the node.
+A `Fail` worker fails every dispatch. One compiled graph runs twice, with `rearm()` before each
+run. In each run the worker must receive `K_MAXIMUM_OFFLOAD_ATTEMPTS` dispatches before the task
+runs locally, so the second run proves the cap of the first did not pin the node. `declined`
+rises by one per run and `redispatched` by the cap.
 
 ### `RefusesEmptySecretOnNetworkExposure`
 
@@ -204,10 +205,11 @@ On a `StubTransport` that reports `Network`, `attach` with an empty secret must 
 registry runs the kernel once. Run with a worker, the worker's registry runs it once and the
 master's not at all. Both outputs must be equal.
 
-### Not covered: `RunReportOffloadedIsPerRun`
+### The per-run offloaded count
 
-`fill_run_report` still copies the cumulative `offloaded` counter into
-`tasks_offloaded_to_network`. The case waits for the per-run count in the api module.
+No test of this file reads `RunReport`. That `tasks_offloaded_to_network` counts the dispatches
+of one run is pinned by `OffloadedCountIsOfThisRun` in
+`modules/surface/api/tests/test_run_driver.cpp`, with a coordinator that only counts.
 
 ## test_socket.cpp
 
@@ -621,6 +623,26 @@ Two workers send limits of 1 and 2 in `PROOF`. The policy sees both, then only t
 nobody, and at that point it is not called at all. One `release_inflight` frees one slot. An answer
 that names a worker the policy was not offered counts as no pick.
 
+### `SnapshotReportsWhatTheWorkerSent`
+
+One registered worker and one peer that only connected. After a `PONG`, a `HEARTBEAT`, a frame
+and a pick, the snapshot holds one entry, the worker's, with its id, name, endpoint, an inflight
+count of 1 and the round trip, free memory, queue depth and cache size it sent. Its
+`ms_since_last_frame` is 600, the time from its last frame to the snapshot.
+
+### `IdentityCarriesTheBuildOfTheLastHello`
+
+`WorkerDirectory::identity()` returns nothing for a stranger and for a peer that still owes
+`PROOF`. A peer that said `HELLO` twice and then proved itself has the name, the endpoint and the
+build id of the second `HELLO`. A third `HELLO`, sent after registration, changes none of them,
+and `remove_peer` ends the identity.
+
+### `HelloFromARegisteredWorkerRegistersNothingTwice`
+
+A registered worker with one task out says `HELLO` again, as a worker does when its `WELCOME` was
+lost. The answer is `AlreadyRegistered`. The alive count, the kernels, the inflight count and the
+build id stay as they were, and the directory still refuses a `PROOF` from that peer.
+
 ## test_transport_conformance.cpp
 
 The file pins the `ITransport` contract as `i_transport.hpp` writes it and needs no hardware. The
@@ -741,10 +763,10 @@ available, succeeds on the same exec thread.
 The kernel reads `size_bytes` of its input and its output views: 12 and 20. The input comes from a
 `BUFFER_REQUEST` the test answers with two chunks, and the output leaves in chunks of 8 bytes.
 
-### `LegacyKernelSignatureStillRuns`
+### `GenericLambdaRegistersAsAKernel`
 
-A kernel registered through the deprecated pointer overload runs and its bytes come back in the
-output chunk. The deprecation warning is silenced around that one call.
+`register_kernel` has one overload, so a lambda whose four parameters are all `auto` registers
+without a cast. It fills its output with 0x5a, and the four bytes come back in one chunk.
 
 ### `KernelThatThrowsFailsTheTaskAndTheWorkerLives`
 
@@ -756,6 +778,13 @@ The transport keeps the stream. Until it is pulled no `TASK_RESULT` exists, the 
 for `HEARTBEAT`, and a `BUFFER_RELEASE` cannot free the output. Pulled, the stream gives chunks of
 4, 4 and 2 bytes, the last one flagged, then `TASK_RESULT`; its destructor returns the pin.
 
+### `DisconnectEndsAnOpenInputPull`
+
+The executor runs with no pull idle timeout, so a pull ends only when something ends it. A task
+asks for its input and `discard_queued()` is called before any chunk arrives. The task ends as
+`InputUnavailable`, its kernel never runs and the cache holds no byte of the abandoned pull. A
+task of the next connection then runs on the same exec thread.
+
 ### `HandshakeChecksTheMasterBeforeProving`
 
 `HELLO` carries the nonce, the name and the build id. No `PROOF` leaves before a `CHALLENGE` whose
@@ -766,6 +795,22 @@ proof verifies; the `PROOF` then carries the worker's proof, its operations and 
 
 A `CHALLENGE` proved with another secret ends the link with `RejectedAuthentication`, sends no
 `PROOF` and closes the peer. The next connection is closed without a `HELLO`.
+
+### `EndedLinkStopsItsTransport`
+
+A link that ends as `RejectedAuthentication` stops its transport from its heartbeat thread, once,
+so the connector opens no further connection. A link that runs stops nothing.
+
+### `PingGetsNoPongBeforeRegistration`
+
+Between a good `CHALLENGE` and its `WELCOME` the link answers no `PING`. After `WELCOME` the same
+`PING` gets one `PONG` with its token.
+
+### `LateChallengeForAForgottenHelloIsIgnored`
+
+The link remembers the nonces of its last four `HELLO`s. After a fifth `HELLO`, a `CHALLENGE`
+proved against the first nonce reports `LinkChange::None`: no `PROOF` leaves and the peer stays
+open, because the proof may answer a `HELLO` the link has forgotten.
 
 ### `IdleHeartbeatCarriesTheNextTaskId`
 
@@ -783,14 +828,22 @@ A reconnect to the same `session_id` reports `Registered` and the cache and the 
 reconnect to another session reports `RegisteredNewSession`, on which the test clears both, as the
 agent does.
 
+### `LossAfterGoodbyeIsTheWorkersOwn`
+
+A registered link says goodbye. The loss that follows and an abandoned connect both report
+`LinkChange::None`, the end stays `Running`, and a connection that opens afterwards is closed
+without a `HELLO`. `stop()` then ends the link as `Stopped`.
+
 ## test_worker_main.cpp
 
 The parser tests pass an `EnvironmentReader` over a table, so no test changes the environment of
-the test process. The exit-code tests call `run_worker(options, kernels)`, which always builds a TCP
-transport, so they run over loopback: a fake master listens on port 0 with
-`TcpTransport::make_master()`, plays the frames of one script and holds an empty secret. Each of
-those tests builds a runtime. The worker runs on a second thread and the test waits for its exit
-code, bounded at 60 s.
+the test process. The five exit-code tests of `Integration_WorkerMainTest` call `serve_worker()` of
+`source/worker_session.hpp` over an in-process fabric, through `ServedWorker`, which serves on a
+thread of its own with an empty secret and reconnecting off. `FakeMaster` is a `TransportEvents`
+on the master endpoint that plays the frames of one script: reject for authentication, reject for
+version, register, or register and close. A sixth test runs `run_worker()` itself over TCP
+loopback. Each of the six builds a runtime, and each wait for an exit code is bounded at 60 s. No
+test raises a signal.
 
 ### `MasterAloneGivesTheDefaults`, `EveryFlagIsRead`
 
@@ -838,9 +891,8 @@ built.
 ### `SignalStopsWithExitZero`
 
 Exit code 0. The fake master welcomes the worker and waits for its first `HEARTBEAT`, which a
-worker sends only once it is registered. The test then raises SIGTERM in its own process. The
-`StopSignal` lives inside `run_worker()`, so `request()` cannot reach it from a test; the handlers
-are installed before the worker connects, so a registered worker has them. The worker returns 0
+worker sends only once it is registered. The test then calls `StopSignal::request()`, which sets
+the flag the first signal of a worker process sets. `serve_worker()` returns `StoppedBySignal`
 and the master receives `GOODBYE`.
 
 ### `AuthenticationRejectExitsThree`, `VersionRejectExitsFour`
@@ -850,13 +902,18 @@ returns 3 or 4 and does not reconnect.
 
 ### `MasterNotReachedExitsTwo`
 
-Exit code 2. The fake master is stopped before the worker starts, so nothing listens on its port,
-and the connect timeout is 1 s. The test takes at least that long.
+Exit code 2. The fabric has no master endpoint and the worker's connect timeout is 50 ms.
 
 ### `MasterLostWithoutReconnectExitsFive`
 
 Exit code 5. The fake master sends `WELCOME` and closes the connection; the worker runs with
 reconnecting off.
+
+### `RunWorkerOverTcpReturnsTheCodeOfItsEnd`
+
+The one test of `run_worker(options, kernels)` with a connection. A fake master listens with
+`TcpTransport::make_master()` on a port the OS chooses, welcomes the worker and closes. The worker,
+on a second thread with reconnecting off, returns 5.
 
 ## test_offload_dispatcher.cpp
 
@@ -897,15 +954,22 @@ version of the buffer in `live_writes` and leaves the other alone, which pins fi
 
 One `prepare` over an offloadable node, a node whose operation no worker has, a node with an
 unshared output, an untagged node and a null slot logs one WARN, captured through
-`Core::set_log_sink`: `2 of 3 op-tagged nodes will run locally: 1 no live worker for the op, 1
-buffer not shared (first: op 502)`. A second `prepare` over the offloadable node alone logs
-nothing.
+`Core::set_log_sink`. Its text is `2 of 3 op-tagged nodes will run locally: 1 no live worker for
+the op, 1 buffer not shared, 0 buffer written twice (first: op N)`, where N is the id of the
+operation no worker has. A second `prepare` over the offloadable node alone logs nothing.
 
 ### `LocalNodeBumpsOnlyItsSharedWrites`
 
 A node that stays local and writes a shared buffer keeps that buffer's handle, and
 `complete_local` raises its version. A node that writes no shared buffer gets no `OffloadState`,
 so its completion returns after one null check and takes no lock.
+
+### `NodeThatWritesOneBufferTwiceStaysLocal`
+
+A fixed-buffer node and a double-buffered node each list one buffer twice among their writes.
+Both stay local, and the one WARN counts them under the third reason, `2 buffer written twice`. A
+node that reads and writes the same buffer names it once as an output and stays offloadable. The
+local run of the first node still raises the version of the buffer it wrote.
 
 ## test_distributed_tcp_faults.cpp
 
@@ -938,8 +1002,8 @@ as a worker.
 
 Findings DIST-15 and DIST-16. A raw socket writes 12 bytes: the text `GET / HTTP/1`, a version 1
 frame (a 32-bit length and a type byte), or a version 2 header that announces 1 MiB plus one byte.
-The master closes the connection with no reply. A worker then registers, and in the first and
-the third test a task runs on it.
+The master closes the connection with no reply and `peers_closed_malformed` reaches 1. A worker
+then registers, and in the first and the third test a task runs on it.
 
 ### `WrongSecretRejected`
 
@@ -963,13 +1027,22 @@ reconnect, and a task runs on it.
 
 The proxy closes the link 100 000 bytes into a 1 MiB input sent in 64 KiB chunks, and the worker
 does not reconnect. The kernel never runs, the master takes the task back and the local fallback
-writes the output.
+writes the output. `peers_lost` and `redispatched` are both 1 as soon as the run returns, because
+the master raises them before it hands the node back.
 
 ### `StalledLinkReapedThenWorkerRejoins`
 
 Finding DIST-05. With a 300 ms liveness timeout the proxy holds every byte until the master has
 reaped the worker. The test raises the timeout to 60 s and lets the bytes pass; the worker
 registers again on a new connection and runs a task.
+
+### `LinkStalledMidTransferLostAtLivenessClose`
+
+A 32 MiB input is throttled to 8 MiB/s and the proxy stalls the link once 1 MiB has passed. The
+master's write idle timeout is 10 minutes, its liveness timeout 2 s and its task deadline 0, so
+only the liveness close can end the wait. By then the writer has waited in one socket write for
+longer than the connection's 1 s linger, so `close()` shuts the socket: the peer is lost, the
+task is resubmitted and the local fallback writes the output.
 
 ### `ThrottledTransferKeepsWorkerAlive`
 
@@ -987,43 +1060,3 @@ each way, no abort and no stale writeback.
 Finding DIST-14. While the proxy holds every byte, a graph with one offloadable node and one
 native node is started. The native node runs, `offloaded` reaches 1 and the task stays pending;
 the run ends on the worker once the bytes pass.
-
-## Cases added after the composition
-
-`test_worker_main.cpp`: the five exit-code cases of `Integration_WorkerMainTest`
-(`SignalStopsWithExitZero`, `MasterNotReachedExitsTwo`, `AuthenticationRejectExitsThree`,
-`VersionRejectExitsFour`, `MasterLostWithoutReconnectExitsFive`) call `serve_worker()` of
-`source/worker_session.hpp` over an in-process fabric, with a scripted `FakeMaster` on the master
-endpoint and `StopSignal::request()` in place of a signal. `RunWorkerOverTcpReturnsTheCodeOfItsEnd`
-is the one case that runs `run_worker()` itself, over TCP loopback on a port the OS chooses. No
-test raises a signal.
-
-`test_worker_bricks.cpp`: `DisconnectEndsAnOpenInputPull` runs an executor with no pull timeout, so
-the task result can only arrive because `discard_queued()` ended the pull.
-`LossAfterGoodbyeIsTheWorkersOwn` pins that a link that said goodbye reports a loss and an
-abandoned connect as `LinkChange::None` and ends as `Stopped`.
-
-`test_offload_dispatcher.cpp`: `NodeThatWritesOneBufferTwiceStaysLocal` pins the third reason of
-the `prepare()` warning for a fixed and a double-buffered node, and that the same buffer as input
-and output still leaves.
-
-`test_worker_directory.cpp`: `IdentityCarriesTheBuildOfTheLastHello` pins
-`WorkerDirectory::identity()`.
-
-## Cases added with the defect fixes
-
-`test_distributed_tcp_faults.cpp`: `LinkStalledMidTransferLostAtLivenessClose` stalls a link in the
-middle of a 32 MiB transfer with the master's write idle timeout at 10 minutes, and expects the
-peer lost and its task finished locally once liveness closes it. The three raw-byte cases also
-expect `peers_closed_malformed == 1`. `WorkerCutMidChunkTaskFinishesLocally` reads `peers_lost` and
-`redispatched` as soon as the run returns.
-
-`test_worker_bricks.cpp`: `GenericLambdaRegistersAsAKernel` replaces
-`LegacyKernelSignatureStillRuns`. `EndedLinkStopsItsTransport`: a link that ended for good stops
-its transport from its own thread. `PingGetsNoPongBeforeRegistration`: a link in the handshake
-answers no PING. `LateChallengeForAForgottenHelloIsIgnored`: after a fifth HELLO a CHALLENGE that
-matches no remembered nonce does not end the link.
-
-`test_worker_directory.cpp`: `HelloFromARegisteredWorkerRegistersNothingTwice`: a HELLO from a
-registered worker answers `AlreadyRegistered` and leaves the alive count, the kernels, the inflight
-count and the identity as they were.

@@ -121,9 +121,9 @@ two vectors and checks every element of the sum. The add is one task tagged with
 and streams the sum back. Without one, the lambda given to `add()` runs it on this machine. The
 sum is the same either way, because both paths call `add_element()` of `distributed_kernels.hpp`.
 
-The program prints where the task ran, which it reads from `Cluster::statistics()`: a dispatch
-that was queued to a worker and not taken back finished there. A typical run with a worker ends
-with:
+The program prints where the task ran, which it reads from `Cluster::statistics()`:
+`completed_remote` above 0 means a worker finished it. A run with a worker ends with these lines,
+followed by one line of byte and chunk counters:
 
 ```
 distributed_demo: N = 1048576, result CORRECT
@@ -140,18 +140,21 @@ distributed_demo: N = 1048576, result CORRECT
 | `--elements n` | 1048576 | Length of each vector |
 
 A value follows its flag as the next argument or after `=`. The buffers are shared with
-`Buffer::distributed()` after `attach()`; called before it, `distributed()` does nothing and the
-task stays local. The default offload policy also keeps a task local when its inputs are under
-64 KiB, so a run with `--elements` below 8192 reports `declined=1` even with a worker connected.
+`Buffer::distributed()` after `attach()`; called before it, `distributed()` shares nothing, logs
+one WARN and the task stays local. The default offload policy also keeps a task local when its
+inputs are under 64 KiB, so a run with `--elements` below 8192 reports `declined=1` even with a
+worker connected.
 
 ## distributed_worker.cpp
 
 The worker of the distributed demo. Its `main` builds a `KernelRegistry`, registers the demo's
 kernels and returns `Distributed::run_worker(argc, argv, kernels)`. The library does the rest:
 the flags, the secret, the connection with reconnect, the signal handlers and the exit code. The
-flags and exit codes are listed in `modules/extension/distributed/README.md`, section
-`worker_main.hpp`. Stop a worker with Ctrl-C; it finishes the running kernel, says goodbye to the
-master and exits 0.
+flags and exit codes are listed in
+[the distributed guide](../../docs/guides/DISTRIBUTED_GUIDE.md), §5. Stop a worker with Ctrl-C; it
+finishes the running kernel, says goodbye to the master and exits 0. `run_worker(argc, argv, ...)`
+refuses a flag it does not know, so a worker program with flags of its own parses them, fills a
+`WorkerOptions` and calls the overload that takes it.
 
 ### One machine
 
@@ -160,7 +163,7 @@ its own terminal: the worker keeps trying for 60 seconds and the master waits 30
 
 ```
 sr run sr_distributed_demo
-sr run sr_distributed_worker --master 127.0.0.1:5555
+sr run sr_distributed_worker -- --master 127.0.0.1:5555
 ```
 
 ### Two machines
@@ -184,17 +187,18 @@ $key = New-Object byte[] 32
 On the master, whose address is 192.168.1.10 in this example:
 
 ```
-sr run sr_distributed_demo --bind 0.0.0.0 --port 5555 --secret-file cluster.key
+sr run sr_distributed_demo -- --bind 0.0.0.0 --port 5555 --secret-file cluster.key
 ```
 
 On the worker:
 
 ```
-sr run sr_distributed_worker --master 192.168.1.10:5555 --secret-file cluster.key
+sr run sr_distributed_worker -- --master 192.168.1.10:5555 --secret-file cluster.key
 ```
 
-A worker with the wrong key exits 3, and one that cannot reach the master within 60 seconds
-exits 2. The frames are authenticated at the handshake and not encrypted, so this is for a LAN
+`sr run` passes what follows `--` to the program. A worker with the wrong key exits 3, and one
+that cannot reach the master within 60 seconds exits 2. The two machines prove the key to each
+other at the handshake; the frames after it are neither encrypted nor signed, so this is for a LAN
 both machines trust.
 
 ## distributed_kernels.hpp

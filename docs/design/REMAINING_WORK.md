@@ -12,14 +12,6 @@ reasoning in `docs/archive/slop/TODO.md`.
   waits on the owning queue's pending work; a debug-build guard that reports the unsafe access
   with its call site; a documented rule that any value read mid-run lives in `Residency::Host`.
   Listed in [`KNOWN_ISSUES.md`](../reference/KNOWN_ISSUES.md).
-- **An untracked task can run on a device that does not own its buffers.** A task without
-  regions takes `get_numa_local_queue`, which rotates over the node's queues per thread. With a
-  GPU and a CPU device on one NUMA node, the second untracked kernel a thread dispatches goes to
-  the other device and dereferences USM of a foreign context. Confirmed on 2026-10-09: the test
-  named in [`KNOWN_ISSUES.md`](../reference/KNOWN_ISSUES.md) faults with two devices and passes
-  with `ONEAPI_DEVICE_SELECTOR=cuda:*`. The fix is a routing rule for region-less tasks (a
-  device argument on `add_untracked`, or one default device), decided with EXEC-04 and EXEC-08
-  of `docs/agent/2026_10_09_USABILITY_AUDIT/REPORT.md`.
 - **A GPU with a known PCI address may still be placed on NUMA node 0.** `numa_mapper.cpp` asks
   hwloc for a NUMA ancestor of the PCI device; in hwloc 2 a NUMA node is never a parent, so the
   walk finds none. Read from `hwloc/helper.h` of hwloc 2.11, not observed: every development
@@ -69,19 +61,25 @@ reasoning in `docs/archive/slop/TODO.md`.
 The v1 limits a user must know are in
 [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md) §12. The engineering gaps:
 
-- **Reconnect.** A worker that drops mid-run cannot rejoin; nothing in `modules/extension/distributed/`
-  re-establishes the connection.
-- **Pipelining.** The worker has one job queue, so task N+1 is not received while N runs
+- **Worker scheduler bypass.** The worker runs every kernel on the queue of its device 0, one
+  at a time, and keeps its buffer cache there. A device field in `WorkerAgentOptions` and
+  dispatch through the worker's scheduler resolve it
   (`modules/extension/distributed/source/worker_agent.cpp`).
-- **Worker scheduler bypass.** The worker uses `ctx.get_queue(0)` for allocation, free and
-  device introspection at five sites, bypassing its NUMA-aware scheduler
-  (`modules/extension/distributed/source/worker_agent.cpp`).
-- **Frame header byte order.** The length field is a native-endian `uint32_t`, so the protocol
-  assumes one endianness across the cluster (`modules/extension/distributed/source/tcp_transport.cpp`).
-- **Unsynchronised `peers` vector.** `accept_loop()` writes a slot that `send()` and `stop()`
-  read from other threads without a lock (`modules/extension/distributed/source/tcp_transport.cpp`).
-- **Endpoint configuration.** Cluster addresses are CLI flags only (`--master`, `--port`,
-  `--workers`); there is no nodes file.
+- **Frames after the handshake.** Master and worker authenticate each other once; frames are
+  not encrypted and carry no signature. Encryption or a MAC per frame resolves it.
+- **Flood protection.** Every open connection counts towards `max_peers`, registered or not. A
+  separate cap on unregistered peers resolves it
+  (`modules/extension/distributed/source/tcp_transport.cpp`).
+- **A wrong secret after five `HELLO`.** `MasterLink` remembers four nonces, so the fifth
+  `CHALLENGE` on one connection is ignored and only the master's handshake timeout ends it
+  (`modules/extension/distributed/source/master_link.cpp`).
+- **Unmeasured costs.** `PendingTasks::insert()` allocates per dispatch, and the release
+  observer takes the buffer registry's mutex on every USM release. Both wait for the TCP
+  benchmark figures.
+- **Verification not yet run.** An ASan run of the layer, 100 repeats of the TCP fault suite,
+  and the TCP rows of the distributed benchmark.
+- **Endpoint configuration.** Cluster addresses come from flags and the environment; there is
+  no nodes file.
 - **Dynamic-graph offload.** The dynamic composer bypasses `TaskGraph::compile`, where
   `stamp_offloadable` runs, so an offloadable op recorded on a region runs its local fallback
   (`modules/engine/graph/source/task_graph.cpp`).

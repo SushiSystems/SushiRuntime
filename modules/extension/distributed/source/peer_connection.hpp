@@ -104,9 +104,10 @@ namespace SushiRuntime
                 /**
                  * @brief Closes the outbox and returns; the threads end on their own.
                  *
-                 * The writer writes the control frames left, for at most close_linger, then
-                 * shuts the socket down; the reader then reports ClosedLocally. Callable from
-                 * an event of this peer. A second call does nothing.
+                 * The writer writes the control frames left for at most close_linger, then shuts
+                 * the socket and the reader reports ClosedLocally. A write that has waited
+                 * close_linger is shut here; one that waited less runs to write_idle_timeout and
+                 * reports WriteStalled. Callable from an event of this peer, and more than once.
                  */
                 void close() noexcept;
 

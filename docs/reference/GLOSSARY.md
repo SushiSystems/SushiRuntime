@@ -25,8 +25,31 @@ The words this repository's documents use. A term defined in code names the head
 | Clock pairing | `Core::ClockPairing`: an event-clock reading and a steady-clock reading taken together at a run's first device submission, used to place host and device records on one axis |
 | Profiling queue | A second queue per device, built on first use with profiling enabled, that a graph requesting profiling dispatches through |
 | Offload | Sending one task to a remote worker through the optional distributed layer |
-| `OpID` | A 32-bit FNV-1a hash of an operation's name. It is what crosses the wire in place of code (`graph/task_types.hpp`) |
+| `OpID` | A 32-bit FNV-1a hash of an operation's name. It is what crosses the wire in place of code (`task/task_types.hpp`) |
 | Master, worker | The two roles of the distributed layer. The master owns the graph and the buffers; a worker runs the ops it registered |
+| Cluster | One master and the workers registered with it. `Distributed::Cluster` is the handle `Cluster::attach` returns (`distributed/cluster.hpp`) |
+| Kernel (distributed) | The function a worker runs for an `OpID`. It receives the task's buffers as `BufferView`s and returns a SYCL event (`distributed/kernel_registry.hpp`) |
+| Kernel registry | `Distributed::KernelRegistry`, the map from `OpID` to kernel that is compiled into a worker's program |
+| Local fallback | The work a task runs on the master when it is not offloaded or is taken back |
+| Shared buffer | A USM allocation the master has made known to its workers, through `Buffer::distributed()` or `State::distributed()`. Only a task whose buffers are all shared can be offloaded |
+| Buffer handle | `Distributed::BufferHandle`: the id, version and size that name a shared buffer on the wire (`distributed/buffer_handle.hpp`) |
+| Buffer version | A number the master raises on every write to a shared buffer. A worker's cached copy at an older version is pulled again |
+| Pull | A worker asking the master for the bytes of one buffer version it does not hold |
+| Chunk | One frame's worth of a buffer's bytes, 256 KiB by default. A buffer crosses as a run of chunks |
+| Frame | One protocol message on the wire: a 12-byte header and a payload of at most 1 MiB |
+| Transport | What carries frames between a master and its workers: `Distributed::ITransport`, implemented over TCP and over an in-process fabric (`distributed/i_transport.hpp`) |
+| Fabric | `Distributed::InProcessFabric`, which joins a master and workers inside one process for tests |
+| Peer | One connection of a transport, named by a `PeerId` that is never reused. A worker that reconnects is a new peer |
+| Shared secret | The key file a master and its workers hold in common, at least 32 bytes (`distributed/shared_secret.hpp`) |
+| Handshake | The four frames (`HELLO`, `CHALLENGE`, `PROOF`, `WELCOME`) by which a master and a worker prove the shared secret to each other and the worker registers |
+| Session | One master process as its workers know it. A worker that registers with a new session empties its buffer cache |
+| Offload policy | `Distributed::IOffloadPolicy`, which picks the worker of each offloadable task, or none (`distributed/i_offload_policy.hpp`) |
+| Liveness timeout | The silence after which the master closes a worker, and a worker its master; 5 s by default |
+| Task deadline | The longest a kernel may run on a worker before the master takes the task back; 30 s by default, 0 for no bound |
+| Heartbeat | The frame a worker sends every second with its queue depth, its cache size and the oldest task it still holds |
+| Reap | The master taking back one task whose worker is still registered: past its deadline, never confirmed, or no longer listed in the worker's heartbeats |
+| Redispatch | A task taken back from a worker and resubmitted to the scheduler, counted in `ClusterStatistics::redispatched` |
+| Stale writeback | An output chunk the master refuses because its task is no longer out or its version is old |
 | Co-tenancy | The runtime sharing a machine with an engine's own threads: `RuntimeConfig` fixes its worker count, first core and pinning |
 | Interop | `API::Interop`: exporting host memory and importing device memory another API allocated |
 
