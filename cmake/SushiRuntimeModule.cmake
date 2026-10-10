@@ -46,18 +46,61 @@ function(sushiruntime_check_module_edge consumer dependency)
     endif()
 endfunction()
 
+# sushiruntime_add_header_check(MODULE <module> INCLUDE_ROOT <dir> [EXCLUDE <header>...])
+#
+# Compiles every public header of a module first and alone, with the include roots of the
+# module's DEPENDS only. A header that forgot one of its own includes, or that includes a
+# module the public surface did not declare, fails to compile here. The headers are globbed
+# so that the check does not depend on someone listing a new one.
+function(sushiruntime_add_header_check)
+    cmake_parse_arguments(ARG "" "MODULE;INCLUDE_ROOT" "EXCLUDE" ${ARGN})
+
+    file(GLOB_RECURSE headers CONFIGURE_DEPENDS RELATIVE "${ARG_INCLUDE_ROOT}"
+        "${ARG_INCLUDE_ROOT}/*.hpp" "${ARG_INCLUDE_ROOT}/*.h")
+    if(ARG_EXCLUDE)
+        list(REMOVE_ITEM headers ${ARG_EXCLUDE})
+    endif()
+    if(NOT headers)
+        return()
+    endif()
+
+    set(units "")
+    foreach(header IN LISTS headers)
+        string(MAKE_C_IDENTIFIER "${header}" unit_name)
+        set(unit "${CMAKE_CURRENT_BINARY_DIR}/header_check/${unit_name}.cpp")
+        file(CONFIGURE OUTPUT "${unit}" CONTENT "#include <${header}>\n" @ONLY)
+        list(APPEND units "${unit}")
+    endforeach()
+
+    set(check "sushiruntime_module_${ARG_MODULE}_header_check")
+    add_library(${check} OBJECT ${units})
+    target_link_libraries(${check} PRIVATE
+        "sushiruntime_module_${ARG_MODULE}" sushiruntime_deterministic_fp IntelSYCL::SYCL_CXX)
+    target_compile_definitions(${check} PRIVATE
+        NOMINMAX WIN32_LEAN_AND_MEAN
+        $<$<BOOL:${SR_ENABLE_DISTRIBUTED}>:SR_DISTRIBUTED>)
+    sushiruntime_apply_build_policy(${check})
+    set_target_properties(${check} PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        POSITION_INDEPENDENT_CODE ON)
+    add_sycl_to_target(TARGET ${check} SOURCES ${units})
+endfunction()
+
 # sushiruntime_add_module(
 #     NAME <module> TIER <tier>
 #     [HEADER_ONLY] [SYCL]
 #     [SOURCES <file under source/>...]
 #     [DEPENDS <module>...] [PRIVATE_DEPENDS <module>...]
-#     [EXTERNAL <third-party target>...])
+#     [EXTERNAL <third-party target>...]
+#     [HEADER_CHECK_EXCLUDE <header path under include/>...])
 #
 # DEPENDS are the modules the public headers include; PRIVATE_DEPENDS the ones only
 # source/ includes. SYCL marks a module whose sources include a SYCL header.
+# HEADER_CHECK_EXCLUDE names a header the header check must not compile alone.
 function(sushiruntime_add_module)
     cmake_parse_arguments(ARG "HEADER_ONLY;SYCL" "NAME;TIER"
-        "SOURCES;DEPENDS;PRIVATE_DEPENDS;EXTERNAL" ${ARGN})
+        "SOURCES;DEPENDS;PRIVATE_DEPENDS;EXTERNAL;HEADER_CHECK_EXCLUDE" ${ARGN})
     if("${ARG_NAME}" STREQUAL "" OR "${ARG_TIER}" STREQUAL "")
         message(FATAL_ERROR "sushiruntime_add_module(): NAME and TIER are required.")
     endif()
@@ -121,5 +164,11 @@ function(sushiruntime_add_module)
         set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_MODULE_OBJECT_TARGETS ${objects})
         set_property(GLOBAL APPEND PROPERTY
             SUSHIRUNTIME_MODULE_EXTERNAL_LIBRARIES ${ARG_EXTERNAL})
+    endif()
+
+    if(SR_BUILD_TESTS)
+        sushiruntime_add_header_check(
+            MODULE ${ARG_NAME} INCLUDE_ROOT "${include_root}"
+            EXCLUDE ${ARG_HEADER_CHECK_EXCLUDE})
     endif()
 endfunction()
