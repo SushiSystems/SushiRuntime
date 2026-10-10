@@ -39,6 +39,7 @@
 
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/callable_traits.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/launch/extent.hpp>
 
@@ -66,7 +67,8 @@ namespace SushiRuntime
                         T* next = view->next;
                         h.parallel_for(sycl::range<1>(n),
                                        [=](sycl::id<1> i) { fn(i[0], cur, next); });
-                    }, { state->read_key() }, { state->write_key() }, {}, registration);
+                    }, { HandleAccess::read_key(*state) }, { HandleAccess::write_key(*state) }, {},
+                    registration);
                 };
             }
 
@@ -87,7 +89,8 @@ namespace SushiRuntime
                         {
                             fn(idx + off, cur, next);
                         });
-                    }, { state->read_key() }, { state->write_key() }, {}, registration);
+                    }, { HandleAccess::read_key(*state) }, { HandleAccess::write_key(*state) }, {},
+                    registration);
                 };
             }
 
@@ -117,7 +120,7 @@ namespace SushiRuntime
                         {
                             invoke_state(fn, i[0], cur, next, ins_ptrs, Seq{});
                         });
-                    }, reads, { out->write_key() }, {}, registration);
+                    }, reads, { HandleAccess::write_key(*out) }, {}, registration);
                 };
             }
         } // namespace detail

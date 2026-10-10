@@ -7,6 +7,28 @@ symbol or passage it explains, and that header's file block cites this page.
 
 ## buffer.hpp
 
+### Range calls
+
+read_range(), write_range() and region() take an ElementRange, on a Buffer and on a State alike, and
+follow one rule: the window `[offset, offset + count)` must lie inside `[0, size())`. A window that
+does not fit throws `Core::SushiException` with `Errc::invalid_access`, and the message holds the
+call, the offset, the count and the size. Nothing is copied and nothing is clamped, because a
+shortened copy hides the wrong count until the missing elements are read somewhere else. The check
+subtracts and does not add, so an offset and a count whose sum wraps around are rejected too.
+
+A zero-length window is accepted at every offset up to and including size(), and it touches neither
+the device nor the source. write_range() with a non-zero count also throws `invalid_access` when
+its source is null or holds fewer than `count` elements; a longer source is accepted and its first
+`count` elements are copied.
+
+### Allocation
+
+The byte size of a handle is `count * sizeof(T)`, checked before anything is allocated: a count
+whose byte size does not fit `std::size_t` throws `Errc::allocation_failed` and names the largest
+count that fits. When the device returns no memory, the message states what was asked for (element
+count, element size, bytes, residency and device) and gives no cause, since the allocator reports
+none.
+
 ### Residency
 
 Shared USM is host-addressable, so the host may seed and read it directly, but at large element
@@ -30,6 +52,10 @@ kernel may capture data() and use it on the device. The handle owns the allocati
 destruction, so it must outlive every graph run that touches it. A Buffer is move-only.
 
 ### Buffer(ctx, count, device_index, residency)
+
+The two constructors that take a runtime context are private. Runtime::buffer() and
+Runtime::state() reach the allocating one and Interop reaches the adopting one, through friendship,
+so a caller never spells `Execution::RuntimeContext`.
 
 The allocation is pinned to `device_index` and its owner recorded, so buffers used together (a
 State's two fields, for example) share a context and a kernel touching them never makes a
@@ -69,33 +95,42 @@ throws, since its memory is not host-addressable; read_range() and write_range()
 
 read_range() is the selective-readback seam. It copies just [offset, offset+count) through the
 owning queue into a host vector, for telemetry, IO or a debug window, without host-mapping a whole
-device-resident field. It is synchronous: the copy is waited on before it returns. The range is
-clamped to what the buffer holds.
+device-resident field. It is synchronous: the copy is waited on before it returns. A window that
+does not fit throws, as the Range calls section states.
 
 ### write_range
 
 write_range() is the counterpart to read_range() and the way to seed a device-resident buffer the
-host cannot index. It is synchronous in the same way, and the range is clamped to what the buffer
-holds.
+host cannot index. It is synchronous in the same way and follows the Range calls rule. The source
+is a span, so a vector or an array is passed as it is and the call can compare the source's length
+with the window. write_range() is const: it changes the elements, not the handle.
 
-### dependency_key
+The overload that takes a `const T*` is deprecated and forwards to the span overload with
+`range.count` elements at the pointer.
 
-Graph::add() passes dependency_key() to the dependency tracker as the read/write key. It is the
-allocation's base address, which the tracker treats as the whole-buffer region.
+### Tracking state
 
-### liveness
+The graph layer needs three things from a handle that a caller never does: the address the
+dependency tracker keys on, the liveness observer, and the swap of a State's two fields. It reaches
+them through `detail::HandleAccess` (api/detail/handle_access.hpp), a friend of both handles.
 
-A graph that records this buffer keeps the observer liveness() returns. The observer stays valid
-while the buffer lives and expires when the buffer is destroyed or moved from. That lets a run
-detect a buffer freed before it ran and fail cleanly instead of dispatching against released memory.
-A handle that owns no allocation returns an empty observer.
+The key of a Buffer is the allocation's base address, which the tracker treats as the whole-buffer
+region. The observer stays valid while the buffer lives and expires when the buffer is destroyed or
+moved from. That lets a run detect a buffer freed before it ran and fail cleanly instead of
+dispatching against released memory. A handle that owns no allocation has an empty observer.
+
+The members dependency_key(), liveness(), State::read_key(), State::write_key() and State::advance()
+forward to HandleAccess and stay for the 0.4 releases. liveness() and advance() are marked
+`[[deprecated]]`. The three key members carry no attribute while headers under api/graph and
+api/detail, and one distributed test, still call them.
 
 ### region
 
 Two tasks declaring regions of the same buffer are serialized only when their ranges overlap, so
 disjoint slices (an array's halves, a grid's interior versus its halo) run in parallel. Pass the
 result to Reads(...)/Writes(...) in place of the buffer itself. Offsets are in elements; the buffer
-keeps the whole-buffer default when used bare.
+keeps the whole-buffer default when used bare. region() returns `API::BufferRegion`, the api
+module's name for the byte window of one allocation, and follows the Range calls rule.
 
 ### distributed()
 
@@ -125,19 +160,32 @@ double-buffer without being recompiled.
 
 Many stepped workloads (stencils, PDE solvers, the digital-twin driver) must read the current state
 and write the next one; they cannot update in place. A State owns two equally sized buffers,
-current() and next(), and the runtime swaps their roles after each step (advance()), an O(1) pointer
-exchange. The user writes one step as "read current, write next" and never manages the ping-pong.
+current() and next(), and the runtime swaps their roles after each step, an O(1) pointer exchange.
+The user writes one step as "read current, write next" and never manages the ping-pong.
+
+A State answers every query a Buffer does: size(), empty(), device_index(), residency(),
+is_host_accessible(), operator[], host(), read_range(), write_range(), region() and distributed().
+Each one acts on the current field. data() is absent because a State has two buffers; current() and
+next() take its place.
 
 ### State(ctx, count, device_index, residency)
 
 Both fields land on `device_index`, so a step kernel that reads current and writes next stays within
-one context. `ctx` is the runtime context that owns the allocations.
+one context. `ctx` is the runtime context that owns the allocations. The constructor is private and
+Runtime::state() is its caller.
 
-### liveness
+### Tracking state of a State
 
-State::liveness() mirrors Buffer::liveness(): a graph that records this State holds the observer to
-detect a State freed before a run. The current field's token stands for the State, because both
-fields are freed together with it. An empty State returns an empty observer.
+A task that reads a State depends on the current field and a task that writes it depends on the
+next field, so HandleAccess::read_key() and write_key() return those two addresses. A graph that
+records a State holds the current field's observer to detect a State freed before a run; that token
+stands for the State because both fields are freed together with it. An empty State has an empty
+observer.
+
+### State::region
+
+region() names a window of the current field. Which field is current changes at every step, so a
+region taken before a run names the other field after an odd number of steps.
 
 ### distributed()
 
@@ -151,9 +199,10 @@ or when no offload coordinator is installed.
 
 read_range() is the selective-readback seam for a device-resident field. It pulls a window of the
 current state for telemetry or IO without host-mapping the whole field, as Buffer::read_range does
-for a buffer.
+for a buffer, under the same Range calls rule.
 
 ### State::write_range
 
 write_range() is how to initialise a device-resident State that the host cannot index. It mirrors
-Buffer::write_range.
+Buffer::write_range, with the same rule, the same span source and the same deprecated pointer
+overload.

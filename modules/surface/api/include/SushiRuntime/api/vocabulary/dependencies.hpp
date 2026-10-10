@@ -33,6 +33,7 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
@@ -44,21 +45,39 @@ namespace SushiRuntime
         {
             // A State reads through its current buffer and writes through its next buffer.
             template <typename T>
-            inline Core::ResourceRegion read_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
+            inline Core::ResourceRegion read_key_of(const Buffer<T>& b) noexcept
+            {
+                return HandleAccess::key(b);
+            }
             template <typename T>
-            inline Core::ResourceRegion read_key_of(const State<T>& s) noexcept { return s.read_key(); }
+            inline Core::ResourceRegion read_key_of(const State<T>& s) noexcept
+            {
+                return HandleAccess::read_key(s);
+            }
             inline Core::ResourceRegion read_key_of(const Core::ResourceRegion& r) noexcept { return r; }
             template <typename T>
-            inline Core::ResourceRegion write_key_of(const Buffer<T>& b) noexcept { return b.dependency_key(); }
+            inline Core::ResourceRegion write_key_of(const Buffer<T>& b) noexcept
+            {
+                return HandleAccess::key(b);
+            }
             template <typename T>
-            inline Core::ResourceRegion write_key_of(const State<T>& s) noexcept { return s.write_key(); }
+            inline Core::ResourceRegion write_key_of(const State<T>& s) noexcept
+            {
+                return HandleAccess::write_key(s);
+            }
             inline Core::ResourceRegion write_key_of(const Core::ResourceRegion& r) noexcept { return r; }
 
             // Only typed handles are watched; a bare ResourceRegion yields an empty observer.
             template <typename T>
-            inline Core::LivenessObserver liveness_of(const Buffer<T>& b) noexcept { return b.liveness(); }
+            inline Core::LivenessObserver liveness_of(const Buffer<T>& b) noexcept
+            {
+                return HandleAccess::liveness(b);
+            }
             template <typename T>
-            inline Core::LivenessObserver liveness_of(const State<T>& s) noexcept { return s.liveness(); }
+            inline Core::LivenessObserver liveness_of(const State<T>& s) noexcept
+            {
+                return HandleAccess::liveness(s);
+            }
             inline Core::LivenessObserver liveness_of(const Core::ResourceRegion&) noexcept { return {}; }
 
             /**
@@ -79,7 +98,7 @@ namespace SushiRuntime
          *
          * The ergonomic counterpart to a hand-built std::vector<void*>: pass the
          * Buffers and States a task reads and this collects their read keys, so the
-         * caller never spells dependency_key()/read_key() by hand. Used by the
+         * caller never spells a dependency key by hand. Used by the
          * explicit-tracking and offload add() overloads to order tasks by data.
          */
         struct Reads

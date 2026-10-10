@@ -36,6 +36,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -115,7 +116,8 @@ namespace SushiRuntime
             inline std::vector<Core::ResourceRegion> read_keys_of(const StatesTuple& states,
                                                                   std::index_sequence<Is...>)
             {
-                return std::vector<Core::ResourceRegion>{ std::get<Is>(states)->read_key()... };
+                return std::vector<Core::ResourceRegion>{
+                    HandleAccess::read_key(*std::get<Is>(states))... };
             }
         } // namespace detail
 

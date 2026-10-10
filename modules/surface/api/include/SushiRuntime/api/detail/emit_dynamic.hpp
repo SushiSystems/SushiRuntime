@@ -38,6 +38,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/data/state.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/detail/late_window.hpp>
 #include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
@@ -132,7 +133,7 @@ namespace SushiRuntime
                         T* next = view->next;
                         submit_late_window(h, *lb, capacity, fault,
                                            [fn, cur, next](std::size_t i) { fn(i, cur, next); });
-                    }, reads, { state->write_key() }, lb, {}, registration);
+                    }, reads, { HandleAccess::write_key(*state) }, lb, {}, registration);
                     bg.width_last_node(capacity);
                 };
             }

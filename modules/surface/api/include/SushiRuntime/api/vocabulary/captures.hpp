@@ -31,6 +31,7 @@
 #include <type_traits>
 
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
 
 namespace SushiRuntime
@@ -54,7 +55,13 @@ namespace SushiRuntime
              * @brief Captures @p b as a read-only kernel argument.
              * @param b Buffer to read; must outlive every run that uses the task.
              */
-            In(const Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
+            In(const Buffer<T>& b)
+                : ptr(b.data()),
+                  key(detail::HandleAccess::key(b)),
+                  life(detail::HandleAccess::liveness(b))
+            {
+
+            }
         };
 
         /**
@@ -74,7 +81,13 @@ namespace SushiRuntime
              * @brief Captures @p b as a write-only kernel argument.
              * @param b Buffer to write; must outlive every run that uses the task.
              */
-            Out(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
+            Out(Buffer<T>& b)
+                : ptr(b.data()),
+                  key(detail::HandleAccess::key(b)),
+                  life(detail::HandleAccess::liveness(b))
+            {
+
+            }
         };
 
         /**
@@ -95,7 +108,13 @@ namespace SushiRuntime
              * @param b Buffer read and written in place; must outlive every run that
              *          uses the task.
              */
-            InOut(Buffer<T>& b) : ptr(b.data()), key(b.dependency_key()), life(b.liveness()) {}
+            InOut(Buffer<T>& b)
+                : ptr(b.data()),
+                  key(detail::HandleAccess::key(b)),
+                  life(detail::HandleAccess::liveness(b))
+            {
+
+            }
         };
 
         // The guides let In(buf), Out(buf) and InOut(buf) omit the element type.
