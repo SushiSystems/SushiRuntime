@@ -10,11 +10,10 @@ symbol or passage it explains, and that header's file block cites this page.
 
 ### The three callable traits
 
-The fluent add() overloads accept three callable shapes, and callable_traits.hpp expresses each as a
-C++17 SFINAE trait over std::is_invocable_v. The C++20 concepts they replace read the same, only as
-`requires`-clauses. enable_if on each add() selects exactly one. A wrong signature removes every
-overload, so the compiler reports "no matching call", which is less pointed than a concept
-diagnostic but still names the offending callable.
+callable_traits.hpp names three callable shapes as C++17 traits over std::is_invocable_v: a
+per-element kernel, a range kernel and a raw kernel. The Recorder uses the first two to choose
+between its two count launches. add() no longer selects an overload by them: it selects by the
+launch and the access, and callable_checks.hpp rejects a callable of the wrong shape.
 
 ### views_current
 
@@ -136,6 +135,80 @@ register_device_slot() names one four-byte slot as a read of the node that will 
 just the one element, not the whole buffer, so two nodes reading different slots out of one buffer
 stay unordered against each other.
 
+## callable_checks.hpp
+
+### One static_assert per family
+
+Up to v0.3 every add() overload was enabled by the signature of its callable. A callable of the
+wrong signature removed every overload, and the compiler answered "no matching member function"
+with the whole overload set as candidates; the two variadic forms did not constrain the callable
+at all and failed inside a SYCL parallel_for.
+
+add() now selects an overload by its launch and its access, and hands the callable to one
+accepts_*() function of this header. Each holds one static_assert whose text states the signature
+the family expects. A wrong callable produces that sentence as its one error, with a note that
+points at the caller's add() line.
+
+| Function | Family |
+| --- | --- |
+| accepts_kernel | add(launch, reads, writes, fn), add_untracked(launch, fn) |
+| accepts_captured_kernel, accepts_captures | add(launch, In/Out/InOut..., fn) |
+| accepts_state_rule | add(state, fn), add(launch, state, fn), add(Dynamic, state, fn), add(OpID, state, fn) |
+| accepts_coupled_rule | add(Coupled, fn), add(launch, Coupled, fn) |
+| accepts_per_element | add(Dynamic, capacity, reads, writes, fn), add(OpID, n, reads, writes, fn) |
+| accepts_raw_kernel | add(reads, writes, fn), add_untracked(fn), add_untracked(On, fn) |
+| accepts_host_task, accepts_emitter, accepts_extension | add_host, add_emitter, extend |
+
+Each function returns what it asserted. The overload records inside `if constexpr` on that
+value, so after a failed assertion the recording call is not instantiated and the caller reads
+one error instead of the assertion followed by a chain from inside the emitter.
+
+### is_launch_kernel_v
+
+is_launch_kernel_v\<Launch, F, Extra...> says whether a launch can call `fn(index, extra...)`,
+where the index is the one that launch hands over. It is specialised once per launch, so every
+family checks the index the same way and a new launch adds one specialisation. An NdRange accepts
+two shapes, with and without the shifted id. The callable is tested as a const object because a
+SYCL kernel is called through a const reference.
+
+## emit_launch.hpp
+
+### Launch traits
+
+is_launch_v tells a launch from every other first argument of add(), which is how the overloads
+that start with a launch are told from those that start with a State, a Coupled, a Dynamic or an
+OpID. Any integer other than bool counts as an element count, so `add(1024, ...)` and
+`add(buffer.size(), ...)` both compile; launch_of() turns it into the std::size_t the emitters
+record.
+
+### submit_launch
+
+submit_launch() is the one parallel_for of each launch. Every emitter that runs a kernel over a
+launch calls it with the values the kernel receives after its index: none for a plain kernel, the
+capture pointers, or the State fields. A launch is therefore written once, and add(NdRange,
+state, fn) or add(count, In(a), fn) exist because the emitters are generic over it and for no
+other reason. The Extent form adds the origin to each id. The NdRange form adds it only for a
+kernel that takes the id as a second parameter.
+
+### launch_reach and require_launch_within
+
+A State rule or a coupled rule hands its kernel the fields of a State, so the recorder knows the
+size the kernel indexes into and compares the launch with it when the rule is recorded.
+require_launch_within() throws `invalid_graph` naming the call, the rule, the launch with its
+origin and the size it was compared with. Up to v0.3 nothing compared them, and a launch larger
+than its State wrote past the allocation on the device.
+
+launch_reach() is the bound compared. A count reaches its own value. A rank-1 Extent or NdRange
+reaches origin plus size, because its kernel indexes with the id it is handed. A higher rank
+reaches its work-item count: the runtime does not know how the kernel folds an N-D id into the
+field, so the count is the largest bound that never refuses a correct graph. A 2-D launch at an
+origin whose kernel indexes with the unshifted position still passes this check and is the
+caller's to get right.
+
+A launch that names its data with Reads and Writes or with captures is not compared. A region can
+be a window of a buffer and a kernel can stride, so the element count of the handle does not
+bound the index the way a State's does.
+
 ## emit_*.hpp
 
 ### Replay callables
@@ -145,6 +218,23 @@ emit(BackingGraph&, registration) every time a Recorder replays. The lambda adds
 the registration through (empty means the backing graph draws a fresh index) and stamps the launch
 width where the shape has one. None of them knows the Recorder, so a shape can be read, changed or
 added without touching the recording state.
+
+The emitters are generic over the launch: launch_node, untracked_launch_node, captured_node,
+state_launch_node and coupled_launch_node each take a count, an Extent or an NdRange and call
+submit_launch(). state_node and coupled_node are the whole-field forms; they read the State's
+size at each replay and share add_state_node() and add_coupled_node() with the launch forms.
+
+### untracked_launch_node
+
+An untracked node names no region, so its replay states the device with Node::place_on(). The
+device is always stated, device 0 included, so the node's placement does not depend on what the
+engine does with a node that states none.
+
+### captured_access
+
+captured_access() turns a list of In, Out and InOut captures into the Access the node is ordered
+by. It lives with the captured emitter so that the builder's capture overload only splits its
+argument pack.
 
 ## host_slot_check.hpp
 
@@ -213,7 +303,7 @@ NodeSpecs are the recorded task specifications: each replays one add() onto a fr
 The fluent Graph is the source of truth so it can rebuild and recompile when mutated. A spec is
 recorded as {emitter, rule} and not as a bare callable. The name of a rule lives in the recorder,
 which owns the text and hands it to every node of the rule when the plan is built; that is what
-lets name_last() attach one after the add() call has already returned.
+lets name() attach one after the add() call has already returned.
 
 ## usm_scratch.hpp
 

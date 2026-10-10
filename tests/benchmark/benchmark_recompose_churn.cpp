@@ -98,13 +98,13 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
     for (std::size_t r = 0; r < REGIONS; ++r)
     {
         int* p = bufs[r].data();
-        world.region(r).add(API::Reads{}, API::Writes(bufs[r]), N,
+        world.region(r).add(N, API::Reads{}, API::Writes(bufs[r]),
                             [p](std::size_t i) { p[i] += 1; });
     }
 
     // Warm up: first run compiles the whole world once (not a "commit").
     world.run(1);
-    ASSERT_EQ(world.compile_count(), 1u);
+    ASSERT_EQ(world.compose_count(), 1u);
 
     using clock = std::chrono::steady_clock;
 
@@ -123,7 +123,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
         replay_allocs = as.allocs();
     }
     // compile_count must NOT have moved: pure replay never recomposes.
-    const std::size_t compiles_after_warm_replay = world.compile_count();
+    const std::size_t compiles_after_warm_replay = world.compose_count();
 
     // Each commit marks one region dirty and steps, so it recomposes exactly once.
     double total_commit_ms = 0.0;
@@ -140,7 +140,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
 
         AllocScope as;
         const auto t0 = clock::now();
-        world.region(r).add(API::Reads{}, API::Writes(bufs[r]), N,
+        world.region(r).add(N, API::Reads{}, API::Writes(bufs[r]),
                             [p](std::size_t i) { p[i] += 1; });
         world.run(1);
         const auto t1 = clock::now();
@@ -154,7 +154,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
         best_commit_allocs   = std::min(best_commit_allocs, as.allocs());
 
         ++expected_compiles;
-        ASSERT_EQ(world.compile_count(), expected_compiles)
+        ASSERT_EQ(world.compose_count(), expected_compiles)
             << "exactly one recompose per mutation at m=" << m;
     }
 
@@ -186,5 +186,5 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
         for (std::size_t i = 1; i < N; ++i)
             EXPECT_EQ(bufs[r][i], v0) << "region " << r << " not uniform at i=" << i;
     }
-    EXPECT_GT(world.compile_count(), 1u);
+    EXPECT_GT(world.compose_count(), 1u);
 }

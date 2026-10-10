@@ -59,11 +59,11 @@ TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
     auto g = rt.graph();
 
     // Producer: derive the count on the device from data the kernel reads.
-    g.add(Reads(wanted), Writes(counter), std::size_t{1},
+    g.add(std::size_t{1}, Reads(wanted), Writes(counter),
           [c, w](std::size_t) { c[0] = w[0] * 3u; });
 
     // Consumer: iterate exactly that many elements.
-    g.add(API::sized_from_device(counter), Reads(), Writes(marks), CAPACITY,
+    g.add(API::sized_from_device(counter), CAPACITY, Reads(), Writes(marks),
           [m](std::size_t i) { m[i] = static_cast<int>(i); });
 
     const std::uint32_t multipliers[] = { 5, 200, 1, 0, 1000 };
@@ -108,9 +108,9 @@ TEST(Integration_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
         out[i] = 0;
 
     auto g = rt.graph();
-    g.add(Reads(), Writes(counter), std::size_t{1},
+    g.add(std::size_t{1}, Reads(), Writes(counter),
           [c](std::size_t) { c[0] = LIVE; });
-    g.add(API::sized_from_device(counter), Reads(), Writes(out), CAPACITY,
+    g.add(API::sized_from_device(counter), CAPACITY, Reads(), Writes(out),
           [o](std::size_t i) { o[i] = 1; });
 
     g.run();
@@ -144,16 +144,16 @@ TEST(Integration_DeviceCount, ChainedProducerCountsInOneComposition)
     auto g = rt.graph();
 
     // Stage 0: pick a first-level count on the device.
-    g.add(Reads(), Writes(first), std::size_t{1}, [c1](std::size_t) { c1[0] = 700u; });
+    g.add(std::size_t{1}, Reads(), Writes(first), [c1](std::size_t) { c1[0] = 700u; });
 
     // Stage 1: iterate it, and produce the next count from how much it did.
-    g.add(API::sized_from_device(first), Reads(), Writes(stage1), CAPACITY,
+    g.add(API::sized_from_device(first), CAPACITY, Reads(), Writes(stage1),
           [s1](std::size_t i) { s1[i] = 1; });
-    g.add(Reads(first), Writes(second), std::size_t{1},
+    g.add(std::size_t{1}, Reads(first), Writes(second),
           [c1, c2](std::size_t) { c2[0] = c1[0] / 2u; });
 
     // Stage 2: iterate the second count.
-    g.add(API::sized_from_device(second), Reads(), Writes(stage2), CAPACITY,
+    g.add(API::sized_from_device(second), CAPACITY, Reads(), Writes(stage2),
           [s2](std::size_t i) { s2[i] = 1; });
 
     for (std::size_t i = 0; i < CAPACITY; ++i) { stage1[i] = 0; stage2[i] = 0; }
@@ -183,10 +183,10 @@ TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
     bool enabled = true;
 
     auto g = rt.graph();
-    g.add(Reads(), Writes(counter), std::size_t{1}, [c](std::size_t) { c[0] = 100u; });
+    g.add(std::size_t{1}, Reads(), Writes(counter), [c](std::size_t) { c[0] = 100u; });
     g.add(API::sized_from_device(counter)
               .when([&enabled] { return enabled; }),
-          Reads(), Writes(out), CAPACITY,
+          CAPACITY, Reads(), Writes(out),
           [o](std::size_t i) { o[i] += 1; });
 
     for (std::size_t i = 0; i < CAPACITY; ++i) o[i] = 0;
@@ -219,16 +219,16 @@ TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
     int* o = out.data();
 
     auto g = rt.graph();
-    g.add(Reads(), Writes(counter), std::size_t{1},
+    g.add(std::size_t{1}, Reads(), Writes(counter),
           [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
-    g.add(API::sized_from_device(counter), Reads(), Writes(out), CAPACITY,
+    g.add(API::sized_from_device(counter), CAPACITY, Reads(), Writes(out),
           [o](std::size_t i) { o[i] = 1; });
 
     EXPECT_THROW(g.run(), SushiException);
 
     // The runtime survives it: the pool is re-armable and a clean graph still runs.
     auto clean = rt.graph();
-    clean.add(Reads(), Writes(out), CAPACITY, [o](std::size_t i) { o[i] = 7; });
+    clean.add(CAPACITY, Reads(), Writes(out), [o](std::size_t i) { o[i] = 7; });
     clean.run();
     EXPECT_EQ(out[0], 7);
 }
@@ -277,7 +277,7 @@ TEST(Integration_DeviceCount, ReadsTheCountAtTheGivenIndex)
 
     auto g = rt.graph();
     ASSERT_NO_THROW(g.add(API::sized_from_device(plan, SLOT),
-                          Reads(), Writes(out), CAPACITY,
+                          CAPACITY, Reads(), Writes(out),
                           [o](std::size_t i) { o[i] = static_cast<int>(i); }));
     g.run();
 
@@ -301,7 +301,7 @@ TEST(Integration_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
 
     auto g = rt.graph();
     EXPECT_NO_THROW(g.add(API::based_at_device(plan, SLOT),
-                          Reads(), Writes(out), CAPACITY,
+                          CAPACITY, Reads(), Writes(out),
                           [](std::size_t) {}));
 }
 

@@ -37,19 +37,17 @@
 #include <utility>
 #include <vector>
 
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
-#include <SushiRuntime/api/detail/callable_traits.hpp>
+#include <SushiRuntime/api/detail/callable_checks.hpp>
+#include <SushiRuntime/api/detail/emit_captured.hpp>
+#include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
-#include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/api/launch/extent.hpp>
-#include <SushiRuntime/api/launch/nd_range.hpp>
-#include <SushiRuntime/api/vocabulary/captures.hpp>
+#include <SushiRuntime/api/vocabulary/coupled.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
+#include <SushiRuntime/api/vocabulary/placement.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 
@@ -67,308 +65,323 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Adds a per-element task that records no regions and is ordered against
-                 *        nothing.
-                 * @param fn Callable invoked as fn(i) for each index i.
+                 * @brief Adds a kernel over a launch, ordered by the handles in Reads and Writes.
+                 * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
+                 * @param kernel Callable invoked as kernel(index); a count also takes
+                 *        kernel(begin, end, sycl::handler&).
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                Derived& add_untracked(std::size_t n, F&& fn)
+                template <class Launch, class F,
+                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                Derived& add(Launch launch, const Reads& reads, const Writes& writes, F&& kernel)
                 {
-                    sink().untracked_kernel(n, std::forward<F>(fn));
+                    if constexpr (detail::accepts_kernel<detail::launch_t<Launch>, F>())
+                        sink().kernel(detail::launch_of(launch), Access(reads, writes),
+                                      std::forward<F>(kernel));
                     return self();
                 }
 
                 /**
-                 * @brief Adds a range task that records no regions; fn receives bounds and handler.
-                 * @param n Upper bound; fn is called as fn(0, n, handler).
-                 */
-                template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
-                Derived& add_untracked(std::size_t n, F&& fn)
-                {
-                    sink().untracked_kernel(n, std::forward<F>(fn));
-                    return self();
-                }
-
-                /**
-                 * @brief Adds a raw kernel that records no regions and drives the handler itself.
-                 * @param fn Callable invoked as fn(sycl::handler&).
-                 */
-                template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
-                Derived& add_untracked(F&& fn)
-                {
-                    sink().untracked_raw_kernel(std::forward<F>(fn));
-                    return self();
-                }
-
-                /**
-                 * @brief Adds an emitter that records its own nodes on the backing graph.
-                 * @param emit Callable invoked as emit(BackingGraph&) at every build of the plan.
-                 * @pre emit only adds nodes: it does not compile, drain or keep the graph.
+                 * @brief Adds a kernel that registers its captures and receives their pointers.
+                 * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
+                 * @param rest Further In, Out or InOut captures, then the callable
+                 *        kernel(index, pointers...) last.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <class F, std::enable_if_t<is_graph_emitter_v<F>, int> = 0>
-                Derived& add_emitter(F&& emit)
+                template <class Launch, class Capture, class... Rest,
+                          std::enable_if_t<detail::is_launch_v<Launch> &&
+                                           detail::is_capture_v<Capture> &&
+                                           (sizeof...(Rest) >= 1), int> = 0>
+                Derived& add(Launch launch, Capture first, Rest&&... rest)
                 {
-                    sink().emitter(std::forward<F>(emit));
-                    return self();
+                    auto arguments = std::forward_as_tuple(first, std::forward<Rest>(rest)...);
+                    return add_captured(detail::launch_of(launch), arguments,
+                                        std::index_sequence_for<Rest...>{});
                 }
 
                 /**
-                 * @brief Adds a multidimensional task over an Extent that records no regions.
-                 * @tparam N Iteration rank (1, 2, or 3).
-                 * @param fn Callable invoked as fn(sycl::id<N>) per work-item.
+                 * @brief Adds the per-step update rule of a State over its whole field.
+                 * @param state The state this rule evolves; must outlive the graph.
+                 * @param kernel Callable invoked as kernel(i, const T* current, T* next).
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <int N, class F,
-                          std::enable_if_t<std::is_invocable_v<F, sycl::id<N>>, int> = 0>
-                Derived& add_untracked(Extent<N> e, F&& fn)
+                template <typename T, class F>
+                Derived& add(State<T>& state, F&& kernel)
                 {
-                    sink().untracked_kernel(e, std::forward<F>(fn));
+                    if constexpr (detail::accepts_state_rule<std::size_t, T, F>())
+                        sink().state_rule(state, std::forward<F>(kernel));
                     return self();
                 }
 
                 /**
-                 * @brief Adds a tiled task over an NdRange that records no regions.
-                 * @tparam N Iteration rank (1, 2, or 3).
-                 * @param r Global and local ranges; global must tile by local.
-                 * @param fn Callable invoked as fn(sycl::nd_item<N>) per work-item.
+                 * @brief Adds the per-step update rule of a State over a launch.
+                 * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
+                 * @param state The state this rule evolves; must outlive the graph.
+                 * @param kernel Callable invoked as kernel(index, const T* current, T* next).
+                 * @throws Core::SushiException With invalid_graph for a launch past the state.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <int N, class F,
-                          std::enable_if_t<std::is_invocable_v<F, sycl::nd_item<N>>, int> = 0>
-                Derived& add_untracked(NdRange<N> r, F&& fn)
+                template <class Launch, typename T, class F,
+                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                Derived& add(Launch launch, State<T>& state, F&& kernel)
                 {
-                    sink().untracked_kernel(r, std::forward<F>(fn));
+                    if constexpr (detail::accepts_state_rule<detail::launch_t<Launch>, T, F>())
+                        sink().state_rule(state, detail::launch_of(launch),
+                                          std::forward<F>(kernel));
                     return self();
                 }
 
                 /**
-                 * @brief Adds a 1-D per-element task ordered by the handles in Reads and Writes.
-                 * @param n Iteration range; fn is called for each i in [0, n).
+                 * @brief Adds a rule that writes one State from several, over its whole field.
+                 * @param states Coupled(out, in0, ...); every State must outlive the graph.
+                 * @param kernel Callable invoked as kernel(i, current, next, in0, ...).
+                 * @throws Core::SushiException With invalid_graph for an input smaller than out.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                Derived& add(const Reads& reads, const Writes& writes,
-                           std::size_t n, F&& fn)
+                template <typename Out, typename... Inputs, class F>
+                Derived& add(Coupled<Out, Inputs...> states, F&& kernel)
                 {
-                    sink().kernel(n, Access(reads, writes), std::forward<F>(fn));
+                    if constexpr (detail::accepts_coupled_rule<std::size_t, F, Out, Inputs...>())
+                        std::apply([&](State<Inputs>&... inputs)
+                        {
+                            sink().coupled_rule(states.out, std::forward<F>(kernel), inputs...);
+                        }, states.inputs);
                     return self();
                 }
 
                 /**
-                 * @brief Adds an N-D per-element task over an Extent, ordered by Reads and Writes.
-                 * @tparam N Iteration rank (1, 2, or 3).
-                 * @param fn Callable invoked as fn(sycl::id<N>) per work-item.
+                 * @brief Adds a rule that writes one State from several, over a launch.
+                 * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
+                 * @param states Coupled(out, in0, ...); every State must outlive the graph.
+                 * @param kernel Callable invoked as kernel(index, current, next, in0, ...).
+                 * @throws Core::SushiException With invalid_graph for a launch past a State.
                  */
-                template <int N, class F,
-                          std::enable_if_t<std::is_invocable_v<F, sycl::id<N>>, int> = 0>
-                Derived& add(const Reads& reads, const Writes& writes,
-                           Extent<N> e, F&& fn)
+                template <class Launch, typename Out, typename... Inputs, class F,
+                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                Derived& add(Launch launch, Coupled<Out, Inputs...> states, F&& kernel)
                 {
-                    sink().kernel(e, Access(reads, writes), std::forward<F>(fn));
+                    if constexpr (detail::accepts_coupled_rule<detail::launch_t<Launch>, F, Out,
+                                                               Inputs...>())
+                        std::apply([&](State<Inputs>&... inputs)
+                        {
+                            sink().coupled_rule(detail::launch_of(launch), states.out,
+                                                std::forward<F>(kernel), inputs...);
+                        }, states.inputs);
                     return self();
                 }
 
                 /**
-                 * @brief Adds a tiled NdRange task ordered by the regions it declares.
-                 * @tparam N Iteration rank (1, 2, or 3).
-                 * @param r Global and local ranges; global must tile by local.
-                 * @param fn Callable invoked as fn(sycl::nd_item<N>) per work-item.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                template <int N, class F,
-                          std::enable_if_t<std::is_invocable_v<F, sycl::nd_item<N>>, int> = 0>
-                Derived& add(const Reads& reads, const Writes& writes,
-                           NdRange<N> r, F&& fn)
-                {
-                    sink().kernel(r, Access(reads, writes), std::forward<F>(fn));
-                    return self();
-                }
-
-                /**
-                 * @brief Adds a range task ordered by its declared regions; fn drives the handler
-                 *        over [0, n).
-                 * @param fn Callable invoked as fn(begin, end, sycl::handler&).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
-                Derived& add(const Reads& reads, const Writes& writes,
-                           std::size_t n, F&& fn)
-                {
-                    sink().kernel(n, Access(reads, writes), std::forward<F>(fn));
-                    return self();
-                }
-
-                /**
-                 * @brief Adds a raw kernel ordered by its declared regions; fn owns the whole
+                 * @brief Adds a raw kernel ordered by its declared regions.
+                 * @param kernel Callable invoked as kernel(sycl::handler&); it submits the whole
                  *        command group.
-                 * @param fn Callable invoked as fn(sycl::handler&).
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <class F, std::enable_if_t<is_raw_kernel_v<F>, int> = 0>
-                Derived& add(const Reads& reads, const Writes& writes, F&& fn)
+                template <class F>
+                Derived& add(const Reads& reads, const Writes& writes, F&& kernel)
                 {
-                    sink().raw_kernel(Access(reads, writes), std::forward<F>(fn));
+                    if constexpr (detail::accepts_raw_kernel<F>())
+                        sink().raw_kernel(Access(reads, writes), std::forward<F>(kernel));
                     return self();
                 }
 
                 /**
-                 * @brief Adds an N-D per-element task that registers its captures and passes their
-                 *        pointers.
-                 * @tparam N Iteration rank (1, 2, or 3).
-                 * @param args Remaining captured arguments, with the callable last.
+                 * @brief Adds a late-bound per-element task whose window varies per step.
+                 * @param capacity Upper bound the live window must fit.
+                 * @param kernel Callable invoked as kernel(i) for each live index.
+                 * @throws Core::SushiException With invalid_access for a slot outside host USM.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <int N, class Cap0, class... Args,
-                          std::enable_if_t<detail::is_capture_v<Cap0> &&
-                                           (sizeof...(Args) >= 1), int> = 0>
-                Derived& add(Extent<N> e, Cap0 c0, Args&&... args)
+                template <class F>
+                Derived& add(Dynamic window, std::size_t capacity, const Reads& reads,
+                             const Writes& writes, F&& kernel)
                 {
-                    // The last element of Args is the callable; the others are captures.
-                    auto tup = std::forward_as_tuple(std::forward<Args>(args)...);
-                    constexpr std::size_t M = sizeof...(Args);
-                    return add_captured(e, c0, tup, std::make_index_sequence<M - 1>{},
-                                        std::get<M - 1>(tup));
-                }
-
-                /**
-                 * @brief Adds the per-step update rule of a State: reads current, writes next.
-                 * @param s The state this rule evolves; must outlive the graph.
-                 * @param fn Callable invoked as fn(i, const T* cur, T* next) for each i in [0,
-                 *        s.size()).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                template <typename T, class F,
-                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
-                                                               const T*, T*>, int> = 0>
-                Derived& add(State<T>& s, F&& fn)
-                {
-                    sink().state_rule(s, std::forward<F>(fn));
-                    return self();
-                }
-
-                /**
-                 * @brief Adds a multidimensional per-step update rule for a State over an Extent.
-                 * @param s The state this rule evolves; must outlive the graph.
-                 * @param fn Callable invoked as fn(sycl::id<N>, const T* cur, T* next).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                template <typename T, int N, class F,
-                          std::enable_if_t<std::is_invocable_v<F,
-                              sycl::id<N>, const T*, T*>, int> = 0>
-                Derived& add(State<T>& s, Extent<N> e, F&& fn)
-                {
-                    sink().state_rule(s, e, std::forward<F>(fn));
-                    return self();
-                }
-
-                /**
-                 * @brief Adds a coupled update rule that writes out's next field from several
-                 *        current fields.
-                 * @param out The field this rule writes; must outlive the graph.
-                 * @param in0 First read field; must outlive the graph.
-                 * @param rest Further read fields, then the callable fn(i, cur, next, a, ...) last.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                template <typename T, typename A, class... Rest,
-                          std::enable_if_t<(sizeof...(Rest) >= 1), int> = 0>
-                Derived& add(State<T>& out, State<A>& in0, Rest&&... rest)
-                {
-                    // The last element of Rest is the callable; the others are read States.
-                    auto tup = std::forward_as_tuple(std::forward<Rest>(rest)...);
-                    constexpr std::size_t M = sizeof...(Rest);
-                    return add_coupled(out, in0, tup, std::make_index_sequence<M - 1>{},
-                                       std::get<M - 1>(tup));
-                }
-
-                /**
-                 * @brief Adds a per-element task ordered by the raw base pointers it reads and
-                 *        writes.
-                 * @param n Iteration range; fn is called for each i in [0, n).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                Derived& add(const std::vector<void*>& reads,
-                           const std::vector<void*>& writes,
-                           std::size_t n, F&& fn)
-                {
-                    // A bare base pointer names the whole-buffer region.
-                    using Regions = std::vector<Core::ResourceRegion>;
-                    sink().kernel(n, Access(Regions(reads.begin(), reads.end()),
-                                            Regions(writes.begin(), writes.end())),
-                                  std::forward<F>(fn));
-                    return self();
-                }
-
-                /**
-                 * @brief Adds a late-bound per-element task whose size and enablement vary per
-                 *        step.
-                 * @param capacity Pre-sized upper bound; the live size must not exceed it.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                Derived& add(Dynamic dyn, const Reads& reads, const Writes& writes,
-                           std::size_t capacity, F&& fn)
-                {
-                    sink().kernel(std::move(dyn), capacity, Access(reads, writes),
-                                  std::forward<F>(fn));
-                    return self();
-                }
-
-                /**
-                 * @brief Adds a late-bound per-element task that names its data by raw base
-                 *        pointer.
-                 * @param capacity Pre-sized upper bound; the live size must not exceed it.
-                 */
-                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                Derived& add(Dynamic dyn, const std::vector<void*>& reads,
-                           const std::vector<void*>& writes, std::size_t capacity, F&& fn)
-                {
-                    using Regions = std::vector<Core::ResourceRegion>;
-                    sink().kernel(std::move(dyn), capacity,
-                                  Access(Regions(reads.begin(), reads.end()),
-                                         Regions(writes.begin(), writes.end())),
-                                  std::forward<F>(fn));
+                    if constexpr (detail::accepts_per_element<F>())
+                        sink().kernel(std::move(window), capacity, Access(reads, writes),
+                                      std::forward<F>(kernel));
                     return self();
                 }
 
                 /**
                  * @brief Adds a late-bound per-step update rule for a State.
-                 * @param s The state this rule evolves; must outlive the graph.
-                 * @param fn Callable invoked as fn(i, const T* cur, T* next).
+                 * @param state The state this rule evolves; its size is the capacity.
+                 * @param kernel Callable invoked as kernel(i, const T* current, T* next).
+                 * @throws Core::SushiException With invalid_access for a slot outside host USM.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <typename T, class F,
-                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
-                                                               const T*, T*>, int> = 0>
-                Derived& add(Dynamic dyn, State<T>& s, F&& fn)
+                template <typename T, class F>
+                Derived& add(Dynamic window, State<T>& state, F&& kernel)
                 {
-                    sink().state_rule(std::move(dyn), s, std::forward<F>(fn));
+                    if constexpr (detail::accepts_state_rule<std::size_t, T, F>())
+                        sink().state_rule(std::move(window), state, std::forward<F>(kernel));
+                    return self();
+                }
+
+                /**
+                 * @brief Adds an offloadable task that names its data with Reads and Writes.
+                 * @param op OpID of the kernel, e.g. "vec.add"_op.
+                 * @param local Local fallback invoked as local(i) for i in [0, n).
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                template <class F>
+                Derived& add(::SushiRuntime::Graph::OpID op, std::size_t n,
+                             const Reads& reads, const Writes& writes, F&& local,
+                             std::initializer_list<std::uint64_t> params = {})
+                {
+                    if constexpr (detail::accepts_per_element<F>())
+                        sink().offload(op, n, Access(reads, writes), std::forward<F>(local),
+                                       std::vector<std::uint64_t>(params));
+                    return self();
+                }
+
+                /**
+                 * @brief Adds an offloadable task that names its data by raw base pointer.
+                 * @param local Local fallback invoked as local(i) for i in [0, n).
+                 */
+                template <class F>
+                Derived& add(::SushiRuntime::Graph::OpID op, std::size_t n,
+                             const std::vector<void*>& reads, const std::vector<void*>& writes,
+                             F&& local, std::initializer_list<std::uint64_t> params = {})
+                {
+                    if constexpr (detail::accepts_per_element<F>())
+                        sink().offload(op, n, whole_buffers(reads, writes),
+                                       std::forward<F>(local),
+                                       std::vector<std::uint64_t>(params));
+                    return self();
+                }
+
+                /**
+                 * @brief Adds an offloadable per-step update rule for a State.
+                 * @pre state was registered with State::distributed().
+                 * @param local Local fallback invoked as local(i, const T* current, T* next).
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                template <typename T, class F>
+                Derived& add(::SushiRuntime::Graph::OpID op, State<T>& state, F&& local,
+                             std::initializer_list<std::uint64_t> params = {})
+                {
+                    if constexpr (detail::accepts_state_rule<std::size_t, T, F>())
+                        sink().offload_rule(op, state, std::forward<F>(local),
+                                            std::vector<std::uint64_t>(params));
+                    return self();
+                }
+
+                /**
+                 * @brief Adds a kernel that names no region and runs on device 0.
+                 * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
+                 * @param kernel Callable invoked as kernel(index); a count also takes
+                 *        kernel(begin, end, sycl::handler&).
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                template <class Launch, class F,
+                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                Derived& add_untracked(Launch launch, F&& kernel)
+                {
+                    if constexpr (detail::accepts_kernel<detail::launch_t<Launch>, F>())
+                        sink().untracked_kernel(detail::launch_of(launch),
+                                                std::forward<F>(kernel));
+                    return self();
+                }
+
+                /**
+                 * @brief Adds a kernel that names no region and runs on the device stated.
+                 * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
+                 * @param placement On(buffer), On(state) or On(DeviceIndex).
+                 * @throws Core::SushiException With invalid_access for a device the runtime
+                 *         does not have.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                template <class Launch, class F,
+                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                Derived& add_untracked(Launch launch, On placement, F&& kernel)
+                {
+                    if constexpr (detail::accepts_kernel<detail::launch_t<Launch>, F>())
+                        sink().untracked_kernel(detail::launch_of(launch),
+                                                std::forward<F>(kernel), placement);
+                    return self();
+                }
+
+                /**
+                 * @brief Adds a raw kernel that names no region and runs on device 0.
+                 * @param kernel Callable invoked as kernel(sycl::handler&).
+                 */
+                template <class F>
+                Derived& add_untracked(F&& kernel)
+                {
+                    if constexpr (detail::accepts_raw_kernel<F>())
+                        sink().untracked_raw_kernel(std::forward<F>(kernel));
+                    return self();
+                }
+
+                /**
+                 * @brief Adds a raw kernel that names no region and runs on the device stated.
+                 * @param placement On(buffer), On(state) or On(DeviceIndex).
+                 * @param kernel Callable invoked as kernel(sycl::handler&).
+                 * @throws Core::SushiException With invalid_access for a device the runtime
+                 *         does not have.
+                 */
+                template <class F>
+                Derived& add_untracked(On placement, F&& kernel)
+                {
+                    if constexpr (detail::accepts_raw_kernel<F>())
+                        sink().untracked_raw_kernel(std::forward<F>(kernel), placement);
                     return self();
                 }
 
                 /**
                  * @brief Adds a pure-CPU task ordered by the data it touches.
-                 * @param fn Nullary callable run once; must not submit SYCL work.
+                 * @param task Nullary callable run once per step; must not submit SYCL work.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <class F, std::enable_if_t<std::is_invocable_v<F>, int> = 0>
-                Derived& add_host(const Reads& reads, const Writes& writes, F&& fn)
+                template <class F>
+                Derived& add_host(const Reads& reads, const Writes& writes, F&& task)
                 {
-                    sink().host(Access(reads, writes), std::forward<F>(fn));
+                    if constexpr (detail::accepts_host_task<F>())
+                        sink().host(Access(reads, writes), std::forward<F>(task));
                     return self();
                 }
 
                 /**
                  * @brief Adds an untracked pure-CPU task that runs every step.
-                 * @param fn Nullary callable run once per step; must not submit SYCL work.
+                 * @param task Nullary callable run once per step; must not submit SYCL work.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                template <class F, std::enable_if_t<std::is_invocable_v<F>, int> = 0>
-                Derived& add_host(F&& fn)
+                template <class F>
+                Derived& add_host(F&& task)
                 {
-                    sink().host(Access(), std::forward<F>(fn));
+                    if constexpr (detail::accepts_host_task<F>())
+                        sink().host(Access(), std::forward<F>(task));
+                    return self();
+                }
+
+                /**
+                 * @brief Adds an emitter that records its own nodes on the engine's graph.
+                 * @param emitter Callable invoked as emitter(SushiRuntime::Graph::TaskGraph&) at
+                 *        every build of the plan.
+                 * @pre emitter only adds nodes: it does not compile, drain or keep the graph.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                template <class F>
+                Derived& add_emitter(F&& emitter)
+                {
+                    if constexpr (detail::accepts_emitter<F>())
+                        sink().emitter(std::forward<F>(emitter));
+                    return self();
+                }
+
+                /**
+                 * @brief Runs an extension once; the nodes it records form one rule.
+                 * @param extension Callable invoked as extension(Recorder&).
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                template <class F>
+                Derived& extend(F&& extension)
+                {
+                    if constexpr (detail::accepts_extension<F>())
+                    {
+                        Recorder& recorder = sink();
+                        const Recorder::RuleScope scope = recorder.rule();
+                        std::forward<F>(extension)(recorder);
+                    }
                     return self();
                 }
 
@@ -378,7 +391,7 @@ namespace SushiRuntime
                  *        rule to the default name. Ignored when nothing has been added.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                Derived& name_last(std::string_view label)
+                Derived& name(std::string_view label)
                 {
                     sink().name_last_rule(label);
                     return self();
@@ -388,16 +401,15 @@ namespace SushiRuntime
                  * @brief Names the rule most recently added from a C string.
                  * @param label Copied; null counts as an empty label.
                  */
-                Derived& name_last(const char* label)
+                Derived& name(const char* label)
                 {
-                    return name_last(label != nullptr ? std::string_view(label)
-                                                      : std::string_view());
+                    return name(label != nullptr ? std::string_view(label) : std::string_view());
                 }
 
                 /**
                  * @brief Returns how many rules have been added.
-                 * @return One per add(), add_untracked(), add_host() or add_emitter() call, and one
-                 *         per Recorder::rule() scope that recorded a node.
+                 * @return One per add(), add_untracked(), add_host(), add_emitter() or extend()
+                 *         call, and one per Recorder::rule() scope that recorded a node.
                  */
                 [[nodiscard]] std::size_t size() const noexcept { return view().rule_count(); }
 
@@ -413,58 +425,94 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] std::size_t last_rule() const noexcept { return size() - 1; }
 
-                /**
-                 * @brief Adds an offloadable task: a named remote kernel with a local fallback.
-                 * @param op OpID of the kernel, e.g. "vec.add"_op.
-                 * @param local Local fallback invoked as local(i) for i in [0, n).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                Derived& add(::SushiRuntime::Graph::OpID op, std::size_t n,
-                           const std::vector<void*>& reads,
-                           const std::vector<void*>& writes,
-                           F&& local,
-                           std::initializer_list<std::uint64_t> params = {})
+                /** @brief Forwards to add(launch, reads, writes, kernel). */
+                template <class Launch, class F,
+                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                [[deprecated("use add(launch, reads, writes, fn)")]]
+                Derived& add(const Reads& reads, const Writes& writes, Launch launch, F&& kernel)
                 {
-                    using Regions = std::vector<Core::ResourceRegion>;
-                    sink().offload(op, n,
-                                   Access(Regions(reads.begin(), reads.end()),
-                                          Regions(writes.begin(), writes.end())),
-                                   std::forward<F>(local), std::vector<std::uint64_t>(params));
+                    return add(launch, reads, writes, std::forward<F>(kernel));
+                }
+
+                /** @brief Forwards to add(launch, state, kernel). */
+                template <typename T, int N, class F>
+                [[deprecated("use add(launch, state, fn)")]]
+                Derived& add(State<T>& state, Extent<N> launch, F&& kernel)
+                {
+                    return add(launch, state, std::forward<F>(kernel));
+                }
+
+                /**
+                 * @brief Forwards to add(Coupled(out, in0, ...), kernel).
+                 * @param rest Further read States, then the callable last.
+                 */
+                template <typename T, typename A, class... Rest,
+                          std::enable_if_t<(sizeof...(Rest) >= 1), int> = 0>
+                [[deprecated("use add(Coupled(out, in0, ...), fn)")]]
+                Derived& add(State<T>& out, State<A>& in0, Rest&&... rest)
+                {
+                    auto arguments = std::forward_as_tuple(std::forward<Rest>(rest)...);
+                    return add_coupled(out, in0, arguments,
+                                       std::make_index_sequence<sizeof...(Rest) - 1>{});
+                }
+
+                /** @brief Forwards to add(window, capacity, reads, writes, kernel). */
+                template <class F>
+                [[deprecated("use add(Dynamic, capacity, reads, writes, fn)")]]
+                Derived& add(Dynamic window, const Reads& reads, const Writes& writes,
+                             std::size_t capacity, F&& kernel)
+                {
+                    return add(std::move(window), capacity, reads, writes,
+                               std::forward<F>(kernel));
+                }
+
+                /**
+                 * @brief Adds a per-element task ordered by the raw base pointers it names.
+                 * @param kernel Callable invoked as kernel(i) for each i in [0, n).
+                 */
+                template <class F>
+                [[deprecated("use add(n, Reads(...), Writes(...), fn); a raw pointer converts to "
+                             "a region")]]
+                Derived& add(const std::vector<void*>& reads, const std::vector<void*>& writes,
+                             std::size_t n, F&& kernel)
+                {
+                    if constexpr (detail::accepts_kernel<std::size_t, F>())
+                        sink().kernel(n, whole_buffers(reads, writes), std::forward<F>(kernel));
                     return self();
                 }
 
                 /**
-                 * @brief Adds an offloadable task that names its data with Reads and Writes.
-                 * @param local Local fallback invoked as local(i) for i in [0, n).
+                 * @brief Adds a late-bound per-element task that names its data by raw base
+                 *        pointer.
+                 * @param capacity Upper bound the live window must fit.
                  */
-                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-                Derived& add(::SushiRuntime::Graph::OpID op, std::size_t n,
-                           const Reads& reads, const Writes& writes,
-                           F&& local,
-                           std::initializer_list<std::uint64_t> params = {})
+                template <class F>
+                [[deprecated("use add(Dynamic, capacity, Reads(...), Writes(...), fn); a raw "
+                             "pointer converts to a region")]]
+                Derived& add(Dynamic window, const std::vector<void*>& reads,
+                             const std::vector<void*>& writes, std::size_t capacity, F&& kernel)
                 {
-                    sink().offload(op, n, Access(reads, writes), std::forward<F>(local),
-                                   std::vector<std::uint64_t>(params));
+                    if constexpr (detail::accepts_per_element<F>())
+                        sink().kernel(std::move(window), capacity, whole_buffers(reads, writes),
+                                      std::forward<F>(kernel));
                     return self();
                 }
 
-                /**
-                 * @brief Adds an offloadable per-step update rule for a State.
-                 * @pre s was registered with State::distributed().
-                 * @param s The state this rule evolves; must outlive the graph.
-                 * @param local Local fallback invoked as local(i, const T* cur, T* next).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                template <typename T, class F,
-                          std::enable_if_t<std::is_invocable_v<F, std::size_t,
-                                                               const T*, T*>, int> = 0>
-                Derived& add(::SushiRuntime::Graph::OpID op, State<T>& s, F&& local,
-                           std::initializer_list<std::uint64_t> params = {})
+                /** @brief Forwards to name(label). */
+                [[deprecated("use name")]]
+                Derived& name_last(std::string_view label)
                 {
-                    sink().offload_rule(op, s, std::forward<F>(local),
-                                        std::vector<std::uint64_t>(params));
-                    return self();
+                    return name(label);
+                }
+
+                /**
+                 * @brief Forwards to name(label).
+                 * @param label Copied; null counts as an empty label.
+                 */
+                [[deprecated("use name")]]
+                Derived& name_last(const char* label)
+                {
+                    return name(label);
                 }
 
             protected:
@@ -488,48 +536,50 @@ namespace SushiRuntime
                     return static_cast<const Derived&>(*this).recorder();
                 }
 
-                /**
-                 * @brief Appends a capture's region to what it reads, what it writes, or both, and
-                 *        watches its allocation.
-                 */
-                template <class Cap>
-                static void collect(Access& access, const Cap& c)
+                /** @brief Names each bare base pointer as the region of its whole buffer. */
+                static Access whole_buffers(const std::vector<void*>& reads,
+                                            const std::vector<void*>& writes)
                 {
-                    if (Cap::reads)
-                        access.reads.push_back(c.key);
-                    if (Cap::writes)
-                        access.writes.push_back(c.key);
-                    if (!c.life.expired())
-                        access.lives.push_back(c.life);
+                    using Regions = std::vector<Core::ResourceRegion>;
+                    return Access(Regions(reads.begin(), reads.end()),
+                                  Regions(writes.begin(), writes.end()));
                 }
 
                 /**
                  * @brief Records the capture overload once the callable is split from the
                  *        captures.
+                 * @tparam Arguments A std::tuple of references: sizeof...(Is) captures, then the
+                 *         callable.
                  */
-                template <int N, class Cap0, class Tuple, std::size_t... Is, class F>
-                Derived& add_captured(Extent<N> e, Cap0 c0, Tuple& tup,
-                                      std::index_sequence<Is...>, F&& fn)
+                template <class Launch, class Arguments, std::size_t... Is>
+                Derived& add_captured(Launch launch, Arguments& arguments,
+                                      std::index_sequence<Is...>)
                 {
-                    Access access;
-                    collect(access, c0);
-                    (collect(access, std::get<Is>(tup)), ...);
-                    sink().captured_kernel(e, std::move(access),
-                                           std::make_tuple(c0.ptr, std::get<Is>(tup).ptr...),
-                                           std::forward<F>(fn));
+                    using F = std::tuple_element_t<sizeof...(Is), Arguments>;
+                    if constexpr (detail::accepts_captures<
+                                      std::tuple_element_t<Is, Arguments>...>())
+                        if constexpr (detail::accepts_captured_kernel<
+                                          Launch, F, decltype(std::get<Is>(arguments).ptr)...>())
+                            sink().captured_kernel(
+                                launch, detail::captured_access(std::get<Is>(arguments)...),
+                                std::make_tuple(std::get<Is>(arguments).ptr...),
+                                std::forward<F>(std::get<sizeof...(Is)>(arguments)));
                     return self();
                 }
 
                 /**
-                 * @brief Records the coupled-State overload once the callable is split from the
+                 * @brief Forwards the old coupled order once the callable is split from the
                  *        read States.
+                 * @tparam Arguments A std::tuple of references: sizeof...(Is) States, then the
+                 *         callable.
                  */
-                template <typename T, typename A, class Tuple, std::size_t... Is, class F>
-                Derived& add_coupled(State<T>& out, State<A>& in0, Tuple& tup,
-                                     std::index_sequence<Is...>, F&& fn)
+                template <typename T, typename A, class Arguments, std::size_t... Is>
+                Derived& add_coupled(State<T>& out, State<A>& in0, Arguments& arguments,
+                                     std::index_sequence<Is...>)
                 {
-                    sink().coupled_rule(out, std::forward<F>(fn), in0, std::get<Is>(tup)...);
-                    return self();
+                    using F = std::tuple_element_t<sizeof...(Is), Arguments>;
+                    return add(Coupled(out, in0, std::get<Is>(arguments)...),
+                               std::forward<F>(std::get<sizeof...(Is)>(arguments)));
                 }
         };
 

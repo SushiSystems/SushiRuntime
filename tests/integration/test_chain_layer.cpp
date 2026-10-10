@@ -85,12 +85,12 @@ namespace
             next[i] = cur[i] * 0.75f + static_cast<float>(i % 7) * 0.125f;
         });
         g.add(API::sized([&size_tick] { return 1 + (size_tick++ * 37) % N; }),
-              API::Reads{}, API::Writes(acc), N,
+              N, API::Reads{}, API::Writes(acc),
               [pa](std::size_t i) { pa[i] = pa[i] * 31u + static_cast<std::uint32_t>(i) + 1u; });
-        g.add(API::Reads(acc), API::Writes(mix), N,
+        g.add(N, API::Reads(acc), API::Writes(mix),
               [pa, pm](std::size_t i) { pm[i] = (pm[i] ^ (pa[i] * 2654435761u)) + 7u; });
         g.add(API::when([&gate_tick] { return (gate_tick++ % 3) != 0; }),
-              API::Reads(mix), API::Writes(gated), N,
+              N, API::Reads(mix), API::Writes(gated),
               [pm, pg](std::size_t i) { pg[i] = pg[i] * 17u + pm[i]; });
         if (native_tail)
             g.add_host([] {});
@@ -184,7 +184,7 @@ TEST(Integration_ChainLayer, RunUntilSeesEveryStepsResult)
     std::uint32_t* pc = counter.data();
 
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(counter), 1, [pc](std::size_t) { pc[0] += 1u; });
+    g.add(1, API::Reads{}, API::Writes(counter), [pc](std::size_t) { pc[0] += 1u; });
 
     // The stop test reads a device result, so the chain must wait after every step.
     const auto report = g.run_until([&counter] { return counter[0] >= TARGET; });
@@ -211,8 +211,8 @@ TEST(Integration_ChainLayer, ProfiledChainRecordsEveryDispatch)
 
     auto g = rt.graph();
     g.set_profiling(true);
-    g.add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i) { pa[i] += 1; });
-    g.add(API::Reads(a), API::Writes(b), N, [pa, pb](std::size_t i) { pb[i] += pa[i]; });
+    g.add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] += 1; });
+    g.add(N, API::Reads(a), API::Writes(b), [pa, pb](std::size_t i) { pb[i] += pa[i]; });
 
     const auto report = g.run(STEPS);
 

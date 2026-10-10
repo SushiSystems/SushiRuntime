@@ -56,7 +56,7 @@ TEST(Integration_Observability, ProfilingOffLeavesBreakdownEmpty)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
     auto rep = g.run(4);
 
     EXPECT_TRUE(rep.node_timings.empty());
@@ -78,13 +78,13 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
 
     auto g = rt.graph();
     // A heavier kernel and a lighter one, two distinct plan nodes.
-    g.add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i)
+    g.add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i)
     {
         float v = static_cast<float>(i);
         for (int k = 0; k < 64; ++k) v = v * 1.0001f + 1.0f;
         pa[i] = v;
     });
-    g.add(API::Reads{}, API::Writes(b), N, [pb](std::size_t i) { pb[i] = static_cast<float>(i); });
+    g.add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] = static_cast<float>(i); });
 
     auto rep = g.run(STEPS);
 
@@ -98,7 +98,7 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
     }
 }
 
-/** @brief Tests that a name given through name_last() reaches RunReport::NodeTiming. */
+/** @brief Tests that a name given through name() reaches RunReport::NodeTiming. */
 TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
 {
     constexpr std::size_t N = 512;
@@ -111,8 +111,8 @@ TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(buf), N,
-          [p](std::size_t i) { p[i] = static_cast<int>(i); }).name_last("seed");
+    g.add(N, API::Reads{}, API::Writes(buf),
+          [p](std::size_t i) { p[i] = static_cast<int>(i); }).name("seed");
 
     auto rep = g.run(STEPS);
 
@@ -136,24 +136,24 @@ TEST(Integration_Observability, EveryAddShapeCanBeNamed)
     auto g = rt.graph();
 
     // Plain tracked per-element.
-    g.add(API::Reads(a), API::Writes(b), N,
-          [pa, pb](std::size_t i) { pb[i] = pa[i] + 1.0f; }).name_last("plain");
+    g.add(N, API::Reads(a), API::Writes(b),
+          [pa, pb](std::size_t i) { pb[i] = pa[i] + 1.0f; }).name("plain");
 
     // Variadic capture shape: the pack's last element is the callable.
     g.add(API::Extent<1>{N}, API::In(b), API::Out(c),
           [](sycl::id<1> i, const float* in, float* out) { out[i] = in[i] * 2.0f; })
-     .name_last("captured");
+     .name("captured");
 
     // State shape.
     g.add(s, [](std::size_t i, const float* cur, float* next) { next[i] = cur[i] + 1.0f; })
-     .name_last("stateful");
+     .name("stateful");
 
     // Host shape.
-    g.add_host(API::Reads(c), API::Writes{}, [] {}).name_last("host");
+    g.add_host(API::Reads(c), API::Writes{}, [] {}).name("host");
 
     // Dynamic per-element shape.
-    g.add(API::sized([] { return N; }), API::Reads(a), API::Writes(b), N,
-          [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name_last("dynamic");
+    g.add(API::sized([] { return N; }), N, API::Reads(a), API::Writes(b),
+          [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name("dynamic");
 
     auto rep = g.run();
 
@@ -176,7 +176,7 @@ TEST(Integration_Observability, UnnamedNodeStillReportsTheDefaultLabel)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
     auto rep = g.run();
 
     ASSERT_EQ(rep.node_timings.size(), 1u);
@@ -195,7 +195,7 @@ TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
+    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
     auto rep = g.run(16);
 
     EXPECT_EQ(rep.layer, Core::ExecutionLayer::Scheduler);

@@ -46,19 +46,32 @@ namespace SushiRuntime
         struct Extent
         {
             static_assert(N >= 1 && N <= 3, "Extent supports 1, 2, or 3 dimensions.");
+            static_assert(std::is_standard_layout_v<sycl::id<N>>,
+                          "origin and offset share one object, which needs a standard-layout id.");
 
-            sycl::range<N> extent;                  /**< Work-items per dimension. */
-            sycl::id<N>    offset = sycl::id<N>{};   /**< Origin of the iterated box. */
+            sycl::range<N> extent;  /**< Work-items per dimension. */
 
             /**
-             * @brief A 1-D extent from a plain element count (offset 0).
+             * @brief Holds the origin under its name and under the name it had before.
+             * @see modules/surface/api/include/SushiRuntime/api/launch/README.md
+             */
+            union
+            {
+                sycl::id<N> origin = sycl::id<N>{};  /**< Index of the first work-item. */
+
+                /** @brief Names the same value as origin. */
+                [[deprecated("use origin")]] sycl::id<N> offset;
+            };
+
+            /**
+             * @brief A 1-D extent from a plain element count (origin 0).
              * @param n Number of work-items to iterate.
              */
             template <int M = N, std::enable_if_t<M == 1, int> = 0>
             Extent(std::size_t n) : extent(n) {}
 
             /**
-             * @brief An extent from explicit per-dimension sizes (offset 0).
+             * @brief An extent from explicit per-dimension sizes (origin 0).
              * @param sizes Exactly N work-item counts, one per dimension, in SYCL
              *              order (slowest-varying first).
              */
@@ -70,7 +83,7 @@ namespace SushiRuntime
                 : extent(static_cast<std::size_t>(sizes)...) {}
 
             /**
-             * @brief An extent from a SYCL range, offset 0.
+             * @brief An extent from a SYCL range, origin 0.
              * @param r Work-items per dimension.
              */
             explicit Extent(sycl::range<N> r) : extent(r) {}
@@ -80,22 +93,22 @@ namespace SushiRuntime
              * @param r Work-items per dimension.
              * @param o Index of the first work-item, so the kernel iterates a sub-box.
              */
-            Extent(sycl::range<N> r, sycl::id<N> o) : extent(r), offset(o) {}
+            Extent(sycl::range<N> r, sycl::id<N> o) : extent(r), origin(o) {}
 
             /**
              * @brief Reports how much work this shape represents.
              * @return Total work-items, the product of the per-dimension sizes.
              */
-            std::size_t count() const noexcept { return extent.size(); }
+            [[nodiscard]] std::size_t count() const noexcept { return extent.size(); }
 
             /**
              * @brief Rebases the same box at a different origin.
-             * @param origin Index of the first work-item in the returned extent.
+             * @param first Index of the first work-item in the returned extent.
              * @return A copy with this extent's sizes and the given origin.
              */
-            Extent at(sycl::id<N> origin) const noexcept
+            [[nodiscard]] Extent at(sycl::id<N> first) const noexcept
             {
-                return Extent(extent, origin);
+                return Extent(extent, first);
             }
         };
 

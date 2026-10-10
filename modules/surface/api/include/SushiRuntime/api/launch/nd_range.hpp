@@ -49,9 +49,10 @@ namespace SushiRuntime
 
             sycl::range<N> global;  /**< Total work-items per dimension. */
             sycl::range<N> local;   /**< Work-group size per dimension. */
+            sycl::id<N> origin = sycl::id<N>{};  /**< Index the first work-item reports. */
 
             /**
-             * @brief Builds the launch from global and local ranges.
+             * @brief Builds the launch from global and local ranges, origin 0.
              * @param g Total work-items per dimension.
              * @param l Work-group size per dimension; each @p g dimension must be a
              *          whole multiple of the matching @p l dimension.
@@ -59,10 +60,20 @@ namespace SushiRuntime
             NdRange(sycl::range<N> g, sycl::range<N> l) : global(g), local(l) {}
 
             /**
-             * @brief Converts to the SYCL type a parallel_for takes.
-             * @return An nd_range carrying this launch's global and local ranges.
+             * @brief Builds the launch from global and local ranges and an origin.
+             * @param g Total work-items per dimension; a whole multiple of @p l per dimension.
+             * @param l Work-group size per dimension.
+             * @param o Added to each work-item's global id before the kernel receives it.
              */
-            sycl::nd_range<N> to_nd_range() const noexcept
+            NdRange(sycl::range<N> g, sycl::range<N> l, sycl::id<N> o)
+                : global(g), local(l), origin(o) {}
+
+            /**
+             * @brief Converts to the SYCL type a parallel_for takes.
+             * @return An nd_range carrying this launch's global and local ranges; the origin is
+             *         applied by the launch, not by SYCL.
+             */
+            [[nodiscard]] sycl::nd_range<N> to_nd_range() const noexcept
             {
                 return sycl::nd_range<N>(global, local);
             }
@@ -71,11 +82,25 @@ namespace SushiRuntime
              * @brief Reports how much work this launch represents.
              * @return Total work-items, the product of the global sizes.
              */
-            std::size_t count() const noexcept { return global.size(); }
+            [[nodiscard]] std::size_t count() const noexcept { return global.size(); }
+
+            /**
+             * @brief Rebases the same tiling at a different origin.
+             * @param first Index the first work-item reports in the returned launch.
+             * @return A copy with this launch's ranges and the given origin.
+             * @see modules/surface/api/include/SushiRuntime/api/launch/README.md
+             */
+            [[nodiscard]] NdRange at(sycl::id<N> first) const noexcept
+            {
+                return NdRange(global, local, first);
+            }
         };
 
         template <int N>
         NdRange(sycl::range<N>, sycl::range<N>) -> NdRange<N>;
+
+        template <int N>
+        NdRange(sycl::range<N>, sycl::range<N>, sycl::id<N>) -> NdRange<N>;
 
     } // namespace API
 

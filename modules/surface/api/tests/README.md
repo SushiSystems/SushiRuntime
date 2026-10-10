@@ -865,7 +865,7 @@ Dropping one of two regions composes once more, and the dropped region's rule do
 
 The acceptance case of the rule count. A graph whose only rule has three nodes reports `size() == 1`
 and `node_count() == 3`. The three nodes share one registration, so the report holds one
-`NodeTiming` row, which carries the name given by one `name_last()`, and `rule_registration(1)`
+`NodeTiming` row, which carries the name given by one `name()`, and `rule_registration(1)`
 names no rule.
 
 ### `ARegionRuleReportsItsRegistrationAndName`
@@ -949,13 +949,13 @@ rules and six nodes, and `last_rule()` gives the position of the scope.
 
 ### `ARuleCarriesNoIndexUntilTheGraphCompiles`
 
-`size()` is four, `node_count()` is six, and every rule reports `no_registration` before the first
+`size()` is four, `node_count()` is six, and every rule reports `NO_REGISTRATION` before the first
 run.
 
 ### `ARuleScopeTakesOneIndexOfItsOwn`
 
 Each plain `add()` takes an index of its own. The scope takes one more, which no plain kernel has,
-and exactly three node events carry it. A position past the last rule reports `no_registration`.
+and exactly three node events carry it. A position past the last rule reports `NO_REGISTRATION`.
 
 ### `ARulesNodesReportOneIndexOnEveryStep`
 
@@ -1119,3 +1119,67 @@ between pragmas that silence the deprecation warning, because the tree compiles 
 ### `AMovedRuntimeKeepsItsContext`
 
 A move hands the context over and does not build a second one.
+
+## test_builder_surface.cpp
+
+The file covers the add() overloads of BuilderSurface that v0.4.0 adds or reorders: launch first,
+then access, then callable. `seeded` and `seeded_state` fill a handle with its index plus `SEED`,
+so a kernel that ran over the wrong elements or received the wrong pointer shows as a wrong word.
+`refusal_of` returns the message of the SushiException a builder call throws.
+
+### `CountLaunchWithCapturesPassesPointers`
+
+`add(count, In(a), Out(b), fn)` hands the kernel the two pointers after a `std::size_t` index. Up
+to v0.3 the capture form took an Extent only.
+
+### `NdRangeOriginShiftsTheIdTheKernelReceives`
+
+An NdRange rebased with `at(origin)` and a kernel written as `fn(nd_item, id, pointer)` zeroes
+the elements from the origin on and leaves the rest, so the id the kernel receives carries the
+origin.
+
+### `StateRuleOverACountUpdatesAPrefix`
+
+`add(count, state, fn)` updates the first `count` elements of the State.
+
+### `ALaunchPastItsStateIsRefusedAtAdd`
+
+An Extent whose origin plus size passes the State's size throws `invalid_graph` from add(). The
+message names the rule, the extent with its origin and the State's size, and the rule is not
+recorded.
+
+### `CoupledRulesReadEveryStateNamed`
+
+`add(Coupled(out, in), fn)` and `add(count, Coupled(out, in), fn)` each hand the kernel the
+current field of the State read after the two fields of the State written.
+
+### `ACoupledInputSmallerThanTheOutputIsRefusedAtAdd`
+
+A coupled rule over the whole field whose input State is shorter than its output throws
+`invalid_graph` from add().
+
+### `DynamicTakesItsCapacityBeforeItsAccess`
+
+`add(sized(...), capacity, Reads, Writes, fn)` runs over the live count only.
+
+### `UntrackedKernelRunsOnTheDeviceOfTheBufferNamed`
+
+Two buffers on the runtime's last device are written, one by `add_untracked(n, On(buffer), fn)`
+and one by a raw kernel placed with `On(DeviceIndex)`. On a machine with one device that device
+is 0 and the test proves only that the forms record and run; with two it proves the routing.
+
+### `PlacementIsCheckedAndItsHandleWatched`
+
+`On(DeviceIndex{device_count})` throws `invalid_access` naming the index and the count. A graph
+whose `On(buffer)` handle was destroyed before the run is refused with `dangling_resource`.
+
+### `ExtendRecordsOneNamedRule`
+
+`extend(fn)` calls `fn` once with the Recorder; the two kernels it records are one rule, and a
+run does not call it again.
+
+### `DeprecatedSpellingsForwardToTheNewOnes`
+
+Each spelling v0.4.0 deprecates (the old argument orders, `name_last`, `no_registration`,
+`Extent::offset`) still records the same rule. The test switches the deprecation warning off for
+its own body and is deleted with the forwarders.

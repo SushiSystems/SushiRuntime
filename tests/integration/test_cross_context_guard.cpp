@@ -48,7 +48,7 @@ TEST(Integration_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
 
     // No one queue can run a node that reads context 0 and writes context 1; see README.md.
     auto g = rt.graph();
-    g.add(API::Reads(a), API::Writes(b), N,
+    g.add(N, API::Reads(a), API::Writes(b),
           [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; });
 
     // The run fails with an error and the runtime stays usable afterward; see README.md.
@@ -60,7 +60,7 @@ TEST(Integration_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
     for (std::size_t i = 0; i < N; ++i) a[i] = static_cast<int>(i);
     int* pa2 = a.data();
     auto g2 = rt.graph();
-    g2.add(API::Reads{}, API::Writes(a), N, [pa2](std::size_t i) { pa2[i] *= 2; });
+    g2.add(N, API::Reads{}, API::Writes(a), [pa2](std::size_t i) { pa2[i] *= 2; });
     auto ok = g2.try_run();
     EXPECT_TRUE(ok) << "the pool must stay re-armable after the guarded failure";
 }

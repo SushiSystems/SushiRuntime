@@ -60,12 +60,12 @@ TEST(Integration_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
     auto requested = rt.graph();
     requested.set_profiling(true);
     EXPECT_TRUE(requested.is_profiling_requested());
-    requested.add(API::Reads{}, API::Writes(a), N,
+    requested.add(N, API::Reads{}, API::Writes(a),
                   [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
 
     auto plain = rt.graph();
     EXPECT_FALSE(plain.is_profiling_requested());
-    plain.add(API::Reads{}, API::Writes(b), N,
+    plain.add(N, API::Reads{}, API::Writes(b),
               [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
 
     // A request alone, before any run, must not build a queue.
@@ -91,7 +91,7 @@ TEST(Integration_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto rep_off = g.run();
     EXPECT_TRUE(rep_off.node_timings.empty());
@@ -124,7 +124,7 @@ TEST(Integration_GraphProfilingSwitch, NumaFallbackBranchUsesProfilingQueue)
 
     auto g = rt.graph();
     g.set_profiling(true);
-    g.add(API::Reads{}, API::Writes{}, N, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, API::Reads{}, API::Writes{}, [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto rep = g.run();
     EXPECT_FALSE(rep.node_timings.empty())

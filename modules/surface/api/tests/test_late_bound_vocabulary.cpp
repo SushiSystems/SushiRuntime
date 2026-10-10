@@ -153,7 +153,7 @@ namespace
     {
         int* m = marks.data();
         auto g = rt.graph();
-        g.add(std::move(window), Reads{}, Writes(marks), capacity,
+        g.add(std::move(window), capacity, Reads{}, Writes(marks),
               [m](std::size_t i) { m[i] = 1; });
         g.run();
 
@@ -331,7 +331,7 @@ TEST(Integration_LateBoundVocabulary, MembersChainOnANamedDynamic)
         .based_at([] { return std::size_t{10}; });
 
     auto g = rt.graph();
-    g.add(std::move(window), Reads{}, Writes(buf), CAPACITY, [p](std::size_t i) { p[i] += 1; });
+    g.add(std::move(window), CAPACITY, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
     g.run();
 
     for (std::size_t i = 0; i < CAPACITY; ++i)
@@ -366,7 +366,7 @@ TEST(Integration_LateBoundVocabulary, DeprecatedSettersForwardToTheirReplacement
 #endif
 
     auto g = rt.graph();
-    g.add(std::move(window), Reads{}, Writes(buf), CAPACITY, [p](std::size_t i) { p[i] = 1; });
+    g.add(std::move(window), CAPACITY, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = 1; });
     g.run();
 
     for (std::size_t i = 0; i < CAPACITY; ++i)

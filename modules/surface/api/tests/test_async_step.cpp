@@ -150,7 +150,7 @@ TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(buf), N, [p](std::size_t i) { p[i] += 1; });
+    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] += 1; });
 
     {
         auto discarded = g.run_async();
@@ -174,7 +174,7 @@ TEST(Integration_AsyncStep, WaitingTwiceThrows)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(API::Reads{}, API::Writes(buf), std::size_t{4},
+    g.add(std::size_t{4}, API::Reads{}, API::Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto step = g.run_async();
@@ -237,7 +237,7 @@ TEST(Integration_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
     }
 
     auto good = rt.graph();
-    good.add(API::Reads{}, API::Writes(buf), std::size_t{4},
+    good.add(std::size_t{4}, API::Reads{}, API::Writes(buf),
              [p](std::size_t i) { p[i] = 3; });
     good.run_async().wait();
     for (std::size_t i = 0; i < 4; ++i)
@@ -303,8 +303,8 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
     int* pb = b.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(a), N, [pa](std::size_t i) { pa[i] += 1; });
-    world.region(1).add(API::Reads{}, API::Writes(b), N, [pb](std::size_t i) { pb[i] += 2; });
+    world.region(0).add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] += 1; });
+    world.region(1).add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] += 2; });
 
     world.run_async().wait();
     for (std::size_t i = 0; i < N; ++i)
@@ -317,10 +317,10 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
     auto c = rt.buffer<int>(N);
     for (std::size_t i = 0; i < N; ++i) c[i] = 0;
     int* pc = c.data();
-    world.region(2).add(API::Reads{}, API::Writes(c), N, [pc](std::size_t i) { pc[i] += 5; });
+    world.region(2).add(N, API::Reads{}, API::Writes(c), [pc](std::size_t i) { pc[i] += 5; });
 
     world.run_async().wait();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(c[i], 5) << "at i=" << i;
-    EXPECT_EQ(world.compile_count(), 2u) << "one composition per mutation, not per step";
+    EXPECT_EQ(world.compose_count(), 2u) << "one composition per mutation, not per step";
 }

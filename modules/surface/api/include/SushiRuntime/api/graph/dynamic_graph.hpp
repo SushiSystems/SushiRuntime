@@ -184,16 +184,22 @@ namespace SushiRuntime
                 }
 
                 /** @brief Stands for "this rule has no index yet". */
-                static constexpr std::uint32_t no_registration = BackingGraph::NO_REGISTRATION;
+                static constexpr std::uint32_t NO_REGISTRATION =
+                    ::SushiRuntime::Graph::TaskGraph::NO_REGISTRATION;
+
+                /** @brief Names the same value as NO_REGISTRATION. */
+                [[deprecated("use NO_REGISTRATION")]]
+                static constexpr std::uint32_t no_registration = NO_REGISTRATION;
 
                 /**
                  * @brief Returns the registration index a rule of a region carries in the plan.
                  * @param rule Position in the region's add() order, below its size().
-                 * @return The index every node of the rule reports under, or no_registration for
+                 * @return The index every node of the rule reports under, or NO_REGISTRATION for
                  *         an absent region, a rule out of range or a region not yet composed.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                [[nodiscard]] std::uint32_t rule_registration(RegionKey key, std::size_t rule) const
+                [[nodiscard]] std::uint32_t rule_registration(RegionKey key,
+                                                              std::size_t rule) const noexcept
                 {
                     return registration_of(key, rule);
                 }
@@ -206,10 +212,8 @@ namespace SushiRuntime
                  */
                 using RegionComposer::compose_count;
 
-                /**
-                 * @brief Returns how many times the plan has been composed.
-                 * @return The same count as compose_count().
-                 */
+                /** @brief Forwards to compose_count(). */
+                [[deprecated("use compose_count")]]
                 [[nodiscard]] std::size_t compile_count() const noexcept { return compose_count(); }
 
             private:

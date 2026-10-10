@@ -59,7 +59,7 @@ int main()
     auto activate = [&](std::uint64_t k)
     {
         int* p = tile[k].data();
-        world.region(k).add(Reads(), Writes(tile[k]), CELL_N,
+        world.region(k).add(CELL_N, Reads(), Writes(tile[k]),
                             [p](std::size_t i) { p[i] += 1; });
     };
 
@@ -76,7 +76,7 @@ int main()
 
     std::printf("streaming world: %zu tiles, 2 windows of %zu steps\n", TILES, STEPS);
     std::printf("  live regions = %zu, compositions = %zu\n",
-                world.region_count(), world.compile_count());
+                world.region_count(), world.compose_count());
     for (std::size_t k = 0; k < TILES; ++k)
         std::printf("  tile %zu: cell[0] = %d\n", k, tile[k][0]);
 

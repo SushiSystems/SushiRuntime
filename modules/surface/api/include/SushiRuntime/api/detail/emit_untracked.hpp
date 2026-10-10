@@ -36,9 +36,8 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/graph/backing_graph.hpp>
-#include <SushiRuntime/api/launch/extent.hpp>
-#include <SushiRuntime/api/launch/nd_range.hpp>
 
 namespace SushiRuntime
 {
@@ -46,74 +45,53 @@ namespace SushiRuntime
     {
         namespace detail
         {
-            /** @brief Builds the replay of a per-element launch over [0, n) with no region. */
-            template <class F>
-            auto untracked_per_element_node(std::size_t n, F&& fn)
+            /**
+             * @brief Builds the replay of a launch that names no region and runs on one device.
+             * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
+             * @param device Index of the device the node is placed on.
+             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+             */
+            template <class Launch, class F>
+            auto untracked_launch_node(Launch launch, std::size_t device, F&& fn)
             {
-                return [fn = std::forward<F>(fn), n]
+                return [fn = std::forward<F>(fn), launch, device]
                        (BackingGraph& bg, std::optional<std::uint32_t> registration)
                 {
-                    bg.add_node([fn, n](sycl::handler& h)
+                    bg.add_node([fn, launch](sycl::handler& h)
                     {
-                        h.parallel_for(sycl::range<1>(n),
-                                       [fn](sycl::id<1> idx) { fn(idx[0]); });
-                    }, std::vector<sycl::event>{}, registration);
+                        submit_launch(h, launch, fn);
+                    }, std::vector<sycl::event>{}, registration).place_on(device);
                 };
             }
 
-            /** @brief Builds the replay of a launch that drives the handler over [0, n) itself. */
+            /**
+             * @brief Builds the replay of a region-less launch that drives the handler itself.
+             * @param device Index of the device the node is placed on.
+             */
             template <class F>
-            auto untracked_range_node(std::size_t n, F&& fn)
+            auto untracked_range_node(std::size_t n, std::size_t device, F&& fn)
             {
-                return [fn = std::forward<F>(fn), n]
+                return [fn = std::forward<F>(fn), n, device]
                        (BackingGraph& bg, std::optional<std::uint32_t> registration)
                 {
                     bg.add_node([fn, n](sycl::handler& h)
                     {
                         fn(std::size_t{0}, n, h);
-                    }, std::vector<sycl::event>{}, registration);
+                    }, std::vector<sycl::event>{}, registration).place_on(device);
                 };
             }
 
-            /** @brief Builds the replay of a raw command group with no region. */
+            /**
+             * @brief Builds the replay of a raw command group with no region.
+             * @param device Index of the device the node is placed on.
+             */
             template <class F>
-            auto untracked_raw_node(F&& fn)
+            auto untracked_raw_node(std::size_t device, F&& fn)
             {
-                return [fn = std::forward<F>(fn)]
+                return [fn = std::forward<F>(fn), device]
                        (BackingGraph& bg, std::optional<std::uint32_t> registration)
                 {
-                    bg.add_node(fn, std::vector<sycl::event>{}, registration);
-                };
-            }
-
-            /** @brief Builds the replay of a launch over an Extent with no region. */
-            template <int N, class F>
-            auto untracked_extent_node(Extent<N> e, F&& fn)
-            {
-                return [fn = std::forward<F>(fn), e]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
-                {
-                    bg.add_node([fn, e](sycl::handler& h)
-                    {
-                        const sycl::id<N> off = e.offset;
-                        h.parallel_for(e.extent,
-                                       [fn, off](sycl::id<N> idx) { fn(idx + off); });
-                    }, std::vector<sycl::event>{}, registration);
-                };
-            }
-
-            /** @brief Builds the replay of a tiled launch over an NdRange with no region. */
-            template <int N, class F>
-            auto untracked_nd_range_node(NdRange<N> r, F&& fn)
-            {
-                return [fn = std::forward<F>(fn), r]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
-                {
-                    bg.add_node([fn, r](sycl::handler& h)
-                    {
-                        h.parallel_for(r.to_nd_range(),
-                                       [fn](sycl::nd_item<N> it) { fn(it); });
-                    }, std::vector<sycl::event>{}, registration);
+                    bg.add_node(fn, std::vector<sycl::event>{}, registration).place_on(device);
                 };
             }
         } // namespace detail

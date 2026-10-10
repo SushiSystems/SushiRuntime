@@ -67,7 +67,7 @@ namespace
                        std::uint32_t step)
     {
         std::uint32_t* words = target.data();
-        builder.add(Reads(target), Writes(target), WIDTH,
+        builder.add(WIDTH, Reads(target), Writes(target),
                     [words, step](std::size_t i) { words[i] += step; });
     }
 
@@ -172,7 +172,7 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     auto values = zeroed(rt);
     auto graph = rt.graph();
     record_three_node_rule(graph.recorder(), values);
-    graph.name_last("pipeline");
+    graph.name("pipeline");
     graph.set_profiling(true);
 
     EXPECT_EQ(graph.size(), 1u);
@@ -185,8 +185,8 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     // The nodes of a rule share one registration, and the report holds one row per registration.
     ASSERT_EQ(report.node_timings.size(), 1u);
     EXPECT_EQ(rows_named(report, "pipeline"), 1u) << "the rule's row must carry the rule's name";
-    EXPECT_NE(graph.rule_registration(0), API::Graph::no_registration);
-    EXPECT_EQ(graph.rule_registration(1), API::Graph::no_registration)
+    EXPECT_NE(graph.rule_registration(0), API::Graph::NO_REGISTRATION);
+    EXPECT_EQ(graph.rule_registration(1), API::Graph::NO_REGISTRATION)
         << "the graph holds one rule, so position 1 names none";
     EXPECT_EQ(values[0], static_cast<std::uint32_t>(RULE_NODES));
 }
@@ -200,11 +200,11 @@ TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     world.set_profiling(true);
     add_increment(world.region(CELL), first, 1u);
     record_three_node_rule(world.region(CELL + 1).recorder(), second);
-    world.region(CELL + 1).name_last("pipeline");
+    world.region(CELL + 1).name("pipeline");
 
     EXPECT_EQ(world.size(), 2u);
     EXPECT_EQ(world.node_count(), 1u + RULE_NODES);
-    EXPECT_EQ(world.rule_registration(CELL + 1, 0), API::DynamicGraph::no_registration);
+    EXPECT_EQ(world.rule_registration(CELL + 1, 0), API::DynamicGraph::NO_REGISTRATION);
 
     Core::RunReport report;
     world.run(1, report);
@@ -213,8 +213,8 @@ TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     EXPECT_EQ(world.rule_registration(CELL, 0), 0u);
     EXPECT_EQ(world.rule_registration(CELL + 1, 0), 1u)
         << "the three nodes of the second region's rule share the index after the first";
-    EXPECT_EQ(world.rule_registration(CELL + 1, 1), API::DynamicGraph::no_registration);
-    EXPECT_EQ(world.rule_registration(CELL + 2, 0), API::DynamicGraph::no_registration);
+    EXPECT_EQ(world.rule_registration(CELL + 1, 1), API::DynamicGraph::NO_REGISTRATION);
+    EXPECT_EQ(world.rule_registration(CELL + 2, 0), API::DynamicGraph::NO_REGISTRATION);
 }
 
 TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
@@ -225,12 +225,12 @@ TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
     add_increment(graph, values, 1u);
     {
         std::string label = "integrate_velocities_of_the_seventh_cell";
-        graph.name_last(label);
+        graph.name(label);
         label.assign(label.size(), '#');
     }
     add_increment(graph, values, 1u);
-    graph.name_last(std::string("a label that is ") + "replaced by the next call");
-    graph.name_last(std::string("integrate_") + std::to_string(CELL));
+    graph.name(std::string("a label that is ") + "replaced by the next call");
+    graph.name(std::string("integrate_") + std::to_string(CELL));
     graph.set_profiling(true);
 
     Core::RunReport report;
@@ -255,7 +255,7 @@ TEST(Integration_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
     ASSERT_EQ(unnamed.node_timings.size(), 1u);
 
     const char* absent = nullptr;
-    graph.name_last("named").name_last(absent);
+    graph.name("named").name(absent);
     Core::RunReport report;
     graph.run(1, report);
 
@@ -277,7 +277,7 @@ TEST(Integration_RecorderSemantics, MovedFromGraphIsEmpty)
     EXPECT_EQ(graph.size(), 0u);
     EXPECT_EQ(graph.node_count(), 0u);
     EXPECT_EQ(graph.compile_count(), 0u);
-    EXPECT_EQ(graph.rule_registration(0), API::Graph::no_registration);
+    EXPECT_EQ(graph.rule_registration(0), API::Graph::NO_REGISTRATION);
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
     EXPECT_EQ(refused.error().code, Errc::invalid_graph);

@@ -36,9 +36,8 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/graph/backing_graph.hpp>
-#include <SushiRuntime/api/launch/extent.hpp>
-#include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -48,22 +47,23 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief Builds the replay of a per-element launch over [0, n).
+             * @brief Builds the replay of a launch ordered by the regions it names.
+             * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
              * @param width Launch width stamped on the node.
+             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
-            template <class F>
-            auto per_element_node(std::vector<Core::ResourceRegion> reads,
-                                  std::vector<Core::ResourceRegion> writes,
-                                  std::size_t n, F&& fn, std::size_t width)
+            template <class Launch, class F>
+            auto launch_node(std::vector<Core::ResourceRegion> reads,
+                             std::vector<Core::ResourceRegion> writes,
+                             Launch launch, F&& fn, std::size_t width)
             {
-                return [fn = std::forward<F>(fn), n, reads = std::move(reads),
+                return [fn = std::forward<F>(fn), launch, reads = std::move(reads),
                         writes = std::move(writes), width]
                        (BackingGraph& bg, std::optional<std::uint32_t> registration)
                 {
-                    bg.add_node([fn, n](sycl::handler& h)
+                    bg.add_node([fn, launch](sycl::handler& h)
                     {
-                        h.parallel_for(sycl::range<1>(n),
-                                       [fn](sycl::id<1> i) { fn(i[0]); });
+                        submit_launch(h, launch, fn);
                     }, reads, writes, {}, registration);
                     bg.width_last_node(width);
                 };
@@ -97,45 +97,6 @@ namespace SushiRuntime
                        (BackingGraph& bg, std::optional<std::uint32_t> registration)
                 {
                     bg.add_node(fn, reads, writes, {}, registration);
-                    bg.width_last_node(width);
-                };
-            }
-
-            /** @brief Builds the replay of a launch over an Extent; fn receives the shifted id. */
-            template <int N, class F>
-            auto extent_node(std::vector<Core::ResourceRegion> reads,
-                             std::vector<Core::ResourceRegion> writes,
-                             Extent<N> e, F&& fn, std::size_t width)
-            {
-                return [fn = std::forward<F>(fn), e, reads = std::move(reads),
-                        writes = std::move(writes), width]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
-                {
-                    bg.add_node([fn, e](sycl::handler& h)
-                    {
-                        const sycl::id<N> off = e.offset;
-                        h.parallel_for(e.extent,
-                                       [fn, off](sycl::id<N> idx) { fn(idx + off); });
-                    }, reads, writes, {}, registration);
-                    bg.width_last_node(width);
-                };
-            }
-
-            /** @brief Builds the replay of a tiled launch over an NdRange. */
-            template <int N, class F>
-            auto nd_range_node(std::vector<Core::ResourceRegion> reads,
-                               std::vector<Core::ResourceRegion> writes,
-                               NdRange<N> r, F&& fn, std::size_t width)
-            {
-                return [fn = std::forward<F>(fn), r, reads = std::move(reads),
-                        writes = std::move(writes), width]
-                       (BackingGraph& bg, std::optional<std::uint32_t> registration)
-                {
-                    bg.add_node([fn, r](sycl::handler& h)
-                    {
-                        h.parallel_for(r.to_nd_range(),
-                                       [fn](sycl::nd_item<N> it) { fn(it); });
-                    }, reads, writes, {}, registration);
                     bg.width_last_node(width);
                 };
             }

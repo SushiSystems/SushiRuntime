@@ -77,7 +77,7 @@ namespace
             const int* in = bufs[i].data();
             int* out      = bufs[i + 1].data();
             // Trivial work: the cost under measurement is dispatch, not compute.
-            g.add(API::Reads(bufs[i]), API::Writes(bufs[i + 1]), std::size_t{1},
+            g.add(std::size_t{1}, API::Reads(bufs[i]), API::Writes(bufs[i + 1]),
                   [in, out](std::size_t) { out[0] = in[0] + 1; });
         }
 

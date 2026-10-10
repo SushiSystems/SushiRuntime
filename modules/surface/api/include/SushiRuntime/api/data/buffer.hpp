@@ -425,6 +425,7 @@ namespace SushiRuntime
                 }
 
                 /** @brief Forwards to detail::HandleAccess::key(). */
+                [[deprecated("name the Buffer in Reads(...) or Writes(...) instead")]]
                 void* dependency_key() const noexcept
                 {
                     return detail::HandleAccess::key(*this);

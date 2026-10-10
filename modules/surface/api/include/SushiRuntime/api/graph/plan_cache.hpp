@@ -66,7 +66,7 @@ namespace SushiRuntime
                  * @brief Requests or withdraws per-node device timing and marks the plan dirty.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                void set_profiling_requested(bool requested) noexcept
+                void set_profiling(bool requested) noexcept
                 {
                     profiling_requested_ = requested;
                     dirty_ = true;
@@ -74,10 +74,13 @@ namespace SushiRuntime
 
                 /**
                  * @brief Reports whether this graph currently requests profiling.
-                 * @return The last value set by set_profiling_requested(), or the
-                 *         runtime's RuntimeSettings::profiling default.
+                 * @return The last value given to set_profiling(), or the runtime's
+                 *         RuntimeSettings::profiling default.
                  */
-                bool profiling_requested() const noexcept { return profiling_requested_; }
+                [[nodiscard]] bool is_profiling_requested() const noexcept
+                {
+                    return profiling_requested_;
+                }
 
             protected:
                 /**

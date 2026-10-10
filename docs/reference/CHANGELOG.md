@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Changed `add()` and `add_untracked()` to take the launch first, as a count, an `Extent` or an `NdRange`; the old argument orders forward and are deprecated (`builder_surface.hpp`).
+- 2026-10-10 — api: Added `Coupled` and `On` to the vocabulary and `extend()` and `name()` to the builder; name_last() forwards to name() and is deprecated (`builder_surface.hpp`).
+- 2026-10-10 — api: Changed an untracked kernel to run on device 0 unless `On(...)` names another; it no longer rotates over devices (`emit_untracked.hpp`, `recorder.hpp`).
+- 2026-10-10 — api: Changed a State or Coupled rule to throw `invalid_graph` at `add()` when the launch reaches past a State it names (`emit_state.hpp`, `emit_launch.hpp`).
+- 2026-10-10 — api: Changed a callable of the wrong signature to fail one `static_assert` that states the expected signature instead of removing the overload (`callable_checks.hpp`).
+- 2026-10-10 — api: Renamed `PlanCache::set_profiling_requested` to `set_profiling` and `profiling_requested` to `is_profiling_requested` (`plan_cache.hpp`).
+- 2026-10-10 — api: Added `NdRange::origin` and renamed `Extent::offset` to `origin`, keeping the old name as a deprecated alias (`nd_range.hpp`, `extent.hpp`).
+- 2026-10-10 — api: Deprecated the raw key accessors of State and Buffer, `no_registration` for `NO_REGISTRATION` and `DynamicGraph::compile_count` for `compose_count` (`state.hpp`).
 - 2026-10-10 — distributed: Fixed the master offering a task to a worker that did not register its kernel (`worker_directory.cpp`).
 - 2026-10-10 — distributed: Changed the wire protocol to version 2: a 12-byte frame with magic and version, 16 message types and a 1 MiB payload bound; a version 1 peer is refused (`wire_frame.hpp`, `wire_messages.hpp`).
 - 2026-10-10 — distributed: Added a mutual HMAC-SHA256 handshake over a shared secret; an empty secret is refused on a transport other machines reach (`handshake.hpp`, `shared_secret.hpp`, `cluster.cpp`).

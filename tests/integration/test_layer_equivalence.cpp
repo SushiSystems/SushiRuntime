@@ -186,7 +186,7 @@ namespace
     void record_scale(Builder& builder, Tiles& tiles)
     {
         Word* scale = tiles.scale.data();
-        builder.add(API::Reads(tiles.scale), API::Writes(tiles.scale), TILE_N,
+        builder.add(TILE_N, API::Reads(tiles.scale), API::Writes(tiles.scale),
                     [scale](std::size_t i)
                     {
                         scale[i] = scale[i] * 31u + static_cast<Word>(i) + 1u;
@@ -202,7 +202,7 @@ namespace
     {
         const Word* scale = tiles.scale.data();
         Word* mix = tiles.mix.data();
-        builder.add(API::Reads(tiles.scale), API::Writes(tiles.mix), TILE_N,
+        builder.add(TILE_N, API::Reads(tiles.scale), API::Writes(tiles.mix),
                     [scale, mix](std::size_t i)
                     {
                         mix[i] = (mix[i] ^ (scale[i] * 2654435761u)) + 7u;
@@ -219,7 +219,7 @@ namespace
         const Word* scale = tiles.scale.data();
         const Word* mix = tiles.mix.data();
         Word* fold = tiles.fold.data();
-        builder.add(API::Reads(tiles.scale, tiles.mix), API::Writes(tiles.fold), TILE_N,
+        builder.add(TILE_N, API::Reads(tiles.scale, tiles.mix), API::Writes(tiles.fold),
                     [scale, mix, fold](std::size_t i)
                     {
                         fold[i] = fold[i] * 17u + scale[i] + mix[i];
@@ -364,7 +364,7 @@ namespace
             g.add_host(reads, writes, [pass] { pass.apply(); });
             return;
         }
-        g.add(reads, writes, std::size_t{1}, [pass](std::size_t) { pass.apply(); });
+        g.add(std::size_t{1}, reads, writes, [pass](std::size_t) { pass.apply(); });
     }
 
     /**
@@ -391,13 +391,13 @@ namespace
         Word* pd = d.data();
 
         auto g = rt.graph();
-        g.add(API::Reads(a), API::Writes(a), HOST_N,
+        g.add(HOST_N, API::Reads(a), API::Writes(a),
               [pa](std::size_t i) { pa[i] = pa[i] * 31u + static_cast<Word>(i) + 1u; });
         record_pass(g, API::Reads(a), API::Writes(b), MixPass{pa, pb}, site);
-        g.add(API::Reads(b), API::Writes(c), HOST_N,
+        g.add(HOST_N, API::Reads(b), API::Writes(c),
               [pb, pc](std::size_t i) { pc[i] = pc[i] * 17u + pb[i]; });
         record_pass(g, API::Reads(c), API::Writes(d), ScanPass{pc, pd}, site);
-        g.add(API::Reads(a, d), API::Writes(a), HOST_N,
+        g.add(HOST_N, API::Reads(a, d), API::Writes(a),
               [pa, pd](std::size_t i) { pa[i] += pd[i]; });
 
         Snapshot shot;
@@ -481,19 +481,19 @@ namespace
         return box;
     }
 
-    /** @brief Allocates a grid-sized buffer on @p rt holding the starting words. */
-    API::Buffer<Word> seeded_grid(Runtime& rt)
+    /** @brief Allocates a grid-sized buffer on a device of @p rt holding the starting words. */
+    API::Buffer<Word> seeded_grid(Runtime& rt, API::DeviceIndex device = API::DeviceIndex{0})
     {
-        auto grid = rt.buffer<Word>(GRID_N);
+        auto grid = rt.buffer<Word>(GRID_N, device);
         for (std::size_t k = 0; k < GRID_N; ++k)
             grid[k] = seed_word(k);
         return grid;
     }
 
-    /** @brief Allocates the read-only input grid on @p rt. */
-    API::Buffer<Word> source_grid(Runtime& rt)
+    /** @brief Allocates the read-only input grid on a device of @p rt. */
+    API::Buffer<Word> source_grid(Runtime& rt, API::DeviceIndex device = API::DeviceIndex{0})
     {
-        auto grid = rt.buffer<Word>(GRID_N);
+        auto grid = rt.buffer<Word>(GRID_N, device);
         for (std::size_t k = 0; k < GRID_N; ++k)
             grid[k] = source_word(k);
         return grid;
@@ -523,22 +523,22 @@ namespace
         Word* tiles_out  = by_tiles.data();
 
         auto g = rt.graph();
-        g.add(API::Reads(source, by_origin), API::Writes(by_origin), box_by_origin(),
+        g.add(box_by_origin(), API::Reads(source, by_origin), API::Writes(by_origin),
               [in, origin_out](sycl::id<2> idx) { stamp_cell(in, origin_out, idx[0], idx[1]); });
-        g.add(API::Reads(source, by_rebase), API::Writes(by_rebase), box_by_rebase(),
+        g.add(box_by_rebase(), API::Reads(source, by_rebase), API::Writes(by_rebase),
               [in, rebase_out](sycl::id<2> idx) { stamp_cell(in, rebase_out, idx[0], idx[1]); });
         g.add(box_by_origin(), In(source), InOut(by_capture),
               [](sycl::id<2> idx, const Word* captured_in, Word* captured_out)
               {
                   stamp_cell(captured_in, captured_out, idx[0], idx[1]);
               });
-        g.add(field, box_by_origin(), [in](sycl::id<2> idx, const Word* cur, Word* next)
+        g.add(box_by_origin(), field, [in](sycl::id<2> idx, const Word* cur, Word* next)
         {
             const std::size_t cell = idx[0] * GRID_COLS + idx[1];
             const std::size_t slot = (idx[0] - BOX_ROW0) * BOX_COLS + (idx[1] - BOX_COL0);
             next[slot] = stamp(cur[slot], in[cell], cell);
         });
-        g.add(API::Reads(source, by_tiles), API::Writes(by_tiles), box_tiles(),
+        g.add(box_tiles(), API::Reads(source, by_tiles), API::Writes(by_tiles),
               [in, tiles_out](sycl::nd_item<2> item)
               {
                   stamp_cell(in, tiles_out, item.get_global_id(0) + BOX_ROW0,
@@ -587,6 +587,42 @@ namespace
             stamp_cell(in, extent_out, idx[0], idx[1]);
         });
         g.add_untracked(box_tiles(), [in, tiles_out](sycl::nd_item<2> item)
+        {
+            stamp_cell(in, tiles_out, item.get_global_id(0) + BOX_ROW0,
+                       item.get_global_id(1) + BOX_COL0);
+        });
+
+        Snapshot shot;
+        drive(g, Drive::Blocking, STEPS, shot);
+
+        take(shot, "untracked Extent", Image(extent_out, extent_out + GRID_N));
+        take(shot, "untracked NdRange", Image(tiles_out, tiles_out + GRID_N));
+        return shot;
+    }
+
+    /**
+     * @brief Runs both untracked launch forms on the runtime's last device, placed with On().
+     *
+     * Every buffer lives on that device, so a kernel routed anywhere else faults or misses.
+     */
+    Snapshot run_placed_untracked_launches(Runtime& rt)
+    {
+        const API::DeviceIndex device{rt.advanced().device_count() - 1};
+        auto source    = source_grid(rt, device);
+        auto by_extent = seeded_grid(rt, device);
+        auto by_tiles  = seeded_grid(rt, device);
+
+        const Word* in = source.data();
+        Word* extent_out = by_extent.data();
+        Word* tiles_out  = by_tiles.data();
+
+        // The two kernels are unordered; each is the only writer of its own buffer.
+        auto g = rt.graph();
+        g.add_untracked(box_by_origin(), API::On(by_extent), [in, extent_out](sycl::id<2> idx)
+        {
+            stamp_cell(in, extent_out, idx[0], idx[1]);
+        });
+        g.add_untracked(box_tiles(), API::On(device), [in, tiles_out](sycl::nd_item<2> item)
         {
             stamp_cell(in, tiles_out, item.get_global_id(0) + BOX_ROW0,
                        item.get_global_id(1) + BOX_COL0);
@@ -731,15 +767,28 @@ TEST(Integration_LayerEquivalence, OffsetLaunchFormsMatchAcrossLayers)
 TEST(Integration_LayerEquivalence, UntrackedOffsetLaunchesMatchAcrossLayers)
 {
     auto default_rt = Runtime::create();
-
-    // An untracked kernel is routed to any device (docs/reference/KNOWN_ISSUES.md).
-    if (default_rt.advanced().device_count() > 1)
-        GTEST_SKIP() << "An untracked kernel may run on a device that does not own its buffers.";
     auto scheduled_rt = Runtime::create(scheduler_only());
 
     const Snapshot reference       = untracked_launch_reference();
     const Snapshot default_layer   = run_untracked_launches(default_rt);
     const Snapshot scheduler_layer = run_untracked_launches(scheduled_rt);
+
+    EXPECT_EQ(scheduler_layer.layer, Core::ExecutionLayer::Scheduler);
+
+    expect_identical(reference, default_layer, "host reference vs default layer");
+    expect_identical(reference, scheduler_layer, "host reference vs forced scheduler");
+    expect_identical(default_layer, scheduler_layer, "default layer vs forced scheduler");
+}
+
+/** @brief Tests that an untracked kernel placed with On() runs on the device it names. */
+TEST(Integration_LayerEquivalence, PlacedUntrackedLaunchesMatchAcrossLayers)
+{
+    auto default_rt = Runtime::create();
+    auto scheduled_rt = Runtime::create(scheduler_only());
+
+    const Snapshot reference       = untracked_launch_reference();
+    const Snapshot default_layer   = run_placed_untracked_launches(default_rt);
+    const Snapshot scheduler_layer = run_placed_untracked_launches(scheduled_rt);
 
     EXPECT_EQ(scheduler_layer.layer, Core::ExecutionLayer::Scheduler);
 

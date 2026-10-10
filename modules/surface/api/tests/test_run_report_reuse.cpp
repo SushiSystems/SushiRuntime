@@ -48,7 +48,7 @@ namespace
             buf[i] = 0;
 
         int* p = buf.data();
-        g.add(API::Reads{}, API::Writes(buf), N,
+        g.add(N, API::Reads{}, API::Writes(buf),
               [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
     }
 }
@@ -195,7 +195,7 @@ TEST(Integration_RunReportReuse, DynamicGraphRunsIntoACallersReport)
     int* pa = a.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(API::Reads{}, API::Writes(a), N,
+    world.region(0).add(N, API::Reads{}, API::Writes(a),
                         [pa](std::size_t i) { pa[i] += 1; });
 
     Core::RunReport report;
