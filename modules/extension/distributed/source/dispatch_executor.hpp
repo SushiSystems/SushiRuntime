@@ -36,6 +36,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <thread>
 
@@ -43,6 +44,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
@@ -223,7 +225,7 @@ namespace SushiRuntime
                 /** @brief Runs one job from its pins to its result. */
                 void execute(const Job& job);
 
-                /// @brief Guards jobs_ and stopping_.
+                /// @brief Guards jobs_, stopping_ and pulling_.
                 mutable std::mutex mutex_;
 
                 /// @brief Wakes the exec thread on a job and on stop().
@@ -255,6 +257,9 @@ namespace SushiRuntime
 
                 /// @brief Jobs waiting for the exec thread, oldest first.
                 std::deque<Job> jobs_;
+
+                /// @brief The input the exec thread is pulling; discard_queued() aborts it.
+                std::optional<BufferHandle> pulling_;
 
                 /// @brief The tasks held, shared with every output stream.
                 std::shared_ptr<HeldTasks> held_;

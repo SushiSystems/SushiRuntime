@@ -35,6 +35,7 @@
 
 #include <SushiRuntime/logging/logger.hpp>
 
+#include "frame_sending.hpp"
 #include "wire_frame.hpp"
 
 namespace SushiRuntime
@@ -58,18 +59,6 @@ namespace SushiRuntime
                 std::array<std::byte, Wire::K_NONCE_BYTES> wire{};
                 std::memcpy(wire.data(), bytes.data(), wire.size());
                 return wire;
-            }
-
-            /** @brief Encodes a message and queues it as one control frame. */
-            template <typename Message>
-            SendStatus send_message(ITransport& transport, PeerId peer, const Message& message)
-            {
-                std::vector<std::byte> payload;
-                if (message.encode(payload) != Wire::CodecStatus::Ok)
-                    return SendStatus::TooLong;
-                return transport.send(
-                    peer, Message::K_TYPE,
-                    SushiRuntime::span<const std::byte>(payload.data(), payload.size()));
             }
 
             /** @brief Returns the words a log line uses for a loss cause. */
@@ -224,6 +213,7 @@ namespace SushiRuntime
 
         void MasterLink::stop() noexcept
         {
+            leaving_.store(true, std::memory_order_release);
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
                 stopping_ = true;
@@ -236,7 +226,7 @@ namespace SushiRuntime
 
         void MasterLink::on_connected(PeerId peer)
         {
-            if (end() != WorkerEnd::Running)
+            if (end() != WorkerEnd::Running || leaving_.load(std::memory_order_acquire))
             {
                 transport_.close_peer(peer);
                 return;
@@ -430,6 +420,14 @@ namespace SushiRuntime
             }
             changed_.notify_all();
 
+            if (leaving_.load(std::memory_order_acquire))
+            {
+                SR_LOG_DEBUG("connection to the master (peer {}) ended while this worker "
+                             "leaves: {} {}",
+                             peer.value, loss_cause_name(loss.cause), loss.text);
+                return LinkChange::None;
+            }
+
             if (loss.cause == PeerLossCause::VersionMismatch)
             {
                 if (finish(WorkerEnd::ProtocolMismatch))
@@ -464,6 +462,13 @@ namespace SushiRuntime
 
         LinkChange MasterLink::on_connect_abandoned()
         {
+            if (leaving_.load(std::memory_order_acquire))
+            {
+                SR_LOG_DEBUG("the transport stopped connecting to the master while this worker "
+                             "leaves");
+                return LinkChange::None;
+            }
+
             bool ever_registered = false;
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
@@ -481,6 +486,8 @@ namespace SushiRuntime
 
         void MasterLink::say_goodbye() noexcept
         {
+            leaving_.store(true, std::memory_order_release);
+            changed_.notify_all();
             try
             {
                 const std::optional<PeerId> peer = master();
@@ -562,7 +569,8 @@ namespace SushiRuntime
                 std::chrono::milliseconds silence{0};
                 std::chrono::milliseconds limit{0};
 
-                const bool running = end() == WorkerEnd::Running;
+                const bool running = end() == WorkerEnd::Running &&
+                                     !leaving_.load(std::memory_order_acquire);
 
                 if (running && phase_ == Phase::Registered)
                 {

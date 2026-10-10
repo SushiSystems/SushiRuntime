@@ -35,6 +35,7 @@
 
 #include <SushiRuntime/logging/logger.hpp>
 
+#include "frame_sending.hpp"
 #include "wire_frame.hpp"
 
 namespace SushiRuntime
@@ -57,18 +58,6 @@ namespace SushiRuntime
                 if (chunk_bytes == 0)
                     return K_DEFAULT_CHUNK_BYTES;
                 return std::min(chunk_bytes, K_MAX_CHUNK_BYTES);
-            }
-
-            /** @brief Encodes a message and queues it as one control frame. */
-            template <typename Message>
-            SendStatus send_message(ITransport& transport, PeerId peer, const Message& message)
-            {
-                std::vector<std::byte> payload;
-                if (message.encode(payload) != Wire::CodecStatus::Ok)
-                    return SendStatus::TooLong;
-                return transport.send(
-                    peer, Message::K_TYPE,
-                    SushiRuntime::span<const std::byte>(payload.data(), payload.size()));
             }
 
             /** @brief Returns the words a log line uses for a cache answer. */
@@ -394,12 +383,18 @@ namespace SushiRuntime
 
         void DispatchExecutor::discard_queued() noexcept
         {
+            std::optional<BufferHandle> pulling;
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
                 jobs_.clear();
                 queue_depth_.store(0, std::memory_order_relaxed);
+                pulling = pulling_;
             }
             held_->reset();
+
+            // No chunk can arrive any more; the abort ends the exec thread's wait at once.
+            if (pulling.has_value())
+                cache_.abort_transfer(pulling->id, pulling->version);
         }
 
         void DispatchExecutor::stop() noexcept
@@ -563,12 +558,23 @@ namespace SushiRuntime
             if (status != CacheStatus::NeedsPull)
                 return status;
 
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                pulling_ = handle;
+            }
+
+            // A peer lost before this send refuses it; one lost after it reaches pulling_.
             Wire::BufferRequestMessage request;
             request.id = handle.id;
             request.version = handle.version;
             if (send_message(transport_, job.from, request) != SendStatus::Queued)
                 cache_.abort_transfer(handle.id, handle.version);
-            return cache_.wait_input(handle, options_.pull_idle_timeout, view);
+            const CacheStatus pulled =
+                cache_.wait_input(handle, options_.pull_idle_timeout, view);
+
+            const std::lock_guard<std::mutex> lock(mutex_);
+            pulling_.reset();
+            return pulled;
         }
 
         void DispatchExecutor::log_no_room(std::uint64_t task_id, const BufferHandle& handle,

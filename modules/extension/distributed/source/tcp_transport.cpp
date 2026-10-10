@@ -463,7 +463,10 @@ namespace SushiRuntime
 
             }
 
-            /** @brief Binds and listens; fills @p result on a refusal. */
+            /**
+             * @brief Binds and listens.
+             * @param result Receives the bound `address:port` as its message, or the refusal.
+             */
             bool open_listener(TransportResult& result)
             {
                 if (master_options.bind.host.empty() || master_options.max_peers == 0)
@@ -476,7 +479,10 @@ namespace SushiRuntime
                 const SocketResult listening =
                     listener.listen(master_options.bind, master_options.backlog);
                 if (listening.is_ok())
+                {
+                    result.message = listener.local_endpoint().to_string();
                     return true;
+                }
                 result.status = TransportStatus::BindFailed;
                 result.message = "cannot listen on " + master_options.bind.to_string() + ": " +
                                  describe(listening) +

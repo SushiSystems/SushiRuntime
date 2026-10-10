@@ -74,19 +74,44 @@ namespace SushiRuntime
             /** @brief Names what prepare() decided about one node. */
             enum class Placement : std::uint8_t
             {
-                Untagged,    /**< The node names no operation; it was never a candidate. */
-                Offloadable, /**< A worker may run the node. */
-                NoWorker,    /**< No alive worker has a kernel for the operation. */
-                NotShared,   /**< A buffer the node touches is not shared. */
+                Untagged,     /**< The node names no operation; it was never a candidate. */
+                Offloadable,  /**< A worker may run the node. */
+                NoWorker,     /**< No alive worker has a kernel for the operation. */
+                NotShared,    /**< A buffer the node touches is not shared. */
+                WrittenTwice, /**< Two of the node's writes name one shared buffer. */
             };
 
             /** @brief Counts the op-tagged nodes one prepare() left local, by reason. */
             struct LocalOnlyCount
             {
-                std::size_t tagged = 0;     /**< Nodes that name an operation. */
-                std::size_t no_worker = 0;  /**< Of those, left local as NoWorker. */
-                std::size_t not_shared = 0; /**< Of those, left local as NotShared. */
-                std::uint32_t first_op = 0; /**< The operation of the first one left local. */
+                std::size_t tagged = 0;        /**< Nodes that name an operation. */
+                std::size_t no_worker = 0;     /**< Of those, left local as NoWorker. */
+                std::size_t not_shared = 0;    /**< Of those, left local as NotShared. */
+                std::size_t written_twice = 0; /**< Of those, left local as WrittenTwice. */
+                std::uint32_t first_op = 0;    /**< The operation of the first one left local. */
+
+                /** @brief Counts one op-tagged node under the placement it got. */
+                void count(Placement placement, std::uint32_t operation) noexcept
+                {
+                    ++tagged;
+                    if (placement == Placement::Offloadable)
+                        return;
+
+                    if (left_local() == 0)
+                        first_op = operation;
+                    if (placement == Placement::NoWorker)
+                        ++no_worker;
+                    else if (placement == Placement::NotShared)
+                        ++not_shared;
+                    else
+                        ++written_twice;
+                }
+
+                /** @brief Returns the op-tagged nodes left local, whatever the reason. */
+                [[nodiscard]] std::size_t left_local() const noexcept
+                {
+                    return no_worker + not_shared + written_twice;
+                }
             };
 
             /** @brief Returns the calling thread's scratch. */
@@ -109,6 +134,35 @@ namespace SushiRuntime
                 return true;
             }
 
+            /**
+             * @brief Returns whether two handles of a list name one buffer.
+             *
+             * One dispatch raises the version of each output once, so a buffer listed twice
+             * would leave with two versions and the fence would refuse one of them.
+             */
+            bool names_a_buffer_twice(SushiRuntime::span<const BufferHandle> handles) noexcept
+            {
+                for (std::size_t later = 1; later < handles.size(); ++later)
+                    for (std::size_t earlier = 0; earlier < later; ++earlier)
+                        if (handles[earlier].id == handles[later].id)
+                            return true;
+                return false;
+            }
+
+            /** @brief Returns whether two addresses of a live write list name one buffer. */
+            bool is_written_twice(const BufferRegistry& registry,
+                                  const std::shared_ptr<std::vector<void*>>& addresses)
+            {
+                if (!addresses || addresses->size() < 2)
+                    return false;
+
+                std::vector<BufferHandle> handles;
+                const SushiRuntime::span<void* const> listed(addresses->data(), addresses->size());
+                return registry.resolve(listed, handles) &&
+                       names_a_buffer_twice(SushiRuntime::span<const BufferHandle>(
+                           handles.data(), handles.size()));
+            }
+
             /** @brief Decides a double-buffered node, whose handles are resolved per dispatch. */
             Placement place_dynamic(const BufferRegistry& registry,
                                     const WorkerDirectory& directory, const Graph::Node& node,
@@ -126,6 +180,8 @@ namespace SushiRuntime
                 if (!is_all_shared(registry, state.live_reads) ||
                     !is_all_shared(registry, state.live_writes))
                     return Placement::NotShared;
+                if (is_written_twice(registry, state.live_writes))
+                    return Placement::WrittenTwice;
 
                 state.offloadable = true;
                 return Placement::Offloadable;
@@ -174,7 +230,12 @@ namespace SushiRuntime
                         every_buffer_shared = false;
                 }
 
-                const bool is_offloadable = is_supported && every_buffer_shared;
+                const bool has_repeated_write =
+                    names_a_buffer_twice(SushiRuntime::span<const BufferHandle>(
+                        baked->handles.data() + baked->input_count,
+                        baked->handles.size() - baked->input_count));
+                const bool is_offloadable =
+                    is_supported && every_buffer_shared && !has_repeated_write;
                 if (!is_offloadable)
                 {
                     // A local node keeps only what complete_local() bumps: its shared writes.
@@ -202,7 +263,9 @@ namespace SushiRuntime
                     return Placement::Untagged;
                 if (is_offloadable)
                     return Placement::Offloadable;
-                return is_supported ? Placement::NotShared : Placement::NoWorker;
+                if (!is_supported)
+                    return Placement::NoWorker;
+                return every_buffer_shared ? Placement::WrittenTwice : Placement::NotShared;
             }
 
             /**
@@ -275,24 +338,15 @@ namespace SushiRuntime
                 if (placement == Placement::Untagged)
                     continue;
 
-                ++local.tagged;
-                if (placement == Placement::Offloadable)
-                    continue;
-
-                if (local.no_worker + local.not_shared == 0)
-                    local.first_op = node->metadata.op_id.value;
-                if (placement == Placement::NoWorker)
-                    ++local.no_worker;
-                else
-                    ++local.not_shared;
+                local.count(placement, node->metadata.op_id.value);
             }
 
-            const std::size_t left_local = local.no_worker + local.not_shared;
-            if (left_local != 0)
+            if (local.left_local() != 0)
                 SR_LOG_WARN("{} of {} op-tagged nodes will run locally: {} no live worker for "
-                            "the op, {} buffer not shared (first: op {})",
-                            left_local, local.tagged, local.no_worker, local.not_shared,
-                            local.first_op);
+                            "the op, {} buffer not shared, {} buffer written twice (first: op "
+                            "{})",
+                            local.left_local(), local.tagged, local.no_worker, local.not_shared,
+                            local.written_twice, local.first_op);
         }
 
         bool OffloadDispatcher::try_offload(Graph::Node& node)

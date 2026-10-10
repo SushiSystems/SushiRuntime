@@ -470,7 +470,8 @@ TEST_F(Unit_OffloadDispatcherTest, PrepareWarnsOnceForLocalOnlyOps)
     ASSERT_EQ(warnings.size(), 1u);
     const std::string expected =
         "2 of 3 op-tagged nodes will run locally: 1 no live worker for the op, 1 buffer not "
-        "shared (first: op " + std::to_string(K_ABSENT_OPERATION.value) + ")";
+        "shared, 0 buffer written twice (first: op " +
+        std::to_string(K_ABSENT_OPERATION.value) + ")";
     EXPECT_NE(warnings.front().find(expected), std::string::npos) << warnings.front();
 
     EXPECT_TRUE(offloadable->offload_state()->offloadable);
@@ -501,4 +502,51 @@ TEST_F(Unit_OffloadDispatcherTest, LocalNodeBumpsOnlyItsSharedWrites)
     dispatcher_.complete_local(*reader);
     EXPECT_EQ(version_of(first_.data()), first_version);
     EXPECT_EQ(version_of(second_.data()), second_version + 1);
+}
+
+/** @brief Tests that a node whose writes name one buffer twice stays local and is counted. */
+TEST_F(Unit_OffloadDispatcherTest, NodeThatWritesOneBufferTwiceStaysLocal)
+{
+    std::vector<std::string> warnings;
+    std::vector<std::string>* const sink_target = &warnings;
+    Core::set_log_sink([sink_target](Core::LogLevel level, std::string_view line)
+    {
+        if (level == Core::LogLevel::Warn)
+            sink_target->push_back(std::string(line));
+    });
+
+    const sushi_ptr<Graph::Node> fixed =
+        fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
+    fixed->io_writes_.emplace_back(second_.data());
+
+    const sushi_ptr<Graph::Node> dynamic =
+        fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
+    Graph::OffloadState& dynamic_state = dynamic->offload();
+    dynamic_state.live_reads =
+        std::make_shared<std::vector<void*>>(1, static_cast<void*>(first_.data()));
+    dynamic_state.live_writes =
+        std::make_shared<std::vector<void*>>(2, static_cast<void*>(second_.data()));
+
+    // The same buffer as an input and as an output is one write, so this node may leave.
+    const sushi_ptr<Graph::Node> in_place =
+        fixed_node(K_KNOWN_OPERATION, second_.data(), second_.data());
+
+    prepare({fixed, dynamic, in_place});
+
+    ASSERT_EQ(warnings.size(), 1u);
+    const std::string expected =
+        "2 of 3 op-tagged nodes will run locally: 0 no live worker for the op, 0 buffer not "
+        "shared, 2 buffer written twice (first: op " +
+        std::to_string(K_KNOWN_OPERATION.value) + ")";
+    EXPECT_NE(warnings.front().find(expected), std::string::npos) << warnings.front();
+
+    ASSERT_NE(fixed->offload_state(), nullptr);
+    EXPECT_FALSE(fixed->offload_state()->offloadable);
+    EXPECT_FALSE(dynamic_state.offloadable);
+    EXPECT_TRUE(in_place->offload_state()->offloadable);
+
+    // The local run still raises the buffer the node wrote, so a worker's copy goes stale.
+    const std::uint32_t version = version_of(second_.data());
+    dispatcher_.complete_local(*fixed);
+    EXPECT_GT(version_of(second_.data()), version);
 }

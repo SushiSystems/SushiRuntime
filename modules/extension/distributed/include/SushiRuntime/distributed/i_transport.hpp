@@ -104,7 +104,11 @@ namespace SushiRuntime
             /** @brief How the call ended. */
             TransportStatus status = TransportStatus::Ok;
 
-            /** @brief Names the endpoint and the cause for a log line; empty when status is Ok. */
+            /**
+             * @brief Names the endpoint and the cause for a log line.
+             *
+             * On Ok it holds a master's bound endpoint and is empty for a worker.
+             */
             std::string message;
 
             /** @brief Returns whether the transport started. */

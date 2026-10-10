@@ -81,10 +81,10 @@ namespace SushiRuntime
                 /**
                  * @brief Marks each node a worker may run; the body of prepare() on the seam.
                  *
-                 * A node qualifies when its op id is not 0, an alive worker supports it and
-                 * every buffer it touches is shared. A fixed-buffer node gets its handles as
-                 * an OffloadHandles payload. Logs one WARN per call that leaves op-tagged
-                 * nodes local, with the count per reason.
+                 * A node qualifies when its op id is not 0, an alive worker supports it, every
+                 * buffer it touches is shared and no two of its writes name one buffer. A
+                 * fixed-buffer node gets its handles as an OffloadHandles payload. Logs one
+                 * WARN per call that leaves op-tagged nodes local, with the count per reason.
                  */
                 void prepare(SushiRuntime::span<const sushi_ptr<Graph::Node>> nodes);
 
