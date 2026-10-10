@@ -1,7 +1,7 @@
 # api/detail
 
-Internals of the fluent API: callable traits, the fixed-order reduction and scan plans, the per-step
-machinery and report building.
+Internals of the fluent API: callable traits, the replay callable of each node shape, late-count
+resolution, the per-step machinery and report building.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
@@ -28,70 +28,6 @@ the swap.
 read_keys_of() gathers the read keys of a tuple of State pointers, in order. It is called at compile
 time so the dependency tracker labels every coupled input consistently with the canonical
 single-State overload.
-
-## fixed_order_reduce.hpp
-
-### REDUCE_TILE
-
-REDUCE_TILE is the single number the whole determinism guarantee rests on: the tile boundaries, and
-therefore which values meet which, are a function of the element count and this constant alone. It
-is deliberately not derived from the device's work-group size, the worker count, or anything else
-that varies between runs or machines.
-
-### ReduceLevel
-
-A level folds `in_count` values into `out_count` = ceil(in_count / REDUCE_TILE) partials. Offsets
-are in elements, into the reduction's scratch allocation; the first level reads the caller's input
-instead of scratch and the last writes the caller's output instead of scratch, so those two offsets
-are unused on those levels.
-
-### plan_reduction
-
-plan_reduction() repeatedly divides the count by REDUCE_TILE until one value remains and assigns
-each level a disjoint scratch window. Consecutive levels therefore never alias, which is what lets
-the ordinary region tracker order them with no hand-written edges. A count of zero yields no levels.
-The function is pure, so the layout can be asserted in a test without a device.
-
-### reduce_scratch_count
-
-Every level but the last parks its partials in scratch; the last writes the caller's output, so its
-window is never allocated. At REDUCE_TILE = 256 this is under half a percent of the input.
-
-### fold_tile
-
-fold_tile() holds the whole ordering contract in one function: the accumulator is seeded with the
-tile's first value and every later value is combined onto it in increasing index order. Seeding from
-the first element and not from an identity keeps the identity out of the arithmetic entirely, so a
-floating-point sum is exactly ((v0+v1)+v2)+… and nothing else.
-
-## fixed_order_scan.hpp
-
-### plan_tiled_levels
-
-plan_tiled_levels() reuses add_reduce's level plan so scan, radix and reduce all answer "how many
-levels, which slice each folds" from one source.
-
-### fill_live_tile_levels
-
-fill_live_tile_levels() walks the same number of physical levels `level_count` as
-plan_tiled_levels(capacity) planned, folding `live_n` at each level exactly as
-plan_reduction(live_n) would. Once the running count reaches one it stays there. Levels beyond what
-plan_reduction(live_n) would have produced degenerate to a single-element pass-through fold, and the
-boundaries up to that point are byte-identical to plan_reduction(live_n).
-
-It writes only through `out`, so a caller that already owns the levels (a graph's per-run resolver,
-sized once at registration) can call it every run with no allocation.
-
-### live_tile_levels
-
-live_tile_levels() is the allocating, vector-returning wrapper over fill_live_tile_levels(). It is
-fine for tests and other callers off the hot path, but a per-run resolver should call
-fill_live_tile_levels() directly into scratch it already owns.
-
-### fill_radix_plan
-
-Digits at or above radix_digit_count(`live_key_range`) get zero work counts. Active digits alternate
-between the indices and the scratch so the last active one always writes the indices.
 
 ## run_report_builder.hpp
 
@@ -208,16 +144,22 @@ node, so the containment search never meets a dispatch. A null slot passes.
 
 ### resolve_late_count
 
-resolve_late_count() is the one resolution point every verb built on LateCount shares: a host
-provider wins when set, then a device slot, and with neither the live count is the capacity, so a
-LateCount left at its default behaves like a fixed count. The result is never larger than
-`lc.capacity`.
+resolve_late_count() is the one place a LateCount's host side is read: a host provider wins when
+set, then a device slot, and with neither the live count is the capacity, so a LateCount left at
+its default behaves like a fixed count. The result is never larger than `lc.capacity`.
+
+### late_count_source and read_live_count
+
+A resolver node reads a host count on the host and a device count in its kernel.
+late_count_source() runs at submission: it resolves a host count through resolve_late_count() and,
+for a device count, only names the slot. read_live_count() runs in the kernel: it reads the slot,
+and a value above the capacity becomes zero and a DEVICE_FAULT_LATE_COUNT record.
 
 ### validate_late_count
 
 validate_late_count() mirrors require_host_device_slots(): a device slot must be Residency::Host,
-checked before add() mutates the graph and not inside the run loop. It also rejects a capacity too
-wide for the uint32 live-count slots the late-bound verbs resolve into.
+checked before a node is recorded and not inside the run loop. It also rejects a capacity too wide
+for a uint32 live-count word. Recorder::resolve() calls it for every count it is given.
 
 ## late_window.hpp
 
@@ -253,8 +195,8 @@ after the add() call has already returned.
 
 ### make_usm_scratch
 
-make_usm_scratch() allocates on the device and with the residency the caller names. A primitive
-passes those of the data it works on, so its nodes never straddle a device context and a
-device-resident field is not dragged into host-addressable memory. The returned pointer owns the
+make_usm_scratch() allocates on the device and with the residency the caller names. A rule passes
+those of the data it works on, so its nodes never straddle a device context and a device-resident
+field is not dragged into host-addressable memory. The returned pointer owns the
 allocation through a deleter that keeps the context alive, so scratch cannot outlive the runtime
 that owns it.

@@ -109,8 +109,8 @@ installed package, in yours. Kernels in a translation unit you build with `-ffas
 `/fp:fast` are outside the guarantee. The rebalancer is off by default, and turning it on
 trades run-to-run reproducibility for throughput on long batch work. See
 [the integration guide](INTEGRATION.md) for the flags and
-[the introduction](../getting_started/INTRODUCTION.md) for `add_reduce`, which folds fixed
-256-element tiles so a reduction gives the same bits at any worker count.
+SushiBLAS for reductions that fold in a fixed order, so a sum gives the same bits at any
+worker count.
 
 ## Can it spread work across several machines?
 

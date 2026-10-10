@@ -60,7 +60,7 @@ namespace SushiRuntime
                 if (raw == nullptr)
                     throw Core::SushiException(Core::Error{
                         Core::Errc::allocation_failed,
-                        "Reduction scratch allocation of " + std::to_string(bytes) +
+                        "Recorder scratch allocation of " + std::to_string(bytes) +
                         " bytes failed (out of USM memory)."});
 
                 return std::shared_ptr<T>(static_cast<T*>(raw),

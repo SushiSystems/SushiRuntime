@@ -41,47 +41,65 @@ namespace
 {
     constexpr std::size_t WIDTH = 64;
     constexpr std::size_t PLAIN_RULES = 3;
+    constexpr std::size_t RULE_NODES = 3;
 
-    /** @brief Holds one graph, the rules it recorded and where the primitive's rules start. */
+    /** @brief Holds one graph, the buffers it names and where the grouped rule starts. */
     struct Recorded
     {
-        API::Graph graph;                 /**< The graph under test. */
-        API::Buffer<float> values;        /**< The plain kernels' target. */
-        API::Buffer<std::uint32_t> counts;/**< The scan's input. */
-        API::Buffer<std::uint32_t> offsets;/**< The scan's output. */
-        API::Buffer<std::uint32_t> total; /**< The scan's total. */
-        std::size_t primitive_first = 0;  /**< First rule the scan recorded. */
+        API::Graph graph;                  /**< The graph under test. */
+        API::Buffer<float> values;         /**< The plain kernels' target. */
+        API::Buffer<std::uint32_t> first;  /**< The rule's input and final output. */
+        API::Buffer<std::uint32_t> second; /**< What the rule's first node writes. */
+        API::Buffer<std::uint32_t> third;  /**< What the rule's second node writes. */
+        std::size_t grouped_first = 0;     /**< Position of the rule's first node. */
     };
 
     /**
-     * @brief Records three plain kernels and one prefix scan onto a fresh graph.
+     * @brief Records RULE_NODES kernels in one rule scope, each reading what the last wrote.
+     * @param first,second,third Hold WIDTH words each; must outlive the recorder.
+     */
+    void record_grouped_rule(API::Recorder& recorder, const API::Buffer<std::uint32_t>& first,
+                             const API::Buffer<std::uint32_t>& second,
+                             const API::Buffer<std::uint32_t>& third)
+    {
+        std::uint32_t* a = first.data();
+        std::uint32_t* b = second.data();
+        std::uint32_t* c = third.data();
+
+        auto rule = recorder.rule();
+        recorder.kernel(WIDTH, API::Access(Reads(first), Writes(second)),
+                        [a, b](std::size_t i) { b[i] = a[i] + 1u; });
+        recorder.kernel(WIDTH, API::Access(Reads(second), Writes(third)),
+                        [b, c](std::size_t i) { c[i] = b[i] * 2u; });
+        recorder.kernel(WIDTH, API::Access(Reads(third), Writes(first)),
+                        [c, a](std::size_t i) { a[i] = c[i]; });
+    }
+
+    /**
+     * @brief Records three plain kernels and one rule of three nodes onto a fresh graph.
      *
-     * The scan is the interesting half: one public call lowers to several nodes
-     * that share one registration index, which is what makes the add() order and
-     * the report's numbering diverge.
+     * The rule is the interesting half: its nodes share one registration index, which is what
+     * makes the add() order and the report's numbering diverge.
      */
     Recorded record(Runtime& rt)
     {
         Recorded r{rt.graph(), rt.buffer<float>(WIDTH), rt.buffer<std::uint32_t>(WIDTH),
-                   rt.buffer<std::uint32_t>(WIDTH + 1), rt.buffer<std::uint32_t>(1), 0};
+                   rt.buffer<std::uint32_t>(WIDTH), rt.buffer<std::uint32_t>(WIDTH), 0};
         for (std::size_t i = 0; i < WIDTH; ++i)
         {
             r.values[i] = 1.0f;
-            r.counts[i] = static_cast<std::uint32_t>(i % 7);
+            r.first[i] = static_cast<std::uint32_t>(i % 7);
+            r.second[i] = 0;
+            r.third[i] = 0;
         }
-        for (std::size_t i = 0; i <= WIDTH; ++i)
-            r.offsets[i] = 0;
 
         float* v = r.values.data();
         for (std::size_t k = 0; k < PLAIN_RULES; ++k)
             r.graph.add(Reads(r.values), Writes(r.values), WIDTH,
                         [v](std::size_t i) { v[i] = v[i] * 1.000001f; });
 
-        r.primitive_first = r.graph.size();
-        API::LateCount live;
-        live.capacity = WIDTH;
-        live.host = [] { return WIDTH; };
-        r.graph.add_prefix_scan(r.counts, r.offsets, r.total, live);
+        r.grouped_first = r.graph.recorder().node_count();
+        record_grouped_rule(r.graph.recorder(), r.first, r.second, r.third);
         r.graph.set_profiling_requested(true);
         return r;
     }
@@ -91,14 +109,15 @@ TEST(Integration_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
 {
     auto rt = Runtime::create();
     Recorded r = record(rt);
+    const std::size_t nodes = r.graph.recorder().node_count();
 
-    ASSERT_GT(r.graph.size(), PLAIN_RULES) << "the scan must have recorded at least one rule";
-    for (std::size_t rule = 0; rule < r.graph.size(); ++rule)
-        EXPECT_EQ(r.graph.rule_registration(rule), API::Graph::no_registration)
-            << "rule " << rule << " reported an index before the first run";
+    ASSERT_EQ(nodes, PLAIN_RULES + RULE_NODES);
+    for (std::size_t node = 0; node < nodes; ++node)
+        EXPECT_EQ(r.graph.rule_registration(node), API::Graph::no_registration)
+            << "node " << node << " reported an index before the first run";
 }
 
-TEST(Integration_RuleRegistration, OnePublicCallsRulesShareOneIndex)
+TEST(Integration_RuleRegistration, TheNodesOfOneRuleScopeShareOneIndex)
 {
     auto rt = Runtime::create();
     Recorded r = record(rt);
@@ -107,20 +126,21 @@ TEST(Integration_RuleRegistration, OnePublicCallsRulesShareOneIndex)
     ASSERT_TRUE(report.is_successful);
 
     std::set<std::uint32_t> plain;
-    for (std::size_t rule = 0; rule < PLAIN_RULES; ++rule)
+    for (std::size_t node = 0; node < PLAIN_RULES; ++node)
     {
-        const std::uint32_t index = r.graph.rule_registration(rule);
+        const std::uint32_t index = r.graph.rule_registration(node);
         EXPECT_NE(index, API::Graph::no_registration);
         plain.insert(index);
     }
     EXPECT_EQ(plain.size(), PLAIN_RULES) << "a plain add() must take an index of its own";
 
-    const std::uint32_t shared = r.graph.rule_registration(r.primitive_first);
+    const std::uint32_t shared = r.graph.rule_registration(r.grouped_first);
     EXPECT_NE(shared, API::Graph::no_registration);
-    for (std::size_t rule = r.primitive_first; rule < r.graph.size(); ++rule)
-        EXPECT_EQ(r.graph.rule_registration(rule), shared)
-            << "rule " << rule << " of one add_prefix_scan took a different index";
-    EXPECT_EQ(plain.count(shared), 0u) << "the scan must not reuse a plain rule's index";
+    for (std::size_t node = r.grouped_first; node < r.grouped_first + RULE_NODES; ++node)
+        EXPECT_EQ(r.graph.rule_registration(node), shared)
+            << "node " << node << " of one rule scope took a different index";
+    EXPECT_EQ(plain.count(shared), 0u) << "the rule must not reuse a plain add()'s index";
+    EXPECT_EQ(r.graph.recorder().rule_count(), PLAIN_RULES + 1u);
 }
 
 TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
@@ -133,10 +153,36 @@ TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
     ASSERT_FALSE(report.node_events.empty()) << "profiling was requested, so events must exist";
 
     std::set<std::uint32_t> recorded;
-    for (std::size_t rule = 0; rule < r.graph.size(); ++rule)
-        recorded.insert(r.graph.rule_registration(rule));
+    for (std::size_t node = 0; node < r.graph.recorder().node_count(); ++node)
+        recorded.insert(r.graph.rule_registration(node));
 
     for (const Core::NodeEventRecord& event : report.node_events)
         EXPECT_EQ(recorded.count(event.node_index), 1u)
             << "node event " << event.node_index << " matches no rule the caller recorded";
+}
+
+TEST(Integration_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
+{
+    constexpr std::size_t STEPS = 4;
+
+    auto rt = Runtime::create();
+    Recorded r = record(rt);
+    Core::RunReport report;
+    r.graph.run(STEPS, report);
+    ASSERT_TRUE(report.is_successful);
+    ASSERT_EQ(report.node_events.size(), (PLAIN_RULES + RULE_NODES) * STEPS);
+
+    const std::uint32_t shared = r.graph.rule_registration(r.grouped_first);
+    std::vector<std::size_t> per_invocation(STEPS, 0);
+    for (const Core::NodeEventRecord& event : report.node_events)
+    {
+        if (event.node_index != shared)
+            continue;
+        ASSERT_LT(event.invocation, STEPS);
+        ++per_invocation[event.invocation];
+    }
+    for (std::size_t step = 0; step < STEPS; ++step)
+        EXPECT_EQ(per_invocation[step], RULE_NODES)
+            << "step " << step << ": every node of the rule must report the rule's index";
+    EXPECT_EQ(r.graph.compile_count(), 1u);
 }

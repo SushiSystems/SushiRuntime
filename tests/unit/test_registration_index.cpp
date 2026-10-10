@@ -21,12 +21,14 @@
 
 /**
  * @file test_registration_index.cpp
- * @brief Tests Node::registration_index and that add_reduce()'s tile levels share one index.
+ * @brief Tests Node::registration_index and that the nodes of one rule scope share one index.
  * @see tests/unit/README.md
  * @author Mustafa Garip
  */
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -87,6 +89,118 @@ namespace
         EXPECT_NE(found, nullptr) << "No compiled node named '" << name << "'.";
         return *found;
     }
+
+    constexpr std::size_t WIDTH = 64;
+    constexpr std::size_t RULE_NODES = 3;
+
+    /** @brief Holds the three buffers the grouped rules pass their values through. */
+    struct Stages
+    {
+        API::Buffer<std::uint32_t> first;  /**< The rule's input. */
+        API::Buffer<std::uint32_t> second; /**< What the rule's first kernel writes. */
+        API::Buffer<std::uint32_t> third;  /**< The rule's output. */
+    };
+
+    /** @brief Allocates the stage buffers and seeds the first with its indices. */
+    Stages make_stages(Runtime& rt)
+    {
+        Stages s{rt.buffer<std::uint32_t>(WIDTH), rt.buffer<std::uint32_t>(WIDTH),
+                 rt.buffer<std::uint32_t>(WIDTH)};
+        for (std::size_t i = 0; i < WIDTH; ++i)
+        {
+            s.first[i] = static_cast<std::uint32_t>(i);
+            s.second[i] = 0;
+            s.third[i] = 0;
+        }
+        return s;
+    }
+
+    /**
+     * @brief Records RULE_NODES kernels in one rule scope, each reading what the last wrote.
+     * @param stages Buffers of WIDTH words; must outlive the recorder.
+     */
+    void record_grouped_rule(API::Recorder& recorder, const Stages& stages)
+    {
+        std::uint32_t* a = stages.first.data();
+        std::uint32_t* b = stages.second.data();
+        std::uint32_t* c = stages.third.data();
+
+        auto rule = recorder.rule();
+        recorder.kernel(WIDTH, API::Access(Reads(stages.first), Writes(stages.second)),
+                        [a, b](std::size_t i) { b[i] = a[i] + 1u; });
+        recorder.kernel(WIDTH, API::Access(Reads(stages.second), Writes(stages.third)),
+                        [b, c](std::size_t i) { c[i] = b[i] * 2u; });
+        recorder.kernel(WIDTH, API::Access(Reads(stages.third), Writes(stages.first)),
+                        [c, a](std::size_t i) { a[i] = c[i]; });
+    }
+
+    /**
+     * @brief Records a resolver, a device-sized kernel and a closing kernel in one rule scope.
+     * @param stages Buffers of WIDTH words; must outlive the recorder.
+     * @param count  Live width of the device-sized kernel; its capacity is at most WIDTH.
+     */
+    void record_late_bound_rule(API::Recorder& recorder, const Stages& stages,
+                                const LateCount& count)
+    {
+        std::uint32_t* live = recorder.scratch<std::uint32_t>(
+            1, stages.first.device_index(), stages.first.residency());
+        const Core::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
+        std::uint32_t* a = stages.first.data();
+        std::uint32_t* b = stages.second.data();
+        std::uint32_t* c = stages.third.data();
+
+        auto rule = recorder.rule();
+        recorder.resolve(std::array<LateCount, 1>{count}, stages.first.device_index(),
+                         API::Access(Reads(), Writes(live_region)),
+                         [live](const std::array<std::size_t, 1>& value)
+                         {
+                             live[0] = static_cast<std::uint32_t>(value[0]);
+                         });
+        recorder.kernel(API::DeviceSized{count.capacity, live, nullptr},
+                        API::Access(Reads(stages.first, live_region), Writes(stages.second)),
+                        [a, b](std::size_t t) { b[t] = a[t] + 1u; });
+        recorder.kernel(std::size_t{1},
+                        API::Access(Reads(stages.second, live_region), Writes(stages.third)),
+                        [b, c, live](std::size_t) { c[0] = b[0] + live[0]; });
+    }
+
+    /** @brief Holds what a compiled plan says about one grouped rule and its two neighbours. */
+    struct Grouping
+    {
+        std::optional<std::uint32_t> rule_index; /**< The index every rule node carries. */
+        std::size_t rule_nodes = 0;              /**< Nodes that are neither neighbour. */
+        std::uint32_t before_index = 0;          /**< Index of the node named "before". */
+        std::uint32_t after_index = 0;           /**< Index of the node named "after". */
+        std::vector<std::uint32_t> all_indices;  /**< Index of every node of the plan. */
+    };
+
+    /** @brief Reads a plan's grouping and fails when two rule nodes carry different indices. */
+    Grouping grouping_of(const Graph::CompiledGraph& plan)
+    {
+        Grouping g;
+        for (const auto& n : plan.all_nodes)
+        {
+            g.all_indices.push_back(n->registration_index);
+            const std::string name(n->metadata.name);
+            if (name == "before")
+            {
+                g.before_index = n->registration_index;
+                continue;
+            }
+            if (name == "after")
+            {
+                g.after_index = n->registration_index;
+                continue;
+            }
+
+            ++g.rule_nodes;
+            if (!g.rule_index.has_value())
+                g.rule_index = n->registration_index;
+            EXPECT_EQ(*g.rule_index, n->registration_index)
+                << "every node of one rule scope must share one registration_index.";
+        }
+        return g;
+    }
 }
 
 /**
@@ -124,8 +238,8 @@ TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
 
 /**
  * @brief Verifies a reserved index passed to several add_node() calls groups
- *        them under one registration_index, the mechanism Graph::add_reduce()
- *        uses so every tile level of one call reports the same node_index.
+ *        them under one registration_index, the mechanism a Recorder rule scope
+ *        uses so every node of one rule reports the same node_index.
  */
 TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
 {
@@ -136,7 +250,7 @@ TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
     graph.add_node(noop_work());
     graph.name_last_node("before");
 
-    // Three "tile levels" sharing one reserved index.
+    // Three nodes sharing one reserved index.
     const std::uint32_t token = graph.reserve_registration();
     graph.add_node(noop_work(), {}, token);
     graph.name_last_node("level0");
@@ -168,75 +282,43 @@ TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
 }
 
 /**
- * @brief Verifies Graph::add_reduce() groups every tile level under one
- *        registration_index, through the real fluent API.
- *
- * N is chosen above REDUCE_TILE^2 (256^2 = 65536) so the fixed-order plan
- * needs three levels (see Unit_FixedOrderReduce.PlanLayoutIsPureAndDisjoint
- * for the same rule at N = 1000000): 70000 -> 274 -> 2 -> 1.
+ * @brief Verifies a Recorder rule scope groups every node recorded in it under
+ *        one registration_index, through the real fluent API.
  */
-TEST(Unit_RegistrationIndex, AddReduceGroupsTileLevelsUnderOneIndex)
+TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
 {
     using API::detail::RegistrationIndexTestAccess;
 
-    constexpr std::size_t N = 70000;
-
-    auto rt  = Runtime::create();
-    auto in  = rt.buffer<float>(N);
-    auto out = rt.buffer<float>(1);
-    for (std::size_t i = 0; i < N; ++i)
-        in[i] = 1.0f;
+    auto rt = Runtime::create();
+    Stages stages = make_stages(rt);
 
     auto g = rt.graph();
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("before");
-    g.add_reduce(in, out, N, Sum<float>{});
+    record_grouped_rule(g.recorder(), stages);
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("after");
     g.run();
 
-    const Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
+    const Grouping grouping = grouping_of(RegistrationIndexTestAccess::plan(g));
 
-    std::optional<std::uint32_t> reduce_index;
-    std::size_t reduce_node_count = 0;
-    std::uint32_t before_index = 0;
-    std::uint32_t after_index  = 0;
-
-    for (const auto& n : plan.all_nodes)
-    {
-        const std::string name(n->metadata.name);
-        if (name == "before") { before_index = n->registration_index; continue; }
-        if (name == "after")  { after_index  = n->registration_index; continue; }
-
-        ++reduce_node_count;
-        if (!reduce_index.has_value())
-            reduce_index = n->registration_index;
-        EXPECT_EQ(*reduce_index, n->registration_index)
-            << "every add_reduce() tile-level node must share one registration_index.";
-    }
-
-    ASSERT_GE(reduce_node_count, 3u) << "N = " << N << " should plan at least three tile levels.";
-    ASSERT_TRUE(reduce_index.has_value());
-    EXPECT_NE(before_index, *reduce_index);
-    EXPECT_NE(after_index, *reduce_index);
-    EXPECT_EQ(after_index, before_index + 2)
+    ASSERT_EQ(grouping.rule_nodes, RULE_NODES);
+    ASSERT_TRUE(grouping.rule_index.has_value());
+    EXPECT_NE(grouping.before_index, *grouping.rule_index);
+    EXPECT_NE(grouping.after_index, *grouping.rule_index);
+    EXPECT_EQ(grouping.after_index, grouping.before_index + 2)
         << "'after' must be before+2: the group draws exactly one index.";
 }
 
-/** @brief Tests that add_reduce()'s group survives a rebuild onto a fresh BackingGraph. */
-TEST(Unit_RegistrationIndex, AddReduceGroupSurvivesRebuild)
+/** @brief Tests that a rule scope's group survives a rebuild onto a fresh BackingGraph. */
+TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
 {
     using API::detail::RegistrationIndexTestAccess;
 
-    constexpr std::size_t N = 70000;
-
-    auto rt  = Runtime::create();
-    auto in  = rt.buffer<float>(N);
-    auto out = rt.buffer<float>(1);
-    for (std::size_t i = 0; i < N; ++i)
-        in[i] = 1.0f;
+    auto rt = Runtime::create();
+    Stages stages = make_stages(rt);
 
     auto g = rt.graph();
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("before");
-    g.add_reduce(in, out, N, Sum<float>{});
+    record_grouped_rule(g.recorder(), stages);
     g.run();
 
     // An add() after the first run dirties the graph, so every spec is replayed; see README.md.
@@ -244,29 +326,14 @@ TEST(Unit_RegistrationIndex, AddReduceGroupSurvivesRebuild)
     g.run();
 
     const Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
+    Grouping grouping = grouping_of(plan);
 
-    std::optional<std::uint32_t> reduce_index;
-    std::size_t reduce_node_count = 0;
-    std::vector<std::uint32_t> all_indices;
+    ASSERT_EQ(grouping.rule_nodes, RULE_NODES);
+    ASSERT_TRUE(grouping.rule_index.has_value());
+    EXPECT_NE(find_named(plan, "before").registration_index, *grouping.rule_index);
+    EXPECT_NE(find_named(plan, "after").registration_index, *grouping.rule_index);
 
-    for (const auto& n : plan.all_nodes)
-    {
-        all_indices.push_back(n->registration_index);
-        const std::string name(n->metadata.name);
-        if (name == "before" || name == "after")
-            continue;
-
-        ++reduce_node_count;
-        if (!reduce_index.has_value())
-            reduce_index = n->registration_index;
-        EXPECT_EQ(*reduce_index, n->registration_index)
-            << "every add_reduce() tile-level node must share one registration_index after rebuild.";
-    }
-
-    ASSERT_GE(reduce_node_count, 3u) << "N = " << N << " should plan at least three tile levels.";
-    EXPECT_NE(find_named(plan, "before").registration_index, *reduce_index);
-    EXPECT_NE(find_named(plan, "after").registration_index, *reduce_index);
-
+    std::vector<std::uint32_t>& all_indices = grouping.all_indices;
     std::sort(all_indices.begin(), all_indices.end());
     all_indices.erase(std::unique(all_indices.begin(), all_indices.end()), all_indices.end());
     for (std::size_t i = 0; i < all_indices.size(); ++i)
@@ -274,57 +341,32 @@ TEST(Unit_RegistrationIndex, AddReduceGroupSurvivesRebuild)
 }
 
 /**
- * @brief Tests that the LateCount overload of add_reduce() groups its tile levels and the identity
- *        write under one index.
+ * @brief Tests that a rule scope groups a late-count resolver, a device-sized kernel and a
+ *        plain kernel under one index.
  */
-TEST(Unit_RegistrationIndex, LateBoundAddReduceGroupsTileLevelsUnderOneIndex)
+TEST(Unit_RegistrationIndex, RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex)
 {
     using API::detail::RegistrationIndexTestAccess;
 
-    constexpr std::size_t CAPACITY = 70000;
+    auto rt = Runtime::create();
+    Stages stages = make_stages(rt);
 
-    auto rt  = Runtime::create();
-    auto in  = rt.buffer<float>(CAPACITY);
-    auto out = rt.buffer<float>(1);
-    for (std::size_t i = 0; i < CAPACITY; ++i)
-        in[i] = 1.0f;
-
-    LateCount lc;
-    lc.capacity = CAPACITY;
-    lc.host = []() { return CAPACITY; };
+    LateCount count;
+    count.capacity = WIDTH;
+    count.host = []() { return WIDTH; };
 
     auto g = rt.graph();
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("before");
-    g.add_reduce(in, out, lc, Sum<float>{});
+    record_late_bound_rule(g.recorder(), stages, count);
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("after");
     g.run();
 
-    const Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
+    const Grouping grouping = grouping_of(RegistrationIndexTestAccess::plan(g));
 
-    std::optional<std::uint32_t> reduce_index;
-    std::size_t reduce_node_count = 0;
-    std::uint32_t before_index = 0;
-    std::uint32_t after_index  = 0;
-
-    for (const auto& n : plan.all_nodes)
-    {
-        const std::string name(n->metadata.name);
-        if (name == "before") { before_index = n->registration_index; continue; }
-        if (name == "after")  { after_index  = n->registration_index; continue; }
-
-        ++reduce_node_count;
-        if (!reduce_index.has_value())
-            reduce_index = n->registration_index;
-        EXPECT_EQ(*reduce_index, n->registration_index)
-            << "every late-bound add_reduce() node (tile levels plus the "
-               "zero-count write) must share one registration_index.";
-    }
-
-    ASSERT_GE(reduce_node_count, 3u)
-        << "capacity = " << CAPACITY << " should plan at least three tile levels.";
-    ASSERT_TRUE(reduce_index.has_value());
-    EXPECT_NE(before_index, *reduce_index);
-    EXPECT_NE(after_index, *reduce_index);
-    EXPECT_EQ(after_index, before_index + 2)
+    ASSERT_EQ(grouping.rule_nodes, RULE_NODES);
+    ASSERT_TRUE(grouping.rule_index.has_value());
+    EXPECT_NE(grouping.before_index, *grouping.rule_index);
+    EXPECT_NE(grouping.after_index, *grouping.rule_index);
+    EXPECT_EQ(grouping.after_index, grouping.before_index + 2)
         << "'after' must be before+2: the group draws exactly one index.";
 }

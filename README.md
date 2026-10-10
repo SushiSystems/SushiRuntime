@@ -325,17 +325,11 @@ worth naming:
 sim.add(Reads(a), Writes(b), n, integrate).name_last("integrate");
 ```
 
-Deterministic reductions are first-class. `add_reduce(input, output, n, op)`
-folds the first `n` elements of a `Buffer<T>` into `output[0]` in fixed-size tiles,
-so the result is bit-identical regardless of worker count, device, or steal
-pattern. `add_segmented_reduce(values, segment_offsets, output, segment_count, op)`
-does the same per segment over a CSR-style offsets array, one work-item per
-segment. Both take an optional explicit identity for the empty case.
-
-```cpp
-g.add_reduce(values, total, n, Sum<float>{});
-g.add_segmented_reduce(contributions, offsets, per_vertex, vertex_count, Sum<float>{});
-```
+The runtime carries no numeric algorithm. A reduction, a scan or a sort is a node kind a
+domain library records through the `Recorder` a `Graph` exposes: `rule()` groups the nodes
+of one call under one registration index, `kernel(...)` and `resolve(...)` record them, and
+`scratch(...)` gives them storage that lives as long as the graph. SushiBLAS builds its
+fixed-order reductions, prefix scan and counting sort this way.
 
 Coupled fields read one another within a step. Every read sees the previous
 step's data (a Jacobi update): each field advances only after the whole step's
@@ -444,8 +438,8 @@ The fluent entry point that most users should start from:
   and `based_at()` / `based_at_device()` taking the live count or the window's
   first element from the host or from a slot a predecessor kernel wrote; an
   `OpID` overload marks a task offloadable with a local fallback.
-  `add_reduce()` / `add_segmented_reduce()` fold a `Buffer<T>` with a
-  schedule-independent, bit-reproducible result. `name_last()` names the node just
+  `recorder()` is where a domain library adds its own node kinds. `name_last()` names the
+  node just
   added, which is the name it carries in `RunReport` and profiling output.
   `run_async()` starts a step on the worker pool and returns a `RunHandle` whose
   `wait()` / `try_wait()` settles it. `buffer()`/`state()` take an optional

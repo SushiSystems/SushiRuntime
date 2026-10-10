@@ -57,6 +57,45 @@ namespace
         return (i % 2 == 0) ? magnitude : -magnitude;
     }
 
+    constexpr std::size_t TILE  = 256;
+    constexpr std::size_t TILES = (N + TILE - 1) / TILE;
+
+    /**
+     * @brief Records one rule of two nodes that totals N values in an order fixed by TILE.
+     *
+     * One work-item per tile adds its values left to right into recorder scratch, then one
+     * work-item adds the partials left to right into total[0].
+     * @param input Holds N values; must outlive the recorder.
+     */
+    void record_tiled_total(API::Recorder& recorder, const API::Buffer<float>& input,
+                            const API::Buffer<float>& total)
+    {
+        float* partials = recorder.scratch<float>(TILES, input.device_index(), input.residency());
+        const Core::ResourceRegion partial_region{partials, 0, TILES * sizeof(float)};
+        const float* in = input.data();
+        float* out = total.data();
+
+        auto rule = recorder.rule();
+        recorder.kernel(TILES, API::Access(Reads(input), Writes(partial_region)),
+                        [in, partials](std::size_t t)
+                        {
+                            const std::size_t begin = t * TILE;
+                            const std::size_t end = (begin + TILE < N) ? begin + TILE : N;
+                            float sum = in[begin];
+                            for (std::size_t i = begin + 1; i < end; ++i)
+                                sum = sum + in[i];
+                            partials[t] = sum;
+                        });
+        recorder.kernel(std::size_t{1}, API::Access(Reads(partial_region), Writes(total)),
+                        [partials, out](std::size_t)
+                        {
+                            float sum = partials[0];
+                            for (std::size_t t = 1; t < TILES; ++t)
+                                sum = sum + partials[t];
+                            out[0] = sum;
+                        });
+    }
+
     // What one configuration produced, and the pool it actually ran on.
     struct Outcome
     {
@@ -69,12 +108,13 @@ namespace
     /**
      * @brief Runs the fixed workload on a runtime built for the given worker count and copies the
      *        results out.
+     * @param rebalancer Whether the background rebalancer runs during the workload.
      */
-    Outcome run_workload(std::size_t worker_count)
+    Outcome run_workload(std::size_t worker_count, bool rebalancer = false)
     {
         API::RuntimeConfig config;
         config.worker_count = worker_count;
-        config.rebalancer   = false;
+        config.rebalancer   = rebalancer;
 
         auto rt = Runtime::create({}, config);
 
@@ -100,8 +140,8 @@ namespace
         float*       po = out.data();
 
         auto g = rt.graph();
-        g.add_reduce(first,  total_a, N, Sum<float>{});
-        g.add_reduce(second, total_b, N, Sum<float>{});
+        record_tiled_total(g.recorder(), first, total_a);
+        record_tiled_total(g.recorder(), second, total_b);
         g.add(Reads(first, second, total_a, total_b), Writes(out), N,
               [pf, ps, pa, pb, po](std::size_t i)
               {
@@ -197,7 +237,7 @@ TEST(Integration_Determinism, OutputIsByteEqualAcrossWorkerCounts)
         << "1 vs " << full.workers << " workers diverged at element "
         << first_difference(single.output, full.output);
 
-    // The reduction results themselves, so a failure says which half moved.
+    // The two totals themselves, so a failure says which half moved.
     EXPECT_EQ(std::memcmp(&single.first_total, &pair.first_total, sizeof(float)), 0);
     EXPECT_EQ(std::memcmp(&single.first_total, &full.first_total, sizeof(float)), 0);
     EXPECT_EQ(std::memcmp(&single.second_total, &pair.second_total, sizeof(float)), 0);
@@ -216,6 +256,17 @@ TEST(Integration_Determinism, RepeatedConfigurationsAgreeByteForByte)
         << first_difference(first.output, second.output);
 }
 
+/** @brief Tests that a run with the background rebalancer on lands on the same bytes. */
+TEST(Integration_Determinism, TheRebalancerDoesNotChangeTheBytes)
+{
+    const Outcome quiet  = run_workload(0, false);
+    const Outcome moving = run_workload(0, true);
+
+    ASSERT_EQ(quiet.workers, moving.workers);
+    EXPECT_TRUE(bytes_equal(quiet.output, moving.output))
+        << "the rebalancer changed element " << first_difference(quiet.output, moving.output);
+}
+
 /** @brief Tests that the first and the last step of a multi-step run produce the same bytes. */
 TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
 {
@@ -230,7 +281,7 @@ TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
     total[0] = 0.0f;
 
     auto g = rt.graph();
-    g.add_reduce(in, total, N, Sum<float>{});
+    record_tiled_total(g.recorder(), in, total);
 
     g.run();
     const float after_one_step = total[0];
@@ -239,7 +290,7 @@ TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
     g.run(STEPS);
 
     EXPECT_EQ(std::memcmp(&after_one_step, &total[0], sizeof(float)), 0)
-        << "a replayed reduction drifted: one step gave " << after_one_step
+        << "a replayed rule drifted: one step gave " << after_one_step
         << ", " << STEPS << " steps gave " << total[0];
     EXPECT_EQ(g.compile_count(), 1u) << "a replay must not recompile";
 }

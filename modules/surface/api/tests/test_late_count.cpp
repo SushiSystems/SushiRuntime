@@ -1,0 +1,238 @@
+/**************************************************************************/
+/* test_late_count.cpp                                                    */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file test_late_count.cpp
+ * @brief Tests where Recorder::resolve() takes a LateCount's live value from, and when.
+ * @see modules/surface/api/tests/README.md
+ * @author Mustafa Garip
+ */
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
+#include <gtest/gtest.h>
+
+#include <SushiRuntime/SushiRuntime.h>
+
+using namespace SushiRuntime;
+
+namespace
+{
+    constexpr std::uint32_t CANARY = 0xDEADBEEFu;
+
+    /**
+     * @brief Records the resolver of one late count; its fill copies the live value to out[0].
+     * @param out Receives the live count; must outlive the graph.
+     */
+    void record_live_count_copy(API::Recorder& recorder, const LateCount& count,
+                                const API::Buffer<std::uint32_t>& out)
+    {
+        std::uint32_t* target = out.data();
+        recorder.resolve(std::array<LateCount, 1>{count}, out.device_index(),
+                         API::Access(Reads(), Writes(out)),
+                         [target](const std::array<std::size_t, 1>& live)
+                         {
+                             target[0] = static_cast<std::uint32_t>(live[0]);
+                         });
+    }
+
+    /** @brief Returns a LateCount of the given capacity that reads its live value from slot[0]. */
+    LateCount device_count(const API::Buffer<std::uint32_t>& slot, std::size_t capacity)
+    {
+        LateCount count;
+        count.capacity = capacity;
+        count.device = &slot;
+        return count;
+    }
+} // namespace
+
+/** @brief Tests that a LateCount with no host provider and no device slot resolves to capacity. */
+TEST(Integration_LateCount, DefaultResolvesToCapacity)
+{
+    auto rt  = Runtime::create();
+    auto out = rt.buffer<std::uint32_t>(1);
+    out[0] = CANARY;
+
+    LateCount count;
+    count.capacity = 42;
+
+    auto g = rt.graph();
+    record_live_count_copy(g.recorder(), count, out);
+    g.run();
+
+    EXPECT_EQ(out[0], 42u);
+}
+
+/** @brief Tests that a host provider below capacity is the live count. */
+TEST(Integration_LateCount, HostProviderBelowCapacity)
+{
+    auto rt  = Runtime::create();
+    auto out = rt.buffer<std::uint32_t>(1);
+    out[0] = CANARY;
+
+    LateCount count;
+    count.capacity = 1000000;
+    count.host = []() { return std::size_t{700000}; };
+
+    auto g = rt.graph();
+    record_live_count_copy(g.recorder(), count, out);
+    g.run();
+
+    EXPECT_EQ(out[0], 700000u);
+}
+
+/** @brief Tests that a host count that changes between runs keeps one compile. */
+TEST(Integration_LateCount, ChangingHostCountKeepsOneCompile)
+{
+    auto rt  = Runtime::create();
+    auto out = rt.buffer<std::uint32_t>(1);
+    out[0] = CANARY;
+
+    std::size_t live = 1000;
+    LateCount count;
+    count.capacity = 700000;
+    count.host = [&live]() { return live; };
+
+    auto g = rt.graph();
+    record_live_count_copy(g.recorder(), count, out);
+
+    g.run();
+    EXPECT_EQ(out[0], 1000u);
+
+    live = 700000;
+    g.run();
+    EXPECT_EQ(out[0], 700000u);
+
+    live = 0;
+    g.run();
+    EXPECT_EQ(out[0], 0u);
+
+    EXPECT_EQ(g.compile_count(), 1u)
+        << "a live count change between runs must not trigger a recompile";
+}
+
+/** @brief Tests that a host count above its capacity fails the run. */
+TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRun)
+{
+    auto rt  = Runtime::create();
+    auto out = rt.buffer<std::uint32_t>(1);
+    out[0] = CANARY;
+
+    LateCount count;
+    count.capacity = 100;
+    count.host = []() { return std::size_t{101}; };
+
+    auto g = rt.graph();
+    record_live_count_copy(g.recorder(), count, out);
+
+    EXPECT_THROW(g.run(), SushiException);
+    EXPECT_EQ(out[0], CANARY) << "a rejected count must not reach the fill";
+}
+
+/** @brief Tests that a Residency::Host device slot resolves to the value written there. */
+TEST(Integration_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
+{
+    auto rt      = Runtime::create();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
+    auto out     = rt.buffer<std::uint32_t>(1);
+    counter[0] = 700000;
+    out[0] = CANARY;
+
+    auto g = rt.graph();
+    record_live_count_copy(g.recorder(), device_count(counter, 1000000), out);
+    g.run();
+
+    EXPECT_EQ(out[0], 700000u);
+}
+
+/** @brief Tests that a device count above its capacity fails the run on both layers. */
+TEST(Integration_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
+{
+    for (const bool force_scheduler : {false, true})
+    {
+        RuntimeConfig config;
+        config.force_scheduler = force_scheduler;
+        auto rt      = Runtime::create({}, config);
+        auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
+        auto out     = rt.buffer<std::uint32_t>(1);
+        counter[0] = 101;
+        out[0] = CANARY;
+
+        auto g = rt.graph();
+        record_live_count_copy(g.recorder(), device_count(counter, 100), out);
+        EXPECT_THROW(g.run(), SushiException) << "force_scheduler = " << force_scheduler;
+
+        // A later graph with a count inside the capacity runs clean on the same runtime.
+        counter[0] = 100;
+        auto valid = rt.graph();
+        record_live_count_copy(valid.recorder(), device_count(counter, 100), out);
+        const auto report = valid.run();
+        EXPECT_TRUE(report.is_successful) << "force_scheduler = " << force_scheduler;
+        EXPECT_EQ(out[0], 100u) << "force_scheduler = " << force_scheduler;
+    }
+}
+
+/** @brief Tests that a device slot outside Residency::Host is rejected when it is recorded. */
+TEST(Integration_LateCount, NonHostDeviceSlotIsRejectedAtRegistration)
+{
+    auto rt      = Runtime::create();
+    auto out     = rt.buffer<std::uint32_t>(1);
+    auto counter = rt.buffer<std::uint32_t>(1);
+
+    auto g = rt.graph();
+    EXPECT_THROW(record_live_count_copy(g.recorder(), device_count(counter, 16), out),
+                 SushiException);
+    EXPECT_EQ(g.recorder().node_count(), 0u) << "a rejected count must record no node";
+}
+
+/** @brief Tests that the resolver sees the count its predecessor wrote in the same run. */
+TEST(Integration_LateCount, ResolverSeesTheCountItsPredecessorJustWrote)
+{
+    constexpr std::size_t CAPACITY = 1000;
+
+    auto rt      = Runtime::create();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
+    auto source  = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
+    auto out     = rt.buffer<std::uint32_t>(1);
+    counter[0] = 0;
+    out[0] = CANARY;
+
+    // A device kernel cannot reach this frame, so its next count is in a buffer; see README.md.
+    const std::uint32_t* source_ptr = source.data();
+    std::uint32_t* counter_ptr = counter.data();
+
+    auto g = rt.graph();
+    g.add(Reads(source), Writes(counter), std::size_t{1},
+          [counter_ptr, source_ptr](std::size_t) { counter_ptr[0] = source_ptr[0]; });
+    record_live_count_copy(g.recorder(), device_count(counter, CAPACITY), out);
+
+    source[0] = 300;
+    g.run();
+    EXPECT_EQ(out[0], 300u) << "the resolver must read the count its own step's producer wrote";
+
+    source[0] = 700;
+    g.run();
+    EXPECT_EQ(out[0], 700u) << "a changed count must take effect the same run, not one run late";
+
+    EXPECT_EQ(g.compile_count(), 1u);
+}

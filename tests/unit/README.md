@@ -48,28 +48,29 @@ backend and mapped to a NUMA node by hwloc. The tests skip when there is no CUDA
 
 ## test_registration_index.cpp
 
-The file covers `Node::registration_index` and the grouping of the tile levels of
-`Graph::add_reduce()` under one index. The design is sections D and F5 of
+The file covers `Node::registration_index` and the grouping of the nodes of one `Recorder::rule()`
+scope under one index. The design is sections D and F5 of
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`.
 
-### `AddReduceGroupSurvivesRebuild`
+`record_grouped_rule` records three kernels in one scope, each reading what the one before it
+wrote. `grouping_of` reads a compiled plan back: the index of the nodes named "before" and "after",
+and the one index every other node must share.
 
-The group of `add_reduce()` must survive a rebuild onto a fresh `BackingGraph`, whose registration
+### `RuleScopeGroupSurvivesRebuild`
+
+The group of a rule scope must survive a rebuild onto a fresh `BackingGraph`, whose registration
 counter restarts at 0.
 
-The test adds a plain node after `add_reduce()`, which marks the graph dirty, and then runs twice,
-so that `build_plan()` replays every spec into a second `BackingGraph`. The levels of the reduce
-must still share one index, distinct from the index of every other node, and the indices of all
-nodes must be dense from 0 to n-1 in registration order.
+The test adds a plain node after the rule, which marks the graph dirty, and then runs twice, so
+that the plan cache replays every recorded node into a second `BackingGraph`. The nodes of the
+rule must still share one index, distinct from the index of every other node, and the indices of
+all nodes must be dense from 0 to n-1 in registration order.
 
-### `LateBoundAddReduceGroupsTileLevelsUnderOneIndex`
+### `RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex`
 
-The `LateCount` overload of `add_reduce()` groups its tile levels, and the trailing identity write
-for a zero count, under one index.
-
-The test mirrors `AddReduceGroupsTileLevelsUnderOneIndex`, but the count is bound through a
-`LateCount` host provider planned for a capacity of at least three tile levels. That exercises the
-registration token of the dynamic emitter and not the fixed-count path.
+A rule scope groups every node shape the same way. `record_late_bound_rule` records a late-count
+resolver, a device-sized kernel and a plain kernel in one scope, and the three share one index
+while the node after the scope takes the next one.
 
 ## test_topology.cpp
 

@@ -55,7 +55,7 @@ auto report = sim.run(10'000);                   // compile once, replay 10k ste
 | Take the element count from a device counter | `SushiRuntime::API::sized_from_device()` |
 | Start a node at a device-computed offset | `SushiRuntime::API::based_at()`, `based_at_device()` |
 | Run plain CPU work in the graph | `SushiRuntime::API::Graph::add_host()` |
-| Reduce a buffer in a fixed, bit-reproducible order | `SushiRuntime::API::Graph::add_reduce()`, `add_segmented_reduce()` |
+| Add a node kind of your own (a reduction, a scan) | `SushiRuntime::API::Graph::recorder()`, `SushiRuntime::API::Recorder` |
 | Add work whose reads and writes you do not want tracked | `SushiRuntime::API::Graph::add_untracked()` |
 | Stream work in and out without recompiling the world | `SushiRuntime::API::DynamicGraph`, `Region`, `region()` / `drop()` |
 | Keep a field on the device | `SushiRuntime::API::Residency`, `Buffer::read_range` / `write_range` |

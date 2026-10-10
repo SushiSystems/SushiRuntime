@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Removed `add_reduce`, `add_segmented_reduce`, `add_prefix_scan` and `add_counting_sort`; they leave for SushiBLAS, built on the recorder (`graph.hpp`).
+- 2026-10-10 — api: Removed the `Sum`, `Minimum` and `Maximum` combiners and the fixed-order plan helpers; they leave for SushiBLAS (`vocabulary/combine.hpp`, `detail/fixed_order_reduce.hpp`).
+- 2026-10-10 — api: Changed `Recorder::resolve` to reject a non-host device slot and an oversized capacity when it records (`graph/recorder.hpp`).
 - 2026-10-10 — scheduler: Fixed a node without a region rotating over devices; it runs on the device given to `Node::place_on`, else on device 0 (`node_placement.hpp`, `task_scheduler.cpp`).
 - 2026-10-10 — graph: Changed every `TaskGraph::add_*` to return the node it added, and the compile errors to `SushiException` with `invalid_graph` (`task_graph.hpp`, `task_graph.cpp`).
 - 2026-10-10 — scheduler: Made `TaskScheduler::num_workers` and `dispatch_loop` private; the rebalancer interfaces gain `completed_task_count` and a two-argument `migrate_tasks` (`rebalancer_interfaces.hpp`).

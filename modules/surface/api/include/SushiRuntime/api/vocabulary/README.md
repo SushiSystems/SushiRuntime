@@ -1,7 +1,7 @@
 # api/vocabulary
 
-The data-flow vocabulary of the fluent API: Reads and Writes, the capture wrappers, Dynamic and the
-combiners.
+The data-flow vocabulary of the fluent API: Reads and Writes, the capture wrappers, Dynamic and
+LateCount.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
@@ -13,22 +13,6 @@ symbol or passage it explains, and that header's file block cites this page.
 In wraps a Buffer so add() can both register the read and hand the kernel the raw element pointer.
 The caller writes the data flow once and gets pointer capture and dependency ordering together. Out
 and InOut are the same wrapper for the other two access intents.
-
-## combine.hpp
-
-### Combiners
-
-combine.hpp declares the combining operators Graph::add_reduce() understands.
-
-A combiner is any binary functor that is trivially copyable, so it can be captured into a device
-kernel. Sum, Minimum and Maximum cover the common cases, and each supplies the identity its
-reduction needs for an empty input. That is why they are types and not lambdas: a lambda cannot
-carry identity(), so a caller passing one uses the add_reduce overload that takes the identity
-explicitly.
-
-The combiner does not determine the order values are combined in. The reduction's element layout
-alone fixes that order, as the add_reduce section of api/graph/README.md describes, and it is what
-makes a floating-point sum reproducible.
 
 ## dependencies.hpp
 
@@ -130,8 +114,8 @@ It replaces any based_at() provider on the same Dynamic; when() and the size con
 
 ### LateCount
 
-A LateCount plans a tiled pass for `capacity` at registration; the live count read each run must not
-exceed it. Leaving `host` empty and `device` null makes the live count `capacity` itself, matching a
+A LateCount names a count that is planned for `capacity` when it is recorded and read once per run;
+the live count must not exceed the capacity. Recorder::resolve() is what reads it. Leaving `host` empty and `device` null makes the live count `capacity` itself, matching a
 fixed-count call. `host` takes precedence over `device` when both are set, which callers should not
 do; exactly one should be set.
 

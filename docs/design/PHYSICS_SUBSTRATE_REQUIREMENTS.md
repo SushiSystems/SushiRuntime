@@ -2,6 +2,11 @@
 
 **Status:** Open — R1 to R8 are addressed; R9, the multi-colour dispatch node, is open.
 
+The reductions, the prefix scan and the counting sort this document names (`add_reduce`,
+`add_segmented_reduce`, `add_prefix_scan`, `add_counting_sort`) leave the runtime for SushiBLAS
+in v0.4.0; the runtime keeps the `Recorder` interface they are built on. Read every mention
+below as the state before that release.
+
 **The original seven are addressed**, plus R8 (raised and closed after this document's
 first pass) — see [`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](../archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md) for
 the design and [the section below](#delivery) for what each one became. **R9 is open** — raised

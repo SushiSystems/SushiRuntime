@@ -2,6 +2,11 @@
 
 **Status:** Open — WP-4 is delivered, WP-5 and WP-7 are not built; the other work packages were not re-checked against the tree on 2026-10-05.
 
+The reductions, the prefix scan and the counting sort this document names (`add_reduce`,
+`add_segmented_reduce`, `add_prefix_scan`, `add_counting_sort`) leave the runtime for SushiBLAS
+in v0.4.0; the runtime keeps the `Recorder` interface they are built on. Read every mention
+below as the state before that release.
+
 Research and engineering specification. No code was changed by this
 document. Every claim below is anchored to a location (`file:line`) in the tree as it stood
 when the claim was written; the anchors have not been refreshed since.

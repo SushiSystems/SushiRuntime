@@ -118,20 +118,10 @@ do not need to reach into the lower layers.
     multidimensional and tiled shapes, ordered.
   - `add(extent, In(a), Out(b), fn)` — captures register the access *and* hand
     the kernel the raw pointers.
-  - `add_reduce(input, output, n, op[, identity])` — a reduction whose
-    combination order is a function of the element layout alone, so the result
-    is bit-identical across runs, worker counts and steal patterns. It folds
-    fixed 256-element tiles left to right and repeats over the partials; each
-    level is one ordinary tracked node reading the previous level's scratch
-    window. `Sum`, `Minimum` and `Maximum` are provided; any trivially copyable
-    binary functor works.
-  - `add_segmented_reduce(values, segment_offsets, output, count, op[, identity])`
-    — the same guarantee over a CSR-style ragged array, one work-item per
-    segment. No atomics and no cross-work-item combining, at the cost of load
-    balance when segment lengths differ sharply.
-  - `add_prefix_scan(counts, offsets, total, n)` — an exclusive uint32 scan
-    over the same 256-tile tree as `add_reduce`, late-bound; sits beside it in
-    `graph.hpp` on `api/detail/fixed_order_scan.hpp`'s tile plan.
+  - `recorder()` — the interface a domain library records its own node kinds through:
+    `rule()` groups the nodes of one call under one registration index, `kernel(...)` and
+    `resolve(...)` record them, `scratch(...)` gives them storage that lives as long as the
+    graph. The runtime carries no reduction, scan or sort; SushiBLAS builds them here.
   - `add_untracked(n, fn)` / `add_untracked(n, range_fn)` /
     `add_untracked(raw_kernel_fn)` / `add_untracked(extent, fn)` /
     `add_untracked(nd_range, fn)` — the same launch shapes with no declared data.
@@ -302,7 +292,7 @@ belongs to one device queue in the context's registry. Anything else, or
 `RuntimeConfig::force_scheduler`, keeps the scheduler path above. No node reads a
 device-written value on the host between nodes: device-sized nodes resolve their
 count inside the kernel (see "Counts the device produces"), so a plan built from
-`sized_from_device`, the scan, the counting sort and the reductions chains.
+`sized_from_device` or from a device-sized rule a domain library records chains.
 
 A chainable plan runs through `Execution::ChainRun` (`execution/chain_run.hpp`) on
 the calling thread: each step submits the nodes in a fixed topological order to
@@ -350,12 +340,12 @@ The host never reads that slot. The node is dispatched at its capacity and its
 kernel reads the count (and a `based_at_device` base) from the slot, returning at
 once in every work-item past the live window, one bounds check each
 (`Graph::submit_late_window`, spec
-`docs/design/GRAPH_REPLAY.md` §D). The scan, counting
-sort and late-bound reductions work the same way: each call emits one resolver
-kernel that reads its `LateCount`s (a host provider or plain capacity is resolved in
-the command group and baked in) and writes the per-level widths, the total and the
-counting sort's digit plan into device scratch, and every later pass reads its
-width from there (`Graph::emit_late_count_resolver`, `Graph::emit_device_sized`).
+`docs/design/GRAPH_REPLAY.md` §D). A device-sized rule
+works the same way: `Recorder::resolve` emits one resolver kernel that reads its
+`LateCount`s (a host provider or plain capacity is resolved in the command group and
+baked in) and lets the caller's fill write what the later passes need into device
+scratch, and every `kernel(DeviceSized, ...)` pass reads its width from there
+(`detail/emit_late_count_resolver.hpp`, `detail/emit_device_sized.hpp`).
 The fold and tile order is the one the host-sized lowering had, so results are
 bit-identical. The result is one composition per tick with no mid-step readback,
 no host node between passes, and `compile_count()` still 1 while the count
@@ -1237,8 +1227,8 @@ helper is a no-op stub and `-fsycl` is applied globally.
    No distributed include or symbol may leak into a standalone build.
 5. **Lock-free invariants:** never free a node another thread may still read
    without going through EBR; keep hot shared state cache-line aligned.
-6. **Same-binary, same-device replay is byte-equal.** Reductions fold in a fixed
-   order regardless of worker count, and the floating-point contract (§14)
+6. **Same-binary, same-device replay is byte-equal.** The schedule never decides
+   which values a kernel combines, and the floating-point contract (§14)
    forbids the reassociation and FMA contraction that would otherwise let two
    builds of the same source disagree. Anything that weakens this silently — a
    build flag, a default-on rebalancer, schedule-dependent arithmetic — is a
