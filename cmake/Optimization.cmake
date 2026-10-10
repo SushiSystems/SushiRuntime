@@ -20,10 +20,6 @@
 # agreeing bit-for-bit. BuildPolicy.cmake links this PRIVATE, so it applies to
 # this tree only and never reaches an installed consumer.
 
-option(SR_NATIVE_ARCH
-    "Build for the build machine's exact ISA (-march=native / /arch:AVX2). Developer convenience; must stay OFF for any binary that leaves this machine."
-    OFF)
-
 add_library(sushiruntime_perf INTERFACE)
 
 if(MSVC OR (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM"))

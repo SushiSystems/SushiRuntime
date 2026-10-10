@@ -23,10 +23,6 @@
 # throughput consumer that does not need replay can configure with
 # SR_DETERMINISTIC_FP=OFF and get its compiler's defaults back.
 
-option(SR_DETERMINISTIC_FP
-    "Compile every translation unit under the reproducible floating-point contract (no fast-math, no FMA contraction). Required for byte-equal replay."
-    ON)
-
 add_library(sushiruntime_deterministic_fp INTERFACE)
 
 if(SR_DETERMINISTIC_FP)

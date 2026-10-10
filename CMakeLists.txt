@@ -29,7 +29,8 @@ cmake_minimum_required(VERSION 3.20)
 set(SR_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 list(APPEND CMAKE_MODULE_PATH "${SR_CMAKE_DIR}")
 
-# --- Pre-project: toolchain shaping -------------------------------------------
+# --- Pre-project: options and toolchain shaping ----------------------------------
+include("${SR_CMAKE_DIR}/SushiRuntimeOptions.cmake") # every option a person or the CLI sets
 include("${SR_CMAKE_DIR}/SushiRuntimeVcpkg.cmake")   # (Windows) locate vcpkg + set the toolchain file
 include("${SR_CMAKE_DIR}/Sycl.cmake")    # select the SYCL toolchain + compiler; oneAPI Windows linker fixups
 
@@ -39,7 +40,7 @@ project(SushiRuntime VERSION 0.3.0 LANGUAGES CXX)
 message(STATUS ">>> SYCL toolchain: ${SR_SYCL_TOOLCHAIN} (${CMAKE_CXX_COMPILER})")
 
 # --- Post-project: policy, deps, and the GPU backend --------------------------
-include("${SR_CMAKE_DIR}/SushiRuntimeProjectOptions.cmake")     # policies, C++17 baseline, cross-cutting options
+include("${SR_CMAKE_DIR}/SushiRuntimeLanguage.cmake") # policies and the C++17 baseline
 
 # Compile policy. BuildPolicy composes the warning, architecture, floating-point
 # and sanitizer targets and exposes sushiruntime_apply_build_policy(<target>), which
@@ -73,13 +74,21 @@ include("${SR_CMAKE_DIR}/SushiRuntimeModule.cmake")
 include("${SR_CMAKE_DIR}/SushiRuntimeLibrary.cmake")
 add_subdirectory(modules)
 
-add_subdirectory(applications/examples)
+if(SR_BUILD_EXAMPLES)
+    add_subdirectory(applications/examples)
+endif()
 
 # --- Install and package --------------------------------------------------------
 # After add_subdirectory(modules): the rules name the library target and the include
 # roots the modules recorded.
-sushiruntime_install_package()
-include("${SR_CMAKE_DIR}/SushiRuntimePackaging.cmake")
+if(SR_INSTALL)
+    sushiruntime_install_package()
+endif()
+
+# An archive is cut from the top-level project only; a parent packages itself.
+if(SR_INSTALL AND SR_IS_TOP_LEVEL)
+    include("${SR_CMAKE_DIR}/SushiRuntimePackaging.cmake")
+endif()
 
 # --- Testing ------------------------------------------------------------------
 # Tests that cross module boundaries; a module's own tests are declared in its folder.
