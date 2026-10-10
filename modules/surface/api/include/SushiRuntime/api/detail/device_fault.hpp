@@ -23,6 +23,7 @@
  * @file device_fault.hpp
  * @brief Declares the device fault record and the functions that write and check it.
  * @author Mustafa Garip
+ * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
 
 #pragma once
@@ -69,6 +70,18 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Builds the error of a LateCount whose live count exceeds its capacity.
+             * @return An invalid_graph error naming both numbers, for a host or a device count.
+             */
+            inline Core::Error late_count_overflow(std::size_t live, std::size_t capacity)
+            {
+                return Core::Error{Core::Errc::invalid_graph,
+                    "LateCount: the live count (" + std::to_string(live) +
+                    ") exceeds the capacity it was planned for (" + std::to_string(capacity) +
+                    "); build the LateCount with a capacity that covers the largest count."};
+            }
+
+            /**
              * @brief Clears a fault record the device wrote and throws the error it names.
              * @param record DEVICE_FAULT_WORDS host-USM words, read after its step finished.
              * @throws Core::SushiException With invalid_graph when the record holds a fault.
@@ -78,18 +91,17 @@ namespace SushiRuntime
                 const std::uint32_t kind = record[0];
                 if (kind == DEVICE_FAULT_NONE)
                     return;
-                const std::string base = std::to_string(record[1]);
-                const std::string count = std::to_string(record[2]);
-                const std::string capacity = std::to_string(record[3]);
+                const std::uint32_t base = record[1];
+                const std::uint32_t count = record[2];
+                const std::uint32_t capacity = record[3];
                 record[0] = DEVICE_FAULT_NONE;
                 if (kind == DEVICE_FAULT_LATE_COUNT)
-                    throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
-                        "LateCount: the live count (" + count +
-                        ") exceeds the capacity it was planned for (" + capacity + ")."});
+                    throw Core::SushiException(late_count_overflow(count, capacity));
                 throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
-                    "A late-bound task's live window starts at " + base + " and covers " +
-                    count + " elements, which does not fit the capacity it was compiled for (" +
-                    capacity + "); size the task's buffers for the worst case."});
+                    "A late-bound task's live window starts at " + std::to_string(base) +
+                    " and covers " + std::to_string(count) +
+                    " elements, which does not fit the capacity it was compiled for (" +
+                    std::to_string(capacity) + "); size the task's buffers for the worst case."});
             }
 
         } // namespace detail

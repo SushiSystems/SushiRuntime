@@ -156,7 +156,7 @@ namespace
                          {
                              live[0] = static_cast<std::uint32_t>(value[0]);
                          });
-        recorder.kernel(API::DeviceSized{count.capacity, live, nullptr},
+        recorder.kernel(API::DeviceSized{count.capacity(), live, nullptr},
                         API::Access(Reads(stages.first, live_region), Writes(stages.second)),
                         [a, b](std::size_t t) { b[t] = a[t] + 1u; });
         recorder.kernel(std::size_t{1},
@@ -351,9 +351,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneI
     auto rt = Runtime::create();
     Stages stages = make_stages(rt);
 
-    LateCount count;
-    count.capacity = WIDTH;
-    count.host = []() { return WIDTH; };
+    const LateCount count = LateCount::from_host(WIDTH, []() { return WIDTH; });
 
     auto g = rt.graph();
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name_last("before");

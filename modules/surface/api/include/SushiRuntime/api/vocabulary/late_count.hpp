@@ -30,36 +30,155 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
+#include <limits>
+#include <memory>
+#include <string>
+#include <utility>
 
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/api/vocabulary/dynamic.hpp>
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
 {
     namespace API
     {
+        namespace detail
+        {
+            struct LateCountAccess;
+        } // namespace detail
+
         /**
-         * @brief Holds a run count resolved once per run from exactly one live source.
+         * @brief Holds a run count resolved once per step from exactly one source.
          * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
          */
-        struct LateCount
+        class LateCount final
         {
-            std::size_t capacity = 0; /**< Plan size; the live count must not exceed it. */
+            public:
+                /** @brief Host provider of a live count; the type Dynamic::sized() takes. */
+                using Provider = Dynamic::CountProvider;
 
-            /** @brief Polled once per run when set; overrides capacity as the count. */
-            std::function<std::size_t()> host;
+                /**
+                 * @brief Builds a count that is the same on every step.
+                 * @param count The live count and the plan size; must fit a uint32.
+                 * @throws Core::SushiException With invalid_graph if @p count does not fit.
+                 */
+                [[nodiscard]] static LateCount fixed(std::size_t count)
+                {
+                    return LateCount(count, "LateCount::fixed");
+                }
 
-            /**
-             * @brief Residency::Host slot a predecessor wrote the live count into.
-             *
-             * Borrowed, not owned: this LateCount only observes it, so the buffer it
-             * points to must outlive every graph this LateCount is passed to.
-             */
-            const Buffer<std::uint32_t>* device = nullptr;
+                /**
+                 * @brief Builds a count a host provider returns, polled once per step.
+                 * @param capacity Plan size; the provider must not return more. Must fit a uint32.
+                 * @param provider Polled when the resolver is submitted; must not be empty.
+                 * @throws Core::SushiException With invalid_access for an empty provider, or
+                 *        invalid_graph if @p capacity does not fit.
+                 */
+                [[nodiscard]] static LateCount from_host(std::size_t capacity, Provider provider)
+                {
+                    LateCount count(capacity, "LateCount::from_host");
+                    if (!provider)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
+                            "LateCount::from_host: the provider is empty; pass a callable that "
+                            "returns the live count, or use LateCount::fixed for a constant."});
+                    count.host_ = std::make_shared<const Provider>(std::move(provider));
+                    return count;
+                }
 
-            /** @brief Element index of the live count within @c device. */
-            std::size_t device_index = 0;
+                /**
+                 * @brief Builds a count a predecessor kernel writes, read on the device each step.
+                 * @param capacity Plan size; the slot must not hold more. Must fit a uint32.
+                 * @param slot     Residency::Host buffer; must outlive the graphs that record it.
+                 * @throws Core::SushiException With invalid_access if @p slot is not host-resident
+                 *        or @p index is out of range, or invalid_graph if @p capacity does not fit.
+                 */
+                [[nodiscard]] static LateCount from_device(std::size_t capacity,
+                                                           const Buffer<std::uint32_t>& slot,
+                                                           std::size_t index = 0)
+                {
+                    LateCount count(capacity, "LateCount::from_device");
+                    const detail::DeviceSlot checked =
+                        detail::checked_device_slot(slot, index, "LateCount::from_device");
+                    count.slot_ = checked.words + checked.index;
+                    count.slot_region_ = Core::ResourceRegion(detail::HandleAccess::key(slot));
+                    count.slot_life_ = detail::HandleAccess::liveness(slot);
+                    return count;
+                }
+
+                /** @brief Returns the plan size, which the live count never exceeds. */
+                [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
+
+            private:
+                friend struct detail::LateCountAccess;
+
+                /**
+                 * @brief Constructs a count with no live source, so its live value is the capacity.
+                 * @param what The call the error message names.
+                 * @throws Core::SushiException With invalid_graph if @p capacity exceeds a uint32.
+                 */
+                LateCount(std::size_t capacity, const char* what) : capacity_(capacity)
+                {
+                    constexpr std::size_t limit = std::numeric_limits<std::uint32_t>::max();
+                    if (capacity > limit)
+                        throw Core::SushiException(Core::Error{Core::Errc::invalid_graph,
+                            std::string(what) + ": capacity " + std::to_string(capacity) +
+                            " exceeds " + std::to_string(limit) + ", the largest count a uint32 "
+                            "live-count word holds; split the work into counts that fit."});
+                }
+
+                /** @brief Plan size and upper bound of the live count. */
+                std::size_t capacity_;
+
+                /** @brief Host provider shared by every copy; null unless built by from_host(). */
+                std::shared_ptr<const Provider> host_;
+
+                /** @brief Word a kernel reads the count from; set only by from_device(). */
+                const std::uint32_t* slot_ = nullptr;
+
+                /** @brief Region of the buffer that holds slot_, which the resolver reads. */
+                Core::ResourceRegion slot_region_;
+
+                /** @brief Observer of the buffer that holds slot_; empty when slot_ is null. */
+                Core::LivenessObserver slot_life_;
         };
+
+        namespace detail
+        {
+            /**
+             * @brief Reads the source of a LateCount for the recording and resolving code.
+             * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
+             */
+            struct LateCountAccess
+            {
+                /** @brief Returns the host provider, or null when the count has none. */
+                static const LateCount::Provider* host(const LateCount& count) noexcept
+                {
+                    return count.host_.get();
+                }
+
+                /** @brief Returns the device word, or null when the count has none. */
+                static const std::uint32_t* slot(const LateCount& count) noexcept
+                {
+                    return count.slot_;
+                }
+
+                /** @brief Returns the region a resolver of a device count reads. */
+                static const Core::ResourceRegion& slot_region(const LateCount& count) noexcept
+                {
+                    return count.slot_region_;
+                }
+
+                /** @brief Returns the observer of the device slot's buffer. */
+                static const Core::LivenessObserver& slot_life(const LateCount& count) noexcept
+                {
+                    return count.slot_life_;
+                }
+            };
+        } // namespace detail
 
     } // namespace API
 } // namespace SushiRuntime

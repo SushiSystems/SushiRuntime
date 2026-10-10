@@ -68,7 +68,7 @@ TEST(Integration_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
     std::uint32_t* f = first.data();
 
     auto g = rt.graph();
-    g.set_profiling_requested(true);
+    g.set_profiling(true);
     {
         API::Recorder& recorder = g.recorder();
         auto rule = recorder.rule();
@@ -95,11 +95,10 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
         out[i] = 0;
     std::uint32_t* o = out.data();
 
-    LateCount count;
-    count.capacity = CAPACITY;
+    const LateCount count = LateCount::fixed(CAPACITY);
 
     auto g = rt.graph();
-    g.set_profiling_requested(true);
+    g.set_profiling(true);
     {
         API::Recorder& recorder = g.recorder();
         std::uint32_t* live =

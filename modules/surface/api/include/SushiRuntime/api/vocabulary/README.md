@@ -44,29 +44,50 @@ A Dynamic is passed as the leading argument to add() to make a node's iteration 
 participation vary every step without recompiling the graph. when() gates whether the node runs at
 all (a sleeping island, an LOD-disabled system); sized() sets how many elements it iterates, which
 must stay within the capacity its buffers were allocated for. The two compose as
-when(pred).and_sized(count). Each provider is polled on the driver thread before the plan replays,
-so the compiled topology is reused across steps and the graph compiles exactly once.
+when(pred).sized(count). Each provider is polled once per step, on the driver thread before the plan
+replays, so the compiled topology is reused across steps and the graph compiles exactly once.
 
 The providers are stored in allocation-free Core::Delegate slots, so a Dynamic is move-only (a
 stored provider has one owner). A caller builds one from a when()/sized() temporary and passes it
 straight to add(), or moves a named Dynamic into the call with std::move.
 
-### Ref-qualified chaining setters
+The controls are private. A caller sets them through the members and the free builders, and the
+recording code reads them through detail::DynamicAccess, so the way a Dynamic stores a control can
+change without a caller or an emitter noticing.
 
-The chaining setters are ref-qualified so a move-only Dynamic chains in both shapes. Mutating a
-named Dynamic in place uses the lvalue overload, which returns a reference. Building one inline, as
-in when(p).and_sized(c), uses the rvalue overload, which returns by value so the result moves
-straight into add()'s by-value parameter.
+### Members and free builders
 
-### and_sized_from_device
+Each control has one member, named after what it sets: when(), sized(), sized_from_device(),
+based_at(), based_at_device(). The free function of the same name builds an empty Dynamic and calls
+the member, so `when(p).sized(c)` and `Dynamic d; d.when(p).sized(c);` run the same code and a
+device slot passes the same check on both paths.
 
-and_sized_from_device() drops any host-side sized() provider, since the two cannot both decide the
-iteration size. The sized_from_device section gives the contract.
+The members are ref-qualified so a move-only Dynamic chains in both shapes. On a named Dynamic the
+lvalue overload returns a reference. Inline, as in when(p).sized(c), the rvalue overload calls the
+lvalue one and returns by value, so the result moves straight into add()'s by-value parameter.
 
-### and_based_at_device
+The free builders are `[[nodiscard]]`: a Dynamic that is built and dropped does nothing. The members
+are not, because a chain on a named Dynamic drops its last reference on purpose.
 
-and_based_at_device() drops any host-side based_at() provider, since the two cannot both decide
-where the node starts.
+### One source per control
+
+The live size has two possible sources, a host provider and a device slot, and so does the base.
+The member that sets one source clears the other, so the source set last decides. Up to v0.3,
+and_sized() after sized_from_device() kept both and the device slot won without saying so.
+
+### checked_device_slot and DeviceSlot
+
+checked_device_slot() is the one check a device slot passes, for sized_from_device(),
+based_at_device() and LateCount::from_device() alike: the buffer is Residency::Host and the index
+is inside it. It returns a DeviceSlot, the buffer's first word and the index, which is what
+Graph::LateBindings stores. The members take the Buffer and never a bare pointer, because a pointer
+carries neither a residency nor a size to check.
+
+### and_when, and_sized, and_based_at
+
+The three `and_` members are deprecated in v0.4.0 and forward to when(), sized() and based_at().
+and_sized_from_device(pointer, index) and and_based_at_device(pointer, index) are removed: they took
+a bare pointer and skipped the check above.
 
 ### sized_from_device
 
@@ -85,7 +106,8 @@ Two constraints are enforced in code. `counter` must be Residency::Host, and siz
 checks it. The live count must not exceed the capacity the node was compiled for; dispatch checks
 that, and exceeding it fails the run instead of silently truncating the work.
 
-sized_from_device() replaces any sized() provider on the same Dynamic; when() still composes.
+sized_from_device() replaces any sized() provider on the same Dynamic, and sized() replaces the
+device slot; when() still composes.
 
 ### based_at
 
@@ -108,20 +130,49 @@ A colouring pass that computes both a slice's offset and its length on the devic
 the same way, and the slot is registered as one of the consuming task's reads so the producer is
 necessarily ordered first.
 
-It replaces any based_at() provider on the same Dynamic; when() and the size controls still compose.
+It replaces any based_at() provider on the same Dynamic, and based_at() replaces the device slot;
+when() and the size controls still compose.
 
 ## late_count.hpp
 
 ### LateCount
 
-A LateCount names a count that is planned for `capacity` when it is recorded and read once per run;
-the live count must not exceed the capacity. Recorder::resolve() is what reads it. Leaving `host` empty and `device` null makes the live count `capacity` itself, matching a
-fixed-count call. `host` takes precedence over `device` when both are set, which callers should not
-do; exactly one should be set.
+A LateCount names a count that is planned for its capacity when it is recorded and resolved once per
+step; the live count must not exceed the capacity. Recorder::resolve() records the node that reads
+it.
 
-A fixed-count call spells its plain capacity as `LateCount lc; lc.capacity = n;`. Plain brace init
-(`LateCount{n}`) trips `-Wmissing-field-initializers`, and this type stays an aggregate, so it takes
-no constructor. The designator form (`LateCount{.capacity = n}`) reads better but is a C++20
-feature. On the non-MSVC compiler path this tree builds with (clang++, `-pedantic -Werror`,
-`cmake/CompilerWarnings.cmake`), it fails as `-Wc++20-designator`, confirmed against that compiler,
-so it is not offered as the idiom.
+It has three factories and no public constructor, so a LateCount has exactly one source:
+
+| Factory | Live count | Read |
+| --- | --- | --- |
+| `fixed(count)` | `count` | never; it is the capacity |
+| `from_host(capacity, provider)` | what the provider returns | on the host, when the resolver is submitted |
+| `from_device(capacity, slot, index)` | the word `slot[index]` | in the resolver's kernel, after its producer |
+
+Each factory checks its arguments where it is called. A capacity past the largest uint32 throws
+`invalid_graph`, because a live count is published as a uint32 word. from_host() throws
+`invalid_access` for an empty provider. from_device() runs checked_device_slot(), so a slot outside
+Residency::Host or an index past the buffer throws `invalid_access` before any graph sees the count.
+
+### LateCount::Provider
+
+Provider is Dynamic::CountProvider, a Core::Delegate with 48 bytes of inline storage. A callable is
+stored without a heap allocation and a capture larger than 48 bytes fails to compile.
+
+A Delegate is move-only, and a LateCount must copy: Recorder::resolve() takes its counts in a
+std::array, and the resolver's replay callable copies that array each time the plan is built. So
+from_host() moves the provider into one shared block, and every copy of the LateCount points at it.
+That is one allocation per from_host() call and none per step. A step pays one pointer load and one
+indirect call for a host count, and neither for a fixed or a device count.
+
+### What from_device keeps
+
+from_device() keeps the address of the word, the dependency key of the buffer and the buffer's
+liveness observer, and no pointer to the Buffer handle. The resolver reads the buffer, so it is
+ordered after the kernel that writes the count, and a graph whose slot buffer was destroyed is
+refused with `dangling_resource` like any other.
+
+### LateCountAccess
+
+detail::LateCountAccess reads the source of a LateCount for the recording code, as
+detail::DynamicAccess does for a Dynamic.

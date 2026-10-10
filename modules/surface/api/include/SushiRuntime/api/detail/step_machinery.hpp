@@ -116,16 +116,20 @@ namespace SushiRuntime
                     void register_binding_updater(
                         std::shared_ptr<::SushiRuntime::Graph::LateBindings> lb, Dynamic dyn)
                     {
-                        if (!dyn.when_pred && !dyn.count_fn && !dyn.base_fn)
+                        if (!DynamicAccess::when(dyn) && !DynamicAccess::count(dyn) &&
+                            !DynamicAccess::base(dyn))
                             return;
                         binding_updaters_.push_back([lb = std::move(lb), dyn = std::move(dyn)]()
                         {
-                            if (dyn.when_pred)
-                                lb->enabled.store(dyn.when_pred(), std::memory_order_relaxed);
-                            if (dyn.count_fn)
-                                lb->count.store(dyn.count_fn(), std::memory_order_relaxed);
-                            if (dyn.base_fn)
-                                lb->base.store(dyn.base_fn(), std::memory_order_relaxed);
+                            const Dynamic::WhenProvider& when = DynamicAccess::when(dyn);
+                            const Dynamic::CountProvider& count = DynamicAccess::count(dyn);
+                            const Dynamic::BaseProvider& base = DynamicAccess::base(dyn);
+                            if (when)
+                                lb->enabled.store(when(), std::memory_order_relaxed);
+                            if (count)
+                                lb->count.store(count(), std::memory_order_relaxed);
+                            if (base)
+                                lb->base.store(base(), std::memory_order_relaxed);
                         });
                     }
 

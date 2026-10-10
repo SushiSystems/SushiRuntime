@@ -59,22 +59,18 @@ namespace
     /** @brief Returns a LateCount of the given capacity that reads its live value from slot[0]. */
     LateCount device_count(const API::Buffer<std::uint32_t>& slot, std::size_t capacity)
     {
-        LateCount count;
-        count.capacity = capacity;
-        count.device = &slot;
-        return count;
+        return LateCount::from_device(capacity, slot);
     }
 } // namespace
 
-/** @brief Tests that a LateCount with no host provider and no device slot resolves to capacity. */
-TEST(Integration_LateCount, DefaultResolvesToCapacity)
+/** @brief Tests that a fixed LateCount resolves to the count it was built with. */
+TEST(Integration_LateCount, FixedResolvesToItsCount)
 {
     auto rt  = Runtime::create();
     auto out = rt.buffer<std::uint32_t>(1);
     out[0] = CANARY;
 
-    LateCount count;
-    count.capacity = 42;
+    const LateCount count = LateCount::fixed(42);
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), count, out);
@@ -90,9 +86,8 @@ TEST(Integration_LateCount, HostProviderBelowCapacity)
     auto out = rt.buffer<std::uint32_t>(1);
     out[0] = CANARY;
 
-    LateCount count;
-    count.capacity = 1000000;
-    count.host = []() { return std::size_t{700000}; };
+    const LateCount count =
+        LateCount::from_host(1000000, []() { return std::size_t{700000}; });
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), count, out);
@@ -109,9 +104,7 @@ TEST(Integration_LateCount, ChangingHostCountKeepsOneCompile)
     out[0] = CANARY;
 
     std::size_t live = 1000;
-    LateCount count;
-    count.capacity = 700000;
-    count.host = [&live]() { return live; };
+    const LateCount count = LateCount::from_host(700000, [&live]() { return live; });
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), count, out);
@@ -138,9 +131,7 @@ TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRun)
     auto out = rt.buffer<std::uint32_t>(1);
     out[0] = CANARY;
 
-    LateCount count;
-    count.capacity = 100;
-    count.host = []() { return std::size_t{101}; };
+    const LateCount count = LateCount::from_host(100, []() { return std::size_t{101}; });
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), count, out);
@@ -192,17 +183,21 @@ TEST(Integration_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
     }
 }
 
-/** @brief Tests that a device slot outside Residency::Host is rejected when it is recorded. */
-TEST(Integration_LateCount, NonHostDeviceSlotIsRejectedAtRegistration)
+/** @brief Tests that a device slot outside Residency::Host is rejected when the count is built. */
+TEST(Integration_LateCount, NonHostDeviceSlotIsRejectedAtConstruction)
 {
     auto rt      = Runtime::create();
-    auto out     = rt.buffer<std::uint32_t>(1);
     auto counter = rt.buffer<std::uint32_t>(1);
 
-    auto g = rt.graph();
-    EXPECT_THROW(record_live_count_copy(g.recorder(), device_count(counter, 16), out),
-                 SushiException);
-    EXPECT_EQ(g.recorder().node_count(), 0u) << "a rejected count must record no node";
+    try
+    {
+        (void)LateCount::from_device(16, counter);
+        ADD_FAILURE() << "a Residency::Shared slot was accepted";
+    }
+    catch (const SushiException& e)
+    {
+        EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+    }
 }
 
 /** @brief Tests that the resolver sees the count its predecessor wrote in the same run. */

@@ -173,7 +173,7 @@ TEST(Integration_LateBindings, ComposedWhenAndSized)
     bool on = true;
     std::size_t live = CAP;
     auto g = rt.graph();
-    g.add(API::when([&] { return on; }).and_sized([&] { return live; }),
+    g.add(API::when([&] { return on; }).sized([&] { return live; }),
           API::Reads{}, API::Writes(buf), CAP,
           [p](std::size_t i) { p[i] += 1; });
 
@@ -205,7 +205,7 @@ TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
 
     auto g = rt.graph();
     g.add(API::based_at([&base] { return base; })
-              .and_sized([&count] { return count; }),
+              .sized([&count] { return count; }),
           API::Reads{}, API::Writes(buf), CAPACITY,
           [p](std::size_t i) { p[i] = static_cast<int>(i) + 1000; });
 
@@ -279,7 +279,7 @@ TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
     auto g = rt.graph();
     g.add(API::Reads{}, API::Writes(slice), std::size_t{1},
           [s](std::size_t) { s[0] = 30u; s[1] = 25u; });
-    g.add(API::based_at_device(slice, 0).and_sized_from_device(slice.data(), 1),
+    g.add(API::based_at_device(slice, 0).sized_from_device(slice, 1),
           API::Reads{}, API::Writes(buf), CAPACITY,
           [p](std::size_t i) { p[i] = static_cast<int>(i); });
     g.run();
@@ -306,7 +306,7 @@ TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
     std::size_t base = 10;
 
     auto g = rt.graph();
-    g.add(API::based_at([&base] { return base; }).and_sized([] { return std::size_t{10}; }),
+    g.add(API::based_at([&base] { return base; }).sized([] { return std::size_t{10}; }),
           API::Reads{}, API::Writes(buf), CAPACITY,
           [p](std::size_t i) { p[i] = 1; });
 
@@ -325,34 +325,26 @@ TEST(Integration_LateBindings, BasedAtDeviceRejectsAnUnreadableSlot)
     auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
     auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);
 
-    EXPECT_THROW(API::based_at_device(resident), SushiException);
-    EXPECT_THROW(API::based_at_device(shared), SushiException);
-    EXPECT_THROW(API::based_at_device(host, 7), SushiException);
-    EXPECT_NO_THROW(API::based_at_device(host, 1));
+    EXPECT_THROW((void)API::based_at_device(resident), SushiException);
+    EXPECT_THROW((void)API::based_at_device(shared), SushiException);
+    EXPECT_THROW((void)API::based_at_device(host, 7), SushiException);
+    EXPECT_NO_THROW((void)API::based_at_device(host, 1));
 }
 
-/** @brief Tests that add() rejects a raw slot inside Shared memory. */
-TEST(Integration_LateBindings, RawSharedSlotIsRejectedAtAdd)
+/** @brief Tests that the member sized_from_device rejects a Shared slot where it is called. */
+TEST(Integration_LateBindings, SharedSlotIsRejectedByTheMemberSetter)
 {
-    constexpr std::size_t CAPACITY = 8;
-
     auto rt     = Runtime::create();
     auto shared = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Shared);
-    auto buf    = rt.buffer<int>(CAPACITY);
-    int* p = buf.data();
 
-    auto g = rt.graph();
     API::Dynamic dyn;
-    dyn.and_sized_from_device(shared.data(), 1);
     try
     {
-        g.add(std::move(dyn), API::Reads{}, API::Writes(buf), CAPACITY,
-              [p](std::size_t i) { p[i] = 1; });
-        ADD_FAILURE() << "a raw Shared slot was accepted";
+        dyn.sized_from_device(shared, 1);
+        ADD_FAILURE() << "a Shared slot was accepted";
     }
     catch (const SushiException& e)
     {
         EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
     }
-    EXPECT_EQ(g.size(), 0u) << "the rejected add() must not record a task";
 }

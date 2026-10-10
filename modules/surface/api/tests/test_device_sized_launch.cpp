@@ -59,7 +59,7 @@ namespace
      *
      * The kernel runs the work-items below the live width and folds its index, the width and
      * the salt into marks[t]; a word at or past the width keeps what it held.
-     * @param marks Holds at least width.capacity words; must outlive the graph.
+     * @param marks Holds at least width.capacity() words; must outlive the graph.
      */
     void record_marking_rule(API::Recorder& recorder, const API::Buffer<std::uint32_t>& marks,
                              const LateCount& width, const LateCount& salt)
@@ -78,31 +78,26 @@ namespace
                              live[1] = static_cast<std::uint32_t>(values[1]);
                          },
                          API::NodeOptions{std::size_t{1}});
-        recorder.kernel(API::DeviceSized{width.capacity, live, live},
+        recorder.kernel(API::DeviceSized{width.capacity(), live, live},
                         API::Access(Reads(marks, live_region), Writes(marks)),
                         [words](std::size_t t, std::size_t live_width, std::size_t live_salt)
                         {
                             words[t] = (words[t] ^ static_cast<std::uint32_t>(t + live_width)) *
                                        MIX + static_cast<std::uint32_t>(live_salt);
                         },
-                        API::NodeOptions{width.capacity});
+                        API::NodeOptions{width.capacity()});
     }
 
     /** @brief Returns a LateCount whose live value is its capacity. */
     LateCount fixed_count(std::size_t capacity)
     {
-        LateCount count;
-        count.capacity = capacity;
-        return count;
+        return LateCount::fixed(capacity);
     }
 
     /** @brief Returns a LateCount the kernels read from counter[0] on the device. */
     LateCount device_count(const API::Buffer<std::uint32_t>& counter, std::size_t capacity)
     {
-        LateCount count;
-        count.capacity = capacity;
-        count.device = &counter;
-        return count;
+        return LateCount::from_device(capacity, counter);
     }
 
     /** @brief Holds one run's per-step digests and the layer it took. */
@@ -235,11 +230,8 @@ TEST(Integration_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
         marks[i] = CANARY;
 
     std::size_t live = 0;
-    LateCount width;
-    width.capacity = CAPACITY;
-    width.host = [&live]() { return live; };
-    LateCount salt;
-    salt.capacity = SALT;
+    const LateCount width = LateCount::from_host(CAPACITY, [&live]() { return live; });
+    const LateCount salt = LateCount::fixed(SALT);
 
     auto g = rt.graph();
     record_marking_rule(g.recorder(), marks, width, salt);
@@ -272,9 +264,7 @@ TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksT
         worded[i] = CANARY;
     }
 
-    LateCount count;
-    count.capacity = CAPACITY;
-    count.host = []() { return LIVE; };
+    const LateCount count = LateCount::from_host(CAPACITY, []() { return LIVE; });
 
     auto g = rt.graph();
     API::Recorder& recorder = g.recorder();
@@ -349,9 +339,8 @@ TEST(Integration_DeviceSizedLaunch, DeviceSizedRuleChainMatchesSchedulerAsTheCou
         // The salt changes every step on the host while the width changes on the device.
         const std::array<std::size_t, 4> salts{5, 300, 70000, SALT_CAPACITY};
         auto tick = std::make_shared<std::size_t>(0);
-        LateCount salt;
-        salt.capacity = SALT_CAPACITY;
-        salt.host = [salts, tick] { return salts[(*tick)++ % salts.size()]; };
+        const LateCount salt = LateCount::from_host(
+            SALT_CAPACITY, [salts, tick] { return salts[(*tick)++ % salts.size()]; });
 
         auto g = rt.graph();
         hx.add_producer(g);

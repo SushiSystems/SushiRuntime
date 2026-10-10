@@ -185,7 +185,7 @@ TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
     auto g = rt.graph();
     g.add(Reads(), Writes(counter), std::size_t{1}, [c](std::size_t) { c[0] = 100u; });
     g.add(API::sized_from_device(counter)
-              .and_when([&enabled] { return enabled; }),
+              .when([&enabled] { return enabled; }),
           Reads(), Writes(out), CAPACITY,
           [o](std::size_t i) { o[i] += 1; });
 
@@ -255,12 +255,12 @@ TEST(Integration_DeviceCount, RejectsACounterThatIsNotHostResident)
                 << e.what();
         }
     }
-    EXPECT_THROW(API::sized_from_device(host, 5), SushiException);
-    EXPECT_NO_THROW(API::sized_from_device(host, 1));
+    EXPECT_THROW((void)API::sized_from_device(host, 5), SushiException);
+    EXPECT_NO_THROW((void)API::sized_from_device(host, 1));
 }
 
-/** @brief Tests that add() resolves an interior pointer to the host allocation it lies in. */
-TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostSlot)
+/** @brief Tests that a count is read from the element the index names, not from element zero. */
+TEST(Integration_DeviceCount, ReadsTheCountAtTheGivenIndex)
 {
     constexpr std::size_t CAPACITY = 16;
     constexpr std::size_t SLOT     = 5;
@@ -274,10 +274,9 @@ TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostSlot)
     plan[SLOT] = 3;
 
     int* o = out.data();
-    std::uint32_t* interior = plan.data() + SLOT;
 
     auto g = rt.graph();
-    ASSERT_NO_THROW(g.add(API::Dynamic().and_sized_from_device(interior, 0),
+    ASSERT_NO_THROW(g.add(API::sized_from_device(plan, SLOT),
                           Reads(), Writes(out), CAPACITY,
                           [o](std::size_t i) { o[i] = static_cast<int>(i); }));
     g.run();
@@ -288,8 +287,8 @@ TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostSlot)
         ASSERT_EQ(out[i], -1) << "element " << i << " ran past the live count";
 }
 
-/** @brief Tests that an offset base slot for based_at_device resolves the same way. */
-TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostBaseSlot)
+/** @brief Tests that add() accepts a based_at_device slot at a non-zero index. */
+TEST(Integration_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
 {
     constexpr std::size_t CAPACITY = 16;
     constexpr std::size_t SLOT     = 3;
@@ -299,28 +298,24 @@ TEST(Integration_DeviceCount, AcceptsAnInteriorPointerIntoAHostBaseSlot)
     auto out  = rt.buffer<int>(CAPACITY);
 
     plan[SLOT] = 4;
-    std::uint32_t* interior = plan.data() + SLOT;
 
     auto g = rt.graph();
-    EXPECT_NO_THROW(g.add(API::Dynamic().and_based_at_device(interior, 0),
+    EXPECT_NO_THROW(g.add(API::based_at_device(plan, SLOT),
                           Reads(), Writes(out), CAPACITY,
                           [](std::size_t) {}));
 }
 
-/** @brief Tests that a raw slot that is not host-resident is refused at add(). */
-TEST(Integration_DeviceCount, RefusesARawSlotThatIsNotHostResident)
+/** @brief Tests that the member setters check their slot as the free builders do. */
+TEST(Integration_DeviceCount, MemberSettersRefuseASlotThatIsNotHostResident)
 {
     auto rt       = Runtime::create();
     auto resident = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Device);
-    auto out      = rt.buffer<int>(4);
+    auto host     = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host);
 
-    std::uint32_t* interior = resident.data() + 1;
-
-    auto g = rt.graph();
+    API::Dynamic dyn;
     try
     {
-        g.add(API::Dynamic().and_sized_from_device(interior, 0),
-              Reads(), Writes(out), std::size_t{4}, [](std::size_t) {});
+        dyn.sized_from_device(resident, 1);
         ADD_FAILURE() << "a device-resident slot was accepted";
     }
     catch (const SushiException& e)
@@ -328,31 +323,18 @@ TEST(Integration_DeviceCount, RefusesARawSlotThatIsNotHostResident)
         EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
         const std::string message(e.what());
         EXPECT_NE(message.find("sized_from_device"), std::string::npos) << message;
-        EXPECT_NE(message.find("inside an allocation that is not Residency::Host"),
-                  std::string::npos) << message;
+        EXPECT_NE(message.find("Residency::Device"), std::string::npos) << message;
     }
-}
-
-/** @brief Tests that a slot this runtime never allocated is refused with its own message. */
-TEST(Integration_DeviceCount, RefusesASlotThisRuntimeNeverAllocated)
-{
-    auto rt  = Runtime::create();
-    auto out = rt.buffer<int>(4);
-
-    std::uint32_t stack_slot = 1;
-
-    auto g = rt.graph();
     try
     {
-        g.add(API::Dynamic().and_based_at_device(&stack_slot, 0),
-              Reads(), Writes(out), std::size_t{4}, [](std::size_t) {});
-        ADD_FAILURE() << "an unregistered slot was accepted";
+        dyn.based_at_device(host, 4);
+        ADD_FAILURE() << "an index one past the slot was accepted";
     }
     catch (const SushiException& e)
     {
         EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
         const std::string message(e.what());
         EXPECT_NE(message.find("based_at_device"), std::string::npos) << message;
-        EXPECT_NE(message.find("never allocated"), std::string::npos) << message;
+        EXPECT_NE(message.find("index 4"), std::string::npos) << message;
     }
 }
