@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-10 — distributed: Added `registrations` to `WorkerStatistics`, the WELCOME frames a worker accepted (`worker_agent.hpp`, `master_link.cpp`).
 - 2026-10-10 — examples: Added an example that shows `RuntimeConfig`, `try_run` with an error branch, `read_range` and `Dynamic` (`operating_path_demo.cpp`).
 - 2026-10-10 — api: Promoted `Graph::OpID` and `Graph::TaskMetadata` into `SushiRuntime::` beside the `_op` literal (`op_literal.hpp`).
 - 2026-10-10 — api: Changed `SushiRuntime.h` to include only `core/version.hpp` and `api/fluent.hpp`; an engine type taken through it now needs its module header.

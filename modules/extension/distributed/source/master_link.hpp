@@ -192,6 +192,9 @@ namespace SushiRuntime
                 /** @brief Blocks until the end is not Running, or the timeout; returns end(). */
                 [[nodiscard]] WorkerEnd wait_for_end(std::chrono::milliseconds timeout);
 
+                /** @brief Returns how many WELCOME frames this link accepted. */
+                [[nodiscard]] std::uint64_t registrations() const noexcept;
+
                 /** @brief Returns the registrations after the first. */
                 [[nodiscard]] std::uint64_t reconnects() const noexcept;
 
@@ -289,8 +292,8 @@ namespace SushiRuntime
                 /// @brief Chunk size of the current session.
                 std::atomic<std::uint32_t> chunk_bytes_{0};
 
-                /// @brief Registrations after the first.
-                std::atomic<std::uint64_t> reconnects_{0};
+                /// @brief WELCOME frames accepted, the first one included.
+                std::atomic<std::uint64_t> registrations_{0};
 
                 /// @brief The connection the link handshakes or is registered on; 0 for none.
                 PeerId peer_;

@@ -97,6 +97,7 @@ namespace SushiRuntime
             std::uint64_t tasks_failed_shutting_down = 0;     /**< Tasks failed by stop(). */
             std::uint64_t cache_bytes = 0;                    /**< Bytes the cache holds. */
             std::uint64_t cache_evictions = 0;                /**< Buffers the cache dropped. */
+            std::uint64_t registrations = 0;                  /**< WELCOME frames accepted. */
             std::uint64_t reconnects = 0;                     /**< Registrations after the first. */
         };
 

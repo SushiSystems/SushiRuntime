@@ -822,6 +822,9 @@ TEST_F(Integration_DistributedTcpFaultsTest, StalledLinkReapedThenWorkerRejoins)
     ASSERT_NO_FATAL_FAILURE(start_worker(proxy_->endpoint(), std::move(worker)));
     ASSERT_TRUE(worker_registered());
 
+    // The master counts the worker before its WELCOME arrives; the stall waits for the WELCOME.
+    ASSERT_TRUE(eventually([&] { return agent_->statistics().registrations >= 1; }));
+
     proxy_->set_fault(Fault::stall());
     ASSERT_TRUE(eventually([&]
     {
