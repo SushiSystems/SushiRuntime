@@ -186,7 +186,8 @@ Each row is closed by `sr build --distributed` and `sr test` on the machine of p
 | Step 6, offload state on the seam type | `5281030`, `78b445c` | 414 of 414 passed, 3 skipped | not run; the step adds nothing to a node without a coordinator |
 | Step 7, control path on the seam | `ecf6bda` | not built: the owner ruled on 2026-10-10 that the steps from here are built and tested once, when the refactor is complete. Syntax check of 120 units passed, flag-off check of 9 units passed | not run |
 | Step 8, `Cluster` to distributed | `7b56468` | not built; syntax check of 120 units and of the new `cluster.cpp` passed, flag-off check of 8 units passed. Two tests added and never run: `ClusterDetachAndDisplacement`, `ClusterHandleOutlivesRuntime` | not run |
-| Step 9, callers on the new spellings, forwarders deprecated | `refactor(execution)` after `7b56468` | not built; syntax check of 120 units passed with no deprecation warning. The deprecated forwarders have no test of their own | not run |
+| Step 9, callers on the new spellings, forwarders deprecated | `79b7851` | not built; syntax check of 120 units passed with no deprecation warning. The deprecated forwarders have no test of their own | not run |
+| Physical move, with steps 7 to 9 | `520e8b9` and the fix after it | 416 of 416 passed, 3 skipped (two cluster tests are new) | 19 of 19 passed; scheduler 131 ns per task (110 to 148), root fan-out 5 990 to 6 254 ns, chain layer 5 975 to 6 254 ns, wide fan-out 703 ns (691 to 809) |
 
 Benchmarks after B2, median of five, two invocations of the suite a few minutes apart:
 
@@ -249,3 +250,17 @@ After the first passing build, each with a build of its own: the header-check ta
 flag targets, the options and sanitizer files, the install split, test labels through
 `TEST_INCLUDE_FILES`, `.config/`, hidden visibility with `SR_API`, `tests/embed/`, the checker
 rules and `set(SR_INSTALL ON)` in the three parents.
+
+## First build of the moved tree
+
+Configure and generate passed at the first attempt. The build found one defect: `RangeTask`
+is defined whole in its header and carried the export macro, so a program that used it
+expected its members from the shared library, which no longer includes that header. The macro
+is removed. The first build was stopped for lack of memory at four parallel compiles and
+completed at three.
+
+Wide fan-out read 547 ns in phase A, then 366, 898 and 703 ns in three later runs, the last
+with a spread of 691 to 809. The other cases stay inside the phase A spread. Phase E measures
+wide fan-out on a quiet machine before it decides whether steps 5 to 9 cost it anything.
+
+Not yet built: the tree without `SR_ENABLE_DISTRIBUTED`.

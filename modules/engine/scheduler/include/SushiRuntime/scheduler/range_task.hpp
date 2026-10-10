@@ -46,7 +46,7 @@ namespace SushiRuntime
          * @brief Represents a splittable work-stealing task over a contiguous index range.
          * @see modules/engine/scheduler/README.md
          */
-        class SUSHIRUNTIME_API RangeTask : public Task
+        class RangeTask : public Task
         {
             private:
                 /** @brief Atomic start index of the current range. */

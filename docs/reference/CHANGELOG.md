@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-10 — scheduler: Removed the export macro from `RangeTask`, which is defined whole in its header (`range_task.hpp`).
 - 2026-10-10 — build: Moved every header and source to a folder per module under a tier, compiled with the include roots of its declared dependencies (`cmake/SushiRuntimeTiers.cmake`, `SushiRuntimeModule.cmake`, `modules/CMakeLists.txt`).
 - 2026-10-10 — build: Generated the forwarding headers of 15 moved include paths from one table; nine headers left the core folder for logging, sycl, memory and observability (`SushiRuntimeMovedHeaders.cmake`, `SushiRuntimeLibrary.cmake`).
 - 2026-10-10 — tests: Moved each module's tests beside it as its own program and kept the tests that cross modules at the root; benchmark sources are named `benchmark_*.cpp` (`SushiRuntimeTests.cmake`, `tests/CMakeLists.txt`).
