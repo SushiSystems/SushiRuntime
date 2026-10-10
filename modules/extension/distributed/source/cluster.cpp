@@ -169,27 +169,29 @@ namespace SushiRuntime
                         "that was never started.");
             check_options(*transport, options);
 
-            release_installed(context);
-
             auto state = std::make_shared<State>(std::move(transport), std::move(options));
-            state->context = &context;
-            context.memory().set_release_observer(&state->coordinator);
 
-            // The scheduler binds the coordinator here, before its transport and monitor start.
-            auto attachment = std::make_shared<State::Attachment>(state);
-            context.install_offload(std::shared_ptr<Graph::OffloadCoordinator>(
-                std::move(attachment), &state->coordinator));
-
+            // The new master starts before the installed one is touched, so a failure costs nothing.
+            state->coordinator.bind(context.offload_sink());
             const TransportResult started = state->coordinator.start();
             if (!started.is_ok())
             {
-                // Releasing the context's share destroys the attachment; the state dies here.
-                release_installed(context);
+                state->coordinator.stop();
                 throw Core::SushiException(Core::Error{
                     Core::Errc::invalid_state,
                     "Cluster::attach: the master did not start: " + started.message +
-                        "; nothing stays installed on the runtime."});
+                        (context.offload() != nullptr
+                             ? "; the cluster attached before stays installed."
+                             : "; nothing is installed on the runtime.")});
             }
+
+            release_installed(context);
+            state->context = &context;
+            context.memory().set_release_observer(&state->coordinator);
+
+            auto attachment = std::make_shared<State::Attachment>(state);
+            context.install_offload(std::shared_ptr<Graph::OffloadCoordinator>(
+                std::move(attachment), &state->coordinator));
 
             return Cluster(std::move(state));
         }
