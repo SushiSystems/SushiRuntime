@@ -20,6 +20,14 @@ has_event is cached at push time so the poll loop can decide whether to wait or 
 constructing a throwaway `sycl::event{}` on every iteration. That default construction can
 heap-allocate in DPC++, and the comparison runs per event per poll.
 
+### PolledEvent::executed
+
+executed is true for a task whose work ran, which is the default, and false for a task the
+scheduler released without running it: a node of an aborted run, or a late-bound node disabled for
+the step. The poller reaps both kinds the same way and reports only an executed graph node to the
+offload coordinator. The flag sits in the padding after has_event, so the record stays 40 bytes
+under the MSVC ABI, where it was measured.
+
 ### ActiveEventList
 
 The common case (at most INLINE_CAP outstanding events) stays in an inline buffer with no
@@ -77,10 +85,11 @@ Profiling comes first. Every node passes through this point, so the per-node inv
 the kernel device time are added here exactly once per dispatch. The step does nothing unless the
 run was armed for profiling.
 
-When an offload coordinator is installed, its on_local_completion() runs next for a graph node,
-before the successors are released. A write's version bump is then visible to any dependent task,
-an offloaded reader for example, by the time that task is dispatched. With none installed the step
-is one pointer load and a branch never taken.
+When an offload coordinator is installed, its on_local_completion() runs next for a graph node
+that executed, before the successors are released. A node the scheduler released without running it
+wrote nothing, so the coordinator is not told of it. A write's version bump is then visible to any
+dependent task, an offloaded reader for example, by the time that task is dispatched. With none
+installed the step is one pointer load and a branch never taken.
 
 trigger_successors() follows, and drop_inflight() comes last. The task's scheduling life ends at
 drop_inflight(), and its successors are already counted by add_inflight inside trigger_successors().
@@ -524,6 +533,9 @@ no clock samples in this loop.
 With no coordinator installed the offload branch is one load of `offload_` and a branch
 never taken; the node's offload state is not read. With one installed, only nodes its
 `prepare()` marked offloadable at `compile()` reach `try_offload()`, one virtual call each.
+The run's failed and cancelled flags are read inside that branch, after the offloadable test,
+so a node that is not offloadable pays nothing for them. An offloadable node of an aborting
+run is not offered; it goes to `execute_task()`, which skips it.
 On a successful offload the scheduling reference passes to the coordinator and is released
 when it returns the node through `complete_remote()` or `resubmit()`, so the loop neither
 executes nor releases the task.
@@ -550,9 +562,11 @@ triggered. The sentinel is exempt: it must run to deliver the outcome and unbloc
 
 A late-bound node that is disabled for the step, a sleeping island or a system switched off
 by level of detail, runs no kernel either and takes the same route, so the DAG drains as it
-would for a completed node. Toggling a subsystem costs no recompile. The relaxed load of
-`enabled` is safe: the step boundary's completion barrier and the acquire/release submit
-path supply the happens-before. The sentinel carries no bindings, so it is never skipped.
+would for a completed node. Both kinds are pushed by `skipped_event()` with `executed` false,
+so the poller does not report them to the offload coordinator. Toggling a subsystem costs no
+recompile. The relaxed load of `enabled` is safe: the step boundary's completion barrier and
+the acquire/release submit path supply the happens-before. The sentinel carries no bindings,
+so it is never skipped.
 
 ##### Completion accounting
 
@@ -661,8 +675,9 @@ independent and there are `num_workers` threads, so one `notify_all` replaces a 
 `set_offload_coordinator()` calls `bind(*this)` on a non-null coordinator, then stores the
 pointer in the scheduler and in the poller. A null pointer removes the coordinator from both.
 
-The poller passes every locally completed graph node to `on_local_completion()` before the
-node's successors are released. What the coordinator does there is its own rule; see
+The poller passes every graph node the pool executed to `on_local_completion()` before the
+node's successors are released. A node skipped by an aborting run or disabled for the step is
+not passed. What the coordinator does there is its own rule; see
 `modules/extension/distributed/README.md`. An offloaded node never reaches that call: the coordinator
 settles it itself before it calls `complete_remote()`.
 

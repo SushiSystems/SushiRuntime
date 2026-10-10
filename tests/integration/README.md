@@ -234,6 +234,23 @@ that excluded everything.
 The default filter admits everything, so the empty-filter check leaves the common path alone: a
 plain `Runtime::create()` still finds the devices of the lane.
 
+## test_error_types.cpp
+
+The file covers the type a caller catches when the library refuses a request. It is here and not
+in a module because the refusal it uses is raised by `RuntimeContext` and caught through `Runtime`.
+
+### `AFilterThatExcludesEveryDeviceThrowsUnsupported`
+
+A filter that admits no device class gives `SushiException` with `Errc::unsupported`. Topology
+returns an empty list for that filter and `RuntimeContext` turns the empty list into the failure;
+`test_device_selection.cpp` checks that the message names the filter.
+
+### `AHandlerForRuntimeErrorReceivesTheSameFailure`
+
+`SushiException` derives from `std::runtime_error`, so a handler written for the base class still
+catches it. The exception is thrown inside the shared library and caught in the test program, and
+the `dynamic_cast` shows its type survives that boundary.
+
 ## test_error_isolation.cpp
 
 A task exception must abort only its own run and must not kill the worker pool. The run that threw
@@ -379,6 +396,26 @@ still visible in the report.
 
 A host node pushes data during the run. The bytes must land in the window of that run, not before
 it.
+
+## test_offload_seam_shutdown.cpp
+
+`RuntimeContext::shutdown()` must stop the installed offload coordinator before the engine stops
+the worker pool, as the destructor does. A coordinator returns the nodes it still holds through the
+sink inside `stop()`, and a pool that has already joined its workers would never run them. The test
+names `RuntimeContext`, an execution header, so it is here and not beside the scheduler tests of
+the seam in `modules/engine/scheduler/tests/test_offload_seam.cpp`.
+
+### `PoolProbingCoordinator`
+
+In its first `stop()` the fake hands a probe node to the sink's `resubmit()` and waits up to ten
+seconds for a worker to run it. The probe was never accepted by `try_offload()`; the fake adds the
+one reference `resubmit()` consumes. A later `stop()` only counts the call.
+
+### `ShutdownStopsCoordinatorBeforeEngine`
+
+The stop count is 1 after `shutdown()` and the probe has run, which only a live pool can do. The
+count is 2 after the context is destroyed: the destructor stops the coordinator again, which
+`OffloadCoordinator::stop()` allows.
 
 ## test_perf_controls.cpp
 

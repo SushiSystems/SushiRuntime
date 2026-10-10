@@ -75,6 +75,12 @@ namespace SushiRuntime
                      */
                     bool has_event = false;
 
+                    /**
+                     * @brief Tells whether the task's work ran; false for a task released unrun.
+                     * @see modules/engine/scheduler/README.md
+                     */
+                    bool executed = true;
+
                     /** @brief Run step this dispatch belongs to, captured by the submitting worker. */
                     std::uint32_t step = 0;
 
@@ -161,7 +167,7 @@ namespace SushiRuntime
                 };
 
                 /**
-                 * @brief Names the coordinator told of every graph node this poller reaps.
+                 * @brief Names the coordinator told of every executed graph node this poller reaps.
                  * @pre No worker is polling.
                  * @param offload Not owned; null for none.
                  */
@@ -299,8 +305,8 @@ namespace SushiRuntime
                             if (profiling)
                                 accumulate_profiling(active_events[i]);
 
-                            // Told before successors are released, so they see a version bump.
-                            if (offload_ != nullptr)
+                            // Told before successors are released, and only of a task that ran.
+                            if (offload_ != nullptr && active_events[i].executed)
                                 report_local_completion(active_events[i].task);
 
                             trigger_successors(active_events[i].task, local_queue);

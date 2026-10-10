@@ -276,7 +276,8 @@ The search is linear in live allocations, so it belongs in graph building, never
 
 install_offload() gives the scheduler the Graph::OffloadCoordinator that may run graph nodes
 elsewhere; null removes it. The context shares ownership of the coordinator: it calls stop() on the
-one still installed when the context is destroyed, and releases it after the engine has shut down.
+one still installed in shutdown() and again when the context is destroyed, and releases it in the
+destructor, after the engine has shut down.
 offload() returns the installed pointer, or nullptr. A TaskGraph offloads only when it is
 constructed with that pointer. With no coordinator installed the context is a single machine;
 Distributed::Cluster::attach() is what installs one.
@@ -563,16 +564,23 @@ with every queue available. The scheduler it starts lives as long as the `Runtim
 
 #### Destruction order
 
-The order in `~Impl` is load-bearing. The installed offload coordinator stops first, so no
-late remote completion can touch the scheduler while or after it is torn down. The
-allocator's release observer is cleared next: a `Buffer` holds the allocator through
-`shared_memory()` and can release its memory after the context is gone, and the observer it
-would call is the coordinator `Impl` is about to release. The `ExecutionEngine` goes after
-that; its
-shutdown joins every worker thread and removes any dangling reference to a queue or to
-another `Impl` member. Only then is it safe to drain outstanding GPU work, which the
-`Device::DeviceQueueSet` does in its own destructor when `Impl`'s members are destroyed, so
-every hardware operation has completed before the SYCL objects it used go out of scope.
+The order in `~Impl` is load-bearing. `Impl::stop_work()` runs first, and
+`RuntimeContext::shutdown()` calls the same function, so an explicit shutdown and the
+destructor stop things in one order. It stops the installed offload coordinator while the
+pool still runs: the coordinator hands the nodes it holds back to the scheduler, and after
+that no late remote completion can touch a scheduler that is being torn down. Then it shuts
+the `ExecutionEngine` down, which joins every worker thread. A context that was shut down
+explicitly calls `stop_work()` a second time from its destructor. The seam allows a second
+`OffloadCoordinator::stop()` and the engine guards its own shutdown, so `Impl` keeps no flag
+for it.
+
+The destructor then clears the allocator's release observer: a `Buffer` holds the allocator
+through `shared_memory()` and can release its memory after the context is gone, and the
+observer it would call is the coordinator `Impl` is about to release. The engine is destroyed
+next, which removes any dangling reference to a queue or to another `Impl` member. Only then
+is it safe to drain outstanding GPU work, which the `Device::DeviceQueueSet` does in its own
+destructor when `Impl`'s members are destroyed, so every hardware operation has completed
+before the SYCL objects it used go out of scope.
 
 `Impl` releases its share of the stopped coordinator after the engine, not when it stops. The
 scheduler keeps its address for the offload branch, the poller for the completion call, and a

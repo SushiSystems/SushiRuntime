@@ -156,22 +156,33 @@ namespace SushiRuntime
             /** @brief Stops everything that submits work, then lets the device set drain. */
             ~Impl()
             {
-                // The coordinator stops first, before the scheduler (modules/engine/execution/README.md).
-                if (offload)
-                    offload->stop();
+                stop_work();
 
                 // The allocator can outlive the coordinator this object releases below.
                 memory->set_release_observer(nullptr);
 
                 // The engine is destroyed before devices drains (modules/engine/execution/README.md).
-                if (engine)
-                {
-                    engine->shutdown();
-                    engine.reset();
-                }
+                engine.reset();
 
                 // The scheduler holds the coordinator's address until its workers have joined.
                 offload.reset();
+            }
+
+            /**
+             * @brief Stops the installed coordinator, then the engine's worker pool.
+             *
+             * A second call stops nothing further: OffloadCoordinator::stop() may be called
+             * again and the engine shuts down once.
+             * @see modules/engine/execution/README.md
+             */
+            void stop_work()
+            {
+                // The coordinator returns its nodes to a pool that still runs.
+                if (offload)
+                    offload->stop();
+
+                if (engine)
+                    engine->shutdown();
             }
 
             Impl(const Impl&) = delete;
@@ -271,8 +282,7 @@ namespace SushiRuntime
 
         void RuntimeContext::shutdown()
         {
-            if (impl_->engine)
-                impl_->engine->shutdown();
+            impl_->stop_work();
         }
 
         void RuntimeContext::install_offload(std::shared_ptr<Graph::OffloadCoordinator> offload)
