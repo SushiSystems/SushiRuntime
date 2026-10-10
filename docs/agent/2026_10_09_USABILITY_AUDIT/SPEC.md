@@ -3727,3 +3727,90 @@ the implementer's: storage is held directly as members, public declarations are 
   private header.
 - `Wire::TaskResultStatus` has no value for a full queue.
 - `FrameSource::next()` is `noexcept` and its first `resize` allocates.
+
+### What the composition decided (T11, T12)
+
+Written from the reports of the two composition tasks, committed as `9582ee6`. The test tasks
+(T13, T14), the application task (T15) and the follow-up task (T18) start from here.
+
+**Master (T11)**
+
+- `DistributedCoordinator(registry, transport, ClusterOptions)`; `start()` returns a
+  `TransportResult` and fails with "bind() must run before start()" when no sink is bound.
+- Every way a peer leaves (`on_peer_lost`, `GOODBYE`, a failed proof, a malformed or unexpected
+  frame) goes through `Impl::retire_peer`, and `WorkerDirectory::remove_peer` makes it idempotent.
+  A task leaves `PendingTasks` through one of `take`, `take_for_worker`, `take_overdue`, `drain`,
+  under the table's mutex, so a node reaches the sink once.
+- `attach` throws `Errc::invalid_state` with one of: `Cluster::attach: the transport can be
+  reached from other machines and ClusterOptions::secret is empty; ...`, `... chunk_bytes is N; it
+  must be between 4096 and 1048512.`, `Cluster::attach: the master did not start: <transport
+  message>; nothing stays installed on the runtime.` After a failed `attach`, `context.offload()`
+  is null and the release observer is cleared.
+- A node that stays local and writes a shared buffer has an `OffloadState` with
+  `offloadable == false` and its shared output handles; a node that writes none has no state.
+- A failed `TASK_RESULT`, or a successful one whose outputs did not arrive whole, is resubmitted
+  and counts in `redispatched`. `stale_writebacks` counts chunks the registry refused plus chunks
+  `expects_output` refused. A refused send counts an attempt and leaves the output version bumped.
+- A worker's `GOODBYE` returns its tasks at once. `stop()` sends no `GOODBYE`; a worker sees the
+  close and reconnects. `stop()` logs `distributed master stopped; K tasks returned to the
+  scheduler` at INFO.
+- `ClusterMonitor::period()` is the smaller of 250 ms and a quarter of the tightest timeout
+  (liveness, or the task deadline when it is not 0), at least 1 ms. The monitor queues
+  `GOODBYE(liveness)` before `close_peer`.
+- `handshake_rejected_version` rises on `on_peer_lost(VersionMismatch)`,
+  `handshake_rejected_auth` on a failed proof, after which the master sends `REJECT` and closes.
+- `Cluster::statistics()` calls `ITransport::statistics()`, which takes a mutex in TCP; the four
+  counter getters and `alive_workers()` read atomics only.
+- Log lines: `N of M op-tagged nodes will run locally: A no live worker for the op, B buffer not
+  shared (first: op ID)` (WARN); `worker N "name" endpoint registered, K kernels` (INFO); `worker
+  N "name" endpoint lost: <cause>; K tasks returned to the scheduler` (WARN); `<endpoint> (peer N)
+  closed before it registered: failed authentication` (WARN); `peer N sent no valid handshake in X
+  ms; closed` (WARN); `task T taken back from worker N: <cause>; it is resubmitted to the
+  scheduler` (WARN, one per worker per second). A test asserts on counters and events, not on the
+  text of a line.
+- `try_offload` allocates nothing in the dispatcher after warm-up; `PendingTasks::insert`
+  allocates a map node and a copy of the outputs, and `ITransport::send` copies the payload. Phase
+  E measures them.
+
+**Worker (T12)**
+
+- `run_worker(argc, argv, kernels)` parses and calls `run_worker(options, kernels)`, which sets
+  the log level, reads the secret, installs `StopSignal`, builds a `RuntimeContext` and a TCP
+  worker transport and calls `serve_worker()` of `source/worker_session.hpp`. `serve_worker(context,
+  transport, kernels, WorkerAgentOptions, const StopSignal&)` runs one agent on any worker
+  transport and returns the `WorkerExitCode`; a test drives it with the in-process fabric and
+  `StopSignal::request()`.
+- Usage errors go to stderr with the prefix `sushiruntime worker: `; `--help` and `--version` go
+  to stdout. A value follows its flag as the next argument or after `=`. `--master` with port 0 is
+  refused. The second overload validates the log level name and the secret file itself.
+- The default name is `host_name()` of the socket seam, else `worker`.
+- An agent that is stopping ignores a loss and an abandon, so `wait_for_end` returns `Stopped`
+  after `stop()`. `stop()` closes the registered peer and waits up to 2 s for its `on_peer_lost`,
+  which is what gets the last results and `GOODBYE` onto the wire.
+- A `TASK_DISPATCH` from a connection the link is not registered on is dropped. A null transport
+  or registry makes the `WorkerAgent` constructor throw `invalid_access`.
+- `WorkerAgentOptions` has no device field; the kernel queue and the cache use device 0. A device
+  that reports 0 bytes of memory gets a 1 GiB cache budget and one WARN.
+
+**Open after the composition, owned by T18 unless another task is named**
+
+1. A node whose work threw is settled by `on_local_completion` like one that ran. The scheduler
+   has to push that event with `executed = false`. Owner: the orchestrator, with the engine.
+2. The "listening" line names no address. `TcpTransport::start()` and the in-process transport
+   return the bound endpoint in `TransportResult::message` on `Ok`, and the coordinator logs it.
+3. The "registered" line has no build id. `WorkerDirectory` keeps `build_id` in the session and in
+   `WorkerSnapshot`.
+4. `send_message` exists three times: `frame_sending.hpp`, `master_link.cpp`,
+   `dispatch_executor.cpp`. The two copies go.
+5. The PING token clock is computed in `cluster_monitor.cpp` and `distributed_coordinator.cpp`.
+   One private header holds it.
+6. `BufferRegistry::bump` on a span that names one buffer twice gives two versions of one
+   output. `OffloadDispatcher::prepare` refuses a node whose writes name one allocation twice.
+7. `MasterLink::on_lost` and `on_connect_abandoned` log WARN and ERROR for a loss the worker
+   caused by its own `stop()`.
+8. After `Disconnected` the exec thread's open input pull waits out `pull_idle_timeout`.
+9. The five exit-code tests of `test_worker_main.cpp` run over TCP and raise a real SIGTERM. They
+   move to `serve_worker()` on the in-process fabric with `StopSignal::request()`; one TCP case
+   stays for `run_worker` itself.
+10. `UsmAllocator` calls `on_release` for every release, so each takes the registry mutex for one
+    failed lookup. Phase E.
