@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — task: Moved the promotion of `_op`, `OpID` and `TaskMetadata` into `task/task_types.hpp` and removed `api/vocabulary/op_literal.hpp`, which no release shipped.
 - 2026-10-11 — build: Added `SR_BUILD_EXAMPLES`, off when a parent project adds the tree, and `SR_INSTALL`; a parent no longer gets the runtime's CPack settings (`SushiRuntimeOptions.cmake`).
 - 2026-10-11 — build: Changed the shared library's SOVERSION to major.minor while the major version is 0, so the Linux file is `libsushiruntime.so.0.3` (`SushiRuntimeLibrary.cmake`).
 - 2026-10-11 — build: Moved the install and export rules, the runtime staging, CPack and the version check into one file each (`SushiRuntimeInstall.cmake`, `SushiRuntimeRedistributables.cmake`).

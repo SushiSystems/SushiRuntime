@@ -71,7 +71,7 @@ closing `using` block. fluent.hpp promotes none. A program that includes
 
 Three headers declare nothing and only promote. `runtime/errors.hpp` promotes `Error`, `Errc`,
 `Result` and `SushiException`; `runtime/logging.hpp` promotes `LogLevel`, `set_log_level` and
-`set_log_sink`; `vocabulary/op_literal.hpp` promotes the `_op` literal. `RunReport` is promoted by
+`set_log_sink`; `task/task_types.hpp` of the task module promotes the `_op` literal, `OpID` and `TaskMetadata`. `RunReport` is promoted by
 `observability/run_report.hpp`, the header that declares it.
 
 The graph type stays `API::Graph`, because `SushiRuntime::Graph` is the engine's namespace. `when`,

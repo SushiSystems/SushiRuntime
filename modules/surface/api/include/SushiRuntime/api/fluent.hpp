@@ -47,5 +47,4 @@
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
-#include <SushiRuntime/api/vocabulary/op_literal.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
