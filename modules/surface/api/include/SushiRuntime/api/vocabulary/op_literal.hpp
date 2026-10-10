@@ -21,7 +21,7 @@
 
 /**
  * @file op_literal.hpp
- * @brief Promotes the _op literal, which names a registered kernel, into SushiRuntime.
+ * @brief Promotes the _op literal, OpID and TaskMetadata into SushiRuntime.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
  */
@@ -33,5 +33,7 @@
 namespace SushiRuntime
 {
     using Graph::Literals::operator""_op;
+    using Graph::OpID;
+    using Graph::TaskMetadata;
 
 } // namespace SushiRuntime

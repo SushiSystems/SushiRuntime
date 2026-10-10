@@ -219,3 +219,6 @@ op_literal.hpp promotes `Graph::Literals::operator""_op` into `SushiRuntime`. Af
 `using namespace SushiRuntime;` or `using SushiRuntime::operator""_op;` a program writes
 `"vec.add"_op` for the OpID of a registered kernel. `distributed/distributed.hpp` includes this
 header, so a worker program that never includes the fluent API has the literal too.
+
+The header also promotes `Graph::OpID` and `Graph::TaskMetadata`, the two engine types a kernel's
+signature names, as `SushiRuntime::OpID` and `SushiRuntime::TaskMetadata`.

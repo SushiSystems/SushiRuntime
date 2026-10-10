@@ -1,20 +1,24 @@
 # examples
 
-Eight programs written against the public API. Read `quickstart.cpp` first, then the focused
-demos:
+Nine programs written against the public API. Each includes `<SushiRuntime/SushiRuntime.h>` and
+spells every name through `using namespace SushiRuntime;`. Read `quickstart.cpp` first, then the
+focused demos:
 
 | File | Shows |
 | --- | --- |
-| `vecadd_demo.cpp` | Buffers and automatic dependency ordering |
-| `stencil_demo.cpp` | A 2-D grid with an interior-only (halo) update |
-| `coupled_fields_demo.cpp` | Several fields evolving together (Jacobi) |
-| `game_engine_demo.cpp` | An ECS-style frame loop built from the data flow |
-| `streaming_world_demo.cpp` | A graph whose set of work changes between steps |
+| `quickstart.cpp` | A runtime, a `State`, one update rule and a stepped `run()` |
+| `vecadd_demo.cpp` | Buffers passed as `In` and `Out`, and automatic dependency ordering |
+| `stencil_demo.cpp` | A 2-D grid with an interior-only (halo) update over an `Extent` |
+| `coupled_fields_demo.cpp` | Two fields evolving together through `Coupled` (Jacobi) |
+| `game_engine_demo.cpp` | An ECS-style frame loop built from the data flow, each system named with `name()` |
+| `streaming_world_demo.cpp` | A `DynamicGraph` whose set of work changes between steps |
+| `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `try_run()` with its error branch, `Dynamic` and a `read_range()` readback |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
 
-`distributed_kernels.hpp` is the header the last two share. The distributed programs are built
-only when the distributed layer is enabled (`sr build --distributed`).
+`distributed_kernels.hpp` is the header the last two share; they also include
+`<SushiRuntime/distributed/distributed.hpp>`. The distributed programs are built only when the
+distributed layer is enabled (`sr build --distributed`).
 
 ## quickstart.cpp
 
@@ -62,7 +66,7 @@ receives the global 2-D index already offset to (1,1).
 ## coupled_fields_demo.cpp
 
 Two fields evolve together, one reading the other. `v` counts up by one each step and `u`
-accumulates `v`. The coupled `add(out, in, fn)` overload reads the previous step's data for
+accumulates `v`. The coupled rule, `add(Coupled(out, in), fn)`, reads the previous step's data for
 every input, a Jacobi update: each `State` advances only after the whole step's kernels have
 run, so writing one field never changes what another reads in the same step. That makes the
 result independent of the order in which the two rules were added. The `v` that the `u` rule
@@ -81,7 +85,8 @@ Components are component arrays, one `Buffer` per field: `px`, `py`, `vx`, `vy`,
 Systems are graph nodes that declare which components they read and write with `In`, `Out` and
 `InOut`. The dependency tracker orders them, and no schedule is written by hand: gravity
 writes velocity, integrate reads it, collision rewrites it, culling reads the new position.
-Work on entities that does not conflict runs in parallel.
+Work on entities that does not conflict runs in parallel. Each system is named with `name()`, so
+a profile lists `gravity`, `integrate`, `collide` and `cull` instead of four unnamed tasks.
 
 The frame is compiled once and replayed every step by `run(STEPS)`, with no rebuild per frame.
 
@@ -111,6 +116,29 @@ first and then slides to {2,3,4,5}: tiles 0 and 1 stream out, 4 and 5 stream in,
 stay live across the recomposition without being rebuilt. Each active tile's task increments
 every cell once per step, so the final cell value is the number of steps that tile was in
 view: STEPS for tiles 0, 1, 4 and 5, 2 * STEPS for tiles 2 and 3, and 0 for tiles 6 and 7.
+
+## operating_path_demo.cpp
+
+The calls a program makes once it runs somewhere other than a developer's desk: it chooses its
+settings, asks what was built, handles a failed run without an exception and reads device memory
+back.
+
+`Runtime::create()` takes one `RuntimeConfig`; here it asks for two workers with
+`PinPolicy::Float`, which leaves the other cores to the host program. `advanced()` returns the
+read-only view, from which the program prints each device by index and the worker count as built.
+
+The buffer is allocated with `Residency::Device`, so the host cannot index it. `write_range()`
+seeds it and `read_range()` copies single elements back.
+
+One rule increments the first `live_count` elements. The count reaches the rule through
+`Dynamic().sized(...)`, which the runtime polls before each step, so the second run covers twice
+as many elements as the first and `compile_count()` stays at 1. After two runs of 8 steps the
+elements read back are 16, 8 and 0: counted in both runs, in the second only, and in neither.
+
+Both runs use `try_run()`, which returns the report or an `Error`. The program then runs an empty
+graph on purpose, checks that the refusal carries `Errc::invalid_graph` and prints the remedy its
+`switch` over `Errc` picks for that code. An exception can still come from `Runtime::create()` and
+from the range calls, and `main` catches `SushiException` for those.
 
 ## distributed_demo.cpp
 
@@ -203,7 +231,8 @@ both machines trust.
 
 ## distributed_kernels.hpp
 
-What the master and the worker must agree on, stated once: the operation id `K_VECTOR_ADD`, the
+What the master and the worker must agree on, stated once: the operation id `K_VECTOR_ADD`
+(written with the `_op` literal), the
 kernel `add_vectors()` a worker runs for it, and `register_kernels()`, which puts every kernel of
 the demo into a registry. A kernel receives its buffers as `BufferView`s, an address and a size
 each, so `add_vectors()` takes the element count from the size of its output. A new operation is

@@ -62,6 +62,7 @@ sushiruntime_add_example(sr_stencil_demo           stencil_demo.cpp)
 sushiruntime_add_example(sr_coupled_fields_demo    coupled_fields_demo.cpp)
 sushiruntime_add_example(sr_game_engine_demo       game_engine_demo.cpp)
 sushiruntime_add_example(sr_streaming_world_demo   streaming_world_demo.cpp)
+sushiruntime_add_example(sr_operating_path_demo    operating_path_demo.cpp)
 
 if(SR_ENABLE_DISTRIBUTED)
     sushiruntime_add_example(sr_distributed_demo   distributed_demo.cpp)

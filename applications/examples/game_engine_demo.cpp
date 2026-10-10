@@ -78,7 +78,7 @@ int main()
         {
             const std::size_t i = id[0];
             if (alive[i]) vy[i] += g * dt;
-        });
+        }).name("gravity");
 
     // integrate: advance position by velocity (reads the velocity gravity just wrote).
     world.add(Extent{N}, In(vx), In(vy), InOut(px), InOut(py), In(alive),
@@ -86,7 +86,7 @@ int main()
         {
             const std::size_t i = id[0];
             if (alive[i]) { px[i] += vx[i] * dt; py[i] += vy[i] * dt; }
-        });
+        }).name("integrate");
 
     // collide: bounce off the floor (reads the position integrate just wrote).
     world.add(Extent{N}, InOut(py), InOut(vy), In(alive),
@@ -94,7 +94,7 @@ int main()
         {
             const std::size_t i = id[0];
             if (alive[i] && py[i] < 0.0f) { py[i] = 0.0f; vy[i] = -vy[i] * rest; }
-        });
+        }).name("collide");
 
     // cull writes `alive` after the three systems above read it, so a kill lands next frame.
     world.add(Extent{N}, In(px), InOut(alive),
@@ -102,7 +102,7 @@ int main()
         {
             const std::size_t i = id[0];
             if (alive[i] && px[i] > xmax) alive[i] = 0;
-        });
+        }).name("cull");
 
     const auto report = world.run(STEPS);
 

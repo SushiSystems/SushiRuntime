@@ -30,9 +30,6 @@
 
 #include <cstddef>
 
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/distributed/distributed.hpp>
 
 /** @brief Holds what the master and the worker of the distributed demo must agree on. */
@@ -41,7 +38,7 @@ namespace DistributedDemo
     using SushiRuntime::operator""_op;
 
     /** @brief Names the operation that adds two float vectors element by element. */
-    inline constexpr SushiRuntime::Graph::OpID K_VECTOR_ADD = "demo.vector_add"_op;
+    inline constexpr auto K_VECTOR_ADD = "demo.vector_add"_op;
 
     /** @brief Writes the sum of one element of @p a and @p b to the same element of @p sum. */
     inline void add_element(const float* a, const float* b, float* sum,
@@ -58,7 +55,7 @@ namespace DistributedDemo
     inline sycl::event add_vectors(
         sycl::queue& queue, SushiRuntime::span<const SushiRuntime::Distributed::BufferView> inputs,
         SushiRuntime::span<const SushiRuntime::Distributed::BufferView> outputs,
-        const SushiRuntime::Graph::TaskMetadata&)
+        const SushiRuntime::TaskMetadata&)
     {
         const float* a = inputs[0].as<const float>();
         const float* b = inputs[1].as<const float>();
