@@ -86,11 +86,11 @@ namespace SushiRuntime
                 virtual void prepare(span<const sushi_ptr<Node>> nodes) = 0;
 
                 /**
-                 * @brief Offers a ready node to a worker.
+                 * @brief Offers a ready node to a worker; may lock, never blocks on I/O.
                  *
-                 * Called on a pool worker at dispatch; the implementer may lock and send, and
-                 * does not wait for the result. On true it owns the caller's scheduling
-                 * reference until it passes the node to the sink; on false the caller runs it.
+                 * Called on a pool worker at dispatch, never in an aborted run. On true the
+                 * implementer owns the scheduling reference until the sink gets the node, and does
+                 * not touch the node once another thread can reach it; on false the caller runs it.
                  * @pre node.offload_state() is not null and its offloadable is true.
                  */
                 [[nodiscard]] virtual bool try_offload(Node& node) = 0;
@@ -98,9 +98,9 @@ namespace SushiRuntime
                 /**
                  * @brief Hears that the pool finished a node itself.
                  *
-                 * Called on a pool worker for every node the poller reaps, before its
-                 * successors are released, whether or not it carries an OffloadState. The
-                 * implementer may take a short lock and never allocates.
+                 * Called on a pool worker for every node the pool ran, before its successors are
+                 * released, whether or not it carries an OffloadState; a node released unrun is
+                 * not reported. The implementer may take a short lock and never allocates.
                  * @param node Borrowed for the call; no reference changes hands.
                  */
                 virtual void on_local_completion(Node& node) noexcept = 0;
@@ -124,9 +124,10 @@ namespace SushiRuntime
                 /**
                  * @brief Ends all remote work before the scheduler shuts down.
                  *
-                 * Called on the thread that tears the runtime down; it may be called again.
-                 * The implementer joins its threads, so the call blocks. Once it returns the
-                 * coordinator calls the sink no more and try_offload() returns false.
+                 * Called on the thread that tears the runtime down, while the pool still runs; it
+                 * may be called again. The implementer joins its threads, so the call blocks. When
+                 * it returns, every node the coordinator still held has been passed to the sink,
+                 * the sink is called no more and try_offload() returns false.
                  */
                 virtual void stop() noexcept = 0;
         };

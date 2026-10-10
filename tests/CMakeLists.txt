@@ -39,12 +39,14 @@ sushiruntime_add_test_program(
         integration/test_determinism.cpp
         integration/test_device_selection.cpp
         integration/test_error_isolation.cpp
+        integration/test_error_types.cpp
         integration/test_graph.cpp
         integration/test_graph_profiling_switch.cpp
         integration/test_interop_host_export.cpp
         integration/test_layer_equivalence.cpp
         integration/test_node_event_records.cpp
         integration/test_observability.cpp
+        integration/test_offload_seam_shutdown.cpp
         integration/test_perf_controls.cpp
         integration/test_scheduler_integration.cpp)
 

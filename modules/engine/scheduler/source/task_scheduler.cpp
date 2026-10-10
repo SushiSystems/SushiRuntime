@@ -150,6 +150,19 @@ namespace SushiRuntime
                 const std::optional<std::size_t> device = memory.device_of(address);
                 return device ? static_cast<int>(*device) : -1;
             }
+
+            /**
+             * @brief Builds the ready event of a task the scheduler releases without running it.
+             * @return An event the poller reaps at once and reports to no offload coordinator.
+             */
+            EventPolling::PolledEvent skipped_event(Task* task)
+            {
+                EventPolling::PolledEvent skipped;
+                skipped.task = task;
+                skipped.ready = true;
+                skipped.executed = false;
+                return skipped;
+            }
         } // namespace
 
         /**
@@ -596,7 +609,14 @@ namespace SushiRuntime
                             auto& node = *static_cast<SushiRuntime::Graph::Node*>(task);
                             const Graph::OffloadState* state = node.offload_state();
                             if (state != nullptr && state->offloadable)
-                                offloaded = offload_->try_offload(node);
+                            {
+                                // A node of an aborting run stays local; execute_task skips it.
+                                const bool aborting =
+                                    run_failed_.load(std::memory_order_acquire) ||
+                                    run_cancelled_.load(std::memory_order_acquire);
+                                if (!aborting)
+                                    offloaded = offload_->try_offload(node);
+                            }
                         }
                         if (!offloaded)
                         {
@@ -653,7 +673,7 @@ namespace SushiRuntime
                                    static_cast<SushiRuntime::Graph::Node*>(task)->is_sentinel;
                 if (!is_sentinel)
                 {
-                    events.push({sycl::event{}, task, true});
+                    events.push(skipped_event(task));
                     return;
                 }
             }
@@ -665,7 +685,7 @@ namespace SushiRuntime
                 if (gnode->bindings_ &&
                     !gnode->bindings_->enabled.load(std::memory_order_relaxed))
                 {
-                    events.push({sycl::event{}, task, true});
+                    events.push(skipped_event(task));
                     return;
                 }
             }
@@ -863,8 +883,14 @@ namespace SushiRuntime
                     (node && profiling_active_.load(std::memory_order_acquire))
                         ? SushiRuntime::Graph::snapshot_widths(*node)
                         : SushiRuntime::Graph::NodeWidths{};
-                events.push({e, task, ready, /*has_event=*/!ready,
-                            current_dispatch_step_.load(std::memory_order_acquire), widths});
+                EventPolling::PolledEvent dispatched;
+                dispatched.event = e;
+                dispatched.task = task;
+                dispatched.ready = ready;
+                dispatched.has_event = !ready;
+                dispatched.step = current_dispatch_step_.load(std::memory_order_acquire);
+                dispatched.widths = widths;
+                events.push(dispatched);
             } 
             catch (const Core::SushiException& cause)
             {

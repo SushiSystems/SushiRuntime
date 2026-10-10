@@ -24,6 +24,40 @@ between inline and spilled storage repeatedly.
 The only spilled entry is the last one, with tag N. Removing an inline slot must move that tail into
 the freed slot and shrink the spill to empty.
 
+## test_offload_seam.cpp
+
+The file pins what the scheduler tells an offload coordinator. A coordinator bumps the version of
+every buffer a reported node writes and may send an offered node to another machine, so a node of
+an aborted run must reach neither call. Each test first runs one node on a healthy run and asserts
+the count it expects to stay fixed, so a coordinator that was never called cannot pass.
+
+### `Unit_OffloadSeam`
+
+The fixture builds the scheduler from a topology view, a device set and an allocator, the parts a
+`RuntimeContext` would supply, because a module test names no execution header. The pool has two
+floating workers. The nodes are native host nodes, so no test submits to a device queue.
+
+### `SingleNodeTopology`
+
+`SingleNodeTopology` and `SingleNodeDistance` describe one NUMA node with no core map, which is all
+an unpinned pool reads.
+
+### `CountingCoordinator`
+
+`CountingCoordinator` declines every offer, so an offered node still runs locally and
+`wait_quiescent()` covers it.
+
+### `AbortedRunOffersNoNode`
+
+The run is aborted twice: once by `request_cancellation()`, once by a node whose work throws. The
+offer count must stay at the one offer of the healthy run both times.
+
+### `SkippedNodeNotReportedAsCompleted`
+
+Two kinds of node are released without running: a node of a cancelled run and a late-bound node
+disabled for the step. Neither may reach `on_local_completion()`. The poller makes that call before
+it drops the in-flight count, so the counter is final when `wait_quiescent()` returns.
+
 ## test_range_task.cpp
 
 The file covers `RangeTask::split`, the primitive for divisible workloads: the grain threshold, that
