@@ -28,8 +28,9 @@
 
 #include <SushiRuntime/topology/topology_view.hpp>
 
-#include <stdexcept>
 #include <utility>
+
+#include <SushiRuntime/core/error.hpp>
 
 #include <SushiRuntime/topology/i_topology_provider.hpp>
 
@@ -41,7 +42,7 @@ namespace SushiRuntime
          * @brief Reads the core map from the provider once and keeps the distance model.
          * @param provider Queried during construction only; not stored.
          * @param distance_model Shared with the view; must not be null.
-         * @throws std::invalid_argument If distance_model is null.
+         * @throws Core::SushiException With Errc::invalid_access if distance_model is null.
          */
         TopologyView::TopologyView(const ITopologyProvider& provider,
                                    std::shared_ptr<const INumaDistanceModel> distance_model)
@@ -49,7 +50,10 @@ namespace SushiRuntime
               distance_model_(std::move(distance_model))
         {
             if (!distance_model_)
-                throw std::invalid_argument("TopologyView: distance model must not be null.");
+                throw Core::SushiException(Core::Error{
+                    Core::Errc::invalid_access,
+                    "TopologyView: the distance model is null; pass a model such as "
+                    "HwlocDistanceModel or MatrixDistanceModel."});
         }
 
         /**

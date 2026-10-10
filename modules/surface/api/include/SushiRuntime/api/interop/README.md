@@ -16,8 +16,8 @@ Buffer. This folder depends on that one, never the reverse.
 Runtime::interop() returns the facade by value. It holds a shared_ptr to the RuntimeContext, and so
 does every Buffer it returns, so the context stays alive until the last of them is destroyed.
 
-capabilities() is the question to ask before either call below. host_export is reported true for
-every device. device_import is true only when the toolchain has the bindless-images extension, the
+capabilities() is the question to ask before either call below. host_export is true when the device
+offers host USM (sycl::aspect::usm_host_allocations). device_import is true only when the toolchain has the bindless-images extension, the
 device is a GPU and it reports the external-memory-import aspect. device_uuid is empty when the
 device does not report one.
 
@@ -36,7 +36,8 @@ it, the host may not index it. The runtime records the mapped address in its USM
 that touches the Buffer is routed to the importing device like any other.
 
 The call throws SushiException with unsupported when the device cannot import (see capabilities()),
-and with invalid_access when the device reports no UUID or a UUID different from
+and with invalid_access when the descriptor's handle kind belongs to another platform, when its
+region ends past allocation_bytes, or when the device reports no UUID or a UUID different from
 ExternalMemoryDescriptor::device. A throw part-way through releases whatever steps had completed.
 
 Destroying the Buffer removes the address from the registry, unmaps the region and releases the

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-10 — core: Added `Errc::invalid_state` and `require_matching_version`, and marked the result type and its accessors nodiscard (`error.hpp`, `version.hpp`, `result.hpp`).
+- 2026-10-10 — topology: Changed the constructors of the topology view, the remapping provider and the matrix distance model to throw `SushiException`, not `std::invalid_argument` (`topology_view.cpp`, `matrix_distance_model.hpp`).
+- 2026-10-10 — interop: Removed the default of `ExternalMemoryDescriptor::kind`; an import refuses another platform's handle kind and a region past its allocation (`interop.cpp`, `external_memory.hpp`).
 - 2026-10-10 — build: Moved the Doxygen and Docker files to a configuration folder and the security policy and code of conduct beside the workflows (`.config/README.md`, `project.py`, `docker.py`, `ci.yml`).
 - 2026-10-10 — graph: Made `dependency_tracker.hpp`, `work_stealing_deque.hpp` and `bindless_detection.hpp` private to their modules; the umbrella header no longer includes the tracker (`SushiRuntime.h`, `SushiRuntimeTests.cmake`).
 - 2026-10-10 — docs: Moved the notes of each test beside the test, one page per module and one for the allocation program, and pointed each test source at its page (`tests/README.md`, `tests/allocation/README.md`).

@@ -77,7 +77,7 @@ namespace SushiRuntime
                 sycl::device device = queue.get_device();
 
                 InteropCapabilities capabilities;
-                capabilities.host_export = true;
+                capabilities.host_export = device.has(sycl::aspect::usm_host_allocations);
                 capabilities.device_import = Detail::BINDLESS_IMAGES_AVAILABLE
                     && context.devices().is_gpu(device_index)
                     && device.has(sycl::aspect::ext_oneapi_external_memory_import);
@@ -91,6 +91,89 @@ namespace SushiRuntime
             }
 
 #if defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
+#if defined(_WIN32)
+            /// @brief Names the handle kind this platform's importer accepts.
+            constexpr ExternalHandleKind K_PLATFORM_HANDLE_KIND = ExternalHandleKind::OpaqueWin32;
+#else
+            /// @brief Names the handle kind this platform's importer accepts.
+            constexpr ExternalHandleKind K_PLATFORM_HANDLE_KIND = ExternalHandleKind::OpaqueFd;
+#endif
+
+            /// @brief Returns the enumerator name of @p kind, or "unknown" for any other value.
+            const char* kind_name(ExternalHandleKind kind) noexcept
+            {
+                switch (kind)
+                {
+                    case ExternalHandleKind::OpaqueWin32: return "OpaqueWin32";
+                    case ExternalHandleKind::OpaqueFd:    return "OpaqueFd";
+                }
+                return "unknown";
+            }
+
+            /// @brief Spells @p uuid as thirty-two lowercase hexadecimal digits.
+            std::string hex(const DeviceUuid& uuid)
+            {
+                static constexpr char K_DIGITS[] = "0123456789abcdef";
+                std::string text;
+                text.reserve(uuid.bytes.size() * 2);
+                for (const std::uint8_t byte : uuid.bytes)
+                {
+                    text += K_DIGITS[byte >> 4];
+                    text += K_DIGITS[byte & 0x0F];
+                }
+                return text;
+            }
+
+            /// @brief Builds the exception import_device throws for a descriptor it rejects.
+            Core::SushiException descriptor_error(std::string detail)
+            {
+                return Core::SushiException(Core::Error{
+                    Core::Errc::invalid_access, "Interop::import_device: " + std::move(detail)});
+            }
+
+            /**
+             * @brief Throws unless @p descriptor can describe @p bytes on this platform.
+             * @throws Core::SushiException With invalid_access, naming the field at fault.
+             */
+            void require_importable(const ExternalMemoryDescriptor& descriptor, std::size_t bytes)
+            {
+                if (descriptor.kind != K_PLATFORM_HANDLE_KIND)
+                    throw descriptor_error(
+                        std::string("descriptor.kind is ") + kind_name(descriptor.kind) +
+                        " (value " + std::to_string(static_cast<unsigned>(descriptor.kind)) +
+                        ") and this platform imports " + kind_name(K_PLATFORM_HANDLE_KIND) +
+                        " handles only.");
+
+                if (descriptor.offset > descriptor.allocation_bytes ||
+                    bytes > descriptor.allocation_bytes - descriptor.offset)
+                    throw descriptor_error(
+                        "the region of " + std::to_string(bytes) + " bytes at offset " +
+                        std::to_string(descriptor.offset) + " ends past the allocation of " +
+                        std::to_string(descriptor.allocation_bytes) +
+                        " bytes that descriptor.allocation_bytes states.");
+            }
+
+            /**
+             * @brief Throws unless device @p device_index is the one @p descriptor names.
+             * @throws Core::SushiException With invalid_access, naming both UUIDs when both exist.
+             */
+            void require_same_device(const InteropCapabilities& capabilities,
+                                     const ExternalMemoryDescriptor& descriptor,
+                                     std::size_t device_index)
+            {
+                if (!capabilities.device_uuid)
+                    throw descriptor_error(
+                        "device " + std::to_string(device_index) + " reports no UUID, so it " +
+                        "cannot be matched to descriptor.device; import on a device whose " +
+                        "capabilities() hold a device_uuid.");
+
+                if (*capabilities.device_uuid != descriptor.device)
+                    throw descriptor_error(
+                        "descriptor.device is " + hex(descriptor.device) + " and device " +
+                        std::to_string(device_index) + " is " + hex(*capabilities.device_uuid) +
+                        "; import on the device that exported the handle.");
+            }
+
             /// @brief Unmaps and releases imported device memory.
             class DeviceImportOwner final : public Memory::IAllocationOwner
             {
@@ -216,7 +299,8 @@ namespace SushiRuntime
                 if (!is_power_of_two(alignment))
                     throw Core::SushiException(Core::Error{
                         Core::Errc::allocation_failed,
-                        "Interop::export_host: alignment must be a power of two."});
+                        "Interop::export_host: alignment " + std::to_string(alignment) +
+                        " is not a power of two."});
 
                 if (bytes == 0)
                     return Memory::Allocation();
@@ -224,7 +308,9 @@ namespace SushiRuntime
                 if (bytes > std::numeric_limits<std::size_t>::max() - (alignment - 1))
                     throw Core::SushiException(Core::Error{
                         Core::Errc::allocation_failed,
-                        "Interop::export_host: requested size overflows when rounded to alignment."});
+                        "Interop::export_host: " + std::to_string(bytes) + " bytes overflow " +
+                        "std::size_t when rounded up to the alignment of " +
+                        std::to_string(alignment) + "."});
 
                 const std::size_t rounded = round_up(bytes, alignment);
 
@@ -236,7 +322,10 @@ namespace SushiRuntime
                     throw Core::SushiException(Core::Error{
                         Core::Errc::allocation_failed,
                         "Interop::export_host: host allocation of " + std::to_string(rounded) +
-                        " bytes failed."});
+                        " bytes, aligned to " + std::to_string(alignment) + ", failed on device " +
+                        std::to_string(device_index) + "; capabilities(" +
+                        std::to_string(device_index) + ").host_export tells whether its queue " +
+                        "offers host USM."});
 
                 return Memory::Allocation(address, rounded, std::move(owner));
             }
@@ -251,16 +340,16 @@ namespace SushiRuntime
                 if (!capabilities.device_import)
                     throw Core::SushiException(Core::Error{
                         Core::Errc::unsupported,
-                        "Interop::import_device: the target device cannot import external memory."});
-                if (!capabilities.device_uuid || *capabilities.device_uuid != descriptor.device)
-                    throw Core::SushiException(Core::Error{
-                        Core::Errc::invalid_access,
-                        "Interop::import_device: the descriptor names a different device."});
+                        "Interop::import_device: device " + std::to_string(device_index) +
+                        " cannot import external memory; capabilities(" +
+                        std::to_string(device_index) + ").device_import is false."});
+                require_importable(descriptor, bytes);
+                require_same_device(capabilities, descriptor, device_index);
 
                 ImportGuard guard(context, device_index);
 
                 Experimental::external_mem memory{};
-                if (descriptor.kind == ExternalHandleKind::OpaqueWin32)
+                if (K_PLATFORM_HANDLE_KIND == ExternalHandleKind::OpaqueWin32)
                 {
                     Experimental::external_mem_descriptor<Experimental::resource_win32_handle> native{
                         {reinterpret_cast<void*>(static_cast<std::uintptr_t>(descriptor.handle))},

@@ -13,4 +13,4 @@ sushiruntime_add_module(
 
 sushiruntime_add_module_tests(
     MODULE interop
-    SOURCES test_interop_vocabulary.cpp)
+    SOURCES test_interop_import.cpp test_interop_vocabulary.cpp)

@@ -10,4 +10,8 @@ sushiruntime_add_module(
 
 sushiruntime_add_module_tests(
     MODULE core
-    SOURCES test_delegate.cpp test_ref_counted.cpp)
+    SOURCES
+        test_delegate.cpp
+        test_error.cpp
+        test_ref_counted.cpp
+        test_version.cpp)

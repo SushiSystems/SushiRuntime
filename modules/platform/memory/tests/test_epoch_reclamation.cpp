@@ -27,10 +27,16 @@
  */
 
 #include <atomic>
+#include <condition_variable>
+#include <cstddef>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 #include <gtest/gtest.h>
+#include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 
 using namespace SushiRuntime::Memory;
@@ -165,4 +171,95 @@ TEST(Unit_EpochReclamationTest, ConcurrentRetireNoCrash)
         w.join();
 
     EXPECT_GT(destroyed->load(), 0) << "No objects reclaimed under concurrent retire.";
+}
+
+namespace
+{
+    /// @brief Number of thread slots EpochManager holds; see README.md.
+    constexpr std::size_t K_EPOCH_SLOTS = SushiRuntime::Core::MAX_WORKER_THREADS + 32;
+
+    /** @brief Parks threads after they report, until the test lets them exit. */
+    class ThreadPark
+    {
+        public:
+            /** @brief Counts the calling thread as reported and blocks it until release(). */
+            void report_and_wait()
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                ++reported_;
+                changed_.notify_all();
+                changed_.wait(lock, [this] { return released_; });
+            }
+
+            /** @brief Blocks until @p count threads have reported. */
+            void wait_for_reports(std::size_t count)
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                changed_.wait(lock, [this, count] { return reported_ >= count; });
+            }
+
+            /** @brief Lets every parked thread return. */
+            void release()
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                released_ = true;
+                changed_.notify_all();
+            }
+
+        private:
+            /// @brief Guards the two fields below.
+            std::mutex mutex_;
+            /// @brief Signals a change of either field.
+            std::condition_variable changed_;
+            /// @brief Number of threads that have reported.
+            std::size_t reported_ = 0;
+            /// @brief Whether parked threads may return.
+            bool released_ = false;
+    };
+}
+
+/**
+ * @brief Tests that a thread arriving when every slot is held gets SushiException, unsupported.
+ */
+TEST(Unit_EpochReclamationTest, AThreadPastTheSlotLimitIsRefusedWithTheLimit)
+{
+    constexpr std::size_t THREADS = K_EPOCH_SLOTS + 1;
+    ThreadPark park;
+    std::atomic<std::size_t> refused{0};
+    std::atomic<std::size_t> refused_otherwise{0};
+
+    std::vector<std::thread> threads;
+    threads.reserve(THREADS);
+    for (std::size_t i = 0; i < THREADS; ++i)
+    {
+        threads.emplace_back([&]
+        {
+            try
+            {
+                EpochGuard guard;
+            }
+            catch (const SushiRuntime::Core::SushiException& refusal)
+            {
+                const std::string message = refusal.what();
+                const bool as_specified =
+                    refusal.error().code == SushiRuntime::Core::Errc::unsupported &&
+                    message.find(std::to_string(K_EPOCH_SLOTS) + " epoch slots") !=
+                        std::string::npos;
+                (as_specified ? refused : refused_otherwise).fetch_add(1);
+            }
+            // A registered thread keeps its slot until it exits; see README.md.
+            park.report_and_wait();
+        });
+    }
+
+    park.wait_for_reports(THREADS);
+    EXPECT_GE(refused.load(), 1u);
+    EXPECT_EQ(refused_otherwise.load(), 0u);
+
+    park.release();
+    for (std::thread& thread : threads)
+        thread.join();
+
+    std::thread late([] { EXPECT_NO_THROW({ EpochGuard guard; }); });
+    late.join();
 }

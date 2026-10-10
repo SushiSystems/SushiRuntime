@@ -50,7 +50,7 @@ namespace SushiRuntime
 
         /** @brief Builds an ErrorWrapper, deducing the error type. */
         template <typename E>
-        ErrorWrapper<std::decay_t<E>> make_error(E&& e)
+        [[nodiscard]] ErrorWrapper<std::decay_t<E>> make_error(E&& e)
         {
             return ErrorWrapper<std::decay_t<E>>{std::forward<E>(e)};
         }
@@ -64,7 +64,7 @@ namespace SushiRuntime
          * @tparam E The type of the error value.
          */
         template <typename T, typename E>
-        class Result
+        class [[nodiscard]] Result
         {
             public:
                 /**
@@ -98,7 +98,7 @@ namespace SushiRuntime
                  *
                  * @return True if a success value is present, false if an error is present.
                  */
-                bool has_value() const noexcept { return data_.index() == 0; }
+                [[nodiscard]] bool has_value() const noexcept { return data_.index() == 0; }
 
                 /** 
                  * @brief Checks if this object holds a success value.
@@ -117,7 +117,7 @@ namespace SushiRuntime
                  * @return A reference to the underlying success value.
                  * @warning Accessing the value when an error is stored yields undefined behavior.
                  */
-                T& value() & { return std::get<0>(data_); }
+                [[nodiscard]] T& value() & { return std::get<0>(data_); }
                 /** 
                  * @brief Retrieves the stored success value.
                  * 
@@ -126,7 +126,7 @@ namespace SushiRuntime
                  * @return A constant reference to the underlying success value.
                  * @warning Accessing the value when an error is stored yields undefined behavior.
                  */
-                const T& value() const & { return std::get<0>(data_); }
+                [[nodiscard]] const T& value() const & { return std::get<0>(data_); }
 
                 /** 
                  * @brief Retrieves the stored success value.
@@ -136,7 +136,7 @@ namespace SushiRuntime
                  * @return A reference to the underlying success value.
                  * @warning Accessing the value when an error is stored yields undefined behavior.
                  */
-                T& operator*() & { return std::get<0>(data_); }
+                [[nodiscard]] T& operator*() & { return std::get<0>(data_); }
                 /** 
                  * @brief Retrieves the stored success value.
                  * 
@@ -145,7 +145,7 @@ namespace SushiRuntime
                  * @return A constant reference to the underlying success value.
                  * @warning Accessing the value when an error is stored yields undefined behavior.
                  */
-                const T& operator*() const & { return std::get<0>(data_); }
+                [[nodiscard]] const T& operator*() const & { return std::get<0>(data_); }
 
                 /** 
                  * @brief Accesses a member of the stored success value.
@@ -155,7 +155,7 @@ namespace SushiRuntime
                  * @return A pointer to the underlying success value.
                  * @warning Accessing the value when an error is stored yields undefined behavior.
                  */
-                T* operator->() { return &std::get<0>(data_); }
+                [[nodiscard]] T* operator->() { return &std::get<0>(data_); }
                 /** 
                  * @brief Accesses a member of the stored success value.
                  * 
@@ -164,7 +164,7 @@ namespace SushiRuntime
                  * @return A constant pointer to the underlying success value.
                  * @warning Accessing the value when an error is stored yields undefined behavior.
                  */
-                const T* operator->() const { return &std::get<0>(data_); }
+                [[nodiscard]] const T* operator->() const { return &std::get<0>(data_); }
 
                 /** 
                  * @brief Retrieves the stored error payload.
@@ -174,7 +174,7 @@ namespace SushiRuntime
                  * @return A reference to the underlying error value.
                  * @warning Accessing the error when a success value is stored yields undefined behavior.
                  */
-                E& error() & { return std::get<1>(data_); }
+                [[nodiscard]] E& error() & { return std::get<1>(data_); }
                 /** 
                  * @brief Retrieves the stored error payload.
                  * 
@@ -183,7 +183,7 @@ namespace SushiRuntime
                  * @return A constant reference to the underlying error value.
                  * @warning Accessing the error when a success value is stored yields undefined behavior.
                  */
-                const E& error() const & { return std::get<1>(data_); }
+                [[nodiscard]] const E& error() const & { return std::get<1>(data_); }
 
             private:
                 std::variant<T, E> data_; /**< Success value at index 0, error at index 1. */

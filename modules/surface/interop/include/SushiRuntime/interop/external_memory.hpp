@@ -47,15 +47,16 @@ namespace SushiRuntime
         /**
          * @brief Describes a device allocation exported by one API for another to import.
          *
+         * kind has no default; the exporter states it.
          * See docs/design/SYCL_VULKAN_INTEROP.md §3.2 in the SushiEngine repository.
          */
         struct ExternalMemoryDescriptor
         {
-            ExternalHandleKind kind = ExternalHandleKind::OpaqueWin32; /**< Names the handle's platform shape. */
-            std::uint64_t handle = 0;                                  /**< Holds the exported OS handle, as an opaque integer. */
-            std::uint64_t allocation_bytes = 0;                        /**< Holds the size of the allocation the handle refers to. */
-            std::uint64_t offset = 0;                                  /**< Holds the byte offset of the imported region within the allocation. */
-            DeviceUuid device;                                         /**< Names the device that exported the handle. */
+            ExternalHandleKind kind;            /**< Names the handle's platform shape. */
+            std::uint64_t handle = 0;           /**< Holds the exported OS handle, as an integer. */
+            std::uint64_t allocation_bytes = 0; /**< Holds the size of the handle's allocation. */
+            std::uint64_t offset = 0;           /**< Holds the region's byte offset in it. */
+            DeviceUuid device;                  /**< Names the device that exported the handle. */
         };
 
     } // namespace Interop
