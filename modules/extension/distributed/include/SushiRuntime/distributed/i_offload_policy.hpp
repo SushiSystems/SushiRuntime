@@ -23,14 +23,16 @@
  * @file i_offload_policy.hpp
  * @brief Declares IOffloadPolicy, WorkerStats and the least-loaded offload policy.
  * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
  */
 
 #pragma once
 
-#include <SushiRuntime/core/span.hpp>
 #include <cstdint>
 #include <optional>
+
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/span.hpp>
 
 namespace SushiRuntime
 {
@@ -39,73 +41,69 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Live telemetry and health metrics for a single cluster worker.
-         *
-         * Supplies the state data needed by the offload policy to make task placement decisions.
+         * @brief Holds what a policy may know about one worker when it picks.
          */
         struct WorkerStats
         {
-            int      worker_id    = -1;
-            bool     alive        = false;
-            uint32_t inflight     = 0;   /**< tasks currently dispatched to it. */
-            uint64_t free_mem     = 0;   /**< device memory headroom (bytes), from the worker's last PONG. */
-            uint32_t rtt_micros   = 0;   /**< round-trip latency (us), refreshed by the master's PING/PONG probe. */
+            int           worker_id  = -1;    /**< The worker's id: the value of its PeerId. */
+            bool          alive      = false; /**< Registered and heard from within liveness. */
+            std::uint32_t inflight   = 0;     /**< Tasks dispatched to it and not settled. */
+            std::uint64_t free_mem   = 0;     /**< Free device memory in bytes, from its PONG. */
+            std::uint32_t rtt_micros = 0;     /**< Round trip of its last PING in microseconds. */
         };
 
         /**
-         * @brief Defines the strategy for selecting an execution node for an offloadable task.
+         * @brief Chooses the worker that runs an offloadable task, or none.
          *
-         * Evaluates cluster metrics to choose between remote dispatch and local fallback execution.
+         * pick_worker() runs on a pool worker at dispatch, under the worker directory's lock,
+         * so two calls never overlap. It returns quickly and calls nothing of the Cluster,
+         * the coordinator or the transport; a call back deadlocks.
          */
         class SUSHIRUNTIME_API IOffloadPolicy
         {
             public:
+                /** @brief Destroys the policy through the pointer the cluster owns. */
                 virtual ~IOffloadPolicy() = default;
 
                 /**
-                 * @brief Selects the optimal worker for executing a specific task.
-                 *
-                 * @param node The task under consideration for offloading.
-                 * @param workers Current telemetry metrics for all available workers.
-                 * @param est_bytes The estimated amount of data that must cross the network.
-                 * @return The ID of the chosen worker, or std::nullopt to execute locally.
+                 * @brief Picks a worker for a task.
+                 * @param node The task; read its metadata only.
+                 * @param workers The registered workers that have room; valid during the call.
+                 * @param est_bytes Bytes of the task's inputs, an upper bound on what crosses.
+                 * @return The worker_id of one entry of @p workers, or nothing to run locally.
                  */
-                virtual std::optional<int> pick_worker(const Graph::Node& node,
-                                                       SushiRuntime::span<const WorkerStats> workers,
-                                                       uint64_t est_bytes) = 0;
+                virtual std::optional<int> pick_worker(
+                    const Graph::Node& node, SushiRuntime::span<const WorkerStats> workers,
+                    std::uint64_t est_bytes) = 0;
         };
 
         /**
-         * @brief Strategy that routes tasks to the worker with the lowest estimated completion cost.
+         * @brief Picks the worker with the lowest estimated time to finish the task.
          *
-         * Incorporates network latency, transfer times, and remote queue backlogs to minimize execution span.
-         * Retains tiny payloads locally to avoid network overhead.
+         * The estimate adds the round trip, the transfer time and the worker's backlog; a
+         * task below the byte threshold stays local.
          */
         class SUSHIRUNTIME_API LeastLoadedOffloadPolicy final : public IOffloadPolicy
         {
             public:
                 /**
-                 * @brief Constructs a policy configured with a minimum payload size.
-                 *
-                 * @param min_offload_bytes The byte threshold below which tasks are forced to run locally.
+                 * @brief Builds the policy.
+                 * @param min_offload_bytes Tasks whose inputs are smaller run locally.
                  */
-                explicit LeastLoadedOffloadPolicy(uint64_t min_offload_bytes = 64 * 1024)
-                    : min_offload_bytes_(min_offload_bytes) {}
+                explicit LeastLoadedOffloadPolicy(std::uint64_t min_offload_bytes = 64 * 1024)
+                    : min_offload_bytes_(min_offload_bytes)
+                {
 
-                /**
-                 * @brief Selects the optimal worker based on load and latency.
-                 *
-                 * @param node The task under consideration for offloading.
-                 * @param workers Current telemetry metrics for all available workers.
-                 * @param est_bytes The estimated amount of data that must cross the network.
-                 * @return The ID of the chosen worker, or std::nullopt to execute locally.
-                 */
+                }
+
+                /** @brief Picks the live worker with the lowest estimate, or none. */
                 std::optional<int> pick_worker(const Graph::Node& node,
                                                SushiRuntime::span<const WorkerStats> workers,
-                                               uint64_t est_bytes) override;
+                                               std::uint64_t est_bytes) override;
 
             private:
-                uint64_t min_offload_bytes_;
+                /** @brief Holds the input size below which a task stays local. */
+                std::uint64_t min_offload_bytes_;
         };
 
     } // namespace Distributed

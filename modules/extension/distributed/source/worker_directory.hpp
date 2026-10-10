@@ -1,0 +1,256 @@
+/**************************************************************************/
+/* worker_directory.hpp                                                   */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file worker_directory.hpp
+ * @brief Declares WorkerDirectory, the master's record of each peer's session and load.
+ * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
+ */
+
+#pragma once
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/distributed/cluster_statistics.hpp>
+#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/message_type.hpp>
+
+#include "handshake.hpp"
+#include "sha256.hpp"
+#include "wire_messages.hpp"
+
+namespace SushiRuntime
+{
+    namespace Graph { struct Node; }
+
+    namespace Distributed
+    {
+        /**
+         * @brief Names what the directory decided about one handshake frame.
+         */
+        enum class HandshakeStep : std::uint8_t
+        {
+            Accepted,             /**< The frame was the one expected; send the reply. */
+            UnknownPeer,          /**< The peer is not in the directory; drop the frame. */
+            OutOfOrder,           /**< Not the frame this peer owes; drop it. */
+            AuthenticationFailed, /**< The worker's proof is wrong; send REJECT and close. */
+        };
+
+        /**
+         * @brief Carries the outcome of accept_hello().
+         */
+        struct HelloReply
+        {
+            /** @brief What the directory decided. */
+            HandshakeStep step = HandshakeStep::UnknownPeer;
+
+            /** @brief Holds the proof CHALLENGE carries; meaningful when step is Accepted. */
+            Sha256Digest master_proof{};
+        };
+
+        /**
+         * @brief Describes a peer the directory has just forgotten.
+         */
+        struct RemovedPeer
+        {
+            /** @brief Tells whether the peer was in the directory at all. */
+            bool known = false;
+
+            /** @brief Tells whether it had finished the handshake and counted as a worker. */
+            bool registered = false;
+
+            /** @brief Holds the name from HELLO; empty before HELLO. */
+            std::string name;
+
+            /** @brief Holds the endpoint the transport reported. */
+            std::string endpoint;
+        };
+
+        /**
+         * @brief Keeps one session per connected peer: handshake state, kernels, liveness, load.
+         *
+         * A worker's id is the value of its PeerId. The directory owns one mutex, held only
+         * inside its members; the single call it makes while holding it is
+         * IOffloadPolicy::pick_worker(). It calls no other brick, no transport and no sink.
+         * alive_count() reads an atomic. Any thread may call any member.
+         */
+        class SUSHIRUNTIME_API WorkerDirectory final
+        {
+            public:
+                /**
+                 * @brief Builds an open, empty directory.
+                 * @param secret The cluster's key, possibly empty; the bytes outlive this.
+                 * @param policy Not null; called under the directory's mutex.
+                 */
+                WorkerDirectory(SushiRuntime::span<const std::uint8_t> secret,
+                                std::shared_ptr<IOffloadPolicy> policy);
+
+                /** @brief Destroys the directory. */
+                ~WorkerDirectory();
+
+                WorkerDirectory(const WorkerDirectory&) = delete;
+                WorkerDirectory& operator=(const WorkerDirectory&) = delete;
+                WorkerDirectory(WorkerDirectory&&) = delete;
+                WorkerDirectory& operator=(WorkerDirectory&&) = delete;
+
+                /** @brief Adds a peer that owes HELLO; its handshake time starts at @p now. */
+                void add_peer(PeerId peer, std::string endpoint,
+                              std::chrono::steady_clock::time_point now);
+
+                /**
+                 * @brief Forgets a peer after on_peer_lost(); a worker stops counting as alive
+                 *        and its kernels stop counting toward supports().
+                 */
+                RemovedPeer remove_peer(PeerId peer);
+
+                /**
+                 * @brief Returns whether a frame of this type is to be handled for this peer.
+                 *
+                 * HELLO and PROOF pass for a peer that owes them, GOODBYE for any known peer,
+                 * every other type only for a registered worker. The rest is dropped unread.
+                 */
+                [[nodiscard]] bool admits(PeerId peer, MessageType type) const;
+
+                /**
+                 * @brief Records a HELLO and computes the master's proof for CHALLENGE.
+                 *
+                 * A second HELLO from a peer that is not registered restarts its handshake
+                 * with the new nonces, which is how a worker recovers a lost frame.
+                 * @param master_nonce Fresh for this call; the caller sends the same bytes.
+                 */
+                [[nodiscard]] HelloReply accept_hello(PeerId peer, const Wire::HelloMessage& hello,
+                                                      const HandshakeNonce& master_nonce);
+
+                /**
+                 * @brief Verifies a PROOF and, when it holds, registers the peer as a worker.
+                 *
+                 * On Accepted the worker is alive, its kernels count toward supports() and
+                 * wait_for_workers() wakes; the caller sends WELCOME with the peer's value.
+                 */
+                [[nodiscard]] HandshakeStep accept_proof(PeerId peer,
+                                                         const Wire::ProofMessage& proof,
+                                                         std::chrono::steady_clock::time_point now);
+
+                /** @brief Refreshes a peer's liveness; called for every frame it sends. */
+                void note_frame(PeerId peer, std::chrono::steady_clock::time_point now);
+
+                /** @brief Records the round trip and the free memory a PONG reports. */
+                void note_pong(PeerId peer, std::uint32_t rtt_micros, std::uint64_t free_mem);
+
+                /** @brief Records the queue depth and the cache size a HEARTBEAT reports. */
+                void note_heartbeat(PeerId peer, std::uint32_t queue_depth,
+                                    std::uint64_t cache_bytes);
+
+                /**
+                 * @brief Asks the policy for a worker and counts the task against it.
+                 *
+                 * The policy sees the alive workers whose inflight count is below the max_jobs
+                 * they sent in PROOF. On a pick that worker's inflight count rises by one.
+                 * @return Nothing when the directory is closed, no worker has room or the
+                 *         policy keeps the task local.
+                 */
+                [[nodiscard]] std::optional<PeerId> pick(const Graph::Node& node,
+                                                         std::uint64_t estimated_bytes);
+
+                /**
+                 * @brief Lowers a worker's inflight count by one, never below 0.
+                 *
+                 * Called once per PendingTask a removal returned, and for nothing else.
+                 */
+                void release_inflight(PeerId worker) noexcept;
+
+                /**
+                 * @brief Lists the workers silent for longer than @p liveness and marks each
+                 *        not alive, so pick() skips it; remove_peer() follows the close.
+                 * @param out Receives the peers, appended; each is listed once.
+                 */
+                void take_silent(std::chrono::steady_clock::time_point now,
+                                 std::chrono::milliseconds liveness, std::vector<PeerId>& out);
+
+                /**
+                 * @brief Lists the peers that connected more than @p limit ago and are still
+                 *        not registered.
+                 * @param out Receives the peers, appended; each is listed once.
+                 */
+                void take_handshake_overdue(std::chrono::steady_clock::time_point now,
+                                            std::chrono::milliseconds limit,
+                                            std::vector<PeerId>& out);
+
+                /** @brief Appends every alive worker, for a PING or a BUFFER_RELEASE to each. */
+                void list_workers(std::vector<PeerId>& out) const;
+
+                /** @brief Returns whether an alive worker sent this operation in PROOF. */
+                [[nodiscard]] bool supports(Graph::OpID op) const;
+
+                /** @brief Returns the number of alive workers; reads an atomic. */
+                [[nodiscard]] std::size_t alive_count() const noexcept;
+
+                /**
+                 * @brief Blocks on a condition, without polling, until @p count workers are
+                 *        alive, the timeout passes or close() is called.
+                 * @return True when the count was reached.
+                 */
+                [[nodiscard]] bool wait_for_workers(std::size_t count,
+                                                    std::chrono::milliseconds timeout);
+
+                /** @brief Appends one snapshot per registered worker. */
+                void snapshot(std::chrono::steady_clock::time_point now,
+                              std::vector<WorkerSnapshot>& out) const;
+
+                /** @brief Makes pick() return nothing from here on and wakes every waiter. */
+                void close() noexcept;
+
+            private:
+                /// @brief Guards the sessions; held across IOffloadPolicy::pick_worker() only.
+                mutable std::mutex mutex_;
+
+                /// @brief Wakes wait_for_workers() on a registration and on close().
+                std::condition_variable registered_;
+
+                /// @brief The cluster's key, borrowed.
+                SushiRuntime::span<const std::uint8_t> secret_;
+
+                /// @brief Chooses the worker in pick().
+                std::shared_ptr<IOffloadPolicy> policy_;
+
+                /// @brief The number of alive workers, for alive_count().
+                std::atomic<std::size_t> alive_count_{0};
+
+                /// @brief Set by close().
+                bool closed_ = false;
+        };
+
+    } // namespace Distributed
+} // namespace SushiRuntime

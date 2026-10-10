@@ -21,18 +21,24 @@
 
 /**
  * @file worker_agent.hpp
- * @brief Declares WorkerAgent, which executes distributed tasks on a worker machine.
+ * @brief Declares WorkerAgent, which runs a master's tasks inside the embedding application.
  * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
  */
 
 #pragma once
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <string>
+
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
+#include <SushiRuntime/distributed/shared_secret.hpp>
 
 namespace SushiRuntime
 {
@@ -41,84 +47,119 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Serves as a daemon that executes distributed tasks on a worker machine.
-         *
-         * Bridges the network transport and the local runtime context, fetching required remote data and executing incoming dispatches.
+         * @brief Holds what a worker agent is built with; moved into its constructor.
          */
-        class SUSHIRUNTIME_API WorkerAgent
+        struct WorkerAgentOptions
+        {
+            /** @brief Holds the cluster's key; empty joins only a master without one. */
+            SharedSecret secret;
+
+            /** @brief Holds the name shown in the master's log, at most 255 bytes. */
+            std::string name;
+
+            /** @brief Caps the tasks waiting to run; the master is told in PROOF. */
+            std::size_t max_jobs = 1024;
+
+            /** @brief Caps the bytes of cached buffers; 0 takes half of the device's memory. */
+            std::uint64_t cache_bytes = 0;
+
+            /** @brief Holds the interval between two HEARTBEAT frames. */
+            std::chrono::milliseconds heartbeat_interval{1000};
+
+            /** @brief Fails a task when no chunk of a requested buffer arrives for this long. */
+            std::chrono::milliseconds pull_idle_timeout{5000};
+        };
+
+        /**
+         * @brief Names why a worker agent stopped serving, or that it still serves.
+         */
+        enum class WorkerEnd : std::uint8_t
+        {
+            Running,                /**< The agent serves, or is between two connections. */
+            Stopped,                /**< stop() was called. */
+            MasterUnreachable,      /**< The transport never reached the master and gave up. */
+            RejectedAuthentication, /**< One side's proof failed: the secrets differ. */
+            ProtocolMismatch,       /**< The peer is another protocol version, or no master. */
+            MasterLost,             /**< The master went away and the transport does not retry. */
+        };
+
+        /**
+         * @brief Holds a worker's counters since start().
+         */
+        struct WorkerStatistics
+        {
+            std::uint64_t tasks_run = 0;                      /**< Kernels that ran to the end. */
+            std::uint64_t tasks_failed_kernel = 0;            /**< Kernels that threw. */
+            std::uint64_t tasks_failed_output_allocation = 0; /**< Outputs that did not fit. */
+            std::uint64_t tasks_failed_input_unavailable = 0; /**< Inputs that never arrived. */
+            std::uint64_t tasks_failed_unknown_operation = 0; /**< Operations with no kernel. */
+            std::uint64_t tasks_failed_shutting_down = 0;     /**< Tasks failed by stop(). */
+            std::uint64_t cache_bytes = 0;                    /**< Bytes the cache holds. */
+            std::uint64_t cache_evictions = 0;                /**< Buffers the cache dropped. */
+            std::uint64_t reconnects = 0;                     /**< Registrations after the first. */
+        };
+
+        /**
+         * @brief Registers with a master over a transport and runs the kernels it dispatches.
+         *
+         * The agent is the transport's only event receiver. It runs one exec thread, which
+         * calls the kernels one at a time, and one heartbeat thread.
+         * @see modules/extension/distributed/README.md
+         */
+        class SUSHIRUNTIME_API WorkerAgent final
         {
             public:
                 /**
-                 * @brief Constructs a worker agent bound to a local runtime context and attaches
-                 *        the transport.
+                 * @brief Builds an agent; nothing runs until start().
+                 * @param context Supplies the queue kernels run on and the cache's memory;
+                 *        outlives the agent.
+                 * @param transport A worker-side transport that was never started; not null.
+                 * @param kernels Not null; read from the exec thread.
                  */
-                WorkerAgent(Execution::RuntimeContext& ctx,
+                WorkerAgent(Execution::RuntimeContext& context,
                             std::shared_ptr<ITransport> transport,
-                            sushi_ptr<KernelRegistry>   kernels);
+                            sushi_ptr<KernelRegistry> kernels,
+                            WorkerAgentOptions options = WorkerAgentOptions());
 
-                /**
-                 * @brief Cleans up the worker agent resources.
-                 *
-                 * Automatically stops the internal event loops and releases memory before destruction.
-                 */
+                /** @brief Stops the agent and frees its cache. */
                 ~WorkerAgent();
 
                 WorkerAgent(const WorkerAgent&) = delete;
                 WorkerAgent& operator=(const WorkerAgent&) = delete;
+                WorkerAgent(WorkerAgent&&) = delete;
+                WorkerAgent& operator=(WorkerAgent&&) = delete;
 
                 /**
-                 * @brief Configures the time interval between network liveness pings.
-                 *
-                 * Schedules periodic heartbeat messages to notify the master that the worker is still active.
-                 *
-                 * @param interval The duration between consecutive heartbeat transmissions.
-                 * @warning Must be called prior to invoking start().
+                 * @brief Starts the exec and heartbeat threads, then the transport.
+                 * @return The transport's result; on a failure no thread is left running.
                  */
-                void set_heartbeat_interval(std::chrono::milliseconds interval);
+                [[nodiscard]] TransportResult start();
 
                 /**
-                 * @brief Defines the maximum duration to wait for a requested buffer transfer.
+                 * @brief Blocks until the agent stops serving, or the timeout.
                  *
-                 * Forces tasks to fail gracefully instead of hanging indefinitely if a remote data fetch times out.
-                 *
-                 * @param timeout The maximum allowed wait time for a buffer transfer, or zero/negative to wait indefinitely.
-                 * @warning Must be called prior to invoking start().
+                 * An agent that ended for a reason other than stop() answers no connection
+                 * and still needs stop().
+                 * @return Running when the timeout passed first.
                  */
-                void set_pull_timeout(std::chrono::milliseconds timeout);
+                [[nodiscard]] WorkerEnd wait_for_end(std::chrono::milliseconds timeout);
 
                 /**
-                 * @brief Limits the maximum number of queued pending jobs to prevent memory exhaustion.
+                 * @brief Ends the agent in order; blocks while the running kernel finishes.
                  *
-                 * Rejects incoming dispatches immediately if the internal queue exceeds this limit.
-                 *
-                 * @param max_jobs The strict upper bound on the number of pending tasks, or 0 for an unbounded queue.
+                 * Takes no more tasks, fails the queued ones as shutting down, sends GOODBYE,
+                 * stops the transport and joins the threads. A second call does nothing.
                  */
-                void set_max_jobs(size_t max_jobs);
+                void stop() noexcept;
 
-                /**
-                 * @brief Activates network communication and starts the background message processing loop.
-                 *
-                 * Transitions the agent into a running state where it can accept and process network payloads.
-                 */
-                void start();
-
-                /**
-                 * @brief Suspends the calling thread until the agent is explicitly stopped.
-                 *
-                 * Blocks execution synchronously by waiting on an internal synchronization primitive.
-                 */
-                void run();
-
-                /**
-                 * @brief Triggers a graceful shutdown of the agent's background loops.
-                 *
-                 * Signals internal threads to exit and cleanly interrupts the blocking run method.
-                 */
-                void stop();
+                /** @brief Returns the counters as they stand; any thread may call. */
+                [[nodiscard]] WorkerStatistics statistics() const noexcept;
 
             private:
                 struct Impl;
-                sushi_ptr<Impl> impl_;
+
+                /** @brief Holds the four worker bricks and what composes them. */
+                std::unique_ptr<Impl> impl_;
         };
 
     } // namespace Distributed

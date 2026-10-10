@@ -31,7 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace SushiRuntime::Distributed::Wire
+namespace SushiRuntime::Distributed
 {
     /**
      * @brief Names the sixteen messages of protocol version 2 by their type byte.
@@ -86,4 +86,17 @@ namespace SushiRuntime::Distributed::Wire
         const std::uint8_t value = static_cast<std::uint8_t>(type);
         return K_NAMES[is_message_type(value) ? value : 0];
     }
-} // namespace SushiRuntime::Distributed::Wire
+
+    /**
+     * @brief Holds the private codec of protocol version 2; these names reach it unqualified.
+     */
+    namespace Wire
+    {
+        using Distributed::is_message_type;
+        using Distributed::K_FIRST_MESSAGE_TYPE;
+        using Distributed::K_LAST_MESSAGE_TYPE;
+        using Distributed::K_MESSAGE_TYPE_COUNT;
+        using Distributed::message_type_name;
+        using Distributed::MessageType;
+    } // namespace Wire
+} // namespace SushiRuntime::Distributed

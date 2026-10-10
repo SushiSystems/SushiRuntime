@@ -29,17 +29,21 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/distributed/buffer_handle.hpp>
+#include <SushiRuntime/distributed/cluster_statistics.hpp>
 #include <SushiRuntime/distributed/i_offload_policy.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
-#include <SushiRuntime/distributed/protocol.hpp>
+#include <SushiRuntime/distributed/shared_secret.hpp>
 
 namespace SushiRuntime
 {
@@ -48,6 +52,46 @@ namespace SushiRuntime
 
     namespace Distributed
     {
+        /** @brief Holds the fewest data bytes one buffer chunk may carry: 4 KiB. */
+        inline constexpr std::uint32_t K_MINIMUM_CHUNK_BYTES = 4u * 1024u;
+
+        /** @brief Holds the most data bytes one buffer chunk may carry: 1 MiB less 64. */
+        inline constexpr std::uint32_t K_MAXIMUM_CHUNK_BYTES = 1024u * 1024u - 64u;
+
+        /** @brief Holds the data bytes one buffer chunk carries unless told otherwise: 256 KiB. */
+        inline constexpr std::uint32_t K_DEFAULT_CHUNK_BYTES = 256u * 1024u;
+
+        /**
+         * @brief Holds what a master is attached with; moved into Cluster::attach().
+         */
+        struct ClusterOptions
+        {
+            /**
+             * @brief Holds the key workers must prove they know; empty authenticates nobody.
+             *
+             * attach() refuses an empty secret on a transport whose exposure() is Network.
+             */
+            SharedSecret secret;
+
+            /** @brief Chooses the worker of each task; null selects LeastLoadedOffloadPolicy. */
+            std::shared_ptr<IOffloadPolicy> policy;
+
+            /** @brief Lives as long as the master, which reads no kernel from it; may be null. */
+            sushi_ptr<KernelRegistry> kernels;
+
+            /** @brief Holds the silence after which a worker counts as lost; sent in WELCOME. */
+            std::chrono::milliseconds liveness_timeout{5000};
+
+            /** @brief Bounds a kernel's run on a worker; 0 sets no bound. */
+            std::chrono::milliseconds task_deadline{30000};
+
+            /** @brief Bounds the time a new connection has to finish the handshake. */
+            std::chrono::milliseconds handshake_timeout{5000};
+
+            /** @brief Holds the data bytes per buffer chunk, within the two limits above. */
+            std::uint32_t chunk_bytes = K_DEFAULT_CHUNK_BYTES;
+        };
+
         /**
          * @brief Attaches a distributed master to a runtime and reads its knobs and counters.
          *
@@ -60,66 +104,99 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Builds a master on a runtime, installs it as the runtime's offload
-                 *        coordinator and starts it.
-                 * @pre No run is in flight on @p runtime.
-                 * @param transport Connected master-side transport, one peer per worker.
-                 * @param policy Offload policy; null selects LeastLoadedOffloadPolicy.
-                 * @throws Core::SushiException When @p transport is null.
+                 * @brief Builds a master, installs it as the runtime's offload coordinator and
+                 *        starts it and the transport.
+                 * @pre No run is in flight on @p runtime; @p transport was never started.
+                 * @throws Core::SushiException When @p transport is null, the secret is empty on
+                 *         a Network transport, chunk_bytes is out of range, or the transport
+                 *         does not start; nothing stays installed.
                  */
-                static Cluster attach(API::Runtime& runtime,
-                                      std::shared_ptr<ITransport> transport,
-                                      sushi_ptr<KernelRegistry> kernels,
-                                      std::shared_ptr<IOffloadPolicy> policy = nullptr);
+                [[nodiscard]] static Cluster attach(API::Runtime& runtime,
+                                                    std::shared_ptr<ITransport> transport,
+                                                    ClusterOptions options = ClusterOptions());
 
                 /**
                  * @brief Builds a master on a bare context; the Runtime overload forwards here.
                  * @pre No run is in flight on @p context.
-                 * @param transport Connected master-side transport, one peer per worker.
-                 * @param policy Offload policy; null selects LeastLoadedOffloadPolicy.
-                 * @throws Core::SushiException When @p transport is null.
+                 * @param transport A master-side transport that was never started.
+                 * @throws Core::SushiException As the Runtime overload.
                  */
-                static Cluster attach(Execution::RuntimeContext& context,
-                                      std::shared_ptr<ITransport> transport,
-                                      sushi_ptr<KernelRegistry> kernels,
-                                      std::shared_ptr<IOffloadPolicy> policy = nullptr);
+                [[nodiscard]] static Cluster attach(Execution::RuntimeContext& context,
+                                                    std::shared_ptr<ITransport> transport,
+                                                    ClusterOptions options = ClusterOptions());
+
+                /** @brief Attaches with an empty secret and default timings. */
+                [[deprecated("use attach(runtime, transport, ClusterOptions)")]]
+                [[nodiscard]] static Cluster attach(
+                    API::Runtime& runtime, std::shared_ptr<ITransport> transport,
+                    sushi_ptr<KernelRegistry> kernels,
+                    std::shared_ptr<IOffloadPolicy> policy = nullptr)
+                {
+                    return attach(runtime, std::move(transport),
+                                  legacy_options(std::move(kernels), std::move(policy)));
+                }
+
+                /** @brief Attaches to a bare context with an empty secret and default timings. */
+                [[deprecated("use attach(context, transport, ClusterOptions)")]]
+                [[nodiscard]] static Cluster attach(
+                    Execution::RuntimeContext& context, std::shared_ptr<ITransport> transport,
+                    sushi_ptr<KernelRegistry> kernels,
+                    std::shared_ptr<IOffloadPolicy> policy = nullptr)
+                {
+                    return attach(context, std::move(transport),
+                                  legacy_options(std::move(kernels), std::move(policy)));
+                }
 
                 /**
                  * @brief Stops the master and removes it from its runtime; does nothing once the
                  *        runtime has released it.
+                 *
+                 * Tasks still out on a worker are resubmitted and finish locally.
                  * @pre No run is in flight on the runtime.
-                 * @see modules/extension/distributed/README.md
                  */
                 void detach();
 
                 /**
-                 * @brief Blocks until @p count workers have registered, or the timeout.
-                 * @return True when the cluster reached @p count live workers in time.
+                 * @brief Blocks until @p count workers are registered, or the timeout.
+                 * @return True when the count was reached in time; false also once detached.
                  */
-                bool wait_for_workers(int count, std::chrono::milliseconds timeout);
+                [[nodiscard]] bool wait_for_workers(std::size_t count,
+                                                    std::chrono::milliseconds timeout);
 
-                /** @brief Returns the number of live, registered workers. */
-                [[nodiscard]] int alive_workers() const;
+                /** @brief Returns the number of workers registered and answering. */
+                [[nodiscard]] std::size_t alive_workers() const;
 
-                /** @brief Sets how long a worker may stay silent before it is declared dead. */
+                /**
+                 * @brief Sets how long a worker may stay silent before it is closed.
+                 *
+                 * Workers registered earlier keep the value their WELCOME carried.
+                 */
                 Cluster& liveness_timeout(std::chrono::milliseconds timeout);
 
-                /** @brief Sets the per-task offload deadline; zero disables it. */
+                /**
+                 * @brief Sets the bound on a kernel's run on a worker; 0 sets no bound.
+                 *
+                 * A dispatch no worker confirms and a result that is lost are taken back
+                 * whatever this value is.
+                 */
                 Cluster& task_deadline(std::chrono::milliseconds deadline);
 
-                /** @brief Returns the number of tasks shipped to workers. */
+                /** @brief Returns every counter, the two gauges and one entry per worker. */
+                [[nodiscard]] ClusterStatistics statistics() const;
+
+                /** @brief Returns statistics().offloaded without building the worker list. */
                 [[nodiscard]] std::uint64_t offloaded() const;
 
-                /** @brief Returns the number of offloadable tasks the policy kept local. */
+                /** @brief Returns statistics().declined without building the worker list. */
                 [[nodiscard]] std::uint64_t declined() const;
 
-                /** @brief Returns the number of tasks re-injected after a failure or a deadline. */
+                /** @brief Returns statistics().redispatched without building the worker list. */
                 [[nodiscard]] std::uint64_t redispatched() const;
 
-                /** @brief Returns the number of writebacks the version fence rejected. */
+                /** @brief Returns statistics().stale_writebacks without building the list. */
                 [[nodiscard]] std::uint64_t stale_writebacks() const;
 
-                /** @brief Reports whether a live worker runs an operation. */
+                /** @brief Reports whether a registered worker has a kernel for an operation. */
                 [[nodiscard]] bool supports(Graph::OpID op) const;
 
                 /** @brief Advances the version of the buffer shared at an address, if any. */
@@ -136,6 +213,16 @@ namespace SushiRuntime
 
                 /** @brief Wraps the state attach() built. */
                 explicit Cluster(std::shared_ptr<State> state) noexcept;
+
+                /** @brief Builds the options of the four-argument attach(). */
+                [[nodiscard]] static ClusterOptions legacy_options(
+                    sushi_ptr<KernelRegistry> kernels, std::shared_ptr<IOffloadPolicy> policy)
+                {
+                    ClusterOptions options;
+                    options.kernels = std::move(kernels);
+                    options.policy  = std::move(policy);
+                    return options;
+                }
 
                 /** @brief The registry and the master; shared by every copy of the handle. */
                 std::shared_ptr<State> state_;

@@ -21,16 +21,19 @@
 
 /**
  * @file tcp_transport.hpp
- * @brief Declares TcpTransport, the ITransport implementation over TCP sockets.
+ * @brief Declares TcpTransport, the ITransport that carries frames over TCP.
  * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
  */
 
 #pragma once
 
-#include <string>
+#include <chrono>
+#include <cstddef>
 #include <memory>
-#include <cstdint>
+
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/distributed/endpoint.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
 
 namespace SushiRuntime
@@ -38,88 +41,132 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Provides a TCP-based implementation for network communication using raw sockets.
+         * @brief Holds the settings of a master-side TCP transport.
+         */
+        struct TcpMasterOptions
+        {
+            /**
+             * @brief Holds the address to listen on; port 0 takes any free port.
+             *
+             * The default reaches this machine only. `0.0.0.0`, `::` or an interface address
+             * must be written out, and Cluster::attach() then requires a secret.
+             */
+            Endpoint bind{"127.0.0.1", 0};
+
+            /** @brief Holds the number of pending connections the OS may queue. */
+            int backlog = 16;
+
+            /** @brief Caps the open connections; one above the cap is refused as busy. */
+            std::size_t max_peers = 64;
+
+            /** @brief Caps the control frames queued per peer; send() then returns QueueFull. */
+            std::size_t control_queue_frames = 4096;
+
+            /** @brief Closes a peer whose socket takes no byte for this long; match liveness. */
+            std::chrono::milliseconds write_idle_timeout{5000};
+        };
+
+        /**
+         * @brief Holds the settings of a worker-side TCP transport.
+         */
+        struct TcpWorkerOptions
+        {
+            /** @brief Bounds one connection attempt to one resolved address. */
+            std::chrono::milliseconds attempt_timeout{3000};
+
+            /** @brief Bounds the wait for the first connection; 0 waits without a limit. */
+            std::chrono::seconds connect_timeout{60};
+
+            /** @brief Connects again after the master is lost; false ends at the first loss. */
+            bool reconnect = true;
+
+            /** @brief Holds the wait before the second attempt; it doubles up to the ceiling. */
+            std::chrono::milliseconds backoff_initial{100};
+
+            /** @brief Holds the longest wait between two attempts. */
+            std::chrono::milliseconds backoff_ceiling{5000};
+
+            /** @brief Caps the control frames queued for the master. */
+            std::size_t control_queue_frames = 4096;
+
+            /** @brief Closes the connection when the socket takes no byte for this long. */
+            std::chrono::milliseconds write_idle_timeout{5000};
+        };
+
+        /**
+         * @brief Carries frames over TCP, two threads per connection.
          *
-         * Establishes asymmetric master-worker connections to exchange framed messages across network boundaries.
+         * A master accepts on one thread; a worker resolves and connects on one thread, again
+         * after each loss while reconnect is set. Each connection has a reader thread, which
+         * makes that peer's events, and a writer thread.
+         * @see modules/extension/distributed/README.md
          */
         class SUSHIRUNTIME_API TcpTransport final : public ITransport
         {
             public:
-                /**
-                 * @brief Creates a master endpoint bound to port; accepting waits until start().
-                 * @param port The port to bind, or 0 to let the operating system assign one.
-                 * @param worker_count The exact number of worker connections to wait for.
-                 * @throws std::runtime_error If socket creation or binding fails.
-                 */
-                static std::shared_ptr<TcpTransport> make_master(uint16_t port, int worker_count);
-
-                /**
-                 * @brief Creates a worker endpoint that connects to the master when start() is
-                 *        called.
-                 */
-                static std::shared_ptr<TcpTransport> make_worker(const std::string& host, uint16_t port);
-
-                /**
-                 * @brief Cleans up network resources and shuts down active connections.
-                 *
-                 * Ensures all underlying socket handles are properly closed and worker threads are joined.
-                 */
-                ~TcpTransport() override;
-
-                /**
-                 * @brief Frames a binary payload with a header and writes it synchronously to a
-                 *        peer.
-                 * @param peer_id The target peer, or < 0 to broadcast to all peers (master only).
-                 */
-                void send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload) override;
-
-                /**
-                 * @brief Registers a callback function to handle incoming network messages.
-                 *
-                 * Stores the provided handler to be invoked whenever a complete frame is received.
-                 *
-                 * @param handler The callback function to execute on message arrival.
-                 */
-                void on_message(MessageHandler handler) override;
-
-                /**
-                 * @brief Activates the transport layer to begin network operations.
-                 *
-                 * Starts background threads for accepting connections (master) or connecting and reading data (worker).
-                 */
-                void start() override;
-
-                /**
-                 * @brief Terminates all active network operations and gracefully stops background threads.
-                 *
-                 * Signals the internal loops to exit and closes open sockets to force unblocking.
-                 */
-                void stop() override;
-
-                /**
-                 * @brief Retrieves the total number of connected peers.
-                 *
-                 * Returns the count of established connections managed by this transport instance.
-                 *
-                 * @return The integer count of active peer connections.
-                 */
-                int  peer_count() const override;
-
-                /**
-                 * @brief Retrieves the actual local port number bound by a master endpoint.
-                 *
-                 * Queries the underlying socket address to determine the OS-assigned port if 0 was originally requested.
-                 *
-                 * @return The local port number in use.
-                 * @warning This function is only valid for master endpoints; calling it on a worker yields undefined results.
-                 */
-                uint16_t bound_port() const;
-
                 struct Impl;
 
+                /**
+                 * @brief Creates a master endpoint; nothing is bound until start().
+                 * @return Never null.
+                 */
+                [[nodiscard]] static std::shared_ptr<TcpTransport> make_master(
+                    TcpMasterOptions options = TcpMasterOptions());
+
+                /**
+                 * @brief Creates a worker endpoint; nothing connects until start().
+                 * @param master Host name or address and port; resolved again on every attempt.
+                 * @return Never null.
+                 */
+                [[nodiscard]] static std::shared_ptr<TcpTransport> make_worker(
+                    Endpoint master, TcpWorkerOptions options = TcpWorkerOptions());
+
+                /** @brief Stops the transport and closes its sockets. */
+                ~TcpTransport() override;
+
+                TcpTransport(const TcpTransport&) = delete;
+                TcpTransport& operator=(const TcpTransport&) = delete;
+                TcpTransport(TcpTransport&&) = delete;
+                TcpTransport& operator=(TcpTransport&&) = delete;
+
+                /** @brief Binds and listens, or starts the connector; see ITransport::start(). */
+                [[nodiscard]] TransportResult start(TransportEvents& events) override;
+
+                /** @brief Closes the listener and every connection and joins every thread. */
+                void stop() noexcept override;
+
+                /** @brief Queues a control frame on the peer's outbox. */
+                [[nodiscard]] SendStatus send(PeerId peer, MessageType type,
+                                              SushiRuntime::span<const std::byte> payload) override;
+
+                /** @brief Adds a stream to the peer's outbox. */
+                [[nodiscard]] SendStatus send_stream(PeerId peer,
+                                                     std::unique_ptr<FrameSource> source) override;
+
+                /** @brief Closes one connection after its queued control frames are written. */
+                void close_peer(PeerId peer) noexcept override;
+
+                /**
+                 * @brief Returns Loopback when the bind address, or the master's host, is a
+                 *        loopback address or `localhost`; Network otherwise.
+                 */
+                [[nodiscard]] TransportExposure exposure() const noexcept override;
+
+                /** @brief Returns the bytes read from and written to every socket. */
+                [[nodiscard]] TransportStatistics statistics() const noexcept override;
+
+                /**
+                 * @brief Returns the address and the port a master listens on.
+                 * @pre This is a master endpoint and start() returned Ok.
+                 */
+                [[nodiscard]] Endpoint local_endpoint() const;
+
             private:
-                explicit TcpTransport(std::shared_ptr<Impl> impl);
-                std::shared_ptr<Impl> impl_;
+                /** @brief Wraps the state a factory built. */
+                explicit TcpTransport(std::unique_ptr<Impl> impl) noexcept;
+
+                /** @brief Holds the role, the options, the peer table and the threads. */
+                std::unique_ptr<Impl> impl_;
         };
 
     } // namespace Distributed
