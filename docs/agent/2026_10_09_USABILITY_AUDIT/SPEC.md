@@ -3841,3 +3841,25 @@ headers from outside the module. Each line names its owner.
 10. `SushiRuntime.h` includes no distributed header. One umbrella
     `SushiRuntime/distributed/distributed.hpp`. Owner: C13.
 11. `tests/benchmark/README.md` describes the old distributed benchmark. Owner: T17.
+
+### What the TCP fault tests found by reading (T14)
+
+None of these is verified by a run. Owner: T19, unless marked.
+
+1. A peer whose socket is blocked inside `write_all` is retired after `write_idle_timeout` (5 s),
+   not after liveness: the writer of `peer_connection.cpp` reads `closed_locally_` only between
+   frames, and the reader reports the loss only after the writer shut the socket. The monitor marks
+   the worker dead at once, and its tasks come back late. `close_peer()` shuts the socket itself.
+2. A worker transport keeps connecting after the link ended with `RejectedAuthentication` or
+   `ProtocolMismatch`; an embedded `WorkerAgent` nobody stops makes one connection per backoff
+   period. The agent ends the connecting when the link ends.
+3. `redispatched` and `peers_lost` rise after the node is back with the scheduler, so a caller that
+   reads statistics right after a run can see the old values. The counters rise first.
+4. `handshake_rejected_version` rises for a peer the directory no longer knows, while the ERROR
+   line is skipped for it.
+5. `ClusterStatistics` has no counter for a close on bad magic or a malformed frame.
+6. An honest worker with the wrong secret checks the master's proof first and closes without
+   `PROOF`, so the master counts nothing and logs "closed before it registered". Protocol
+   behaviour; the guide says so. Owner: T17.
+7. Every open connection counts toward `max_peers`, registered or not. Floods are out of scope
+   for a trusted LAN; the guide says so. Owner: T17.
