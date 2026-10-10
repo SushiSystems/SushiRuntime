@@ -331,3 +331,377 @@ on entry. A payload that declares a 256-byte string fails to decode.
 
 `MessageRouter` calls the handler set for a type and reports `Unhandled` for a type with no handler
 and for a byte that names no message.
+
+## test_buffer_exchange.cpp
+
+The tests drive `BufferExchange` over a `BufferRegistry` with no socket and no thread. Buffers are
+host vectors registered by pointer, each followed by one guard byte that a write past the end would
+change. A pull is read the way a peer's writer reads it: one `OutboundFrame`, reused for every
+`next()`. Every exchange uses the smallest chunk, 4 KiB. The file includes the module's private
+headers `buffer_exchange.hpp`, `buffer_registry.hpp`, `wire_frame.hpp` and `wire_messages.hpp` by
+quoted name.
+
+### `ChunkedRoundTrip`
+
+Runs at 0, 1, chunk - 1, chunk, chunk + 1 and 3 chunks + 7 bytes. It pulls a registered buffer,
+decodes each frame with `BufferChunkMessage::decode`, checks the prefix fields and the offset, and
+compares the reassembled bytes with the source. The same chunks then go back as task-output chunks
+into a second buffer, which must end up equal to the source, guard byte included. `finish_task`
+answers true once and false the second time, because the first call forgets the task.
+
+### `EveryStreamEndsWithALastChunk`
+
+At each of the six sizes only the final frame carries the last-chunk flag and only it comes back as
+`FinalFrame`. A 0-byte buffer is one empty chunk with the flag. The call after the final frame
+returns `Finished` and leaves the frame's payload as it was.
+
+### `ForgedVersionFenced`
+
+Pins the second half of the output fence (finding DIST-03). A chunk one version above the buffer's
+and one a version below are both `Stale` and change no byte. After an honest first chunk the
+registry's version is raised, as a reaper does before it resubmits, and the task's second chunk is
+`Stale` as well. `stale_writebacks` counts three.
+
+### `GapDiscardsTransfer`
+
+After piece 0, piece 2 is a `Gap`. Piece 1, which was the expected one, is then a `Gap` too: the
+transfer's progress is gone. A transfer that starts again at offset 0 runs to `Completed`.
+
+### `DuplicateChunkDiscardsTransfer`
+
+Piece 1 sent twice is a `Gap` the second time, and piece 2 after it is refused as well.
+
+### `ReleaseDuringStreamAborts`
+
+Pins finding N1. The buffer is unregistered and its allocation freed between two `next()` calls. The
+stream's next frame is `BUFFER_ABORT` with reason `Gone`, and it is the last. The registry copied
+nothing for it, so an ASan run reports no read of the freed allocation; without ASan the test only
+proves the abort. A pull of an id that was never shared is one `BUFFER_ABORT` frame.
+
+### `StaleVersionAbortsThePull`
+
+The buffer's version is raised between two `next()` calls: the stream ends with `BUFFER_ABORT`,
+reason `Stale`. A request that names a version the buffer has already left gets that frame alone.
+
+### `MalformedChunkIsRefusedBeforeAnyWrite`
+
+A chunk with the pull-reply purpose, one that declares a size other than the buffer's, one that
+runs past the end, and one flagged last before the end are each `Malformed`. The buffer keeps its
+bytes.
+
+### `ForgottenTaskStartsOver`
+
+After `forget_task` the task's next chunk is a `Gap`. A chunk that continues a transfer from another
+connection than the one that started it is a `Gap` as well.
+
+## test_buffer_registry.cpp
+
+The tests cover `BufferRegistry` alone, on host vectors registered by pointer, with one thread. No
+test here proves that `unregister_buffer` waits for a copy in progress: that needs a way to stop a
+thread inside `read()`, which the registry does not offer.
+
+### `RegisteringASharedAddressKeepsItsHandle`
+
+The first id is 1 and the first version is 1. Registering the same address again returns the same id
+and the same version; a second address gets id 2.
+
+### `BumpRaisesTheVersionAndSkipsAGoneId`
+
+`bump` writes the raised version into each handle and leaves a handle whose id is gone as it was.
+`bump_addresses` raises the version of a shared address and ignores an address that is not shared.
+
+### `ResolveAndRefreshFollowTheCurrentVersion`
+
+`resolve` returns handles in the order of the addresses and false when one is not shared. `refresh`
+rewrites each handle's version and returns false once an id has been unregistered.
+
+### `ReadAtAnOffsetCopiesExactlyTheChunk`
+
+A 16-byte read at offset 10 lands in the middle of a guarded destination; the guard bytes on both
+sides stay. A read that ends on the buffer's last byte succeeds. One byte further, an offset beyond
+the size, and an offset of 2^64 - 1 are `OutOfRange`; another version is `Stale`; an unknown id is
+`Gone`. None of the refused reads changes the destination. A 0-byte read at the end only checks.
+
+### `WriteAtAnOldVersionIsRefused`
+
+After `bump`, a write at the version the task was dispatched with is `Stale`, as is one at a version
+the buffer has not reached, and neither changes a byte. A write at the current version lands at its
+offset only and leaves the version as it was.
+
+### `UnregisterReturnsTheId`
+
+`unregister_buffer` returns the id of a shared address and an invalid id for an address that was
+never shared or was already released. Lookups by address and by id then find nothing, and `read`
+and `write` report `Gone`. The same address registered again gets a new id.
+
+## test_pending_tasks.cpp
+
+The file tests `PendingTasks` of `modules/extension/distributed/source/pending_tasks.hpp`, the table
+that owns an offloaded node from `insert` until one removal returns it. It needs no hardware, no
+transport and no clock: every time is a fixed point passed in, and a node is a bare `Graph::Node`
+from `make_sushi` that the table never reads.
+
+### `InsertAfterCloseRefused`, `DrainReturnsEveryNode`
+
+After `close()` an insert returns false and the caller keeps its node; an id already in the table is
+refused too. `drain` then hands back each node that was inserted, once, whether or not the task was
+acknowledged, and a second `drain` finds nothing. Together they pin findings D1 and D2: a stopping
+coordinator takes no new node and returns the ones it holds.
+
+### `TakeIsExactlyOnce`, `ForeignWorkerCannotTake`
+
+`take` returns the node, the worker and the output handles as dispatched, and the same call a second
+time returns nothing, as do the three other removals. A worker that does not own the task can
+neither take it, acknowledge it nor pass the output fence for it.
+
+### `LateResultLeavesInflightAlone`
+
+The regression test of finding DIST-20. A result for an id that was never dispatched, or for a task
+`take_for_worker` already returned, gets nothing back, so the caller has no task to lower a count
+for.
+
+### `UnacknowledgedTaskReapedWithDeadlineZero`
+
+Finding D6, the lost dispatch. With a task deadline of 0, a task with no `TASK_ACCEPTED` is reaped
+one millisecond after the acknowledgement limit of 5000 ms, with the cause `Unacknowledged`, and not
+at the limit itself. The acknowledged task beside it is never reaped, because a deadline of 0 puts
+no bound on the kernel. `HeartbeatLeavesAnUnacknowledgedTaskToItsOwnLimit` shows that heartbeats do
+not count against a task the worker has not accepted.
+
+### `AcknowledgedTaskBelowOldestHeldReaped`
+
+Finding D6, the lost result. A heartbeat whose oldest held id is above an acknowledged task counts
+one miss; the task is reaped as `LostResult` at the second miss in a row. A heartbeat that lists the
+task again clears the count, which the test shows with task 2: it misses, is listed, and then needs
+two more misses. A task of another worker is untouched.
+
+### `ChunkRestartsTheDeadline`, `TakeForWorkerForgetsItsChunkTime`
+
+The task deadline runs from the later of the dispatch and the worker's last chunk, per worker.
+A worker's chunk time is dropped with its tasks, so a task dispatched to it afterwards is measured
+from its own dispatch.
+
+### `TwoRemovalsOfOneTaskHaveOneWinner`
+
+In each of 200 rounds one thread calls `take` and another `take_for_worker` for the same task. Both
+wait at a `StartGate`, which spins until the two have arrived, so the calls overlap as closely as
+two threads can. Whichever order the scheduler picks, exactly one of them gets the node.
+
+## test_worker_directory.cpp
+
+The file tests `WorkerDirectory` of `modules/extension/distributed/source/worker_directory.hpp`. It
+needs no hardware and no transport: the test plays the worker's side of the handshake with fixed
+nonces and a secret of the bytes 0 to 31, computes proofs with `compute_proof` of `handshake.hpp`,
+and passes every time in as a fixed point.
+
+### `RecordingPolicy`
+
+`RecordingPolicy` is the offload policy of the fixture. It records the workers of each call and
+returns the first, a fixed id, or nothing, as the test sets it.
+
+### `UnregisteredPeerMessagesDropped`
+
+The regression test of finding DIST-03. The test lists the message types `admits` passes for a peer
+at each step: none for an unknown peer, `HELLO` and `GOODBYE` after the connect, those and `PROOF`
+after `HELLO`, and every type but the two handshake frames once the proof holds. A `BUFFER_REQUEST`
+or `BUFFER_CHUNK` from a peer that has not proved the secret is therefore dropped unread.
+
+### `HandshakeDeadlineClosesPeer`
+
+Finding DIST-04. A peer that has not registered is listed one millisecond after the limit, counted
+from its connect, and once. Sending `HELLO` again does not move the limit, and a registered worker
+is never listed.
+
+### `WaitForWorkersWakesOnRegistration`
+
+Finding DIST-10. A thread waits for one worker with a limit of 24 hours while the test registers
+one, and a second thread waits for two while the test closes the directory. The limit is never
+reached, so a registration or a `close()` that wakes nobody hangs the test until the program's
+timeout; no outcome depends on which thread runs first.
+
+### `WrongProofIsRejected`
+
+A proof made under another secret, the master's own proof sent back, and a proof made under an
+empty key are each refused with `AuthenticationFailed`, and the peer is not a worker afterwards. A
+refused proof spends its nonces: the right proof for them is then `OutOfOrder`.
+
+### `SecondHelloRestartsTheHandshake`
+
+A second `HELLO` from a peer that owes `PROOF` gets a proof for the new nonces, and only a `PROOF`
+for the new nonces registers it. `HELLO` and `PROOF` from a registered worker are `OutOfOrder` and
+change nothing.
+
+### `SilentWorkerIsTakenOnce`
+
+A worker silent for longer than the liveness limit is listed once and stops counting at that
+moment: the alive count drops, its operations no longer count toward `supports`, and `pick` offers
+only the other worker. The `remove_peer` that follows does not lower the count a second time, and
+a late frame does not bring the worker back.
+
+### `PickSkipsWorkersAtTheirJobLimit`
+
+Two workers send limits of 1 and 2 in `PROOF`. The policy sees both, then only the second, then
+nobody, and at that point it is not called at all. One `release_inflight` frees one slot. An answer
+that names a worker the policy was not offered counts as no pick.
+
+## test_transport_conformance.cpp
+
+The file pins the `ITransport` contract as `i_transport.hpp` writes it and needs no hardware. The
+suite `Unit_TransportConformanceTest` is typed over two rigs, so each test runs once on an
+`InProcessFabric` and once over TCP on `127.0.0.1` with port 0. The tests wait on recorded events
+with a 10 s limit and never on a sleep. `Unit_OutboxTest` covers `Outbox` with no transport.
+
+### `EventRecorder`
+
+`EventRecorder` implements `TransportEvents`, copies every event into a list and lets a test wait
+until the list satisfies a condition. A test may set a reaction, which runs inside the event on the
+transport's thread, outside the recorder's lock.
+
+### `DeliversInOrderPerPeer`
+
+Each end queues 500 control frames that carry a counter. Each receiver must see the counters in
+order, and the byte counters must cover 16 bytes for each frame.
+
+### `PeerLostOnceAfterLastFrame`
+
+The worker queues 100 frames and calls `close_peer()`. The master must record the connection, the
+100 frames in order and one `ClosedByPeer` loss, 102 events in all, counted after both transports
+have stopped. The worker must record one `ClosedLocally` loss and then one `on_connect_abandoned()`,
+since its reconnect is off. A send to the closed peer returns `UnknownPeer` on both ends.
+
+### `NoCallbackAfterStop`
+
+A thread floods the master with frames while the test stops the master. The number of events the
+master recorded when `stop()` returned must not grow afterwards, and `stop()` must report no loss.
+
+### `SendFromCallbackAllowed`
+
+The master sends from `on_peer_connected()` and echoes every frame from inside `on_frame()`; the
+worker calls `close_peer()` from inside the event of the last echo. Every send must return `Queued`
+and the echoes must arrive in order, which fails if a transport holds a lock across an event.
+
+### `SendAfterStopReturnsStopped`
+
+`send()` returns `Stopped` before `start()` and after `stop()`, and `UnknownPeer` in between for an
+id that names nobody. `send_stream()` on a stopped transport destroys its source before it returns.
+A second `start()` returns `AlreadyStarted`, also after `stop()`, and a second `stop()` does
+nothing.
+
+### `ControlFrameOvertakesStream`
+
+A stream of 8 chunks holds its second chunk until the test has queued a control frame. The control
+frame must arrive after at most 2 chunks, and the chunks must arrive in order with the last-chunk
+flag on the eighth only.
+
+### `GatedSource`
+
+`GatedSource` is the stream of that test. Its wait stands in for a writer that is busy with one
+chunk; a production `FrameSource` never waits.
+
+### `ControlComesBeforeStream`
+
+`Outbox::pop()` returns two control frames that were pushed after a stream before the stream's first
+frame, destroys the source after its final frame and reports `Timeout` when nothing is queued.
+
+### `StreamsTakeTurns`
+
+Two streams of 3 and 2 frames come out as first, second, first, second, first.
+
+### `QueueFullAtCapacity`
+
+An outbox of capacity 2 returns `QueueFull` for the third control frame and `Queued` again after one
+`pop()`. A payload of 1 MiB plus one byte returns `TooLong` whatever the queue holds.
+
+### `CloseKeepsControlAndDropsStreams`
+
+`close()` destroys the queued stream at once and refuses later pushes with `UnknownPeer`. The
+control frame queued before it still comes out of `pop()`, and the next `pop()` returns `Closed`.
+
+## test_worker_bricks.cpp
+
+The tests in this file open no socket. A fake transport records every frame a brick sends and every
+peer it closes, and either pulls an output stream dry on the calling thread or keeps it until the
+test releases it. A fake allocator gives the cache host memory, counts it and can be told to refuse.
+The handshake tests use a fixed nonce and a fixed secret. Every wait is on a condition, bounded at
+30 s so that a broken brick fails a test. The executor tests build a default `sycl::queue`; their
+kernels write through the views and return a finished event. The file includes the private headers
+of the four bricks by quoted name.
+
+### `ReleaseEvicts`
+
+`BUFFER_RELEASE` frees an unpinned buffer at once and counts an eviction. A pinned buffer keeps its
+memory until its last unpin.
+
+### `BudgetEvictsLeastRecentlyUsedUnpinned`
+
+Three buffers of 100 bytes fill a 300-byte budget and the first is read again. A fourth buffer makes
+the cache free exactly the second, which is the one used longest ago.
+
+### `PinnedEntryIsNotEvicted`
+
+With the oldest buffer pinned, the budget evicts the newer unpinned one. With every buffer pinned,
+`pin_output` answers `AllocationFailed` and frees nothing.
+
+### `GapInAPulledBufferDiscardsIt`
+
+A chunk at offset 8 after a chunk that ended at 4 ends the transfer: `wait_input` answers `Aborted`
+and the memory is returned. The same buffer is then pulled again in three chunks and arrives whole.
+
+### `DuplicateDispatchRunsOnce`
+
+The same dispatch delivered twice through `DispatchDeduplicator` reaches the executor once: one
+kernel call, one `TASK_ACCEPTED`, one `TASK_RESULT`. A deduplicator of capacity 2 forgets its oldest
+id when a third arrives.
+
+### `OutputAllocationFailureFailsTheTask`
+
+With the allocator refusing, a task with one output ends in a `TASK_RESULT` with
+`OutputAllocationFailed`, its kernel never runs and no chunk is sent. The next task, with memory
+available, succeeds on the same exec thread.
+
+### `KernelSeesBufferSizes`
+
+The kernel reads `size_bytes` of its input and its output views: 12 and 20. The input comes from a
+`BUFFER_REQUEST` the test answers with two chunks, and the output leaves in chunks of 8 bytes.
+
+### `LegacyKernelSignatureStillRuns`
+
+A kernel registered through the deprecated pointer overload runs and its bytes come back in the
+output chunk. The deprecation warning is silenced around that one call.
+
+### `KernelThatThrowsFailsTheTaskAndTheWorkerLives`
+
+A kernel that throws produces `KernelFailed` with no outputs and no chunk. The next dispatch runs.
+
+### `OutputStreamEndsWithTheResult`
+
+The transport keeps the stream. Until it is pulled no `TASK_RESULT` exists, the task is still held
+for `HEARTBEAT`, and a `BUFFER_RELEASE` cannot free the output. Pulled, the stream gives chunks of
+4, 4 and 2 bytes, the last one flagged, then `TASK_RESULT`; its destructor returns the pin.
+
+### `HandshakeChecksTheMasterBeforeProving`
+
+`HELLO` carries the nonce, the name and the build id. No `PROOF` leaves before a `CHALLENGE` whose
+proof verifies; the `PROOF` then carries the worker's proof, its operations and its capacity, and
+`WELCOME` registers the link.
+
+### `WrongMasterProofEndsTheLink`
+
+A `CHALLENGE` proved with another secret ends the link with `RejectedAuthentication`, sends no
+`PROOF` and closes the peer. The next connection is closed without a `HELLO`.
+
+### `IdleHeartbeatCarriesTheNextTaskId`
+
+After task 41 finished and nothing is held, the heartbeat thread sends `oldest_held_task_id` 42.
+Before the first task the executor reports 0.
+
+### `SilentMasterIsLost`
+
+`WELCOME` carries a liveness timeout of 40 ms and no frame follows. The link closes the peer, and
+the loss that follows reports `Disconnected` and leaves the link running.
+
+### `NewSessionClearsTheCache`
+
+A reconnect to the same `session_id` reports `Registered` and the cache and the seen ids stay. A
+reconnect to another session reports `RegisteredNewSession`, on which the test clears both, as the
+agent does.

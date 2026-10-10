@@ -21,35 +21,34 @@
 
 /**
  * @file tcp_transport.cpp
- * @brief Carries framed messages between a master and its workers over TCP sockets.
+ * @brief Accepts or connects TCP peers and keeps the table of their connections.
  * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
  */
 
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 
-#include <mutex>
-#include <chrono>
-#include <thread>
-#include <vector>
+#include <algorithm>
 #include <atomic>
-#include <cstring>
+#include <cctype>
+#include <condition_variable>
+#include <cstdint>
+#include <exception>
+#include <mutex>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <thread>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 #include <SushiRuntime/logging/logger.hpp>
 
-#if defined(_WIN32)
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    using socket_t = SOCKET;
-    static constexpr socket_t INVALID_SOCK = INVALID_SOCKET;
-#else
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <netinet/tcp.h>
-    #include <arpa/inet.h>
-    #include <netdb.h>
-    #include <unistd.h>
-    using socket_t = int;
-    static constexpr socket_t INVALID_SOCK = -1;
-#endif
+#include "peer_connection.hpp"
+#include "socket.hpp"
+#include "wire_frame.hpp"
+#include "wire_messages.hpp"
 
 namespace SushiRuntime
 {
@@ -57,443 +56,747 @@ namespace SushiRuntime
     {
         namespace
         {
-            constexpr int MASTER_PEER = -1;
+            /** @brief Holds how long one accept() waits before the acceptor looks around. */
+            constexpr std::chrono::milliseconds K_ACCEPT_POLL{100};
 
-            /**
-             * @brief Initializes the underlying platform networking system.
-             * On Windows, it calls WSAStartup; on other platforms, it is a no-op.
-             */
-            void platform_init()
+            /** @brief Holds the wait after an accept() the OS refused. */
+            constexpr std::chrono::milliseconds K_ACCEPT_RETRY{200};
+
+            /** @brief Bounds the write of a REJECT(busy) to a connection that gets no slot. */
+            constexpr std::chrono::milliseconds K_REFUSAL_WRITE_LIMIT{250};
+
+            /** @brief Holds the spacing of the repeated lines of one failing loop. */
+            constexpr std::uint64_t K_LOGGED_EVERY = 10;
+
+            /** @brief Returns whether a loop logs its n-th failure: the first, then every tenth. */
+            constexpr bool is_logged_attempt(std::uint64_t attempt) noexcept
             {
-#if defined(_WIN32)
-                static std::once_flag once;
-                std::call_once(once, []
-                {
-                    WSADATA wsa;
-                    WSAStartup(MAKEWORD(2, 2), &wsa);
-                });
-#endif
+                return attempt == 1 || attempt % K_LOGGED_EVERY == 0;
+            }
+
+            /** @brief Returns whether a host is 127.0.0.0/8, ::1 or localhost. */
+            bool is_loopback_host(std::string_view host)
+            {
+                std::string lowered(host);
+                std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                               [](unsigned char letter)
+                               {
+                                   return static_cast<char>(std::tolower(letter));
+                               });
+                if (lowered == "localhost" || lowered == "::1")
+                    return true;
+
+                const bool is_dotted_quad =
+                    std::count(lowered.begin(), lowered.end(), '.') == 3 &&
+                    lowered.find_first_not_of("0123456789.") == std::string::npos;
+                return is_dotted_quad && lowered.compare(0, 4, "127.") == 0;
+            }
+
+            /** @brief Formats a failed connect as the cause of a "cannot reach master" line. */
+            std::string describe_unreachable(const Endpoint& master, const SocketResult& result)
+            {
+                std::string text = "cannot reach master " + master.to_string();
+                if (!result.address.empty())
+                    text.append(" (").append(result.address).append(")");
+                text.append(": ").append(result.cause);
+                if (result.os_error != 0)
+                    text.append(" (os error ").append(std::to_string(result.os_error)).append(")");
+                return text;
             }
 
             /**
-             * @brief Closes a given socket descriptor.
-             * Abstracts platform-specific socket closing functions.
-             * @param s The socket_t descriptor to close.
+             * @brief Holds a transport's connections by PeerId and relays their events.
+             *
+             * One mutex guards the table. It is held for a lookup or an update only, never
+             * across an event, a socket call, a join or a call into a connection's outbox.
              */
-            void close_sock(socket_t s)
+            class PeerTable final : public TransportEvents
             {
-                if (s == INVALID_SOCK) return;
-#if defined(_WIN32)
-                ::closesocket(s);
-#else
-                ::close(s);
-#endif
+                public:
+                    /** @brief Builds an empty table whose connections take @p options. */
+                    explicit PeerTable(const PeerConnectionOptions& options) : options_(options)
+                    {
+
+                    }
+
+                    /**
+                     * @brief Names the receiver every event is relayed to.
+                     * @param receiver Outlives stop_all(); set before the first open().
+                     */
+                    void set_receiver(TransportEvents& receiver) noexcept
+                    {
+                        receiver_ = &receiver;
+                    }
+
+                    /**
+                     * @brief Gives a connected socket the next id and starts its two threads.
+                     * @return False once shut() was called; the socket is then closed.
+                     */
+                    bool open(Socket socket, PeerInfo info)
+                    {
+                        const PeerId peer{next_peer_.fetch_add(1)};
+                        std::shared_ptr<PeerConnection> connection =
+                            std::make_shared<PeerConnection>(peer, std::move(socket),
+                                                             std::move(info), options_, *this);
+                        {
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            if (is_shut_)
+                                return false;
+                            peers_.emplace(peer.value, Entry{connection, true});
+                            ++open_peers_;
+                        }
+                        connection->start();
+                        if (connection->is_finished())
+                            reap_finished();
+                        return true;
+                    }
+
+                    /** @brief Returns the open connection of a peer, or null. */
+                    [[nodiscard]] std::shared_ptr<PeerConnection> find(PeerId peer)
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        const auto found = peers_.find(peer.value);
+                        if (found == peers_.end() || !found->second.is_open)
+                            return nullptr;
+                        return found->second.connection;
+                    }
+
+                    /** @brief Returns the number of connections that have reported no loss. */
+                    [[nodiscard]] std::size_t open_count()
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        return open_peers_;
+                    }
+
+                    /**
+                     * @brief Joins and destroys every connection whose threads have ended.
+                     * @pre The caller is the transport's accept or connect thread.
+                     */
+                    void reap_finished()
+                    {
+                        while (std::shared_ptr<PeerConnection> finished = take(is_finished))
+                        {
+                            finished->stop();
+                            wake_.notify_all();
+                        }
+                    }
+
+                    /**
+                     * @brief Joins and destroys every connection whose loss was reported.
+                     *
+                     * Blocks until each on_peer_lost() in progress has returned.
+                     * @pre The caller is the transport's accept or connect thread.
+                     */
+                    void join_lost()
+                    {
+                        while (std::shared_ptr<PeerConnection> lost = take(is_lost))
+                            lost->stop();
+                    }
+
+                    /** @brief Refuses every later open() and wakes the waits below. */
+                    void shut() noexcept
+                    {
+                        {
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            is_shut_ = true;
+                        }
+                        wake_.notify_all();
+                    }
+
+                    /** @brief Returns whether shut() was called. */
+                    [[nodiscard]] bool is_shut()
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        return is_shut_;
+                    }
+
+                    /**
+                     * @brief Waits for a time, or for shut().
+                     * @return True when the table is shut.
+                     */
+                    [[nodiscard]] bool wait_shut_for(std::chrono::milliseconds time)
+                    {
+                        std::unique_lock<std::mutex> lock(mutex_);
+                        return wake_.wait_for(lock, time, [this] { return is_shut_; });
+                    }
+
+                    /**
+                     * @brief Waits until no connection is open, or for shut().
+                     * @return True when the table is shut.
+                     */
+                    [[nodiscard]] bool wait_until_no_peer()
+                    {
+                        std::unique_lock<std::mutex> lock(mutex_);
+                        wake_.wait(lock, [this] { return is_shut_ || open_peers_ == 0; });
+                        return is_shut_;
+                    }
+
+                    /**
+                     * @brief Stops every connection, with no on_peer_lost().
+                     * @pre shut() was called and the accept or connect thread has ended.
+                     */
+                    void stop_all() noexcept
+                    {
+                        for (;;)
+                        {
+                            std::shared_ptr<PeerConnection> connection;
+                            {
+                                std::lock_guard<std::mutex> lock(mutex_);
+                                if (peers_.empty())
+                                    return;
+                                connection = std::move(peers_.begin()->second.connection);
+                                peers_.erase(peers_.begin());
+                            }
+                            connection->stop();
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            retired_.bytes_sent += connection->bytes_sent();
+                            retired_.bytes_received += connection->bytes_received();
+                        }
+                    }
+
+                    /** @brief Returns the bytes of every connection the table has held. */
+                    [[nodiscard]] TransportStatistics totals() const noexcept
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        TransportStatistics sum = retired_;
+                        for (const auto& item : peers_)
+                        {
+                            sum.bytes_sent += item.second.connection->bytes_sent();
+                            sum.bytes_received += item.second.connection->bytes_received();
+                        }
+                        return sum;
+                    }
+
+                    /** @brief Relays the event. */
+                    void on_peer_connected(PeerId peer, const PeerInfo& info) override
+                    {
+                        receiver_->on_peer_connected(peer, info);
+                    }
+
+                    /** @brief Relays the frame. */
+                    void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+                                  SushiRuntime::span<const std::byte> payload) override
+                    {
+                        receiver_->on_frame(peer, type, flags, payload);
+                    }
+
+                    /** @brief Marks the peer closed, so sends return UnknownPeer, then relays. */
+                    void on_peer_lost(PeerId peer, const PeerLoss& loss) override
+                    {
+                        {
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            const auto found = peers_.find(peer.value);
+                            if (found != peers_.end() && found->second.is_open)
+                            {
+                                found->second.is_open = false;
+                                --open_peers_;
+                            }
+                        }
+                        receiver_->on_peer_lost(peer, loss);
+                        wake_.notify_all();
+                    }
+
+                    /** @brief Relays the event; no connection makes it. */
+                    void on_connect_abandoned(const std::string& cause) override
+                    {
+                        receiver_->on_connect_abandoned(cause);
+                    }
+
+                private:
+                    /** @brief Holds one connection and whether it has reported no loss yet. */
+                    struct Entry
+                    {
+                        std::shared_ptr<PeerConnection> connection; /**< The connection. */
+                        bool is_open = true; /**< Cleared when on_peer_lost() begins. */
+                    };
+
+                    /** @brief Returns whether both threads of an entry's connection have ended. */
+                    static bool is_finished(const Entry& entry) noexcept
+                    {
+                        return entry.connection->is_finished();
+                    }
+
+                    /** @brief Returns whether an entry's connection has reported its loss. */
+                    static bool is_lost(const Entry& entry) noexcept
+                    {
+                        return !entry.is_open;
+                    }
+
+                    /**
+                     * @brief Removes the first connection a test accepts, or returns null.
+                     *
+                     * The caller stops what it gets. The byte counts move to retired_ here; a
+                     * connection taken by is_lost may still add a few bytes afterwards.
+                     */
+                    std::shared_ptr<PeerConnection> take(bool (*is_due)(const Entry&) noexcept)
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        for (auto entry = peers_.begin(); entry != peers_.end(); ++entry)
+                        {
+                            if (!is_due(entry->second))
+                                continue;
+                            std::shared_ptr<PeerConnection> taken =
+                                std::move(entry->second.connection);
+                            if (entry->second.is_open)
+                                --open_peers_;
+                            retired_.bytes_sent += taken->bytes_sent();
+                            retired_.bytes_received += taken->bytes_received();
+                            peers_.erase(entry);
+                            return taken;
+                        }
+                        return nullptr;
+                    }
+
+                    /// @brief The settings every connection takes.
+                    PeerConnectionOptions options_;
+
+                    /// @brief Receives the relayed events.
+                    TransportEvents* receiver_ = nullptr;
+
+                    /// @brief The id the next connection gets; ids start at 1.
+                    std::atomic<std::uint32_t> next_peer_{1};
+
+                    /// @brief Guards every member below.
+                    mutable std::mutex mutex_;
+
+                    /// @brief Wakes the waits on a loss, a reap and shut().
+                    std::condition_variable wake_;
+
+                    /// @brief The connections by PeerId::value.
+                    std::unordered_map<std::uint32_t, Entry> peers_;
+
+                    /// @brief Counts the entries whose is_open is set.
+                    std::size_t open_peers_ = 0;
+
+                    /// @brief Sums the bytes of the connections that left the table.
+                    TransportStatistics retired_;
+
+                    /// @brief Set by shut().
+                    bool is_shut_ = false;
+            };
+
+            /** @brief Builds the settings a master gives each connection. */
+            PeerConnectionOptions connection_options(const TcpMasterOptions& options)
+            {
+                PeerConnectionOptions result;
+                result.control_queue_frames = options.control_queue_frames;
+                result.write_idle_timeout = options.write_idle_timeout;
+                return result;
             }
 
-            /**
-             * @brief Shuts down a given socket descriptor.
-             * close() alone does NOT wake a recv()/accept() blocked in another
-             * thread on Linux — shutdown() does. Call this before joining readers.
-             * @param s The socket_t descriptor to shut down.
-             */
-            void shutdown_sock(socket_t s)
+            /** @brief Builds the settings a worker gives its connection. */
+            PeerConnectionOptions connection_options(const TcpWorkerOptions& options)
             {
-                if (s == INVALID_SOCK) return;
-#if defined(_WIN32)
-                ::shutdown(s, SD_BOTH);
-#else
-                ::shutdown(s, SHUT_RDWR);
-#endif
+                PeerConnectionOptions result;
+                result.control_queue_frames = options.control_queue_frames;
+                result.write_idle_timeout = options.write_idle_timeout;
+                return result;
             }
 
-            /**
-             * @brief Configures a socket with TCP_NODELAY.
-             * Disables Nagle's algorithm to ensure immediate message transmission.
-             * @param s The socket_t descriptor to configure.
-             */
-            void set_nodelay(socket_t s)
+            /** @brief Returns the numeric address of a socket's peer, or a fallback name. */
+            std::string peer_name(const Socket& socket, const std::string& fallback)
             {
-                int one = 1;
-                ::setsockopt(s, IPPROTO_TCP, TCP_NODELAY,
-                             reinterpret_cast<const char*>(&one), sizeof(one));
+                Endpoint numeric;
+                return socket.peer_endpoint(numeric).is_ok() ? numeric.to_string() : fallback;
             }
 
-            /**
-             * @brief Bounds blocking socket reads with SO_RCVTIMEO (modules/extension/distributed/README.md).
-             * @param s Socket to configure.
-             * @param seconds Idle-read timeout in seconds.
-             */
-            void set_recv_timeout(socket_t s, int seconds)
+            /** @brief Writes REJECT(busy) to a connection that gets no slot and ends it. */
+            void refuse_busy(Socket& socket, const std::string& name, std::size_t open_peers,
+                             std::uint64_t refusal)
             {
-#if defined(_WIN32)
-                DWORD ms = static_cast<DWORD>(seconds) * 1000u;
-                ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
-                             reinterpret_cast<const char*>(&ms), sizeof(ms));
-#else
-                struct timeval tv;
-                tv.tv_sec  = seconds;
-                tv.tv_usec = 0;
-                ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
-                             reinterpret_cast<const char*>(&tv), sizeof(tv));
-#endif
-            }
+                Wire::RejectMessage reject;
+                reject.reason = Wire::RejectReason::Busy;
+                reject.sender_version = Wire::K_PROTOCOL_VERSION;
+                reject.text = "the master takes no more peers";
 
-            /**
-             * @brief Performs a blocking read of an exact byte count from a socket.
-             * Continues reading until the requested number of bytes is received or an error occurs.
-             * @param s The socket_t descriptor to read from.
-             * @param buf The buffer to write received data into.
-             * @param n The number of bytes to read.
-             * @return A boolean which is true if the exact byte count was successfully read, false on close/error.
-             */
-            bool read_n(socket_t s, void* buf, size_t n)
-            {
-                auto* p = static_cast<char*>(buf);
-                size_t got = 0;
-                while (got < n)
-                {
-                    auto r = ::recv(s, p + got, static_cast<int>(n - got), 0);
-                    if (r <= 0) return false;
-                    got += static_cast<size_t>(r);
-                }
-                return true;
-            }
+                std::vector<std::byte> frame;
+                const bool is_sent =
+                    Wire::append_frame(reject, 0, frame) == Wire::CodecStatus::Ok &&
+                    socket.write_all({frame.data(), frame.size()}, K_REFUSAL_WRITE_LIMIT).is_ok();
+                socket.shutdown();
 
-            /**
-             * @brief Performs a blocking write of an exact byte count to a socket.
-             * Continues sending until the requested number of bytes is transmitted or an error occurs.
-             * @param s The socket_t descriptor to write to.
-             * @param buf The buffer containing the data to send.
-             * @param n The number of bytes to write.
-             * @return A boolean which is true if the exact byte count was successfully written, false on close/error.
-             */
-            bool write_n(socket_t s, const void* buf, size_t n)
-            {
-                const auto* p = static_cast<const char*>(buf);
-                size_t sent = 0;
-                while (sent < n)
-                {
-                    auto r = ::send(s, p + sent, static_cast<int>(n - sent), 0);
-                    if (r <= 0) return false;
-                    sent += static_cast<size_t>(r);
-                }
-                return true;
+                if (is_logged_attempt(refusal))
+                    SR_LOG_WARN("{} refused: {} peers are open, the limit; refusal {}, "
+                                "REJECT(busy) {}",
+                                name, open_peers, refusal,
+                                is_sent ? "sent" : "not sent");
             }
         } // namespace
 
+        /**
+         * @brief Holds one endpoint's role, options, listener, peer table and service thread.
+         */
         struct TcpTransport::Impl
         {
-            bool        is_master = false;
-            int         worker_count = 0;
-            std::string host;
-            uint16_t    port = 0;
-
-            MessageHandler    handler;
-            std::atomic<bool> running{false};
-
-            socket_t              listen_sock = INVALID_SOCK;     // master
-            std::vector<socket_t> peers;                          // master: workers; worker: [master]
-            std::vector<std::unique_ptr<std::mutex>> send_mtx;    // one per peer socket
-            std::thread              accept_thread;               // master
-            std::vector<std::thread> readers;
-
-            /**
-             * @brief Reads incoming messages from a specific peer socket.
-             * Continuously polls the socket for message frames and dispatches them to the handler.
-             * @param sock The socket_t descriptor for the connection.
-             * @param peer The integer ID of the peer.
-             */
-            void reader_loop(socket_t sock, int peer)
+            /** @brief Names which side of the session the endpoint is. */
+            enum class Role : std::uint8_t
             {
-                for (;;)
-                {
-                    unsigned char hdr[5];
-                    if (!read_n(sock, hdr, sizeof(hdr))) break;
+                Master, /**< Listens and accepts. */
+                Worker, /**< Connects to one master. */
+            };
 
-                    uint32_t len;
-                    std::memcpy(&len, hdr, 4);
-                    MsgType type = static_cast<MsgType>(hdr[4]);
+            /** @brief Names where the endpoint is in its one start and one stop. */
+            enum class Phase : std::uint8_t
+            {
+                Idle,    /**< start() has not run. */
+                Running, /**< start() returned Ok and stop() has not begun. */
+                Stopped, /**< stop() has begun, or start() failed. */
+            };
 
-                    // A length above MAX_FRAME_BYTES drops the peer (modules/extension/distributed/README.md).
-                    if (len > MAX_FRAME_BYTES)
-                    {
-                        SR_LOG_ERROR("Peer {} sent oversized frame ({} bytes > {} cap); "
-                                     "dropping connection.", peer, len, MAX_FRAME_BYTES);
-                        break;
-                    }
+            /** @brief Builds a master endpoint. */
+            explicit Impl(const TcpMasterOptions& options)
+                : role(Role::Master), master_options(options),
+                  exposure(is_loopback_host(options.bind.host) ? TransportExposure::Loopback
+                                                               : TransportExposure::Network),
+                  table(connection_options(options))
+            {
 
-                    std::vector<std::byte> payload(len);
-                    if (len && !read_n(sock, payload.data(), len)) break;
-
-                    if (handler && running.load())
-                        handler(peer, type, SushiRuntime::span<const std::byte>(payload.data(), payload.size()));
-                }
             }
 
-            /**
-             * @brief Sends one frame; a failed write shuts the socket (modules/extension/distributed/README.md).
-             * @param m The mutex that serialises writes to this socket.
-             */
-            void send_to(socket_t sock, std::mutex& m, int peer, MsgType type, SushiRuntime::span<const std::byte> payload)
+            /** @brief Builds a worker endpoint. */
+            Impl(Endpoint master_endpoint, const TcpWorkerOptions& options)
+                : role(Role::Worker), worker_options(options), master(std::move(master_endpoint)),
+                  exposure(is_loopback_host(master.host) ? TransportExposure::Loopback
+                                                         : TransportExposure::Network),
+                  table(connection_options(options))
             {
-                if (sock == INVALID_SOCK) return;
-                unsigned char hdr[5];
-                uint32_t len = static_cast<uint32_t>(payload.size());
-                std::memcpy(hdr, &len, 4);
-                hdr[4] = static_cast<unsigned char>(type);
 
-                std::lock_guard<std::mutex> lk(m);
-                // A failed write shuts the socket down (modules/extension/distributed/README.md).
-                if (!write_n(sock, hdr, sizeof(hdr)) ||
-                    (len && !write_n(sock, payload.data(), len)))
-                {
-                    SR_LOG_WARN("TCP send to peer {} failed; tearing down the connection.", peer);
-                    shutdown_sock(sock);
-                }
             }
 
-            /**
-             * @brief Accepts incoming worker connections.
-             * Runs on the master transport to accept connections up to the expected worker count.
-             */
+            /** @brief Binds and listens; fills @p result on a refusal. */
+            bool open_listener(TransportResult& result)
+            {
+                if (master_options.bind.host.empty() || master_options.max_peers == 0)
+                {
+                    result.status = TransportStatus::InvalidArgument;
+                    result.message = "cannot listen on '" + master_options.bind.to_string() +
+                                     "': the bind host is empty or max_peers is 0";
+                    return false;
+                }
+                const SocketResult listening =
+                    listener.listen(master_options.bind, master_options.backlog);
+                if (listening.is_ok())
+                    return true;
+                result.status = TransportStatus::BindFailed;
+                result.message = "cannot listen on " + master_options.bind.to_string() + ": " +
+                                 describe(listening) +
+                                 "; if another process holds the port, choose another or stop it";
+                return false;
+            }
+
+            /** @brief Checks the master's address; fills @p result on a refusal. */
+            bool check_master(TransportResult& result) const
+            {
+                if (!master.host.empty() && master.port != 0)
+                    return true;
+                result.status = TransportStatus::InvalidArgument;
+                result.message = "cannot connect to '" + master.to_string() +
+                                 "': the master needs a host and a port above 0";
+                return false;
+            }
+
+            /** @brief Runs the master's service thread: reap, accept, admit or refuse. */
             void accept_loop()
             {
-                for (int i = 0; i < worker_count && running.load(); ++i)
+                const std::string local = listener.local_endpoint().to_string();
+                std::uint64_t failures = 0;
+                std::uint64_t refusals = 0;
+                while (!table.is_shut())
                 {
-                    socket_t s = ::accept(listen_sock, nullptr, nullptr);
-                    if (s == INVALID_SOCK) break;
-                    set_nodelay(s);
-                    // Idle reads time out after 30 s (modules/extension/distributed/README.md).
-                    set_recv_timeout(s, 30);
-                    peers[static_cast<size_t>(i)] = s;
-                    readers.emplace_back([this, s, i] { reader_loop(s, i); });
-                    SR_LOG_INFO("TCP master accepted worker {}.", i);
+                    table.reap_finished();
+
+                    Socket accepted;
+                    const SocketResult result = listener.accept(accepted, K_ACCEPT_POLL);
+                    if (result.status == SocketStatus::Timeout)
+                        continue;
+                    if (!result.is_ok())
+                    {
+                        if (is_logged_attempt(++failures))
+                            SR_LOG_WARN("accept on {} failed: {}; failure {}, next try in {} ms",
+                                        local, describe(result), failures,
+                                        K_ACCEPT_RETRY.count());
+                        if (table.wait_shut_for(K_ACCEPT_RETRY))
+                            return;
+                        continue;
+                    }
+
+                    const std::string name = peer_name(accepted, "an unnamed address");
+                    const std::size_t open_peers = table.open_count();
+                    if (open_peers >= master_options.max_peers)
+                    {
+                        refuse_busy(accepted, name, open_peers, ++refusals);
+                        continue;
+                    }
+                    SR_LOG_DEBUG("{} accepted a connection from {}", local, name);
+                    if (!table.open(std::move(accepted), PeerInfo{name}))
+                        return;
                 }
             }
+
+            /** @brief Makes on_connect_abandoned() and logs what escapes it. */
+            void abandon(const std::string& cause)
+            {
+                try
+                {
+                    events->on_connect_abandoned(cause);
+                }
+                catch (const std::exception& error)
+                {
+                    SR_LOG_ERROR("handler of the abandoned connection to master {} threw '{}'; "
+                                 "the connector ends as planned",
+                                 master.to_string(), error.what());
+                }
+                catch (...)
+                {
+                    SR_LOG_ERROR("handler of the abandoned connection to master {} threw an "
+                                 "unknown exception; the connector ends as planned",
+                                 master.to_string());
+                }
+            }
+
+            /** @brief Runs the worker's service thread: connect, wait for the loss, back off. */
+            void connect_loop()
+            {
+                using Clock = std::chrono::steady_clock;
+
+                const std::string target = master.to_string();
+                const Clock::time_point started = Clock::now();
+                const bool has_deadline = worker_options.connect_timeout.count() > 0;
+                bool was_connected = false;
+                std::uint64_t attempt = 0;
+                std::chrono::milliseconds backoff = worker_options.backoff_initial;
+
+                while (!table.is_shut())
+                {
+                    ++attempt;
+                    std::chrono::milliseconds wait = backoff;
+
+                    Socket socket;
+                    const SocketResult connected =
+                        socket.connect(master, worker_options.attempt_timeout);
+                    if (connected.is_ok())
+                    {
+                        const Clock::time_point opened = Clock::now();
+                        was_connected = true;
+                        const std::string name = peer_name(socket, target);
+                        SR_LOG_DEBUG("connected to master {} ({}) at attempt {}", target, name,
+                                     attempt);
+                        if (!table.open(std::move(socket), PeerInfo{name}) ||
+                            table.wait_until_no_peer())
+                            return;
+                        table.join_lost();
+
+                        if (!worker_options.reconnect)
+                        {
+                            abandon("master " + target + " was lost and reconnecting is off");
+                            return;
+                        }
+                        // A connection that ended early keeps the backoff it was reached with.
+                        if (Clock::now() - opened >= worker_options.backoff_ceiling)
+                        {
+                            attempt = 0;
+                            backoff = worker_options.backoff_initial;
+                            wait = backoff;
+                        }
+                    }
+                    else
+                    {
+                        const std::string cause = describe_unreachable(master, connected);
+                        const Clock::duration waited = Clock::now() - started;
+                        if (!was_connected && has_deadline)
+                        {
+                            if (waited >= worker_options.connect_timeout)
+                            {
+                                abandon(cause + "; gave up after " +
+                                        std::to_string(worker_options.connect_timeout.count()) +
+                                        " s and " + std::to_string(attempt) + " attempts");
+                                return;
+                            }
+                            wait = std::min(
+                                wait, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          worker_options.connect_timeout - waited) +
+                                          std::chrono::milliseconds(1));
+                        }
+                        if (is_logged_attempt(attempt))
+                            SR_LOG_WARN("{}; attempt {}, next in {} ms", cause, attempt,
+                                        wait.count());
+                    }
+
+                    if (table.wait_shut_for(wait))
+                        return;
+                    backoff = std::min(backoff * 2, worker_options.backoff_ceiling);
+                }
+            }
+
+            /// @brief Which side the endpoint is.
+            Role role;
+
+            /// @brief The settings of a master endpoint.
+            TcpMasterOptions master_options;
+
+            /// @brief The settings of a worker endpoint.
+            TcpWorkerOptions worker_options;
+
+            /// @brief The master a worker endpoint connects to.
+            Endpoint master;
+
+            /// @brief Who can reach the endpoint, decided from the address at construction.
+            TransportExposure exposure;
+
+            /// @brief The connections and the relay of their events.
+            PeerTable table;
+
+            /// @brief The listening socket of a master endpoint.
+            Listener listener;
+
+            /// @brief The accept thread of a master or the connect thread of a worker.
+            std::thread service;
+
+            /// @brief Receives the events; set by start().
+            TransportEvents* events = nullptr;
+
+            /// @brief Serialises start() and stop().
+            std::mutex lifecycle;
+
+            /// @brief Where the endpoint is in its life; send() reads it without a lock.
+            std::atomic<Phase> phase{Phase::Idle};
+
+            /// @brief Set by the first start(), whatever its outcome.
+            bool was_started = false;
         };
 
-        /**
-         * @brief Constructs a TcpTransport with a specific implementation.
-         * Initializes the transport with the given Impl context.
-         * @param impl A std::shared_ptr to the Impl context.
-         */
-        TcpTransport::TcpTransport(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-
-        /**
-         * @brief Destructs the TcpTransport.
-         * Stops any active connections and threads before destruction.
-         */
-        TcpTransport::~TcpTransport() { stop(); }
-
-        /**
-         * @brief Factory method to create a master TCP transport.
-         * Initializes a transport that listens for incoming worker connections.
-         * @param port The port to listen on.
-         * @param worker_count The total number of workers to accept.
-         * @return A std::shared_ptr to the constructed TcpTransport.
-         * @throws std::runtime_error If socket creation, bind, or listen fails.
-         */
-        std::shared_ptr<TcpTransport> TcpTransport::make_master(uint16_t port, int worker_count)
+        TcpTransport::TcpTransport(std::unique_ptr<Impl> impl) noexcept : impl_(std::move(impl))
         {
-            platform_init();
-            auto impl = std::make_shared<Impl>();
-            impl->is_master    = true;
-            impl->worker_count = worker_count;
-            impl->peers.assign(static_cast<size_t>(worker_count), INVALID_SOCK);
-            for (int i = 0; i < worker_count; ++i)
-                impl->send_mtx.push_back(std::make_unique<std::mutex>());
 
-            socket_t ls = ::socket(AF_INET, SOCK_STREAM, 0);
-            if (ls == INVALID_SOCK)
-                throw std::runtime_error("TcpTransport: socket() failed for master.");
-
-            int one = 1;
-            ::setsockopt(ls, SOL_SOCKET, SO_REUSEADDR,
-                         reinterpret_cast<const char*>(&one), sizeof(one));
-
-            sockaddr_in addr{};
-            addr.sin_family      = AF_INET;
-            addr.sin_addr.s_addr = htonl(INADDR_ANY);
-            addr.sin_port        = htons(port);
-
-            if (::bind(ls, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
-            {
-                close_sock(ls);
-                throw std::runtime_error("TcpTransport: bind() failed for master.");
-            }
-            if (::listen(ls, worker_count > 0 ? worker_count : 1) != 0)
-            {
-                close_sock(ls);
-                throw std::runtime_error("TcpTransport: listen() failed for master.");
-            }
-
-            // Resolve the actual bound port (when port 0 was requested).
-            sockaddr_in bound{};
-#if defined(_WIN32)
-            int blen = sizeof(bound);
-#else
-            socklen_t blen = sizeof(bound);
-#endif
-            if (::getsockname(ls, reinterpret_cast<sockaddr*>(&bound), &blen) == 0)
-                impl->port = ntohs(bound.sin_port);
-
-            impl->listen_sock = ls;
-            return std::shared_ptr<TcpTransport>(new TcpTransport(impl));
         }
 
-        /**
-         * @brief Factory method to create a worker TCP transport.
-         * Initializes a transport that connects to the specified master host.
-         * @param host A std::string containing the hostname or IP of the master.
-         * @param port The port to connect to.
-         * @return A std::shared_ptr to the constructed TcpTransport.
-         */
-        std::shared_ptr<TcpTransport> TcpTransport::make_worker(const std::string& host, uint16_t port)
+        std::shared_ptr<TcpTransport> TcpTransport::make_master(TcpMasterOptions options)
         {
-            platform_init();
-            auto impl = std::make_shared<Impl>();
-            impl->is_master = false;
-            impl->host      = host;
-            impl->port      = port;
-            impl->peers.assign(1, INVALID_SOCK);
-            impl->send_mtx.push_back(std::make_unique<std::mutex>());
-            return std::shared_ptr<TcpTransport>(new TcpTransport(impl));
+            return std::shared_ptr<TcpTransport>(
+                new TcpTransport(std::make_unique<Impl>(options)));
         }
 
-        /**
-         * @brief Registers a callback to handle incoming messages.
-         * The handler is invoked whenever a complete message is received from a peer.
-         * @param handler The MessageHandler to register.
-         */
-        void TcpTransport::on_message(MessageHandler handler) { impl_->handler = std::move(handler); }
-
-        /**
-         * @brief Starts the transport.
-         * Begins listening for connections if master, or connecting if worker, and starts reader threads.
-         * @throws std::runtime_error If socket creation or connection fails.
-         */
-        void TcpTransport::start()
+        std::shared_ptr<TcpTransport> TcpTransport::make_worker(Endpoint master,
+                                                                TcpWorkerOptions options)
         {
-            bool expected = false;
-            if (!impl_->running.compare_exchange_strong(expected, true))
+            return std::shared_ptr<TcpTransport>(
+                new TcpTransport(std::make_unique<Impl>(std::move(master), options)));
+        }
+
+        TcpTransport::~TcpTransport()
+        {
+            stop();
+        }
+
+        TransportResult TcpTransport::start(TransportEvents& events)
+        {
+            Impl& impl = *impl_;
+            std::lock_guard<std::mutex> lock(impl.lifecycle);
+
+            TransportResult result;
+            if (impl.was_started)
+            {
+                result.status = TransportStatus::AlreadyStarted;
+                result.message = "the TCP transport was started before; a transport starts once";
+                return result;
+            }
+            impl.was_started = true;
+            if (impl.phase.load() != Impl::Phase::Idle)
+            {
+                result.status = TransportStatus::Failed;
+                result.message = "the TCP transport was stopped before it was started";
+                return result;
+            }
+
+            const bool is_master = impl.role == Impl::Role::Master;
+            if (!(is_master ? impl.open_listener(result) : impl.check_master(result)))
+            {
+                impl.phase.store(Impl::Phase::Stopped);
+                return result;
+            }
+
+            impl.events = &events;
+            impl.table.set_receiver(events);
+            impl.phase.store(Impl::Phase::Running);
+            try
+            {
+                impl.service = is_master ? std::thread([&impl] { impl.accept_loop(); })
+                                         : std::thread([&impl] { impl.connect_loop(); });
+            }
+            catch (const std::system_error& error)
+            {
+                impl.phase.store(Impl::Phase::Stopped);
+                impl.table.shut();
+                impl.listener.close();
+                result.status = TransportStatus::Failed;
+                result.message = std::string("cannot start the TCP ") +
+                                 (is_master ? "accept" : "connect") + " thread: " + error.what();
+            }
+            return result;
+        }
+
+        void TcpTransport::stop() noexcept
+        {
+            Impl& impl = *impl_;
+            std::lock_guard<std::mutex> lock(impl.lifecycle);
+            if (impl.phase.exchange(Impl::Phase::Stopped) != Impl::Phase::Running)
                 return;
 
-            if (impl_->is_master)
-            {
-                impl_->accept_thread = std::thread([this] { impl_->accept_loop(); });
-            }
-            else
-            {
-                sockaddr_in addr{};
-                addr.sin_family = AF_INET;
-                addr.sin_port   = htons(impl_->port);
-                if (::inet_pton(AF_INET, impl_->host.c_str(), &addr.sin_addr) != 1)
-                    throw std::runtime_error("TcpTransport: bad master host '" + impl_->host + "'.");
-
-                // The worker retries so it can start before the master (modules/extension/distributed/README.md).
-                constexpr int  MAX_ATTEMPTS = 300;   // ~60s at 200ms
-                socket_t s = INVALID_SOCK;
-                for (int attempt = 0; impl_->running.load() && attempt < MAX_ATTEMPTS; ++attempt)
-                {
-                    s = ::socket(AF_INET, SOCK_STREAM, 0);
-                    if (s == INVALID_SOCK)
-                        throw std::runtime_error("TcpTransport: socket() failed for worker.");
-
-                    if (::connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0)
-                        break; // connected
-
-                    close_sock(s);
-                    s = INVALID_SOCK;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-                }
-
-                if (s == INVALID_SOCK)
-                    throw std::runtime_error("TcpTransport: connect() to master failed (master not reachable).");
-
-                set_nodelay(s);
-                impl_->peers[0] = s;
-                impl_->readers.emplace_back([this, s] { impl_->reader_loop(s, MASTER_PEER); });
-                SR_LOG_INFO("TCP worker connected to master {}:{}.", impl_->host, impl_->port);
-            }
+            impl.table.shut();
+            if (impl.service.joinable())
+                impl.service.join();
+            impl.listener.close();
+            impl.table.stop_all();
         }
 
-        /**
-         * @brief Stops the transport.
-         * Shuts down all sockets, joins reader threads, and cleans up resources.
-         */
-        void TcpTransport::stop()
+        SendStatus TcpTransport::send(PeerId peer, MessageType type,
+                                      SushiRuntime::span<const std::byte> payload)
         {
-            bool expected = true;
-            if (!impl_->running.compare_exchange_strong(expected, false))
-                return;
-
-            // shutdown() first; close() alone leaves recv() blocked (modules/extension/distributed/README.md).
-            shutdown_sock(impl_->listen_sock);
-            for (auto& s : impl_->peers)
-                shutdown_sock(s);
-
-            if (impl_->accept_thread.joinable())
-                impl_->accept_thread.join();
-            for (auto& t : impl_->readers)
-                if (t.joinable()) t.join();
-            impl_->readers.clear();
-
-            // Now it is safe to close the descriptors.
-            close_sock(impl_->listen_sock);
-            impl_->listen_sock = INVALID_SOCK;
-            for (auto& s : impl_->peers)
-            {
-                close_sock(s);
-                s = INVALID_SOCK;
-            }
+            if (impl_->phase.load(std::memory_order_acquire) != Impl::Phase::Running)
+                return SendStatus::Stopped;
+            const std::shared_ptr<PeerConnection> connection = impl_->table.find(peer);
+            if (connection == nullptr)
+                return SendStatus::UnknownPeer;
+            return connection->send(type, payload);
         }
 
-        /**
-         * @brief Sends a message to a specific peer.
-         * Broadcasts to all peers if peer_id is negative.
-         * @param peer_id The integer ID of the destination peer, or negative for broadcast.
-         * @param type The MsgType to send.
-         * @param payload A span of bytes containing the message payload.
-         */
-        void TcpTransport::send(int peer_id, MsgType type, SushiRuntime::span<const std::byte> payload)
+        SendStatus TcpTransport::send_stream(PeerId peer, std::unique_ptr<FrameSource> source)
         {
-            if (!impl_->running.load()) return;
-
-            if (impl_->is_master)
+            if (impl_->phase.load(std::memory_order_acquire) != Impl::Phase::Running)
             {
-                if (peer_id < 0) // broadcast
-                {
-                    for (size_t i = 0; i < impl_->peers.size(); ++i)
-                        impl_->send_to(impl_->peers[i], *impl_->send_mtx[i],
-                                       static_cast<int>(i), type, payload);
-                }
-                else if (peer_id < static_cast<int>(impl_->peers.size()))
-                {
-                    impl_->send_to(impl_->peers[static_cast<size_t>(peer_id)],
-                                   *impl_->send_mtx[static_cast<size_t>(peer_id)],
-                                   peer_id, type, payload);
-                }
+                source.reset();
+                return SendStatus::Stopped;
             }
-            else
+            const std::shared_ptr<PeerConnection> connection = impl_->table.find(peer);
+            if (connection == nullptr)
             {
-                impl_->send_to(impl_->peers[0], *impl_->send_mtx[0], MASTER_PEER, type, payload);
+                source.reset();
+                return SendStatus::UnknownPeer;
             }
+            return connection->send_stream(std::move(source));
         }
 
-        /**
-         * @brief Retrieves the number of connected peers.
-         * @return An integer representing the number of peers (worker count for master, 1 for worker).
-         */
-        int TcpTransport::peer_count() const
+        void TcpTransport::close_peer(PeerId peer) noexcept
         {
-            return impl_->is_master ? impl_->worker_count : 1;
+            const std::shared_ptr<PeerConnection> connection = impl_->table.find(peer);
+            if (connection != nullptr)
+                connection->close();
         }
 
-        /**
-         * @brief Retrieves the bound port of the transport.
-         * @return An uint16_t representing the port the transport is bound to.
-         */
-        uint16_t TcpTransport::bound_port() const { return impl_->port; }
+        TransportExposure TcpTransport::exposure() const noexcept
+        {
+            return impl_->exposure;
+        }
+
+        TransportStatistics TcpTransport::statistics() const noexcept
+        {
+            return impl_->table.totals();
+        }
+
+        Endpoint TcpTransport::local_endpoint() const
+        {
+            return impl_->listener.local_endpoint();
+        }
 
     } // namespace Distributed
 } // namespace SushiRuntime

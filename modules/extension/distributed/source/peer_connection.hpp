@@ -179,6 +179,9 @@ namespace SushiRuntime
                 /// @brief Set by stop() so the reader reports no loss.
                 std::atomic<bool> stopping_{false};
 
+                /// @brief Set by the writer so the reader reports WriteStalled.
+                std::atomic<bool> write_stalled_{false};
+
                 /// @brief Bytes written to the socket.
                 std::atomic<std::uint64_t> bytes_sent_{0};
 

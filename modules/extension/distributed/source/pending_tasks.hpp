@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include <SushiRuntime/core/export.hpp>
@@ -198,6 +199,50 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t count_for_worker(PeerId worker) const;
 
             private:
+                /** @brief Holds one task out on a worker. */
+                struct Entry
+                {
+                    /** @brief The node the table owns until a removal returns it. */
+                    Graph::Node* node = nullptr;
+
+                    /** @brief The worker the task was dispatched to. */
+                    PeerId worker;
+
+                    /** @brief The output handles as dispatched. */
+                    std::vector<BufferHandle> outputs;
+
+                    /** @brief The time insert() was given. */
+                    std::chrono::steady_clock::time_point dispatched_at;
+
+                    /** @brief Heartbeats in a row that did not list the task. */
+                    std::uint32_t heartbeat_misses = 0;
+
+                    /** @brief Whether TASK_ACCEPTED arrived. */
+                    bool acknowledged = false;
+                };
+
+                /** @brief Holds what the table notes for a worker that has a task out. */
+                struct WorkerNotes
+                {
+                    /** @brief The number of tasks of the worker in the table. */
+                    std::size_t tasks = 0;
+
+                    /** @brief The time of the last chunk exchanged with the worker. */
+                    std::chrono::steady_clock::time_point last_chunk;
+                };
+
+                /** @brief Maps a task id to its entry. */
+                using TaskTable = std::unordered_map<std::uint64_t, Entry>;
+
+                /** @brief Returns the limit an entry is past, if any; called under the mutex. */
+                [[nodiscard]] std::optional<ReapCause> overdue_cause(
+                    const Entry& entry, std::chrono::steady_clock::time_point now,
+                    const OverdueLimits& limits) const noexcept;
+
+                /** @brief Erases an entry and returns its task; called under the mutex. */
+                [[nodiscard]] PendingTask detach(TaskTable::iterator position,
+                                                 ReapCause cause) noexcept;
+
                 /// @brief Guards the table; never held across a call out of this class.
                 mutable std::mutex mutex_;
 
@@ -209,6 +254,12 @@ namespace SushiRuntime
 
                 /// @brief Set by close().
                 bool closed_ = false;
+
+                /// @brief The tasks out on a worker, by id.
+                TaskTable tasks_;
+
+                /// @brief Notes by the value of a PeerId; one per worker with a task here.
+                std::unordered_map<std::uint32_t, WorkerNotes> workers_;
         };
 
     } // namespace Distributed

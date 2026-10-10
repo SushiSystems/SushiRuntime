@@ -34,7 +34,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <list>
 #include <mutex>
+#include <unordered_map>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
@@ -158,6 +160,86 @@ namespace SushiRuntime
                 [[nodiscard]] std::uint64_t evictions() const noexcept;
 
             private:
+                /** @brief Names how far the pull of one buffer has come. */
+                enum class Transfer : std::uint8_t
+                {
+                    None,      /**< No pull is open and no outcome waits to be collected. */
+                    Open,      /**< Chunks are expected; next_offset names the next one. */
+                    Complete,  /**< The last chunk arrived; wait_input() has yet to collect it. */
+                    Aborted,   /**< A gap, a BUFFER_ABORT or a release ended the pull. */
+                    Cancelled, /**< clear() ended the pull. */
+                };
+
+                /** @brief Holds one allocation and what the cache knows about its bytes. */
+                struct Entry
+                {
+                    /** @brief The buffer the memory belongs to. */
+                    GlobalBufferID id;
+
+                    /** @brief The allocation; null at size 0. */
+                    void* data = nullptr;
+
+                    /** @brief The size of the allocation. */
+                    std::uint64_t size_bytes = 0;
+
+                    /** @brief The version held or being pulled. */
+                    std::uint32_t version = 0;
+
+                    /** @brief Unpins still owed. */
+                    std::uint32_t pins = 0;
+
+                    /** @brief Whether data holds the bytes of version. */
+                    bool valid = false;
+
+                    /** @brief Whether the entry left the live table and waits for its unpins. */
+                    bool detached = false;
+
+                    /** @brief The state of its pull. */
+                    Transfer transfer = Transfer::None;
+
+                    /** @brief The offset the next chunk must carry. */
+                    std::uint64_t next_offset = 0;
+
+                    /** @brief Chunks accepted in this pull, for the idle timeout. */
+                    std::uint64_t chunks = 0;
+
+                    /** @brief Its place in recency_ while it is live. */
+                    std::list<std::uint64_t>::iterator recency;
+                };
+
+                /** @brief Names the table of buffers a task can ask for, by id value. */
+                using Live = std::unordered_map<std::uint64_t, Entry>;
+
+                /** @brief Moves a live entry to the most recently used end. */
+                void touch(Entry& entry);
+
+                /** @brief Returns the memory of an entry to the allocator. */
+                void free_memory(Entry& entry);
+
+                /** @brief Takes an entry out of the live table; a pinned one waits detached. */
+                void retire(Live::iterator position);
+
+                /** @brief Evicts the least recently used unpinned buffer; false when none is. */
+                [[nodiscard]] bool evict_one();
+
+                /**
+                 * @brief Adds a live entry with room for a handle's bytes, evicting for it.
+                 * @return Null when neither the budget nor the allocator has the room.
+                 */
+                [[nodiscard]] Entry* create(const BufferHandle& handle);
+
+                /** @brief Returns the entry whose pull of this version is open or uncollected. */
+                [[nodiscard]] Entry* find_transfer(GlobalBufferID id, std::uint32_t version);
+
+                /** @brief Returns the detached entry of an id that still owes an unpin. */
+                [[nodiscard]] Entry* find_detached(GlobalBufferID id);
+
+                /** @brief Drops one pin and frees what nothing can use any more. */
+                void drop_pin(Entry& entry);
+
+                /** @brief Fills a view with the memory of an entry. */
+                static void fill(const Entry& entry, BufferView& view) noexcept;
+
                 /// @brief Guards the entries and the open transfers.
                 mutable std::mutex mutex_;
 
@@ -175,6 +257,15 @@ namespace SushiRuntime
 
                 /// @brief Buffers evicted or released.
                 std::atomic<std::uint64_t> evictions_{0};
+
+                /// @brief The buffers a task can ask for.
+                Live live_;
+
+                /// @brief The id values of the live buffers, least recently used first.
+                std::list<std::uint64_t> recency_;
+
+                /// @brief Buffers released, replaced or cleared while pinned.
+                std::list<Entry> detached_;
         };
 
     } // namespace Distributed

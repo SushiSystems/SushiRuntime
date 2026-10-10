@@ -28,9 +28,11 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -188,6 +190,50 @@ namespace SushiRuntime
                 [[nodiscard]] std::uint64_t reconnects() const noexcept;
 
             private:
+                /** @brief Names the clock every interval of the link is measured on. */
+                using Clock = std::chrono::steady_clock;
+
+                /** @brief Names how far the handshake of the connection has come. */
+                enum class Phase : std::uint8_t
+                {
+                    Idle,       /**< No connection. */
+                    HelloSent,  /**< HELLO went out; CHALLENGE is awaited. */
+                    ProofSent,  /**< PROOF went out; WELCOME is awaited. */
+                    Registered, /**< WELCOME arrived. */
+                    Closing,    /**< The link closed a silent master and waits for the loss. */
+                };
+
+                /** @brief Counts the nonces kept per connection to recognise a late CHALLENGE. */
+                static constexpr std::size_t K_NONCE_HISTORY = 4;
+
+                /** @brief Names the nonces of one connection, newest first. */
+                using Nonces = std::array<HandshakeNonce, K_NONCE_HISTORY>;
+
+                /** @brief Returns whether a handshake is under way; mutex held. */
+                [[nodiscard]] bool is_handshaking() const noexcept;
+
+                /** @brief Returns when the last frame of the watched connection arrived. */
+                [[nodiscard]] Clock::time_point last_frame() const noexcept;
+
+                /** @brief Records a frame of the watched connection as arriving at this instant. */
+                void stamp_frame() noexcept;
+
+                /** @brief Forgets the connection and keeps the sessions seen; mutex held. */
+                void forget_connection() noexcept;
+
+                /**
+                 * @brief Moves a Running link to its final end and wakes whoever waits for it.
+                 * @return False when the link had ended before.
+                 */
+                bool finish(WorkerEnd end);
+
+                /**
+                 * @brief Draws a nonce and sends HELLO to a connection whose handshake is open.
+                 *
+                 * A nonce source that fails closes the peer, so the transport tries again.
+                 */
+                void send_hello(PeerId peer);
+
                 /** @brief Runs the heartbeat and the two watches until stop(). */
                 void run() noexcept;
 
@@ -223,6 +269,45 @@ namespace SushiRuntime
 
                 /// @brief Registrations after the first.
                 std::atomic<std::uint64_t> reconnects_{0};
+
+                /// @brief The connection the link handshakes or is registered on; 0 for none.
+                PeerId peer_;
+
+                /// @brief How far that connection's handshake has come.
+                Phase phase_ = Phase::Idle;
+
+                /// @brief The nonces sent on that connection, newest first.
+                Nonces sent_nonces_{};
+
+                /// @brief How many entries of sent_nonces_ are set.
+                std::size_t sent_nonce_count_ = 0;
+
+                /// @brief Whether a PROOF went out on that connection.
+                bool proof_sent_ = false;
+
+                /// @brief The session id of the CHALLENGE the last PROOF answered.
+                std::uint64_t offered_session_ = 0;
+
+                /// @brief The session id of the last registration.
+                std::uint64_t session_ = 0;
+
+                /// @brief Whether the link has registered at least once.
+                bool ever_registered_ = false;
+
+                /// @brief The silence after which the master counts as lost; 0 means no watch.
+                std::chrono::milliseconds liveness_{0};
+
+                /// @brief When the newest HELLO went out.
+                Clock::time_point hello_at_{};
+
+                /// @brief When the next HEARTBEAT is due.
+                Clock::time_point heartbeat_at_{};
+
+                /// @brief The value of peer_, read by note_frame() without the mutex.
+                std::atomic<std::uint32_t> watched_peer_{0};
+
+                /// @brief The arrival of the last frame from watched_peer_, in clock ticks.
+                std::atomic<Clock::rep> last_frame_ticks_{0};
         };
 
     } // namespace Distributed

@@ -33,7 +33,10 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <memory>
 #include <mutex>
+#include <set>
 #include <thread>
 
 #include <sycl/sycl.hpp>
@@ -139,10 +142,88 @@ namespace SushiRuntime
                 [[nodiscard]] WorkerStatistics statistics() const noexcept;
 
             private:
+                /**
+                 * @brief Keeps the task ids the worker holds for one connection, for HEARTBEAT.
+                 *
+                 * An output stream may outlive the executor, so the two share this object. Its
+                 * mutex is a leaf: nothing is called while it is held.
+                 */
+                class HeldTasks final
+                {
+                    public:
+                        /**
+                         * @brief Starts holding a task.
+                         * @return The generation let_go() must be given for the same task.
+                         */
+                        [[nodiscard]] std::uint64_t hold(std::uint64_t task_id);
+
+                        /** @brief Stops holding a task whose result left or cannot leave. */
+                        void let_go(std::uint64_t task_id, std::uint64_t generation) noexcept;
+
+                        /** @brief Forgets every task and the idle value; the connection is gone. */
+                        void reset() noexcept;
+
+                        /** @brief Returns the smallest held id, or the idle value when none is. */
+                        [[nodiscard]] std::uint64_t oldest() const;
+
+                    private:
+                        /// @brief Guards every member below.
+                        mutable std::mutex mutex_;
+
+                        /// @brief The ids held, smallest first.
+                        std::set<std::uint64_t> held_;
+
+                        /// @brief The largest id let go plus one; 0 before the first.
+                        std::uint64_t idle_value_ = 0;
+
+                        /// @brief Counts the resets, so a task of an earlier connection is ignored.
+                        std::uint64_t generation_ = 0;
+                };
+
+                /** @brief Produces the output chunks of one finished task, then its TASK_RESULT. */
+                class OutputStream;
+
+                /** @brief Holds one dispatch that waits for the exec thread. */
+                struct Job
+                {
+                    /** @brief The connection every reply goes to. */
+                    PeerId from;
+
+                    /** @brief The task. */
+                    Wire::TaskDispatchMessage dispatch;
+
+                    /** @brief Data bytes per output chunk. */
+                    std::uint32_t chunk_bytes = 0;
+
+                    /** @brief What HeldTasks::hold() returned for the task. */
+                    std::uint64_t generation = 0;
+                };
+
                 /** @brief Runs jobs until stop(). */
                 void run() noexcept;
 
-                /// @brief Guards the queue and the set of held task ids.
+                /** @brief Counts one failed task under its status. */
+                void count_failure(Wire::TaskResultStatus status) noexcept;
+
+                /** @brief Sends TASK_RESULT alone with a failure status and lets the task go. */
+                void fail(PeerId from, std::uint64_t task_id, std::uint64_t generation,
+                          Wire::TaskResultStatus status);
+
+                /** @brief Lets a task go after execute() failed, with a result if one fits. */
+                void abandon(const Job& job, const char* cause) noexcept;
+
+                /** @brief Gets one input from the cache, pulling it from the master on a miss. */
+                [[nodiscard]] CacheStatus acquire_input(const Job& job, const BufferHandle& handle,
+                                                        BufferView& view);
+
+                /** @brief Logs that the cache has no room for a buffer of a task. */
+                void log_no_room(std::uint64_t task_id, const BufferHandle& handle,
+                                 const char* consequence) const;
+
+                /** @brief Runs one job from its pins to its result. */
+                void execute(const Job& job);
+
+                /// @brief Guards jobs_ and stopping_.
                 mutable std::mutex mutex_;
 
                 /// @brief Wakes the exec thread on a job and on stop().
@@ -171,6 +252,30 @@ namespace SushiRuntime
 
                 /// @brief Jobs waiting, for queue_depth().
                 std::atomic<std::uint32_t> queue_depth_{0};
+
+                /// @brief Jobs waiting for the exec thread, oldest first.
+                std::deque<Job> jobs_;
+
+                /// @brief The tasks held, shared with every output stream.
+                std::shared_ptr<HeldTasks> held_;
+
+                /// @brief Kernels that ran to the end.
+                std::atomic<std::uint64_t> tasks_run_{0};
+
+                /// @brief Kernels that threw.
+                std::atomic<std::uint64_t> failed_kernel_{0};
+
+                /// @brief Tasks whose output did not fit.
+                std::atomic<std::uint64_t> failed_output_allocation_{0};
+
+                /// @brief Tasks whose input never arrived.
+                std::atomic<std::uint64_t> failed_input_unavailable_{0};
+
+                /// @brief Tasks whose operation has no kernel.
+                std::atomic<std::uint64_t> failed_unknown_operation_{0};
+
+                /// @brief Tasks failed by stop().
+                std::atomic<std::uint64_t> failed_shutting_down_{0};
         };
 
     } // namespace Distributed
