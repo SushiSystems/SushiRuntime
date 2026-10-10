@@ -11,10 +11,19 @@ sushiruntime_add_module(
         buffer_registry.cpp
         cluster.cpp
         distributed_coordinator.cpp
+        endpoint.cpp
+        handshake.cpp
+        hmac_sha256.cpp
         i_offload_policy.cpp
         in_process_transport.cpp
         kernel_registry.cpp
+        sha256.cpp
+        shared_secret.cpp
+        socket_posix.cpp
+        socket_windows.cpp
         tcp_transport.cpp
+        wire_frame.cpp
+        wire_messages.cpp
         worker_agent.cpp
     DEPENDS core memory task
     PRIVATE_DEPENDS
@@ -30,4 +39,7 @@ sushiruntime_add_module_tests(
     SOURCES
         test_distributed.cpp
         test_distributed_e2e.cpp
-        test_distributed_jepsen.cpp)
+        test_distributed_jepsen.cpp
+        test_handshake.cpp
+        test_socket.cpp
+        test_wire_format.cpp)

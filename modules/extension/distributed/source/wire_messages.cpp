@@ -1,0 +1,423 @@
+/**************************************************************************/
+/* wire_messages.cpp                                                      */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file wire_messages.cpp
+ * @brief Encodes and decodes the sixteen messages of protocol version 2.
+ * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
+ */
+
+#include "wire_messages.hpp"
+
+namespace SushiRuntime::Distributed::Wire
+{
+    namespace
+    {
+        /** @brief Holds the encoded size of one operation identifier. */
+        constexpr std::size_t K_OP_ID_BYTES = 4;
+
+        /** @brief Holds the number of scalar parameters a task's metadata carries at most. */
+        constexpr std::size_t K_MAX_PARAMS = Graph::TaskMetadata::K_MAX_PARAMS;
+
+        /** @brief Appends a handle as id, version, size: 20 bytes. */
+        void put_handle(FieldWriter& writer, const BufferHandle& handle)
+        {
+            writer.put_u64(handle.id.value);
+            writer.put_u32(handle.version);
+            writer.put_u64(handle.size_bytes);
+        }
+
+        /** @brief Reads a handle. */
+        BufferHandle get_handle(FieldReader& reader) noexcept
+        {
+            BufferHandle handle;
+            handle.id.value = reader.get_u64();
+            handle.version = reader.get_u32();
+            handle.size_bytes = reader.get_u64();
+            return handle;
+        }
+
+        /** @brief Appends a list of handles behind its count. */
+        void put_handles(FieldWriter& writer, const std::vector<BufferHandle>& handles)
+        {
+            writer.put_count(handles.size());
+            for (const BufferHandle& handle : handles)
+                put_handle(writer, handle);
+        }
+
+        /** @brief Reads a list of handles; reserves once, after the count passed its check. */
+        void get_handles(FieldReader& reader, std::vector<BufferHandle>& out)
+        {
+            const std::uint32_t count = reader.get_count(K_BUFFER_HANDLE_BYTES);
+            out.clear();
+            out.reserve(count);
+            for (std::uint32_t index = 0; index < count; ++index)
+                out.push_back(get_handle(reader));
+        }
+
+        /** @brief Returns how many leading parameters reach the last one that is not zero. */
+        std::uint8_t used_param_count(const Graph::TaskMetadata& metadata) noexcept
+        {
+            std::size_t count = K_MAX_PARAMS;
+            while (count > 0 && metadata.params[count - 1] == 0)
+                --count;
+            return static_cast<std::uint8_t>(count);
+        }
+
+        /** @brief Appends task type, priority, affinity, then the used parameters. */
+        void put_metadata(FieldWriter& writer, const Graph::TaskMetadata& metadata)
+        {
+            writer.put_enum(metadata.task_type);
+            writer.put_i32(static_cast<std::int32_t>(metadata.priority));
+            writer.put_i32(static_cast<std::int32_t>(metadata.numa_affinity));
+
+            const std::uint8_t count = used_param_count(metadata);
+            writer.put_u8(count);
+            for (std::size_t index = 0; index < count; ++index)
+                writer.put_u64(metadata.params[index]);
+        }
+
+        /** @brief Reads the metadata fields; parameters past the sent count stay zero. */
+        void get_metadata(FieldReader& reader, Graph::TaskMetadata& metadata) noexcept
+        {
+            metadata.task_type =
+                reader.get_enum(Graph::TaskType::NONE, Graph::TaskType::CONTROL_FLOW);
+            metadata.priority = reader.get_i32();
+            metadata.numa_affinity = reader.get_i32();
+
+            const std::uint8_t count =
+                reader.get_u8_at_most(static_cast<std::uint8_t>(K_MAX_PARAMS));
+            for (std::size_t index = 0; index < count; ++index)
+                metadata.params[index] = reader.get_u64();
+        }
+    } // namespace
+
+    CodecStatus HelloMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_bytes({worker_nonce.data(), worker_nonce.size()});
+        writer.put_string(build_id);
+        writer.put_string(node_name);
+        return writer.status();
+    }
+
+    DecodeResult HelloMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                      HelloMessage& out)
+    {
+        FieldReader reader(payload);
+        reader.get_bytes({out.worker_nonce.data(), out.worker_nonce.size()});
+        out.build_id = reader.get_string();
+        out.node_name = reader.get_string();
+        return reader.finish();
+    }
+
+    CodecStatus ChallengeMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_bytes({master_nonce.data(), master_nonce.size()});
+        writer.put_bytes({master_proof.data(), master_proof.size()});
+        writer.put_u64(session_id);
+        return writer.status();
+    }
+
+    DecodeResult ChallengeMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                          ChallengeMessage& out)
+    {
+        FieldReader reader(payload);
+        reader.get_bytes({out.master_nonce.data(), out.master_nonce.size()});
+        reader.get_bytes({out.master_proof.data(), out.master_proof.size()});
+        out.session_id = reader.get_u64();
+        return reader.finish();
+    }
+
+    CodecStatus ProofMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_bytes({worker_proof.data(), worker_proof.size()});
+        writer.put_count(ops.size());
+        for (const Graph::OpID& op : ops)
+            writer.put_u32(op.value);
+        writer.put_u32(max_jobs);
+        writer.put_u64(cache_budget);
+        return writer.status();
+    }
+
+    DecodeResult ProofMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                      ProofMessage& out)
+    {
+        FieldReader reader(payload);
+        reader.get_bytes({out.worker_proof.data(), out.worker_proof.size()});
+
+        const std::uint32_t count = reader.get_count(K_OP_ID_BYTES);
+        out.ops.clear();
+        out.ops.reserve(count);
+        for (std::uint32_t index = 0; index < count; ++index)
+            out.ops.push_back(Graph::OpID(reader.get_u32()));
+
+        out.max_jobs = reader.get_u32();
+        out.cache_budget = reader.get_u64();
+        return reader.finish();
+    }
+
+    CodecStatus WelcomeMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u32(worker_id);
+        writer.put_u32(liveness_timeout_ms);
+        writer.put_u32(ping_interval_ms);
+        writer.put_u32(chunk_bytes);
+        return writer.status();
+    }
+
+    DecodeResult WelcomeMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                        WelcomeMessage& out)
+    {
+        FieldReader reader(payload);
+        out.worker_id = reader.get_u32();
+        out.liveness_timeout_ms = reader.get_u32();
+        out.ping_interval_ms = reader.get_u32();
+        out.chunk_bytes = reader.get_u32();
+        return reader.finish();
+    }
+
+    CodecStatus RejectMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_enum(reason);
+        writer.put_u16(sender_version);
+        writer.put_string(text);
+        return writer.status();
+    }
+
+    DecodeResult RejectMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                       RejectMessage& out)
+    {
+        FieldReader reader(payload);
+        out.reason = reader.get_enum(RejectReason::Version, RejectReason::Busy);
+        out.sender_version = reader.get_u16();
+        out.text = reader.get_string();
+        return reader.finish();
+    }
+
+    CodecStatus GoodbyeMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_enum(reason);
+        writer.put_string(text);
+        return writer.status();
+    }
+
+    DecodeResult GoodbyeMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                        GoodbyeMessage& out)
+    {
+        FieldReader reader(payload);
+        out.reason = reader.get_enum(GoodbyeReason::Shutdown, GoodbyeReason::Detach);
+        out.text = reader.get_string();
+        return reader.finish();
+    }
+
+    CodecStatus TaskDispatchMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u64(task_id);
+        writer.put_u32(metadata.op_id.value);
+        put_metadata(writer, metadata);
+        put_handles(writer, inputs);
+        put_handles(writer, outputs);
+        return writer.status();
+    }
+
+    DecodeResult TaskDispatchMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                             TaskDispatchMessage& out)
+    {
+        FieldReader reader(payload);
+        out.metadata = Graph::TaskMetadata{};
+        out.task_id = reader.get_u64();
+        out.metadata.op_id = Graph::OpID(reader.get_u32());
+        get_metadata(reader, out.metadata);
+        get_handles(reader, out.inputs);
+        get_handles(reader, out.outputs);
+        return reader.finish();
+    }
+
+    CodecStatus TaskAcceptedMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u64(task_id);
+        return writer.status();
+    }
+
+    DecodeResult TaskAcceptedMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                             TaskAcceptedMessage& out)
+    {
+        FieldReader reader(payload);
+        out.task_id = reader.get_u64();
+        return reader.finish();
+    }
+
+    CodecStatus TaskResultMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u64(task_id);
+        writer.put_enum(status);
+        put_handles(writer, outputs);
+        return writer.status();
+    }
+
+    DecodeResult TaskResultMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                           TaskResultMessage& out)
+    {
+        FieldReader reader(payload);
+        out.task_id = reader.get_u64();
+        out.status =
+            reader.get_enum(TaskResultStatus::Succeeded, TaskResultStatus::ShuttingDown);
+        get_handles(reader, out.outputs);
+        return reader.finish();
+    }
+
+    CodecStatus BufferRequestMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u64(id.value);
+        writer.put_u32(version);
+        return writer.status();
+    }
+
+    DecodeResult BufferRequestMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                              BufferRequestMessage& out)
+    {
+        FieldReader reader(payload);
+        out.id.value = reader.get_u64();
+        out.version = reader.get_u32();
+        return reader.finish();
+    }
+
+    CodecStatus BufferChunkMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_enum(purpose);
+        writer.put_u64(task_id);
+        put_handle(writer, handle);
+        writer.put_u64(offset);
+        writer.put_bytes(data);
+        return writer.status();
+    }
+
+    DecodeResult BufferChunkMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                            BufferChunkMessage& out)
+    {
+        FieldReader reader(payload);
+        out.purpose = reader.get_enum(ChunkPurpose::PullReply, ChunkPurpose::TaskOutput);
+        out.task_id = reader.get_u64();
+        out.handle = get_handle(reader);
+        out.offset = reader.get_u64();
+        out.data = reader.get_rest();
+        return reader.finish();
+    }
+
+    CodecStatus BufferAbortMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u64(id.value);
+        writer.put_u32(version);
+        writer.put_u64(task_id);
+        writer.put_enum(reason);
+        return writer.status();
+    }
+
+    DecodeResult BufferAbortMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                            BufferAbortMessage& out)
+    {
+        FieldReader reader(payload);
+        out.id.value = reader.get_u64();
+        out.version = reader.get_u32();
+        out.task_id = reader.get_u64();
+        out.reason = reader.get_enum(AbortReason::Stale, AbortReason::Gone);
+        return reader.finish();
+    }
+
+    CodecStatus BufferReleaseMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u64(id.value);
+        return writer.status();
+    }
+
+    DecodeResult BufferReleaseMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                              BufferReleaseMessage& out)
+    {
+        FieldReader reader(payload);
+        out.id.value = reader.get_u64();
+        return reader.finish();
+    }
+
+    CodecStatus PingMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u64(token);
+        return writer.status();
+    }
+
+    DecodeResult PingMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                     PingMessage& out)
+    {
+        FieldReader reader(payload);
+        out.token = reader.get_u64();
+        return reader.finish();
+    }
+
+    CodecStatus PongMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u64(token);
+        writer.put_u64(free_mem);
+        return writer.status();
+    }
+
+    DecodeResult PongMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                     PongMessage& out)
+    {
+        FieldReader reader(payload);
+        out.token = reader.get_u64();
+        out.free_mem = reader.get_u64();
+        return reader.finish();
+    }
+
+    CodecStatus HeartbeatMessage::encode(std::vector<std::byte>& out) const
+    {
+        FieldWriter writer(out);
+        writer.put_u32(queue_depth);
+        writer.put_u64(oldest_held_task_id);
+        writer.put_u64(cache_bytes);
+        return writer.status();
+    }
+
+    DecodeResult HeartbeatMessage::decode(SushiRuntime::span<const std::byte> payload,
+                                          HeartbeatMessage& out)
+    {
+        FieldReader reader(payload);
+        out.queue_depth = reader.get_u32();
+        out.oldest_held_task_id = reader.get_u64();
+        out.cache_bytes = reader.get_u64();
+        return reader.finish();
+    }
+} // namespace SushiRuntime::Distributed::Wire
