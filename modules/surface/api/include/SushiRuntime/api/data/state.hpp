@@ -35,6 +35,8 @@
 
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime
@@ -71,59 +73,54 @@ namespace SushiRuntime
                 State() = default;
 
                 /**
-                 * @brief Allocates both buffers of count elements on one device.
-                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-                 */
-                State(std::shared_ptr<Execution::RuntimeContext> ctx,
-                      std::size_t count, DeviceIndex device_index = DeviceIndex{0},
-                      Residency residency = Residency::Shared)
-                    : cur_(ctx, count, device_index, residency),
-                      next_(std::move(ctx), count, device_index, residency)
-                {
-                }
-
-                /**
                  * @brief Exposes the field a step kernel reads from.
                  * @return Pointer to the first element of the current field.
                  */
-                T* current() const noexcept { return cur_.data(); }
+                [[nodiscard]] T* current() const noexcept { return cur_.data(); }
 
                 /**
                  * @brief Exposes the field a step kernel writes into.
                  * @return Pointer to the first element of the next field.
                  */
-                T* next() const noexcept { return next_.data(); }
+                [[nodiscard]] T* next() const noexcept { return next_.data(); }
 
                 /**
                  * @brief Reports the capacity of the pair.
                  * @return Number of elements in each field; both are the same size.
                  */
-                std::size_t size() const noexcept { return cur_.size(); }
+                [[nodiscard]] std::size_t size() const noexcept { return cur_.size(); }
 
                 /**
                  * @brief Tells whether this State still owns memory.
                  * @return True if it owns no allocation, e.g. after being moved from.
                  */
-                bool empty() const noexcept { return cur_.empty(); }
+                [[nodiscard]] bool empty() const noexcept { return cur_.empty(); }
 
                 /**
-                 * @brief Identifies the region a task reading this State depends on.
-                 * @return The current field's base address, as used by the tracker.
+                 * @brief Reports which device queue both fields are pinned to.
+                 * @return The device index the State was allocated on.
                  */
-                void* read_key() const noexcept { return cur_.dependency_key(); }
+                [[nodiscard]] DeviceIndex device_index() const noexcept
+                {
+                    return cur_.device_index();
+                }
 
                 /**
-                 * @brief Identifies the region a task writing this State depends on.
-                 * @return The next field's base address, as used by the tracker.
+                 * @brief Reports where both fields live.
+                 * @return Residency::Shared for managed USM, Residency::Device for
+                 *         device-resident memory, Residency::Host for pinned host USM.
                  */
-                void* write_key() const noexcept { return next_.dependency_key(); }
+                [[nodiscard]] Residency residency() const noexcept { return cur_.residency(); }
 
                 /**
-                 * @brief Returns a weak observer of the current field's allocation, which stands
-                 *        for the State.
-                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+                 * @brief Tells whether the host may index the current field directly.
+                 * @return True for shared or host USM; false for device-resident memory, which
+                 *         must go through read_range()/write_range().
                  */
-                Core::LivenessObserver liveness() const noexcept { return cur_.liveness(); }
+                [[nodiscard]] bool is_host_accessible() const noexcept
+                {
+                    return cur_.is_host_accessible();
+                }
 
                 /**
                  * @brief Returns element i of the current field for host code.
@@ -136,54 +133,50 @@ namespace SushiRuntime
                  *        check.
                  * @throws SushiException If the State is device-resident.
                  */
-                span<T> host() const { return cur_.host(); }
+                [[nodiscard]] span<T> host() const { return cur_.host(); }
 
                 /**
-                 * @brief Reports where both fields live.
-                 * @return Residency::Shared for managed USM, Residency::Device for
-                 *         device-resident memory, Residency::Host for pinned host USM.
+                 * @brief Copies a window of the current field out to a host vector and waits for
+                 *        it.
+                 * @param range Element window to read.
+                 * @throws SushiException With invalid_access when @p range does not fit size().
+                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
-                Residency residency() const noexcept { return cur_.residency(); }
-
-                /**
-                 * @brief Tells whether the host may index the current field directly.
-                 * @return True for shared or host USM; false for device-resident memory, which
-                 *         must go through read_range()/write_range().
-                 */
-                bool host_accessible() const noexcept { return cur_.host_accessible(); }
-
-                /**
-                 * @brief Copies a sub-range of the current field out to a host vector.
-                 * @param range Element window to read; count is clamped to the field size.
-                 */
-                std::vector<T> read_range(ElementRange range) const
+                [[nodiscard]] std::vector<T> read_range(ElementRange range) const
                 {
-                    return cur_.read_range(range);
+                    return cur_.read_window("State::read_range", range);
                 }
 
                 /**
-                 * @brief Copies a host range into a sub-range of the current field.
-                 * @param range Element window to write; count is clamped to the field size.
-                 * @param src Host source of at least range.count elements.
+                 * @brief Copies host elements into a window of the current field and waits for it.
+                 * @param range  Element window to write.
+                 * @param source Holds at least range.count elements; the first range.count are
+                 *        copied.
+                 * @throws SushiException With invalid_access when @p range does not fit size(), or
+                 *        @p source is null or shorter than a non-empty window.
                  */
-                void write_range(ElementRange range, const T* src)
+                void write_range(ElementRange range, span<const T> source) const
                 {
-                    cur_.write_range(range, src);
+                    cur_.write_window("State::write_range", range, source);
                 }
 
                 /**
-                 * @brief Swaps current and next so the just-written state becomes
-                 *        current. The runtime calls this once per step.
+                 * @brief Names a window of the current field so that tasks on disjoint windows
+                 *        are not serialized.
+                 * @param range Element window, in elements.
+                 * @throws SushiException With invalid_access when @p range does not fit size().
+                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
-                void advance() noexcept
+                [[nodiscard]] BufferRegion region(ElementRange range) const
                 {
-                    using std::swap;
-                    swap(cur_, next_);
+                    return cur_.region_of("State::region", range);
                 }
 
                 /**
                  * @brief Shares both fields with the runtime's offload coordinator; does nothing
                  *        when none is installed or the state is empty.
+                 * @return *this from the lvalue overload, the state by value from the rvalue
+                 *        overload.
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
                 State& distributed() &
@@ -193,15 +186,78 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                /** @brief Rvalue overload; moves the state into the caller. */
-                State distributed() &&
+                [[nodiscard]] State distributed() &&
                 {
                     cur_.distributed();
                     next_.distributed();
                     return std::move(*this);
                 }
 
+                /** @brief Forwards to is_host_accessible(). */
+                [[deprecated("use is_host_accessible()")]]
+                bool host_accessible() const noexcept
+                {
+                    return is_host_accessible();
+                }
+
+                /**
+                 * @brief Forwards to write_range(ElementRange, span<const T>) with range.count
+                 *        elements at @p src.
+                 * @throws SushiException With invalid_access when @p src is null and range.count
+                 *        is not zero.
+                 */
+                [[deprecated("use write_range(ElementRange, span<const T>)")]]
+                void write_range(ElementRange range, const T* src) const
+                {
+                    cur_.write_window("State::write_range", range,
+                                      span<const T>(src, range.count));
+                }
+
+                /** @brief Forwards to detail::HandleAccess::read_key(). */
+                void* read_key() const noexcept
+                {
+                    return detail::HandleAccess::read_key(*this);
+                }
+
+                /** @brief Forwards to detail::HandleAccess::write_key(). */
+                void* write_key() const noexcept
+                {
+                    return detail::HandleAccess::write_key(*this);
+                }
+
+                /** @brief Forwards to detail::HandleAccess::liveness(). */
+                [[deprecated("internal to the graph layer; declare the access with Reads or "
+                             "Writes")]]
+                Core::LivenessObserver liveness() const noexcept
+                {
+                    return detail::HandleAccess::liveness(*this);
+                }
+
+                /** @brief Forwards to detail::HandleAccess::advance(). */
+                [[deprecated("internal to the graph layer; a run advances a State after each "
+                             "step")]]
+                void advance() noexcept
+                {
+                    detail::HandleAccess::advance(*this);
+                }
+
             private:
+                friend class Runtime;
+                friend struct detail::HandleAccess;
+
+                /**
+                 * @brief Allocates both fields of count elements on one device.
+                 * @throws SushiException With allocation_failed, as Buffer's allocating
+                 *         constructor does.
+                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+                 */
+                State(std::shared_ptr<Execution::RuntimeContext> ctx, std::size_t count,
+                      DeviceIndex device_index, Residency residency)
+                    : cur_(ctx, count, device_index, residency),
+                      next_(std::move(ctx), count, device_index, residency)
+                {
+                }
+
                 Buffer<T> cur_;
                 Buffer<T> next_;
         };

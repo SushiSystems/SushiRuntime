@@ -45,11 +45,11 @@ TEST(Integration_DeviceResident, BufferRoundTrip)
     auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
 
     EXPECT_EQ(buf.residency(), Residency::Device);
-    EXPECT_FALSE(buf.host_accessible());
+    EXPECT_FALSE(buf.is_host_accessible());
 
     std::vector<int> seed(N);
     std::iota(seed.begin(), seed.end(), 0);     // 0,1,2,...
-    buf.write_range({0, N}, seed.data());
+    buf.write_range({0, N}, seed);
 
     int* p = buf.data();
     auto g = rt.graph();
@@ -72,7 +72,7 @@ TEST(Integration_DeviceResident, SelectiveReadback)
 
     std::vector<int> seed(N);
     std::iota(seed.begin(), seed.end(), 100);   // 100,101,...
-    buf.write_range({0, N}, seed.data());
+    buf.write_range({0, N}, seed);
 
     const std::vector<int> window = buf.read_range({8, 4});
     ASSERT_EQ(window.size(), 4u);
@@ -93,10 +93,10 @@ TEST(Integration_DeviceResident, StateStepsResident)
     auto field = rt.state<int>(N, DeviceIndex{0}, Residency::Device);
 
     EXPECT_EQ(field.residency(), Residency::Device);
-    EXPECT_FALSE(field.host_accessible());
+    EXPECT_FALSE(field.is_host_accessible());
 
     std::vector<int> seed(N, 0);
-    field.write_range({0, N}, seed.data());
+    field.write_range({0, N}, seed);
 
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
@@ -117,7 +117,7 @@ TEST(Integration_DeviceResident, SharedDefaultUnchanged)
     auto buf = rt.buffer<int>(N);
 
     EXPECT_EQ(buf.residency(), Residency::Shared);
-    EXPECT_TRUE(buf.host_accessible());
+    EXPECT_TRUE(buf.is_host_accessible());
 
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = static_cast<int>(i);           // direct host indexing still valid
@@ -152,7 +152,7 @@ TEST(Integration_DeviceResident, HostAccessOnDeviceThrows)
 
     auto rt  = Runtime::create();
     auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
-    ASSERT_FALSE(buf.host_accessible());
+    ASSERT_FALSE(buf.is_host_accessible());
 
     EXPECT_THROW((void)buf[0], Core::SushiException);
     EXPECT_THROW((void)buf.host(), Core::SushiException);
@@ -170,7 +170,7 @@ TEST(Integration_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
     auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Host);
 
     EXPECT_EQ(buf.residency(), Residency::Host);
-    EXPECT_TRUE(buf.host_accessible());
+    EXPECT_TRUE(buf.is_host_accessible());
 
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = static_cast<int>(i);

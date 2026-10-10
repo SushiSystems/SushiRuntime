@@ -37,6 +37,7 @@
 using SushiRuntime::API::Buffer;
 using SushiRuntime::API::DeviceIndex;
 using SushiRuntime::API::Residency;
+using SushiRuntime::API::detail::HandleAccess;
 using SushiRuntime::Memory::Allocation;
 using SushiRuntime::Memory::IAllocationOwner;
 
@@ -132,8 +133,9 @@ TEST(Unit_Buffer, AdoptingConstructorExposesTheAdoptedAddress)
 {
     int releases = 0;
     void* last = nullptr;
-    Buffer<std::uint8_t> buffer(nullptr, counted_allocation(5, 16, releases, last), 16,
-                                 DeviceIndex{0}, Residency::Shared);
+    auto buffer = HandleAccess::construct<Buffer<std::uint8_t>>(
+        nullptr, counted_allocation(5, 16, releases, last), 16,
+        DeviceIndex{0}, Residency::Shared);
     EXPECT_EQ(buffer.data(), fake(5));
     EXPECT_EQ(releases, 0);
 }
@@ -143,8 +145,9 @@ TEST(Unit_Buffer, DestructionReleasesTheAdoptedAllocationOnce)
     int releases = 0;
     void* last = nullptr;
     {
-        Buffer<std::uint8_t> buffer(nullptr, counted_allocation(6, 16, releases, last), 16,
-                                     DeviceIndex{0}, Residency::Shared);
+        auto buffer = HandleAccess::construct<Buffer<std::uint8_t>>(
+            nullptr, counted_allocation(6, 16, releases, last), 16,
+            DeviceIndex{0}, Residency::Shared);
     }
     EXPECT_EQ(releases, 1);
     EXPECT_EQ(last, fake(6));
@@ -156,8 +159,9 @@ TEST(Unit_Buffer, AdoptingATooSmallAllocationThrowsAndStillReleasesOnce)
     void* last = nullptr;
     EXPECT_THROW(
         {
-            Buffer<std::uint32_t> buffer(nullptr, counted_allocation(7, 4, releases, last), 4,
-                                          DeviceIndex{0}, Residency::Shared);
+            auto buffer = HandleAccess::construct<Buffer<std::uint32_t>>(
+                nullptr, counted_allocation(7, 4, releases, last), 4,
+                DeviceIndex{0}, Residency::Shared);
         },
         SushiRuntime::Core::SushiException);
     EXPECT_EQ(releases, 1);
@@ -171,8 +175,9 @@ TEST(Unit_Buffer, AdoptingACountThatOverflowsItsByteSizeThrows)
     const std::size_t huge = std::numeric_limits<std::size_t>::max() / sizeof(std::uint32_t) + 1;
     EXPECT_THROW(
         {
-            Buffer<std::uint32_t> buffer(nullptr, counted_allocation(8, 4, releases, last), huge,
-                                          DeviceIndex{0}, Residency::Shared);
+            auto buffer = HandleAccess::construct<Buffer<std::uint32_t>>(
+                nullptr, counted_allocation(8, 4, releases, last), huge,
+                DeviceIndex{0}, Residency::Shared);
         },
         SushiRuntime::Core::SushiException);
     EXPECT_EQ(releases, 1);

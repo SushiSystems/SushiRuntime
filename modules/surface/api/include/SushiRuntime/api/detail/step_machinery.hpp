@@ -36,6 +36,7 @@
 
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/device_fault.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -101,7 +102,7 @@ namespace SushiRuntime
                         State<T>* sp = &s;
                         step_advancers_.push_back([sp, view]()
                         {
-                            sp->advance();
+                            HandleAccess::advance(*sp);
                             view->cur = sp->current();
                             view->next = sp->next();
                         });

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Changed the range calls and `region` of Buffer and State to throw the invalid-access error for a window outside the handle; they clamped before (`buffer.hpp`, `state.hpp`).
+- 2026-10-10 — api: Removed the public constructors of Buffer and State that take a runtime context; use `Runtime::buffer()`, `Runtime::state()` or Interop (`buffer.hpp`, `state.hpp`).
+- 2026-10-10 — api: Added `is_host_accessible()`, a span overload of `write_range` and `State::device_index()`, and deprecated `host_accessible()` and the pointer overload (`buffer.hpp`).
+- 2026-10-10 — api: Fixed an element count whose byte size overflows allocating a small buffer; it throws the allocation error before allocating (`buffer.hpp`).
 - 2026-10-10 — scheduler: Fixed a node whose work threw being reported to the offload coordinator as completed (`task_scheduler.cpp`, `event_polling.hpp`).
 - 2026-10-10 — api: Removed `add_reduce`, `add_segmented_reduce`, `add_prefix_scan` and `add_counting_sort`; they leave for SushiBLAS, built on the recorder (`graph.hpp`).
 - 2026-10-10 — api: Removed the `Sum`, `Minimum` and `Maximum` combiners and the fixed-order plan helpers; they leave for SushiBLAS (`vocabulary/combine.hpp`, `detail/fixed_order_reduce.hpp`).

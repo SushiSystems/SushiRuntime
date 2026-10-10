@@ -29,6 +29,21 @@ read_keys_of() gathers the read keys of a tuple of State pointers, in order. It 
 time so the dependency tracker labels every coupled input consistently with the canonical
 single-State overload.
 
+## handle_access.hpp
+
+### HandleAccess
+
+HandleAccess is the one place the graph layer reads a data handle's tracking state: the dependency
+key of a Buffer, the read and write keys of a State, the liveness observer of either, and the swap
+that makes a State's written field current. Buffer and State name it a friend, so none of the five
+has to be a public member, and a change to how a handle keeps its key or its token is made in this
+header and in the handle, with no recording code to follow. Its member templates are defined against
+forward declarations of Buffer and State, so the handles' own headers include it.
+
+construct() calls a private constructor of either handle. Runtime and Interop do not need it, since
+they are friends of the handles; it serves code that builds a handle without a runtime, which today
+is the unit test of the adopting constructor (tests/unit/test_allocation.cpp).
+
 ## run_report_builder.hpp
 
 ### fill_run_report
@@ -187,9 +202,9 @@ written against absolute indices stays correct whether or not its node happens t
 
 NodeSpecs are the recorded task specifications: each replays one add() onto a fresh backing graph.
 The fluent Graph is the source of truth so it can rebuild and recompile when mutated. A spec is
-recorded as {emitter, name, rule} and not as a bare callable: the name is handed to the emitter when
-the plan is built, not captured when the task is recorded, which is what lets name_last() attach one
-after the add() call has already returned.
+recorded as {emitter, rule} and not as a bare callable. The name of a rule lives in the recorder,
+which owns the text and hands it to every node of the rule when the plan is built; that is what
+lets name_last() attach one after the add() call has already returned.
 
 ## usm_scratch.hpp
 

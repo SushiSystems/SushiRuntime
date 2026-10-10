@@ -37,6 +37,7 @@
 #include <vector>
 
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
@@ -90,6 +91,9 @@ namespace SushiRuntime
             Host     /**< Pinned host USM; host-readable while kernels run. */
         };
 
+        /** @brief Names the byte window of one allocation that region() returns. */
+        using BufferRegion = Core::ResourceRegion;
+
         /**
          * @brief Names a residency as its enumerator spelling, for messages.
          * @param residency The residency to name.
@@ -142,6 +146,55 @@ namespace SushiRuntime
                 const std::optional<std::size_t> device = ctx.memory().owning_device(address);
                 return ctx.devices().queue_or_numa_local(device, 0);
             }
+
+            /**
+             * @brief Returns the byte size of count elements.
+             * @param call Names the calling operation in the message.
+             * @throws SushiException With allocation_failed when the byte size does not fit
+             *         std::size_t.
+             */
+            inline std::size_t checked_byte_count(const char* call, std::size_t count,
+                                                  std::size_t element_size)
+            {
+                const std::size_t most = std::numeric_limits<std::size_t>::max() / element_size;
+                if (count > most)
+                    throw Core::SushiException(Core::Error{
+                        Core::Errc::allocation_failed,
+                        std::string(call) + ": " + std::to_string(count) + " elements of " +
+                        std::to_string(element_size) + " bytes each exceed the largest byte "
+                        "count; ask for at most " + std::to_string(most) + " elements."});
+                return count * element_size;
+            }
+
+            /**
+             * @brief Describes an allocation request for a message: elements, bytes, residency
+             *        and device.
+             */
+            inline std::string describe_request(std::size_t count, std::size_t element_size,
+                                                DeviceIndex device_index, Residency residency)
+            {
+                return std::to_string(count) + " elements of " + std::to_string(element_size) +
+                       " bytes each (" + std::to_string(count * element_size) +
+                       " bytes), residency " + residency_name(residency) + ", device " +
+                       std::to_string(device_index.value());
+            }
+
+            /**
+             * @brief Checks that an element window lies inside a handle.
+             * @param call Names the calling operation in the message.
+             * @param size Element count of the handle.
+             * @throws SushiException With invalid_access when offset + count exceeds @p size.
+             */
+            inline void require_window(const char* call, ElementRange range, std::size_t size)
+            {
+                if (range.offset <= size && range.count <= size - range.offset)
+                    return;
+                throw Core::SushiException(Core::Error{
+                    Core::Errc::invalid_access,
+                    std::string(call) + ": the window (offset " + std::to_string(range.offset) +
+                    ", count " + std::to_string(range.count) + ") does not fit a handle of size " +
+                    std::to_string(size) + "; keep offset + count within size()."});
+            }
         } // namespace detail
 
         /**
@@ -159,58 +212,6 @@ namespace SushiRuntime
 
                 /** @brief Constructs an empty handle that owns no memory. */
                 Buffer() = default;
-
-                /**
-                 * @brief Allocates count elements of USM pinned to one device and records the
-                 *        owner.
-                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-                 */
-                Buffer(std::shared_ptr<Execution::RuntimeContext> ctx,
-                       std::size_t count, DeviceIndex device_index = DeviceIndex{0},
-                       Residency residency = Residency::Shared)
-                    : ctx_(std::move(ctx)),
-                      size_(count),
-                      device_index_(device_index),
-                      residency_(residency),
-                      liveness_(Core::make_liveness())
-                {
-                    const std::size_t bytes = count * sizeof(T);
-                    auto owner = std::make_unique<Memory::UsmAllocationOwner>(ctx_->shared_memory());
-                    void* address = detail::malloc_residency_on(*ctx_, bytes, device_index, residency);
-                    // A null address here would make dependency_key() null and skip tracking.
-                    if (count > 0 && address == nullptr)
-                        throw Core::SushiException(Core::Error{
-                            Core::Errc::allocation_failed,
-                            "Buffer allocation of " + std::to_string(bytes) +
-                            " bytes failed (out of USM memory)."});
-                    allocation_ = Memory::Allocation(address, bytes, std::move(owner));
-                }
-
-                /**
-                 * @brief Wraps memory another component allocated and will release.
-                 * @param allocation   Owns at least count * sizeof(T) bytes; released
-                 *        when this buffer is.
-                 * @throws SushiException With allocation_failed when @p count overflows
-                 *        its byte count, or @p allocation is smaller than it; @p allocation
-                 *        is released before the exception propagates.
-                 */
-                Buffer(std::shared_ptr<Execution::RuntimeContext> ctx, Memory::Allocation allocation,
-                       std::size_t count, DeviceIndex device_index, Residency residency)
-                    : ctx_(std::move(ctx)),
-                      allocation_(std::move(allocation)),
-                      size_(count),
-                      device_index_(device_index),
-                      residency_(residency),
-                      liveness_(Core::make_liveness())
-                {
-                    if (count > std::numeric_limits<std::size_t>::max() / sizeof(T) ||
-                        allocation_.bytes() < count * sizeof(T))
-                        throw Core::SushiException(Core::Error{
-                            Core::Errc::allocation_failed,
-                            "Buffer adoption of " + std::to_string(count) +
-                            " elements over an allocation of " +
-                            std::to_string(allocation_.bytes()) + " bytes."});
-                }
 
                 /** @brief Frees the owned allocation, if any. */
                 ~Buffer()
@@ -265,39 +266,45 @@ namespace SushiRuntime
                  * @brief Exposes the raw pointer a kernel captures.
                  * @return Pointer to the first element, or null if the handle is empty.
                  */
-                T* data() const noexcept { return static_cast<T*>(allocation_.address()); }
+                [[nodiscard]] T* data() const noexcept
+                {
+                    return static_cast<T*>(allocation_.address());
+                }
 
                 /**
                  * @brief Reports the allocation's capacity.
                  * @return Number of elements, not bytes.
                  */
-                std::size_t size() const noexcept { return size_; }
+                [[nodiscard]] std::size_t size() const noexcept { return size_; }
 
                 /**
                  * @brief Tells whether this handle still owns memory.
                  * @return True if it owns no allocation, e.g. after being moved from.
                  */
-                bool empty() const noexcept { return allocation_.empty(); }
+                [[nodiscard]] bool empty() const noexcept { return allocation_.empty(); }
 
                 /**
                  * @brief Reports which device queue the allocation is pinned to.
                  * @return The device index the buffer was allocated on.
                  */
-                DeviceIndex device_index() const noexcept { return device_index_; }
+                [[nodiscard]] DeviceIndex device_index() const noexcept { return device_index_; }
 
                 /**
                  * @brief Reports where the allocation lives.
                  * @return Residency::Shared for managed USM, Residency::Device for
                  *         device-resident memory, Residency::Host for pinned host USM.
                  */
-                Residency residency() const noexcept { return residency_; }
+                [[nodiscard]] Residency residency() const noexcept { return residency_; }
 
                 /**
                  * @brief Tells whether the host may index this buffer directly.
                  * @return True for shared and host USM; false for device-resident
                  *         memory, which must go through read_range()/write_range().
                  */
-                bool host_accessible() const noexcept { return residency_ != Residency::Device; }
+                [[nodiscard]] bool is_host_accessible() const noexcept
+                {
+                    return residency_ != Residency::Device;
+                }
 
                 /**
                  * @brief Returns element i for host code; valid only for shared or host USM.
@@ -317,87 +324,47 @@ namespace SushiRuntime
                  * @throws SushiException If the buffer is device-resident.
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
-                span<T> host() const
+                [[nodiscard]] span<T> host() const
                 {
                     require_host_accessible("Buffer::host");
                     return span<T>(data(), size_);
                 }
 
                 /**
-                 * @brief Copies a sub-range out to a host vector through the owning queue and waits
+                 * @brief Copies a window out to a host vector through the owning queue and waits
                  *        for it.
-                 * @param range Element window to read; count is clamped to the remainder.
+                 * @param range Element window to read.
+                 * @throws SushiException With invalid_access when @p range does not fit size().
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
-                std::vector<T> read_range(ElementRange range) const
+                [[nodiscard]] std::vector<T> read_range(ElementRange range) const
                 {
-                    const std::size_t offset = range.offset;
-                    std::size_t count = range.count;
-                    const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
-                    if (count > avail) count = avail;
-                    std::vector<T> out(count);
-                    T* ptr = data();
-                    if (count && ptr && ctx_)
-                    {
-                        auto& q = detail::owning_queue(*ctx_, static_cast<void*>(ptr));
-                        q.memcpy(out.data(), ptr + offset, count * sizeof(T)).wait();
-                        ctx_->transfers().add_device_to_host(count * sizeof(T));
-                    }
-                    return out;
+                    return read_window("Buffer::read_range", range);
                 }
 
                 /**
-                 * @brief Copies a host range into a sub-range through the owning queue and waits
-                 *        for it.
-                 * @param range Element window to write; count is clamped to the remainder.
-                 * @param src Host source of at least range.count elements.
-                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+                 * @brief Copies host elements into a window through the owning queue and waits.
+                 * @param range  Element window to write.
+                 * @param source Holds at least range.count elements; the first range.count are
+                 *        copied.
+                 * @throws SushiException With invalid_access when @p range does not fit size(), or
+                 *        @p source is null or shorter than a non-empty window.
                  */
-                void write_range(ElementRange range, const T* src)
+                void write_range(ElementRange range, span<const T> source) const
                 {
-                    const std::size_t offset = range.offset;
-                    std::size_t count = range.count;
-                    const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
-                    if (count > avail) count = avail;
-                    T* ptr = data();
-                    if (count && ptr && ctx_ && src)
-                    {
-                        auto& q = detail::owning_queue(*ctx_, static_cast<void*>(ptr));
-                        q.memcpy(ptr + offset, src, count * sizeof(T)).wait();
-                        ctx_->transfers().add_host_to_device(count * sizeof(T));
-                    }
+                    write_window("Buffer::write_range", range, source);
                 }
 
                 /**
-                 * @brief Returns the allocation's base address, which the dependency tracker uses
-                 *        as the key.
-                 * @return The base pointer as a void*, or nullptr when empty.
-                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-                 */
-                void* dependency_key() const noexcept { return static_cast<void*>(data()); }
-
-                /**
-                 * @brief Returns a weak observer that expires when this buffer is destroyed or
-                 *        moved from.
-                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-                 */
-                Core::LivenessObserver liveness() const noexcept { return liveness_; }
-
-                /**
-                 * @brief Names a sub-range of this buffer so that tasks on disjoint ranges are not
+                 * @brief Names a window of this buffer so that tasks on disjoint windows are not
                  *        serialized.
-                 * @param range Element window, in elements; count is clamped to the remainder.
+                 * @param range Element window, in elements.
+                 * @throws SushiException With invalid_access when @p range does not fit size().
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
-                Core::ResourceRegion region(ElementRange range) const noexcept
+                [[nodiscard]] BufferRegion region(ElementRange range) const
                 {
-                    const std::size_t offset = range.offset;
-                    std::size_t count = range.count;
-                    const std::size_t avail = (offset < size_) ? (size_ - offset) : 0;
-                    if (count > avail) count = avail;
-                    return Core::ResourceRegion{static_cast<void*>(data()),
-                                                offset * sizeof(T),
-                                                count * sizeof(T)};
+                    return region_of("Buffer::region", range);
                 }
 
                 /**
@@ -413,13 +380,174 @@ namespace SushiRuntime
                     return *this;
                 }
 
-                Buffer distributed() &&
+                [[nodiscard]] Buffer distributed() &&
                 {
                     share_with_offload();
                     return std::move(*this);
                 }
 
+                /** @brief Forwards to is_host_accessible(). */
+                [[deprecated("use is_host_accessible()")]]
+                bool host_accessible() const noexcept
+                {
+                    return is_host_accessible();
+                }
+
+                /**
+                 * @brief Forwards to write_range(ElementRange, span<const T>) with range.count
+                 *        elements at @p src.
+                 * @throws SushiException With invalid_access when @p src is null and range.count
+                 *        is not zero.
+                 */
+                [[deprecated("use write_range(ElementRange, span<const T>)")]]
+                void write_range(ElementRange range, const T* src) const
+                {
+                    write_window("Buffer::write_range", range, span<const T>(src, range.count));
+                }
+
+                /** @brief Forwards to detail::HandleAccess::key(). */
+                void* dependency_key() const noexcept
+                {
+                    return detail::HandleAccess::key(*this);
+                }
+
+                /** @brief Forwards to detail::HandleAccess::liveness(). */
+                [[deprecated("internal to the graph layer; declare the access with Reads, Writes, "
+                             "In, Out or InOut")]]
+                Core::LivenessObserver liveness() const noexcept
+                {
+                    return detail::HandleAccess::liveness(*this);
+                }
+
             private:
+                friend class Runtime;
+                friend class Interop;
+                template <typename>
+                friend class State;
+                friend struct detail::HandleAccess;
+
+                /**
+                 * @brief Allocates count elements of USM pinned to one device and records the
+                 *        owner.
+                 * @throws SushiException With allocation_failed when the byte size of @p count
+                 *        overflows or the device allocates nothing for a non-zero count.
+                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+                 */
+                Buffer(std::shared_ptr<Execution::RuntimeContext> ctx, std::size_t count,
+                       DeviceIndex device_index, Residency residency)
+                    : ctx_(std::move(ctx)),
+                      size_(count),
+                      device_index_(device_index),
+                      residency_(residency),
+                      liveness_(Core::make_liveness())
+                {
+                    const std::size_t bytes =
+                        detail::checked_byte_count("Buffer allocation", count, sizeof(T));
+                    auto owner =
+                        std::make_unique<Memory::UsmAllocationOwner>(ctx_->shared_memory());
+                    void* address =
+                        detail::malloc_residency_on(*ctx_, bytes, device_index, residency);
+                    // A null address would give the handle a null key, which skips tracking.
+                    if (count > 0 && address == nullptr)
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::allocation_failed,
+                            "Buffer allocation: the device returned no memory for " +
+                            detail::describe_request(count, sizeof(T), device_index, residency) +
+                            "."});
+                    allocation_ = Memory::Allocation(address, bytes, std::move(owner));
+                }
+
+                /**
+                 * @brief Wraps memory another component allocated and will release.
+                 * @param allocation Owns at least count * sizeof(T) bytes; released when this
+                 *        buffer is.
+                 * @throws SushiException With allocation_failed when the byte size of @p count
+                 *        overflows or @p allocation is smaller than it; @p allocation is released
+                 *        before the exception propagates.
+                 */
+                Buffer(std::shared_ptr<Execution::RuntimeContext> ctx,
+                       Memory::Allocation allocation, std::size_t count,
+                       DeviceIndex device_index, Residency residency)
+                    : ctx_(std::move(ctx)),
+                      allocation_(std::move(allocation)),
+                      size_(count),
+                      device_index_(device_index),
+                      residency_(residency),
+                      liveness_(Core::make_liveness())
+                {
+                    const std::size_t bytes =
+                        detail::checked_byte_count("Buffer adoption", count, sizeof(T));
+                    if (allocation_.bytes() < bytes)
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::allocation_failed,
+                            "Buffer adoption: an allocation of " +
+                            std::to_string(allocation_.bytes()) + " bytes cannot hold " +
+                            detail::describe_request(count, sizeof(T), device_index, residency) +
+                            "."});
+                }
+
+                /**
+                 * @brief Copies a window out to a host vector and counts the bytes moved.
+                 * @param call Names the public operation in a thrown message.
+                 * @throws SushiException With invalid_access when @p range does not fit size().
+                 */
+                std::vector<T> read_window(const char* call, ElementRange range) const
+                {
+                    detail::require_window(call, range, size_);
+                    std::vector<T> out(range.count);
+                    if (range.count == 0)
+                        return out;
+                    // A non-zero size_ implies a context and a non-null address.
+                    T* first = data();
+                    sycl::queue& queue = detail::owning_queue(*ctx_, static_cast<void*>(first));
+                    queue.memcpy(out.data(), first + range.offset, range.count * sizeof(T)).wait();
+                    ctx_->transfers().add_device_to_host(range.count * sizeof(T));
+                    return out;
+                }
+
+                /**
+                 * @brief Copies host elements into a window and counts the bytes moved.
+                 * @param call Names the public operation in a thrown message.
+                 * @throws SushiException With invalid_access when @p range does not fit size(), or
+                 *        @p source is null or shorter than a non-empty window.
+                 */
+                void write_window(const char* call, ElementRange range, span<const T> source) const
+                {
+                    detail::require_window(call, range, size_);
+                    if (range.count == 0)
+                        return;
+                    if (source.data() == nullptr)
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::invalid_access,
+                            std::string(call) + ": the source is null for a window of count " +
+                            std::to_string(range.count) + "; pass that many elements."});
+                    if (source.size() < range.count)
+                        throw Core::SushiException(Core::Error{
+                            Core::Errc::invalid_access,
+                            std::string(call) + ": the source holds " +
+                            std::to_string(source.size()) + " elements for a window of count " +
+                            std::to_string(range.count) + "; pass at least that many."});
+                    // A non-zero size_ implies a context and a non-null address.
+                    T* first = data();
+                    sycl::queue& queue = detail::owning_queue(*ctx_, static_cast<void*>(first));
+                    queue.memcpy(first + range.offset, source.data(), range.count * sizeof(T))
+                        .wait();
+                    ctx_->transfers().add_host_to_device(range.count * sizeof(T));
+                }
+
+                /**
+                 * @brief Returns the byte window of this allocation that an element window names.
+                 * @param call Names the public operation in a thrown message.
+                 * @throws SushiException With invalid_access when @p range does not fit size().
+                 */
+                BufferRegion region_of(const char* call, ElementRange range) const
+                {
+                    detail::require_window(call, range, size_);
+                    return BufferRegion{static_cast<void*>(data()),
+                                        range.offset * sizeof(T),
+                                        range.count * sizeof(T)};
+                }
+
                 /** @brief Hands the allocation to the installed offload coordinator, if any. */
                 void share_with_offload()
                 {
@@ -432,7 +560,7 @@ namespace SushiRuntime
                 /** @brief Throws an invalid_access error when host indexing is invalid. */
                 void require_host_accessible(const char* where) const
                 {
-                    if (!host_accessible())
+                    if (!is_host_accessible())
                         throw Core::SushiException(Core::Error{
                             Core::Errc::invalid_access,
                             std::string(where) +
@@ -463,5 +591,6 @@ namespace SushiRuntime
     using API::Residency;
     using API::DeviceIndex;
     using API::ElementRange;
+    using API::BufferRegion;
 
 } // namespace SushiRuntime
