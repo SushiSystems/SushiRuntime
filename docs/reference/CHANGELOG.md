@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-10 — logging: Added `set_log_level`, `set_log_sink` and the SR_LOG_LEVEL variable, and moved the logger's state into the library (`log_level.hpp`, `log_sink.hpp`, `logger.cpp`).
+- 2026-10-10 — logging: Changed the default level to Warn and the default sink to stderr for every level; a runtime no longer prints its device lines unless asked (`logger.cpp`).
+- 2026-10-10 — logging: Changed `SR_THROW_IF` to throw a typed exception with the invalid-state code, and deprecated the log type alias and `ACTIVE_LOG_LEVEL` for `LogLevel` and `K_LOG_LEVEL_CEILING` (`logger.hpp`).
 - 2026-10-10 — topology: Logged the two NUMA fallbacks of a GPU at warning level only on a machine with more than one NUMA node (`numa_mapper.cpp`).
 - 2026-10-10 — api: Split the two graph headers into one header per symbol and built the graph, the region and the dynamic graph on one recorder (`recorder.hpp`, `builder_surface.hpp`, `step_driver.hpp`, `plan_cache.hpp`).
 - 2026-10-10 — api: Moved the reduce, segmented reduce, prefix scan and counting sort bodies onto the public recorder interface; the add members forward to them (`primitives/reduce.hpp`, `primitives/primitive_members.hpp`).

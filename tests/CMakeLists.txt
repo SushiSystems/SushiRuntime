@@ -44,6 +44,7 @@ sushiruntime_add_test_program(
         integration/test_graph_profiling_switch.cpp
         integration/test_interop_host_export.cpp
         integration/test_layer_equivalence.cpp
+        integration/test_logging_defaults.cpp
         integration/test_node_event_records.cpp
         integration/test_observability.cpp
         integration/test_offload_seam_shutdown.cpp

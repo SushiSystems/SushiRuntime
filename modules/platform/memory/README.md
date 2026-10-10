@@ -168,3 +168,42 @@ queue's context for the pointer's kind and device. A shared allocation that matc
 once; a device allocation that matches is kept while the remaining queues are tried, so a shared
 match on a later queue wins. Host USM belongs to a context and to no device, and resolves to
 nothing. A context that throws for an address it does not know counts as no match.
+
+## resource_liveness.hpp
+
+### Why the liveness token exists
+
+A LivenessToken is a token a data handle owns and a graph weakly observes.
+
+A fluent graph records the base pointers of the Buffers and States its tasks touch, but it does not
+own them. If a handle is destroyed before the graph runs, those pointers dangle and a run is silent
+undefined behaviour. A handle holds one shared LivenessToken; the graph keeps a weak observer of it
+per recorded resource. When the handle dies the token expires, so the graph can detect a stale
+resource at run time and fail cleanly instead of dispatching against freed memory. The token carries
+no state: its existence is the signal, so observing it costs a weak_ptr lock and never touches the
+dependency hot path.
+
+## resource_region.hpp
+
+### ResourceRegion
+
+The dependency tracker keys ordering on regions, not bare pointers, so it can tell apart two
+sub-ranges of the same allocation (an array's two halves, a grid's interior and its halo). Two
+accesses are ordered if and only if their regions overlap; disjoint sub-ranges of the same buffer
+stay parallel, and distinct allocations never serialize.
+
+A bare pointer converts to the whole-buffer region implicitly, so every caller that still speaks
+base pointers keeps the previous behaviour: a whole region overlaps any region of the same base,
+degenerating the overlap test to base-pointer equality.
+
+### overlaps
+
+overlaps() is the test the tracker uses to decide ordering: same base and intersecting half-open
+intervals. WHOLE is treated as an unbounded upper end, so the comparison never overflows on the
+sentinel.
+
+### contains
+
+contains() is true if `r` lies entirely within this region. It lets the tracker stop walking history
+early: once a write that covers the accessed region is found, every earlier access to that range is
+already ordered behind it transitively.
