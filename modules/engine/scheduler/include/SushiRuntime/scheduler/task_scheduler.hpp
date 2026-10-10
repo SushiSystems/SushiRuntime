@@ -436,7 +436,7 @@ namespace SushiRuntime
                  * Remaining tasks drain without executing and the run completes
                  * (the sentinel still fires); the driver stops launching new steps.
                  */
-                void request_cancellation() { run_cancelled_.store(true, std::memory_order_release); }
+                void request_cancellation() noexcept { run_cancelled_.store(true, std::memory_order_release); }
 
                 /**
                  * @brief Reports whether the active run has been cancelled.

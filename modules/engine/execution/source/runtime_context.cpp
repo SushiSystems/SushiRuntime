@@ -300,6 +300,13 @@ namespace SushiRuntime
             return impl_->offload.get();
         }
 
+        Graph::OffloadSink& RuntimeContext::offload_sink()
+        {
+            SR_THROW_IF(!impl_->engine,
+                        "ExecutionEngine is not initialized: the context is still being built.");
+            return impl_->engine->offload_sink();
+        }
+
         bool RuntimeContext::profiling_enabled() const noexcept
         {
             return impl_->settings.profiling;

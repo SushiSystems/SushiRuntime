@@ -281,6 +281,9 @@ destructor, after the engine has shut down.
 offload() returns the installed pointer, or nullptr. A TaskGraph offloads only when it is
 constructed with that pointer. With no coordinator installed the context is a single machine;
 Distributed::Cluster::attach() is what installs one.
+offload_sink() returns the sink a coordinator hands its nodes back to. A coordinator may be bound
+to it and started before install_offload() runs, so one that fails to start is never installed and
+the coordinator installed before it keeps working.
 
 ## runtime_settings.hpp
 

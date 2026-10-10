@@ -222,7 +222,7 @@ namespace SushiRuntime
          * executing while the sentinel still fires, so the blocked execute()
          * returns promptly.
          */
-        void ExecutionEngine::cancel()
+        void ExecutionEngine::cancel() noexcept
         {
             impl_->scheduler.request_cancellation();
         }
@@ -392,6 +392,11 @@ namespace SushiRuntime
         void ExecutionEngine::install_offload(Graph::OffloadCoordinator* offload)
         {
             impl_->scheduler.set_offload_coordinator(offload);
+        }
+
+        Graph::OffloadSink& ExecutionEngine::offload_sink() noexcept
+        {
+            return impl_->scheduler;
         }
 
         /**
