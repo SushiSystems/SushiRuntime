@@ -82,6 +82,14 @@ namespace
     /** @brief Names an operation every worker of a test runs. */
     constexpr Graph::OpID K_COMMON_OPERATION{202};
 
+    /** @brief Builds a node tagged with the operation every worker of these tests holds. */
+    sushi_ptr<Graph::Node> common_node()
+    {
+        sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+        node->metadata.op_id = K_COMMON_OPERATION;
+        return node;
+    }
+
     /** @brief Names an operation no worker of a test runs. */
     constexpr Graph::OpID K_ABSENT_OPERATION{303};
 
@@ -311,7 +319,7 @@ TEST_F(Unit_WorkerDirectory, HandshakeDeadlineClosesPeer)
     const milliseconds limit(5000);
 
     directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
-    ASSERT_EQ(register_worker(K_SECOND, {}, 4, at(milliseconds(0))), HandshakeStep::Accepted);
+    ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(0))), HandshakeStep::Accepted);
     directory_.add_peer(K_THIRD, "10.0.0.3:7000", at(milliseconds(400)));
 
     // A peer that keeps sending HELLO still owes PROOF, and its time runs from the connect.
@@ -352,7 +360,7 @@ TEST_F(Unit_WorkerDirectory, WaitForWorkersWakesOnRegistration)
 
     std::atomic<bool> reached{false};
     std::thread waiter([&] { reached = directory_.wait_for_workers(1, K_UNTIL_WOKEN); });
-    const HandshakeStep step = register_worker(K_FIRST, {}, 4, at(milliseconds(0)));
+    const HandshakeStep step = register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0)));
     waiter.join();
 
     EXPECT_EQ(step, HandshakeStep::Accepted);
@@ -479,7 +487,7 @@ TEST_F(Unit_WorkerDirectory, SecondHelloRestartsTheHandshake)
 
 TEST_F(Unit_WorkerDirectory, SilentWorkerIsTakenOnce)
 {
-    const sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+    const sushi_ptr<Graph::Node> node = common_node();
     const milliseconds liveness(500);
 
     ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION, K_COMMON_OPERATION}, 4,
@@ -533,13 +541,13 @@ TEST_F(Unit_WorkerDirectory, SilentWorkerIsTakenOnce)
 
 TEST_F(Unit_WorkerDirectory, PickSkipsWorkersAtTheirJobLimit)
 {
-    const sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+    const sushi_ptr<Graph::Node> node = common_node();
 
     EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
     EXPECT_EQ(policy_->calls, 0) << "the policy is not asked when no worker has room";
 
-    ASSERT_EQ(register_worker(K_FIRST, {}, 1, at(milliseconds(0))), HandshakeStep::Accepted);
-    ASSERT_EQ(register_worker(K_SECOND, {}, 2, at(milliseconds(0))), HandshakeStep::Accepted);
+    ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 1, at(milliseconds(0))), HandshakeStep::Accepted);
+    ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 2, at(milliseconds(0))), HandshakeStep::Accepted);
 
     std::optional<PeerId> picked = directory_.pick(*node, 1024);
     ASSERT_TRUE(picked.has_value());
@@ -588,9 +596,36 @@ TEST_F(Unit_WorkerDirectory, PickSkipsWorkersAtTheirJobLimit)
     EXPECT_EQ(policy_->calls, calls_before_close) << "a closed directory asks nobody";
 }
 
+/** @brief Tests that pick() offers a node only to a worker that holds its kernel. */
+TEST_F(Unit_WorkerDirectory, PickOffersOnlyWorkersWithTheKernel)
+{
+    using std::chrono::milliseconds;
+
+    ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+              HandshakeStep::Accepted);
+    ASSERT_EQ(register_worker(K_SECOND, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
+              HandshakeStep::Accepted);
+
+    const sushi_ptr<Graph::Node> rare = make_sushi<Graph::Node>();
+    rare->metadata.op_id = K_RARE_OPERATION;
+    for (int round = 0; round < 4; ++round)
+    {
+        const std::optional<PeerId> picked = directory_.pick(*rare, 1024);
+        ASSERT_TRUE(picked.has_value());
+        EXPECT_EQ(picked->value, K_SECOND.value) << "the task went to a worker without its kernel";
+    }
+
+    // The only worker with the kernel is full; the other one is not a fallback.
+    EXPECT_FALSE(directory_.pick(*rare, 1024).has_value());
+
+    const sushi_ptr<Graph::Node> untagged = make_sushi<Graph::Node>();
+    EXPECT_FALSE(directory_.pick(*untagged, 1024).has_value())
+        << "a node with no operation was offered to a worker";
+}
+
 TEST_F(Unit_WorkerDirectory, SnapshotReportsWhatTheWorkerSent)
 {
-    const sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+    const sushi_ptr<Graph::Node> node = common_node();
 
     directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
     ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(100))),
@@ -662,7 +697,9 @@ TEST_F(Unit_WorkerDirectory, HelloFromARegisteredWorkerRegistersNothingTwice)
 {
     ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
               HandshakeStep::Accepted);
-    ASSERT_TRUE(directory_.pick(*make_sushi<Graph::Node>(), 0).has_value());
+    const sushi_ptr<Graph::Node> rare = make_sushi<Graph::Node>();
+    rare->metadata.op_id = K_RARE_OPERATION;
+    ASSERT_TRUE(directory_.pick(*rare, 0).has_value());
 
     // The worker lost its WELCOME and says HELLO again with a nonce of its own choosing.
     ASSERT_TRUE(directory_.admits(K_FIRST, MessageType::Hello));

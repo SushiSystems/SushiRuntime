@@ -61,8 +61,8 @@ namespace SushiRuntime
             /**
              * @brief Tells the scheduler to offer this node to the coordinator at dispatch.
              *
-             * OffloadCoordinator::prepare() sets it; the coordinator clears it to pin the
-             * node local.
+             * OffloadCoordinator::prepare() sets it, and clears it for a node it no longer
+             * accepts.
              */
             bool offloadable = false;
 
