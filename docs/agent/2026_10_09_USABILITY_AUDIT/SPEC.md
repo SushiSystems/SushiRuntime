@@ -2320,6 +2320,745 @@ Step 6 is what makes step 8 incremental: the product is composed from recorded o
 - **Items 3 and 4.** Commands run were `ls`, `cat`, `sed`, `grep`, `git ls-files`, `cmake --version` and one failed `python -c` import probe. No configure, build or test started, and no file was created, touched or deleted in any repository.
 - **Skills loaded:** `humanizer`, `repository-layout`, `project-tools`, `dependencies`, `platform-portability`, `versioning-and-release`, `continuous-integration`, `testing`.
 
+# Phase C: public API
+
+Read-only task. I wrote no file, ran no build, and started no `se`, `cmake`, `ninja`, `ctest` or `sr` process. Everything below is read from the tree at `703eed9` (the working tree also carries uncommitted edits by other sessions under `docs/`, `.config/`, `.github/`, `cli/`; I did not touch them).
+
+Path shorthand: `API/` is `D:\Projects\sushiruntime\modules\surface\api\include\SushiRuntime\api\`. Other paths are relative to `D:\Projects\sushiruntime\`.
+
+### 1. Findings table
+
+Status: **closed** (today's code already does it), **changed** (partly done, or the evidence moved), **stands**. Tasks are defined in section 5.
+
+#### API
+
+| ID | Status today | Decision | Task |
+| --- | --- | --- | --- |
+| API-01 | Stands. `create(const Topology::HardwareFilterConfig&, const RuntimeConfig&)`, `API/runtime/runtime.hpp:146-151`; `RuntimeConfig` is an alias of `Execution::RuntimeSettings`, `:52` | Fix now. One `RuntimeConfig` owned by the api module; two-argument `create` kept as deprecated forwarder | C12 |
+| API-02 | Closed. `DeviceQueueSet::require_index` throws `SushiException{invalid_access}` with index and count (`modules/platform/device/source/device_queue_set.cpp:286-295`); the allocator throws `bad_device_index(device_index, queues_.size())` (`modules/platform/memory/source/usm_allocator.cpp:215`) | Add the `@throws` lines only | C12 |
+| API-03 | Stands. `AdvancedControls` holds `Execution::RuntimeContext&` (`runtime.hpp:127`); the doc still says the Runtime must outlive graphs (`:133-135`, `:167`, `:179`) | Fix now, no break: `AdvancedControls` holds the `shared_ptr`; one lifetime rule in the docs | C12 |
+| API-04 | Stands. Public `Buffer(std::shared_ptr<Execution::RuntimeContext>, ...)` at `API/data/buffer.hpp:168,197`; `State` at `API/data/state.hpp:77`; `Core::ResourceRegion` from `region()` `buffer.hpp:392`; `Execution::WorkerPoolInfo` `runtime.hpp:101` | Fix now. Aliases in `API` (`DeviceFilter`, `WorkerPool`, `BufferRegion`); context constructors become private. Break only for code that constructs a `Buffer` from a context | C10, C12 |
+| API-05 | Stands. Clamping at `buffer.hpp:334-337`, `358-361`, `394-397`; null `src` skipped at `:363` | Fix now with a behaviour break: a window that does not fit throws `invalid_access` | C10 |
+| API-06 | Stands. Level is `inline constexpr ACTIVE_LOG_LEVEL` (`modules/foundation/logging/include/SushiRuntime/logging/logger.hpp:66-71`); INFO goes to stdout (`:109`, `:181`); one INFO line per device (`device_queue_set.cpp:169`) | Fix now, no break in macros | C2 |
+| API-07 | Stands. `version_matches()` at `modules/foundation/core/include/SushiRuntime/core/version.hpp:86-91`; `runtime.hpp` does not include it | Fix now, additive | C1, C12 |
+| API-08 | Stands. `dependency_key` `buffer.hpp:377`, `liveness` `:384`; `State::read_key/write_key/liveness/advance` `state.hpp:113-126,178`; no `State::device_index()` | Fix now. Plumbing moves behind `detail::HandleAccess`; public spellings deprecated for v0.4.x | C10 |
+| API-09 | Closed by phase B (stated in the brief; `buffer.hpp:410-430` has no `#ifdef`) | None | none |
+| API-10 | Stands. `API/../SushiRuntime.h` includes scheduler, EBR, tracker and topology headers (17 engine includes, listed in section 2.8) | Fix now with a break | C13 |
+| API-11 | Stands. `fluent.hpp` promotes 13 names; `buffer.hpp:462-465`, `state.hpp:211`, `dynamic_graph.hpp:1133` promote their own; `Dynamic`, `Region`, `PinPolicy` are not promoted | Fix now, additive, plus the namespace repair of the nine moved headers | C13 |
+| API-12 | Stands. `interop()` is `const` (`runtime.hpp:210`), every factory is not (`:157-204`); copy is implicit | Fix now. Factories become `const`; copy deleted (break, question 7) | C12, C10 |
+| API-13 | Changed. `distributed_demo.cpp` now calls `Distributed::Cluster::attach` (`applications/examples/distributed_demo.cpp:132`) but still builds `RuntimeContext` and `TaskGraph` by hand (`:103,125,161`) | Fix now, no break | C14 |
+| API-14 | Stands. No example calls `try_run`, passes a `RuntimeConfig`, or uses `read_range`, `advanced()` or `Dynamic` (grep over `applications/examples/*.cpp`) | Fix now: one operating-path example | C14 |
+| API-15 | Stands. Public fields `dynamic.hpp:89-115`; unchecked raw-pointer setters `:170,186,229,245` | Fix now. Fields private; setters take the `Buffer`; break for code that assigns the fields | C11 |
+| API-16 | Stands. `count * sizeof(T)` unchecked at `buffer.hpp:177`; message "(out of USM memory)" at `:184-185` | Fix now, no break | C10 |
+| API-17 | Not re-checked line by line | Defer to phase G (PLAN.md:113) | G |
+| API-18 | Stands for the headers I read (`runtime.hpp:140-145` has no `@return`) | Each task documents what it touches; the sweep stays in phase G | G, per task |
+| API-19 | Stands | Fix the rows that are public names now (table in 2.9); `Cluster` counts go to phase D | C12, C2, D |
+| API-20 | Changed. `try_run`, `try_wait` and the bricks carry `[[nodiscard]]` (`graph.hpp:2000-2035`, `run_handle.hpp:182,198`); `Runtime`, `Buffer`, `State` carry none | Fix now; policy in 2.7 | C10, C12, C1 |
+| API-21 | Stands | Ruled: leaves for SushiBLAS | C5, C6 |
+| API-22 | Not re-checked; `cluster.hpp` moved to the distributed module | Defer to phase D, with the `int` counts of API-19 | D |
+
+#### GRAPHAPI
+
+| ID | Status today | Decision | Task |
+| --- | --- | --- | --- |
+| GRAPHAPI-01 | Stands. Capture form only for `Extent` (`graph.hpp:517-520`); coupled States have no launch form (`:607-609`); `NdRange` only untracked (`:373-375`) | Fix now. Launch and access become two descriptor families over one `Recorder::record`; old orders forward | C8 |
+| GRAPHAPI-02 | Stands. `enable_if` only; class comment still promises "concept-constrained" errors (`graph.hpp:246-248`) | Fix now, no break | C8 |
+| GRAPHAPI-03 | Stands. `BackingGraph = ::SushiRuntime::Graph::TaskGraph` (`graph.hpp:82`); `Graph` not promoted | Owner question 1 | C13 |
+| GRAPHAPI-04 | Stands. `class Region : private Graph` (`API/graph/region.hpp:42`); `friend class Region; friend class DynamicGraph;` (`graph.hpp:2051-2052`); `static_cast<const Graph&>` at `dynamic_graph.hpp:175`, `as_graph` at `:436` | Fix now, no break. The recorder brick, section 3 | C5 |
+| GRAPHAPI-05 | Stands (graph.hpp is 3 059 lines, dynamic_graph.hpp 1 135) | Do it first, as its own task | C5 |
+| GRAPHAPI-06 | Stands. `compile_failed` for any `std::exception` at `graph.hpp:2179-2187`; `kernel_failed` at `run_handle.hpp:214-222` | Fix now, behaviour break | C9 |
+| GRAPHAPI-07 | Stands. `size()` returns `task_count_` (`graph.hpp:1813`); `rule_registration` indexes `specs_` (`:1825-1828`) | Fix now, value break for graphs that record multi-node rules | C7 |
+| GRAPHAPI-08 | Stands. `LateCount` aggregate at `graph.hpp:104-121`, `std::function` provider `:109` | Fix now with a break (aggregate becomes a class) | C11 |
+| GRAPHAPI-09 | Stands | Fix now; old orders are deprecated forwarders | C8 |
+| GRAPHAPI-10 | Stands. `DynamicGraph` has no `try_run()` without arguments (`dynamic_graph.hpp:263-286` lists three); `cancel()` not `noexcept` (`graph.hpp:1994`, `dynamic_graph.hpp:297`) | Fix now, additive | C9 |
+| GRAPHAPI-11 | Stands. `Graph(Graph&&) = default` (`graph.hpp:258`); raw `Owner*` in `RunHandle` (`run_handle.hpp:251`) | Fix now; deleting `Region`'s move is a break that matches its README | C7 |
+| GRAPHAPI-12 | Stands. `name_last(const char*)` stores the pointer (`graph.hpp:727-732`, `:3013`) | Fix now, no break | C7 |
+| GRAPHAPI-13 | Stands. `dirty_regions_.insert(key)` on every access (`dynamic_graph.hpp:102`) | PLAN puts it in phase E, but it is a contract (what `region()` means), so fix now; the cost claim stays a phase E measurement | C7 |
+| GRAPHAPI-14 | Stands | Defer. Moving bodies to `source/` needs a build-file change and a compile-time benchmark; phase E | E |
+| GRAPHAPI-15 | Stands. `<cassert>` `graph.hpp:32`, `topology/hw_discovery.hpp` `:75`; `Runtime::dynamic_graph()` defined in `dynamic_graph.hpp:1125-1128` | Fix in the split | C5 |
+| GRAPHAPI-16 | Stands (`graph.hpp:2327-2356`) | Fix with the recorder (one observer per allocation); number comes in phase E | C7 |
+| GRAPHAPI-17 | Closed. `return std::move(*r);` (`graph.hpp:2115`) | None | none |
+| GRAPHAPI-18 | Stands | Defer to phase E (needs a before and after) | E |
+| GRAPHAPI-19 | Not re-checked | Defer to phase E | E |
+| GRAPHAPI-20 | Stands for the items checked (`graph.hpp:101` "once per run", `:246-248`, `:256`) | Each task corrects the lines in its files; remainder in phase G | per task, G |
+| GRAPHAPI-21 | Not re-checked | Phase G; C8 writes the "which add do I call" table because it defines it | C8, G |
+| GRAPHAPI-22 | Stands. `add(State<T>&, Extent<N>, fn)` at `graph.hpp:573-594` compares nothing | Fix now, behaviour break for graphs that are already wrong | C8 |
+| GRAPHAPI-23 | Stands. `BackingGraph` `graph.hpp:82`; `no_registration` `:1816`; `set_profiling_requested` `:1844` | Fix now with deprecated forwarders | C8, C9 |
+
+#### CORE
+
+| ID | Status today | Decision | Task |
+| --- | --- | --- | --- |
+| CORE-01 | Closed in phase A (brief) | None | none |
+| CORE-02 | Not re-checked | Defer to phase E. The settings field it needs is additive, so it does not have to land before the freeze | E |
+| CORE-03 to 08, 15, 16, 21 | Not re-checked | Phase E (PLAN.md:112) | E |
+| CORE-09 | Stands. No `source/` folder in `modules/foundation/logging`; level constexpr (`logger.hpp:66-71`) | Fix now | C2 |
+| CORE-10 | Closed by ruling (construction stays lock-free). The "track touched shards" variant is a phase E measurement | None here | E |
+| CORE-11, 19 | Assigned to phase B; not re-checked | None | none |
+| CORE-12 | Changed. The eight headers are still under `include/` (for example `modules/engine/scheduler/include/SushiRuntime/scheduler/event_polling.hpp`) and the umbrella still includes four of them | C13 removes them from the umbrella. Leaving the installed set is build-file work, listed in PLAN.md:249-252 | C13, B follow-up |
+| CORE-13 | Stands. Every `add_*` returns `void` (`modules/engine/graph/include/SushiRuntime/graph/task_graph.hpp:98-222`); `name_last_node`, `width_last_node`, `last_node_width`, `last_registration_index` at `:133-169` | Fix now. `add_*` return `Node&`; accessors deprecated once the api module stops calling them | C3, C13 |
+| CORE-14 | Stands. Public `num_workers` (`task_scheduler.hpp:98`), public `dispatch_loop` (`:340`), `get_completion_rate` (`:453`), `migrate_tasks` three-argument form (`:455`) | Fix now with deprecated forwarders | C3 |
+| CORE-17 | Stands. `throw std::runtime_error` at `modules/engine/graph/source/task_graph.cpp:547,596`; `epoch_reclamation.hpp:183` | Fix now, no break (`SushiException` is a `std::runtime_error`) | C3, C1 |
+| CORE-18 | Not re-checked | Phase G | G |
+| CORE-20 | Not re-checked | Fix with CORE-14, same module | C3 |
+
+#### EXEC
+
+| ID | Status today | Decision | Task |
+| --- | --- | --- | --- |
+| EXEC-01, 03, 06, 10 | Closed (brief) | None | none |
+| EXEC-02 | Stands. `throw std::runtime_error("hardware discovery failed.")` at `modules/platform/topology/source/hw_discovery.cpp:223`. The WSL2 pair is already one INFO line (`numa_mapper.cpp:85`) | Fix now, no break | C1 |
+| EXEC-04 | Closed. `UsmAllocator::allocate(const UsmRequest&)` (`usm_allocator.hpp:79`, `usm_request.hpp:50-63`); the eight old names are deprecated forwarders (`runtime_context.hpp:225-273`) | None | none |
+| EXEC-05 | Changed. `DeviceQueueSet::devices()` returns `std::vector<DeviceInfo>` (`device_queue_set.hpp:75`, `device_info.hpp:55-63`); `API::Runtime` exposes only a count (`runtime.hpp:79`) | Fix now, additive: `AdvancedControls::devices()`. Device order is question 8 | C12 |
+| EXEC-07 | Changed. Index errors carry values (see API-02). `SR_THROW_IF` still throws `std::runtime_error` at `runtime_context.cpp:267,280` and `execution_engine.cpp:413-417` | Fix now: `SR_THROW_IF` throws `SushiException` | C2 |
+| EXEC-08 | Closed as far as I read: one WARN at route build (`device_queue_set.cpp:367`). Lines 345-372 not read in full | None | none |
+| EXEC-11 | Not re-checked | Phase G with the interop README | G |
+| EXEC-12 | Stands. `capabilities.host_export = true` (`modules/surface/interop/source/interop.cpp:80`); `kind` defaults to `OpaqueWin32` (`external_memory.hpp:54`) | Fix now; removing the default of `kind` breaks SushiEngine's `to_external_descriptor`, which sets it explicitly (`runtime_backend.hpp:226-229`), so in practice nothing breaks | C1 |
+| EXEC-22 | Closed. WARN with the address; adopted mappings are not freed (`usm_allocator.cpp:106-134`) | None | none |
+| EXEC-05 order, EXEC-23 | Open | Question 8; the page is phase G | G |
+
+### 2. Target public surface
+
+"Fwd" means a `[[deprecated]]` forwarder is kept for v0.4.x. "Breaks" names the repository and the grep that shows the use.
+
+#### 2.1 Runtime
+
+```cpp
+// api/runtime/runtime_config.hpp
+namespace SushiRuntime::API
+{
+    using DeviceFilter = Topology::HardwareFilterConfig;   // include_cpu, include_gpu, include_accelerator, require_fp64
+    using PinPolicy    = Scheduler::PinPolicy;
+    using WorkerPool   = Scheduler::WorkerPoolInfo;
+
+    struct RuntimeConfig
+    {
+        DeviceFilter devices;
+        std::size_t  worker_count    = 0;
+        std::size_t  first_core      = 0;
+        PinPolicy    pinning         = PinPolicy::Pin;
+        bool         profiling       = false;
+        bool         rebalancer      = false;
+        bool         force_scheduler = false;
+    };
+}
+
+// api/runtime/runtime.hpp
+class Runtime
+{
+    public:
+        [[nodiscard]] static Runtime create(const RuntimeConfig& config = {});
+        [[deprecated("use create(RuntimeConfig) and set RuntimeConfig::devices")]]
+        static Runtime create(const DeviceFilter& devices, const RuntimeConfig& config);
+
+        Runtime(Runtime&&) noexcept = default;
+        Runtime& operator=(Runtime&&) noexcept = default;
+        Runtime(const Runtime&) = delete;
+        Runtime& operator=(const Runtime&) = delete;
+
+        [[nodiscard]] Graph        graph() const;
+        [[nodiscard]] DynamicGraph dynamic_graph() const;
+        template <typename T> [[nodiscard]] Buffer<T> buffer(std::size_t count, DeviceIndex device = DeviceIndex{0},
+                                                             Residency residency = Residency::Shared) const;
+        template <typename T> [[nodiscard]] State<T>  state(std::size_t count, DeviceIndex device = DeviceIndex{0},
+                                                            Residency residency = Residency::Shared) const;
+        const Runtime& set_rebalancer_enabled(bool enabled) const;
+        [[nodiscard]] AdvancedControls advanced() const noexcept;
+        [[nodiscard]] Interop          interop() const noexcept;
+        [[nodiscard]] Execution::RuntimeContext& unsafe_context() const noexcept;
+};
+
+class AdvancedControls            // holds std::shared_ptr<Execution::RuntimeContext>
+{
+    public:
+        [[nodiscard]] std::size_t device_count() const;
+        [[nodiscard]] const std::vector<Device::DeviceInfo>& devices() const;   // new, EXEC-05
+        [[nodiscard]] bool is_profiling_enabled() const noexcept;
+        [[nodiscard]] bool is_rebalancer_enabled() const;
+        [[nodiscard]] WorkerPool worker_pool() const;
+        [[nodiscard]] std::size_t host_to_device_bytes() const noexcept;
+        [[nodiscard]] std::size_t device_to_host_bytes() const noexcept;
+};
+```
+
+| Old | New | Fwd | Breaks |
+| --- | --- | --- | --- |
+| `create(const Topology::HardwareFilterConfig& = {}, const RuntimeConfig& = {})` | `create(const RuntimeConfig& = {})` | yes | SushiEngine compiles with a warning: `runtime_simulation.cpp:82` `Runtime::create({}, to_runtime_config(options))` |
+| `using RuntimeConfig = Execution::RuntimeSettings` | the struct above, same flat field names | not needed | None found. SushiEngine assigns `worker_count` and `pinning` (`runtime_simulation.cpp:71-74`), which keep their names. Code that passes an `API::RuntimeConfig` where a `RuntimeSettings` is expected stops compiling; no such use in the three repositories (`grep -rn "RuntimeConfig" sushiengine sushiblas sushiai`, 2 hits, both above) |
+| `Runtime& rebalancer(bool)` | `set_rebalancer_enabled(bool)` | yes | None found |
+| `profiling_enabled()`, `rebalancer_enabled()` | `is_...` | yes | None found (`advanced()` is used once: `runtime_backend.hpp:909`, `device_count`) |
+| implicit copy of `Runtime` | deleted | no forwarder possible | Not found in SushiEngine (`new Runtime(Runtime::create())` at `runtime_backend.hpp:994` is a move). Question 7 |
+| `AdvancedControls(Execution::RuntimeContext&)` public constructor | private, `Runtime` is friend | no | None found |
+
+`RuntimeConfig` converts to `Topology::HardwareFilterConfig` and `Execution::RuntimeSettings` in one private function of `runtime.hpp`; the lower structs keep their own types, and SushiAI keeps using `RuntimeSettings` with `RuntimeContext` directly.
+
+#### 2.2 Buffer and State
+
+```cpp
+template <typename T>
+class Buffer
+{
+    public:
+        using value_type = T;
+        Buffer() = default;
+        Buffer(Buffer&&) noexcept;  Buffer& operator=(Buffer&&) noexcept;
+
+        [[nodiscard]] T*          data() const noexcept;
+        [[nodiscard]] std::size_t size() const noexcept;
+        [[nodiscard]] bool        empty() const noexcept;
+        [[nodiscard]] DeviceIndex device_index() const noexcept;
+        [[nodiscard]] Residency   residency() const noexcept;
+        [[nodiscard]] bool        is_host_accessible() const noexcept;
+        T& operator[](std::size_t i) const;
+        [[nodiscard]] span<T>        host() const;
+        [[nodiscard]] std::vector<T> read_range(ElementRange range) const;            // throws invalid_access
+        void                         write_range(ElementRange range, span<const T> source) const;  // throws invalid_access
+        [[nodiscard]] BufferRegion   region(ElementRange range) const;                // throws invalid_access
+        Buffer& distributed() &;
+        [[nodiscard]] Buffer distributed() &&;
+
+    private:
+        friend class Runtime;  friend class Interop;  template <typename> friend class State;
+        friend struct detail::HandleAccess;
+        Buffer(std::shared_ptr<Execution::RuntimeContext>, std::size_t, DeviceIndex, Residency);
+        Buffer(std::shared_ptr<Execution::RuntimeContext>, Memory::Allocation, std::size_t, DeviceIndex, Residency);
+};
+
+template <typename T>
+class State        // same member set as Buffer, plus current()/next(); data() is absent because there are two buffers
+{
+    public:
+        [[nodiscard]] T* current() const noexcept;
+        [[nodiscard]] T* next() const noexcept;
+        [[nodiscard]] std::size_t size() const noexcept;
+        [[nodiscard]] bool        empty() const noexcept;
+        [[nodiscard]] DeviceIndex device_index() const noexcept;      // new
+        [[nodiscard]] Residency   residency() const noexcept;
+        [[nodiscard]] bool        is_host_accessible() const noexcept;
+        T& operator[](std::size_t i) const;
+        [[nodiscard]] span<T>        host() const;
+        [[nodiscard]] std::vector<T> read_range(ElementRange range) const;
+        void                         write_range(ElementRange range, span<const T> source) const;
+        [[nodiscard]] BufferRegion   region(ElementRange range) const;  // new: the current buffer's window
+        State& distributed() &;
+        [[nodiscard]] State distributed() &&;
+};
+
+// api/detail/handle_access.hpp: the one door the graph layer uses
+namespace detail
+{
+    struct HandleAccess
+    {
+        template <typename T> static void* key(const Buffer<T>&) noexcept;
+        template <typename T> static void* read_key(const State<T>&) noexcept;
+        template <typename T> static void* write_key(const State<T>&) noexcept;
+        template <typename T> static Memory::LivenessObserver liveness(const Buffer<T>&) noexcept;
+        template <typename T> static Memory::LivenessObserver liveness(const State<T>&) noexcept;
+        template <typename T> static void advance(State<T>&) noexcept;
+    };
+}
+```
+
+| Old | New | Fwd | Breaks |
+| --- | --- | --- | --- |
+| public context-taking constructors (`buffer.hpp:168,197`, `state.hpp:77`) | private | no | None found. SushiEngine wraps buffers it got from the factories (`runtime_backend.hpp:253`) |
+| `dependency_key()`, `liveness()`, `read_key()`, `write_key()`, `advance()` | `detail::HandleAccess` | yes | None: `grep -rnE "\.(dependency_key|read_key|write_key|liveness)\(\)"` over the three repositories finds no runtime handle use |
+| `write_range(ElementRange, const T*)` | `write_range(ElementRange, span<const T>)` | yes; the forwarder throws on null | SushiEngine `runtime_backend.hpp:313` compiles with a warning |
+| clamping `read_range`, `write_range`, `region` | throw `invalid_access` naming offset, count and size | n/a | Behaviour. SushiEngine calls both (`runtime_backend.hpp:302,313`); whether any call relies on clamping was not checked |
+| `host_accessible()` | `is_host_accessible()` | yes | Not grepped downstream |
+| `Core::ResourceRegion` return type | `API::BufferRegion` = `Memory::ResourceRegion` | alias | None (same type) |
+
+The allocating constructor shares the overflow check with the adopting one, and its failure message names element count, bytes, residency and device.
+
+#### 2.3 Graph and DynamicGraph builder
+
+One canonical order: **modifier, launch, access, callable**. The builder surface is one class template shared by `Graph` and `Region`, so the two cannot drift.
+
+```cpp
+// Launch descriptors (api/launch/)
+std::size_t n                // 1-D, origin 0; kernel index is std::size_t
+Extent<N>                    // field `offset` renamed `origin`; kernel index sycl::id<N>, or std::size_t when N == 1
+NdRange<N>                   // gains `origin` and `at(origin)` (question 2)
+Dynamic + capacity           // late-bound window; `Dynamic` is the modifier, capacity is the launch
+
+// Access descriptors (api/vocabulary/)
+Reads, Writes                // handles named; the kernel captures its own pointers
+In<T>, Out<T>, InOut<T>...   // handles named once; the kernel receives the pointers
+State<T>&                    // kernel receives (i, const T* current, T* next)
+Coupled(out, in0, in...)     // new wrapper for the coupled-State form
+On(handle_or_device)         // untracked: no ordering, placement stated (section 4)
+
+template <class Derived>
+class BuilderSurface
+{
+    public:
+        template <class Launch, class F>              Derived& add(Launch launch, const Reads& reads, const Writes& writes, F&& kernel);
+        template <class Launch, class... Captures, class F>
+                                                      Derived& add(Launch launch, Captures... captures, F&& kernel);
+        template <typename T, class F>                Derived& add(State<T>& state, F&& kernel);
+        template <class Launch, typename T, class F>  Derived& add(Launch launch, State<T>& state, F&& kernel);
+        template <class Launch, class... States, class F>
+                                                      Derived& add(Launch launch, Coupled<States...> states, F&& kernel);
+        template <class... Args>                      Derived& add(Dynamic modifier, Args&&... launch_access_kernel);
+        template <class... Args>                      Derived& add(Tasks::OpID op, Args&&... launch_access_kernel_params);
+
+        template <class Launch, class F>              Derived& add_untracked(Launch launch, F&& kernel);            // DeviceIndex{0}
+        template <class Launch, class F>              Derived& add_untracked(Launch launch, On placement, F&& kernel);
+        template <class F>                            Derived& add_untracked(On placement, F&& raw_kernel);         // fn(sycl::handler&)
+
+        template <class F>                            Derived& add_host(const Reads& reads, const Writes& writes, F&& task);
+        template <class F>                            Derived& add_host(F&& task);
+        template <class F>                            Derived& add_emitter(F&& emitter);   // void(Graph::TaskGraph&), replayed at each build
+        template <class F>                            Derived& extend(F&& extension);      // void(Recorder&), run once, section 3
+
+        Derived& name(std::string_view label);        // copies; names every node of the last rule
+        [[nodiscard]] std::size_t size() const noexcept;        // rules, one per add*/extend call
+        [[nodiscard]] std::size_t node_count() const noexcept;  // recorded nodes
+        [[nodiscard]] std::size_t last_rule() const noexcept;
+        [[nodiscard]] Recorder& recorder() noexcept;
+};
+
+class Graph  : public BuilderSurface<Graph>  { /* plan cache + run surface */ };
+class Region : public BuilderSurface<Region> { public: void clear(); /* no run surface; not movable */ };
+```
+
+Run surface, generated once from the step driver, identical on `Graph` and `DynamicGraph`:
+
+```cpp
+RunReport  run();                         RunReport  run(std::size_t steps);
+RunReport& run(RunReport& reuse);         RunReport& run(std::size_t steps, RunReport& reuse);
+template <class R, class P> RunReport  run_for(std::chrono::duration<R, P> budget);
+template <class R, class P> RunReport& run_for(std::chrono::duration<R, P> budget, RunReport& reuse);
+template <class Pred> RunReport  run_until(Pred done);
+template <class Pred> RunReport& run_until(Pred done, RunReport& reuse);
+// each of the eight has a [[nodiscard]] noexcept try_ twin returning Result<RunReport, Error> or Result<RunReport*, Error>
+[[nodiscard]] RunHandle<Self> run_async();
+[[nodiscard]] Result<RunHandle<Self>, Error> try_run_async() noexcept;
+void cancel() noexcept;
+Self& set_profiling(bool requested) noexcept;      [[nodiscard]] bool is_profiling_requested() const noexcept;
+[[nodiscard]] std::uint32_t rule_registration(std::size_t rule) const noexcept;                    // Graph
+[[nodiscard]] std::uint32_t rule_registration(RegionKey key, std::size_t rule) const noexcept;     // DynamicGraph
+static constexpr std::uint32_t NO_REGISTRATION;
+[[nodiscard]] std::size_t compile_count() const noexcept;   // Graph
+[[nodiscard]] std::size_t compose_count() const noexcept;   // DynamicGraph
+```
+
+| Old (file:line) | New | Fwd | Breaks |
+| --- | --- | --- | --- |
+| `add(reads, writes, n, fn)` `graph.hpp:396`; `add(reads, writes, Extent, fn)` `:412`; `add(reads, writes, NdRange...)` `:442` | `add(launch, reads, writes, fn)` | yes | None found downstream (SushiEngine uses the `Dynamic` form only) |
+| `add(Dynamic, reads, writes, capacity, fn)` `graph.hpp:644` | `add(Dynamic, capacity, reads, writes, fn)` | yes | SushiEngine warning: `runtime_backend.hpp:368`, `:656` |
+| `add(State, Extent, fn)` `:573` | `add(Extent, State, fn)` | yes | None found |
+| `add(State& out, State& in0, Rest&&...)` `:609` | `add(launch, Coupled(out, in0, ...), fn)`; a two-argument `add(Coupled, fn)` covers the whole-field case | yes | Not grepped downstream |
+| `add(OpID, n, reads, writes, local, params)` `:1715,1732` | `add(OpID, n, reads, writes, local, params)` unchanged: it already matches "modifier, launch, access, callable, options" | n/a | None |
+| `add(const std::vector<void*>&, const std::vector<void*>&, n, fn)` `:626`, `:659` | removed; `Reads`/`Writes` take a `BufferRegion`, which a raw pointer converts to | yes for v0.4.x | Not grepped downstream |
+| `name_last(const char*)` `:727` | `name(std::string_view)` | yes; the forwarder accepts null, which SushiEngine passes (`runtime_backend.hpp:368-371` "node.name may be null") | SushiEngine warning at `runtime_backend.hpp:371,394,659,676` |
+| `size()` counts specs `:1813` | counts rules; `node_count()` is the old number | n/a | Value changes only for graphs with multi-node rules. SushiEngine forwards `rule_registration(rule)` (`runtime_backend.hpp:547-549`); its callers index by node today when a primitive is in the graph and must be re-read in the upgrade commit |
+| `no_registration` `:1816` | `NO_REGISTRATION` | yes | Not grepped downstream |
+| `set_profiling_requested` / `profiling_requested` `:1844,1855` | `set_profiling` / `is_profiling_requested` | yes | SushiEngine warning: `runtime_backend.hpp:602-604` |
+| `BackingGraph` alias `:82` | `Graph::TaskGraph` spelled out in `add_emitter`'s contract | yes | Not grepped downstream |
+| `DynamicGraph::compile_count()` `dynamic_graph.hpp:187` | `compose_count()` | yes | Not grepped downstream |
+| `DynamicGraph::region(key)` dirties on access `dynamic_graph.hpp:102` | does not dirty; a region is rebuilt when its recorder's generation changed | n/a | Behaviour. SushiEngine calls `graph_.region(key)` to create (`runtime_backend.hpp:809`) and then records into it, which still rebuilds |
+| `Region` move-constructible | not movable | no | None found |
+| `Extent::offset` field (`API/launch/extent.hpp:51`) | `origin` | no (a data member cannot forward) | Not found in SushiEngine (`grep -n "Extent" runtime_backend.hpp` has no hit); question 2 |
+| `add_reduce`, `add_segmented_reduce`, `add_prefix_scan`, `add_counting_sort` | gone, section 3 | no | SushiEngine: `runtime_backend.hpp:410,428,448,483,526,685,733,745,762` |
+
+Registration-time checks (GRAPHAPI-22) throw `invalid_graph` naming the rule, the extent with its origin, and the size it was compared with. Signature mistakes (GRAPHAPI-02) hit one `static_assert` per family in `api/detail/callable_checks.hpp`, stating the expected signature in words.
+
+#### 2.4 Late-bound vocabulary
+
+```cpp
+// api/vocabulary/late_count.hpp
+class LateCount
+{
+    public:
+        using Provider = Core::Delegate<std::size_t(), 48>;                      // same type Dynamic uses (dynamic.hpp:78-84)
+        [[nodiscard]] static LateCount fixed(std::size_t count);
+        [[nodiscard]] static LateCount from_host(std::size_t capacity, Provider provider);
+        [[nodiscard]] static LateCount from_device(std::size_t capacity, const Buffer<std::uint32_t>& slot, std::size_t index = 0);
+        [[nodiscard]] std::size_t capacity() const noexcept;
+};
+
+// api/vocabulary/dynamic.hpp: fields private; free builders and members share one checked slot helper
+[[nodiscard]] Dynamic when(Dynamic::WhenProvider);              Dynamic& Dynamic::when(WhenProvider) &;   // and && forms
+[[nodiscard]] Dynamic sized(Dynamic::CountProvider);            Dynamic& Dynamic::sized(CountProvider) &;
+[[nodiscard]] Dynamic sized_from_device(const Buffer<std::uint32_t>&, std::size_t index = 0);
+                                                                Dynamic& Dynamic::sized_from_device(const Buffer<std::uint32_t>&, std::size_t index = 0) &;
+[[nodiscard]] Dynamic based_at(Dynamic::BaseProvider);          // member likewise
+[[nodiscard]] Dynamic based_at_device(const Buffer<std::uint32_t>&, std::size_t index = 0);
+```
+
+| Old | New | Fwd | Breaks |
+| --- | --- | --- | --- |
+| `struct LateCount { capacity; std::function host; const Buffer* device; device_index; }` `graph.hpp:104-121` | the class above; "exactly one source" cannot be written wrong, and the device index is checked at construction | no: public fields cannot stay if the invariant is to hold | **SushiEngine**: `runtime_backend.hpp:208-215` (`lc.capacity = capacity; lc.host = ...`) becomes `LateCount::from_host(capacity, ...)` or `fixed(capacity)` |
+| `Dynamic` public fields `dynamic.hpp:89-115` | private | no | **SushiEngine**: `to_dynamic` (`runtime_backend.hpp:122-136`) builds a `Dynamic`; lines 125-136 were not read, so whether it assigns fields or chains builders is unverified |
+| `and_when`, `and_sized`, `and_based_at`, `and_sized_from_device(const uint32_t*, index)`, `and_based_at_device(const uint32_t*, index)` | members named like the free functions, taking the `Buffer` | yes for the three provider forms; the two raw-pointer forms are removed because they skip the check | Not grepped downstream |
+
+Both types document "resolved once per step", which is what the code does (the resolver node runs every step, `graph.hpp:2683-2694`).
+
+#### 2.5 Errors
+
+```cpp
+namespace SushiRuntime::Core
+{
+    enum class Errc { ok, invalid_graph, compile_failed, allocation_failed, kernel_failed, device_lost,
+                      invalid_access, dangling_resource, unsupported,
+                      invalid_state };                              // new: the call is not allowed in the object's current state
+    struct Error { Errc code = Errc::ok; std::string message; };
+    class SushiException : public std::runtime_error { public: explicit SushiException(Error); const Error& error() const noexcept; };
+    template <typename T, typename E> class [[nodiscard]] Result;   // members unchanged (result.hpp:67-186)
+}
+```
+
+The library throws one type, `Core::SushiException`. `SR_THROW_IF` throws it with `invalid_state`.
+
+| Where | Thrown or returned today | After |
+| --- | --- | --- |
+| Hardware discovery fails | `std::runtime_error("hardware discovery failed.")`, `hw_discovery.cpp:223` | `SushiException{unsupported}` carrying the SYCL text and the filter in force |
+| Graph has no root, or a cycle | `std::runtime_error`, `task_graph.cpp:547,596` | `SushiException{invalid_graph}` naming one undrained node and its registration index |
+| `execute` after shutdown, or while a run is in progress | `std::runtime_error` through `SR_THROW_IF`, `execution_engine.cpp:413-417` | `SushiException{invalid_state}` |
+| Sync run while an async step is pending | `Error{invalid_graph}`, `graph.hpp:2159-2162` | `Error{invalid_state}` |
+| `RunHandle::wait()` on an empty handle | `invalid_graph`, `run_handle.hpp:147-150` | `invalid_state` |
+| Exception while building the plan | `compile_failed` | `compile_failed` |
+| `sycl::exception` during a step | `kernel_failed`, `graph.hpp:2175-2178` | `kernel_failed` |
+| Other exception during a step (a throwing host task) | `compile_failed` from `try_run` (`graph.hpp:2179-2187`), `kernel_failed` from `try_wait` (`run_handle.hpp:214-222`) | `kernel_failed` from both, through one `error_from_current_exception(phase)` in the step driver |
+| Range that does not fit a handle | silent clamp, `buffer.hpp:334-337` | `invalid_access` with offset, count and size |
+| Allocation fails | `allocation_failed`, "(out of USM memory)", `buffer.hpp:181-185` | `allocation_failed` with element count, bytes, residency and device |
+| Header and library versions differ | nothing | `unsupported` with both versions (2.6) |
+
+Message rule for every new or rewritten message: the call, the offending value, the limit it broke, and the fix. Builder calls (`add`, `buffer`, `LateCount::from_device`) throw at the call. Run entries throw from `run*` and return from `try_run*`; nothing throws from a destructor.
+
+Breaks: the `Errc` of three conditions changes. SushiAI reads `Core::Errc` twice (`grep -rhoE "SushiRuntime::Core::Errc" sushiai`, 2 hits); which enumerators it compares was not read.
+
+#### 2.6 Logging and the version check
+
+```cpp
+// logging/logger.hpp; the state lives in modules/foundation/logging/source/logger.cpp, exported once
+namespace SushiRuntime::Core
+{
+    enum class LogLevel : int { Off = 0, Error, Warn, Info, Debug };
+    using LogType [[deprecated("use LogLevel")]] = LogLevel;     // ERR/WARN/INFO/DEBUG/OFF kept as deprecated enumerators of equal value
+    using LogSink = Core::Delegate<void(LogLevel level, std::string_view line), 48>;
+
+    SUSHIRUNTIME_API void     set_log_level(LogLevel level) noexcept;
+    SUSHIRUNTIME_API LogLevel log_level() noexcept;
+    SUSHIRUNTIME_API void     set_log_sink(LogSink sink);        // empty restores the default: stderr, every level
+    SUSHIRUNTIME_API void     log_write(LogLevel level, std::string&& line);
+}
+```
+
+The default level is `Warn`. `SR_LOG_LEVEL` is read once when the logger is first used. The compile-time `SR_ENABLE_LOGGING` switch stays as an upper bound. Each macro loads the level with a relaxed read before formatting and is wrapped in `do { } while (0)`. `Runtime::create()` then prints nothing on a healthy machine, because every start-up line is INFO (`device_queue_set.cpp:169,371`, `hw_discovery.cpp:54`, `numa_mapper.cpp:49`). `SR_LOGGER_SET_SYNC_MODE` forwards to an exported function, so a test executable reaches the library's logger.
+
+Logging is process state, so it is set by free functions and `RuntimeConfig` has no log field (question 3).
+
+```cpp
+// core/version.hpp
+[[nodiscard]] inline bool version_matches() noexcept;             // unchanged
+inline void require_matching_version();                           // throws SushiException{Errc::unsupported}
+```
+
+`Runtime::create` is header-inline, so it calls `require_matching_version()` first. The message reads: "SushiRuntime headers are 0.4.0 and the loaded library is 0.3.2; an older sushiruntime shared library is earlier on the loader path." No downstream break.
+
+#### 2.7 `[[nodiscard]]` policy
+
+| Gets it | Does not |
+| --- | --- |
+| Factories and anything returning an owning handle: `Runtime::create`, `graph`, `dynamic_graph`, `buffer`, `state`, `run_async`, `interop`, `export_host`, `import_device`, `LateCount::*`, the free `Dynamic` builders, rvalue `distributed() &&` | Fluent calls that return `*this`: `add*`, `name`, `extend`, `set_*`, lvalue `distributed() &` |
+| Status values: `Result` and `RunHandle` at class level, `version_matches`, `ready`, `pending` | `run*` returning a report; dropping a report is ordinary use |
+| Pure queries: `size`, `empty`, `device_count`, `devices`, `read_range`, `region`, `rule_registration` | `operator[]` |
+
+A consumer that drops one of these results gets a new warning, which is an error under `-Werror`; the changelog says so.
+
+#### 2.8 Umbrella header
+
+`SushiRuntime.h` holds two includes: `core/version.hpp` and `api/fluent.hpp`. `fluent.hpp` holds the includes of the api leaf headers and `core/error.hpp`, `core/result.hpp`, and no `using` line.
+
+Removed from the umbrella (today at `SushiRuntime.h`, non-comment lines): `core/export.hpp`, `core/common.hpp`, `core/sushi_ptr.hpp`, `core/ref_counted.hpp`, `logging/logger.hpp`, `topology/hw_discovery.hpp`, `topology/numa_mapper.hpp`, `topology/affinity.hpp`, `memory/epoch_reclamation.hpp`, `memory/usm_registry.hpp`, `execution/execution_engine.hpp`, `task/node_widths.hpp`, `graph/dependency_tracker.hpp`, `scheduler/task_scheduler.hpp`, `scheduler/range_task.hpp`, `scheduler/event_polling.hpp`, `scheduler/rebalancer_interfaces.hpp`.
+
+**Breaks SushiBLAS**: 16 files include the umbrella (`grep -rlE "#include <SushiRuntime/SushiRuntime.h>" sushiblas`). `modules/data/tensor/include/SushiBLAS/tensor/storage.hpp:34` includes nothing else from the runtime and uses `Execution::RuntimeContext` (`:65`), `Core::RefCounted` (`:54`) and `Core::DEFAULT_ALIGNMENT` (`:43`). Some of those names stay reachable through the api headers' own includes; which of the 16 files stop compiling can only be told by compiling them, which I did not do. **SushiAI**: one file, `tests/common/test_environment.hpp`. **SushiEngine**: 4 files, all using the fluent surface. The changelog line names the header to include for each removed name.
+
+#### 2.9 Name promotion and namespaces
+
+One rule: each leaf header promotes the public names it declares into `SushiRuntime::`; `fluent.hpp` promotes none. After the phase these are reachable as `SushiRuntime::X`: `Runtime`, `RuntimeConfig`, `DeviceFilter`, `PinPolicy`, `WorkerPool`, `AdvancedControls`, `Buffer`, `State`, `Residency`, `DeviceIndex`, `ElementRange`, `BufferRegion`, `Extent`, `NdRange`, `Reads`, `Writes`, `In`, `Out`, `InOut`, `Coupled`, `On`, `Dynamic`, `LateCount`, `DynamicGraph`, `Region`, `RunHandle`, `Recorder`, `Error`, `Errc`, `RunReport`, `SushiException`, `Result`, `LogLevel`, `set_log_level`, `set_log_sink`. `when`, `sized`, `based_at` and their device forms stay in `API`: they are short verbs, and a `using namespace SushiRuntime` should not bring `when` into scope. `Graph` is question 1.
+
+The nine headers that changed module keep namespace `Core` today (`Core::ResourceRegion` in `memory/`, `Core::RunReport` in `observability/`; `graph.hpp:3016,3031` and `run_report.hpp:155,218`). Fix: declare each in the namespace of its module and leave an alias in `Core`:
+
+```cpp
+namespace SushiRuntime::Core { using ResourceRegion [[deprecated("use Memory::ResourceRegion")]] = Memory::ResourceRegion; }
+```
+
+for `ResourceRegion`, `ResourceId`, `LivenessObserver`, `LivenessToken`, `make_liveness` (to `Memory`); `RunReport`, `NodeTiming`, `WorkerTiming`, `NodeEventRecord`, `ClockPairing`, `ExecutionLayer`, `ProfilingLedger`, `WIDTH_UNKNOWN` (to `Observability`). Downstream compiles with warnings: SushiBLAS `Core::ResourceRegion` 16 uses, SushiEngine `Core::RunReport` 12, `Core::NodeEventRecord` 11, `Core::ResourceRegion` 3, `Core::WIDTH_UNKNOWN` 2 (`grep -rhoE "SushiRuntime::[A-Za-z_:]+" | sort | uniq -c`). SushiEngine `static_assert`s the layout of `NodeEventRecord` (`runtime_backend.hpp:51-72`); the type does not change, only its namespace.
+
+Casing (API-19): `Errc` enumerators stay snake_case (they mirror `std::errc` and SushiAI reads them); `Residency`, `PinPolicy`, `LogLevel`, `ExecutionLayer` are PascalCase; `Core::Detail` becomes `Core::detail` with no forwarder (it is not public). `StateView::cur` becomes `current`.
+
+### 3. The recorder split and the numeric primitives
+
+#### What exists today only for reduce, scan and counting sort
+
+| Item | Where | Used by anything else? |
+| --- | --- | --- |
+| The eight primitive overloads, about 970 lines | `graph.hpp:734-1703` | no |
+| `emit_late_count_resolver` | `graph.hpp:2651-2700` | no (four call sites, all in the primitives: `:901,1083,1167,1219,1450`) |
+| `emit_device_sized` | `graph.hpp:2710-2759` | no |
+| `registration_token` and `width` parameters of `emit_per_element_tracked` | `graph.hpp:2451-2453` | no; the public `add` passes neither (`:401`) |
+| `reduce_scratch_`, `reduce_registration_tokens_` and the token reset in `build_plan` | `graph.hpp:3022,3025,2972-2973` | `reduce_scratch_` also holds fault records (`:2619`) |
+| `LateCount` and its four helpers | `graph.hpp:104-241` | no: `grep -rl LateCount` finds only `graph.hpp`, `device_fault.hpp`, `fluent.hpp` and tests |
+| `DEVICE_FAULT_LATE_COUNT` | `API/detail/device_fault.hpp:85-88` | no |
+| `detail::make_reduce_scratch` | `API/detail/fixed_order_reduce.hpp:118-133` | yes: `allocate_fault_record` (`graph.hpp:2615`), which `Dynamic` with a device slot needs (`:2629-2641`) |
+| `fixed_order_reduce.hpp`, `fixed_order_scan.hpp`, `vocabulary/combine.hpp` | 152, 183 and 109 lines | no |
+| Four `using Graph::add_*` lines | `region.hpp` (the four names after `add_host`) | no |
+
+`DynamicGraph` holds nothing for the primitives; it replays whatever specs a region recorded (`dynamic_graph.hpp:678-682`). One thing I noticed there and did not run: `build_region` does not reset the registration tokens that `build_plan` resets (`graph.hpp:2972-2973`), so after a region rebuild a multi-node rule may keep the index reserved on the previous backing graph until `renumber_registration_indices` (`dynamic_graph.hpp:902`) rewrites it. The recorder design below removes the token, so the question disappears with it.
+
+#### The recorder brick
+
+`Recorder` is the single owner of recorded work. `Graph` is a recorder plus a plan cache plus the step driver; `Region` is a recorder; `DynamicGraph` composes regions through the recorder's public const interface, with no friend and no cast.
+
+```cpp
+// api/graph/recorder.hpp
+namespace SushiRuntime::API
+{
+    /** What a node reads and writes, with the liveness of the handles it names. */
+    struct Access
+    {
+        Access() = default;
+        Access(const Reads& reads, const Writes& writes);
+        std::vector<BufferRegion> reads;
+        std::vector<BufferRegion> writes;
+        std::vector<Memory::LivenessObserver> lives;
+    };
+
+    /** A launch that runs at capacity and reads its live width on the device. */
+    struct DeviceSized
+    {
+        std::size_t capacity = 0;
+        const std::uint32_t* live_width = nullptr;   // work-items at or past *live_width return; null means all run
+        const std::uint32_t* live_words = nullptr;   // one or two words handed to the kernel, by its arity
+    };
+
+    struct NodeOptions
+    {
+        std::size_t width = Observability::WIDTH_UNKNOWN;   // launch width stamped into node event records
+        std::optional<DeviceIndex> placement;               // for a node with no region
+    };
+
+    class Recorder
+    {
+        public:
+            Recorder(Recorder&&) noexcept;             // resets the moved-from counters
+            Recorder& operator=(Recorder&&) noexcept;
+            Recorder(const Recorder&) = delete;
+
+            /** Groups every node recorded until the scope ends into one rule: one registration index, one name, one unit of size(). */
+            class RuleScope;
+            [[nodiscard]] RuleScope rule();
+
+            template <class F> void kernel(std::size_t count, const Access& access, F&& fn, NodeOptions options = {});
+            template <int N, class F> void kernel(Extent<N> extent, const Access& access, F&& fn, NodeOptions options = {});
+            template <int N, class F> void kernel(NdRange<N> range, const Access& access, F&& fn, NodeOptions options = {});
+            template <class F> void kernel(DeviceSized launch, const Access& access, F&& fn, NodeOptions options = {});
+            template <class F> void kernel(Dynamic window, std::size_t capacity, const Access& access, F&& fn, NodeOptions options = {});
+            template <class F> void raw_kernel(const Access& access, F&& fn, NodeOptions options = {});        // fn(sycl::handler&)
+            template <class F> void host(const Access& access, F&& fn, NodeOptions options = {});
+            template <class F> void emitter(F&& fn);                                                          // void(Graph::TaskGraph&)
+
+            /** One single-task node that resolves K late counts and hands the live values to fill, on the device. */
+            template <std::size_t K, class Fill>
+            void resolve(const std::array<LateCount, K>& counts, DeviceIndex device, const Access& writes,
+                         Fill fill, NodeOptions options = {});
+
+            /** USM the recorder owns and frees with itself; ordering regions are built from the returned span. */
+            template <typename T> [[nodiscard]] span<T> scratch(std::size_t count, DeviceIndex device, Residency residency);
+
+            void name_last_rule(std::string_view label);
+            void clear();
+
+            [[nodiscard]] std::size_t rule_count() const noexcept;
+            [[nodiscard]] std::size_t node_count() const noexcept;
+            [[nodiscard]] std::uint64_t generation() const noexcept;        // bumped by every record; DynamicGraph compares it
+            [[nodiscard]] bool has_dangling_resource() const noexcept;      // one observer per distinct allocation
+            void replay(Graph::TaskGraph& target) const;                    // what build_plan and build_region call
+            [[nodiscard]] const detail::StepMachinery& steps() const noexcept;
+    };
+}
+```
+
+Every `kernel`, `host` and `resolve` goes through one private `record(NodeSpec)`, which appends the spec, attaches it to the open rule or opens a one-node rule, records the liveness of `access.lives`, and bumps the generation. Today that epilogue is written out at each emit site (`++task_count_; dirty_ = true; return *this;`, for example `graph.hpp:287-289`, `:2474-2476`, `:2698-2699`, `:2757-2758`), and a primitive has to remember `observe(reads); observe(writes);` before each emit (the comment at `graph.hpp:761` and `:813` says so). With `Access` carrying the observers, a domain library cannot forget either step.
+
+`RuleScope` replaces the shared `std::shared_ptr<std::optional<std::uint32_t>>` token: the recorder knows which specs belong to a rule and reserves one registration per rule at replay. `resolve` allocates the fault record itself when a count has a device source (today `graph.hpp:2669`), and the step driver checks it; a domain library never sees fault records.
+
+#### How SushiBLAS adds `reduce`
+
+A free function over the public interface, with no friend access:
+
+```cpp
+// SushiBLAS, sketch
+template <typename T, class Combine>
+void reduce(SushiRuntime::Recorder& recorder, const SushiRuntime::Buffer<T>& input, const SushiRuntime::Buffer<T>& output,
+            SushiRuntime::LateCount count, Combine combine, T identity)
+{
+    auto rule = recorder.rule();                                             // one rule, one registration index
+    const auto levels = detail::plan_tiled_levels(count.capacity());
+    span<T> scratch = recorder.scratch<T>(detail::reduce_scratch_count(levels), input.device_index(), input.residency());
+    span<std::uint32_t> live = recorder.scratch<std::uint32_t>(2 * levels.size(), input.device_index(), input.residency());
+
+    recorder.resolve(std::array<SushiRuntime::LateCount, 1>{count}, input.device_index(),
+                     Access(Reads(), Writes(region_of(live))),
+                     [words = live.data(), n = levels.size()](const std::array<std::size_t, 1>& v)
+                     { detail::fill_live_level_words(n, v[0], words); }, {1});
+
+    for (each level i)
+        recorder.kernel(DeviceSized{level.out_count, live.data() + levels.size() + i, live.data() + i},
+                        Access(Reads(source_region, region_of(live)), Writes(target_region)),
+                        [src, dst, combine](std::size_t t, std::size_t in_count) { /* fold one tile */ },
+                        {level.out_count});
+}
+```
+
+The caller writes `SushiBLAS::reduce(graph.recorder(), in, out, n, Sum<float>{}, 0.0f);`, or inside a chain `graph.add(...).extend([&](Recorder& r) { SushiBLAS::reduce(r, in, out, n, Sum<float>{}, 0.0f); }).name("total")`. It works the same on a `Region`, because `Region` has the same `recorder()` and `extend()`. The three-arity kernel contract of `DeviceSized` (`fn(t)`, `fn(t, w0)`, `fn(t, w0, w1)`) is today's `if constexpr` ladder at `graph.hpp:2743-2752`, kept and documented.
+
+#### Files that leave the runtime
+
+| Leaves | Lines |
+| --- | --- |
+| `API/vocabulary/combine.hpp` | 109 |
+| `API/detail/fixed_order_reduce.hpp`, except `make_reduce_scratch`, which becomes `Recorder::scratch` | 152 |
+| `API/detail/fixed_order_scan.hpp` | 183 |
+| `graph.hpp:734-1703`, first moved by C5 into `API/primitives/{reduce,segmented_reduce,prefix_scan,counting_sort}.hpp` as free functions over `Recorder`, then deleted by C6 | about 970 |
+
+#### Tests
+
+`modules/surface/api/tests/numeric/` holds 57 tests in 7 files (counted with `grep -cE "^TEST"`). I read their names, not their bodies.
+
+| File | Tests | Leaves with the primitives | Stays, rewritten on a trivial kernel |
+| --- | --- | --- | --- |
+| `test_counting_sort.cpp` | 17 | all 17 | none |
+| `test_prefix_scan.cpp` | 8 | all 8 | none |
+| `test_fixed_order_reduce.cpp` | 11 | all 11 | none |
+| `test_reduce_dispatch_width.cpp` | 4 | all 4 | replaced by one test: `NodeOptions::width` reaches `NodeEventRecord::launched_width` |
+| `test_late_count.cpp` | 10 | 5 (`LevelCountsAtTileBoundaries`, `LiveCountBelowCapacityMatchesThatCountAtCapacity`, `LiveCountZeroFoldsNothing`, `RadixDigitCountAtByteBoundaries`, `RadixPlanSkipsDigitsAboveTheLiveKeyRange`) | 5 (`DefaultResolvesToCapacity`, `HostProviderBelowCapacity`, `AboveCapacityIsRejected`, `DeviceSlotResolvesFromHostResidentBuffer`, `NonHostDeviceSlotIsRejectedAtRegistration`), against `Recorder::resolve` plus a kernel that copies the live count out |
+| `test_late_count_ordering.cpp` | 1 | 0 | 1: the resolver sees the count its predecessor wrote |
+| `test_device_sized_primitives.cpp` | 6 | 4 (the four `...ChainMatchesScheduler...` cases named after a primitive) | 2 (`SizedFromDevice...`, `DeviceCountOverCapacityFailsAChainedRun`), plus one new: a `DeviceSized` kernel that marks the items it ran gives the same bytes on the chain and the scheduler layer as the count changes |
+
+Outside that folder: `tests/unit/test_registration_index.cpp:192,239,298` (three cases on `add_reduce`) are rewritten on `Recorder::rule()` with three trivial kernels; `tests/integration/test_determinism.cpp:103-104,233` leave for SushiBLAS as bit-equality tests; `modules/surface/api/tests/test_rule_registration.cpp:81-122` is rewritten on a rule scope. The runtime's kept tests cover: rule grouping and registration, name per rule, `size()` against `node_count()`, late count from each of the three sources, over-capacity fault through both layers, device-sized launch, scratch freed with the recorder, and the dangling check for handles named through `Access`.
+
+#### SushiBLAS side, in outline
+
+`D:\Projects\sushiblas\cmake\SushiBLASLayers.cmake` orders the layers foundation, data, kernels, engine, operations, library. SushiBLAS today builds on `Graph::TaskGraph` (6 uses) and never on `API::Graph` (no hit for `API::Graph` or `API::Runtime` in the count above), so this is its first code over the fluent recorder, and it does not touch tensors or the SushiBLAS engine. Two modules, because the plan arithmetic and tile kernels need no graph and the recording functions do:
+
+| Module | Layer | Holds | Depends on |
+| --- | --- | --- | --- |
+| `ordered_kernels` | kernels | `combine.hpp` (`Sum`, `Minimum`, `Maximum`), reduction and scan level plans, `fold_tile`, radix plan; header-only | `core` |
+| `ordered` | operations | `reduce`, `segmented_reduce`, `prefix_scan`, `counting_sort` as free functions over `SushiRuntime::Recorder`; the 49 algorithm tests and the determinism tests | `core`, `ordered_kernels` |
+
+Both need a line in `SUSHIBLAS_MODULE_LAYERS`. Whether `sushiblas_add_module` accepts a module with no `SOURCES` was not checked. SushiBLAS already has `engine/task_recorder.hpp` and `support/reduce_1d.hpp`; the runtime type is named `Recorder`, not `TaskRecorder`, so the two do not read as one thing. Names are question 6. Order: SushiBLAS upgrades the runtime to `v0.4.0` (adapting to 2.8 and to the deprecations), adds the two modules, releases.
+
+#### SushiEngine call sites that change
+
+All runtime use sits behind one seam file, `D:\Projects\sushiengine\engine\foundation\execution\include\SushiEngine\execution\backend\runtime_backend.hpp`. The engine's own `Sum`, `Minimum`, `Maximum` come from its math library (`engine/foundation/core/include/SushiEngine/core/types.hpp:103-106`), so the solver files that call `add_reduce` on the engine's `Graph` wrapper (`runtime_matter_solver.hpp`, `matter_device_neighbours.hpp`, `matter_ghost_gather.hpp`, `runtime_graph_builder.hpp:752`) do not change. `native_backend.hpp` implements the same four primitives without the runtime and does not change.
+
+| Site | Change |
+| --- | --- |
+| `runtime_backend.hpp:410`, `:685` | `graph_.add_reduce(...)` becomes `SushiBLAS::reduce(graph_.recorder(), ...)` |
+| `:428`, `:448`, `:733` | `add_segmented_reduce` likewise |
+| `:483`, `:745` | `add_prefix_scan` likewise |
+| `:526`, `:762` | `add_counting_sort` likewise; the nullable `const Buffer*` (`:524`) becomes an overload |
+| `:208-215` | `to_late_count` uses `LateCount::from_host` / `fixed` |
+| `:122-136` | `to_dynamic`, if it assigns `Dynamic` fields (not read) |
+| `:368`, `:656` | argument order of `add(Dynamic, ...)` (warning until changed) |
+| `:371`, `:394`, `:659`, `:676` | `name_last` to `name`, guarding the null name |
+| `:547-549` | `rule_registration` now takes a rule index |
+| `:602-604` | `set_profiling` |
+| `engine/world/simulation/source/runtime_simulation.cpp:82` | `Runtime::create(config)` |
+| `engine/domain/audio/include/SushiEngine/audio/accelerator_sycl.hpp:63,94-97` | `context_->free_usm` is already deprecated; move to `memory().release` |
+| `tests/integration/test_animation_device_parity.cpp:319` | `unsafe_context().get_queue(0)` is already deprecated; move to `devices().queue(0)` |
+
+### 4. The untracked-kernel routing defect
+
+Where it happens. A node with no region has no anchor (`modules/engine/scheduler/source/task_scheduler.cpp:750-755`), so `recorded_device_index` returns no context and `cached_queue_index_` stays negative (`:784`). The queue then comes from `devices_.queue_or_numa_local(std::nullopt, target_numa_id)` (`:799-800`), which calls `next_device_for_numa` (`modules/platform/device/source/device_queue_set.cpp:263-267`), and that rotates over the node's devices (`:318-326`, `next_rotation`). `add_untracked` records `bg.add_node(fn)` with no region (`graph.hpp:281`, `:320`), so its kernel, which captured a pointer the runtime cannot see, lands on whichever device the rotation reaches. The chain layer refuses such a node (`owning_queue_index` returns -1 for no region, `modules/engine/execution/source/chain_plan.cpp:64-80`, `:156-158`), so the defect is on the scheduler layer only.
+
+The rule. Every graph node has one placement, fixed when the plan is built, from the first of these that applies:
+
+1. It names regions: the device that owns the first write region, else the first read region. This is today's rule and does not change.
+2. It names no region and states a placement: that device. `On(buffer)` and `On(state)` resolve to the handle's `device_index()` and also register the handle's liveness, so a freed buffer is caught by the dangling check; `On(DeviceIndex)` names the device outright.
+3. It names nothing: `DeviceIndex{0}`, the same default `Runtime::buffer` and `Runtime::state` use (`runtime.hpp:171,183`). A default buffer and a default untracked kernel therefore always meet on one device.
+
+A `Task` that is not a graph node keeps NUMA-local placement without rotation: `device_for_numa(numa)` returns the first device of the route (`device_queue_set.cpp:255-261`).
+
+Mechanics. `TaskGraph::add_node` returns `Node&` (CORE-13) and `Node` gets `place_on(std::size_t device)`; a region-less node defaults to 0. One function, `placement_of(const Node&, const Memory::UsmAllocator&)`, in the task module, answers for both the scheduler (`task_scheduler.cpp:789-808`, whose fallback branch goes away for nodes) and `classify_chain` (`chain_plan.cpp:69`). The second use makes a graph with untracked kernels chainable when all placements agree, which changes `RunReport::layer` for such graphs; if the owner prefers to leave the chain rule alone for now, C3 limits the function to the scheduler and nothing else in this section changes.
+
+The test. `tests/integration/test_layer_equivalence.cpp:735-737` loses its `GTEST_SKIP`. Its body does not change: I did not read `run_untracked_launches`, but the skip comment and the known-issues entry say its buffers come from the default device. One test is added beside it: on a machine with more than one device, a buffer on `DeviceIndex{1}` and `add_untracked(n, On(buffer), fn)` give the host reference's bytes under both layers; on one device it runs with `DeviceIndex{0}`. `docs/reference/KNOWN_ISSUES.md:10` and `docs/design/REMAINING_WORK.md:15-22` lose their entries in the same task.
+
+### 5. Task list
+
+`graph.hpp` and `dynamic_graph.hpp` are split first, by one worker who holds both (C5). The split comes before every finding that touches them because (a) after it the findings land in different files and can run in parallel, and (b) C5 also moves the primitives onto the public recorder interface while their 57 tests still exist, which is the only point at which the interface can be proven sufficient by tests that already pass. C6 then deletes code that no longer has a private dependency.
+
+Build-file edits (new `logger.cpp` in the logging target, the api test list, the module list of any new header-check) are the orchestrator's, as in phase A's A7.
+
+| Task | Closes | Files | Acceptance (one) | Waits on |
+| --- | --- | --- | --- | --- |
+| C1 core and platform errors | EXEC-02, EXEC-12, CORE-17 (EBR part), API-07 (function), API-20 (`Result`) | `modules/foundation/core/include/SushiRuntime/core/{error,result,version}.hpp`, `modules/platform/topology/source/hw_discovery.cpp`, `modules/platform/memory/include/SushiRuntime/memory/epoch_reclamation.hpp`, `modules/surface/interop/source/interop.cpp`, `modules/surface/interop/include/SushiRuntime/interop/external_memory.hpp`, their module tests | `grep -rn "throw std::runtime_error" modules/platform modules/surface/interop modules/foundation` is empty, and a test catches `SushiException` with `Errc::unsupported` from a filter that excludes every device | none |
+| C2 logger | CORE-09, API-06, EXEC-07 | `modules/foundation/logging/include/SushiRuntime/logging/logger.hpp`, new `modules/foundation/logging/source/logger.cpp`, `modules/foundation/logging/tests/` | A test captures stdout and stderr around `Runtime::create()` at the default level and both are empty; the same test sets `LogLevel::Info` and sees the device line through its sink | C1 (`invalid_state`); orchestrator adds the source to the target |
+| C3 engine graph and placement | CORE-13, CORE-14, CORE-17, CORE-20, routing defect (engine half) | `modules/engine/task/include/SushiRuntime/task/node.hpp`, `modules/engine/graph/include/SushiRuntime/graph/task_graph.hpp`, `modules/engine/graph/source/task_graph.cpp`, `modules/engine/scheduler/include/SushiRuntime/scheduler/{task_scheduler,thermal_proxy_strategy}.hpp`, `modules/engine/scheduler/source/task_scheduler.cpp`, `modules/engine/execution/source/chain_plan.cpp`, their module tests | A unit test builds two region-less nodes on a two-entry synthetic device set and both dispatch to device 0; a third placed with `place_on(1)` dispatches to device 1 | C1. The four `*_last_node` accessors stay undeprecated here, because the api module still calls them |
+| C5 split and recorder | GRAPHAPI-04, 05, 15; API-21 (first half) | `API/graph/{graph,dynamic_graph,region,run_handle}.hpp`, new `API/graph/{recorder,builder_surface,plan_cache,step_driver,boundary_access,region_composer}.hpp`, new `API/detail/{emit_*,late_window,device_sized,late_count_resolution}.hpp`, `API/detail/fixed_order_reduce.hpp` (scratch helper out), new `API/vocabulary/late_count.hpp` (moved as is), new `API/primitives/*.hpp`, `API/runtime/runtime.hpp` (factory definition only) | `grep -n "friend class Region\|friend class DynamicGraph\|static_cast<const Graph&>\|static_cast<Graph&>" API/graph` is empty, `API/primitives/*.hpp` name no private member, and every existing api test passes unchanged, with the primitives still reachable through forwarding members | none (file set disjoint from C1 to C3) |
+| C6 primitives leave | API-21 | delete `API/primitives/`, `API/vocabulary/combine.hpp`, `API/detail/fixed_order_{reduce,scan}.hpp`; `API/fluent.hpp` (one include); `modules/surface/api/tests/numeric/` (per the table in section 3); `tests/unit/test_registration_index.cpp`, `tests/integration/test_determinism.cpp`, `modules/surface/api/tests/test_rule_registration.cpp`; `API/graph/README.md`, `API/vocabulary/README.md`, `API/detail/README.md` | `grep -rnE "add_reduce|add_segmented_reduce|add_prefix_scan|add_counting_sort|fold_tile|Sum<" modules tests applications` is empty and the kept tests of section 3 pass. The commit before this one is recorded as the source SushiBLAS copies from | C5 and the build after it |
+| C7 recorder semantics | GRAPHAPI-07, 11, 12, 13, 16 | `API/graph/{recorder,region,dynamic_graph,plan_cache,region_composer}.hpp`, new tests | `world.region(k).size()` between two runs leaves `compose_count()` unchanged, and a graph with one three-node rule reports `size() == 1`, `node_count() == 3` and one name on all three `NodeTiming` rows | C6 |
+| C10 data handles | API-04, 05, 08, 12, 16, 20 | `API/data/{buffer,state}.hpp`, new `API/detail/handle_access.hpp`, `API/vocabulary/{dependencies,captures}.hpp`, `API/detail/{step_machinery,callable_traits}.hpp`, `API/interop/interop.hpp`, `API/data/README.md`, tests | `read_range({size, 1})` throws `invalid_access` whose message holds the offset, the count and the size; no file under `API/` outside `detail/handle_access.hpp` calls `dependency_key`, `read_key`, `write_key`, `liveness` or `advance` | C6 |
+| C12 runtime entry | API-01, 02, 03, 07, 12, 19, 20; EXEC-05 | `API/runtime/runtime.hpp`, new `API/runtime/{runtime_config,advanced_controls}.hpp`, `API/runtime/README.md`, tests | `Runtime::create({.worker_count = 2})`-style construction (one struct) yields `advanced().worker_pool().count == 2`, and an `AdvancedControls` taken before its `Runtime` is destroyed still answers `device_count()` | C1, C6 |
+| C11 late-bound vocabulary | GRAPHAPI-08, API-15 | `API/vocabulary/{late_count,dynamic}.hpp`, `API/detail/{late_count_resolution,device_fault}.hpp`, tests | `LateCount::from_device(n, slot, slot.size())` throws `invalid_access` at construction, and `grep -n "std::function" API/vocabulary` is empty | C6, C10 (`Buffer` accessors) |
+| C8 builder surface | GRAPHAPI-01, 02, 09, 22, 23; routing defect (api half) | `API/graph/builder_surface.hpp`, `API/detail/emit_*.hpp`, new `API/detail/callable_checks.hpp`, `API/launch/{extent,nd_range}.hpp`, new `API/vocabulary/{placement,coupled}.hpp`, `API/launch/README.md`, `tests/integration/test_layer_equivalence.cpp`, tests | `UntrackedOffsetLaunchesMatchAcrossLayers` contains no `GTEST_SKIP`, and a compile-fail probe of `add(state, wrong_fn)` reports the `static_assert` text | C3, C7, C10, C11 |
+| C9 run driver | GRAPHAPI-06, 10, 23 (profiling names) | `API/graph/{step_driver,run_handle,graph,dynamic_graph}.hpp` (run entries only), tests | A host task that throws yields `Errc::kernel_failed` from `try_run` and from `try_wait`, on `Graph` and on `DynamicGraph`, and both classes expose the same sixteen run entries (checked by one `static_assert` list) | C7 (same two kept headers) |
+| C13 umbrella, promotion, namespaces | API-10, API-11, GRAPHAPI-03, CORE-12 (umbrella part), CORE-13 (deprecation flip) | `API/../SushiRuntime.h`, `API/fluent.hpp`, the closing `using` block of every api leaf header, `modules/platform/memory/include/SushiRuntime/memory/{resource_region,resource_liveness}.hpp`, `modules/platform/observability/include/SushiRuntime/observability/*.hpp`, `task_graph.hpp` (attributes only), `tests/package/main.cpp` | A translation unit that includes only `SushiRuntime.h` compiles the quickstart with every type spelled `SushiRuntime::X`, and `grep -c "#include" SushiRuntime.h` is 2 | C8, C9, C10, C11, C12; runs alone |
+| C14 examples and callers | API-13, API-14 | `applications/examples/*.cpp`, `applications/examples/README.md`, in-repo tests still on deprecated spellings | The syntax check of all units reports no deprecation warning, and one example handles a `try_run` error and reads a device-resident field back | C13 |
+| Orchestrator | changelog, build lists | `docs/reference/CHANGELOG.md`, the api and logging `CMakeLists.txt`, `KNOWN_ISSUES.md`, `REMAINING_WORK.md` | One changelog line per row marked as a break in section 2, each naming the replacement | after each wave |
+
+Waves, by disjoint file sets:
+
+| Wave | Tasks | Then |
+| --- | --- | --- |
+| 1 | C1, C3, C5 in parallel; C2 after C1 | build and test (the first build of the split) |
+| 2 | C6 alone | build and test (first build without the primitives) |
+| 3 | C7, C10, C12 in parallel; C11 after C10 | build and test |
+| 4 | C8, then C9 | build and test, benchmark suite |
+| 5 | C13 alone | build and test, then the three downstream repositories configured against the tree as a smoke check |
+| 6 | C14 | build, test, benchmark suite, package consumer |
+
+C8 and C9 are serial in wave 4 only because C9 waits on nothing C8 produces but both are large; they have disjoint files and may share the wave if two workers are free.
+
+Benchmark-relevant paths:
+
+| Task | Path | Benchmark |
+| --- | --- | --- |
+| C3 | queue choice per dispatch (`task_scheduler.cpp:789-808`); chain classification | `scheduler_dispatch`, `chain_dispatch`, `wide_fanout`, `root_fanout` |
+| C2 | one relaxed load per log macro; none on the dispatch path unless a line is logged | `scheduler_dispatch` as a guard |
+| C5, C7 | plan build and region rebuild; the dangling check at each run entry | `test_graph_compile_perf`, `test_recompose_churn_perf`, `test_dynamic_graph_perf` |
+| C9 | the step loop itself (`graph.hpp:2258-2307`) | `chain_dispatch`, `root_fanout`, `wide_fanout` |
+
+Per PLAN.md:205-208 the machine's run-to-run spread reached 35 percent, so these runs can show a regression of that size and no smaller.
+
+### 6. Questions for the owner
+
+1. **The name `Graph`.** `SushiRuntime::Graph` is the engine namespace, so the builder cannot be promoted under that name. Recommend: keep the namespace, leave the builder at `SushiRuntime::API::Graph`, promote everything else. Alternative: rename the engine namespace (for example `SushiRuntime::Tasks`) so `SushiRuntime::Graph` is the builder; that rewrites 287 `SushiRuntime::Graph::` uses in SushiBLAS and about 10 in SushiAI with no forwarder possible.
+2. **`NdRange` origin.** Recommend: `NdRange` gets `origin` and `at(origin)` like `Extent`, with a second kernel form `fn(sycl::nd_item<N>, sycl::id<N> global)` that receives the shifted id, and `Extent::offset` is renamed `origin`. Alternative: `NdRange` stays origin-less and the README says so; `Extent::offset` keeps its name.
+3. **Where logging is set.** Recommend: process-wide free functions `set_log_level` / `set_log_sink` plus `SR_LOG_LEVEL`. Alternative: fields on `RuntimeConfig`, with the last created runtime winning.
+4. **`RuntimeConfig` shape.** Recommend: flat fields with today's names plus `devices` (SushiEngine compiles unchanged). Alternative: nested `workers { count, first_core, pinning }`.
+5. **Untracked default.** Recommend: an untracked kernel with no `On(...)` runs on `DeviceIndex{0}`. Alternative: make the placement mandatory and deprecate the two-argument `add_untracked`.
+6. **SushiBLAS modules.** Recommend: `ordered_kernels` (kernels layer) and `ordered` (operations layer). Alternative: one module `ordered` in operations holding both halves.
+7. **`Runtime` copy.** Recommend: delete it. Alternative: keep it and document that a copy is a second handle to one runtime.
+8. **Device order.** Recommend: keep SYCL enumeration order and expose `advanced().devices()`. Alternative: sort GPUs first, which changes what `DeviceIndex{0}` and the untracked default mean on a machine with a CPU device listed first.
+
+### 7. Not read, not verified
+
+- `graph.hpp`: read lines 77-391, 716-965, 1800-1869, 2041-2360, 2436-2765 and 2956-3059, plus a grep outline of every declaration. Not read: the tracked, capture, State, Dynamic and offload overload bodies (392-715, 1705-1800), segmented reduce, prefix scan and counting sort (966-1703), the run entries (1870-2040), `emit_coupled` and `emit_captured` (2360-2435), the Dynamic and offload emitters (2766-2955).
+- `dynamic_graph.hpp`: read 90-189, 664-713, 1118-1135 and the declaration outline. The composer (434-933) and the drivers (935-1070) were not read.
+- `buffer.hpp`, `state.hpp`, `dynamic.hpp`, `dependencies.hpp`, `captures.hpp`, `run_handle.hpp`, `step_machinery.hpp`, `device_fault.hpp`, `callable_traits.hpp`: read with comment lines filtered out, so their Doxygen was not checked. `combine.hpp`, `extent.hpp`, `nd_range.hpp`, `region.hpp`: partly. `export.hpp`: my filter printed nothing for it; not read. `host_export.hpp`, `api/interop/interop.hpp`, `run_report_builder.hpp`, `fixed_order_scan.hpp`, every README in the api module: not read.
+- `logger.hpp`: declaration outline and the two stream lines only. `result.hpp`: member list only. `runtime_context.hpp`, `runtime_settings.hpp`, `run_report.hpp`, `error.hpp`, `version.hpp`: declarations read, comments filtered.
+- Examples: grepped for the calls API-13 and API-14 name; no example read in full.
+- Tests: names only for `tests/numeric/`; `run_untracked_launches` in `test_layer_equivalence.cpp` not read, so "its buffers are on the default device" rests on the skip comment and the known-issues text.
+- Audit: every `API-`, `GRAPHAPI-`, `CORE-` finding and EXEC-01 to 25 read. Findings marked "not re-checked" in section 1 were not compared with today's code. `SPEC.md` not read.
+- Downstream: counts come from grep over source files; nothing was compiled. Which of SushiBLAS's 16 umbrella includers break (2.8), whether SushiEngine relies on clamped ranges (2.2), how `to_dynamic` builds a `Dynamic` (2.4), and which `Errc` values SushiAI compares (2.5) are open. `SushiBLASModule.cmake` was not read beyond one grep, so header-only module support is unverified.
+- The `DynamicGraph` token observation in section 3 and every "would chain" statement in section 4 are read from code, not run.
+- Nothing was measured. Every performance statement cites the benchmark that would settle it.
+
 # Phase D: distributed layer, production ready for a trusted LAN
 
 Read-only design against the working tree at `703eed9`. Paths are relative to `D:\Projects\sushiruntime`. `M/` stands for `modules/extension/distributed/`, `inc/` for `M/include/SushiRuntime/distributed/`, `src/` for `M/source/`. Nothing was built or run, so every behavioural claim comes from reading.
@@ -2722,3 +3461,40 @@ Guesses until run or measured:
 - Where the "before" snapshot for D10 is captured in the surface module; I read only `run_report_builder.hpp:70-93`.
 - DIST-23: I checked the API shape, not what an OFF build installs.
 - Whether a graph reset clears `offloadable` after the attempt cap (N3).
+
+### Rulings on the phase D questions
+
+Given by the owner on 2026-10-10.
+
+| Question | Ruling |
+| --- | --- |
+| Q1, authentication | SHA-256 and HMAC written in the module; mutual challenge-response |
+| Q3, `attach` | `attach(runtime, transport, ClusterOptions)`; the four-argument form deprecated; default bind `127.0.0.1`; an empty secret refused on a network-exposed transport |
+| Q5, worker entry point | One shipped `sr_worker` that loads kernels from a shared library through an exported registration function. The recommendation was the library function with a thin `main`; the owner chose the single binary, so the plug-in ABI is part of the design |
+| Q6, output writeback | In place, chunk by chunk, fenced by pending state and an exact version |
+| Q2, public headers | `protocol.hpp` is deleted for a private codec, `buffer_registry.hpp` and `distributed_coordinator.hpp` become private, `ITransport` breaks once |
+| Q4, handle lifetime | Destroying the last copy of a `Cluster` handle detaches. The recommendation was an explicit `detach()` only; the owner chose detach on destruction, so `attach` is `[[nodiscard]]`, a discarded handle detaches at once, and the test that lets a handle outlive the runtime keeps passing because a detach after the runtime is gone does nothing |
+| Q8, kernel API | A fluent `graph.add(op, ...)` with no lambda, whose local fallback is the registered kernel; kernels take `span<const BufferView>` and the pointer form stays as a deprecated adapter. The recommendation was a free function in the module; the owner chose the fluent form, so T16 edits the api module and waits on the phase C split |
+| Q10, master lost | The worker reconnects with backoff, forever, unless `--no-reconnect` |
+| Q7, `task_deadline(0)` | Decided by the orchestrator as recommended: no bound on kernel run time; lost dispatches and results are still reaped |
+| Q9, automatic sharing | Decided by the orchestrator as recommended: sharing stays explicit, with one WARN per `prepare` that leaves op-tagged nodes local |
+
+Consequence of Q5 for the design above: `run_worker` stays the library function, and `applications/sr_worker/` holds the one shipped `main`. It takes `--kernels <shared library>` (repeatable), loads each with the platform loader behind the socket seam's sibling (`dynamic_library.hpp`, `dynamic_library_posix.cpp`, `dynamic_library_windows.cpp`), and calls the exported C function `sushiruntime_register_kernels(SushiRuntime::Distributed::KernelRegistry*)`. The plug-in contract is that one symbol, the `KernelRegistry` interface and the protocol build id, which the worker prints with `--version` and refuses to load across.
+
+### Rulings on the phase C questions
+
+Given by the owner on 2026-10-10, numbered as in section 6 of phase C.
+
+| Question | Ruling |
+| --- | --- |
+| 2, `NdRange` origin | `NdRange` gets `origin` and `at(origin)` like `Extent`, with the kernel form that receives the shifted id; `Extent::offset` is renamed `origin` with the old name deprecated |
+| 3, logging | Process-wide `set_log_level` and `set_log_sink`, plus `SR_LOG_LEVEL` |
+| 5, untracked default | `DeviceIndex{0}` when no `On(...)` is given |
+| 7, `Runtime` copy | Deleted; `Runtime` is move-only |
+| 1, the name `Graph` | Decided by the orchestrator as recommended: the engine namespace keeps the name, the builder stays `SushiRuntime::API::Graph`; the alternative rewrites 287 uses in SushiBLAS with no forwarder |
+| 4, `RuntimeConfig` shape | Decided by the orchestrator as recommended: flat fields with today's names plus `devices` |
+| 8, device order | Decided by the orchestrator as recommended: SYCL enumeration order, exposed through `advanced().devices()` |
+| 6, SushiBLAS modules | Open until the SushiBLAS part starts |
+
+One change to the task lists: D10 (the per-run offloaded count) leaves phase D's T4 for phase C's C9, because its caller is the step driver that C5 moves.
+
