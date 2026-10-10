@@ -281,4 +281,9 @@ TEST_F(Unit_OffloadSeam, SkippedNodeNotReportedAsCompleted)
     EXPECT_EQ(coordinator_.completions(), 1u) << "a node disabled for the step was reported";
 
     EXPECT_EQ(runs.load(), 1);
+
+    const sushi_ptr<Node> thrower = make_throwing_node();
+    run(*thrower);
+    ASSERT_TRUE(scheduler_.run_failed());
+    EXPECT_EQ(coordinator_.completions(), 1u) << "a node whose work threw was reported";
 }
