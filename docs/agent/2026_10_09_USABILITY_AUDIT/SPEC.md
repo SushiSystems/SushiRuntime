@@ -3470,16 +3470,18 @@ Given by the owner on 2026-10-10.
 | --- | --- |
 | Q1, authentication | SHA-256 and HMAC written in the module; mutual challenge-response |
 | Q3, `attach` | `attach(runtime, transport, ClusterOptions)`; the four-argument form deprecated; default bind `127.0.0.1`; an empty secret refused on a network-exposed transport |
-| Q5, worker entry point | One shipped `sr_worker` that loads kernels from a shared library through an exported registration function. The recommendation was the library function with a thin `main`; the owner chose the single binary, so the plug-in ABI is part of the design |
+| Q5, worker entry point | `run_worker` in the library plus a thin `main` per application. Kernels are C++ callables compiled into the worker's binary, so a single shipped executable would need a plug-in ABI that has to stay stable for no gain at two machines |
 | Q6, output writeback | In place, chunk by chunk, fenced by pending state and an exact version |
 | Q2, public headers | `protocol.hpp` is deleted for a private codec, `buffer_registry.hpp` and `distributed_coordinator.hpp` become private, `ITransport` breaks once |
-| Q4, handle lifetime | Destroying the last copy of a `Cluster` handle detaches. The recommendation was an explicit `detach()` only; the owner chose detach on destruction, so `attach` is `[[nodiscard]]`, a discarded handle detaches at once, and the test that lets a handle outlive the runtime keeps passing because a detach after the runtime is gone does nothing |
-| Q8, kernel API | A fluent `graph.add(op, ...)` with no lambda, whose local fallback is the registered kernel; kernels take `span<const BufferView>` and the pointer form stays as a deprecated adapter. The recommendation was a free function in the module; the owner chose the fluent form, so T16 edits the api module and waits on the phase C split |
+| Q4, handle lifetime | Destroying a `Cluster` handle does not detach; `detach()` is explicit and `attach` is `[[nodiscard]]`. The handle stays a copyable view, so a caller that keeps nothing still has a cluster |
+| Q8, kernel API | `kernels` is optional in `ClusterOptions`; a free function in the distributed module adds an op whose local fallback is the registered kernel; kernels take `span<const BufferView>` and the pointer form stays as a deprecated adapter. The api module does not learn about the distributed layer |
 | Q10, master lost | The worker reconnects with backoff, forever, unless `--no-reconnect` |
 | Q7, `task_deadline(0)` | Decided by the orchestrator as recommended: no bound on kernel run time; lost dispatches and results are still reaped |
 | Q9, automatic sharing | Decided by the orchestrator as recommended: sharing stays explicit, with one WARN per `prepare` that leaves op-tagged nodes local |
 
-Consequence of Q5 for the design above: `run_worker` stays the library function, and `applications/sr_worker/` holds the one shipped `main`. It takes `--kernels <shared library>` (repeatable), loads each with the platform loader behind the socket seam's sibling (`dynamic_library.hpp`, `dynamic_library_posix.cpp`, `dynamic_library_windows.cpp`), and calls the exported C function `sushiruntime_register_kernels(SushiRuntime::Distributed::KernelRegistry*)`. The plug-in contract is that one symbol, the `KernelRegistry` interface and the protocol build id, which the worker prints with `--version` and refuses to load across.
+The owner answered Q1, Q2, Q3, Q6 and Q10 and then handed the rest to the orchestrator, to be
+decided for performance and for operability later. Q4, Q5 and Q8 above are the orchestrator's,
+and each follows the design's recommendation.
 
 ### Rulings on the phase C questions
 
