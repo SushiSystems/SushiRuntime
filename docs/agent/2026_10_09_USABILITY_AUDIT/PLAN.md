@@ -114,6 +114,15 @@ with its wave table (tasks, files, what each waits on, acceptance) appended here
 
 Phase E changes nothing without a before and an after from the benchmarks phase A repairs.
 
+Added by the owner on 2026-10-10: `TaskScheduler` is split before phase E's measurements, as task
+E0. `task_scheduler.cpp` holds 1 220 lines and five responsibilities: the worker loop and
+dispatch, the naming of a failure, placement of a node on a queue, cancellation and run errors,
+and taking an offloaded node back. Each becomes a brick the scheduler composes; the class keeps
+its public declarations. The task opens with its own design (the bricks, what each owns, which
+state crosses between them) and runs with a before and an after of `scheduler_dispatch`,
+`root_fanout`, `chain_dispatch` and `wide_fanout` on a quiet machine, because every one of the
+five sits on or beside the dispatch path.
+
 ## Phase A wave
 
 Baseline: `sr build --distributed` and `sr test` on `bfbc137`, recorded in `REPORT.md` when the
