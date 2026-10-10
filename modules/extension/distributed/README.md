@@ -36,7 +36,7 @@ Headers under `include/SushiRuntime/distributed/`. Everything is in `SushiRuntim
 private codec uses.
 
 `distributed.hpp` includes every header of the table except `in_process_transport.hpp` and
-`message_type.hpp`, and the `_op` literal of `api/vocabulary/op_literal.hpp`. A worker program
+`message_type.hpp`, and the `_op` literal, which `task/task_types.hpp` promotes into `SushiRuntime`. A worker program
 includes it alone; a master includes it beside `SushiRuntime/SushiRuntime.h`.
 
 Deprecated and forwarding: the four-argument `Cluster::attach()` overloads, which attach with an

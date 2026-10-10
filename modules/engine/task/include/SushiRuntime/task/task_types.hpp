@@ -185,4 +185,9 @@ namespace SushiRuntime
         };
 
     } // namespace Graph
+
+    using Graph::Literals::operator""_op;
+    using Graph::OpID;
+    using Graph::TaskMetadata;
+
 } // namespace SushiRuntime

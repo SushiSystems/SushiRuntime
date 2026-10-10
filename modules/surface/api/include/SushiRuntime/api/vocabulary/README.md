@@ -211,14 +211,10 @@ refused with `dangling_resource` like any other.
 detail::LateCountAccess reads the source of a LateCount for the recording code, as
 detail::DynamicAccess does for a Dynamic.
 
-## op_literal.hpp
+## The _op literal
 
-### The _op literal
-
-op_literal.hpp promotes `Graph::Literals::operator""_op` into `SushiRuntime`. After
-`using namespace SushiRuntime;` or `using SushiRuntime::operator""_op;` a program writes
-`"vec.add"_op` for the OpID of a registered kernel. `distributed/distributed.hpp` includes this
-header, so a worker program that never includes the fluent API has the literal too.
-
-The header also promotes `Graph::OpID` and `Graph::TaskMetadata`, the two engine types a kernel's
-signature names, as `SushiRuntime::OpID` and `SushiRuntime::TaskMetadata`.
+`task/task_types.hpp` of the task module declares `OpID`, `TaskMetadata` and the `_op` literal and
+promotes all three into `SushiRuntime`. After `using namespace SushiRuntime;` or
+`using SushiRuntime::operator""_op;` a program writes `"vec.add"_op` for the OpID of a registered
+kernel. The distributed headers include it, so a worker program that never includes the fluent
+API has the literal too.

@@ -28,7 +28,6 @@
 
 #pragma once
 
-#include <SushiRuntime/api/vocabulary/op_literal.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
