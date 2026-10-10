@@ -336,3 +336,25 @@ against.
 
 `wide_fanout` moved by a factor of 3.5 between runs with no change to the code, so it can show
 only a regression larger than that.
+
+### After
+
+Three runs at `b47ead2`, same machine and build, after the five commits `965cb46`, `43fa5eb`,
+`bb575ba`, `826f2e6` and `b47ead2`. Each passed 657 of 657 tests with the distributed layer.
+
+| Benchmark | Case | Run 1 | Run 2 | Run 3 |
+| --- | --- | --- | --- | --- |
+| `scheduler_dispatch` | `scheduler`, ns per task | 168.9 | 144.9 | 157.8 |
+| `root_fanout` | `batched_submit`, size 1, ns per root step | 7 456 | 6 821 | 6 574 |
+| `root_fanout` | `batched_submit`, size 1024 | 6 001 | 6 322 | 6 714 |
+| `chain_dispatch` | `chain`, size 1, ns per node step | 5 633 | 6 536 | 6 877 |
+| `chain_dispatch` | `chain`, size 1024 | 7 668 | 6 432 | 6 062 |
+| `wide_fanout` | `steps20000_x64`, ns per task | 483 | 377 | 401 |
+
+Every figure lies inside the spread of the three runs before, so the split shows no cost these
+benchmarks can see. They cannot see one smaller than that spread.
+
+### What E0 changed in size
+
+`task_scheduler.cpp` went from 1 220 lines to 1 014. The five named responsibilities are out;
+the worker loop, the injector queues, stealing and the per-worker time buckets are what is left.

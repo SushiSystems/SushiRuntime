@@ -88,6 +88,11 @@ The v1 limits a user must know are in
 
 ## Structural debt
 
+- **`TaskScheduler` still holds two responsibilities beside the worker loop.** The injector
+  queues (`pending_submissions`, `priority_submissions`, their mutex, condition variable and
+  shadow counts) and the per-worker time buckets are members of the class, and
+  `task_scheduler.cpp` holds 1 014 lines. Each is a brick of the kind task E0 took out
+  (`docs/agent/2026_10_09_USABILITY_AUDIT/PLAN.md`, "Task E0").
 - **Sentinel injection in `compile()`.** `TaskGraph::compile()` links leaf nodes to a sentinel.
   Moving the injection into `ExecutionEngine::execute()` would let `compile()` return a pure
   DAG. The current design is correct.
