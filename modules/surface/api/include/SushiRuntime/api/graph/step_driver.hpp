@@ -188,7 +188,7 @@ namespace SushiRuntime
                     const Observability::TransferCounters& transfers = context.transfers();
                     state.device_to_host_before = transfers.device_to_host();
                     state.host_to_device_before = transfers.host_to_device();
-                    state.task_count = self.size();
+                    state.task_count = self.node_count();
 
                     steps.before_step();
                     self.rearm_plan();
@@ -450,7 +450,7 @@ namespace SushiRuntime
                     const auto t1 = clock::now();
                     const auto after = engine.metrics();
 
-                    const std::size_t total_tasks = self.size() * executed;
+                    const std::size_t total_tasks = self.node_count() * executed;
                     detail::fill_run_report(report, context, before, after, total_tasks,
                                             compile_ms, ms(t0, t1));
                     report.cancelled = engine.is_cancelled();

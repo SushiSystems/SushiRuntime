@@ -28,14 +28,17 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <memory>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -52,6 +55,7 @@
 #include <SushiRuntime/api/detail/emit_state.hpp>
 #include <SushiRuntime/api/detail/emit_tracked.hpp>
 #include <SushiRuntime/api/detail/emit_untracked.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/detail/host_slot_check.hpp>
 #include <SushiRuntime/api/detail/late_count_resolution.hpp>
 #include <SushiRuntime/api/detail/node_spec.hpp>
@@ -80,6 +84,8 @@ namespace SushiRuntime
     {
         /**
          * @brief Owns the nodes recorded for one graph or region and replays them.
+         *
+         * A move leaves the source empty on the same context, ready to record again.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         class Recorder final
@@ -106,7 +112,7 @@ namespace SushiRuntime
                         ~RuleScope()
                         {
                             if (recorder_ != nullptr)
-                                recorder_->open_rule_ = detail::NodeSpec::K_NO_RULE;
+                                recorder_->scope_open_ = false;
                         }
 
                     private:
@@ -129,26 +135,42 @@ namespace SushiRuntime
                 {
                 }
 
-                /** @brief Takes over another recorder's nodes; no rule scope may be open on it. */
-                Recorder(Recorder&& other) = default;
+                /**
+                 * @brief Takes over another recorder's nodes, rules, scratch and hooks.
+                 * @param other Left empty on the same context, with its counters at zero.
+                 * @pre No rule scope is open on other.
+                 */
+                Recorder(Recorder&& other) noexcept
+                {
+                    take(other);
+                }
 
-                /** @brief Replaces this recorder's nodes with another's. */
-                Recorder& operator=(Recorder&& other) = default;
+                /**
+                 * @brief Replaces this recorder's contents with another's.
+                 * @param other Left empty on the same context, with its counters at zero.
+                 * @pre No rule scope is open on either recorder.
+                 */
+                Recorder& operator=(Recorder&& other) noexcept
+                {
+                    if (this != &other)
+                        take(other);
+                    return *this;
+                }
 
                 Recorder(const Recorder&) = delete;
                 Recorder& operator=(const Recorder&) = delete;
 
                 /**
-                 * @brief Opens a rule: nodes recorded until the scope ends share one registration.
+                 * @brief Opens a rule: the nodes recorded until the scope ends form one rule.
                  * @return The scope; a scope opened inside another joins the outer rule.
-                 * @pre The scope ends before this recorder is moved or destroyed.
+                 * @pre The scope ends before this recorder is moved, cleared or destroyed.
                  */
                 [[nodiscard]] RuleScope rule() noexcept
                 {
-                    if (open_rule_ != detail::NodeSpec::K_NO_RULE)
+                    if (scope_open_)
                         return RuleScope(nullptr);
-                    open_rule_ = next_rule_++;
-                    open_rule_has_node_ = false;
+                    scope_open_ = true;
+                    scope_has_node_ = false;
                     return RuleScope(this);
                 }
 
@@ -291,7 +313,7 @@ namespace SushiRuntime
                                emit(bg);
                            }, lives);
                     // An emitter stamps its own nodes, so it takes no registration from a rule.
-                    specs_.back().rule = detail::NodeSpec::K_NO_RULE;
+                    specs_.back().takes_rule_registration = false;
                 }
 
                 /**
@@ -392,7 +414,7 @@ namespace SushiRuntime
                     auto view = steps_.view_for(state);
                     auto bindings = std::make_shared<::SushiRuntime::Graph::LateBindings>();
 
-                    std::vector<Core::ResourceRegion> reads{ state.read_key() };
+                    std::vector<Core::ResourceRegion> reads{ detail::HandleAccess::read_key(state) };
                     detail::adopt_device_bindings(*bindings, window, reads);
                     std::uint32_t* fault = fault_record_for(window);
 
@@ -453,9 +475,9 @@ namespace SushiRuntime
                 {
                     auto view = steps_.view_for(state);
                     auto live_reads = std::make_shared<std::vector<void*>>(
-                        std::vector<void*>{ state.read_key() });
+                        std::vector<void*>{ detail::HandleAccess::read_key(state) });
                     auto live_writes = std::make_shared<std::vector<void*>>(
-                        std::vector<void*>{ state.write_key() });
+                        std::vector<void*>{ detail::HandleAccess::write_key(state) });
 
                     std::vector<Core::LivenessObserver> lives;
                     detail::gather_life(lives, state);
@@ -524,22 +546,42 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Names the node most recently recorded.
-                 * @param name Persistent label, stored not copied.
+                 * @brief Names the rule most recently recorded; every node of it reports the name.
+                 * @param label Copied; an empty label returns the rule to the default name.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                void name_last_node(const char* name) noexcept
+                void name_last_rule(std::string_view label)
                 {
-                    if (!specs_.empty())
-                        specs_.back().name = name;
+                    if (rule_names_.empty())
+                        return;
+                    rule_names_.back() =
+                        label.empty() ? nullptr : labels_.emplace(label).first->c_str();
+                    ++generation_;
+                }
+
+                /**
+                 * @brief Forgets every node, rule, observer, hook and scratch block recorded.
+                 * @pre No rule scope is open, and no step that runs the recorded nodes is pending.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                void clear()
+                {
+                    specs_.clear();
+                    rule_names_.clear();
+                    labels_.clear();
+                    scratch_.clear();
+                    observers_.clear();
+                    steps_ = detail::StepMachinery();
+                    ++generation_;
                 }
 
                 /** @brief Returns how many rules are recorded. */
-                [[nodiscard]] std::size_t rule_count() const noexcept { return rule_count_; }
+                [[nodiscard]] std::size_t rule_count() const noexcept { return rule_names_.size(); }
 
                 /** @brief Returns how many nodes are recorded. */
-                [[nodiscard]] std::size_t node_count() const noexcept { return node_count_; }
+                [[nodiscard]] std::size_t node_count() const noexcept { return specs_.size(); }
 
-                /** @brief Returns a counter every recorded node advances. */
+                /** @brief Returns a counter every change to the recorded work advances. */
                 [[nodiscard]] std::uint64_t generation() const noexcept { return generation_; }
 
                 /** @brief Returns whether a recorded handle names a freed allocation. */
@@ -551,37 +593,43 @@ namespace SushiRuntime
                     return false;
                 }
 
+                /** @brief Returns how many distinct allocations has_dangling_resource() checks. */
+                [[nodiscard]] std::size_t watched_allocation_count() const noexcept
+                {
+                    return observers_.size();
+                }
+
                 /**
                  * @brief Adds every recorded node to a backing graph, in recording order.
                  *
-                 * The nodes of one rule scope share a registration index reserved on target when
-                 * the first of them is added; every other node draws its own.
-                 * @param visit Called as visit(node) once node is added and named.
+                 * The nodes of one rule share a registration index reserved on target when the
+                 * first of them is added, and all carry the rule's name.
+                 * @param visit Called as visit(rule, node) once node is added and named.
                  */
                 template <class Visit>
                 void replay(BackingGraph& target, Visit&& visit) const
                 {
-                    std::uint32_t rule = detail::NodeSpec::K_NO_RULE;
+                    std::uint32_t stamped = detail::NodeSpec::K_NO_RULE;
                     std::optional<std::uint32_t> reserved;
                     for (std::size_t node = 0; node < specs_.size(); ++node)
                     {
                         const detail::NodeSpec& spec = specs_[node];
-                        const bool grouped = spec.rule != detail::NodeSpec::K_NO_RULE;
-                        if (grouped && spec.rule != rule)
+                        if (spec.takes_rule_registration && spec.rule != stamped)
                         {
-                            rule = spec.rule;
+                            stamped = spec.rule;
                             reserved = target.reserve_registration();
                         }
-                        spec.emit(target, grouped ? reserved : std::optional<std::uint32_t>());
-                        target.name_last_node(spec.name);
-                        visit(node);
+                        spec.emit(target, spec.takes_rule_registration
+                                              ? reserved : std::optional<std::uint32_t>());
+                        target.name_last_node(rule_names_[spec.rule]);
+                        visit(static_cast<std::size_t>(spec.rule), node);
                     }
                 }
 
                 /** @brief Adds every recorded node to a backing graph, in recording order. */
                 void replay(BackingGraph& target) const
                 {
-                    replay(target, [](std::size_t) {});
+                    replay(target, [](std::size_t, std::size_t) {});
                 }
 
                 /** @brief Returns the per-step hooks of the recorded nodes. */
@@ -597,16 +645,46 @@ namespace SushiRuntime
                 void record(Emit&& emit, std::vector<Core::LivenessObserver>& lives)
                 {
                     detail::NodeSpec spec(std::forward<Emit>(emit));
-                    spec.rule = open_rule_;
-                    if (open_rule_ == detail::NodeSpec::K_NO_RULE || !open_rule_has_node_)
-                        ++rule_count_;
-                    open_rule_has_node_ = true;
+                    if (!scope_open_ || !scope_has_node_)
+                        rule_names_.push_back(nullptr);
+                    scope_has_node_ = true;
+                    spec.rule = static_cast<std::uint32_t>(rule_names_.size() - 1);
 
                     specs_.push_back(std::move(spec));
-                    observers_.insert(observers_.end(), std::make_move_iterator(lives.begin()),
-                                      std::make_move_iterator(lives.end()));
-                    ++node_count_;
+                    for (Core::LivenessObserver& life : lives)
+                        watch(std::move(life));
                     ++generation_;
+                }
+
+                /**
+                 * @brief Keeps one observer per allocation, however many nodes name it.
+                 * @param life Observer of a handle a node names.
+                 */
+                void watch(Core::LivenessObserver life)
+                {
+                    // observers_ is sorted by owner; the binary search below depends on it.
+                    const auto at = std::lower_bound(observers_.begin(), observers_.end(), life,
+                                                     std::owner_less<Core::LivenessObserver>());
+                    if (at == observers_.end() || life.owner_before(*at))
+                        observers_.insert(at, std::move(life));
+                }
+
+                /**
+                 * @brief Moves other's contents here and leaves other empty on its context.
+                 * @param other Recorder to empty; its counters return to zero.
+                 */
+                void take(Recorder& other) noexcept
+                {
+                    context_ = other.context_;
+                    specs_ = std::exchange(other.specs_, {});
+                    rule_names_ = std::exchange(other.rule_names_, {});
+                    labels_ = std::exchange(other.labels_, {});
+                    scratch_ = std::exchange(other.scratch_, {});
+                    observers_ = std::exchange(other.observers_, {});
+                    steps_ = std::exchange(other.steps_, detail::StepMachinery());
+                    generation_ = std::exchange(other.generation_, 0);
+                    scope_open_ = false;
+                    scope_has_node_ = false;
                 }
 
                 /**
@@ -652,24 +730,26 @@ namespace SushiRuntime
                 /** @brief Owns the USM handed out by scratch() and the fault records. */
                 std::vector<std::shared_ptr<void>> scratch_;
 
-                /** @brief Liveness observers of every typed handle the recorded nodes name. */
+                /** @brief One entry per rule: its label in labels_, or null for the default. */
+                std::vector<const char*> rule_names_;
+
+                /** @brief Owns one copy of each distinct label; its entries never move. */
+                std::unordered_set<std::string> labels_;
+
+                /** @brief One liveness observer per allocation the nodes name, sorted by owner. */
                 std::vector<Core::LivenessObserver> observers_;
 
                 /** @brief The per-step hooks of the recorded nodes. */
                 detail::StepMachinery steps_;
 
-                std::size_t node_count_ = 0;   /**< Nodes recorded. */
-                std::size_t rule_count_ = 0;   /**< Rules recorded. */
-                std::uint64_t generation_ = 0; /**< Advanced by every recorded node. */
+                /** @brief Advanced by every recorded node, every rename and every clear(). */
+                std::uint64_t generation_ = 0;
 
-                /** @brief The rule scope open at this moment, or K_NO_RULE. */
-                std::uint32_t open_rule_ = detail::NodeSpec::K_NO_RULE;
-
-                /** @brief The identity the next rule scope takes. */
-                std::uint32_t next_rule_ = 0;
+                /** @brief Whether a rule scope is open at this moment. */
+                bool scope_open_ = false;
 
                 /** @brief Whether the open rule scope has recorded a node. */
-                bool open_rule_has_node_ = false;
+                bool scope_has_node_ = false;
         };
 
     } // namespace API

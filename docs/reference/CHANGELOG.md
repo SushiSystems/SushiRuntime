@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Changed `size()` of every graph kind to count rules, and `rule_registration` to take a rule position; `node_count()` and `last_rule()` are new (`builder_surface.hpp`).
+- 2026-10-10 — api: Changed `DynamicGraph::region(key)` so that reading a region no longer marks it for a rebuild; added `Region::clear()` (`dynamic_graph.hpp`, `region.hpp`).
+- 2026-10-10 — api: Changed `name_last` to copy its text and name every node of the last rule; a rename after a build is now seen (`builder_surface.hpp`, `recorder.hpp`).
+- 2026-10-10 — api: Removed the move of `Region`, and defined a moved-from graph of either kind as empty and reusable (`region.hpp`, `graph.hpp`, `dynamic_graph.hpp`).
+- 2026-10-10 — api: Fixed the recorder keeping one liveness observer per handle per node; it keeps one per allocation (`recorder.hpp`).
 - 2026-10-10 — api: Changed `RuntimeConfig` from an alias of the engine's settings to a struct with a `devices` filter, and `Runtime::create` to take it alone (`runtime_config.hpp`, `runtime.hpp`).
 - 2026-10-10 — api: Removed the copy of `Runtime`; it is move-only, and its factories and every query of the advanced view are nodiscard (`runtime.hpp`, `advanced_controls.hpp`).
 - 2026-10-10 — api: Added `AdvancedControls::devices()`, `is_profiling_enabled()`, `is_rebalancer_enabled()` and `Runtime::set_rebalancer_enabled()`; the old names are deprecated (`advanced_controls.hpp`).

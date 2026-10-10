@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -372,16 +373,45 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Names the task most recently added to this graph.
-                 * @param name Persistent label, stored not copied; ignored when no task has been
-                 *        added.
+                 * @brief Names the rule most recently added; every node of it reports the name.
+                 * @param label Copied, so a temporary may be passed; an empty label returns the
+                 *        rule to the default name. Ignored when nothing has been added.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                Derived& name_last(const char* name) noexcept
+                Derived& name_last(std::string_view label)
                 {
-                    sink().name_last_node(name);
+                    sink().name_last_rule(label);
                     return self();
                 }
+
+                /**
+                 * @brief Names the rule most recently added from a C string.
+                 * @param label Copied; null counts as an empty label.
+                 */
+                Derived& name_last(const char* label)
+                {
+                    return name_last(label != nullptr ? std::string_view(label)
+                                                      : std::string_view());
+                }
+
+                /**
+                 * @brief Returns how many rules have been added.
+                 * @return One per add(), add_untracked(), add_host() or add_emitter() call, and one
+                 *         per Recorder::rule() scope that recorded a node.
+                 */
+                [[nodiscard]] std::size_t size() const noexcept { return view().rule_count(); }
+
+                /** @brief Returns how many nodes the rules record; an emitter counts as one. */
+                [[nodiscard]] std::size_t node_count() const noexcept
+                {
+                    return view().node_count();
+                }
+
+                /**
+                 * @brief Returns the position of the rule most recently added.
+                 * @pre size() is not zero.
+                 */
+                [[nodiscard]] std::size_t last_rule() const noexcept { return size() - 1; }
 
                 /**
                  * @brief Adds an offloadable task: a named remote kernel with a local fallback.
@@ -450,7 +480,13 @@ namespace SushiRuntime
                 Derived& self() noexcept { return static_cast<Derived&>(*this); }
 
                 /** @brief Returns the recorder every overload records onto. */
-                Recorder& sink() noexcept { return self().recorder(); }
+                Recorder& sink() { return self().recorder(); }
+
+                /** @brief Returns the recorder the queries read, without recording on it. */
+                const Recorder& view() const noexcept
+                {
+                    return static_cast<const Derived&>(*this).recorder();
+                }
 
                 /**
                  * @brief Appends a capture's region to what it reads, what it writes, or both, and

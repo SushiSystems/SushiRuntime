@@ -59,12 +59,12 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief A chainable graph of tasks built fluently, then run.
+         * @brief A chainable graph of rules built fluently, then run.
          *
-         * Every add() overload appends one task and returns *this so calls chain.
-         * The concept-constrained overloads give a readable compiler error when a
-         * callable has the wrong signature — something a macro cannot do.
-         * Obtain one from Runtime::graph(); it is moveable but not copyable.
+         * Every add() overload appends one rule and returns *this so calls chain. Obtain one
+         * from Runtime::graph(). A graph moves and does not copy; the source of a move is left
+         * empty on the same runtime and can be built and run again.
+         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         class Graph : public BuilderSurface<Graph>,
                       public StepDriver<Graph>,
@@ -72,44 +72,56 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Takes over another graph's recorded tasks.
-                 * @param other Graph to move from; left with no tasks.
+                 * @brief Takes over another graph's rules and compiled plan.
+                 * @param other Left empty on the same runtime: size() and compile_count() are zero.
+                 * @pre No step started with run_async() on other is pending.
                  */
-                Graph(Graph&& other) = default;
+                Graph(Graph&& other) noexcept
+                    : BuilderSurface<Graph>(std::move(other)),
+                      StepDriver<Graph>(std::move(other)),
+                      PlanCache(std::move(other)),
+                      ctx_(other.ctx_),
+                      recorder_(std::move(other.recorder_))
+                {
+                }
 
                 /**
-                 * @brief Replaces this graph's contents with another's.
-                 * @param other Graph to move from; left with no tasks.
-                 * @return *this, now owning @p other's tasks.
+                 * @brief Replaces this graph's rules and plan with another's.
+                 * @param other Left empty on the same runtime: size() and compile_count() are zero.
+                 * @pre No step started with run_async() on either graph is pending.
                  */
-                Graph& operator=(Graph&& other) = default;
+                Graph& operator=(Graph&& other) noexcept
+                {
+                    if (this != &other)
+                    {
+                        StepDriver<Graph>::operator=(std::move(other));
+                        PlanCache::operator=(std::move(other));
+                        ctx_ = other.ctx_;
+                        recorder_ = std::move(other.recorder_);
+                    }
+                    return *this;
+                }
 
                 Graph(const Graph&) = delete;
                 Graph& operator=(const Graph&) = delete;
 
-                /** @brief Returns the recorder this graph's tasks are recorded on. */
+                /** @brief Returns the recorder this graph's rules are recorded on. */
                 [[nodiscard]] Recorder& recorder() noexcept { return recorder_; }
 
-                /** @brief Returns the recorder this graph's tasks are recorded on, read-only. */
+                /** @brief Returns the recorder this graph's rules are recorded on, read-only. */
                 [[nodiscard]] const Recorder& recorder() const noexcept { return recorder_; }
-
-                /**
-                 * @brief Reports how much work has been recorded.
-                 * @return Number of update rules (tasks) added so far.
-                 */
-                std::size_t size() const noexcept { return recorder_.node_count(); }
 
                 /** @brief Stands for "this rule has no index yet". */
                 static constexpr std::uint32_t no_registration = BackingGraph::NO_REGISTRATION;
 
                 /**
                  * @brief Returns the registration index the rule at position rule took.
-                 * @param rule Position in add() order, below size().
-                 * @return The index, or no_registration when rule is out of range or nothing
-                 *        compiled yet.
+                 * @param rule Position in add() order, below size(); last_rule() gives the newest.
+                 * @return The index every node of the rule reports under, or no_registration when
+                 *        rule is out of range or nothing compiled yet.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                std::uint32_t rule_registration(std::size_t rule) const noexcept
+                [[nodiscard]] std::uint32_t rule_registration(std::size_t rule) const noexcept
                 {
                     return registration_of(rule);
                 }

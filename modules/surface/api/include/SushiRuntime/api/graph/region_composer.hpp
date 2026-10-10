@@ -54,6 +54,8 @@ namespace SushiRuntime
     {
         /**
          * @brief Owns the compiled sub-graph of every region and stitches them into one plan.
+         *
+         * A move leaves the source with no region and no plan, ready to compose again.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         class RegionComposer
@@ -75,6 +77,10 @@ namespace SushiRuntime
                             RecorderOf&& recorder_of,
                             ::SushiRuntime::Graph::OffloadCoordinator* offload, bool profiling)
                 {
+                    // A composer that was moved from holds no sentinel until it composes again.
+                    if (sentinel_ == nullptr)
+                        sentinel_ = make_sushi<Node>();
+
                     // teardown lists regions to tear down; dirty_bases the bases to re-wire.
                     std::set<RegionKey> teardown(dirty.begin(), dirty.end());
                     teardown.insert(dropped.begin(), dropped.end());
@@ -161,14 +167,57 @@ namespace SushiRuntime
                 /** @brief Returns whether the plan has been composed at least once. */
                 bool composed() const noexcept { return committed_once_; }
 
+                /**
+                 * @brief Returns whether a region's cached sub-graph matches its recorder.
+                 * @return False for a region never built, or built at another generation.
+                 */
+                [[nodiscard]] bool is_current(RegionKey key, const Recorder& recorder) const
+                {
+                    const auto found = states_.find(key);
+                    return found != states_.end() &&
+                           found->second.generation == recorder.generation();
+                }
+
+                /**
+                 * @brief Returns the registration index a rule of a region carries in the plan.
+                 * @param rule Position in the region's recording order, one per rule.
+                 * @return The index, or BackingGraph::NO_REGISTRATION before the region is built.
+                 */
+                [[nodiscard]] std::uint32_t registration_of(RegionKey key, std::size_t rule) const
+                {
+                    const auto found = states_.find(key);
+                    if (found == states_.end() || rule >= found->second.rule_nodes.size() ||
+                        found->second.rule_nodes[rule] == nullptr)
+                        return BackingGraph::NO_REGISTRATION;
+                    return found->second.rule_nodes[rule]->registration_index;
+                }
+
             protected:
                 /** @brief Starts with no region and a fresh completion sentinel. */
                 RegionComposer() : sentinel_(make_sushi<Node>())
                 {
                 }
 
-                RegionComposer(RegionComposer&&) = default;
-                RegionComposer& operator=(RegionComposer&&) = default;
+                /**
+                 * @brief Takes over another composer's regions and plan.
+                 * @param other Left with no region, no plan and a compose count of zero.
+                 */
+                RegionComposer(RegionComposer&& other) noexcept
+                {
+                    take(other);
+                }
+
+                /**
+                 * @brief Replaces this composer's regions and plan with another's.
+                 * @param other Left with no region, no plan and a compose count of zero.
+                 */
+                RegionComposer& operator=(RegionComposer&& other) noexcept
+                {
+                    if (this != &other)
+                        take(other);
+                    return *this;
+                }
+
                 RegionComposer(const RegionComposer&) = delete;
                 RegionComposer& operator=(const RegionComposer&) = delete;
                 ~RegionComposer() = default;
@@ -201,6 +250,8 @@ namespace SushiRuntime
                     std::vector<sushi_ptr<Node>> nodes;
                     std::vector<Node*>           intra_roots;
                     std::map<Base, BaseAccess>   access;
+                    std::vector<const Node*>     rule_nodes;     /**< Last node of each rule. */
+                    std::uint64_t                generation = 0; /**< Recorder generation built. */
                 };
 
                 /**
@@ -208,6 +259,23 @@ namespace SushiRuntime
                  *        alone.
                  */
                 struct BoundaryEdge { Node* from; Node* to; };
+
+                /**
+                 * @brief Moves other's regions, plan and counters here and leaves other with none.
+                 * @param other Composer to empty; commit() gives it a sentinel when it composes.
+                 */
+                void take(RegionComposer& other) noexcept
+                {
+                    plan_ = std::exchange(other.plan_, {});
+                    states_ = std::exchange(other.states_, {});
+                    base_regions_ = std::exchange(other.base_regions_, {});
+                    base_edges_ = std::exchange(other.base_edges_, {});
+                    roots_ = std::exchange(other.roots_, {});
+                    sentinel_ = std::exchange(other.sentinel_, {});
+                    compiles_ = std::exchange(other.compiles_, 0);
+                    plan_index_counter_ = std::exchange(other.plan_index_counter_, 0);
+                    committed_once_ = std::exchange(other.committed_once_, false);
+                }
 
                 /**
                  * @brief Links a leaf node to the completion sentinel and counts it on the
@@ -365,9 +433,14 @@ namespace SushiRuntime
                                   ::SushiRuntime::Graph::OffloadCoordinator* offload)
                 {
                     BackingGraph bg(offload);
-                    recorder.replay(bg);
-
                     RegionState st;
+                    st.generation = recorder.generation();
+                    st.rule_nodes.assign(recorder.rule_count(), nullptr);
+                    recorder.replay(bg, [&st, &bg](std::size_t rule, std::size_t)
+                    {
+                        st.rule_nodes[rule] = bg.last_node_added();
+                    });
+
                     st.nodes = bg.take_nodes();   // intra edges baked; insertion order
 
                     for (auto& np : st.nodes)

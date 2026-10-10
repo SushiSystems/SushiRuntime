@@ -59,6 +59,9 @@ namespace SushiRuntime
         /**
          * @brief Composes regions that stream in and out into one plan, rebuilt only where it
          *        changed.
+         *
+         * A graph moves and does not copy; the source of a move is left with no region on the
+         * same runtime and can be given regions and run again.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         class DynamicGraph : public StepDriver<DynamicGraph>, private RegionComposer
@@ -68,24 +71,42 @@ namespace SushiRuntime
                 using RegionKey = std::uint64_t;
 
                 /**
-                 * @brief Takes over another graph's regions and pending structure.
-                 * @param other Graph to move from; left with no regions.
+                 * @brief Takes over another graph's regions, plan and pending changes.
+                 * @param other Left with no region on the same runtime; compose_count() is zero.
+                 * @pre No step started with run_async() on other is pending.
                  */
-                DynamicGraph(DynamicGraph&& other) = default;
+                DynamicGraph(DynamicGraph&& other) noexcept
+                    : StepDriver<DynamicGraph>(std::move(other)),
+                      RegionComposer(std::move(other)),
+                      ctx_(other.ctx_),
+                      profiling_requested_(other.profiling_requested_)
+                {
+                    take(other);
+                }
 
                 /**
-                 * @brief Replaces this graph's contents with another's.
-                 * @param other Graph to move from; left with no regions.
-                 * @return *this, now owning @p other's regions.
+                 * @brief Replaces this graph's regions and plan with another's.
+                 * @param other Left with no region on the same runtime; compose_count() is zero.
+                 * @pre No step started with run_async() on either graph is pending.
                  */
-                DynamicGraph& operator=(DynamicGraph&& other) = default;
+                DynamicGraph& operator=(DynamicGraph&& other) noexcept
+                {
+                    if (this != &other)
+                    {
+                        StepDriver<DynamicGraph>::operator=(std::move(other));
+                        RegionComposer::operator=(std::move(other));
+                        ctx_ = other.ctx_;
+                        profiling_requested_ = other.profiling_requested_;
+                        take(other);
+                    }
+                    return *this;
+                }
 
                 DynamicGraph(const DynamicGraph&) = delete;
                 DynamicGraph& operator=(const DynamicGraph&) = delete;
 
                 /**
-                 * @brief Returns the region for key, creating it if absent, and marks it for
-                 *        rebuild.
+                 * @brief Returns the region for key, creating it if absent.
                  * @return A reference to the region, valid until the region is dropped.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
@@ -93,9 +114,14 @@ namespace SushiRuntime
                 {
                     auto it = regions_.find(key);
                     if (it == regions_.end())
+                    {
+                        if (changes_ == nullptr)
+                            changes_ = std::make_unique<RegionChangeLog>();
                         it = regions_.emplace(key,
-                            std::unique_ptr<Region>(new Region(ctx_))).first;
-                    dirty_regions_.insert(key);
+                            std::make_unique<Region>(ctx_, *changes_, key)).first;
+                        // A region that did not exist is built at the next run.
+                        dirty_regions_.insert(key);
+                    }
                     return *it->second;
                 }
 
@@ -160,11 +186,8 @@ namespace SushiRuntime
                  */
                 bool profiling_requested() const noexcept { return profiling_requested_; }
 
-                /**
-                 * @brief Reports how much work the graph currently holds.
-                 * @return Total tasks recorded across all live regions.
-                 */
-                std::size_t size() const noexcept
+                /** @brief Returns how many rules the live regions hold together. */
+                [[nodiscard]] std::size_t size() const noexcept
                 {
                     std::size_t total = 0;
                     for (const auto& kv : regions_)
@@ -172,15 +195,43 @@ namespace SushiRuntime
                     return total;
                 }
 
+                /** @brief Returns how many nodes the live regions record together. */
+                [[nodiscard]] std::size_t node_count() const noexcept
+                {
+                    std::size_t total = 0;
+                    for (const auto& kv : regions_)
+                        total += kv.second->node_count();
+                    return total;
+                }
+
+                /** @brief Stands for "this rule has no index yet". */
+                static constexpr std::uint32_t no_registration = BackingGraph::NO_REGISTRATION;
+
                 /**
-                 * @brief Number of times the plan has been (re)composed.
-                 *
-                 * Holds at 1 across a multi-step run that mutates nothing, and rises
-                 * by one per commit (a run that follows at least one mutation),
-                 * regardless of how many regions exist.
-                 * @return The composition count since this graph was created.
+                 * @brief Returns the registration index a rule of a region carries in the plan.
+                 * @param rule Position in the region's add() order, below its size().
+                 * @return The index every node of the rule reports under, or no_registration for
+                 *         an absent region, a rule out of range or a region not yet composed.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                std::size_t compile_count() const noexcept { return compose_count(); }
+                [[nodiscard]] std::uint32_t rule_registration(RegionKey key, std::size_t rule) const
+                {
+                    return registration_of(key, rule);
+                }
+
+                /**
+                 * @brief Returns how many times the plan has been composed.
+                 *
+                 * It rises by one at a run that follows a recording, a clear() or a drop(), and
+                 * holds across runs that only read the regions.
+                 */
+                using RegionComposer::compose_count;
+
+                /**
+                 * @brief Returns how many times the plan has been composed.
+                 * @return The same count as compose_count().
+                 */
+                [[nodiscard]] std::size_t compile_count() const noexcept { return compose_count(); }
 
             private:
                 friend class Runtime;
@@ -205,6 +256,17 @@ namespace SushiRuntime
                 /** @brief Returns the context whose engine runs this graph. */
                 Execution::RuntimeContext& run_context() noexcept { return *ctx_; }
 
+                /**
+                 * @brief Returns a region's recorder for reading.
+                 *
+                 * The graph reads through here, because Region::recorder() on a non-const region
+                 * lists the region as written to.
+                 */
+                static const Recorder& recorded(const Region& region) noexcept
+                {
+                    return region.recorder();
+                }
+
                 /** @brief Returns whether any region exists. */
                 bool has_work() const noexcept { return !regions_.empty(); }
 
@@ -212,13 +274,22 @@ namespace SushiRuntime
                 bool has_dangling_resource() const noexcept
                 {
                     for (const auto& kv : regions_)
-                        if (kv.second->recorder().has_dangling_resource())
+                        if (recorded(*kv.second).has_dangling_resource())
                             return true;
                     return false;
                 }
 
-                /** @brief Returns whether the plan must be composed before the next step. */
-                bool plan_is_stale() const { return needs_commit(); }
+                /**
+                 * @brief Returns whether the plan must be composed before the next step.
+                 *
+                 * It first compares each region written to since the last run with what the
+                 * composer built, so the cost follows the regions touched and not the world.
+                 */
+                bool plan_is_stale()
+                {
+                    settle_changes();
+                    return needs_commit();
+                }
 
                 /** @brief Composes the plan from the changed regions and clears the pending set. */
                 void rebuild_plan()
@@ -227,7 +298,7 @@ namespace SushiRuntime
                            [this](RegionKey key) -> const Recorder*
                            {
                                const auto it = regions_.find(key);
-                               return it == regions_.end() ? nullptr : &it->second->recorder();
+                               return it == regions_.end() ? nullptr : &recorded(*it->second);
                            },
                            ctx_->offload(), profiling_requested_);
                     dirty_regions_.clear();
@@ -264,6 +335,34 @@ namespace SushiRuntime
                     return !composed() || !dirty_regions_.empty() || !dropped_.empty();
                 }
 
+                /** @brief Marks dirty each region written to whose recording really changed. */
+                void settle_changes()
+                {
+                    if (changes_ == nullptr)
+                        return;
+                    for (RegionKey key : changes_->keys())
+                    {
+                        const auto found = regions_.find(key);
+                        if (found != regions_.end() &&
+                            !is_current(key, recorded(*found->second)))
+                            dirty_regions_.insert(key);
+                    }
+                    changes_->settle();
+                }
+
+                /**
+                 * @brief Moves other's regions and pending changes here and leaves other with none.
+                 * @param other Graph to empty; its context and profiling request are kept.
+                 */
+                void take(DynamicGraph& other) noexcept
+                {
+                    regions_ = std::exchange(other.regions_, {});
+                    changes_ = std::exchange(other.changes_, {});
+                    dirty_regions_ = std::exchange(other.dirty_regions_, {});
+                    dropped_ = std::exchange(other.dropped_, {});
+                    steps_ = std::exchange(other.steps_, detail::StepMachinery());
+                }
+
                 /**
                  * @brief Rebuilds the aggregated per-step updater lists from every live region.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
@@ -272,7 +371,7 @@ namespace SushiRuntime
                 {
                     steps_.reset_updaters();
                     for (auto& kv : regions_)
-                        steps_.aggregate_from(kv.second->recorder().steps());
+                        steps_.aggregate_from(recorded(*kv.second).steps());
                 }
 
                 std::shared_ptr<Execution::RuntimeContext> ctx_;
@@ -284,8 +383,13 @@ namespace SushiRuntime
                  */
                 std::map<RegionKey, std::unique_ptr<Region>> regions_;
 
-                // Pending structural changes applied at the next commit.
+                /** @brief Lists the regions written to since the last run; regions point at it. */
+                std::unique_ptr<RegionChangeLog> changes_;
+
+                /** @brief Regions to build or rebuild at the next commit. */
                 std::set<RegionKey> dirty_regions_;
+
+                /** @brief Regions removed since the last commit. */
                 std::set<RegionKey> dropped_;
 
                 /** @brief Aggregates every live region's per-step lifecycle before each run. */

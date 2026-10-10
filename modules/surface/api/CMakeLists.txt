@@ -24,6 +24,7 @@ sushiruntime_add_module_tests(
     MODULE api
     SOURCES
         test_async_step.cpp
+        test_data_handles.cpp
         test_device_count.cpp
         test_device_resident.cpp
         test_device_sized_launch.cpp
@@ -37,6 +38,8 @@ sushiruntime_add_module_tests(
         test_native_cpu_path.cpp
         test_node_options_width.cpp
         test_recorder_scratch.cpp
+        test_recorder_semantics.cpp
         test_region_emitter.cpp
         test_rule_registration.cpp
-        test_run_report_reuse.cpp)
+        test_run_report_reuse.cpp
+        test_runtime_entry.cpp)
