@@ -575,9 +575,11 @@ namespace
         Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
                                           impatient_master());
         outcome.assembled = worker.start() && cluster.wait_for_workers(1, K_WAIT);
-        outcome.frames_dropped = dropped->load(std::memory_order_relaxed);
         if (!outcome.assembled)
+        {
+            outcome.frames_dropped = dropped->load(std::memory_order_relaxed);
             return outcome;
+        }
 
         OffloadCoordinator* master = master_context.offload();
         master->share(input->data(), K_COUNT * sizeof(float));
@@ -593,6 +595,9 @@ namespace
 
         worker.stop();
         cluster.detach();
+
+        // The master counts the worker before its WELCOME leaves, so the drop is read last.
+        outcome.frames_dropped = dropped->load(std::memory_order_relaxed);
         outcome.worker_runs = worker_runs.load(std::memory_order_relaxed);
         if (outcome.returned)
             outcome.wrong = first_wrong_element(output);
