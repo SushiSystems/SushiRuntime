@@ -182,9 +182,9 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     Core::RunReport report;
     graph.run(1, report);
 
-    ASSERT_EQ(report.node_timings.size(), RULE_NODES);
-    EXPECT_EQ(rows_named(report, "pipeline"), RULE_NODES)
-        << "every node of the rule must report the rule's name";
+    // The nodes of a rule share one registration, and the report holds one row per registration.
+    ASSERT_EQ(report.node_timings.size(), 1u);
+    EXPECT_EQ(rows_named(report, "pipeline"), 1u) << "the rule's row must carry the rule's name";
     EXPECT_NE(graph.rule_registration(0), API::Graph::no_registration);
     EXPECT_EQ(graph.rule_registration(1), API::Graph::no_registration)
         << "the graph holds one rule, so position 1 names none";
@@ -209,7 +209,7 @@ TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     Core::RunReport report;
     world.run(1, report);
 
-    EXPECT_EQ(rows_named(report, "pipeline"), RULE_NODES);
+    EXPECT_EQ(rows_named(report, "pipeline"), 1u);
     EXPECT_EQ(world.rule_registration(CELL, 0), 0u);
     EXPECT_EQ(world.rule_registration(CELL + 1, 0), 1u)
         << "the three nodes of the second region's rule share the index after the first";

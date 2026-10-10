@@ -8,145 +8,206 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_distributed.cpp
 
-The tests of the distributed layer in this file need no hardware. They cover wire-protocol
-serialization, the in-process transport switchboard that simulates a cluster on one machine, and the
-registries and policy on the master. An integration test,
-`modules/extension/distributed/tests/test_distributed_e2e.cpp`, covers end-to-end kernel offload.
+The tests in this file need no hardware. They cover what `test_wire_format.cpp` does not pin about
+the codec, the in-process transport in both directions, and the offload policy.
+`test_wire_format.cpp` holds the golden bytes, the truncations and the range checks of every
+message; `test_buffer_registry.cpp` holds the registry.
 
-### `BufferRegistryVersioning`
+### `SeededDispatchesSurviveAWholeFrame`
 
-Registering the same pointer again raises the version and keeps the existing id. The version is how
-a stale handle is detected when a USM address is reused.
+The golden test pins one dispatch. This one encodes 200 dispatches drawn from seed 20261010 with
+`append_frame`, reads the header back and decodes the payload. Every wire field must come back
+equal, and `metadata.name` must not, because the name stays off the wire. A parameter is zero one
+time in four, so the encoder's cut of trailing zero parameters is exercised with and without a tail.
+
+### `InProcessTransportDeliversBothDirections`
+
+A master endpoint and a worker endpoint each start with a recording `TransportEvents`. The test
+waits on the `on_peer_connected` event of both sides, sends one control frame each way and checks
+that each side sees the frame under the `PeerId` its own `on_peer_connected` named, with the type,
+flags 0 and the payload it was sent.
 
 ### Offload policy tests
 
-The offload policy tests drive `pick_worker()` of `LeastLoadedOffloadPolicy` with synthetic
-`WorkerStats`. They validate the cost model (round-trip time, transfer and queue backlog) and its
-gates without a live cluster.
+The policy tests call `pick_worker()` of `LeastLoadedOffloadPolicy` with synthetic `WorkerStats`
+and no cluster. They cover the byte gate, the round-trip and backlog terms of the estimate, the
+free-memory gate, and the worker that is not alive.
 
-### `live_worker`
+### `live_worker`, `pick`
 
-`live_worker` creates synthetic `WorkerStats` for the policy tests.
+`live_worker` builds the `WorkerStats` of one live worker. `pick` asks a default policy to place a
+task of a given size on a list of workers.
 
 ### Malformed wire input
 
-The distributed layer sits on an unauthenticated trust boundary. Every deserialize path must survive
-garbage without a crash, without reading past the end, and without allocating an amount an attacker
-chose. The tests of the `Unit_DistributedProtocolFuzz` suite exercise the surfaces where findings
-C1, C3 and H7 of `docs/archive/slop/CODE_AND_ARCHITECTURE_REVIEW.md` were: a blob length prefix that
-is oversized or overflows, a truncated stream, and an empty payload.
+A frame's payload is decoded before its sender is trusted with anything else, so a decoder must
+refuse garbage without reading past the payload. The `Unit_DistributedProtocolFuzz` suite feeds
+seeded damage to the decoders; under the ASan lane an out-of-bounds read fails the run.
 
-### `GetBlobRejectsOverflowingLength`
+### `TaskResultRefusesACountItCannotHold`
 
-A blob length prefix so large that `pos_ + bytes` wraps around must be rejected by the bounds check,
-which compares `bytes > size - pos` and performs no addition. Otherwise the call would yield a span
-about 2^64 bytes long. This is the regression behind finding C3.
+A `TASK_RESULT` that claims 1000 outputs and carries none must fail at the count, offset 9, with
+`OutOfRange`, and leave the output list empty. `ListCountBoundedByRemainingBytes` of
+`test_wire_format.cpp` pins the same rule for `PROOF` and `TASK_DISPATCH`.
 
-### `GetBlobRejectsOversizedLength`
+### `SeededMutationsDecodeOrFailInsideThePayload`
 
-A length prefix that is larger than what remains, without overflowing, is still out of bounds and
-must fail cleanly.
+`every_sample` encodes one well-formed payload per message type. Each is damaged 500 times by
+`mutated`: one byte replaced, the tail cut, up to 8 bytes appended, or four bytes in a row set to
+0xFF. Every decode must return, and the offset it reports must lie inside the damaged payload.
 
-### `BufferPushSurvivesOverflowingBlobLength`
+### `SeededHeadersPassOnlyInsideTheirRanges`
 
-`BufferPushMsg::deserialize` on a hostile oversized length must not crash and must not attempt an
-allocation of 2^64 bytes. It should return an empty payload.
+4000 random 12-byte headers are decoded. Three in four carry the magic and version 2 so that the
+type, flag and length checks run. A header that passes must name one of the sixteen types, carry a
+payload length of at most 1 MiB, and carry the last-chunk flag only on `BUFFER_CHUNK`.
 
-### `BufferPushSurvivesTruncatedStream`
+### Cases removed with protocol v1
 
-A truncated stream, with a handle and no blob, deserializes to an empty payload and does not read
-past the end.
-
-### `TaskResultSurvivesTruncatedOutputs`
-
-A `TaskResultMsg` that claims more outputs than the buffer can hold must stop at the first failed
-extraction and must not loop past the end.
-
-### `DeserializeEmptyPayloadIsSafe`
-
-Deserializing an empty payload does nothing and yields empty fields. It never reads out of bounds.
+| Old test | Why it is gone |
+| --- | --- |
+| `ProtocolRoundTrip` | `GoldenBytes_TaskDispatch` pins the fixed case; the seeded round trip replaces it |
+| `BufferPushRoundTrip` | `BufferPushMsg` no longer exists; `GoldenBytes_BufferChunk` pins its successor |
+| `BufferRegistryVersioning` | It expected a second `register_buffer` to raise the version, which it no longer does; `test_buffer_registry.cpp` pins the registry |
+| `GetBlobRejectsOverflowingLength`, `GetBlobRejectsOversizedLength`, `BufferPushSurvivesOverflowingBlobLength` | No v2 message carries a length-prefixed blob: chunk data runs to the end of the frame |
+| `BufferPushSurvivesTruncatedStream`, `DeserializeEmptyPayloadIsSafe` | `EveryTruncationFailsCleanly` decodes every prefix of every message, the empty one included |
 
 ## test_distributed_e2e.cpp
 
-The file runs end-to-end offload on a real SYCL device. A master and one or more workers in the same
-process exercise the full chain: `compile()` offload stamping, the dispatch branch, the buffer pull,
-the remote kernel, the result writeback, the successor release and the graph completion. An atomic
-counter in the kernel proves that the work ran on the worker and not on the local fallback.
+The file runs offload end to end on a real SYCL device, with a master and its workers in one
+process. Most tests use a real `WorkerAgent` on the in-process fabric; the tests that need a worker
+to misbehave use `ScriptedWorker`. Every test skips when SYCL reports no device.
 
-### `register_state_step`
+Float buffers hold whole numbers below 2^24, which float addition keeps exact, so `K_TOLERANCE` is
+0 and a comparison is an equality.
 
-`register_state_step` registers the State-step kernel `next[i] = cur[i] + (i % 7)`.
+### `UsmFloats`, `LocalWorker`, `BackgroundRun`
 
-The same rule is given as the fluent local fallback, so an offloaded run must match the closed form
-`seed[i] + steps*(i % 7)` whichever physical buffer the double-buffer swap leaves the result in.
-`ins[0]` is the current field of the step and `outs[0]` its next field; the runtime re-points both
-on every step.
+`UsmFloats` owns one shared USM allocation and frees it. `LocalWorker` owns a worker's
+`RuntimeContext` and its `WorkerAgent`. `BackgroundRun` calls `execute()` on its own thread; a
+test waits for it at most `K_WAIT` (10 s), so a run that never returns fails that test and the
+suite goes on. A run that did not return is detached, not joined.
 
-### `evolve_distributed_state`
+### `vec_add_kernel`, `add_vec_add`
 
-`evolve_distributed_state` evolves a distributed `State<int>` for `steps` steps on an in-process
-cluster with one worker and returns its final field.
+The kernel takes `span<const BufferView>` and reads the element count from the output's
+`size_bytes`. Each registry counts its kernel's runs in an atomic the test owns, which is how a
+test tells a remote run from the local fallback. `add_vec_add` adds the op-tagged task with a
+fallback lambda that computes the same sum.
 
-It builds the cluster with `Distributed::Cluster::attach` on a fluent runtime (`State::distributed`,
-`Graph::add(op, State, ...)`). The per-step rule `next[i] = cur[i] + (i % 7)` is registered
-identically on the worker, so the caller can check the offloaded result against a closed form. The
-helper throws if no SYCL device is present or the worker fails to register, and the caller turns
-that into a clean skip.
+### `ScriptedWorker`
 
-### `OffloadVectorAddRoundTrip`
+A worker endpoint that implements `TransportEvents` itself. It sends `HELLO`, answers `CHALLENGE`
+with a `PROOF` under the empty secret, and answers `PING` with `PONG`, so the master counts it
+alive. It records each `TASK_DISPATCH` and wakes the test through a condition variable. What it
+does next is one of three scripts: `Accept` sends `TASK_ACCEPTED` and holds the task, `Fail` also
+sends `TASK_RESULT` with `KernelFailed`, `FallSilent` sends nothing from then on. Its transport
+does not reconnect. `send_stream` hands the master a `ScriptedFrames` source, because a frame that
+carries the last-chunk flag can only travel in a stream.
 
-The test wires up the in-process cluster with one worker. It constructs both endpoints first so that
-they register on the fabric, then brings the master up before the worker. In the other order the
-worker's HELLO would reach a master that is not serving yet.
+### `StubTransport`
 
-### `FanOutAcrossTwoWorkers`
+An `ITransport` that carries nothing: `exposure()` and `start()` return what the test set, and
+`start_calls()` counts the starts.
 
-Per-worker run counters prove which worker ran which task. A short sleep keeps both tasks in flight
-so that the least-loaded policy spreads them.
+### `eventually`
 
-The test asserts the total and not a per-worker split. Both tasks must have run on workers, but
-which worker gets which task is a scheduling race. Requiring exactly one each is flaky: under load
-the first task can finish before the second is dispatched, and both then go to the same idle worker.
+The master's `stale_writebacks` counter has no event to wait on. `eventually` re-reads a condition,
+yielding between reads, until it holds or `K_WAIT` passes. No test sleeps.
+
+### `OffloadVectorAddRoundTrip`, `FanOutAcrossTwoWorkers`, `OffloadOverTcpLoopback`
+
+One task, or two on two workers, goes through the whole chain: `prepare`, dispatch, the buffer
+pull, the kernel on the worker, the output chunks and the completion. The fan-out test asserts the
+total of the two workers' run counters, not a split: which worker gets which task depends on
+timing. The TCP test binds `TcpMasterOptions` defaults (127.0.0.1, port 0) and reads the port from
+`local_endpoint()` after `attach`.
+
+### `AutoVersionBumpAcrossLocalWriteThenOffloadedRead`
+
+A local task with no operation writes a shared buffer and an offloaded task reads it. The
+buffer's version must rise, and the worker must compute from the values the local task wrote. The
+local writer carries an `OffloadState` with `offloadable == false`: it holds the handles the
+master bumps when the node completes.
 
 ### `WorkerDeathFallsBackToLocal`
 
-The fake worker advertises `VEC_ADD`, heartbeats until it receives a dispatch, and then goes silent
-for good: it never sends `TASK_RESULT`, as a worker that crashed in the middle of a task would.
+A `FallSilent` worker takes the dispatch and stops answering. With a liveness timeout of 300 ms
+the master closes it and resubmits the task, which finishes locally. Until the dispatch the worker
+answers pings, so it cannot be closed early on a slow machine.
 
-The key assertion is implicit. The `execute()` call must return and not deadlock, although the
-worker the task went to never answered.
+### `StaleWritebackIsFenced`
+
+An `Accept` worker holds the dispatched task. The test first streams an output chunk at the
+dispatched version minus one, filled with 999, and waits for `stale_writebacks` to reach 1; the
+output must still hold 7. It then streams a chunk at the dispatched version, filled with 42,
+followed by a succeeded `TASK_RESULT`. The run must return with 42 in the output, one chunk
+received, one refused and nothing resubmitted.
 
 ### `LostBufferPushTimesOutInsteadOfHanging`
 
-The fault policy drops every buffer the master tries to push to the worker, so the worker's input
-pull can never complete.
+The fault policy drops every `BUFFER_CHUNK` from master to worker, so no input arrives. With a
+pull idle timeout of 200 ms the worker reports `InputUnavailable`; the master resubmits, and after
+the attempt cap the task runs locally. The kernel must not have run on the worker.
 
-The graph runs on a side thread, so a regression that hangs for good fails the test by timeout and
-does not block the whole suite.
+### `FluentClusterOffload`, `FluentDistributedStateParity`, `evolve_distributed_state`
 
-### `FluentDistributedStateParity`
+The fluent surface builds the same offload. A `State` swaps its two allocations every step, so
+its handles are resolved at each dispatch; `evolve_distributed_state` runs 4 and 5 steps, which
+leave the result in different allocations, and both must match `seed[i] + steps * (i % 7)`.
 
-The test checks transparent offload of a double-buffered `State` across even and odd step counts.
+### `ClusterDetachAndDisplacement`, `ClusterHandleOutlivesRuntime`
 
-A `State` rotates its two allocations every step, so the compiled plan cannot bake its offload
-handles. The runtime re-points the live pointer lists on every step and the coordinator resolves
-handles at dispatch. An even and an odd number of steps leave the logical result in different
-physical buffers, and no other test has that property, so this one is the sharpest check that the
-live-IO indirection follows the swap. Both runs must match the closed form `seed[i] + steps*(i %
-7)`, and both must have offloaded.
+`detach()` leaves `offload()` null and a second call does nothing. A later `attach()` displaces
+the installed master, and the displaced handle's `detach()` leaves the new one installed. A handle
+that outlives its context still answers `alive_workers()` and `offloaded()`.
 
-### `ClusterDetachAndDisplacement`
+### `StopResubmitsPendingNodes`
 
-The test attaches three masters to one bare context, each on its own fabric with no worker.
-`detach()` must leave `offload()` null, and a second `detach()` on the same handle must do nothing.
-A third `attach()` displaces the second master; the second handle's `detach()` must then leave the
-third installed, because a displaced handle no longer points at the context.
+An `Accept` worker holds the only task while `execute()` waits. The test calls `stop()` on the
+installed coordinator. The run must return with the local result, `redispatched` must be 1 and
+`pending_tasks` 0.
 
-### `ClusterHandleOutlivesRuntime`
+### `TryOffloadAfterStopRunsLocally`
 
-The test destroys the context while two copies of a handle are alive, then calls `detach()` and
-reads counters. Under ASan this is the check that a handle never follows a pointer into a destroyed
-context and that the master outlives the engine that held its address.
+The graph is compiled while a real worker is registered, so its node is offloadable. The
+coordinator is stopped before the run. The worker's kernel must not run, `offloaded` stays 0,
+`declined` rises and the result is the local one.
+
+### `DynamicStateBumpsTheLiveBufferAfterSwap`
+
+A distributed `State` runs two steps with no worker attached, so both steps complete locally: the
+first writes one allocation, the second the other. Both versions must rise, and by the same
+amount. A master that bumped the list recorded at compile time would raise one version twice and
+leave the other.
+
+### `AttachStartFailureLeavesNothingInstalled`
+
+`attach` on a `StubTransport` whose `start()` returns `BindFailed` must throw
+`Core::SushiException` carrying the transport's message, call `start()` once and leave `offload()`
+null. A second `attach` on the same context must then succeed.
+
+### `AttemptCapDoesNotOutliveTheRun`
+
+A `Fail` worker fails every dispatch. One compiled graph runs twice. In each run the worker must
+receive `K_MAXIMUM_OFFLOAD_ATTEMPTS` dispatches before the task runs locally, so the second run
+proves the cap of the first did not pin the node.
+
+### `RefusesEmptySecretOnNetworkExposure`
+
+On a `StubTransport` that reports `Network`, `attach` with an empty secret must throw before
+`start()` is called. With a 32-byte secret the same transport attaches.
+
+### `RegisteredTaskRunsWithAndWithoutAWorker`, `run_registered_sum`
+
+`add_registered_task` adds the vector-add with no lambda. Run with no cluster, the master's own
+registry runs the kernel once. Run with a worker, the worker's registry runs it once and the
+master's not at all. Both outputs must be equal.
+
+### Not covered: `RunReportOffloadedIsPerRun`
+
+`fill_run_report` still copies the cumulative `offloaded` counter into
+`tasks_offloaded_to_network`. The case waits for the per-run count in the api module.
 
 ## test_socket.cpp
 
@@ -203,29 +264,45 @@ The test is reported as skipped, with the OS error, on a machine where `::1` can
 
 ## test_distributed_jepsen.cpp
 
-The file is a soak test in the style of Jepsen. It runs an offload graph under a seeded random fault
-policy, the nemesis, which drops, duplicates, holds, reorders and partitions messages. It asserts
-the safety property the offload model reduces to, determinism under faults: whatever the fault
-schedule, the authoritative buffers must end byte-identical to a fault-free run (every `y == 2*x`).
-It also asserts liveness: `execute()` must return.
+The file is a soak test in the style of Jepsen. It runs an offload graph under a seeded fault
+policy and a nemesis thread, which between them drop, repeat, park, reorder and partition frames.
+It asserts determinism under faults: whatever the schedule, every output must end equal to a
+fault-free run (`out == 2 * in`). It also asserts liveness: `execute()` must return.
 
-The runtime is an offload accelerator with a single authoritative writer, the master. For that model
-the determinism check is the practical equivalent of a linearizability check for a database. It
-costs far less, and it is exactly the contract the runtime promises.
+The runtime is an offload accelerator with one authoritative writer, the master. For that model
+the determinism check stands in for a linearizability check and costs far less.
 
 ### `run_one_scenario`
 
-The cluster assembles cleanly before any fault is injected, so the test exercises recovery at task
-time and not the loss of a registration.
+Two workers register before any fault is injected, so the scenario exercises recovery at task
+time. The master runs with a liveness timeout of 250 ms and a task deadline of 300 ms, the workers
+with a heartbeat of 40 ms and a pull idle timeout of 120 ms.
 
-The nemesis is a per-message fault policy with a seed. The fabric mutex serializes the calls to it,
-so one shared random number generator is safe.
+The graph runs on a `BackgroundRun` with a limit of 30 s. When the limit passes, the scenario
+stops the coordinator, which returns every node it holds, and reports the hang.
 
-The graph runs on a side thread, so a liveness regression fails by timeout and does not block the
-whole suite.
+Before the outputs are read, the nemesis heals the fabric, both workers stop and the cluster
+detaches. From then on no thread writes an output.
 
-The scenario tears the nemesis down and lets every in-flight delivery settle before it reads the
-results and frees the memory.
+### `seeded_faults`, `Nemesis`
+
+`seeded_faults` drops 8 frames in 100, repeats 4 and parks 8. The fabric calls a policy from
+several threads with no lock held, so the policy locks its own random source. `Nemesis` installs
+the policy and runs a thread that flushes parked frames in a shuffled order every 25 ms and, one
+pass in eight, cuts one worker's link for 60 ms. The two intervals pace the faults; the thread
+waits on a condition variable, so `heal()` ends it at once.
+
+### `RegistrationSurvivesMessageLoss`, `drop_first_of`
+
+`drop_first_of` drops the first frame of each listed type. The test loses the first `HELLO`, the
+first `CHALLENGE` and the first `PROOF`. The worker sends `HELLO` again with a fresh nonce after
+each heartbeat interval, so it must register; the policy must have dropped exactly three frames,
+and the task that follows must run on the worker.
+
+### `RegistrationSurvivesALostWelcome`
+
+The same run with only the first `WELCOME` lost. The master has registered the worker by then and
+the worker has not heard it. The test asserts that the task still runs on the worker.
 
 ## test_handshake.cpp
 
@@ -829,3 +906,106 @@ nothing.
 A node that stays local and writes a shared buffer keeps that buffer's handle, and
 `complete_local` raises its version. A node that writes no shared buffer gets no `OffloadState`,
 so its completion returns after one null check and takes no lock.
+
+## test_distributed_tcp_faults.cpp
+
+The file runs a master and a worker in one process over TCP on `127.0.0.1` and breaks the link
+between them. The master is a `Cluster` on a `RuntimeContext` and binds port 0; the test reads the
+port back after `attach`. The worker is a `WorkerAgent` on a second context with one kernel, which
+writes each input byte combined with 0x5a to the output. Every test needs a SYCL device and is
+reported as skipped without one. Every wait is on a condition and bounded at 60 s: a socket read,
+`wait_for_workers`, `wait_for_end`, a future, or `eventually`, which reads a statistics counter
+every 2 ms. The file includes the private headers `socket.hpp`, `wire_frame.hpp` and
+`wire_messages.hpp` by quoted name.
+
+### `tcp_fault_proxy.hpp`
+
+`TcpFaultProxy` listens on a free loopback port and forwards each accepted connection to the
+master, with one pump thread per direction. `set_fault` gives a direction one of five faults:
+`Pass`, `Stall` (hold every byte and the end of the stream), `Cut` (close every connection and
+refuse new ones), `Throttle` (a number of bytes per second) and `Truncate` (forward a number of
+bytes, close, then act as `Cut`). Each fault is one rule in `K_FAULT_RULES`, and the pump asks the
+table. The proxy uses `Socket` and `Listener` of the module, so it holds no platform check.
+`retarget` sends later connections to another master.
+
+### `StrayConnectionTakesNoSlot`
+
+Finding DIST-04. A connection that never sends HELLO stays open while a worker registers. The
+master closes it after the 500 ms handshake timeout without sending it a byte, and it never counts
+as a worker.
+
+### `GarbageBytesClosedMasterLives`, `V1FrameRejected`, `OversizedLengthClosesPeerNotProcess`
+
+Findings DIST-15 and DIST-16. A raw socket writes 12 bytes: the text `GET / HTTP/1`, a version 1
+frame (a 32-bit length and a type byte), or a version 2 header that announces 1 MiB plus one byte.
+The master closes the connection with no reply. A worker then registers, and in the first and
+the third test a task runs on it.
+
+### `WrongSecretRejected`
+
+Finding DIST-03. A worker with another secret ends with `RejectedAuthentication`: it checks the
+master's proof first and sends no PROOF, so the master counts nothing for it. A raw peer then
+answers CHALLENGE with a proof of 0x44 bytes, and `handshake_rejected_auth` is 1.
+
+### `VersionMismatchLoggedOncePerConnection`
+
+Finding DIST-06. Two connections each send two headers of version 3. A sink installed with
+`Core::set_log_sink` counts the ERROR lines that hold `protocol v3`: two after the master is
+detached, one for each connection, and `handshake_rejected_version` is 2.
+
+### `MasterKilledWorkerSurvivesAndReconnects`
+
+Findings DIST-01 and DIST-07. The proxy cuts the link and the master is detached. A second master
+attaches on another port and the proxy is retargeted. The worker registers with it, counts one
+reconnect, and a task runs on it.
+
+### `WorkerCutMidChunkTaskFinishesLocally`
+
+The proxy closes the link 100 000 bytes into a 1 MiB input sent in 64 KiB chunks, and the worker
+does not reconnect. The kernel never runs, the master takes the task back and the local fallback
+writes the output.
+
+### `StalledLinkReapedThenWorkerRejoins`
+
+Finding DIST-05. With a 300 ms liveness timeout the proxy holds every byte until the master has
+reaped the worker. The test raises the timeout to 60 s and lets the bytes pass; the worker
+registers again on a new connection and runs a task.
+
+### `ThrottledTransferKeepsWorkerAlive`
+
+Finding DIST-05. An 8 MiB input crosses at 4 MiB/s under a 500 ms liveness timeout, which takes
+about 2 s; the test checks that it took at least 1.5 s. No worker is lost and no task is reaped,
+because every chunk and every heartbeat counts as a sign of life.
+
+### `ManyChunkBufferCrossesIntact`
+
+Finding DIST-12. 1 MiB goes to the worker and 1 MiB comes back at `chunk_bytes` 4 KiB: 256 chunks
+each way, no abort and no stale writeback.
+
+### `DispatchReturnsWhilePeerStalled`
+
+Finding DIST-14. While the proxy holds every byte, a graph with one offloadable node and one
+native node is started. The native node runs, `offloaded` reaches 1 and the task stays pending;
+the run ends on the worker once the bytes pass.
+
+## Cases added after the composition
+
+`test_worker_main.cpp`: the five exit-code cases of `Integration_WorkerMainTest`
+(`SignalStopsWithExitZero`, `MasterNotReachedExitsTwo`, `AuthenticationRejectExitsThree`,
+`VersionRejectExitsFour`, `MasterLostWithoutReconnectExitsFive`) call `serve_worker()` of
+`source/worker_session.hpp` over an in-process fabric, with a scripted `FakeMaster` on the master
+endpoint and `StopSignal::request()` in place of a signal. `RunWorkerOverTcpReturnsTheCodeOfItsEnd`
+is the one case that runs `run_worker()` itself, over TCP loopback on a port the OS chooses. No
+test raises a signal.
+
+`test_worker_bricks.cpp`: `DisconnectEndsAnOpenInputPull` runs an executor with no pull timeout, so
+the task result can only arrive because `discard_queued()` ended the pull.
+`LossAfterGoodbyeIsTheWorkersOwn` pins that a link that said goodbye reports a loss and an
+abandoned connect as `LinkChange::None` and ends as `Stopped`.
+
+`test_offload_dispatcher.cpp`: `NodeThatWritesOneBufferTwiceStaysLocal` pins the third reason of
+the `prepare()` warning for a fixed and a double-buffered node, and that the same buffer as input
+and output still leaves.
+
+`test_worker_directory.cpp`: `IdentityCarriesTheBuildOfTheLastHello` pins
+`WorkerDirectory::identity()`.
