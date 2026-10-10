@@ -46,6 +46,7 @@
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/scheduler/pin_policy.hpp>
+#include <SushiRuntime/scheduler/quiescence_latch.hpp>
 #include <SushiRuntime/scheduler/run_outcome.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
@@ -258,11 +259,7 @@ namespace SushiRuntime
                  * @brief Counts tasks submitted for the run but not yet reaped.
                  * @see modules/engine/scheduler/README.md
                  */
-                std::atomic<long long> inflight_{0};
-                /** @brief Guards the wait_quiescent() predicate against lost wakeups. */
-                std::mutex quiesce_mutex_;
-                /** @brief Signalled by the poller when inflight_ reaches zero. */
-                std::condition_variable quiesce_cv_;
+                QuiescenceLatch quiescence_;
 
                 // --- NUMA-aware hierarchical stealing (built once at construction) ---
                 /** @brief NUMA node of each worker (= node of the core it is pinned to). */

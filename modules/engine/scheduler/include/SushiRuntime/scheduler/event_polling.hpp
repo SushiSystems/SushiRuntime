@@ -36,6 +36,7 @@
 #include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/scheduler/quiescence_latch.hpp>
 #include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
@@ -192,19 +193,13 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Wires the scheduler's run-quiescence tracker into the poller.
-                 * @param counter In-flight task counter owned by the scheduler.
-                 * @param mutex Guards the wait predicate against a lost wakeup.
-                 * @param cv Signalled when the counter reaches zero.
+                 * @brief Wires the scheduler's run-quiescence latch into the poller.
+                 * @param latch Owned by the scheduler and outlives the poller; null unwires it.
                  * @see modules/engine/scheduler/README.md
                  */
-                void set_inflight_tracker(std::atomic<long long>* counter,
-                                          std::mutex* mutex,
-                                          std::condition_variable* cv) noexcept
+                void set_inflight_tracker(QuiescenceLatch* latch) noexcept
                 {
-                    inflight_ = counter;
-                    quiesce_mutex_ = mutex;
-                    quiesce_cv_ = cv;
+                    quiescence_ = latch;
                 }
 
             private:
@@ -217,7 +212,8 @@ namespace SushiRuntime
                  */
                 void add_inflight() noexcept
                 {
-                    if (inflight_) inflight_->fetch_add(1, std::memory_order_relaxed);
+                    if (quiescence_ != nullptr)
+                        quiescence_->add();
                 }
 
                 /**
@@ -227,21 +223,12 @@ namespace SushiRuntime
                  */
                 void drop_inflight() noexcept
                 {
-                    if (!inflight_) return;
-                    if (inflight_->fetch_sub(1, std::memory_order_acq_rel) == 1)
-                    {
-                        if (quiesce_mutex_ && quiesce_cv_)
-                        {
-                            { std::lock_guard<std::mutex> lock(*quiesce_mutex_); }
-                            quiesce_cv_->notify_all();
-                        }
-                    }
+                    if (quiescence_ != nullptr)
+                        quiescence_->retire();
                 }
 
-                /** @brief In-flight run-quiescence tracker (scheduler-owned, may be null). */
-                std::atomic<long long>*  inflight_ = nullptr;
-                std::mutex*              quiesce_mutex_ = nullptr;
-                std::condition_variable* quiesce_cv_ = nullptr;
+                /** @brief Run-quiescence latch, owned by the scheduler; null when none is wired. */
+                QuiescenceLatch* quiescence_ = nullptr;
 
                 /** @brief Told of each locally completed graph node; null for none. */
                 Graph::OffloadCoordinator* offload_ = nullptr;

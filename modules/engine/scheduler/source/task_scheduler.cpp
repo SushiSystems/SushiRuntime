@@ -132,7 +132,7 @@ namespace SushiRuntime
             build_steal_topology();
 
             // The poller owns the run-quiescence counter's updates (modules/engine/scheduler/README.md).
-            event_poller.set_inflight_tracker(&inflight_, &quiesce_mutex_, &quiesce_cv_);
+            event_poller.set_inflight_tracker(&quiescence_);
 
             if (pinning_ == PinPolicy::Pin)
             {
@@ -546,11 +546,7 @@ namespace SushiRuntime
                         else
                         {
                             // Its quiescence count retires here (modules/engine/scheduler/README.md).
-                            if (inflight_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-                            {
-                                std::lock_guard<std::mutex> lock(quiesce_mutex_);
-                                quiesce_cv_.notify_all();
-                            }
+                            quiescence_.retire();
                         }
                     }
                 }
@@ -920,7 +916,7 @@ namespace SushiRuntime
             task->add_ref();
 
             // The task is counted before workers can reach it (modules/engine/scheduler/README.md).
-            inflight_.fetch_add(1, std::memory_order_relaxed);
+            quiescence_.add();
 
             // External submissions use the injector, not a worker deque (modules/engine/scheduler/README.md).
             {
@@ -968,8 +964,7 @@ namespace SushiRuntime
                         ++normal_added;
                     }
                 }
-                inflight_.fetch_add(static_cast<long long>(normal_added + priority_added),
-                                    std::memory_order_relaxed);
+                quiescence_.add(normal_added + priority_added);
                 if (normal_added)
                     pending_count_.store(pending_submissions.size(), std::memory_order_relaxed);
                 if (priority_added)
@@ -983,17 +978,11 @@ namespace SushiRuntime
         /**
          * @brief Blocks until every task submitted for the run has been reaped.
          *
-         * See the header and inflight_. The predicate reads the counter under the
-         * same mutex the poller locks before notifying, so a decrement to zero that
-         * lands just before this thread parks is never missed.
+         * @see modules/engine/scheduler/README.md
          */
         void TaskScheduler::wait_quiescent()
         {
-            std::unique_lock<std::mutex> lock(quiesce_mutex_);
-            quiesce_cv_.wait(lock, [this]
-            {
-                return inflight_.load(std::memory_order_acquire) <= 0;
-            });
+            quiescence_.wait();
         }
 
         /**
