@@ -3622,3 +3622,108 @@ What each later task must know that its headers do not say:
   transport option, separate from the cluster's liveness.
 - **T15 applications**: `distributed_demo.cpp` and `benchmark_distributed_offload.cpp` use the old
   factories, the old `WorkerAgent` and the pointer kernel.
+
+### What the bricks of wave 3 decided (T6 to T10)
+
+Written by the workers that implemented the bricks; the composition tasks (T11, T12), the test
+tasks (T13, T14) and the application task (T15) start from here. A brick's private section is
+the implementer's: storage is held directly as members, public declarations are fixed.
+
+**Transports (T6)**
+
+- The transports log neither a bind failure nor "listening on": `start()` returns the bind
+  message in `TransportResult::message`, and the coordinator logs it with the authentication
+  state. They do log a handler exception (ERROR), the connector's "cannot reach master" (WARN,
+  first and every tenth), accept failures and busy refusals (WARN, first and every tenth),
+  thread-start failures (ERROR), accept and connect (DEBUG).
+- `stop()` drops queued control frames. To get a `GOODBYE` out, call `close_peer()` and wait for
+  `on_peer_lost(ClosedLocally)` before `stop()`.
+- The TCP worker transport keeps reconnecting after `VersionMismatch` or `BadMagic`; the agent
+  calls `stop()` to exit with code 4. A connection that ended sooner than `backoff_ceiling`
+  keeps its backoff.
+- `PeerLoss::text` holds `first four 0x........` for `BadMagic`, the offending field for
+  `MalformedFrame`, `what()` for `HandlerFailed`, `describe(result)` for `IoFailed`.
+- `on_connect_abandoned` runs after that peer's `on_peer_lost` has returned.
+- In-process: frames, close notices and connection attempts are discarded while a link is cut;
+  streams are pulled only while the receiver's inbox holds fewer than 16 undelivered frames of
+  that link; the worker polls for a master every `reconnect_delay` (1 ms by default).
+- `REJECT(busy)` and `REJECT(version)` are best effort: the socket is shut down right after the
+  write, so a test asserts on slots and events, not on receiving the frame. A refused connection
+  gets no `PeerId` and makes no event. The acceptor polls `accept` every 100 ms, so a master's
+  `stop()` takes up to 100 ms. A stall is reported as `WriteStalled` only when the peer keeps the
+  connection open.
+- `TcpTransport::statistics()` takes the peer-table mutex briefly; the header's "takes no lock"
+  holds for the in-process transport only.
+- The conformance suite is a typed test, so its names start with `Unit_` and the label filter
+  matches them.
+
+**`PendingTasks` and `WorkerDirectory` (T7, T8)**
+
+- `HelloReply::master_proof` is a `Sha256Digest` over `std::uint8_t`; the wire's
+  `ChallengeMessage::master_proof` is `std::array<std::byte, 32>`. The handler converts.
+- `accept_hello` keeps `node_name` and drops `build_id`; the "registered" log line takes the
+  build id from the handler's own copy of `HELLO`.
+- The handshake deadline runs from `add_peer`; a repeated `HELLO` does not restart it. After
+  `AuthenticationFailed` the peer owes a new `HELLO`.
+- `accept_proof` registers a peer even after `close()`; only `pick` and the waiters look at the
+  closed flag.
+- `take_silent` and both overdue tests use strictly greater than. `note_frame` never brings a
+  taken worker back; `admits` still passes its frames until `remove_peer`, so a late result
+  reaches `PendingTasks::take` and finds nothing.
+- `pick` does not call the policy when no worker has room, and a policy answer that names a
+  worker it was not offered counts as no pick. A worker that sends `max_jobs` 0 is never offered.
+- `take_overdue` picks the cause in this order: Unacknowledged, LostResult, Deadline. The order
+  of tasks out of `take_for_worker`, `take_overdue` and `drain` is unspecified. `drain` works
+  whether or not `close()` was called.
+- `wait_for_workers` clamps the timeout to one year.
+
+**Registry and exchange (T9)**
+
+- Chunk prefix, 37 bytes, exactly what `BufferChunkMessage::encode` writes with empty data:
+  `purpose u8`, `task_id u64`, `handle.id u64`, `handle.version u32`, `handle.size_bytes u64`,
+  `offset u64`. Data follows to the end of the payload.
+- Pull stream: `BUFFER_CHUNK` frames in rising offset, purpose `PullReply`, `task_id` 0, the
+  handle carrying the requested version and the buffer's whole size; the last-chunk flag on the
+  final chunk; a 0-byte buffer is one empty flagged chunk. On `Stale` or `Gone` the final frame
+  is `BUFFER_ABORT`, and chunks already sent are not followed by a last-chunk frame.
+- Output chunks: the worker flags the chunk that ends at `handle.size_bytes` and no other, and
+  every chunk carries the whole buffer size and the dispatched version. Offset 0 always restarts
+  a transfer. Any refusal discards the transfer's progress. `finish_task` returns true only when
+  every output handle has a transfer that ended with a flagged chunk at its size; for a task
+  with no outputs it returns true.
+- `register_buffer` on an address already shared returns the handle unchanged; the old code
+  raised the version, and one old test expects the raise.
+- The registry lock is held for one hash lookup and one `memcpy` of at most `chunk_bytes`; it is
+  shared with `bump`, `resolve` in `try_offload`, registration and every other peer's chunk.
+
+**Worker bricks (T10)**
+
+- The executor sends `TASK_ACCEPTED` itself, inside `enqueue()` when it returns `Queued`; the
+  agent does not. A task that fails at once can put its `TASK_RESULT` on the wire before its
+  `TASK_ACCEPTED`.
+- The agent calls `link.note_frame(peer)` for every frame before routing it, and routes
+  `BUFFER_CHUNK` with purpose `PullReply` to `accept_chunk(chunk, last flag)`, `BUFFER_ABORT` to
+  `abort_transfer`, `BUFFER_RELEASE` to `release`.
+- `LinkChange`: `RegisteredNewSession` clears the cache and the deduplicator (the first
+  registration returns it too); `Disconnected` calls `executor.discard_queued()`, which also
+  resets the held-task ledger; `Ended` reads `link.end()`.
+- Dispatch path: `if (dedup.mark_seen(id)) executor.enqueue(peer, std::move(dispatch),
+  link.chunk_bytes())`; on `QueueFull` nothing is sent.
+- Stop order: `executor.stop()`, `link.say_goodbye()`, `transport.stop()`, `link.stop()`, then
+  the cache is destroyed. The cache outlives `transport.stop()`, where kept streams are destroyed
+  and unpin. `executor.stop()` can block for up to `pull_idle_timeout`; `cache.clear()` wakes it.
+- The link has no endpoint, so the agent logs `host:port` in `on_peer_connected` and the
+  transport's cause in `on_connect_abandoned`, and the worker's statistics at INFO on shutdown.
+- A throwing `free_memory_probe` escapes `on_ping` to the transport, which closes the peer.
+- The link keeps the last four nonces of a connection, so a late `CHALLENGE` for an older one is
+  ignored. Inputs are pulled one at a time, in dispatch order.
+- The logger has no level below DEBUG, so per-task lines are DEBUG.
+
+**Left for the composition tasks to fold in**
+
+- The try/catch wrapper around the three transport events is written twice
+  (`peer_connection.cpp`, `in_process_transport.cpp`), and `send_message` (encode, then
+  `transport.send`) twice (`master_link.cpp`, `dispatch_executor.cpp`). Each belongs in one
+  private header.
+- `Wire::TaskResultStatus` has no value for a full queue.
+- `FrameSource::next()` is `noexcept` and its first `resize` allocates.

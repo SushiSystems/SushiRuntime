@@ -33,10 +33,12 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <SushiRuntime/core/export.hpp>
@@ -233,6 +235,72 @@ namespace SushiRuntime
                 void close() noexcept;
 
             private:
+                /** @brief Names how far the handshake of a peer has come. */
+                enum class Phase : std::uint8_t
+                {
+                    AwaitsHello, /**< Connected; owes HELLO. */
+                    AwaitsProof, /**< Sent HELLO; owes PROOF. */
+                    Registered,  /**< Proved the secret; a worker. */
+                };
+
+                /** @brief Holds the session of one peer. */
+                struct Session
+                {
+                    /** @brief How far the handshake has come. */
+                    Phase phase = Phase::AwaitsHello;
+
+                    /** @brief Whether the peer is a worker that pick() may offer. */
+                    bool alive = false;
+
+                    /** @brief Whether take_handshake_overdue() listed the peer. */
+                    bool handshake_overdue_listed = false;
+
+                    /** @brief The name from HELLO. */
+                    std::string name;
+
+                    /** @brief The endpoint the transport reported. */
+                    std::string endpoint;
+
+                    /** @brief The nonce of the last HELLO. */
+                    HandshakeNonce worker_nonce{};
+
+                    /** @brief The nonce the master answered that HELLO with. */
+                    HandshakeNonce master_nonce{};
+
+                    /** @brief The operations from PROOF. */
+                    std::vector<Graph::OpID> operations;
+
+                    /** @brief The task limit from PROOF. */
+                    std::uint32_t max_jobs = 0;
+
+                    /** @brief Tasks picked for the worker and not released. */
+                    std::uint32_t inflight = 0;
+
+                    /** @brief The round trip of the last PONG in microseconds. */
+                    std::uint32_t rtt_micros = 0;
+
+                    /** @brief The queue depth of the last HEARTBEAT. */
+                    std::uint32_t queue_depth = 0;
+
+                    /** @brief The free memory of the last PONG in bytes. */
+                    std::uint64_t free_mem = 0;
+
+                    /** @brief The cache size of the last HEARTBEAT in bytes. */
+                    std::uint64_t cache_bytes = 0;
+
+                    /** @brief The time add_peer() was given. */
+                    std::chrono::steady_clock::time_point connected_at;
+
+                    /** @brief The time of the last frame of the peer. */
+                    std::chrono::steady_clock::time_point last_frame;
+                };
+
+                /** @brief Returns whether pick() may offer the worker of a session. */
+                [[nodiscard]] static bool has_room(const Session& session) noexcept;
+
+                /** @brief Marks a worker not alive and uncounts it; called under the mutex. */
+                void retire(Session& session) noexcept;
+
                 /// @brief Guards the sessions; held across IOffloadPolicy::pick_worker() only.
                 mutable std::mutex mutex_;
 
@@ -250,6 +318,15 @@ namespace SushiRuntime
 
                 /// @brief Set by close().
                 bool closed_ = false;
+
+                /// @brief The sessions by the value of their PeerId, in rising order.
+                std::map<std::uint32_t, Session> sessions_;
+
+                /// @brief The number of alive workers per operation id value.
+                std::unordered_map<std::uint32_t, std::size_t> workers_per_operation_;
+
+                /// @brief The workers offered to the policy; reused by every pick().
+                std::vector<WorkerStats> candidates_;
         };
 
     } // namespace Distributed

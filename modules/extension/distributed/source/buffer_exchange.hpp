@@ -46,6 +46,8 @@ namespace SushiRuntime
 {
     namespace Distributed
     {
+        class OutputTransferTable;
+
         /**
          * @brief Names what apply_output_chunk() did with a chunk.
          */
@@ -154,6 +156,9 @@ namespace SushiRuntime
 
                 /// @brief Output chunks refused as Stale.
                 std::atomic<std::uint64_t> stale_writebacks_{0};
+
+                /// @brief Next expected offset of every incoming transfer, by task and buffer.
+                std::unique_ptr<OutputTransferTable> transfers_;
         };
 
     } // namespace Distributed

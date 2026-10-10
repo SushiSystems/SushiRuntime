@@ -21,117 +21,205 @@
 
 /**
  * @file buffer_registry.cpp
- * @brief Maps USM pointers to stable buffer ids and versions.
+ * @brief Keeps the ids and versions of shared buffers and copies their bytes under one lock.
  * @author Mustafa Garip
+ * @see modules/extension/distributed/README.md
  */
 
-#include <SushiRuntime/distributed/buffer_registry.hpp>
+#include "buffer_registry.hpp"
+
+#include <cstring>
+#include <new>
 
 namespace SushiRuntime
 {
     namespace Distributed
     {
-        /**
-         * @brief Registers a USM buffer or bumps a known one's version (modules/extension/distributed/README.md).
-         * @param usm_ptr The memory pointer to track.
-         * @param size_bytes The size of the memory buffer in bytes.
-         * @return A BufferHandle containing the registration details.
-         */
-        BufferHandle BufferRegistry::register_buffer(void* usm_ptr, uint64_t size_bytes)
+        namespace
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-
-            // A live pointer keeps its id and gains a version (modules/extension/distributed/README.md).
-            if (auto it = by_ptr_.find(usm_ptr); it != by_ptr_.end())
+            /**
+             * @brief Returns whether a buffer at @p current admits a copy of @p length bytes
+             *        at @p offset for a caller that names @p version.
+             * @return Ok, Stale or OutOfRange; never Gone.
+             */
+            BufferAccessStatus admit_access(const BufferHandle& current, std::uint32_t version,
+                                            std::uint64_t offset, std::size_t length) noexcept
             {
-                ++it->second.version;
-                return it->second;
+                if (current.version != version)
+                    return BufferAccessStatus::Stale;
+
+                if (offset > current.size_bytes || length > current.size_bytes - offset)
+                    return BufferAccessStatus::OutOfRange;
+
+                return BufferAccessStatus::Ok;
             }
+        } // namespace
 
-            BufferHandle h;
-            h.id.value    = next_id_++;
-            h.version     = 1;
-            h.size_bytes  = size_bytes;
+        BufferRegistry::BufferRegistry() = default;
 
-            by_ptr_[usm_ptr]      = h;
-            ptr_by_id_[h.id.value] = usm_ptr;
-            return h;
-        }
+        BufferRegistry::~BufferRegistry() = default;
 
-        /**
-         * @brief Increments the version of a registered buffer.
-         * Locates the buffer by its pointer and updates the version count to invalidate stale copies.
-         * @param usm_ptr The memory pointer associated with the buffer.
-         */
-        void BufferRegistry::bump_version(void* usm_ptr)
+        BufferHandle BufferRegistry::register_buffer(void* address, std::uint64_t size_bytes)
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (auto it = by_ptr_.find(usm_ptr); it != by_ptr_.end())
-                ++it->second.version;
-        }
 
-        /**
-         * @brief Increments the version of a registered buffer using its global ID.
-         * Locates the buffer by its ID and updates the version count to invalidate stale copies.
-         * @param id The GlobalBufferID identifying the buffer.
-         */
-        void BufferRegistry::bump_version_by_id(GlobalBufferID id)
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            auto pit = ptr_by_id_.find(id.value);
-            if (pit == ptr_by_id_.end())
-                return;
-            if (auto it = by_ptr_.find(pit->second); it != by_ptr_.end())
-                ++it->second.version;
-        }
+            const auto known = id_by_address_.find(address);
+            if (known != id_by_address_.end())
+                return by_id_.find(known->second)->second.handle;
 
-        /**
-         * @brief Removes a buffer from the registry.
-         * Erases the internal tracking data associated with the given pointer.
-         * @param usm_ptr The memory pointer to unregister.
-         */
-        void BufferRegistry::unregister_buffer(void* usm_ptr)
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (auto it = by_ptr_.find(usm_ptr); it != by_ptr_.end())
+            Entry entry;
+            entry.address = address;
+            entry.handle.id.value = next_id_;
+            entry.handle.version = 1;
+            entry.handle.size_bytes = size_bytes;
+
+            // Every address in id_by_address_ has its entry in by_id_; a half insert is undone.
+            by_id_.emplace(next_id_, entry);
+            try
             {
-                ptr_by_id_.erase(it->second.id.value);
-                by_ptr_.erase(it);
+                id_by_address_.emplace(address, next_id_);
             }
+            catch (const std::bad_alloc&)
+            {
+                by_id_.erase(next_id_);
+                throw std::bad_alloc();
+            }
+            ++next_id_;
+            return entry.handle;
         }
 
-        /**
-         * @brief Retrieves the buffer handle associated with a specific pointer.
-         * Looks up the pointer in the registry and returns its handle if found.
-         * @param usm_ptr The memory pointer to look up.
-         * @return An std::optional containing the BufferHandle if found, or std::nullopt otherwise.
-         */
-        std::optional<BufferHandle> BufferRegistry::lookup(void* usm_ptr) const
+        GlobalBufferID BufferRegistry::unregister_buffer(void* address) noexcept
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (auto it = by_ptr_.find(usm_ptr); it != by_ptr_.end())
-                return it->second;
-            return std::nullopt;
+
+            const auto known = id_by_address_.find(address);
+            if (known == id_by_address_.end())
+                return GlobalBufferID{};
+
+            const GlobalBufferID id{known->second};
+            by_id_.erase(known->second);
+            id_by_address_.erase(known);
+            return id;
         }
 
-        /**
-         * @brief Retrieves the buffer entry associated with a specific global ID.
-         * Looks up the ID in the registry and returns its corresponding entry.
-         * @param id The GlobalBufferID to look up.
-         * @return An std::optional containing the BufferRegistry::Entry if found, or std::nullopt otherwise.
-         */
-        std::optional<BufferRegistry::Entry> BufferRegistry::lookup_by_id(GlobalBufferID id) const
+        std::optional<BufferHandle> BufferRegistry::lookup(void* address) const
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            auto pit = ptr_by_id_.find(id.value);
-            if (pit == ptr_by_id_.end())
+
+            const auto known = id_by_address_.find(address);
+            if (known == id_by_address_.end())
                 return std::nullopt;
 
-            auto hit = by_ptr_.find(pit->second);
-            if (hit == by_ptr_.end())
+            return by_id_.find(known->second)->second.handle;
+        }
+
+        std::optional<BufferHandle> BufferRegistry::lookup_by_id(GlobalBufferID id) const
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            const auto entry = by_id_.find(id.value);
+            if (entry == by_id_.end())
                 return std::nullopt;
 
-            return Entry{ pit->second, hit->second };
+            return entry->second.handle;
+        }
+
+        bool BufferRegistry::resolve(SushiRuntime::span<void* const> addresses,
+                                     std::vector<BufferHandle>& out) const
+        {
+            out.clear();
+            out.reserve(addresses.size());
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (void* address : addresses)
+            {
+                const auto known = id_by_address_.find(address);
+                if (known == id_by_address_.end())
+                    return false;
+
+                out.push_back(by_id_.find(known->second)->second.handle);
+            }
+            return true;
+        }
+
+        bool BufferRegistry::refresh(SushiRuntime::span<BufferHandle> handles) const
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (BufferHandle& handle : handles)
+            {
+                const auto entry = by_id_.find(handle.id.value);
+                if (entry == by_id_.end())
+                    return false;
+
+                handle.version = entry->second.handle.version;
+            }
+            return true;
+        }
+
+        void BufferRegistry::bump(SushiRuntime::span<BufferHandle> handles) noexcept
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (BufferHandle& handle : handles)
+            {
+                const auto entry = by_id_.find(handle.id.value);
+                if (entry == by_id_.end())
+                    continue;
+
+                handle.version = ++entry->second.handle.version;
+            }
+        }
+
+        void BufferRegistry::bump_addresses(SushiRuntime::span<void* const> addresses) noexcept
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (void* address : addresses)
+            {
+                const auto known = id_by_address_.find(address);
+                if (known == id_by_address_.end())
+                    continue;
+
+                ++by_id_.find(known->second)->second.handle.version;
+            }
+        }
+
+        BufferAccessStatus BufferRegistry::read(GlobalBufferID id, std::uint32_t version,
+                                                std::uint64_t offset,
+                                                SushiRuntime::span<std::byte> out) const
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            const auto entry = by_id_.find(id.value);
+            if (entry == by_id_.end())
+                return BufferAccessStatus::Gone;
+
+            const BufferAccessStatus status =
+                admit_access(entry->second.handle, version, offset, out.size());
+            if (status != BufferAccessStatus::Ok || out.empty())
+                return status;
+
+            const auto* base = static_cast<const std::byte*>(entry->second.address);
+            std::memcpy(out.data(), base + offset, out.size());
+            return BufferAccessStatus::Ok;
+        }
+
+        BufferAccessStatus BufferRegistry::write(GlobalBufferID id, std::uint32_t version,
+                                                 std::uint64_t offset,
+                                                 SushiRuntime::span<const std::byte> in)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            const auto entry = by_id_.find(id.value);
+            if (entry == by_id_.end())
+                return BufferAccessStatus::Gone;
+
+            const BufferAccessStatus status =
+                admit_access(entry->second.handle, version, offset, in.size());
+            if (status != BufferAccessStatus::Ok || in.empty())
+                return status;
+
+            auto* base = static_cast<std::byte*>(entry->second.address);
+            std::memcpy(base + offset, in.data(), in.size());
+            return BufferAccessStatus::Ok;
         }
 
     } // namespace Distributed

@@ -21,61 +21,73 @@
 
 /**
  * @file kernel_registry.cpp
- * @brief Stores the remote kernels a worker can run, keyed by operation id.
+ * @brief Implements KernelRegistry and the adapter for kernels that take bare addresses.
  * @author Mustafa Garip
  */
 
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 
+#include <utility>
+
 namespace SushiRuntime
 {
     namespace Distributed
     {
-        /**
-         * @brief Registers a remote kernel for a specific operation ID.
-         * Stores the kernel function in the registry for future execution.
-         * @param id The Graph::OpID identifying the operation.
-         * @param fn The RemoteKernel function to register.
-         */
-        void KernelRegistry::register_kernel(Graph::OpID id, RemoteKernel fn)
+        namespace
         {
-            kernels_[id.value] = std::move(fn);
+            /** @brief Returns the addresses of a list of views, in the same order. */
+            std::vector<void*> addresses_of(SushiRuntime::span<const BufferView> views)
+            {
+                std::vector<void*> addresses;
+                addresses.reserve(views.size());
+                for (const BufferView& view : views)
+                    addresses.push_back(view.data);
+                return addresses;
+            }
+        } // namespace
+
+        void KernelRegistry::register_kernel(Graph::OpID id, Kernel kernel)
+        {
+            kernels_[id.value] = std::move(kernel);
         }
 
-        /**
-         * @brief Checks if a kernel is registered for the given operation ID.
-         * Determines if the registry contains an entry for the specified ID.
-         * @param id The Graph::OpID to check.
-         * @return A boolean which is true if the kernel is registered, false otherwise.
-         */
+        void KernelRegistry::register_kernel(Graph::OpID id, RemoteKernel kernel)
+        {
+            Kernel adapter = [legacy = std::move(kernel)](
+                                 sycl::queue& queue, SushiRuntime::span<const BufferView> inputs,
+                                 SushiRuntime::span<const BufferView> outputs,
+                                 const Graph::TaskMetadata& metadata) -> sycl::event
+            {
+                const std::vector<void*> input_addresses = addresses_of(inputs);
+                const std::vector<void*> output_addresses = addresses_of(outputs);
+                return legacy(
+                    queue,
+                    SushiRuntime::span<void* const>(input_addresses.data(),
+                                                    input_addresses.size()),
+                    SushiRuntime::span<void* const>(output_addresses.data(),
+                                                    output_addresses.size()),
+                    metadata);
+            };
+            kernels_[id.value] = std::move(adapter);
+        }
+
         bool KernelRegistry::has(Graph::OpID id) const
         {
             return kernels_.find(id.value) != kernels_.end();
         }
 
-        /**
-         * @brief Retrieves the remote kernel associated with an operation ID.
-         * Looks up the ID and returns a pointer to the kernel function.
-         * @param id The Graph::OpID to look up.
-         * @return A pointer to the RemoteKernel if found, or nullptr otherwise.
-         */
-        const KernelRegistry::RemoteKernel* KernelRegistry::find(Graph::OpID id) const
+        const KernelRegistry::Kernel* KernelRegistry::find(Graph::OpID id) const
         {
-            auto it = kernels_.find(id.value);
-            return it == kernels_.end() ? nullptr : &it->second;
+            const auto found = kernels_.find(id.value);
+            return found == kernels_.end() ? nullptr : &found->second;
         }
 
-        /**
-         * @brief Retrieves a list of all registered operation IDs.
-         * Iterates through the registry and collects the IDs of all known kernels.
-         * @return A vector of Graph::OpID elements containing all registered operations.
-         */
         std::vector<Graph::OpID> KernelRegistry::known_ops() const
         {
             std::vector<Graph::OpID> ops;
             ops.reserve(kernels_.size());
-            for (const auto& [value, _] : kernels_)
-                ops.push_back(Graph::OpID(value));
+            for (const auto& entry : kernels_)
+                ops.push_back(Graph::OpID(entry.first));
             return ops;
         }
 
