@@ -7,7 +7,9 @@
 sushiruntime_add_module(
     NAME scheduler TIER engine
     SYCL
-    SOURCES task_scheduler.cpp
+    SOURCES
+        failure_naming.cpp
+        task_scheduler.cpp
     DEPENDS core logging observability task
     PRIVATE_DEPENDS sycl topology memory device)
 
