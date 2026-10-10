@@ -21,212 +21,331 @@
 
 /**
  * @file distributed_demo.cpp
- * @brief Runs the distributed layer's master or worker role over TCP with a vector-add kernel.
+ * @brief Runs the master of the distributed demo: one vector add a worker may take over.
  * @author Mustafa Garip
  * @see applications/examples/README.md
  */
 
-#include <atomic>
 #include <chrono>
-#include <csignal>
+#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
-#include <iostream>
+#include <cstdio>
+#include <exception>
+#include <filesystem>
+#include <optional>
 #include <string>
-#include <thread>
-#include <vector>
-#include <sycl/sycl.hpp>
+#include <string_view>
+#include <utility>
 
-#include <SushiRuntime/sycl/sycl_compat.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/distributed/tcp_transport.hpp>
+#include <SushiRuntime/SushiRuntime.h>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/kernel_registry.hpp>
-#include <SushiRuntime/distributed/worker_agent.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/cluster_statistics.hpp>
+#include <SushiRuntime/distributed/endpoint.hpp>
+#include <SushiRuntime/distributed/shared_secret.hpp>
+#include <SushiRuntime/distributed/tcp_transport.hpp>
+
+#include "distributed_kernels.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Graph;
-using namespace SushiRuntime::Graph::Literals;
-using namespace SushiRuntime::Distributed;
 
 namespace
 {
-    constexpr auto VEC_ADD = "vec.add"_op;
-    std::atomic<bool> g_stop{false};
-
-    // out[i] = a[i] + b[i] over network-resolved local USM buffers.
-    void register_vec_add(KernelRegistry& reg)
+    /** @brief Holds the settings of the master, one field per command line flag. */
+    struct DemoOptions
     {
-        reg.register_kernel(VEC_ADD,
-            [](sycl::queue& q, SushiRuntime::span<void* const> ins, SushiRuntime::span<void* const> outs,
-               const TaskMetadata& meta) -> sycl::event
-            {
-                auto* a = static_cast<const float*>(ins[0]);
-                auto* b = static_cast<const float*>(ins[1]);
-                auto* o = static_cast<float*>(outs[0]);
-                const size_t n = meta.get_param<uint64_t>(0);
-                return q.submit([&](sycl::handler& h)
-                {
-                    SushiRuntime::detail::enqueue_host_task(h, [=]
-                    {
-                        for (size_t i = 0; i < n; ++i)
-                            o[i] = a[i] + b[i];
-                    });
-                });
-            });
+        /** @brief `--bind` and `--port`: where workers connect. */
+        Distributed::Endpoint listen{"127.0.0.1", 5555};
+
+        /** @brief `--secret-file`: the cluster's key; empty attaches without one. */
+        std::filesystem::path secret_file;
+
+        /** @brief `--wait-s`: how long to wait for a worker before the task runs here. */
+        std::chrono::seconds worker_wait{30};
+
+        /** @brief `--elements`: the length of each vector. */
+        std::size_t element_count = std::size_t{1} << 20;
+    };
+
+    /** @brief Describes one flag: its name, its help line and how its value is stored. */
+    struct Flag
+    {
+        const char* name;    /**< The flag as typed, with its two dashes. */
+        const char* meaning; /**< The line `--help` prints for it. */
+
+        /** @brief Stores @p value in @p options; returns false when the value is refused. */
+        bool (*apply)(std::string_view value, DemoOptions& options);
+    };
+
+    /**
+     * @brief Reads a decimal number without a sign.
+     * @param maximum The largest value accepted; at most 2^32.
+     * @return Nothing when @p text is empty, holds another character or exceeds @p maximum.
+     */
+    std::optional<std::uint64_t> parse_whole_number(std::string_view text, std::uint64_t maximum)
+    {
+        if (text.empty())
+            return std::nullopt;
+
+        std::uint64_t value = 0;
+        for (const char digit : text)
+        {
+            if (digit < '0' || digit > '9')
+                return std::nullopt;
+
+            value = value * 10 + static_cast<std::uint64_t>(digit - '0');
+            if (value > maximum)
+                return std::nullopt;
+        }
+        return value;
     }
 
-    // Minimal "--key=value" / "--key value" argv lookup.
-    std::string arg_value(int argc, char** argv, const std::string& key, const std::string& def)
+    /** @brief Lists every flag that takes a value; `--help` is printed from this table. */
+    const Flag K_FLAGS[] = {
+        {"--bind", "address to listen on (127.0.0.1)",
+         [](std::string_view value, DemoOptions& options)
+         {
+             options.listen.host = std::string(value);
+             return !value.empty();
+         }},
+        {"--port", "port to listen on, 0 for any free port (5555)",
+         [](std::string_view value, DemoOptions& options)
+         {
+             const std::optional<std::uint64_t> port = parse_whole_number(value, 65535);
+             if (port.has_value())
+                 options.listen.port = static_cast<std::uint16_t>(*port);
+             return port.has_value();
+         }},
+        {"--secret-file", "file of at least 32 bytes that workers must hold too (none)",
+         [](std::string_view value, DemoOptions& options)
+         {
+             options.secret_file = std::filesystem::path(std::string(value));
+             return !value.empty();
+         }},
+        {"--wait-s", "seconds to wait for a worker, 0 to run here at once (30)",
+         [](std::string_view value, DemoOptions& options)
+         {
+             const std::optional<std::uint64_t> seconds = parse_whole_number(value, 86400);
+             if (seconds.has_value())
+                 options.worker_wait = std::chrono::seconds(*seconds);
+             return seconds.has_value();
+         }},
+        {"--elements", "length of each vector, from 1 to 67108864 (1048576)",
+         [](std::string_view value, DemoOptions& options)
+         {
+             const std::optional<std::uint64_t> count = parse_whole_number(value, 67108864);
+             if (count.has_value())
+                 options.element_count = static_cast<std::size_t>(*count);
+             return count.has_value() && *count > 0;
+         }},
+    };
+
+    /** @brief Holds the outcome of reading the command line. */
+    struct CommandLine
     {
-        const std::string pfx = key + "=";
-        for (int i = 1; i < argc; ++i)
+        DemoOptions options;     /**< The settings; meaningful when error is empty. */
+        bool wants_help = false; /**< Whether `--help` was given. */
+        std::string error;       /**< What was wrong with which argument; empty when none. */
+    };
+
+    /** @brief Returns the flag of a name, or null when the table has none. */
+    const Flag* find_flag(std::string_view name)
+    {
+        for (const Flag& flag : K_FLAGS)
         {
-            std::string a = argv[i];
-            if (a.rfind(pfx, 0) == 0)
-                return a.substr(pfx.size());
-            if (a == key && i + 1 < argc)
-                return argv[i + 1];
+            if (name == flag.name)
+                return &flag;
         }
-        return def;
+        return nullptr;
     }
 
-    int run_worker(const std::string& master_host, uint16_t port)
+    /** @brief Reads the flags; a value follows its flag as the next argument or after `=`. */
+    CommandLine read_command_line(int argc, char** argv)
     {
-        RuntimeContext ctx;
-        auto transport = TcpTransport::make_worker(master_host, port);
-        auto kernels   = make_sushi<KernelRegistry>();
-        register_vec_add(*kernels);
-
-        WorkerAgent agent(ctx, transport, kernels);
-        agent.start();
-        std::cout << "[worker] connected to " << master_host << ":" << port
-                  << " — waiting for tasks (Ctrl-C to stop)\n";
-
-        std::signal(SIGINT,  [](int) { g_stop.store(true); });
-        std::signal(SIGTERM, [](int) { g_stop.store(true); });
-        while (!g_stop.load())
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-        std::cout << "[worker] stopping\n";
-        agent.stop();
-        return 0;
-    }
-
-    int run_master(uint16_t port, int workers, size_t n)
-    {
-        RuntimeContext ctx;
-
-        auto transport = TcpTransport::make_master(port, workers);
-        std::cout << "[master] listening on port " << transport->bound_port()
-                  << " for " << workers << " worker(s)\n";
-
-        auto policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
-        auto cluster = Distributed::Cluster::attach(ctx, transport,
-                                                    make_sushi<KernelRegistry>(), policy);
-
-        // Wait for the cluster to assemble.
-        for (int i = 0; i < 600 && cluster.alive_workers() < workers; ++i)
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        if (cluster.alive_workers() < workers)
+        CommandLine line;
+        for (int index = 1; index < argc; ++index)
         {
-            std::cerr << "[master] only " << cluster.alive_workers()
-                      << "/" << workers << " workers registered; aborting.\n";
-            return 1;
-        }
-        std::cout << "[master] " << cluster.alive_workers() << " worker(s) ready\n";
-
-        sycl::queue& q = ctx.devices().queue(0);
-        float* a   = sycl::malloc_shared<float>(n, q);
-        float* b   = sycl::malloc_shared<float>(n, q);
-        float* out = sycl::malloc_shared<float>(n, q);
-        for (size_t i = 0; i < n; ++i)
-        {
-            a[i]   = float(i);
-            b[i]   = float(2 * i);
-            out[i] = 0.0f;
-        }
-
-        ctx.offload()->share(a,   n * sizeof(float));
-        ctx.offload()->share(b,   n * sizeof(float));
-        ctx.offload()->share(out, n * sizeof(float));
-
-        TaskGraph graph(ctx.offload());
-        TaskMetadata meta{};
-        meta.name  = "demo_vec_add";
-        meta.op_id = VEC_ADD;
-        meta.set_param<uint64_t>(0, n);
-        graph.add_task(meta, {a, b}, {out},
-            [a, b, out, n](sycl::queue& qq, const std::vector<sycl::event>&) -> sycl::event
+            const std::string_view argument = argv[index];
+            if (argument == "--help")
             {
-                return qq.submit([&](sycl::handler& h)
-                {
-                    SushiRuntime::detail::enqueue_host_task(h, [=]
-                    {
-                        for (size_t i = 0; i < n; ++i)
-                            out[i] = a[i] + b[i];
-                    });
-                });
-            });
+                line.wants_help = true;
+                return line;
+            }
 
-        ctx.get_execution_engine().execute(graph.compile());
-
-        bool ok = true;
-        for (size_t i = 0; i < n; ++i)
-        {
-            if (out[i] != a[i] + b[i])
+            const std::size_t equals = argument.find('=');
+            const std::string name(argument.substr(0, equals));
+            const Flag* flag = find_flag(name);
+            if (flag == nullptr)
             {
-                ok = false;
-                break;
+                line.error = "unknown argument '" + std::string(argument) + "'";
+                return line;
+            }
+            if (equals == std::string_view::npos && index + 1 >= argc)
+            {
+                line.error = name + " needs a value";
+                return line;
+            }
+
+            const std::string_view value = equals == std::string_view::npos
+                                               ? std::string_view(argv[++index])
+                                               : argument.substr(equals + 1);
+            if (!flag->apply(value, line.options))
+            {
+                line.error = name + ": '" + std::string(value) + "' is not accepted";
+                return line;
             }
         }
-
-        std::cout << "[master] result " << (ok ? "CORRECT" : "WRONG")
-                  << " | offloaded=" << cluster.offloaded()
-                  << " declined=" << cluster.declined()
-                  << " | out[1]=" << out[1] << " out[" << (n - 1) << "]=" << out[n - 1] << "\n";
-
-        sycl::free(a, q);
-        sycl::free(b, q);
-        sycl::free(out, q);
-        return ok ? 0 : 2;
+        return line;
     }
-}
+
+    /** @brief Prints the flags and their defaults. */
+    void print_usage()
+    {
+        std::printf("usage: sr_distributed_demo [--flag value]...\n");
+        for (const Flag& flag : K_FLAGS)
+            std::printf("  %-14s %s\n", flag.name, flag.meaning);
+    }
+
+    /**
+     * @brief Reads the cluster's key, or returns the empty secret when no file was named.
+     * @throws Core::SushiException When the file cannot be read or holds fewer than 32 bytes.
+     */
+    Distributed::SharedSecret read_secret(const std::filesystem::path& file)
+    {
+        if (file.empty())
+            return Distributed::SharedSecret();
+        return Distributed::SharedSecret::from_file(file);
+    }
+
+    /**
+     * @brief Adds two vectors of @p count floats and checks every element of the sum.
+     * @pre A master is attached to @p runtime, so distributed() has a coordinator to share with.
+     * @return True when the sum is right, wherever the task ran.
+     */
+    bool run_vector_add(Runtime& runtime, std::size_t count)
+    {
+        auto a = runtime.buffer<float>(count).distributed();
+        auto b = runtime.buffer<float>(count).distributed();
+        auto sum = runtime.buffer<float>(count).distributed();
+
+        const float* a_data = a.data();
+        const float* b_data = b.data();
+        float* sum_data = sum.data();
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            a[index] = static_cast<float>(index);
+            b[index] = static_cast<float>(2 * index);
+            sum[index] = 0.0f;
+        }
+
+        // The lambda is the local fallback; a worker runs the kernel registered for the same id.
+        auto graph = runtime.graph();
+        graph.add(DistributedDemo::K_VECTOR_ADD, count, API::Reads(a, b), API::Writes(sum),
+                  [a_data, b_data, sum_data](std::size_t index)
+                  {
+                      DistributedDemo::add_element(a_data, b_data, sum_data, index);
+                  });
+        graph.run();
+
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            if (sum[index] != a[index] + b[index])
+                return false;
+        }
+        return true;
+    }
+
+    /** @brief Returns how many dispatches a worker finished: those queued less those taken back. */
+    std::uint64_t finished_on_workers(const Distributed::ClusterStatistics& statistics)
+    {
+        if (statistics.offloaded <= statistics.redispatched)
+            return 0;
+        return statistics.offloaded - statistics.redispatched;
+    }
+
+    /** @brief Prints one line per registered worker. */
+    void print_workers(const Distributed::ClusterStatistics& statistics)
+    {
+        for (const Distributed::WorkerSnapshot& worker : statistics.workers)
+            std::printf("  worker %u \"%s\" at %s\n", static_cast<unsigned>(worker.id),
+                        worker.name.c_str(), worker.endpoint.c_str());
+    }
+
+    /** @brief Prints where the task ran and the master's counters. */
+    void print_outcome(const Distributed::ClusterStatistics& statistics)
+    {
+        std::printf("  ran on: %s\n",
+                    finished_on_workers(statistics) > 0 ? "a worker" : "this machine");
+        std::printf("  offloaded=%llu declined=%llu redispatched=%llu stale_writebacks=%llu\n",
+                    static_cast<unsigned long long>(statistics.offloaded),
+                    static_cast<unsigned long long>(statistics.declined),
+                    static_cast<unsigned long long>(statistics.redispatched),
+                    static_cast<unsigned long long>(statistics.stale_writebacks));
+        std::printf("  bytes_sent=%llu bytes_received=%llu chunks_sent=%llu chunks_received=%llu\n",
+                    static_cast<unsigned long long>(statistics.bytes_sent),
+                    static_cast<unsigned long long>(statistics.bytes_received),
+                    static_cast<unsigned long long>(statistics.chunks_sent),
+                    static_cast<unsigned long long>(statistics.chunks_received));
+    }
+
+    /**
+     * @brief Attaches a master, waits for a worker, runs the vector add and reports.
+     * @return 0 when the sum is right, 1 otherwise.
+     * @throws Core::SushiException When the secret cannot be read or the master does not start.
+     */
+    int run_demo(const DemoOptions& options)
+    {
+        auto runtime = Runtime::create();
+
+        Distributed::TcpMasterOptions listener;
+        listener.bind = options.listen;
+        auto transport = Distributed::TcpTransport::make_master(listener);
+
+        Distributed::ClusterOptions cluster_options;
+        cluster_options.secret = read_secret(options.secret_file);
+        const bool is_authenticated = !cluster_options.secret.empty();
+        auto cluster = Distributed::Cluster::attach(runtime, transport, std::move(cluster_options));
+
+        std::printf("distributed_demo: listening on %s, authentication %s\n",
+                    transport->local_endpoint().to_string().c_str(),
+                    is_authenticated ? "on" : "off");
+
+        if (cluster.wait_for_workers(1, options.worker_wait))
+            print_workers(cluster.statistics());
+        else
+            std::printf("  no worker within %lld s\n",
+                        static_cast<long long>(options.worker_wait.count()));
+
+        const bool is_correct = run_vector_add(runtime, options.element_count);
+
+        std::printf("distributed_demo: N = %zu, result %s\n", options.element_count,
+                    is_correct ? "CORRECT" : "WRONG");
+        print_outcome(cluster.statistics());
+        return is_correct ? 0 : 1;
+    }
+} // namespace
 
 int main(int argc, char** argv)
 {
-    const std::string role = arg_value(argc, argv, "--distributed", "master");
-    const size_t      n    = std::strtoul(arg_value(argc, argv, "--n", "1024").c_str(), nullptr, 10);
+    const CommandLine line = read_command_line(argc, argv);
+    if (line.wants_help)
+    {
+        print_usage();
+        return 0;
+    }
+    if (!line.error.empty())
+    {
+        std::fprintf(stderr, "distributed_demo: %s\n", line.error.c_str());
+        print_usage();
+        return 1;
+    }
 
     try
     {
-        if (role == "worker")
-        {
-            std::string master = arg_value(argc, argv, "--master", "127.0.0.1:5555");
-            auto colon = master.find(':');
-            std::string host = master.substr(0, colon);
-            uint16_t    port = static_cast<uint16_t>(
-                std::strtoul(colon == std::string::npos ? "5555" : master.substr(colon + 1).c_str(),
-                             nullptr, 10));
-            return run_worker(host, port);
-        }
-
-        const uint16_t port    = static_cast<uint16_t>(
-            std::strtoul(arg_value(argc, argv, "--port", "5555").c_str(), nullptr, 10));
-        const int      workers = static_cast<int>(
-            std::strtoul(arg_value(argc, argv, "--workers", "1").c_str(), nullptr, 10));
-        return run_master(port, workers, n);
+        return run_demo(line.options);
     }
-    catch (const std::exception& e)
+    catch (const std::exception& error)
     {
-        std::cerr << "[fatal] " << e.what() << "\n";
+        std::fprintf(stderr, "distributed_demo: %s\n", error.what());
         return 1;
     }
 }

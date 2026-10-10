@@ -1,6 +1,6 @@
 # examples
 
-Seven programs written against the public API. Read `quickstart.cpp` first, then the focused
+Eight programs written against the public API. Read `quickstart.cpp` first, then the focused
 demos:
 
 | File | Shows |
@@ -10,7 +10,11 @@ demos:
 | `coupled_fields_demo.cpp` | Several fields evolving together (Jacobi) |
 | `game_engine_demo.cpp` | An ECS-style frame loop built from the data flow |
 | `streaming_world_demo.cpp` | A graph whose set of work changes between steps |
-| `distributed_demo.cpp` | Offloading a task to a remote worker (opt-in) |
+| `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
+| `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
+
+`distributed_kernels.hpp` is the header the last two share. The distributed programs are built
+only when the distributed layer is enabled (`sr build --distributed`).
 
 ## quickstart.cpp
 
@@ -110,11 +114,93 @@ view: STEPS for tiles 0, 1, 4 and 5, 2 * STEPS for tiles 2 and 3, and 0 for tile
 
 ## distributed_demo.cpp
 
-The master and worker entry for the distributed layer. One binary plays either role, selected
-by `--distributed=master|worker`. Workers connect over TCP and run a registered `vec.add`
-kernel; the master offloads a vector add and checks the result.
+The master of the distributed demo. It attaches a master to a runtime with
+`Distributed::Cluster::attach` and a `ClusterOptions`, listens on TCP, waits for one worker, adds
+two vectors and checks every element of the sum. The add is one task tagged with the operation
+`demo.vector_add`. With a worker registered the task runs there: the worker pulls the two inputs
+and streams the sum back. Without one, the lambda given to `add()` runs it on this machine. The
+sum is the same either way, because both paths call `add_element()` of `distributed_kernels.hpp`.
+
+The program prints where the task ran, which it reads from `Cluster::statistics()`: a dispatch
+that was queued to a worker and not taken back finished there. A typical run with a worker ends
+with:
 
 ```
-sr run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555
-sr run sr_distributed_demo --distributed=master --port=5555 --workers=1
+distributed_demo: N = 1048576, result CORRECT
+  ran on: a worker
+  offloaded=1 declined=0 redispatched=0 stale_writebacks=0
 ```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--bind address` | `127.0.0.1` | Address to listen on |
+| `--port n` | 5555 | Port to listen on; 0 takes any free port, which the first line prints |
+| `--secret-file path` | none | The cluster's key, a file of at least 32 bytes |
+| `--wait-s n` | 30 | Seconds to wait for a worker; 0 runs the task here at once |
+| `--elements n` | 1048576 | Length of each vector |
+
+A value follows its flag as the next argument or after `=`. The buffers are shared with
+`Buffer::distributed()` after `attach()`; called before it, `distributed()` does nothing and the
+task stays local. The default offload policy also keeps a task local when its inputs are under
+64 KiB, so a run with `--elements` below 8192 reports `declined=1` even with a worker connected.
+
+## distributed_worker.cpp
+
+The worker of the distributed demo. Its `main` builds a `KernelRegistry`, registers the demo's
+kernels and returns `Distributed::run_worker(argc, argv, kernels)`. The library does the rest:
+the flags, the secret, the connection with reconnect, the signal handlers and the exit code. The
+flags and exit codes are listed in `modules/extension/distributed/README.md`, section
+`worker_main.hpp`. Stop a worker with Ctrl-C; it finishes the running kernel, says goodbye to the
+master and exits 0.
+
+### One machine
+
+The master listens on loopback, so no secret is needed. Start the two in either order, each in
+its own terminal: the worker keeps trying for 60 seconds and the master waits 30.
+
+```
+sr run sr_distributed_demo
+sr run sr_distributed_worker --master 127.0.0.1:5555
+```
+
+### Two machines
+
+A master that other machines can reach refuses to start without a secret. Make a key file of 32
+random bytes once and copy it to both machines; it is read byte for byte, so both must hold the
+same file.
+
+```
+head -c 32 /dev/urandom > cluster.key
+```
+
+On Windows, in PowerShell:
+
+```
+$key = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($key)
+[IO.File]::WriteAllBytes("$PWD\cluster.key", $key)
+```
+
+On the master, whose address is 192.168.1.10 in this example:
+
+```
+sr run sr_distributed_demo --bind 0.0.0.0 --port 5555 --secret-file cluster.key
+```
+
+On the worker:
+
+```
+sr run sr_distributed_worker --master 192.168.1.10:5555 --secret-file cluster.key
+```
+
+A worker with the wrong key exits 3, and one that cannot reach the master within 60 seconds
+exits 2. The frames are authenticated at the handshake and not encrypted, so this is for a LAN
+both machines trust.
+
+## distributed_kernels.hpp
+
+What the master and the worker must agree on, stated once: the operation id `K_VECTOR_ADD`, the
+kernel `add_vectors()` a worker runs for it, and `register_kernels()`, which puts every kernel of
+the demo into a registry. A kernel receives its buffers as `BufferView`s, an address and a size
+each, so `add_vectors()` takes the element count from the size of its output. A new operation is
+added here and nowhere else.
