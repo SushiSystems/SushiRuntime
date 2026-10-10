@@ -337,8 +337,7 @@ namespace SushiRuntime
                     return LinkChange::None;
 
                 new_session = !ever_registered_ || session_ != offered_session_;
-                if (ever_registered_)
-                    reconnects_.fetch_add(1, std::memory_order_relaxed);
+                registrations_.fetch_add(1, std::memory_order_relaxed);
 
                 phase_ = Phase::Registered;
                 session_ = offered_session_;
@@ -566,9 +565,15 @@ namespace SushiRuntime
             return end();
         }
 
+        std::uint64_t MasterLink::registrations() const noexcept
+        {
+            return registrations_.load(std::memory_order_relaxed);
+        }
+
         std::uint64_t MasterLink::reconnects() const noexcept
         {
-            return reconnects_.load(std::memory_order_relaxed);
+            const std::uint64_t accepted = registrations();
+            return accepted == 0 ? 0 : accepted - 1;
         }
 
         void MasterLink::run() noexcept

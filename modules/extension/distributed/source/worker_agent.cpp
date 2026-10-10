@@ -576,6 +576,7 @@ namespace SushiRuntime
             WorkerStatistics counters = executor_.statistics();
             counters.cache_bytes = cache_.bytes();
             counters.cache_evictions = cache_.evictions();
+            counters.registrations = link_.registrations();
             counters.reconnects = link_.reconnects();
             return counters;
         }
