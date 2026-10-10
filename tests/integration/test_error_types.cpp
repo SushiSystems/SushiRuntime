@@ -34,13 +34,13 @@ using namespace SushiRuntime;
 
 namespace
 {
-    /** @brief Returns the filter that admits no device class. */
-    Topology::HardwareFilterConfig filter_admitting_nothing()
+    /** @brief Returns the config whose device filter admits no device class. */
+    RuntimeConfig config_admitting_nothing()
     {
-        Topology::HardwareFilterConfig config;
-        config.include_cpu = false;
-        config.include_gpu = false;
-        config.include_accelerator = false;
+        RuntimeConfig config;
+        config.devices.include_cpu = false;
+        config.devices.include_gpu = false;
+        config.devices.include_accelerator = false;
         return config;
     }
 } // namespace
@@ -50,7 +50,7 @@ TEST(Integration_ErrorTypes, AFilterThatExcludesEveryDeviceThrowsUnsupported)
 {
     try
     {
-        static_cast<void>(Runtime::create(filter_admitting_nothing()));
+        static_cast<void>(Runtime::create(config_admitting_nothing()));
         FAIL() << "a runtime was built over no device";
     }
     catch (const SushiException& refusal)
@@ -65,7 +65,7 @@ TEST(Integration_ErrorTypes, AHandlerForRuntimeErrorReceivesTheSameFailure)
 {
     try
     {
-        static_cast<void>(Runtime::create(filter_admitting_nothing()));
+        static_cast<void>(Runtime::create(config_admitting_nothing()));
         FAIL() << "a runtime was built over no device";
     }
     catch (const std::runtime_error& caught)

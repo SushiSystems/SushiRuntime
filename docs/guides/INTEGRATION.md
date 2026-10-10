@@ -175,7 +175,7 @@ config.worker_count = 8;                 // take eight of what is left
 config.pinning      = API::PinPolicy::Pin;
 config.rebalancer   = false;             // the default; leave it off for a frame loop
 
-auto runtime = API::Runtime::create({}, config);
+auto runtime = API::Runtime::create(config);
 
 // Verify what you actually got — a request that does not fit is clamped, not obeyed.
 const auto pool = runtime.advanced().worker_pool();

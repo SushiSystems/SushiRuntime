@@ -142,7 +142,7 @@ TEST(Integration_ChainLayer, ChainMatchesForcedSchedulerBitForBit)
     auto chained_rt = Runtime::create();
     API::RuntimeConfig forced;
     forced.force_scheduler = true;
-    auto scheduled_rt = Runtime::create({}, forced);
+    auto scheduled_rt = Runtime::create(forced);
 
     const Outputs chained   = run_workload(chained_rt, RUNS, STEPS, false);
     const Outputs scheduled = run_workload(scheduled_rt, RUNS, STEPS, false);

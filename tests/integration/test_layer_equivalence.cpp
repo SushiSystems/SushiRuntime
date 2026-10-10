@@ -617,7 +617,7 @@ TEST(Integration_LayerEquivalence, DynamicRegionsMatchOneStaticGraph)
     const Script script{{{true, RUNS}}, true};
 
     auto chained_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create({}, scheduler_only());
+    auto scheduled_rt = Runtime::create(scheduler_only());
 
     const Snapshot static_chained    = run_static_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot static_scheduled  = run_static_tiles(scheduled_rt, script, Drive::Blocking);
@@ -640,7 +640,7 @@ TEST(Integration_LayerEquivalence, DroppedAndReaddedRegionMatchesStaticGraphs)
     const Script script{{{true, 1}, {false, 1}, {true, 1}}, false};
 
     auto chained_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create({}, scheduler_only());
+    auto scheduled_rt = Runtime::create(scheduler_only());
 
     const Snapshot static_chained    = run_static_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot static_scheduled  = run_static_tiles(scheduled_rt, script, Drive::Blocking);
@@ -660,7 +660,7 @@ TEST(Integration_LayerEquivalence, DroppedAndReaddedRegionMatchesStaticGraphs)
 TEST(Integration_LayerEquivalence, HostTasksAmongKernelsMatchAcrossLayers)
 {
     auto default_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create({}, scheduler_only());
+    auto scheduled_rt = Runtime::create(scheduler_only());
 
     const Snapshot host_default   = run_pass_chain(default_rt, PassSite::Host);
     const Snapshot host_scheduled = run_pass_chain(scheduled_rt, PassSite::Host);
@@ -680,7 +680,7 @@ TEST(Integration_LayerEquivalence, AsyncStepsMatchBlockingRun)
     const Script script{{{true, RUNS}}, true};
 
     auto chained_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create({}, scheduler_only());
+    auto scheduled_rt = Runtime::create(scheduler_only());
 
     const Snapshot blocking_chained   = run_static_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot blocking_scheduled = run_static_tiles(scheduled_rt, script, Drive::Blocking);
@@ -712,7 +712,7 @@ TEST(Integration_LayerEquivalence, AsyncStepsOfADynamicGraphMatchBlockingRun)
 TEST(Integration_LayerEquivalence, OffsetLaunchFormsMatchAcrossLayers)
 {
     auto chained_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create({}, scheduler_only());
+    auto scheduled_rt = Runtime::create(scheduler_only());
 
     const Snapshot reference = tracked_launch_reference();
     const Snapshot chained   = run_tracked_launches(chained_rt);
@@ -735,7 +735,7 @@ TEST(Integration_LayerEquivalence, UntrackedOffsetLaunchesMatchAcrossLayers)
     // An untracked kernel is routed to any device (docs/reference/KNOWN_ISSUES.md).
     if (default_rt.advanced().device_count() > 1)
         GTEST_SKIP() << "An untracked kernel may run on a device that does not own its buffers.";
-    auto scheduled_rt = Runtime::create({}, scheduler_only());
+    auto scheduled_rt = Runtime::create(scheduler_only());
 
     const Snapshot reference       = untracked_launch_reference();
     const Snapshot default_layer   = run_untracked_launches(default_rt);

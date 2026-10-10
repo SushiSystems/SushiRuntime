@@ -35,13 +35,13 @@ using namespace SushiRuntime;
 TEST(Integration_PerfControls, RebalancerIsOffUnlessRequested)
 {
     auto rt = Runtime::create();
-    EXPECT_FALSE(rt.advanced().rebalancer_enabled())
+    EXPECT_FALSE(rt.advanced().is_rebalancer_enabled())
         << "the rebalancer must not run unless RuntimeConfig asked for it";
 
     API::RuntimeConfig config;
     config.rebalancer = true;
-    auto throughput = Runtime::create({}, config);
-    EXPECT_TRUE(throughput.advanced().rebalancer_enabled())
+    auto throughput = Runtime::create(config);
+    EXPECT_TRUE(throughput.advanced().is_rebalancer_enabled())
         << "RuntimeConfig::rebalancer must start the coordinator";
 }
 
@@ -60,21 +60,21 @@ TEST(Integration_PerfControls, RebalancerToggleKeepsExecutionCorrect)
           [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
 
     // Off (the default): a run produces correct results with no background thread.
-    EXPECT_FALSE(rt.advanced().rebalancer_enabled());
+    EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
     g.run();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer off, at i=" << i;
 
     // Enabled after construction: still correct, and the flag reflects the change.
-    rt.rebalancer(true);
-    EXPECT_TRUE(rt.advanced().rebalancer_enabled());
+    rt.set_rebalancer_enabled(true);
+    EXPECT_TRUE(rt.advanced().is_rebalancer_enabled());
     g.run();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer on, at i=" << i;
 
     // And back off again, so the transition is exercised in both directions.
-    rt.rebalancer(false);
-    EXPECT_FALSE(rt.advanced().rebalancer_enabled());
+    rt.set_rebalancer_enabled(false);
+    EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
     g.run();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer off again, at i=" << i;

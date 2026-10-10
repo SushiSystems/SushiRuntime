@@ -337,7 +337,7 @@ config.first_core   = 4;                       // on cores 4..11; 0..3 stay your
 config.rebalancer   = false;                   // the default; see below
 config.profiling    = false;                   // the default
 
-auto rt = Runtime::create({}, config);
+auto rt = Runtime::create(config);
 ```
 
 Verify it took effect with `rt.advanced().worker_pool()`, which reports the pool
@@ -363,7 +363,7 @@ profiling enabled, so it cannot be turned on later and costs nothing when off.
 ```cpp
 API::RuntimeConfig config;
 config.profiling = true;
-auto rt = Runtime::create({}, config);
+auto rt = Runtime::create(config);
 // ... build and run a graph ...
 for (const auto& node : report.node_timings)
     std::printf("%-24s %8.3f ms over %zu runs\n",

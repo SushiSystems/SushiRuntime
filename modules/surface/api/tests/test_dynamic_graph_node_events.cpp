@@ -80,7 +80,7 @@ TEST(Integration_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
     constexpr std::size_t N = 32;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
     auto buf = rt.buffer<int>(N);
     int* p = buf.data();
 
@@ -99,7 +99,7 @@ TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRe
     constexpr std::size_t N = 32;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
     auto a = rt.buffer<int>(N);
     auto b = rt.buffer<int>(N);
     int* pa = a.data();
@@ -131,7 +131,7 @@ TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrde
     constexpr std::size_t N = 16;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
     auto a = rt.buffer<int>(N);
     auto b = rt.buffer<int>(N);
     auto c = rt.buffer<int>(N);
@@ -168,7 +168,7 @@ TEST(Integration_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
     constexpr std::size_t N = 16;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
     auto a = rt.buffer<int>(N);
     auto b = rt.buffer<int>(N);
     int* pa = a.data();
@@ -203,7 +203,7 @@ TEST(Integration_DynamicGraphNodeEvents, RequestToggleRecompilesOnce)
     constexpr std::size_t N = 8;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
     auto buf = rt.buffer<int>(N);
     int* p = buf.data();
 

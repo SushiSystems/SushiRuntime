@@ -1,0 +1,168 @@
+/**************************************************************************/
+/* test_runtime_entry.cpp                                                 */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file test_runtime_entry.cpp
+ * @brief Tests Runtime::create(), RuntimeConfig and the AdvancedControls view of a runtime.
+ * @author Mustafa Garip
+ * @see modules/surface/api/tests/README.md
+ */
+
+#include <cstddef>
+#include <optional>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+#include <gtest/gtest.h>
+
+#include <SushiRuntime/SushiRuntime.h>
+
+using namespace SushiRuntime;
+
+static_assert(!std::is_copy_constructible<Runtime>::value, "a Runtime must not copy");
+static_assert(!std::is_copy_assignable<Runtime>::value, "a Runtime must not copy-assign");
+static_assert(std::is_nothrow_move_constructible<Runtime>::value, "a Runtime must move");
+static_assert(std::is_nothrow_move_assignable<Runtime>::value, "a Runtime must move-assign");
+
+/** @brief Tests that one struct sets the worker count and that a view outlives its Runtime. */
+TEST(Integration_RuntimeEntry, OneStructConfiguresAndTheViewOutlivesTheRuntime)
+{
+    RuntimeConfig config;
+    config.worker_count = 2;
+
+    std::optional<Runtime> rt(Runtime::create(config));
+    const AdvancedControls view = rt->advanced();
+
+    EXPECT_EQ(view.worker_pool().count, 2u);
+    const std::size_t device_count = view.device_count();
+    ASSERT_GE(device_count, 1u);
+
+    rt.reset();
+
+    EXPECT_EQ(view.device_count(), device_count);
+    EXPECT_EQ(view.devices().size(), device_count);
+    EXPECT_EQ(view.worker_pool().count, 2u);
+}
+
+/** @brief Tests that devices() has one entry per device, in the order DeviceIndex counts. */
+TEST(Integration_RuntimeEntry, DevicesListsEveryDeviceInOrder)
+{
+    const Runtime rt = Runtime::create();
+    const AdvancedControls view = rt.advanced();
+    const std::vector<Device::DeviceInfo>& devices = view.devices();
+
+    ASSERT_EQ(devices.size(), view.device_count());
+    ASSERT_FALSE(devices.empty());
+
+    Execution::RuntimeContext& context = rt.unsafe_context();
+    for (std::size_t index = 0; index < devices.size(); ++index)
+    {
+        const std::string reported = context.devices().queue(index).get_device()
+                                         .get_info<sycl::info::device::name>();
+        EXPECT_EQ(devices[index].index, index);
+        EXPECT_EQ(devices[index].name, reported) << "entry " << index;
+    }
+
+    auto landed = rt.buffer<int>(16);
+    const std::optional<std::size_t> owner = context.memory().device_of(landed.data());
+    ASSERT_TRUE(owner.has_value());
+    EXPECT_EQ(*owner, devices.front().index);
+    EXPECT_EQ(landed.device_index().value(), devices.front().index);
+}
+
+/** @brief Tests that create() with no argument yields a runtime that runs a graph. */
+TEST(Integration_RuntimeEntry, DefaultConfigCreates)
+{
+    constexpr std::size_t COUNT = 64;
+
+    const Runtime rt = Runtime::create();
+    EXPECT_FALSE(rt.advanced().is_profiling_enabled());
+    EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
+
+    auto values = rt.buffer<int>(COUNT);
+    int* data = values.data();
+    for (std::size_t i = 0; i < COUNT; ++i)
+        values[i] = 0;
+
+    auto graph = rt.graph();
+    graph.add(Reads(), Writes(values), COUNT, [data](std::size_t i) { data[i] = 7; });
+    graph.run();
+
+    for (std::size_t i = 0; i < COUNT; ++i)
+        ASSERT_EQ(values[i], 7) << "element " << i;
+}
+
+/** @brief Tests that every RuntimeConfig field reaches the runtime it configures. */
+TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
+{
+    RuntimeConfig config;
+    config.worker_count = 1;
+    config.pinning = PinPolicy::Float;
+    config.profiling = true;
+    config.rebalancer = true;
+    config.force_scheduler = true;
+
+    const Runtime rt = Runtime::create(config);
+    const AdvancedControls view = rt.advanced();
+    const Execution::RuntimeSettings& settings = rt.unsafe_context().settings();
+
+    EXPECT_EQ(view.worker_pool().count, 1u);
+    EXPECT_EQ(view.worker_pool().pinning, PinPolicy::Float);
+    EXPECT_TRUE(view.is_profiling_enabled());
+    EXPECT_TRUE(view.is_rebalancer_enabled());
+    EXPECT_TRUE(settings.force_scheduler);
+
+    rt.set_rebalancer_enabled(false);
+    EXPECT_FALSE(view.is_rebalancer_enabled());
+}
+
+/** @brief Tests that the two-argument create() builds what the one-struct form builds. */
+TEST(Integration_RuntimeEntry, TheDeprecatedTwoArgumentCreateStillWorks)
+{
+    DeviceFilter devices;
+    RuntimeConfig config;
+    config.worker_count = 2;
+
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+    const Runtime rt = Runtime::create(devices, config);
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
+    EXPECT_EQ(rt.advanced().worker_pool().count, 2u);
+    EXPECT_EQ(rt.advanced().device_count(), Runtime::create(config).advanced().device_count());
+}
+
+/** @brief Tests that a moved Runtime keeps the context its handles were made from. */
+TEST(Integration_RuntimeEntry, AMovedRuntimeKeepsItsContext)
+{
+    Runtime first = Runtime::create();
+    Execution::RuntimeContext* const context = &first.unsafe_context();
+
+    const Runtime second = std::move(first);
+
+    EXPECT_EQ(&second.unsafe_context(), context);
+}

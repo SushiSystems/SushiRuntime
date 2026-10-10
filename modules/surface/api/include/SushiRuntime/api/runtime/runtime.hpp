@@ -21,7 +21,7 @@
 
 /**
  * @file runtime.hpp
- * @brief Declares Runtime, the fluent entry point, and AdvancedControls.
+ * @brief Declares Runtime, the entry point that builds a runtime and hands out its handles.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
  */
@@ -30,201 +30,172 @@
 
 #include <cstddef>
 #include <memory>
+#include <utility>
+
+#include <SushiRuntime/core/version.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/execution/runtime_settings.hpp>
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/graph/dynamic_graph.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/execution/runtime_settings.hpp>
-#include <SushiRuntime/observability/transfer_counters.hpp>
-#include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/api/runtime/advanced_controls.hpp>
+#include <SushiRuntime/api/runtime/runtime_config.hpp>
 
 namespace SushiRuntime
 {
     namespace API
     {
         /**
-         * @brief Names the runtime-wide settings chosen once at Runtime::create().
-         * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-         */
-        using RuntimeConfig = Execution::RuntimeSettings;
-
-        /** @brief Whether workers bind to cores; see Execution::PinPolicy. */
-        using PinPolicy = Execution::PinPolicy;
-
-        /**
-         * @brief Exposes a narrow, read-only view of runtime-internal state.
-         * @pre The view does not outlive the Runtime it came from.
-         * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-         */
-        class AdvancedControls
-        {
-            public:
-                /**
-                 * @brief Wraps the runtime's context for read-only inspection.
-                 * @param ctx Context borrowed, not owned; must outlive this view.
-                 */
-                explicit AdvancedControls(Execution::RuntimeContext& ctx) noexcept
-                    : ctx_(ctx)
-                {
-                }
-
-                /**
-                 * @brief Reports how many devices the runtime is driving.
-                 * @return Number of device queues selected at construction; valid
-                 *         device indices are [0, this).
-                 */
-                std::size_t device_count() const { return ctx_.devices().count(); }
-
-                /**
-                 * @brief Tells whether per-kernel timings are being collected.
-                 * @return True when the queues were built with profiling enabled.
-                 */
-                bool profiling_enabled() const noexcept { return ctx_.settings().profiling; }
-
-                /**
-                 * @brief Tells whether work is being redistributed by device load.
-                 * @return True while the background thermal rebalancer is running.
-                 */
-                bool rebalancer_enabled() const
-                {
-                    return ctx_.get_execution_engine().rebalancer_enabled();
-                }
-
-                /**
-                 * @brief Returns the worker pool as built, which may differ from the request.
-                 * @return The worker count, first bound core, and pin policy in effect.
-                 * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-                 */
-                Execution::WorkerPoolInfo worker_pool() const
-                {
-                    return ctx_.get_execution_engine().worker_pool();
-                }
-
-                /**
-                 * @brief Reports upload traffic caused by explicit transfers.
-                 * @return Cumulative bytes copied host to device since startup;
-                 *         implicit shared-USM migration is not counted.
-                 */
-                std::size_t host_to_device_bytes() const noexcept
-                {
-                    return ctx_.transfers().host_to_device();
-                }
-
-                /**
-                 * @brief Reports readback traffic caused by explicit transfers.
-                 * @return Cumulative bytes copied device to host since startup;
-                 *         implicit shared-USM migration is not counted.
-                 */
-                std::size_t device_to_host_bytes() const noexcept
-                {
-                    return ctx_.transfers().device_to_host();
-                }
-
-            private:
-                Execution::RuntimeContext& ctx_;
-        };
-
-        /**
-         * @brief Entry point of the fluent API: owns hardware and hands out graphs.
+         * @brief Builds a runtime and hands out the graphs, buffers and views that use it.
          *
-         * Create one with Runtime::create(), then call graph() to build work.
-         * The runtime owns the RuntimeContext (hardware, queues, engine); graphs
-         * borrow it, so the Runtime must outlive every graph it produces.
+         * The Runtime and every handle it hands out share ownership of one context, which is
+         * destroyed with the last of them. A Runtime moves and does not copy; a moved-from
+         * Runtime accepts assignment and destruction only.
+         * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
          */
         class Runtime
         {
             public:
                 /**
-                 * @brief Creates a runtime with default device selection.
-                 * @param config Device-class filter passed to hardware discovery.
-                 * @param runtime_config Runtime-wide settings; defaults to the simulation profile.
-                 * @throws SushiException If no device satisfies config.
+                 * @brief Creates a runtime on the devices and with the settings of one struct.
+                 * @throws Core::SushiException With Errc::unsupported when the loaded library
+                 *         is of another release than these headers, or when no device passes
+                 *         config.devices.
                  */
-                static Runtime create(const Topology::HardwareFilterConfig& config = {},
-                                      const RuntimeConfig& runtime_config = {})
+                [[nodiscard]] static Runtime create(const RuntimeConfig& config = {})
                 {
+                    require_matching_version();
                     return Runtime(std::make_shared<Execution::RuntimeContext>(
-                        config, nullptr, nullptr, runtime_config));
+                        config.devices, nullptr, nullptr, settings_of(config)));
                 }
 
                 /**
-                 * @brief Starts a new, empty graph bound to this runtime.
-                 * @return A fluent Graph; add tasks, then run() or try_run().
+                 * @brief Forwards to create(RuntimeConfig) with @p devices as its device filter.
+                 * @param devices Replaces config.devices.
+                 * @throws Core::SushiException As create(RuntimeConfig) does.
                  */
-                Graph graph() { return Graph(ctx_); }
+                [[deprecated("use create(RuntimeConfig) and set RuntimeConfig::devices")]]
+                static Runtime create(const DeviceFilter& devices, const RuntimeConfig& config)
+                {
+                    RuntimeConfig merged = config;
+                    merged.devices = devices;
+                    return create(merged);
+                }
+
+                Runtime(Runtime&&) noexcept = default;
+                Runtime& operator=(Runtime&&) noexcept = default;
+                Runtime(const Runtime&) = delete;
+                Runtime& operator=(const Runtime&) = delete;
+                ~Runtime() = default;
+
+                /** @brief Returns a new, empty graph that runs on this runtime. */
+                [[nodiscard]] Graph graph() const { return Graph(context_); }
 
                 /**
-                 * @brief Starts a new dynamic, region-partitioned graph.
+                 * @brief Returns a new, empty graph whose work is grouped into regions.
                  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
                  */
-                DynamicGraph dynamic_graph() { return DynamicGraph(ctx_); }
+                [[nodiscard]] DynamicGraph dynamic_graph() const { return DynamicGraph(context_); }
 
                 /**
-                 * @brief Allocates a typed shared-USM buffer owned by this runtime.
-                 * @pre The buffer does not outlive the Runtime.
+                 * @brief Allocates a typed buffer of @p count elements on one device.
+                 * @throws Core::SushiException With Errc::invalid_access when @p device names no
+                 *         device of this runtime; the message carries the index and the count.
                  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
                  */
                 template <typename T>
-                Buffer<T> buffer(std::size_t count, DeviceIndex device_index = DeviceIndex{0},
-                                 Residency residency = Residency::Shared)
+                [[nodiscard]] Buffer<T> buffer(std::size_t count,
+                                               DeviceIndex device = DeviceIndex{0},
+                                               Residency residency = Residency::Shared) const
                 {
-                    return Buffer<T>(ctx_, count, device_index, residency);
+                    return Buffer<T>(context_, count, device, residency);
                 }
 
                 /**
-                 * @brief Allocates a double-buffered, time-evolving State field.
-                 * @pre The State does not outlive the Runtime.
+                 * @brief Allocates a double-buffered field of @p count elements on one device.
+                 * @throws Core::SushiException With Errc::invalid_access when @p device names no
+                 *         device of this runtime; the message carries the index and the count.
                  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
                  */
                 template <typename T>
-                State<T> state(std::size_t count, DeviceIndex device_index = DeviceIndex{0},
-                               Residency residency = Residency::Shared)
+                [[nodiscard]] State<T> state(std::size_t count,
+                                             DeviceIndex device = DeviceIndex{0},
+                                             Residency residency = Residency::Shared) const
                 {
-                    return State<T>(ctx_, count, device_index, residency);
+                    return State<T>(context_, count, device, residency);
                 }
 
                 /**
-                 * @brief Enables or disables the background thermal rebalancer; safe to call
-                 *        between runs.
+                 * @brief Starts or stops the background thermal rebalancer.
+                 * @pre No run is in flight.
                  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
                  */
-                Runtime& rebalancer(bool enabled)
+                const Runtime& set_rebalancer_enabled(bool enabled) const
                 {
-                    ctx_->get_execution_engine().set_rebalancer_enabled(enabled);
+                    context_->get_execution_engine().set_rebalancer_enabled(enabled);
                     return *this;
                 }
 
-                /**
-                 * @brief A narrow, supported view of runtime-internal state.
-                 * @return An AdvancedControls borrowing this runtime's context.
-                 */
-                AdvancedControls advanced() noexcept { return AdvancedControls(*ctx_); }
+                /** @brief Forwards to set_rebalancer_enabled(). */
+                [[deprecated("use set_rebalancer_enabled()")]]
+                Runtime& rebalancer(bool enabled)
+                {
+                    set_rebalancer_enabled(enabled);
+                    return *this;
+                }
+
+                /** @brief Returns the read-only view of this runtime's devices and counters. */
+                [[nodiscard]] AdvancedControls advanced() const noexcept
+                {
+                    return AdvancedControls(context_);
+                }
+
+                /** @brief Returns the facade that exchanges this runtime's memory with Vulkan. */
+                [[nodiscard]] Interop interop() const noexcept { return Interop(context_); }
 
                 /**
-                 * @brief Provides the SYCL/Vulkan interop facade for this runtime's context.
-                 * @return An Interop bound to this runtime's context.
-                 */
-                Interop interop() const noexcept { return Interop(ctx_); }
-
-                /**
-                 * @brief Returns the full runtime context, a non-public type that may break across
-                 *        versions.
+                 * @brief Returns the runtime context, a type outside the stable surface.
+                 * @return A reference valid while a handle of this runtime lives.
                  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
                  */
-                Execution::RuntimeContext& unsafe_context() noexcept { return *ctx_; }
+                [[nodiscard]] Execution::RuntimeContext& unsafe_context() const noexcept
+                {
+                    return *context_;
+                }
 
             private:
-                explicit Runtime(std::shared_ptr<Execution::RuntimeContext> ctx)
-                    : ctx_(std::move(ctx))
+                /** @brief Returns the settings the context takes from a RuntimeConfig. */
+                [[nodiscard]] static Execution::RuntimeSettings
+                settings_of(const RuntimeConfig& config) noexcept
+                {
+                    Execution::RuntimeSettings settings;
+                    settings.profiling = config.profiling;
+                    settings.worker_count = config.worker_count;
+                    settings.first_core = config.first_core;
+                    settings.pinning = config.pinning;
+                    settings.rebalancer = config.rebalancer;
+                    settings.force_scheduler = config.force_scheduler;
+                    return settings;
+                }
+
+                /**
+                 * @brief Takes ownership of a built context.
+                 * @param context Must not be null.
+                 */
+                explicit Runtime(std::shared_ptr<Execution::RuntimeContext> context) noexcept
+                    : context_(std::move(context))
                 {
                 }
 
-                std::shared_ptr<Execution::RuntimeContext> ctx_;
+                /// @brief Context shared with every handle; null only after a move.
+                std::shared_ptr<Execution::RuntimeContext> context_;
         };
 
     } // namespace API
+
+    using API::Runtime;
+
 } // namespace SushiRuntime

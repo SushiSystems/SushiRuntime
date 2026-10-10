@@ -66,8 +66,8 @@ TEST(Integration_DeviceSelection, RequireFp64AdmitsOnlyFp64Devices)
  */
 TEST(Integration_DeviceSelection, RequireFp64StillConstructsOnAConformingLane)
 {
-    Topology::HardwareFilterConfig config;
-    config.require_fp64 = true;
+    RuntimeConfig config;
+    config.devices.require_fp64 = true;
 
     if (any_device_has_fp64())
     {
@@ -77,21 +77,21 @@ TEST(Integration_DeviceSelection, RequireFp64StillConstructsOnAConformingLane)
     else
     {
         // With no conforming device the failure is still the SushiException below; see README.md.
-        EXPECT_THROW(Runtime::create(config), SushiException);
+        EXPECT_THROW(static_cast<void>(Runtime::create(config)), SushiException);
     }
 }
 
 /** @brief Tests that a filter that admits nothing fails at construction with Errc::unsupported. */
 TEST(Integration_DeviceSelection, AnEmptyFilterFailsWithUnsupported)
 {
-    Topology::HardwareFilterConfig config;
-    config.include_cpu         = false;
-    config.include_gpu         = false;
-    config.include_accelerator = false;
+    RuntimeConfig config;
+    config.devices.include_cpu         = false;
+    config.devices.include_gpu         = false;
+    config.devices.include_accelerator = false;
 
     try
     {
-        Runtime::create(config);
+        static_cast<void>(Runtime::create(config));
         FAIL() << "a filter admitting no device class must not produce a runtime";
     }
     catch (const SushiException& e)

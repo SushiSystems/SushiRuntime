@@ -172,7 +172,7 @@ TEST(Integration_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
     {
         RuntimeConfig config;
         config.force_scheduler = force_scheduler;
-        auto rt      = Runtime::create({}, config);
+        auto rt      = Runtime::create(config);
         auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
         auto out     = rt.buffer<std::uint32_t>(1);
         counter[0] = 101;

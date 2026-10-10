@@ -41,7 +41,7 @@ TEST(Performance_DynamicGraph, ManyRegionsStreamingMutations)
     constexpr std::size_t MUTATES  = 16;   // distinct regions touched between runs
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     std::vector<Buffer<int>> bufs;
     bufs.reserve(REGIONS);

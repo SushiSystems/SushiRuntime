@@ -89,7 +89,7 @@ TEST(Integration_CoTenancy, ReservesTheCoresTheHostAskedFor)
     config.worker_count = cores - reserved;
     config.first_core   = reserved;
 
-    auto rt = Runtime::create({}, config);
+    auto rt = Runtime::create(config);
     const auto pool = rt.advanced().worker_pool();
 
     EXPECT_EQ(pool.count, cores - reserved);
@@ -104,7 +104,7 @@ TEST(Integration_CoTenancy, ASingleWorkerStillExecutesTheWholeGraph)
     API::RuntimeConfig config;
     config.worker_count = 1;
 
-    auto rt = Runtime::create({}, config);
+    auto rt = Runtime::create(config);
     EXPECT_EQ(rt.advanced().worker_pool().count, 1u);
 
     expect_runs_correctly(rt);
@@ -117,7 +117,7 @@ TEST(Integration_CoTenancy, FloatPolicyRunsUnpinned)
     config.worker_count = 2;
     config.pinning      = API::PinPolicy::Float;
 
-    auto rt = Runtime::create({}, config);
+    auto rt = Runtime::create(config);
     const auto pool = rt.advanced().worker_pool();
 
     EXPECT_EQ(pool.count, 2u);
@@ -135,7 +135,7 @@ TEST(Integration_CoTenancy, AnOutOfRangeCoreRangeIsClampedNotIgnored)
     config.worker_count = 4;
     config.first_core   = cores + 8;   // entirely past the last core
 
-    auto rt = Runtime::create({}, config);
+    auto rt = Runtime::create(config);
     const auto pool = rt.advanced().worker_pool();
 
     EXPECT_LE(pool.first_core + pool.count, cores)
