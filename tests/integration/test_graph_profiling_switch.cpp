@@ -49,7 +49,7 @@ TEST(Integration_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
     constexpr std::size_t N = 256;
 
     auto rt = Runtime::create(); // RuntimeSettings::profiling defaults to false
-    ASSERT_FALSE(rt.advanced().profiling_enabled());
+    ASSERT_FALSE(rt.advanced().is_profiling_enabled());
     ASSERT_FALSE(any_profiling_queue_built(rt.unsafe_context()));
 
     auto a = rt.buffer<int>(N);

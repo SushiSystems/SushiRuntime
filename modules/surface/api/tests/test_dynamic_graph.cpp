@@ -42,7 +42,7 @@ TEST(Integration_DynamicGraph, IndependentRegionsRunAndComposeOnce)
     constexpr std::size_t STEPS = 5;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto a = rt.buffer<int>(N);
     auto b = rt.buffer<int>(N);
@@ -74,7 +74,7 @@ TEST(Integration_DynamicGraph, CrossRegionDependencyOrders)
     constexpr std::size_t N = 32;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto x = rt.buffer<int>(N);
     auto y = rt.buffer<int>(N);
@@ -103,7 +103,7 @@ TEST(Integration_DynamicGraph, DropRegionStopsItsWork)
     constexpr std::size_t N = 8;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto a = rt.buffer<int>(N);
     auto b = rt.buffer<int>(N);
@@ -138,7 +138,7 @@ TEST(Integration_DynamicGraph, AddRegionBetweenSteps)
     constexpr std::size_t N = 8;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto a = rt.buffer<int>(N);
     auto b = rt.buffer<int>(N);
@@ -170,7 +170,7 @@ TEST(Integration_DynamicGraph, SingleRecomposePerMutation)
     constexpr std::size_t REGIONS  = 32;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     std::vector<Buffer<int>> bufs;
     bufs.reserve(REGIONS);
@@ -214,7 +214,7 @@ TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
     constexpr std::size_t N = 4;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto a = rt.buffer<int>(N);
     int* pa = a.data();
@@ -244,7 +244,7 @@ TEST(Integration_DynamicGraph, ThreeRegionChainThreadsValue)
     constexpr std::size_t N = 24;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto x = rt.buffer<int>(N);
     auto y = rt.buffer<int>(N);
@@ -275,7 +275,7 @@ TEST(Integration_DynamicGraph, ReadReadSharingStaysConsistent)
     constexpr std::size_t N = 24;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto base = rt.buffer<int>(N);
     auto o1   = rt.buffer<int>(N);
@@ -309,7 +309,7 @@ TEST(Integration_DynamicGraph, StreamInConsumerRewiresProducer)
     constexpr std::size_t N = 16;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto x = rt.buffer<int>(N);
     auto y = rt.buffer<int>(N);
@@ -339,7 +339,7 @@ TEST(Integration_DynamicGraph, DropProducerLeavesConsumerRunnable)
     constexpr std::size_t N = 16;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto x = rt.buffer<int>(N);
     auto y = rt.buffer<int>(N);
@@ -378,7 +378,7 @@ TEST(Integration_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
     constexpr std::size_t HALF = N / 2;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto shared = rt.buffer<int>(N);
     for (std::size_t i = 0; i < N; ++i) shared[i] = 0;
@@ -416,7 +416,7 @@ TEST(Integration_DynamicGraph, OverlappingRangeRegionsStillSerialize)
     constexpr std::size_t N = 64;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto shared = rt.buffer<int>(N);
     for (std::size_t i = 0; i < N; ++i) shared[i] = 0;
@@ -465,7 +465,7 @@ TEST(Integration_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
     constexpr std::size_t HALF = N / 2;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto shared = rt.buffer<int>(N);
     auto total  = rt.buffer<int>(1);

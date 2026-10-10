@@ -59,7 +59,7 @@ namespace
     FanoutMeasurement measure_fanout(std::size_t roots, std::size_t steps)
     {
         auto rt = Runtime::create();
-        rt.rebalancer(false);
+        rt.set_rebalancer_enabled(false);
 
         std::vector<Buffer<int>> bufs;
         bufs.reserve(roots);

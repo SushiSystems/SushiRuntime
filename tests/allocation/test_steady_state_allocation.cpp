@@ -241,7 +241,7 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
     // Claim 3: the scheduler submits from a worker, which this counter cannot see; see README.md.
     API::RuntimeConfig forced;
     forced.force_scheduler = true;
-    auto scheduled_rt  = Runtime::create({}, forced);
+    auto scheduled_rt  = Runtime::create(forced);
     auto scheduled_buf = scheduled_rt.buffer<float>(N);
     for (std::size_t i = 0; i < N; ++i)
         scheduled_buf[i] = 0.0f;
@@ -347,7 +347,7 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
 
     API::RuntimeConfig forced;
     forced.force_scheduler = true;
-    auto scheduled_rt  = Runtime::create({}, forced);
+    auto scheduled_rt  = Runtime::create(forced);
     auto scheduled_buf = scheduled_rt.buffer<int>(N);
 
     auto sg = scheduled_rt.graph();

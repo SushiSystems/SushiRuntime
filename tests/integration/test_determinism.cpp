@@ -116,7 +116,7 @@ namespace
         config.worker_count = worker_count;
         config.rebalancer   = rebalancer;
 
-        auto rt = Runtime::create({}, config);
+        auto rt = Runtime::create(config);
 
         auto first   = rt.buffer<float>(N);
         auto second  = rt.buffer<float>(N);
@@ -272,7 +272,7 @@ TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
 {
     API::RuntimeConfig config;
     config.rebalancer = false;
-    auto rt = Runtime::create({}, config);
+    auto rt = Runtime::create(config);
 
     auto in    = rt.buffer<float>(N);
     auto total = rt.buffer<float>(1);

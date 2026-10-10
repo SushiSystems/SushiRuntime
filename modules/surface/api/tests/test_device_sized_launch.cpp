@@ -203,7 +203,7 @@ namespace
         auto chained_rt = Runtime::create();
         RuntimeConfig forced;
         forced.force_scheduler = true;
-        auto scheduled_rt = Runtime::create({}, forced);
+        auto scheduled_rt = Runtime::create(forced);
 
         const Recording chained = workload(chained_rt);
         const Recording scheduled = workload(scheduled_rt);

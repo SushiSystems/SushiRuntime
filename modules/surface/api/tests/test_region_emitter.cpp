@@ -64,7 +64,7 @@ TEST(Integration_RegionEmitter, EmittedNodesOrderAgainstANeighbourRegion)
     constexpr std::size_t N = 32;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto x = rt.buffer<int>(N);
     auto y = rt.buffer<int>(N);
@@ -95,7 +95,7 @@ TEST(Integration_RegionEmitter, AnEmitterIsOneRule)
     constexpr std::size_t N = 4;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto x = rt.buffer<int>(N);
     int* px = x.data();
@@ -123,7 +123,7 @@ TEST(Integration_RegionEmitter, AnEmitterReplaysOnlyWhenItsRegionIsRebuilt)
     constexpr std::size_t N = 8;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto a = rt.buffer<int>(N);
     auto b = rt.buffer<int>(N);
@@ -169,7 +169,7 @@ TEST(Integration_RegionEmitter, AStaticGraphTakesAnEmitter)
     constexpr std::size_t N = 16;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto x = rt.buffer<int>(N);
     auto y = rt.buffer<int>(N);

@@ -293,7 +293,7 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
     constexpr std::size_t N = 16;
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);
+    rt.set_rebalancer_enabled(false);
 
     auto a = rt.buffer<int>(N);
     auto b = rt.buffer<int>(N);

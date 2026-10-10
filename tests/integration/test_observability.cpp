@@ -50,7 +50,7 @@ TEST(Integration_Observability, ProfilingOffLeavesBreakdownEmpty)
     constexpr std::size_t N = 256;
 
     auto rt  = Runtime::create();                 // no profiling
-    EXPECT_FALSE(rt.advanced().profiling_enabled());
+    EXPECT_FALSE(rt.advanced().is_profiling_enabled());
 
     auto buf = rt.buffer<int>(N);
     int* p = buf.data();
@@ -68,8 +68,8 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
     constexpr std::size_t N = 4096;
     constexpr std::size_t STEPS = 8;
 
-    auto rt = Runtime::create({}, profiling_config());
-    ASSERT_TRUE(rt.advanced().profiling_enabled());
+    auto rt = Runtime::create(profiling_config());
+    ASSERT_TRUE(rt.advanced().is_profiling_enabled());
 
     auto a = rt.buffer<float>(N);
     auto b = rt.buffer<float>(N);
@@ -104,8 +104,8 @@ TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
     constexpr std::size_t N = 512;
     constexpr std::size_t STEPS = 4;
 
-    auto rt = Runtime::create({}, profiling_config());
-    ASSERT_TRUE(rt.advanced().profiling_enabled());
+    auto rt = Runtime::create(profiling_config());
+    ASSERT_TRUE(rt.advanced().is_profiling_enabled());
 
     auto buf = rt.buffer<int>(N);
     int* p = buf.data();
@@ -125,7 +125,7 @@ TEST(Integration_Observability, EveryAddShapeCanBeNamed)
 {
     constexpr std::size_t N = 256;
 
-    auto rt = Runtime::create({}, profiling_config());
+    auto rt = Runtime::create(profiling_config());
     auto a = rt.buffer<float>(N);
     auto b = rt.buffer<float>(N);
     auto c = rt.buffer<float>(N);
@@ -171,7 +171,7 @@ TEST(Integration_Observability, UnnamedNodeStillReportsTheDefaultLabel)
 {
     constexpr std::size_t N = 128;
 
-    auto rt = Runtime::create({}, profiling_config());
+    auto rt = Runtime::create(profiling_config());
     auto buf = rt.buffer<int>(N);
     int* p = buf.data();
 
@@ -190,7 +190,7 @@ TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
     // The worker split describes the scheduler, so keep this plan off the chain.
     RuntimeConfig config = profiling_config();
     config.force_scheduler = true;
-    auto rt = Runtime::create({}, config);
+    auto rt = Runtime::create(config);
     auto buf = rt.buffer<int>(N);
     int* p = buf.data();
 
@@ -218,7 +218,7 @@ TEST(Integration_Observability, ExplicitTransfersAreAccounted)
 
     // The context counts the runtime-issued copies directly.
     std::vector<int> src(N, 7);
-    buf.write_range({0, N}, src.data());
+    buf.write_range({0, N}, src);
     EXPECT_EQ(rt.advanced().host_to_device_bytes(), N * sizeof(int));
 
     auto out = buf.read_range({0, N});
@@ -236,7 +236,7 @@ TEST(Integration_Observability, TransferBytesAttributedToTheRunWindow)
 
     // The bytes a host node pushes during the run land in this run's window; see README.md.
     auto g = rt.graph();
-    g.add_host([&buf, &src]() { buf.write_range({0, N}, src.data()); });
+    g.add_host([&buf, &src]() { buf.write_range({0, N}, src); });
     auto rep = g.run();
 
     EXPECT_EQ(rep.host_to_device_bytes, N * sizeof(int));

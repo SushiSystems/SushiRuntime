@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-10 — api: Changed `RuntimeConfig` from an alias of the engine's settings to a struct with a `devices` filter, and `Runtime::create` to take it alone (`runtime_config.hpp`, `runtime.hpp`).
+- 2026-10-10 — api: Removed the copy of `Runtime`; it is move-only, and its factories and every query of the advanced view are nodiscard (`runtime.hpp`, `advanced_controls.hpp`).
+- 2026-10-10 — api: Added `AdvancedControls::devices()`, `is_profiling_enabled()`, `is_rebalancer_enabled()` and `Runtime::set_rebalancer_enabled()`; the old names are deprecated (`advanced_controls.hpp`).
+- 2026-10-10 — api: Removed the public constructor of `AdvancedControls`; it comes from `Runtime::advanced()` only (`advanced_controls.hpp`).
 - 2026-10-10 — api: Changed the range calls and `region` of Buffer and State to throw the invalid-access error for a window outside the handle; they clamped before (`buffer.hpp`, `state.hpp`).
 - 2026-10-10 — api: Removed the public constructors of Buffer and State that take a runtime context; use `Runtime::buffer()`, `Runtime::state()` or Interop (`buffer.hpp`, `state.hpp`).
 - 2026-10-10 — api: Added `is_host_accessible()`, a span overload of `write_range` and `State::device_index()`, and deprecated `host_accessible()` and the pointer overload (`buffer.hpp`).

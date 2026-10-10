@@ -62,8 +62,8 @@ namespace
     {
         API::RuntimeConfig config;
         config.force_scheduler = force_scheduler;
-        auto rt = Runtime::create({}, config);
-        rt.rebalancer(false);
+        auto rt = Runtime::create(config);
+        rt.set_rebalancer_enabled(false);
 
         std::vector<Buffer<int>> bufs;
         bufs.reserve(length + 1);

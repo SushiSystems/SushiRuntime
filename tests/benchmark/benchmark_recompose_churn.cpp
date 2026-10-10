@@ -84,7 +84,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
     constexpr std::size_t COMMITS = 64;   // dirty commits measured
 
     auto rt = Runtime::create();
-    rt.rebalancer(false);                 // deterministic; keep the migrator off the numbers
+    rt.set_rebalancer_enabled(false);     // deterministic; keep the migrator off the numbers
 
     std::vector<Buffer<int>> bufs;
     bufs.reserve(REGIONS);
