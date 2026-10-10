@@ -3500,3 +3500,20 @@ Given by the owner on 2026-10-10, numbered as in section 6 of phase C.
 
 One change to the task lists: D10 (the per-run offloaded count) leaves phase D's T4 for phase C's C9, because its caller is the step driver that C5 moves.
 
+### Found while phase D's first wave ran
+
+- A late-bound node that is disabled for the step but offloadable is still offered to
+  `try_offload`: the `enabled` check lives only in `execute_task`. T11 adds it to the branch
+  that is taken only for an offloadable node.
+- A node whose work throws is pushed as executed and reported to `on_local_completion`, so
+  versions are bumped for a node that failed part-way. T11.
+- `HEARTBEAT.oldest_held_task_id` has no defined value for an idle worker; with 0 the master
+  never reaps a lost result from one. T7 and T10 fix the value: the worker sends the largest
+  task id it has finished plus one when it holds none.
+- `Core::Errc` has no code for an unreadable file or an invalid argument; `SharedSecret` uses
+  `invalid_access`. Aligned with what phase C's C1 adds.
+- Reading an environment variable needs one seam: `std::getenv` trips the deprecation warning
+  on this toolchain, and `shared_secret.cpp` and the worker entry point both need it. T12.
+- On Windows it is not known whether a `select` in one thread wakes when another thread shuts
+  the socket down; `Unit_SocketTest.ShutdownEndsAWaitingRead` decides it at the first run.
+
