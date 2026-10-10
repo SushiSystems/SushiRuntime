@@ -128,6 +128,7 @@ def build(
     rich_help_panel=K_PROJECT,
     epilog="sr test\n"
            "sr test --suite all\n"
+           "sr test --module scheduler  # The tests of one module\n"
            "sr test --filter 'Suite.Case'  # ctest -R regex\n"
            "sr test --repeat 5  # Hunt a flaky test",
 )
@@ -140,6 +141,9 @@ def test(
     filter: Optional[str] = typer.Option(
         None, "--filter", "-f",
         help="ctest -R regex over 'Suite.Case' test names."),
+    module: Optional[str] = typer.Option(
+        None, "--module", "-m",
+        help="Run the tests of one module (its folder name); replaces --suite."),
     asan: bool = typer.Option(
         False, "--asan", help="Run the build-asan tree instead of build."),
     repeat: int = typer.Option(
@@ -152,7 +156,7 @@ def test(
     For GTest-level knobs (shuffle, break-on-failure) run the binary directly:
     sr run sr_functional_tests -- --gtest_shuffle --gtest_break_on_failure
     """
-    raise typer.Exit(project_svc.test(suite, distributed, filter, asan, repeat))
+    raise typer.Exit(project_svc.test(suite, distributed, filter, asan, repeat, module))
 
 
 @app.command(

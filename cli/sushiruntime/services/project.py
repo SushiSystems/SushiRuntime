@@ -16,6 +16,7 @@ from __future__ import annotations
 import enum
 import hashlib
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -455,7 +456,7 @@ def build(build_type: BuildType, distributed: bool = False,
 
 
 def test(suite: Suite, distributed: bool = False, filter: str | None = None,
-         asan: bool = False, repeat: int = 0) -> int:
+         asan: bool = False, repeat: int = 0, module: str | None = None) -> int:
     console.header("Project Test")
     root = find_project_root()
     cfg = load_config()
@@ -477,10 +478,13 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
     _neutralize_runtime_ld(cfg, env)
     # An inherited CUDA_LAUNCH_BLOCKING=1 serializes every kernel and breaks the overlap tests.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
+    # A module's tests carry its folder name as a label, whatever their kind.
+    if module is not None:
+        label_regex: str | None = f"^{re.escape(module)}$"
+    else:
+        label_regex = None if suite is Suite.all else _SUITE_LABEL_REGEX[suite]
     return _DRIVER.ctest_run(
-        cfg, build_dir, env,
-        label_regex=None if suite is Suite.all else _SUITE_LABEL_REGEX[suite],
-        filter=filter, repeat=repeat)
+        cfg, build_dir, env, label_regex=label_regex, filter=filter, repeat=repeat)
 
 
 def run(target: str | None = None, sort: bool = False,
