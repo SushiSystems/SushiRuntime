@@ -46,6 +46,7 @@
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
 
 #include "buffer_registry.hpp"
 #include "distributed_coordinator.hpp"
@@ -216,7 +217,8 @@ namespace SushiRuntime
         Result<Cluster> Cluster::attach(Runtime& runtime, std::shared_ptr<Transport> transport,
                                         ClusterOptions options)
         {
-            Internal::Execution::RuntimeContext& context = runtime.unsafe_context();
+            Internal::Execution::RuntimeContext& context =
+                SushiRuntime::Detail::ContextAccess::context(runtime);
             SR_VERIFY(transport != nullptr,
                       "Cluster::attach: the transport is null; pass a master-side transport "
                       "that was never started.");

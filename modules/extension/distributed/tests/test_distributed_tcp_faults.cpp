@@ -68,6 +68,7 @@
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
 
 #include "socket.hpp"
 #include "tcp_fault_proxy.hpp"
@@ -591,7 +592,8 @@ namespace
             /** @brief Allocates a buffer the fixture owns and shares it with the master. */
             SharedBytes& add_buffer(std::size_t size)
             {
-                Internal::Memory::USMAllocator& memory = master_runtime_->unsafe_context().memory();
+                Internal::Memory::USMAllocator& memory =
+                    SushiRuntime::Detail::ContextAccess::context(*master_runtime_).memory();
                 buffers_.push_back(std::make_unique<SharedBytes>(memory, size));
                 SharedBytes& buffer = *buffers_.back();
                 cluster_->share(buffer.data(), buffer.size());

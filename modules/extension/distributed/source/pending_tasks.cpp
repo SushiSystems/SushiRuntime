@@ -31,6 +31,8 @@
 #include <algorithm>
 #include <utility>
 
+#include <SushiRuntime/task/node.hpp>
+
 namespace SushiRuntime
 {
     namespace Distributed

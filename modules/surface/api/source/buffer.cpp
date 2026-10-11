@@ -1,0 +1,121 @@
+/**************************************************************************/
+/* buffer.cpp                                                             */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file buffer.cpp
+ * @brief Implements the calls a Buffer makes into the runtime for its memory.
+ * @author Mustafa Garip
+ * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+ */
+
+#include <SushiRuntime/api/data/buffer.hpp>
+
+#include <cstddef>
+#include <memory>
+#include <utility>
+
+#include <sycl/sycl.hpp>
+
+#include <SushiRuntime/api/detail/error_translation.hpp>
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/memory/allocation.hpp>
+#include <SushiRuntime/memory/usm_allocation_owner.hpp>
+#include <SushiRuntime/observability/transfer_counters.hpp>
+
+#include "context_memory.hpp"
+#include "memory_block.hpp"
+
+namespace SushiRuntime
+{
+    namespace Detail
+    {
+        std::size_t device_count(const ContextHandle& context)
+        {
+            return ContextAccess::context(context).devices().count();
+        }
+
+        Result<MemoryBlock> allocate_block(const ContextHandle& context, std::size_t count,
+                                           std::size_t element_size, std::size_t device,
+                                           Residency residency, std::size_t alignment)
+        {
+            const std::size_t bytes = checked_byte_count("Buffer allocation", count, element_size);
+            MemoryBlock block;
+            Error refused;
+            Error thrown = translate_exceptions(
+                ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
+            {
+                const std::shared_ptr<Internal::Execution::RuntimeContext>& shared =
+                    ContextAccess::shared(context);
+                auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
+                    shared->shared_memory());
+                void* address = malloc_residency_on(*shared, bytes, DeviceIndex{device},
+                                                    residency, alignment);
+                // A null address would give the handle a null key, which skips tracking.
+                if (count > 0 && address == nullptr)
+                {
+                    refused = Error{
+                        ErrorCode::AllocationFailed,
+                        "Buffer allocation: the device returned no memory for " +
+                        describe_request(count, element_size, DeviceIndex{device}, residency) +
+                        "."};
+                    return;
+                }
+                block = block_of(
+                    Internal::Memory::Allocation(address, bytes, std::move(owner)));
+            });
+            if (thrown.code != ErrorCode::Ok)
+                return make_error(std::move(thrown));
+            if (refused.code != ErrorCode::Ok)
+                return make_error(std::move(refused));
+            return block;
+        }
+
+        Error copy_to_host(const ContextHandle& context, void* base, const void* source,
+                           void* destination, std::size_t bytes) noexcept
+        {
+            return translate_exceptions(
+                ErrorCode::KernelFailed, ErrorCode::AllocationFailed, [&]()
+            {
+                Internal::Execution::RuntimeContext& runtime = ContextAccess::context(context);
+                sycl::queue& queue = owning_queue(runtime, base);
+                queue.memcpy(destination, source, bytes).wait();
+                runtime.transfers().add_device_to_host(bytes);
+            });
+        }
+
+        Error copy_to_device(const ContextHandle& context, void* base, void* destination,
+                             const void* source, std::size_t bytes) noexcept
+        {
+            return translate_exceptions(
+                ErrorCode::KernelFailed, ErrorCode::KernelFailed, [&]()
+            {
+                Internal::Execution::RuntimeContext& runtime = ContextAccess::context(context);
+                sycl::queue& queue = owning_queue(runtime, base);
+                queue.memcpy(destination, source, bytes).wait();
+                runtime.transfers().add_host_to_device(bytes);
+            });
+        }
+    } // namespace Detail
+} // namespace SushiRuntime

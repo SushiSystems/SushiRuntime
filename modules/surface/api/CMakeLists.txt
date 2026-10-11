@@ -8,30 +8,32 @@ sushiruntime_add_module(
     NAME api TIER surface
     SYCL
     SOURCES
+        advanced_controls.cpp
+        buffer.cpp
         context_handle.cpp
+        interop.cpp
         late_window.cpp
         node_emitters.cpp
         plan_cache.cpp
         recorder.cpp
         region_composer.cpp
+        runtime.cpp
         step_run.cpp
     DEPENDS
         core
-        logging
-        topology
+        report
+        region
+        log
+        machine
+        interop
+    PRIVATE_DEPENDS
         memory
         device
         observability
         task
-        scheduler
         graph
         execution
-        interop
-        report
-        region
-        interop_engine
-        log
-        machine)
+        interop_engine)
 
 sushiruntime_add_module_tests(
     MODULE api

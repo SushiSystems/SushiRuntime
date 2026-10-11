@@ -61,6 +61,8 @@
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 
 #include "test_helpers.hpp"
 
@@ -488,7 +490,8 @@ namespace
 
         std::atomic<int> worker_runs{0};
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = master_runtime.unsafe_context();
+        RuntimeContext& master_context =
+            SushiRuntime::Detail::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         const std::unique_ptr<USMFloats> input = make_input(queue);
         std::vector<std::unique_ptr<USMFloats>> outputs;
@@ -566,7 +569,8 @@ namespace
         const auto dropped = std::make_shared<std::atomic<int>>(0);
 
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = master_runtime.unsafe_context();
+        RuntimeContext& master_context =
+            SushiRuntime::Detail::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         const std::unique_ptr<USMFloats> input = make_input(queue);
         USMFloats output(queue, K_UNWRITTEN);

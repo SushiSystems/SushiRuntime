@@ -53,7 +53,7 @@ namespace SushiRuntime
         Internal::Execution::RuntimeContext&
         ContextAccess::context(const Runtime& runtime) noexcept
         {
-            return *runtime.context_;
+            return context(runtime.context_);
         }
     } // namespace Detail
 } // namespace SushiRuntime

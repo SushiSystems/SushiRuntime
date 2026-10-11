@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-12 — api: Breaking change: Removed `Runtime::unsafe_context()`; the library and its tests reach the context through `Detail::ContextAccess` of the internal `execution` module (`runtime.hpp`, `context_access.hpp`).
+- 2026-10-12 — api: Breaking change: Made `Buffer` hold a `Detail::MemoryBlock` and a `ContextHandle`; allocation and the window copies are compiled into the library (`buffer.hpp`, `buffer.cpp`).
+- 2026-10-12 — api: Breaking change: Compiled the members of `Runtime`, `AdvancedControls` and `Interop` that reach the context into the library (`runtime.cpp`, `interop.cpp`).
+- 2026-10-12 — api: Breaking change: Moved the engine modules of `api` to `PRIVATE_DEPENDS` and dropped topology, scheduler and logging; no header of the module includes an internal header (`CMakeLists.txt`).
 - 2026-10-12 — api: Breaking change: Compiled `Recorder::record`, `PlanCache` and `RegionComposer` into the library; no header of the graph folder includes an engine header (`recorder.cpp`, `plan_cache.cpp`).
 - 2026-10-12 — api: Breaking change: Moved the scheduler loop and the chain loop of `StepDriver` into the library, behind `Detail::run_steps` (`step_run.hpp`, `step_run.cpp`).
 - 2026-10-12 — api: Breaking change: Replaced the replay callable of a recorded node with `Detail::NodeDescription`, the regions, the type-erased work and a kind (`node_description.hpp`, `node_emitters.cpp`).

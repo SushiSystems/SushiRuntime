@@ -40,6 +40,9 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 
 using namespace SushiRuntime;
 
@@ -78,7 +81,7 @@ TEST(Integration_RuntimeEntry, DevicesListsEveryDeviceInOrder)
     ASSERT_EQ(devices.size(), view.device_count());
     ASSERT_FALSE(devices.empty());
 
-    Internal::Execution::RuntimeContext& context = rt.unsafe_context();
+    Internal::Execution::RuntimeContext& context = SushiRuntime::Detail::ContextAccess::context(rt);
     for (std::size_t index = 0; index < devices.size(); ++index)
     {
         const std::string reported = context.devices().queue(index).get_device()
@@ -128,7 +131,8 @@ TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
 
     const Runtime rt = Runtime::create(config).value();
     const AdvancedControls view = rt.advanced();
-    const Internal::Execution::RuntimeSettings& settings = rt.unsafe_context().settings();
+    const Internal::Execution::RuntimeSettings& settings =
+        SushiRuntime::Detail::ContextAccess::context(rt).settings();
 
     EXPECT_EQ(view.worker_pool().count, 1u);
     EXPECT_EQ(view.worker_pool().pinning, PinPolicy::Float);
@@ -144,11 +148,12 @@ TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
 TEST(Integration_RuntimeEntry, AMovedRuntimeKeepsItsContext)
 {
     Runtime first = Runtime::create().value();
-    Internal::Execution::RuntimeContext* const context = &first.unsafe_context();
+    Internal::Execution::RuntimeContext* const context =
+        &SushiRuntime::Detail::ContextAccess::context(first);
 
     const Runtime second = std::move(first);
 
-    EXPECT_EQ(&second.unsafe_context(), context);
+    EXPECT_EQ(&SushiRuntime::Detail::ContextAccess::context(second), context);
 }
 
 /** @brief Tests that a caller waits for device work and copies through the device's queue. */

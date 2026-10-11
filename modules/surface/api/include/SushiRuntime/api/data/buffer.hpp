@@ -28,7 +28,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -41,21 +40,15 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/strong_id.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/memory/allocation.hpp>
-#include <SushiRuntime/memory/usm_allocation_owner.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
-#include <SushiRuntime/memory/usm_request.hpp>
-#include <SushiRuntime/observability/transfer_counters.hpp>
 
 namespace SushiRuntime
 {
@@ -108,43 +101,52 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Allocates USM of the given residency on one device queue.
-         * @param context   Performs and records the allocation.
-         * @param alignment Byte alignment of the address; 0 asks for the device default.
-         * @return The USM pointer, or nullptr on failure.
+         * @brief Names one allocation and what keeps it alive, with nothing of how it was
+         *        made.
+         * @see modules/surface/api/include/SushiRuntime/api/data/README.md
          */
-        inline void* malloc_residency_on(Internal::Execution::RuntimeContext& context,
-                                         std::size_t bytes,
-                                         DeviceIndex device_index, Residency residency,
-                                         std::size_t alignment = 0)
+        struct MemoryBlock
         {
-            const std::size_t device = device_index.value();
-            Internal::Memory::USMAllocator& memory = context.memory();
-            switch (residency)
-            {
-                case Residency::Device:
-                    return memory.allocate(
-                        {Internal::Memory::USMKind::Device, bytes, alignment, device});
-                case Residency::Host:
-                    return memory.allocate(
-                        {Internal::Memory::USMKind::Host, bytes, alignment, device});
-                case Residency::Shared:
-                    return memory.allocate(
-                        {Internal::Memory::USMKind::Shared, bytes, alignment, device});
-            }
-            return nullptr;
-        }
+            void* address = nullptr;     /**< Base address, or null for no memory. */
+            std::size_t bytes = 0;       /**< Bytes the block holds. */
+            std::shared_ptr<void> owner; /**< Returns the memory when the last copy goes. */
+        };
+
+        /** @brief Returns how many devices a runtime drives. */
+        [[nodiscard]] SUSHIRUNTIME_API std::size_t device_count(const ContextHandle& context);
 
         /**
-         * @brief Returns the queue of the device that owns an address, or a queue of
-         *        NUMA node 0 when no device of the context owns it.
+         * @brief Allocates USM of one residency on one device, owned by the block returned.
+         * @param alignment Byte alignment of the address; 0 asks for the device default.
+         * @return The block, or an AllocationFailed error when the device returns nothing
+         *         for a count above zero.
+         * @pre The byte size of count elements fits std::size_t.
          */
-        inline sycl::queue& owning_queue(Internal::Execution::RuntimeContext& context,
-                                         void* address)
-        {
-            const std::optional<std::size_t> device = context.memory().owning_device(address);
-            return context.devices().queue_or_numa_local(device, 0);
-        }
+        [[nodiscard]] SUSHIRUNTIME_API Result<MemoryBlock> allocate_block(
+            const ContextHandle& context, std::size_t count, std::size_t element_size,
+            std::size_t device, Residency residency, std::size_t alignment);
+
+        /**
+         * @brief Copies bytes of an allocation to host memory through its owning queue,
+         *        waits, and counts them as moved device to host.
+         * @param base Base address of the allocation; source lies inside it.
+         * @return An Error whose code is ok, or a KernelFailed error when the device fails.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Error copy_to_host(const ContextHandle& context,
+                                                          void* base, const void* source,
+                                                          void* destination,
+                                                          std::size_t bytes) noexcept;
+
+        /**
+         * @brief Copies host bytes into an allocation through its owning queue, waits, and
+         *        counts them as moved host to device.
+         * @param base Base address of the allocation; destination lies inside it.
+         * @return An Error whose code is ok, or a KernelFailed error when the device fails.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Error copy_to_device(const ContextHandle& context,
+                                                            void* base, void* destination,
+                                                            const void* source,
+                                                            std::size_t bytes) noexcept;
 
         /**
          * @brief Stops the process unless a device index names a device the context drives.
@@ -264,7 +266,7 @@ namespace SushiRuntime
              */
             Buffer(Buffer&& other) noexcept
                 : context_(std::move(other.context_)),
-                  allocation_(std::move(other.allocation_)),
+                  block_(std::exchange(other.block_, {})),
                   size_(other.size_),
                   device_index_(other.device_index_),
                   residency_(other.residency_),
@@ -284,7 +286,7 @@ namespace SushiRuntime
                 {
                     reset();
                     context_ = std::move(other.context_);
-                    allocation_ = std::move(other.allocation_);
+                    block_ = std::exchange(other.block_, {});
                     size_ = other.size_;
                     device_index_ = other.device_index_;
                     residency_ = other.residency_;
@@ -301,7 +303,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] T* data() const noexcept
             {
-                return static_cast<T*>(allocation_.address());
+                return static_cast<T*>(block_.address);
             }
 
             /**
@@ -314,7 +316,7 @@ namespace SushiRuntime
              * @brief Tells whether this handle owns no memory.
              * @return True if it owns no allocation, e.g. after being moved from.
              */
-            [[nodiscard]] bool empty() const noexcept { return allocation_.empty(); }
+            [[nodiscard]] bool empty() const noexcept { return block_.address == nullptr; }
 
             /**
              * @brief Reports which device queue the allocation is pinned to.
@@ -419,56 +421,42 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             [[nodiscard]] static Result<Buffer> allocate(
-                const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
+                const char* call, const ContextHandle& context,
                 std::size_t count, DeviceIndex device_index, Residency residency,
                 std::size_t alignment)
             {
-                Detail::require_device(call, device_index, context->devices().count());
+                Detail::require_device(call, device_index, Detail::device_count(context));
                 Detail::require_alignment(call, alignment);
-                const std::size_t bytes =
-                    Detail::checked_byte_count("Buffer allocation", count, sizeof(T));
+                static_cast<void>(
+                    Detail::checked_byte_count("Buffer allocation", count, sizeof(T)));
+
+                Result<Detail::MemoryBlock> block = Detail::allocate_block(
+                    context, count, sizeof(T), device_index.value(), residency, alignment);
+                if (!block)
+                    return make_error(std::move(block.error()));
 
                 std::optional<Buffer> made;
-                Error refused;
                 Error thrown = Detail::translate_exceptions(
                     ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
                 {
-                    auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
-                        context->shared_memory());
-                    void* address = Detail::malloc_residency_on(*context, bytes, device_index,
-                                                                residency, alignment);
-                    // A null address would give the handle a null key, which skips tracking.
-                    if (count > 0 && address == nullptr)
-                    {
-                        refused = Error{
-                            ErrorCode::AllocationFailed,
-                            "Buffer allocation: the device returned no memory for " +
-                            Detail::describe_request(count, sizeof(T), device_index, residency) +
-                            "."};
-                        return;
-                    }
-                    made.emplace(Buffer(
-                        context, Internal::Memory::Allocation(address, bytes, std::move(owner)),
-                        count, device_index, residency));
+                    made.emplace(
+                        Buffer(context, std::move(*block), count, device_index, residency));
                 });
                 if (thrown.code != ErrorCode::Ok)
                     return make_error(std::move(thrown));
-                if (refused.code != ErrorCode::Ok)
-                    return make_error(std::move(refused));
                 return std::move(*made);
             }
 
             /**
              * @brief Wraps memory another component allocated and will release.
-             * @param allocation Owns at least count * sizeof(T) bytes; released when this
-             *        buffer is.
-             * @pre The byte size of count fits std::size_t and allocation holds at least it.
+             * @param block Holds at least count * sizeof(T) bytes; its owner is let go when
+             *        this buffer is.
+             * @pre The byte size of count fits std::size_t and block holds at least it.
              */
-            Buffer(std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                   Internal::Memory::Allocation allocation, std::size_t count,
+            Buffer(ContextHandle context, Detail::MemoryBlock block, std::size_t count,
                    DeviceIndex device_index, Residency residency)
                 : context_(std::move(context)),
-                  allocation_(std::move(allocation)),
+                  block_(std::move(block)),
                   size_(count),
                   device_index_(device_index),
                   residency_(residency),
@@ -476,9 +464,9 @@ namespace SushiRuntime
             {
                 const std::size_t bytes =
                     Detail::checked_byte_count("Buffer adoption", count, sizeof(T));
-                SR_VERIFY(allocation_.bytes() >= bytes,
+                SR_VERIFY(block_.bytes >= bytes,
                           ("Buffer adoption: an allocation of " +
-                           std::to_string(allocation_.bytes()) + " bytes cannot hold " +
+                           std::to_string(block_.bytes) + " bytes cannot hold " +
                            Detail::describe_request(count, sizeof(T), device_index, residency) +
                            ".")
                               .c_str());
@@ -499,16 +487,12 @@ namespace SushiRuntime
                     ErrorCode::KernelFailed, ErrorCode::AllocationFailed, [&]()
                 {
                     out.resize(range.count);
-                    if (range.count == 0)
-                        return;
-                    // A non-zero size_ implies a context and a non-null address.
-                    T* first = data();
-                    sycl::queue& queue =
-                        Detail::owning_queue(*context_, static_cast<void*>(first));
-                    queue.memcpy(out.data(), first + range.offset, range.count * sizeof(T))
-                        .wait();
-                    context_->transfers().add_device_to_host(range.count * sizeof(T));
                 });
+                // A non-zero size_ implies a runtime and a non-null address.
+                if (failed.code == ErrorCode::Ok && range.count != 0)
+                    failed = Detail::copy_to_host(context_, static_cast<void*>(data()),
+                                                  data() + range.offset, out.data(),
+                                                  range.count * sizeof(T));
                 if (failed.code != ErrorCode::Ok)
                     return make_error(std::move(failed));
                 return std::move(out);
@@ -535,17 +519,10 @@ namespace SushiRuntime
                            std::to_string(source.size()) + " elements for a window of count " +
                            std::to_string(range.count) + "; pass at least that many.")
                               .c_str());
-                Error failed = Detail::translate_exceptions(
-                    ErrorCode::KernelFailed, ErrorCode::KernelFailed, [&]()
-                {
-                    // A non-zero size_ implies a context and a non-null address.
-                    T* first = data();
-                    sycl::queue& queue =
-                        Detail::owning_queue(*context_, static_cast<void*>(first));
-                    queue.memcpy(first + range.offset, source.data(), range.count * sizeof(T))
-                        .wait();
-                    context_->transfers().add_host_to_device(range.count * sizeof(T));
-                });
+                // A non-zero size_ implies a runtime and a non-null address.
+                Error failed = Detail::copy_to_device(context_, static_cast<void*>(data()),
+                                                      data() + range.offset, source.data(),
+                                                      range.count * sizeof(T));
                 if (failed.code != ErrorCode::Ok)
                     return make_error(std::move(failed));
                 return {};
@@ -580,14 +557,18 @@ namespace SushiRuntime
             /** @brief Frees the owned allocation and clears the handle. */
             void reset() noexcept
             {
-                allocation_.reset();
+                block_ = {};
                 size_ = 0;
                 // Resetting the token expires every graph's observer of this allocation.
                 liveness_.reset();
             }
 
-            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
-            Internal::Memory::Allocation allocation_;
+            /** @brief The runtime the memory came from; empty for an empty handle. */
+            ContextHandle context_;
+
+            /** @brief The allocation and what keeps it alive. */
+            Detail::MemoryBlock block_;
+
             std::size_t size_ = 0;
             DeviceIndex device_index_ = DeviceIndex{0};
             Residency residency_ = Residency::Shared;

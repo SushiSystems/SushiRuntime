@@ -30,6 +30,8 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 
 using namespace SushiRuntime;
 
@@ -51,7 +53,7 @@ TEST(Integration_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
 
     auto rt = Runtime::create().value(); // RuntimeSettings::profiling defaults to false
     ASSERT_FALSE(rt.advanced().is_profiling_enabled());
-    ASSERT_FALSE(any_profiling_queue_built(rt.unsafe_context()));
+    ASSERT_FALSE(any_profiling_queue_built(SushiRuntime::Detail::ContextAccess::context(rt)));
 
     auto a = rt.buffer<int>(N).value();
     auto b = rt.buffer<int>(N).value();
@@ -70,12 +72,12 @@ TEST(Integration_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
               [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
 
     // A request alone, before any run, must not build a queue.
-    EXPECT_FALSE(any_profiling_queue_built(rt.unsafe_context()));
+    EXPECT_FALSE(any_profiling_queue_built(SushiRuntime::Detail::ContextAccess::context(rt)));
 
     auto rep_requested = requested.run().value();
     EXPECT_FALSE(rep_requested.node_timings.empty())
         << "the requested graph must collect device timing";
-    EXPECT_TRUE(any_profiling_queue_built(rt.unsafe_context()))
+    EXPECT_TRUE(any_profiling_queue_built(SushiRuntime::Detail::ContextAccess::context(rt)))
         << "running the requested graph must have built a profiling queue";
 
     auto rep_plain = plain.run().value();
@@ -130,6 +132,6 @@ TEST(Integration_GraphProfilingSwitch, NUMAFallbackBranchUsesProfilingQueue)
     auto rep = g.run().value();
     EXPECT_FALSE(rep.node_timings.empty())
         << "the NUMA-fallback branch must still dispatch on a profiling queue";
-    EXPECT_TRUE(any_profiling_queue_built(rt.unsafe_context()))
+    EXPECT_TRUE(any_profiling_queue_built(SushiRuntime::Detail::ContextAccess::context(rt)))
         << "reaching this branch under profiling must build a profiling queue";
 }
