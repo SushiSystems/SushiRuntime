@@ -37,7 +37,7 @@
 #include <string_view>
 #include <utility>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/distributed/distributed.hpp>
 
 #include "distributed_kernels.hpp"

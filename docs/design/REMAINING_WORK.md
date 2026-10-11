@@ -197,7 +197,7 @@ Open after a repair:
 - **CI.** `.github/workflows/ci.yml` runs on Linux only, calls `cmake` and `ctest` directly,
   runs none of the checkers, has no release workflow, and its `cli` job installs `sushicore`
   from a path SushiStack no longer carries.
-- **The umbrella header's name.** `SushiRuntime/SushiRuntime.h` is the one header with a `.h`
+- **The umbrella header's name.** `SushiRuntime/sushiruntime.hpp` is the one header with a `.h`
   suffix and a capitalised name. A rename is a public interface change.
 - **Layout steps left after the move.** The library exports every symbol, and no header is
   compiled alone. The order is in `docs/agent/2026_10_09_USABILITY_AUDIT/PLAN.md`.

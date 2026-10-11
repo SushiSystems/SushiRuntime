@@ -90,7 +90,7 @@ The demo's own flags are listed in `applications/examples/README.md`.
 ## 4. Start a master
 
 ```cpp
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>

@@ -1,6 +1,6 @@
 # examples
 
-Nine programs written against the public API. Eight include `<SushiRuntime/SushiRuntime.h>`;
+Nine programs written against the public API. Eight include `<SushiRuntime/sushiruntime.hpp>`;
 `distributed_worker.cpp` includes only `<SushiRuntime/distributed/distributed.hpp>`, and
 `distributed_demo.cpp` includes both. Each spells every name through
 `using namespace SushiRuntime;`. Read `quickstart.cpp` first, then the focused demos:

@@ -32,7 +32,7 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 
 #include "dynamic_graph_plan_access.hpp"
 

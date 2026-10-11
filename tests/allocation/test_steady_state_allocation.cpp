@@ -34,7 +34,7 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 
 using namespace SushiRuntime;

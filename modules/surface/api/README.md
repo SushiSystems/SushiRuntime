@@ -68,7 +68,7 @@ A caller writes `record_scaled_copy(graph.recorder(), in, out, n, 2.0f);`, and t
 
 Each leaf header promotes the public names it declares into the SushiRuntime namespace, in a
 closing `using` block. fluent.hpp promotes none. A program that includes
-`SushiRuntime/SushiRuntime.h` writes `SushiRuntime::Runtime`, `SushiRuntime::Buffer<T>`,
+`SushiRuntime/sushiruntime.hpp` writes `SushiRuntime::Runtime`, `SushiRuntime::Buffer<T>`,
 `SushiRuntime::Reads` and `SushiRuntime::RunReport`.
 
 Two headers under `api/` declare nothing and only promote. `runtime/errors.hpp` promotes
@@ -85,9 +85,9 @@ The graph type stays `Graph`, because `SushiRuntime::Internal::Graph` is the eng
 `sized`, `based_at` and their device forms stay in `API`, so `using namespace SushiRuntime` does not
 bring `when` into scope.
 
-## SushiRuntime.h
+## sushiruntime.hpp
 
-`SushiRuntime/SushiRuntime.h` includes `core/version.hpp` and `api/fluent.hpp`, and nothing else.
+`SushiRuntime/sushiruntime.hpp` includes `core/version.hpp` and `api/fluent.hpp`, and nothing else.
 Up to v0.3 it also included seventeen engine headers. A program that used the scheduler, the
 dependency tracker, epoch reclamation, hardware discovery or the logger through it now includes that
 module's header.

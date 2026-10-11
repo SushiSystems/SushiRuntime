@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* SushiRuntime.h                                                         */
+/* sushiruntime.hpp                                                       */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,7 +20,7 @@
 /**************************************************************************/
 
 /**
- * @file SushiRuntime.h
+ * @file sushiruntime.hpp
  * @brief Includes the release version and the fluent API of the SushiRuntime library.
  * @author Mustafa Garip
  * @see modules/surface/api/README.md
