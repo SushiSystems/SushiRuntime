@@ -46,7 +46,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/strong_id.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -88,9 +88,6 @@ namespace SushiRuntime
         Device,  /**< Device-resident USM; host access only via read/write_range. */
         Host     /**< Pinned host USM; host-readable while kernels run. */
     };
-
-    /** @brief Names the byte window of one allocation that region() returns. */
-    using BufferRegion = Internal::Memory::ResourceRegion;
 
     /**
      * @brief Names a residency as its enumerator spelling, for messages.

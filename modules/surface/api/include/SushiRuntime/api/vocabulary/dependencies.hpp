@@ -35,7 +35,7 @@
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -43,29 +43,29 @@ namespace SushiRuntime
     {
         // A State reads through its current buffer and writes through its next buffer.
         template <typename T>
-        inline Internal::Memory::ResourceRegion read_key_of(const Buffer<T>& b) noexcept
+        inline BufferRegion read_key_of(const Buffer<T>& b) noexcept
         {
             return HandleAccess::key(b);
         }
         template <typename T>
-        inline Internal::Memory::ResourceRegion read_key_of(const State<T>& s) noexcept
+        inline BufferRegion read_key_of(const State<T>& s) noexcept
         {
             return HandleAccess::read_key(s);
         }
-        inline Internal::Memory::ResourceRegion read_key_of(const Internal::Memory::ResourceRegion& r) noexcept { return r; }
+        inline BufferRegion read_key_of(const BufferRegion& r) noexcept { return r; }
         template <typename T>
-        inline Internal::Memory::ResourceRegion write_key_of(const Buffer<T>& b) noexcept
+        inline BufferRegion write_key_of(const Buffer<T>& b) noexcept
         {
             return HandleAccess::key(b);
         }
         template <typename T>
-        inline Internal::Memory::ResourceRegion write_key_of(const State<T>& s) noexcept
+        inline BufferRegion write_key_of(const State<T>& s) noexcept
         {
             return HandleAccess::write_key(s);
         }
-        inline Internal::Memory::ResourceRegion write_key_of(const Internal::Memory::ResourceRegion& r) noexcept { return r; }
+        inline BufferRegion write_key_of(const BufferRegion& r) noexcept { return r; }
 
-        // Only typed handles are watched; a bare ResourceRegion yields an empty observer.
+        // Only typed handles are watched; a bare BufferRegion yields an empty observer.
         template <typename T>
         inline Internal::Memory::LivenessObserver liveness_of(const Buffer<T>& b) noexcept
         {
@@ -76,7 +76,7 @@ namespace SushiRuntime
         {
             return HandleAccess::liveness(s);
         }
-        inline Internal::Memory::LivenessObserver liveness_of(const Internal::Memory::ResourceRegion&) noexcept { return {}; }
+        inline Internal::Memory::LivenessObserver liveness_of(const BufferRegion&) noexcept { return {}; }
 
         /**
          * @brief Appends a handle's observer only when it watches an allocation.
@@ -99,7 +99,7 @@ namespace SushiRuntime
      */
     struct Reads
     {
-        std::vector<Internal::Memory::ResourceRegion> keys;  /**< Read regions, in argument order. */
+        std::vector<BufferRegion> keys;  /**< Read regions, in argument order. */
         std::vector<Internal::Memory::LivenessObserver> lives; /**< Observers of typed handles read. */
 
         /**
@@ -121,7 +121,7 @@ namespace SushiRuntime
      */
     struct Writes
     {
-        std::vector<Internal::Memory::ResourceRegion> keys;  /**< Write regions, in argument order. */
+        std::vector<BufferRegion> keys;  /**< Write regions, in argument order. */
         std::vector<Internal::Memory::LivenessObserver> lives; /**< Observers of the typed handles written. */
 
         /**

@@ -41,7 +41,7 @@
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -156,9 +156,9 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the whole-buffer region a resolver of a device count reads. */
-            static Internal::Memory::ResourceRegion slot_region(const LateCount& count) noexcept
+            static BufferRegion slot_region(const LateCount& count) noexcept
             {
-                return Internal::Memory::ResourceRegion(slot_buffer_key(count.slot_));
+                return BufferRegion(slot_buffer_key(count.slot_));
             }
 
             /** @brief Returns the observer of the device slot's buffer. */

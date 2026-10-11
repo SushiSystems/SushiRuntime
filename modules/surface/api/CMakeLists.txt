@@ -19,7 +19,8 @@ sushiruntime_add_module(
         graph
         execution
         interop
-        report)
+        report
+        region)
 
 sushiruntime_add_module_tests(
     MODULE api

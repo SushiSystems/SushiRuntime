@@ -37,7 +37,7 @@
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -51,7 +51,7 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         inline bool gather_device_read(const LateCount& count,
-                                       std::vector<Internal::Memory::ResourceRegion>& reads,
+                                       std::vector<BufferRegion>& reads,
                                        std::vector<Internal::Memory::LivenessObserver>& lives)
         {
             if (LateCountAccess::slot(count) == nullptr)

@@ -36,7 +36,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/assert.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
@@ -48,10 +48,10 @@ namespace SushiRuntime
         namespace
         {
             /** @brief Returns the whole-buffer region of each view, in the views' order. */
-            std::vector<Internal::Memory::ResourceRegion> regions_of(
+            std::vector<BufferRegion> regions_of(
                 SushiRuntime::span<const BufferView> views)
             {
-                std::vector<Internal::Memory::ResourceRegion> regions;
+                std::vector<BufferRegion> regions;
                 regions.reserve(views.size());
                 for (const BufferView& view : views)
                     regions.emplace_back(view.data);

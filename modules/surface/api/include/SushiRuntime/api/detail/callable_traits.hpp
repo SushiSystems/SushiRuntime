@@ -36,7 +36,7 @@
 
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -103,11 +103,11 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Views, std::size_t... Is>
-        inline std::vector<Internal::Memory::ResourceRegion> read_keys_of_views(
+        inline std::vector<BufferRegion> read_keys_of_views(
             const Views& views, std::index_sequence<Is...>)
         {
-            return std::vector<Internal::Memory::ResourceRegion>{
-                Internal::Memory::ResourceRegion(static_cast<void*>(std::get<Is>(views)->current))... };
+            return std::vector<BufferRegion>{
+                BufferRegion(static_cast<void*>(std::get<Is>(views)->current))... };
         }
     } // namespace Detail
 } // namespace SushiRuntime

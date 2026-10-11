@@ -50,6 +50,7 @@ sushiruntime_add_module(
         graph
         execution
         api
+        region
     EXTERNAL "$<$<PLATFORM_ID:Windows>:ws2_32>")
 
 sushiruntime_add_module_tests(

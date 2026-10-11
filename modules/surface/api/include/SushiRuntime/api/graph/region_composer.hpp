@@ -44,7 +44,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
@@ -228,7 +228,7 @@ namespace SushiRuntime
 
         private:
             using Node = ::SushiRuntime::Internal::Graph::Node;
-            using Base = ::SushiRuntime::Internal::Memory::ResourceID;  // allocation identity (void*)
+            using Base = ::SushiRuntime::ResourceID;  // allocation identity (void*)
             using Pin = Detail::Pin;
             using BaseAccess = Detail::BaseAccess;
 
@@ -239,7 +239,7 @@ namespace SushiRuntime
             struct BoundaryPin
             {
                 Node* node = nullptr;
-                std::vector<Internal::Memory::ResourceRegion> regions;
+                std::vector<BufferRegion> regions;
             };
 
             /**
@@ -489,13 +489,13 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             static void retire_covered(std::vector<BoundaryPin>& pins,
-                                       const std::vector<Internal::Memory::ResourceRegion>& covers)
+                                       const std::vector<BufferRegion>& covers)
             {
                 for (auto it = pins.begin(); it != pins.end(); )
                 {
                     auto& regions = it->regions;
                     regions.erase(std::remove_if(regions.begin(), regions.end(),
-                        [&covers](const Internal::Memory::ResourceRegion& r)
+                        [&covers](const BufferRegion& r)
                         {
                             return Detail::covered_by_any(r, covers);
                         }), regions.end());
@@ -550,7 +550,7 @@ namespace SushiRuntime
                                     add_cross_edge(r.node, in.node, b);   // WAR
                     }
 
-                    std::vector<Internal::Memory::ResourceRegion> covering;
+                    std::vector<BufferRegion> covering;
                     for (const Pin& e : a.exit)
                         covering.insert(covering.end(), e.writes.begin(), e.writes.end());
 

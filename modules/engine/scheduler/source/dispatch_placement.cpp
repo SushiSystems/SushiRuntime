@@ -32,7 +32,7 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
@@ -51,10 +51,10 @@ namespace SushiRuntime
             }
 
             /** @brief Tells whether a region of @p regions is recorded off the device @p anchor. */
-            bool leaves_device(const std::vector<Internal::Memory::ResourceRegion>& regions, int anchor,
+            bool leaves_device(const std::vector<BufferRegion>& regions, int anchor,
                                const Internal::Memory::USMAllocator& memory)
             {
-                for (const Internal::Memory::ResourceRegion& region : regions)
+                for (const BufferRegion& region : regions)
                 {
                     if (!region.base)
                         continue;

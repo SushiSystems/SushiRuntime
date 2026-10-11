@@ -39,7 +39,7 @@
 
 #include <SushiRuntime/api/graph/device_sized.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -53,8 +53,8 @@ namespace SushiRuntime
          * @pre The reads name the regions launch.live_width and launch.live_words lie in.
          */
         template <class F>
-        auto device_sized_node(std::vector<Internal::Memory::ResourceRegion> reads,
-                               std::vector<Internal::Memory::ResourceRegion> writes,
+        auto device_sized_node(std::vector<BufferRegion> reads,
+                               std::vector<BufferRegion> writes,
                                DeviceSized launch, F kernel, std::size_t width)
         {
             return [kernel, launch, reads = std::move(reads), writes = std::move(writes), width]

@@ -15,6 +15,5 @@ sushiruntime_add_module_tests(
     MODULE memory
     SOURCES
         test_epoch_reclamation.cpp
-        test_resource_region.cpp
         test_usm_allocator.cpp
         test_usm_registry.cpp)

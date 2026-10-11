@@ -37,7 +37,7 @@
 #include <vector>
 
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
@@ -55,8 +55,8 @@ namespace SushiRuntime
         struct Pin
         {
             GraphNode* node = nullptr;
-            std::vector<Internal::Memory::ResourceRegion> reads;
-            std::vector<Internal::Memory::ResourceRegion> writes;
+            std::vector<BufferRegion> reads;
+            std::vector<BufferRegion> writes;
         };
 
         /**
@@ -72,8 +72,8 @@ namespace SushiRuntime
         /** @brief Holds the byte intervals one node reads and writes on one allocation. */
         struct NodeAccess
         {
-            std::vector<Internal::Memory::ResourceRegion> reads;
-            std::vector<Internal::Memory::ResourceRegion> writes;
+            std::vector<BufferRegion> reads;
+            std::vector<BufferRegion> writes;
         };
 
         /** @brief Lists the accesses of a node's direct intra neighbours on one allocation. */
@@ -96,8 +96,8 @@ namespace SushiRuntime
         }
 
         /** @brief Returns whether an interval in a intersects an interval in b. */
-        inline bool overlaps_any(const std::vector<Internal::Memory::ResourceRegion>& a,
-                                 const std::vector<Internal::Memory::ResourceRegion>& b)
+        inline bool overlaps_any(const std::vector<BufferRegion>& a,
+                                 const std::vector<BufferRegion>& b)
         {
             for (const auto& x : a)
                 for (const auto& y : b)
@@ -107,8 +107,8 @@ namespace SushiRuntime
         }
 
         /** @brief Returns whether one interval in covers fully contains r. */
-        inline bool covered_by_any(const Internal::Memory::ResourceRegion& r,
-                                   const std::vector<Internal::Memory::ResourceRegion>& covers)
+        inline bool covered_by_any(const BufferRegion& r,
+                                   const std::vector<BufferRegion>& covers)
         {
             for (const auto& c : covers)
                 if (c.contains(r))
@@ -117,7 +117,7 @@ namespace SushiRuntime
         }
 
         /** @brief Returns whether a write of one neighbour fully contains r. */
-        inline bool covered_by_write(const Internal::Memory::ResourceRegion& r,
+        inline bool covered_by_write(const BufferRegion& r,
                                      const NeighbourAccesses& neighbours)
         {
             for (const NodeAccess* neighbour : neighbours)
@@ -127,7 +127,7 @@ namespace SushiRuntime
         }
 
         /** @brief Returns whether a read or a write of one neighbour fully contains r. */
-        inline bool covered_by_access(const Internal::Memory::ResourceRegion& r,
+        inline bool covered_by_access(const BufferRegion& r,
                                       const NeighbourAccesses& neighbours)
         {
             for (const NodeAccess* neighbour : neighbours)
@@ -179,10 +179,10 @@ namespace SushiRuntime
          *        byte interval.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
-        inline std::map<Internal::Memory::ResourceID, BaseAccess> compute_boundary_access(
+        inline std::map<ResourceID, BaseAccess> compute_boundary_access(
             const std::vector<sushi_ptr<GraphNode>>& nodes)
         {
-            std::map<Internal::Memory::ResourceID, std::unordered_map<GraphNode*, NodeAccess>> per_base;
+            std::map<ResourceID, std::unordered_map<GraphNode*, NodeAccess>> per_base;
             for (const auto& np : nodes)
             {
                 GraphNode* n = np.get();
@@ -192,7 +192,7 @@ namespace SushiRuntime
                     if (w.base) per_base[w.base][n].writes.push_back(w);
             }
 
-            std::map<Internal::Memory::ResourceID, BaseAccess> access;
+            std::map<ResourceID, BaseAccess> access;
             const NeighbourAccesses none;
             for (const auto& base_and_accessors : per_base)
             {

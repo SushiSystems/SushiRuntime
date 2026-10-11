@@ -19,6 +19,7 @@ set(SUSHIRUNTIME_TIER_ORDER
 set(SUSHIRUNTIME_MODULE_TIERS
     core            foundation
     report          foundation
+    region          foundation
     logging         foundation
     sycl            foundation
     topology        platform

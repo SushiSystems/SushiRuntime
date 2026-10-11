@@ -75,36 +75,6 @@ The test retires 4 times `K_RETIRE_THRESHOLD` parents under guards. Each parent'
 child. The test then retires 32 times `K_RETIRE_THRESHOLD` objects under guards and asserts that the
 parent counter and the child counter each equal the number of parents.
 
-## test_resource_region.cpp
-
-The file covers the overlap and containment queries of `ResourceRegion`. Two integers stand in for two
-allocations, `first_allocation` and `second_allocation`. Only their addresses are used.
-
-### `ADefaultRegionOverlapsNothing`
-
-A default region is not valid and overlaps no region, itself included. Two regions with a null base,
-of 8 bytes at offsets 0 and 4, do not overlap.
-
-### `ADefaultRegionContainsNothingAndIsContainedByNothing`
-
-A default region contains neither another default region nor a region of an allocation. The whole
-allocation does not contain a default region.
-
-### `RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersect`
-
-The whole allocation overlaps every region of it. `[0, 8)` overlaps `[4, 12)`, and `[4, 12)` overlaps
-`[8, 16)` and the tail from offset 12 to the end. The intervals are half-open, so `[0, 8)` overlaps
-neither `[8, 16)` nor the tail.
-
-### `RegionsOfDifferentAllocationsNeverOverlap`
-
-Regions of two different allocations neither overlap nor contain each other.
-
-### `ARegionContainsWhatLiesEntirelyInside`
-
-The whole allocation contains itself and `[0, 8)`. `[0, 8)` contains itself and `[2, 6)`. `[0, 8)`
-contains neither the whole allocation nor `[4, 12)`, and `[2, 6)` does not contain `[0, 8)`.
-
 ## test_usm_allocator.cpp
 
 The file covers `USMAllocator`. The sections below cover its release of an address that it holds no

@@ -36,7 +36,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
@@ -87,8 +87,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_node(TaskWork work,
-                               const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                               const std::vector<Internal::Memory::ResourceRegion>& write_access,
+                               const std::vector<BufferRegion>& read_access,
+                               const std::vector<BufferRegion>& write_access,
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
 
@@ -100,8 +100,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_node(TaskWork work,
-                               const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                               const std::vector<Internal::Memory::ResourceRegion>& write_access,
+                               const std::vector<BufferRegion>& read_access,
+                               const std::vector<BufferRegion>& write_access,
                                std::shared_ptr<LateBindings> bindings,
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
@@ -141,8 +141,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_task(const TaskMetadata& metadata,
-                               const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                               const std::vector<Internal::Memory::ResourceRegion>& write_access,
+                               const std::vector<BufferRegion>& read_access,
+                               const std::vector<BufferRegion>& write_access,
                                TaskWork device_work,
                                HostWork fallback_work,
                                const std::vector<sycl::event>& dependencies = {},
@@ -155,8 +155,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_task(const TaskMetadata& metadata,
-                               const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                               const std::vector<Internal::Memory::ResourceRegion>& write_access,
+                               const std::vector<BufferRegion>& read_access,
+                               const std::vector<BufferRegion>& write_access,
                                HostWork fallback_work,
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
@@ -169,8 +169,8 @@ namespace SushiRuntime
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                Node& add_native(const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                                 const std::vector<Internal::Memory::ResourceRegion>& write_access,
+                Node& add_native(const std::vector<BufferRegion>& read_access,
+                                 const std::vector<BufferRegion>& write_access,
                                  std::function<void()> work,
                                  const std::vector<sycl::event>& dependencies = {},
                                  std::optional<std::uint32_t> registration = std::nullopt);
