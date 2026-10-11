@@ -8,21 +8,22 @@ symbol or passage it explains, and that header's file block cites this page.
 
 ## callable_traits.hpp
 
-### The three callable traits
+### The callable traits
 
-callable_traits.hpp names three callable shapes as C++17 traits over std::is_invocable_v: a
-per-element kernel, a range kernel and a raw kernel. They have two users. The Recorder chooses
-between a per-element node and a range node by the first two: untracked_kernel() by overload, and
-kernel(count, ...) inside one overload, after accepts_kernel() has asserted the callable.
-callable_checks.hpp reads all three in accepts_per_element(), accepts_kernel() and
-accepts_raw_kernel(). add() selects its overload by the launch and the access.
+callable_traits.hpp names four callable shapes as C++17 traits over std::is_invocable_v: a
+per-element kernel, a range kernel, a raw kernel and a task body. The first three have two users.
+The Recorder chooses between a per-element node and a range node by the first two:
+untracked_kernel() by overload, and kernel(count, ...) inside one overload, after accepts_kernel()
+has asserted the callable. callable_checks.hpp reads all three in accepts_per_element(),
+accepts_kernel() and accepts_raw_kernel(). add() selects its overload by the launch and the access.
 
 is_per_element_v and is_range_kernel_v test a `const std::decay_t<F>&`, as is_launch_kernel_v
 does, because the emitters call those kernels as const objects. A `mutable` lambda that captures
 state is therefore false for both and stops at the static_assert of its family. A captureless one
 converts to a function pointer and stays callable as const. is_raw_kernel_v tests F itself:
 raw_node() stores the command group in a std::function, which calls it as a non-const object, so
-a `mutable` raw kernel runs.
+a `mutable` raw kernel runs. is_task_body_v tests a non-const `std::decay_t<F>&` for the same
+reason, and also that the result converts to `sycl::event`; accepts_task() is its one reader.
 
 ### views_current
 
@@ -179,6 +180,7 @@ points at the caller's add() line.
 | accepts_coupled_rule | add(Coupled, fn), add(launch, Coupled, fn) |
 | accepts_per_element | add(Dynamic, capacity, reads, writes, fn), add(OperationID, n, reads, writes, fn) |
 | accepts_raw_kernel | add(reads, writes, fn), add_untracked(fn), add_untracked(On, fn) |
+| accepts_task | add_task(reads, writes, fn) |
 | accepts_host_task, accepts_emitter, accepts_extension | add_host, add_emitter, extend |
 
 Each function returns what it asserted. The overload records inside `if constexpr` on that
@@ -259,7 +261,7 @@ after the emitter has run.
 
 | Emitter | Width stamped |
 | --- | --- |
-| launch_node, range_node, raw_node, captured_node, host_node, device_sized_node, late_count_resolver_node | the width NodeOptions states |
+| launch_node, range_node, raw_node, captured_node, task_node, host_node, device_sized_node, late_count_resolver_node | the width NodeOptions states |
 | dynamic_node | the width NodeOptions states, or the capacity |
 | add_state_node, add_coupled_node, untracked_launch_node | launch_count() of the launch |
 | untracked_range_node, offload_node | the count |
@@ -268,6 +270,14 @@ after the emitter has run.
 
 untracked_raw_node() stamps none: a raw command group submits its own work and takes no launch,
 so its width is the one NodeOptions states, or unknown.
+
+### task_node
+
+task_node() adds its node with TaskGraph::add_task() and a host-side work only, which is the
+engine's form for a body that receives the queue. The engine calls such a node "host" because the
+body runs on a worker thread; the node still counts as one that submits device work, so the chain
+layer takes it. The body is wrapped in the engine's HostWork explicitly: add_task() has a second
+overload that takes a device work first, and a generic lambda would convert to both.
 
 ### State emitters
 

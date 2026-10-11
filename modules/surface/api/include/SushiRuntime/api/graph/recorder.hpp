@@ -55,6 +55,7 @@
 #include <SushiRuntime/api/detail/emit_late_count_resolver.hpp>
 #include <SushiRuntime/api/detail/emit_offload.hpp>
 #include <SushiRuntime/api/detail/emit_state.hpp>
+#include <SushiRuntime/api/detail/emit_task.hpp>
 #include <SushiRuntime/api/detail/emit_tracked.hpp>
 #include <SushiRuntime/api/detail/emit_untracked.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
@@ -300,6 +301,21 @@ namespace SushiRuntime
             {
                 record(Detail::host_node(std::move(access.reads), std::move(access.writes),
                                          std::forward<F>(fn), options.width),
+                       access.lives, options);
+            }
+
+            /**
+             * @brief Records a task that submits its own work on the queue it is handed.
+             * @param body Callable invoked once per step as
+             *        body(sycl::queue&, const std::vector<sycl::event>&); it waits for nothing
+             *        and returns the event that ends its work.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            template <class F>
+            void task(Access access, F&& body, NodeOptions options = {})
+            {
+                record(Detail::task_node(std::move(access.reads), std::move(access.writes),
+                                         std::forward<F>(body), options.width),
                        access.lives, options);
             }
 

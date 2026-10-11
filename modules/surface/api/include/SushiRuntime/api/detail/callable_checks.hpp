@@ -180,6 +180,18 @@ namespace SushiRuntime
             return accepted;
         }
 
+        /** @brief Checks a task body, which submits its own work on the queue it is given. */
+        template <class F>
+        constexpr bool accepts_task() noexcept
+        {
+            constexpr bool accepted = is_task_body_v<F>;
+            static_assert(accepted,
+                "add_task(reads, writes, fn) takes a body invoked as "
+                "fn(sycl::queue&, const std::vector<sycl::event>&) that returns the "
+                "sycl::event which ends its work.");
+            return accepted;
+        }
+
         /** @brief Checks an emitter, which adds its own nodes to the engine's graph. */
         template <class F>
         constexpr bool accepts_emitter() noexcept

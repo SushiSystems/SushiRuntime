@@ -983,6 +983,15 @@ is refused with `dangling_resource`, on a `Graph` and on a `DynamicGraph`.
 `refusal_of` runs a call and returns the `Error` of the `SushiException` it throws, or
 nothing when it throws none.
 
+### `ATaskOfTwoCommandGroupsIsOrderedByItsAccess`
+
+A kernel writes `i + 1` into a buffer. A task recorded with `add_task` reads it and submits two
+command groups: the first doubles the values into a second buffer, the second adds one into a
+third and waits on the first one's event. The task returns the second event. A kernel that reads
+the third buffer multiplies by three. Every element of its output is `((i + 1) * 2 + 1) * 3` only
+when the task ran after the first kernel and the last kernel waited for the event the task
+returned.
+
 ### `AMovedFromRecorderNeverRepeatsAGeneration`
 
 A graph records one rule and runs, so its plan is built at the recorder's generation. The recorder

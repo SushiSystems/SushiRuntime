@@ -68,6 +68,16 @@ namespace SushiRuntime
         std::is_invocable_v<const std::decay_t<F>&, std::size_t, std::size_t,
                             sycl::handler&>;
 
+    /**
+     * @brief Tells whether F is callable as fn(sycl::queue&, const std::vector<sycl::event>&)
+     *        and returns a sycl::event, the task body shape.
+     * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+     */
+    template <class F>
+    inline constexpr bool is_task_body_v =
+        std::is_invocable_r_v<sycl::event, std::decay_t<F>&, sycl::queue&,
+                              const std::vector<sycl::event>&>;
+
     namespace Detail
     {
         /** @brief Returns a field pointer as the read-only pointer a kernel input receives. */
