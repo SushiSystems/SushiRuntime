@@ -394,7 +394,7 @@ using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
 
 RuntimeContext ctx;
-TaskGraph graph(ctx);
+TaskGraph graph;
 
 int data = 0;
 void* ptr = &data;
@@ -508,7 +508,7 @@ An opt-in master-worker layer that offloads individual tasks to remote workers. 
 - The key idea: **compiled code can't travel the wire**, so nothing is serialized except references. A task ships its `OpID` (a kernel already compiled into every node) plus `GlobalBufferID`+version handles; each worker resolves those to its own local USM. Closures and pointers never cross the network.
 - `ITransport` abstracts the wire: `InProcessTransport` runs the full multi-node protocol on a single machine (the network analogue of `RemappingTopologyProvider`), and `TCPTransport` is a dependency-free raw-socket transport (POSIX + Winsock) for a real cluster.
 - `DistributedCoordinator` (master) decides what to offload via a swappable `IOffloadPolicy`, serves a stateful, pull-based, master-authoritative buffer cache (a write auto-bumps a version, so stale worker caches re-pull), and releases a node's successors when its remote result arrives. `WorkerAgent` (worker) is a thin network shell around a normal local `RuntimeContext`, so the existing NUMA-aware scheduler runs the offloaded work.
-- Integration with the core is minimal and guarded: `TaskGraph::compile()` stamps which nodes are offloadable, and the scheduler's hot path adds a single `[[unlikely]]` branch — non-offloaded tasks pay nothing. An offloadable task whose policy declines falls back to local execution transparently.
+- Integration with the core is minimal and guarded: `ExecutionEngine::prepare()` stamps which nodes of a compiled plan are offloadable, and the scheduler's hot path adds a single `[[unlikely]]` branch — non-offloaded tasks pay nothing. An offloadable task whose policy declines falls back to local execution transparently.
 
 See [Distributed execution](#distributed-execution-optional) for how to run it.
 
