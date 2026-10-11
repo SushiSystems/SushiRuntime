@@ -5,11 +5,15 @@
 - 2026-10-12 — logging: Moved the declaration of `set_log_synchronous` to `log_sink.hpp`, so `<SushiRuntime/api/runtime/logging.hpp>` declares it with the other logging controls (`log_sink.hpp`, `logger.hpp`).
 - 2026-10-12 — api: Added `AdvancedControls::live_allocation_count()`, the number of USM allocations of the runtime not yet released (`advanced_controls.hpp`).
 - 2026-10-12 — api: Added an alignment in bytes as the last argument of `Runtime::buffer` and `Runtime::state`; 0 keeps the device default and a value that is not a power of two stops the process (`runtime.hpp`, `buffer.hpp`).
-- 2026-10-12 — observability: Breaking change: Made `NodeTiming::operation` an `OperationID` and added the public names `NodeTiming`, `NodeEventRecord`, `ExecutionLayer`, `WorkerTiming`, `ClockPairing` and `K_WIDTH_UNKNOWN` (`run_report.hpp`, `dispatch_width.hpp`).
-- 2026-10-12 — distributed: Breaking change: Removed the `RuntimeContext&` forms of `Cluster::attach` and `WorkerAgent` and replaced `add_registered_task` with `record_registered_task(Recorder&, ...)`, used through `extend` (`cluster.hpp`, `worker_agent.hpp`, `registered_task.hpp`).
-- 2026-10-12 — scheduler: Breaking change: Removed `OffloadCoordinator::statistics`, `OffloadStatistics` and `RunReport`'s `remote_nodes_involved`; the offload gate counts accepted offers into `ExecutionMetrics::tasks_offloaded` (`offload_gate.hpp`, `run_report.hpp`).
-- 2026-10-12 — execution: Breaking change: Removed the coordinator parameter of `TaskGraph`; `ExecutionEngine::prepare` marks a compiled plan for offload and `PlanCache::build` calls it (`task_graph.hpp`, `execution_engine.hpp`, `offload_gate.hpp`).
-- 2026-10-12 — api: Fixed three tests that did not compile: one called the private `Recorder::replay` and reads `Graph::plan()` now, two kept an unused context (`test_state_move.cpp`, `test_registration_index.cpp`, `test_node_dispatch_width.cpp`).
+- 2026-10-12 — observability: Added the public names `ClockPairing` and `K_WIDTH_UNKNOWN` (`run_report.hpp`, `dispatch_width.hpp`).
+- 2026-10-12 — observability: Added the public names `NodeTiming`, `NodeEventRecord`, `ExecutionLayer` and `WorkerTiming` beside the run report (`run_report.hpp`).
+- 2026-10-12 — observability: Breaking change: Made `NodeTiming::operation` an `OperationID`, which makes the module depend on core (`run_report.hpp`).
+- 2026-10-12 — distributed: Breaking change: Replaced `add_registered_task` with `record_registered_task`, which records through a `Recorder&` and returns the position of the rule (`registered_task.hpp`).
+- 2026-10-12 — distributed: Breaking change: Removed the `RuntimeContext&` forms of `Cluster::attach` and `WorkerAgent`; both take a `Runtime&` (`cluster.hpp`).
+- 2026-10-12 — observability: Breaking change: Removed `remote_nodes_involved` from the distributed figures of a run report (`run_report.hpp`).
+- 2026-10-12 — scheduler: Breaking change: Removed `OffloadCoordinator::statistics` and `OffloadStatistics`; the offload gate counts accepted offers into `ExecutionMetrics::tasks_offloaded` (`offload_gate.hpp`).
+- 2026-10-12 — execution: Breaking change: Removed the coordinator parameter of `TaskGraph`; `ExecutionEngine::prepare` marks a compiled plan for offload and `PlanCache::build` calls it (`task_graph.hpp`, `execution_engine.hpp`).
+- 2026-10-12 — api: Fixed three tests that did not compile: one called the private `Recorder::replay`, two kept an unused context (`test_state_move.cpp`, `test_registration_index.cpp`, `test_node_dispatch_width.cpp`).
 - 2026-10-12 — api: Added `Graph::plan()`, which returns a `PlanView` of the nodes in recording order with their predecessor counts and regions (`plan_view.hpp`, `plan_cache.hpp`, `graph.hpp`).
 - 2026-10-12 — api: Added `compile()` to `Graph` and `DynamicGraph`, which builds the plan when none is current and runs nothing (`step_driver.hpp`).
 - 2026-10-11 — distributed: Breaking change: Made `KernelRegistry::Kernel` and `OffloadPolicy::pick_worker` take `const NodeOptions&`; the public headers include no engine header (`kernel_registry.hpp`, `offload_policy.hpp`).
