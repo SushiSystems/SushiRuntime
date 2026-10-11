@@ -566,7 +566,6 @@ namespace SushiRuntime
                 const Internal::Observability::TransferCounters& transfers = context.transfers();
                 state.device_to_host_before = transfers.device_to_host();
                 state.host_to_device_before = transfers.host_to_device();
-                state.offloaded_before = Detail::offloaded_dispatches(context);
                 state.task_count = self.node_count();
 
                 step_hooks_.run(0);
@@ -652,8 +651,8 @@ namespace SushiRuntime
 
                 const auto after = engine.metrics();
                 Detail::fill_run_report(
-                    report, context, state.before, after, state.offloaded_before,
-                    state.task_count, state.compile_ms,
+                    report, context, state.before, after, state.task_count,
+                    state.compile_ms,
                     std::chrono::duration<double, std::milli>(
                         finished - state.started).count());
 
@@ -777,7 +776,6 @@ namespace SushiRuntime
                 const Internal::Observability::TransferCounters& transfers = context.transfers();
                 const std::size_t d2h_before = transfers.device_to_host();
                 const std::size_t h2d_before = transfers.host_to_device();
-                const std::uint64_t offloaded_before = Detail::offloaded_dispatches(context);
                 const auto t0 = clock::now();
 
                 // A hook may write what a kernel reads, so each step ends before the next hook.
@@ -795,8 +793,8 @@ namespace SushiRuntime
 
                 const std::size_t total_tasks = self.node_count() * executed;
                 Detail::fill_run_report(
-                    report, context, before, after, offloaded_before, total_tasks,
-                    compile_ms, std::chrono::duration<double, std::milli>(t1 - t0).count());
+                    report, context, before, after, total_tasks, compile_ms,
+                    std::chrono::duration<double, std::milli>(t1 - t0).count());
                 report.cancelled = engine.is_cancelled();
                 report.layer = chained ? Internal::Observability::ExecutionLayer::Chain
                                        : Internal::Observability::ExecutionLayer::Scheduler;

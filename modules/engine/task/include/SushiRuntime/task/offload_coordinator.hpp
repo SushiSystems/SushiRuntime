@@ -41,19 +41,6 @@ namespace SushiRuntime
         class OffloadSink;
 
         /**
-         * @brief Reports what an offload coordinator did since it was built.
-         * @see modules/engine/task/README.md
-         */
-        struct OffloadStatistics
-        {
-            std::uint64_t offloaded = 0;        /**< Dispatches queued to a worker. */
-            std::uint64_t declined = 0;         /**< Offloadable dispatches left to run locally. */
-            std::uint64_t redispatched = 0;     /**< Nodes taken back from a lost worker or task. */
-            std::uint64_t stale_writebacks = 0; /**< Worker outputs dropped as out of date. */
-            std::size_t alive_workers = 0;      /**< Workers registered and answering now. */
-        };
-
-        /**
          * @brief Runs graph nodes somewhere other than the local pool.
          *
          * The scheduler, the graph and the context call it; one implementer is installed
@@ -105,12 +92,6 @@ namespace SushiRuntime
                  * @param node Borrowed for the call; no reference changes hands.
                  */
                 virtual void on_local_completion(Node& node) noexcept = 0;
-
-                /**
-                 * @brief Returns the counters as they stand; any thread may call.
-                 * @return A snapshot; the fields are not read at one instant.
-                 */
-                [[nodiscard]] virtual OffloadStatistics statistics() const noexcept = 0;
 
                 /**
                  * @brief Ends all remote work before the scheduler shuts down.

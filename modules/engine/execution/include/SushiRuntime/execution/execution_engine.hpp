@@ -70,6 +70,7 @@ namespace SushiRuntime
             std::size_t local_steals = 0;       /**< Successful steals from a node-local victim. */
             std::size_t remote_steals = 0;      /**< Successful steals that crossed NUMA nodes. */
             std::size_t tasks_completed = 0;    /**< Tasks completed across all workers. */
+            std::size_t tasks_offloaded = 0;    /**< Dispatches an offload coordinator took. */
         };
 
         /**

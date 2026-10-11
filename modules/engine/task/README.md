@@ -34,7 +34,7 @@ and what a coordinator needs beyond the seam's fields it stores behind
 | `node.hpp` | `Internal::Graph::SuccessorNode`, `Internal::Graph::Node` |
 | `offload_state.hpp` | `Internal::Graph::OffloadPayload`, `Internal::Graph::OffloadState`, the per-node record `Node::offload_state_` points to |
 | `offload_sink.hpp` | `Internal::Graph::OffloadSink`, through which a coordinator returns nodes to the scheduler |
-| `offload_coordinator.hpp` | `Internal::Graph::OffloadStatistics`, `Internal::Graph::OffloadCoordinator`, the seam an offload layer implements |
+| `offload_coordinator.hpp` | `Internal::Graph::OffloadCoordinator`, the seam an offload layer implements |
 | `node_widths.hpp` | `Internal::Graph::NodeWidths`, `Internal::Graph::snapshot_widths` (defined in `modules/engine/task/source/node_widths.cpp`) |
 | `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of` (defined in `modules/engine/task/source/node_placement.cpp`), the device a node runs on |
 

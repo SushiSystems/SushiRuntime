@@ -461,7 +461,8 @@ transport for its byte counts, and `TCPTransport::statistics()` takes the peer t
 that.
 
 `completed_remote` counts the tasks whose result was `Succeeded` with every output whole. The
-coordinator keeps it, since `Internal::Graph::OffloadStatistics` has no field for it.
+coordinator keeps it beside the four counters of `CoordinatorStatistics`, its own type: the
+engine's seam has no statistics call, and a RunReport's offloaded count comes from the scheduler.
 `peers_closed_malformed` counts the peers closed for bad magic, a malformed header or a payload
 that does not decode.
 

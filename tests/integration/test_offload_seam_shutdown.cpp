@@ -70,12 +70,6 @@ namespace
 
             }
 
-            [[nodiscard]] SushiRuntime::Internal::Graph::OffloadStatistics
-            statistics() const noexcept override
-            {
-                return {};
-            }
-
             /** @brief Hands the pool a probe node on the first call and waits for it to run. */
             void stop() noexcept override
             {

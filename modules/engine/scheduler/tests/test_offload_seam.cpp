@@ -92,7 +92,7 @@ namespace
         return {descriptor};
     }
 
-    /** @brief Counts what the scheduler offers and reports, and declines every offer. */
+    /** @brief Counts what the scheduler offers and reports; declines an offer unless told. */
     class CountingCoordinator final : public SushiRuntime::Internal::Graph::OffloadCoordinator
     {
         public:
@@ -106,10 +106,13 @@ namespace
 
             }
 
-            [[nodiscard]] bool try_offload(Node&) override
+            [[nodiscard]] bool try_offload(Node& node) override
             {
                 offers_.fetch_add(1, std::memory_order_relaxed);
-                return false;
+                if (!accepting_.load(std::memory_order_relaxed))
+                    return false;
+                held_.store(&node, std::memory_order_release);
+                return true;
             }
 
             void on_local_completion(Node&) noexcept override
@@ -117,15 +120,21 @@ namespace
                 completions_.fetch_add(1, std::memory_order_relaxed);
             }
 
-            [[nodiscard]] SushiRuntime::Internal::Graph::OffloadStatistics
-            statistics() const noexcept override
-            {
-                return {};
-            }
-
             void stop() noexcept override
             {
 
+            }
+
+            /** @brief Makes try_offload() take the next nodes, or decline them again. */
+            void set_accepting(bool accepting) noexcept
+            {
+                accepting_.store(accepting, std::memory_order_relaxed);
+            }
+
+            /** @brief Returns the node try_offload() took last, or nullptr. */
+            [[nodiscard]] Node* held() const noexcept
+            {
+                return held_.load(std::memory_order_acquire);
             }
 
             /** @brief Returns how many nodes try_offload() was offered. */
@@ -145,6 +154,10 @@ namespace
             std::atomic<std::size_t> offers_{0};
             /// @brief Calls of on_local_completion().
             std::atomic<std::size_t> completions_{0};
+            /// @brief Whether try_offload() takes the node.
+            std::atomic<bool> accepting_{false};
+            /// @brief The node try_offload() took last.
+            std::atomic<Node*> held_{nullptr};
     };
 
     /**
@@ -281,4 +294,31 @@ TEST_F(Unit_OffloadSeam, SkippedNodeNotReportedAsCompleted)
     run(*thrower);
     ASSERT_TRUE(scheduler_.run_failed());
     EXPECT_EQ(coordinator_.completions(), 1u) << "a node whose work threw was reported";
+}
+
+/**
+ * @brief The scheduler counts the offers a coordinator took, and no offer it declined.
+ */
+TEST_F(Unit_OffloadSeam, OnlyAcceptedOffersAreCounted)
+{
+    std::atomic<int> runs{0};
+    ASSERT_EQ(scheduler_.offloaded_task_count(), 0u);
+
+    const sushi_ptr<Node> declined = make_offloadable_node(runs);
+    run(*declined);
+    EXPECT_EQ(coordinator_.offers(), 1u);
+    EXPECT_EQ(scheduler_.offloaded_task_count(), 0u) << "a declined offer was counted";
+    EXPECT_EQ(runs.load(), 1);
+
+    coordinator_.set_accepting(true);
+    const sushi_ptr<Node> accepted = make_offloadable_node(runs);
+    run(*accepted);
+    coordinator_.set_accepting(false);
+    ASSERT_EQ(coordinator_.held(), accepted.get());
+    EXPECT_EQ(scheduler_.offloaded_task_count(), 1u);
+    EXPECT_EQ(runs.load(), 1) << "the pool ran a node the coordinator took";
+
+    // The coordinator's reference goes back the way a finished remote node returns.
+    scheduler_.complete_remote(*accepted);
+    EXPECT_EQ(scheduler_.offloaded_task_count(), 1u);
 }

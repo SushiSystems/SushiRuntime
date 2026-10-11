@@ -1150,12 +1150,14 @@ is skipped there. In a release build the move must wait for the step, the handle
 destination must run. The gate is released before the move, so the move returns as soon as the task
 has run.
 
-### `CountingCoordinator`, `OffloadedCountIsOfThisRun`
+### `AcceptingCoordinator`, `OffloadedCountIsOfThisRun`
 
-`CountingCoordinator` offloads nothing and reports as offloaded a count the test moves. The test
-sets it to five before any run, and the graph's host task adds three per step. A one-step run must
-report three, a two-step run six and an asynchronous step three; a report that copied the
-coordinator's cumulative count would say eight, fourteen and seventeen.
+`AcceptingCoordinator` marks every node of a plan offloadable, takes each one it is offered and
+returns it as finished from a thread of its own, the way a worker's answer arrives. A graph of one
+host task reports zero offloaded tasks before the coordinator is installed. A graph recorded after
+the install reports one for a one-step run, two for a two-step run and one for an asynchronous
+step; a report that copied the scheduler's lifetime count would say one, three and four. The host
+task ran once in all, in the run without a coordinator.
 
 ### `CountedStep`, `counted_step_runs_chained`
 

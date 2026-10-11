@@ -69,8 +69,6 @@ namespace SushiRuntime
 
             std::size_t network_bytes_tx = 0;            /**< Total bytes sent. Reserved: always 0 in v1. */
             std::size_t network_bytes_rx = 0;            /**< Total bytes received. Reserved: always 0 in v1. */
-
-            std::size_t remote_nodes_involved = 0;       /**< Live remote workers that took part. */
         };
 
         /**

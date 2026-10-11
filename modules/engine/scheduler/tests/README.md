@@ -31,6 +31,13 @@ every buffer a reported node writes and may send an offered node to another mach
 an aborted run must reach neither call. Each test first runs one node on a healthy run and asserts
 the count it expects to stay fixed, so a coordinator that was never called cannot pass.
 
+### `OnlyAcceptedOffersAreCounted`
+
+`offloaded_task_count()` is what a RunReport's `tasks_offloaded_to_network` is read from. A node
+the coordinator declines leaves it at zero and runs on the pool. A node the coordinator takes
+raises it to one and does not run; the test then returns the node through `complete_remote()`,
+which drops the reference the coordinator held.
+
 ### `Unit_OffloadSeam`
 
 The fixture builds the scheduler from a topology view, a device set and an allocator, the parts a

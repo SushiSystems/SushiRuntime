@@ -28,6 +28,9 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
+
 #include <SushiRuntime/scheduler/run_outcome.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
@@ -39,7 +42,8 @@ namespace SushiRuntime
     namespace Internal::Scheduler
     {
         /**
-         * @brief Offers each offloadable node a worker dispatches to the installed coordinator.
+         * @brief Offers each offloadable node a worker dispatches to the installed coordinator
+         *        and counts the offers it took.
          * @see modules/engine/scheduler/README.md
          */
         class OffloadGate final
@@ -71,7 +75,7 @@ namespace SushiRuntime
                  * @param outcome A node of an aborting run is not offered; it stays local.
                  * @return True when the coordinator took the node and now owns it.
                  */
-                [[nodiscard]] bool offer(Task& task, const RunOutcome& outcome) const
+                [[nodiscard]] bool offer(Task& task, const RunOutcome& outcome)
                 {
                     if (coordinator_ == nullptr || !task.is_graph_node())
                         return false;
@@ -84,12 +88,28 @@ namespace SushiRuntime
                     if (outcome.is_aborting())
                         return false;
 
-                    return coordinator_->try_offload(node);
+                    if (!coordinator_->try_offload(node))
+                        return false;
+
+                    accepted_.fetch_add(1, std::memory_order_relaxed);
+                    return true;
+                }
+
+                /**
+                 * @brief Returns how many offers a coordinator has taken since the gate was built.
+                 * @return A lifetime total; any thread may read it.
+                 */
+                [[nodiscard]] std::uint64_t accepted_count() const noexcept
+                {
+                    return accepted_.load(std::memory_order_relaxed);
                 }
 
             private:
                 /// @brief Coordinator nodes are offered to; null when none is installed.
                 Internal::Graph::OffloadCoordinator* coordinator_ = nullptr;
+
+                /// @brief Offers a coordinator took; written only on an accepted offer.
+                std::atomic<std::uint64_t> accepted_{0};
         };
 
     } // namespace Scheduler
