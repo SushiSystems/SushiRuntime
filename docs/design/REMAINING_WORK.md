@@ -12,11 +12,9 @@ reasoning in `docs/archive/slop/TODO.md`.
   waits on the owning queue's pending work; a debug-build guard that reports the unsafe access
   with its call site; a documented rule that any value read mid-run lives in `Residency::Host`.
   Listed in [`KNOWN_ISSUES.md`](../reference/KNOWN_ISSUES.md).
-- **A GPU with a known PCI address may still be placed on NUMA node 0.** `numa_mapper.cpp` asks
-  hwloc for a NUMA ancestor of the PCI device; in hwloc 2 a NUMA node is never a parent, so the
-  walk finds none. Read from `hwloc/helper.h` of hwloc 2.11, not observed: every development
-  machine has one NUMA node.
-- **A `Buffer` or `State` moved after `Graph::add` dangles silently.** The graph records the
+- **NUMA placement is untested on a machine with several nodes.** The lookup reads the nodeset
+  of the object since `2be82a7`; every development machine has one NUMA node.
+- **A `Buffer` moved after `Graph::add` dangles silently.** A `State` may move since `c819f31`. The graph records the
   handle by address and the liveness token travels with the value, so the guard does not see the
   move (`modules/surface/api/include/SushiRuntime/api/data/buffer.hpp`, the `@warning` on the move constructor).
   Finding H4 of `docs/archive/slop/CODE_AND_ARCHITECTURE_REVIEW.md`: documented, not detected.
@@ -85,6 +83,61 @@ The v1 limits a user must know are in
 - **Dynamic-graph offload.** The dynamic composer bypasses `TaskGraph::compile`, where
   `stamp_offloadable` runs, so an offloadable op recorded on a region runs its local fallback
   (`modules/engine/graph/source/task_graph.cpp`).
+
+## API quality control
+
+Findings of `docs/agent/2026_10_11_API_QUALITY_CONTROL/REPORT.md` that the repairs left open.
+
+Waiting for a measurement, phase E:
+
+- QC-19: the scheduler's atomics share a cache line with `inflight_`.
+- QC-20: three default `sycl::event` objects and two copies per dispatch.
+- QC-86: `is_graph_node()` and `get_execution_mode()` are read twice per node.
+- QC-58: `prepare_run()` aggregates every region again at each run entry.
+- QC-08: a commit renumbers every node; the incremental form changes the layout of `RegionState`.
+- QC-117: two mutexes per `release()`, sixteen ledger cursors per cache line.
+- QC-121: one allocation and two mutexes per control frame.
+
+Reshapes of a public surface, each a breaking change with its own decision:
+
+- QC-21, 22, 23: `IExecutionEngine` has 16 virtuals, `Node` seven responsibilities,
+  `TaskScheduler` eight.
+- QC-56: `DeviceIndex` and three more types live in `buffer.hpp`.
+- QC-57, 67, 68: a change listener on `Recorder`, the argument order of `untracked_kernel`,
+  `scratch()` returning a span.
+- QC-59: the capture and `Coupled` forms have no `Dynamic` overload.
+- QC-63: `dynamic_graph.hpp` includes `runtime.hpp`.
+- QC-85: `Node::profiling` has no reader. `Core::Backend` has none either.
+- QC-109: `EpochManager` is an inline singleton in a public header.
+- QC-113, 114: `NUMAMapper::get_distance`, `map_distances` and the default body in
+  `ITopologyProvider`.
+- QC-122: `WorkerStats` carries an `int` id and an abbreviated name.
+- QC-126: the interop handle kinds are a switch, with two kinds today.
+- QC-93, 103, 116, 136: naming sweeps and `enqueue_host_task` in `detail`.
+
+Open after a repair:
+
+- QC-18: the reaping of an event whose query throws has no test, and a successor the failed
+  entry released can be dispatched before the failure is recorded.
+- QC-84: a `detach()` during a run leaves the stopped coordinator installed, because
+  `scheduler/event_polling.hpp` holds it as a plain pointer.
+- QC-12: a `cancel()` that races the end of its own run can reach the next run.
+- QC-06: the full rebuild after a commit that threw midway has no test.
+- QC-05: a graph that drops regions and never runs again keeps them; its two tests fail
+  before the fix reliably only under ASan.
+- QC-24: the logger's shutdown path has no automated test.
+- QC-02, 29, 33: processor groups, the POSIX affinity branch and a machine with several NUMA
+  nodes are untested.
+- QC-28: `sushi_ptr<T> == sushi_ptr<U>` may be ambiguous under C++20.
+- QC-40: whether a SYCL backend takes over an imported file descriptor is not known.
+- QC-73, 74, 95, 115: a zero-size `parallel_for`, `NdRange` tiling, the logger join under
+  `FreeLibrary`, and `DeviceQueueSet::wait_all()` stopping at the first queue that throws.
+- QC-137: seven earlier deprecations have no changelog entry.
+- `TcpWorkerOptions::attempt_timeout` and `write_idle_timeout` at zero were not traced.
+- Wording left by the register pass: "before v0.4.0" in `log_level.hpp`,
+  `resource_liveness.hpp`, `dispatch_width.hpp`, `event_timestamps.hpp` and
+  `profiling_ledger.hpp`; "(F4)" and "(F5)" in `execution_engine.cpp`; the "used to"
+  sentences in `modules/surface/api/tests/README.md`.
 
 ## Structural debt
 
