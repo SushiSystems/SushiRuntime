@@ -30,7 +30,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -49,7 +48,6 @@
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
-#include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -222,40 +220,6 @@ namespace SushiRuntime
                 if constexpr (Detail::accepts_state_rule<std::size_t, T, F>())
                     sink().dynamic_kernel(std::move(window), state, std::forward<F>(kernel),
                                           options);
-                return self();
-            }
-
-            /**
-             * @brief Adds an offloadable task that names its data with Reads and Writes.
-             * @param op OperationID of the kernel, e.g. "vec.add"_op.
-             * @param local Local fallback invoked as local(i) for i in [0, n).
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            template <class F>
-            Derived& add(::SushiRuntime::OperationID op, std::size_t n,
-                         const Reads& reads, const Writes& writes, F&& local,
-                         std::initializer_list<std::uint64_t> params = {})
-            {
-                if constexpr (Detail::accepts_per_element<F>())
-                    sink().offload(op, n, Access(reads, writes), std::forward<F>(local),
-                                   std::vector<std::uint64_t>(params), K_ADD_OFFLOAD);
-                return self();
-            }
-
-            /**
-             * @brief Adds an offloadable per-step update rule for a State.
-             * @pre state was registered with State::distributed().
-             * @param local Local fallback invoked as local(i, const T* current, T* next).
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            template <typename T, class F>
-            Derived& add(::SushiRuntime::OperationID op, State<T>& state, F&& local,
-                         std::initializer_list<std::uint64_t> params = {})
-            {
-                if constexpr (Detail::accepts_state_rule<std::size_t, T, F>())
-                    sink().offload_rule(op, state, std::forward<F>(local),
-                                        std::vector<std::uint64_t>(params),
-                                        K_ADD_OFFLOAD_RULE);
                 return self();
             }
 
@@ -458,12 +422,6 @@ namespace SushiRuntime
             /// @brief Names add_untracked(On(...), kernel) in the messages of its refusals.
             static constexpr const char* K_ADD_UNTRACKED_RAW_ON =
                 "add_untracked(On(...), kernel)";
-            /// @brief Names add(OperationID, n, reads, writes, local, params) in its refusals.
-            static constexpr const char* K_ADD_OFFLOAD =
-                "add(OperationID, n, reads, writes, local, params)";
-            /// @brief Names add(OperationID, state, local, params) in the messages of its refusals.
-            static constexpr const char* K_ADD_OFFLOAD_RULE =
-                "add(OperationID, state, local, params)";
 
             /** @brief Returns the builder this surface belongs to. */
             Derived& self() noexcept { return static_cast<Derived&>(*this); }

@@ -53,7 +53,6 @@
 #include <SushiRuntime/api/detail/emit_host.hpp>
 #include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/detail/emit_late_count_resolver.hpp>
-#include <SushiRuntime/api/detail/emit_offload.hpp>
 #include <SushiRuntime/api/detail/emit_state.hpp>
 #include <SushiRuntime/api/detail/emit_task.hpp>
 #include <SushiRuntime/api/detail/emit_tracked.hpp>
@@ -62,6 +61,7 @@
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/detail/host_slot_check.hpp>
 #include <SushiRuntime/api/detail/late_count_resolution.hpp>
+#include <SushiRuntime/api/detail/live_fields.hpp>
 #include <SushiRuntime/api/detail/node_spec.hpp>
 #include <SushiRuntime/api/detail/node_stamp.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
@@ -466,7 +466,10 @@ namespace SushiRuntime
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::gather_life(lives, state);
                 const std::size_t rule = record(
-                    Detail::state_launch_node(view, view->size, std::forward<F>(kernel_body)),
+                    Detail::with_live_fields(
+                        Detail::state_launch_node(view, view->size,
+                                                  std::forward<F>(kernel_body)),
+                        live_fields_of(options, view)),
                     lives, options);
                 steps_.register_advance(std::move(view));
                 return rule;
@@ -495,7 +498,9 @@ namespace SushiRuntime
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::gather_life(lives, state);
                 const std::size_t rule = record(
-                    Detail::state_launch_node(view, launch, std::forward<F>(kernel_body)),
+                    Detail::with_live_fields(
+                        Detail::state_launch_node(view, launch, std::forward<F>(kernel_body)),
+                        live_fields_of(options, view)),
                     lives, options);
                 steps_.register_advance(std::move(view));
                 return rule;
@@ -527,9 +532,11 @@ namespace SushiRuntime
 
                 Detail::gather_life(lives, state);
                 const std::size_t rule = record(
-                    Detail::dynamic_state_node(
-                        view, view->size, bindings, *fault, std::move(slot_reads),
-                        std::forward<F>(kernel_body)),
+                    Detail::with_live_fields(
+                        Detail::dynamic_state_node(
+                            view, view->size, bindings, *fault, std::move(slot_reads),
+                            std::forward<F>(kernel_body)),
+                        live_fields_of(options, view)),
                     lives, options);
                 steps_.register_advance(std::move(view));
                 steps_.register_binding_updater(std::move(bindings), std::move(window));
@@ -587,64 +594,6 @@ namespace SushiRuntime
                     return record_coupled(launch, states.out, std::forward<F>(kernel_body),
                                           options, inputs...);
                 }, states.inputs);
-            }
-
-            /**
-             * @brief Records an offloadable per-element task with a local fallback.
-             * @param local  Callable invoked as local(i) for i in [0, count) when run here.
-             * @param params Scalar parameters sent with the kernel name.
-             * @param call   Names the call the user wrote in a refusal's message.
-             */
-            template <class F>
-            std::size_t offload(::SushiRuntime::OperationID op, std::size_t count, Access access,
-                                F&& local, std::vector<std::uint64_t> params,
-                                const char* call =
-                                    "Recorder::offload(op, count, access, local, params)")
-            {
-                if (!admit(Detail::offload_parameters_refusal(call, next_rule(), params.size())))
-                    return rule_count();
-                return record(Detail::offload_node(op, count, std::move(access.reads),
-                                                   std::move(access.writes), std::forward<F>(local),
-                                                   std::move(params)),
-                              access.lives);
-            }
-
-            /**
-             * @brief Records an offloadable per-step rule of a State.
-             * @pre state was registered with State::distributed().
-             * @param local Local fallback invoked as local(i, const T* current, T* next).
-             * @param call  Names the call the user wrote in a refusal's message.
-             */
-            template <typename T, class F>
-            std::size_t offload_rule(::SushiRuntime::OperationID op, State<T>& state, F&& local,
-                                     std::vector<std::uint64_t> params,
-                                     const char* call =
-                                         "Recorder::offload_rule(op, state, local, params)")
-            {
-                if (!admit(Detail::offload_parameters_refusal(call, next_rule(), params.size())))
-                    return rule_count();
-                auto view = steps_.view_for(state);
-                auto live_reads = std::make_shared<std::vector<void*>>(
-                    std::vector<void*>{ static_cast<void*>(view->current) });
-                auto live_writes = std::make_shared<std::vector<void*>>(
-                    std::vector<void*>{ static_cast<void*>(view->next) });
-
-                std::vector<Internal::Memory::LivenessObserver> lives;
-                Detail::gather_life(lives, state);
-                const std::size_t rule = record(
-                    Detail::offload_state_node(
-                        op, view, view->size, live_reads, live_writes, std::forward<F>(local),
-                        std::move(params)),
-                    lives);
-                steps_.register_advance(view);
-
-                // Live IO is re-pointed before each step for the coordinator.
-                steps_.add_dist_io_updater([view, live_reads, live_writes]()
-                {
-                    (*live_reads)[0]  = view->current;
-                    (*live_writes)[0] = view->next;
-                });
-                return rule;
             }
 
             /**
@@ -859,12 +808,58 @@ namespace SushiRuntime
 
                 auto out_view = steps_.view_for(out);
                 auto views = std::make_tuple(steps_.view_for(inputs)...);
+                Detail::LiveFields live = std::apply(
+                    [&](const auto&... input_views)
+                    {
+                        return live_fields_of(options, out_view, input_views...);
+                    },
+                    views);
                 const std::size_t rule = record(
-                    Detail::coupled_launch_node(
-                        out_view, std::move(views), launch, std::forward<F>(kernel_body)),
+                    Detail::with_live_fields(
+                        Detail::coupled_launch_node(out_view, std::move(views), launch,
+                                                    std::forward<F>(kernel_body)),
+                        std::move(live)),
                     lives, options);
                 steps_.register_advance(std::move(out_view));
                 return rule;
+            }
+
+            /**
+             * @brief Returns the live fields of a State rule and registers their per-step
+             *        refresh.
+             * @param options What the rule states; a rule that names no operation gets null
+             *        lists and registers nothing.
+             * @param out     View of the State written.
+             * @param inputs  Views of the further States read.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            template <typename T, class... Inputs>
+            Detail::LiveFields live_fields_of(
+                const NodeOptions& options, const std::shared_ptr<Detail::StateView<T>>& out,
+                const std::shared_ptr<Detail::StateView<Inputs>>&... inputs)
+            {
+                Detail::LiveFields live;
+                if (!options.operation.is_named())
+                    return live;
+
+                const auto refresh = [](const Detail::LiveFields& fields,
+                                        const std::shared_ptr<Detail::StateView<T>>& written,
+                                        const std::shared_ptr<Detail::StateView<Inputs>>&... read)
+                {
+                    *fields.reads = {static_cast<void*>(written->current),
+                                     static_cast<void*>(read->current)...};
+                    *fields.writes = {static_cast<void*>(written->next)};
+                };
+                live.reads = std::make_shared<std::vector<void*>>();
+                live.writes = std::make_shared<std::vector<void*>>();
+                refresh(live, out, inputs...);
+
+                // The fields swap every step, so the lists are rewritten before each one.
+                steps_.add_live_field_updater([refresh, live, out, inputs...]()
+                {
+                    refresh(live, out, inputs...);
+                });
+                return live;
             }
 
             /**

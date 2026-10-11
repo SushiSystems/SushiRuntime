@@ -329,8 +329,7 @@ namespace SushiRuntime
                        {
                            const auto it = regions_.find(key);
                            return it == regions_.end() ? nullptr : &recorded(*it->second);
-                       },
-                       context_->offload());
+                       });
                 dirty_regions_.clear();
                 dropped_.clear();
                 free_retired_regions();

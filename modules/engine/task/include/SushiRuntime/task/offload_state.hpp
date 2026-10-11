@@ -72,7 +72,7 @@ namespace SushiRuntime
             /**
              * @brief Lists the addresses a double-buffered node reads at its next dispatch.
              *
-             * TaskGraph::add_offload_dynamic() sets it; null on a node with fixed buffers.
+             * Node::set_live_io() sets it; null on a node with fixed buffers.
              */
             std::shared_ptr<std::vector<void*>> live_reads;
 

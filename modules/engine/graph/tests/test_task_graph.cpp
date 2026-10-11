@@ -128,10 +128,14 @@ TEST(Unit_TaskGraph, EveryAddReturnsTheNodeItAdded)
 
     const auto live_reads = std::make_shared<std::vector<void*>>(1, &source);
     const auto live_writes = std::make_shared<std::vector<void*>>(1, &target);
-    Node& dynamic = graph.add_offload_dynamic(metadata, live_reads, live_writes, idle_host_work());
+    Node& dynamic = graph.add_task(metadata, reads, writes, idle_host_work());
     EXPECT_EQ(&dynamic, graph.last_node_added());
+    EXPECT_EQ(dynamic.offload_state(), nullptr);
+    dynamic.set_live_io(live_reads, live_writes);
     ASSERT_NE(dynamic.offload_state(), nullptr);
+    EXPECT_EQ(dynamic.offload_state()->live_reads, live_reads);
     EXPECT_EQ(dynamic.offload_state()->live_writes, live_writes);
+    EXPECT_FALSE(dynamic.offload_state()->offloadable);
 
     Node& native = graph.add_native(reads, writes, [] {});
     EXPECT_EQ(&native, graph.last_node_added());
@@ -206,9 +210,6 @@ TEST(Unit_TaskGraphDeathTest, EveryAddOverloadStopsOnAnUnissuedRegistration)
                  pattern);
     EXPECT_DEATH(static_cast<void>(
                      graph.add_task(metadata, reads, writes, idle_host_work(), none, unissued)),
-                 pattern);
-    EXPECT_DEATH(static_cast<void>(graph.add_offload_dynamic(
-                     metadata, live_reads, live_writes, idle_host_work(), none, unissued)),
                  pattern);
     EXPECT_DEATH(static_cast<void>(graph.add_native(reads, writes, [] {}, none, unissued)),
                  pattern);

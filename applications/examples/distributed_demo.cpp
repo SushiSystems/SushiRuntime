@@ -233,13 +233,17 @@ namespace
             sum[index] = 0.0f;
         }
 
-        // The lambda is the local fallback; a worker runs the kernel registered for the same id.
+        // The node names its operation; a worker runs the kernel registered for the same id.
+        NodeOptions vector_add;
+        vector_add.operation = DistributedDemo::K_VECTOR_ADD;
+
         auto graph = runtime.graph();
-        graph.add(DistributedDemo::K_VECTOR_ADD, count, Reads(a, b), Writes(sum),
+        graph.add(count, Reads(a, b), Writes(sum),
                   [a_data, b_data, sum_data](std::size_t index)
                   {
                       DistributedDemo::add_element(a_data, b_data, sum_data, index);
-                  });
+                  },
+                  vector_add);
         graph.run().value();
 
         for (std::size_t index = 0; index < count; ++index)
@@ -291,8 +295,7 @@ namespace
         auto secret = read_secret(options.secret_file);
         if (!secret)
         {
-            std::fprintf(stderr, "distributed_demo: %s
-", secret.error().message.c_str());
+            std::fprintf(stderr, "distributed_demo: %s\n", secret.error().message.c_str());
             return 1;
         }
 
@@ -303,8 +306,7 @@ namespace
             Distributed::Cluster::attach(runtime, transport, std::move(cluster_options));
         if (!attached)
         {
-            std::fprintf(stderr, "distributed_demo: %s
-", attached.error().message.c_str());
+            std::fprintf(stderr, "distributed_demo: %s\n", attached.error().message.c_str());
             return 1;
         }
         Distributed::Cluster& cluster = *attached;

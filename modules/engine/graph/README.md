@@ -288,15 +288,14 @@ This is the compatibility overload for host-executed semantic tasks. Kernel-capa
 prefer the overload that also receives device_work. `write_access` lists the memory pointers the
 operation overwrites or updates.
 
-### add_offload_dynamic
+### A node whose buffers rotate
 
-add_offload_dynamic() is the double-buffered counterpart to the offload add_task overloads. For a
-task that reads one allocation and writes another and swaps the two each step (a distributed State),
-the touched buffers cannot be frozen at compile time. The node carries the shared `live_reads` and
-`live_writes` pointer lists, which the caller re-points before each step; compile() marks the node
-offloadable without baking handles, and the coordinator resolves them from the live lists at
-dispatch. Dependency ordering and queue routing use the lists' current contents at insertion.
-`fallback_work` is the host fallback run when the task is not offloaded.
+For a node that reads one allocation and writes another and swaps the two each step (the rule
+of a State), the touched buffers cannot be frozen at compile time. `Node::set_live_io()` gives
+such a node the shared `live_reads` and `live_writes` pointer lists, which the caller re-points
+before each step; a coordinator's prepare() then marks the node without baking handles and
+resolves them from the live lists at dispatch. No add function sets the lists: the node is added
+like any other, and its dependency ordering and queue routing use the regions it was added with.
 
 ### add_native
 
@@ -391,7 +390,7 @@ under those raw pointers. The check costs one relaxed load and a compare per add
 passes an index, at graph build; nothing reads it at dispatch.
 
 `registration_counter_` is atomic for the same reason. `add_node()`, `add_task()`,
-`add_native()` and `add_offload_dynamic()` run on the same lock-free contract as the rest of
+`add_native()` run on the same lock-free contract as the rest of
 graph construction, so a plain counter would race under concurrent callers. `fetch_add`
 makes each draw atomic and distinct whoever is calling.
 
@@ -434,14 +433,9 @@ each `PlanCache::build()` and `RegionComposer::build_region()` and finishes it i
 call, so it holds no graph across an install.
 
 The add functions keep nothing for offload beyond `io_reads_` and `io_writes_`, which
-`prepare()` reads. `add_offload_dynamic()` is the exception: it stores the two live lists
-in the node's `OffloadState`, in every build.
-
-`add_offload_dynamic()` snapshots the current pointers for dependency ordering and queue
-routing. Both reason about a single compiled graph, where the snapshot holds. The node
-touches whole allocations that rotate each step, so each live pointer maps to a whole-buffer
-region. The live lists drive handle resolution at dispatch, so the node follows the
-double-buffer swap without recompiling.
+`prepare()` reads. The two live lists of a node whose buffers rotate are stored in its
+`OffloadState` by `Node::set_live_io()`, which the caller makes after the add. They drive
+handle resolution at dispatch, so the node follows the double-buffer swap without recompiling.
 
 #### The last node added
 

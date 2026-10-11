@@ -15,7 +15,7 @@ The unit of work the scheduler dispatches and the graph node built on it.
 | `sycl` | `sycl/sycl.hpp` | `sycl::event`, `sycl::handler`, `sycl::queue` |
 
 No header here changes shape with a build flag. A node carries one `Internal::Graph::OffloadState`
-pointer, null until `TaskGraph::add_offload_dynamic()` or a coordinator's `prepare()` fills it,
+pointer, null until `Node::set_live_io()` or a coordinator's `prepare()` fills it,
 and what a coordinator needs beyond the seam's fields it stores behind
 `OffloadState::payload`.
 

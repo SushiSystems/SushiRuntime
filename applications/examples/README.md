@@ -147,9 +147,10 @@ graph on purpose, checks that the refusal carries `ErrorCode::InvalidGraph` and 
 
 The master of the distributed demo. It attaches a master to a runtime with
 `Distributed::Cluster::attach` and a `ClusterOptions`, listens on TCP, waits for one worker, adds
-two vectors and checks every element of the sum. The add is one task tagged with the operation
-`demo.vector_add`. With a worker registered the task runs there: the worker pulls the two inputs
-and streams the sum back. Without one, the lambda given to `add()` runs it on this machine. The
+two vectors and checks every element of the sum. The add is one kernel whose `NodeOptions`
+name the operation `demo.vector_add`. With a worker registered the node runs there: the worker
+pulls the two inputs and streams the sum back. Without one, the kernel given to `add()` runs it
+on this machine. The
 sum is the same either way, because both paths call `add_element()` of `distributed_kernels.hpp`.
 
 The program prints where the task ran, which it reads from `Cluster::statistics()`:

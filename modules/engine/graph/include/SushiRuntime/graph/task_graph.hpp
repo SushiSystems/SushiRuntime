@@ -169,20 +169,6 @@ namespace SushiRuntime
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
 
-                /**
-                 * @brief Adds an offloadable task whose buffers rotate every step.
-                 * @param live_reads Shared list of the buffers read this step.
-                 * @param live_writes Shared list of the buffers written this step.
-                 * @param registration Index to stamp on this node; see the first add_node().
-                 * @return The node added; the graph owns it, then the plan compile() returns.
-                 * @see modules/engine/graph/README.md
-                 */
-                Node& add_offload_dynamic(const TaskMetadata& metadata,
-                                          std::shared_ptr<std::vector<void*>> live_reads,
-                                          std::shared_ptr<std::vector<void*>> live_writes,
-                                          HostWork fallback_work,
-                                          const std::vector<sycl::event>& dependencies = {},
-                                          std::optional<std::uint32_t> registration = std::nullopt);
 
                 /**
                  * @brief Adds a pure-CPU task run natively, with no SYCL submission.

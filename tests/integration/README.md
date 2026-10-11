@@ -27,6 +27,13 @@ The file covers layer 1 of `docs/design/GRAPH_REPLAY.md` (sections C and G, phas
 A chainable plan runs as an in-order chain, matches the scheduler bit for bit, and names the path it
 took in `RunReport::layer`.
 
+### `ANamedNodeRunsOnTheChainWithNoClusterAttached`
+
+A kernel and a State rule each name an operation and one parameter in their `NodeOptions`. No
+cluster is attached, so nothing can take either node. The run of three steps must report
+`ExecutionLayer::Chain` and leave the values an unnamed graph leaves: a named node is a candidate
+for another machine only where one can run it.
+
 ## test_co_tenancy.cpp
 
 The file covers the co-tenancy contract: the runtime is a tenant of the machine, not its owner.

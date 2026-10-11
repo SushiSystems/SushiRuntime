@@ -150,9 +150,8 @@ namespace SushiRuntime
         {
             constexpr bool accepted = is_per_element_v<F>;
             static_assert(accepted,
-                "add_dynamic(Dynamic, capacity, reads, writes, kernel) and add(OperationID, n, "
-                "reads, writes, local) take a callable invoked as kernel(std::size_t i) for "
-                "each element index.");
+                "add_dynamic(Dynamic, capacity, reads, writes, kernel) takes a callable "
+                "invoked as kernel(std::size_t i) for each element index.");
             return accepted;
         }
 

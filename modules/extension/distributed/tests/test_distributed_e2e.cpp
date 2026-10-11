@@ -874,11 +874,16 @@ namespace
             field.next()[index] = static_cast<int>(index);
         }
 
+        const std::uint64_t parameters[] = {static_cast<std::uint64_t>(count)};
+        NodeOptions step;
+        step.operation = K_STATE_STEP;
+        step.parameters = parameters;
+
         auto graph = runtime.graph();
-        graph.add(K_STATE_STEP, field,
-                  [](std::size_t index, const int* current, int* next)
-                  { next[index] = current[index] + static_cast<int>(index % 7); },
-                  {static_cast<std::uint64_t>(count)});
+        graph.add_rule(field,
+                       [](std::size_t index, const int* current, int* next)
+                       { next[index] = current[index] + static_cast<int>(index % 7); },
+                       step);
         graph.run(steps).value();
 
         std::vector<int> result(count);
@@ -1330,10 +1335,15 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
     const float* left = a.data();
     const float* right = b.data();
     float* sum = out.data();
+    const std::uint64_t parameters[] = {static_cast<std::uint64_t>(K_COUNT)};
+    NodeOptions vector_add;
+    vector_add.operation = K_VEC_ADD;
+    vector_add.parameters = parameters;
+
     auto graph = runtime.graph();
-    graph.add(K_VEC_ADD, K_COUNT, Reads(a, b), Writes(out),
+    graph.add(K_COUNT, Reads(a, b), Writes(out),
               [left, right, sum](std::size_t index) { sum[index] = left[index] + right[index]; },
-              {static_cast<std::uint64_t>(K_COUNT)});
+              vector_add);
     graph.run().value();
 
     EXPECT_GE(cluster.offloaded(), 1u);
@@ -1547,11 +1557,16 @@ TEST(Integration_DistributedE2ETest, DynamicStateBumpsTheLiveBufferAfterSwap)
     ASSERT_TRUE(back_before.has_value());
 
     // No worker is attached, so both steps run locally: the first writes back, the second front.
+    const std::uint64_t parameters[] = {static_cast<std::uint64_t>(K_COUNT)};
+    NodeOptions step;
+    step.operation = K_STATE_STEP;
+    step.parameters = parameters;
+
     auto graph = runtime.graph();
-    graph.add(K_STATE_STEP, field,
-              [](std::size_t index, const int* current, int* next)
-              { next[index] = current[index] + static_cast<int>(index % 7); },
-              {static_cast<std::uint64_t>(K_COUNT)});
+    graph.add_rule(field,
+                   [](std::size_t index, const int* current, int* next)
+                   { next[index] = current[index] + static_cast<int>(index % 7); },
+                   step);
     graph.run(K_STEPS).value();
 
     const std::optional<BufferHandle> front_after = cluster.buffer_handle(front);
