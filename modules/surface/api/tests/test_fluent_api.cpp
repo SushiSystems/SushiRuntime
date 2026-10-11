@@ -70,12 +70,12 @@ TEST(Integration_FluentAPI, RunReportFieldsAfterMultiStep)
         field[i] = 0;
 
     auto g = rt.graph();
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
     // Two independent tasks per step so we can verify the multiplier.
     auto extra = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         extra[i] = 0;
-    g.add(extra, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(extra, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     auto report = g.run(STEPS).value();
 
@@ -95,7 +95,7 @@ TEST(Integration_FluentAPI, RunForRunsAtLeastOneStep)
         field[i] = 0;
 
     auto g = rt.graph();
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     // Zero budget: documented contract says at least one step always runs.
     auto report = g.run_for(std::chrono::milliseconds(0)).value();
@@ -116,7 +116,7 @@ TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
         field[i] = 0;
 
     auto g = rt.graph();
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     // The kernel is warmed first, as run_for fixes its deadline before step one; see README.md.
     g.run().value();
@@ -392,10 +392,10 @@ TEST(Integration_FluentAPI, GraphSizeTracksAdds)
     EXPECT_EQ(g.size(), 0u);
 
     auto f = rt.state<int>(4).value();
-    g.add(f, [](std::size_t, const int*, int*) {});
+    g.add_rule(f, [](std::size_t, const int*, int*) {});
     EXPECT_EQ(g.size(), 1u);
 
-    g.add(f, [](std::size_t, const int*, int*) {});
+    g.add_rule(f, [](std::size_t, const int*, int*) {});
     EXPECT_EQ(g.size(), 2u);
 }
 
@@ -421,7 +421,7 @@ TEST(Integration_FluentAPI, RunZeroStepsIsNoOp)
         field[i] = 42;
 
     auto g = rt.graph();
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     auto report = g.run(0).value();
 

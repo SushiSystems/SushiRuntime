@@ -145,15 +145,15 @@ TEST(Integration_Observability, EveryAddShapeCanBeNamed)
      .name("captured");
 
     // State shape.
-    g.add(s, [](std::size_t i, const float* cur, float* next) { next[i] = cur[i] + 1.0f; })
+    g.add_rule(s, [](std::size_t i, const float* cur, float* next) { next[i] = cur[i] + 1.0f; })
      .name("stateful");
 
     // Host shape.
     g.add_host(Reads(c), Writes{}, [] {}).name("host");
 
     // Dynamic per-element shape.
-    g.add(sized([] { return N; }), N, Reads(a), Writes(b),
-          [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name("dynamic");
+    g.add_dynamic(sized([] { return N; }), N, Reads(a), Writes(b),
+                  [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name("dynamic");
 
     auto rep = g.run().value();
 

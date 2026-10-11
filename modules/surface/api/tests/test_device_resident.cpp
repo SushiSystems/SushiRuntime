@@ -99,7 +99,7 @@ TEST(Integration_DeviceResident, StateStepsResident)
     field.write_range({0, N}, seed).value();
 
     auto g = rt.graph();
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
     g.run(STEPS).value();
 
     const std::vector<int> out = field.read_range({0, N}).value();

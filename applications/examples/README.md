@@ -69,7 +69,7 @@ receives the global 2-D index already offset to (1,1).
 ## coupled_fields_demo.cpp
 
 Two fields evolve together, one reading the other. `v` counts up by one each step and `u`
-accumulates `v`. The coupled rule, `add(Coupled(out, in), fn)`, reads the previous step's data for
+accumulates `v`. The coupled rule, `add_coupled(Coupled(out, in), kernel)`, reads the previous step's data for
 every input, a Jacobi update: each `State` advances only after the whole step's kernels have
 run, so writing one field never changes what another reads in the same step. That makes the
 result independent of the order in which the two rules were added. The `v` that the `u` rule

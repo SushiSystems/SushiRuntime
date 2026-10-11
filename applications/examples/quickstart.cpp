@@ -49,8 +49,8 @@ namespace
 
         auto sim = rt.graph();
 
-        // fn receives the index and the current and next buffers; the runtime tracks the access.
-        sim.add(heat, [](std::size_t i, const float* cur, float* next)
+        // The kernel receives the index and both buffers; the runtime tracks the access.
+        sim.add_rule(heat, [](std::size_t i, const float* cur, float* next)
         {
             const float left  = (i == 0)     ? cur[i] : cur[i - 1];
             const float right = (i == N - 1) ? cur[i] : cur[i + 1];

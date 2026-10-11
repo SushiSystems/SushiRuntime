@@ -365,8 +365,8 @@ TEST(Integration_DeviceSizedLaunch, SizedFromDeviceChainMatchesSchedulerAsTheCou
 
         auto g = rt.graph();
         hx.add_producer(g);
-        g.add(sized_from_device(hx.counter), CAPACITY, Reads{}, Writes(acc),
-              [a](std::size_t i) { a[i] = a[i] * 2654435761u + 12345u; });
+        g.add_dynamic(sized_from_device(hx.counter), CAPACITY, Reads{}, Writes(acc),
+                      [a](std::size_t i) { a[i] = a[i] * 2654435761u + 12345u; });
         hx.add_digest(g, acc, CAPACITY);
         return hx.record(g);
     });

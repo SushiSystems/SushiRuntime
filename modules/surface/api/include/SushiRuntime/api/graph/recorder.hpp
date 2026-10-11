@@ -71,6 +71,7 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/api/launch/extent.hpp>
 #include <SushiRuntime/api/launch/nd_range.hpp>
+#include <SushiRuntime/api/vocabulary/coupled.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
@@ -262,8 +263,8 @@ namespace SushiRuntime
              * @param capacity Upper bound the live window must fit; also the default width.
              */
             template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-            std::size_t kernel(Dynamic window, std::size_t capacity, Access access, F&& kernel_body,
-                               NodeOptions options = {})
+            std::size_t dynamic_kernel(Dynamic window, std::size_t capacity, Access access,
+                                       F&& kernel_body, NodeOptions options = {})
             {
                 if (!admits(options) ||
                     !admit(Detail::host_device_slots_refusal(*context_, window, next_rule())))
@@ -439,7 +440,7 @@ namespace SushiRuntime
             std::size_t untracked_raw_kernel(
                        F&& kernel_body, const On& placement = On(DeviceIndex{0}),
                        NodeOptions options = {},
-                       const char* call = "Recorder::untracked_raw_kernel(fn, placement)")
+                       const char* call = "Recorder::untracked_raw_kernel(kernel, placement)")
             {
                 if (!admit(placement_refusal(call, placement)))
                     return rule_count();
@@ -483,7 +484,8 @@ namespace SushiRuntime
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
             std::size_t state_rule(State<T>& state, Launch launch, F&& kernel_body,
                                    NodeOptions options = {},
-                                   const char* call = "Recorder::state_rule(state, launch, fn)")
+                                   const char* call =
+                                       "Recorder::state_rule(state, launch, kernel)")
             {
                 if (!admits(options) ||
                     !admit(Detail::launch_refusal(launch, state.size(), call, next_rule(),
@@ -503,10 +505,12 @@ namespace SushiRuntime
              * @brief Records a State rule whose window is bound per step.
              * @param state The state the rule evolves; its size is the capacity. Alive at
              *        every run, free to move.
+             * @param kernel_body Callable invoked as kernel_body(i, const T* current, T* next)
+             *        for each live index.
              */
             template <typename T, class F>
-            std::size_t state_rule(Dynamic window, State<T>& state, F&& kernel_body,
-                                   NodeOptions options = {})
+            std::size_t dynamic_kernel(Dynamic window, State<T>& state, F&& kernel_body,
+                                       NodeOptions options = {})
             {
                 if (!admits(options) ||
                     !admit(Detail::host_device_slots_refusal(*context_, window, next_rule())))
@@ -533,97 +537,56 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Records a rule that writes one State from several current fields.
-             * @param call   Names the call the user wrote in a refusal's message.
-             * @param out    The field written; alive at every run, free to move.
-             * @param kernel_body     Callable invoked as kernel_body(i, current, next, a, ...).
-             * @param inputs The fields read, under the same rule as out.
-             */
-            template <typename T, class F, class... Inputs>
-            std::size_t coupled_rule(const char* call, State<T>& out, F&& kernel_body,
-                                     NodeOptions options,
-                                     State<Inputs>&... inputs)
-            {
-                const bool inputs_fit =
-                    (admit(Detail::launch_refusal(out.size(), inputs.size(), call, next_rule(),
-                                                  "a State read")) && ...);
-                if (!admits(options) || !inputs_fit)
-                    return rule_count();
-                return record_coupled(out.size(), out, std::forward<F>(kernel_body), options,
-                                      inputs...);
-            }
-
-            /**
-             * @brief Records a coupled rule over the whole field, with node options.
+             * @brief Records a rule that writes one State from several current fields, over
+             *        the whole field.
+             * @param states Coupled(out, in0, ...); each State is alive at every run and
+             *        free to move.
+             * @param kernel_body Callable invoked as kernel_body(i, current, next, in0, ...).
+             * @param call Names the call the user wrote in a refusal's message.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            template <typename T, class F, class... Inputs>
-            std::size_t coupled_rule(State<T>& out, F&& kernel_body, NodeOptions options,
-                                     State<Inputs>&... inputs)
+            template <typename Out, typename... Inputs, class F>
+            std::size_t coupled_rule(Coupled<Out, Inputs...> states, F&& kernel_body,
+                                     NodeOptions options = {},
+                                     const char* call = K_COUPLED_RULE)
             {
-                return coupled_rule("Recorder::coupled_rule(out, fn, options, inputs...)", out,
-                                    std::forward<F>(kernel_body), options, inputs...);
-            }
-
-            /**
-             * @brief Records a coupled rule over the whole field, named as this member.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            template <typename T, class F, class... Inputs>
-            std::size_t coupled_rule(State<T>& out, F&& kernel_body, State<Inputs>&... inputs)
-            {
-                return coupled_rule("Recorder::coupled_rule(out, fn, inputs...)", out,
-                                    std::forward<F>(kernel_body), NodeOptions(), inputs...);
+                return std::apply([&](State<Inputs>&... inputs)
+                {
+                    const bool inputs_fit =
+                        (admit(Detail::launch_refusal(states.out.size(), inputs.size(), call,
+                                                      next_rule(), "a State read")) && ...);
+                    if (!admits(options) || !inputs_fit)
+                        return rule_count();
+                    return record_coupled(states.out.size(), states.out,
+                                          std::forward<F>(kernel_body), options, inputs...);
+                }, states.inputs);
             }
 
             /**
              * @brief Records a coupled rule over a count, an Extent or an NdRange.
-             * @param call   Names the call the user wrote in a refusal's message.
-             * @param out    The field written; alive at every run, free to move.
-             * @param kernel_body     Callable invoked as kernel_body(index, current, next, a, ...).
-             * @param inputs The fields read, under the same rule as out.
+             * @param states Coupled(out, in0, ...); each State is alive at every run and
+             *        free to move.
+             * @param kernel_body Callable invoked as kernel_body(index, current, next, in0, ...).
+             * @param call Names the call the user wrote in a refusal's message.
              */
-            template <class Launch, typename T, class F, class... Inputs,
+            template <class Launch, typename Out, typename... Inputs, class F,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
-            std::size_t coupled_rule(const char* call, Launch launch, State<T>& out,
-                                     F&& kernel_body,
-                                     NodeOptions options, State<Inputs>&... inputs)
+            std::size_t coupled_rule(Launch launch, Coupled<Out, Inputs...> states,
+                                     F&& kernel_body, NodeOptions options = {},
+                                     const char* call = K_LAUNCH_COUPLED_RULE)
             {
-                const bool output_fits = admit(Detail::launch_refusal(
-                    launch, out.size(), call, next_rule(), "the State written"));
-                const bool inputs_fit =
-                    (admit(Detail::launch_refusal(launch, inputs.size(), call, next_rule(),
-                                                  "a State read")) && ...);
-                if (!admits(options) || !output_fits || !inputs_fit)
-                    return rule_count();
-                return record_coupled(launch, out, std::forward<F>(kernel_body), options,
-                                      inputs...);
-            }
-
-            /**
-             * @brief Records a coupled rule over a launch, with node options.
-             */
-            template <class Launch, typename T, class F, class... Inputs,
-                      std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
-            std::size_t coupled_rule(Launch launch, State<T>& out, F&& kernel_body,
-                                     NodeOptions options,
-                                     State<Inputs>&... inputs)
-            {
-                return coupled_rule("Recorder::coupled_rule(launch, out, fn, options, inputs...)",
-                                    launch, out, std::forward<F>(kernel_body), options, inputs...);
-            }
-
-            /**
-             * @brief Records a coupled rule over a launch, named as this member.
-             */
-            template <class Launch, typename T, class F, class... Inputs,
-                      std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
-            std::size_t coupled_rule(Launch launch, State<T>& out, F&& kernel_body,
-                                     State<Inputs>&... inputs)
-            {
-                return coupled_rule("Recorder::coupled_rule(launch, out, fn, inputs...)",
-                                    launch, out, std::forward<F>(kernel_body), NodeOptions(),
-                                    inputs...);
+                return std::apply([&](State<Inputs>&... inputs)
+                {
+                    const bool output_fits = admit(Detail::launch_refusal(
+                        launch, states.out.size(), call, next_rule(), "the State written"));
+                    const bool inputs_fit =
+                        (admit(Detail::launch_refusal(launch, inputs.size(), call, next_rule(),
+                                                      "a State read")) && ...);
+                    if (!admits(options) || !output_fits || !inputs_fit)
+                        return rule_count();
+                    return record_coupled(launch, states.out, std::forward<F>(kernel_body),
+                                          options, inputs...);
+                }, states.inputs);
             }
 
             /**
@@ -870,9 +833,17 @@ namespace SushiRuntime
                 return rule_names_.size() - 1;
             }
 
+            /** @brief Names coupled_rule(Coupled, kernel) in a message of its own. */
+            static constexpr const char* K_COUPLED_RULE =
+                "Recorder::coupled_rule(Coupled(out, in0, ...), kernel)";
+
+            /** @brief Names coupled_rule(launch, Coupled, kernel) in a message of its own. */
+            static constexpr const char* K_LAUNCH_COUPLED_RULE =
+                "Recorder::coupled_rule(launch, Coupled(out, in0, ...), kernel)";
+
             /** @brief Names the untracked_kernel() family in a message of its own. */
             static constexpr const char* K_UNTRACKED_KERNEL =
-                "Recorder::untracked_kernel(launch, fn, placement)";
+                "Recorder::untracked_kernel(launch, kernel, placement)";
 
             /**
              * @brief Records the node and the advance of a coupled rule already checked.

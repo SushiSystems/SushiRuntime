@@ -76,7 +76,7 @@ namespace
     /** @brief Adds the rule next = current + 1 over the whole of field. */
     void add_increment(Graph& graph, State<Word>& field)
     {
-        graph.add(field, [](std::size_t i, const Word* current, Word* next)
+        graph.add_rule(field, [](std::size_t i, const Word* current, Word* next)
         {
             next[i] = current[i] + 1u;
         });
@@ -130,11 +130,11 @@ TEST(Integration_StateMove, ACoupledRuleFollowsItsMovedStates)
     auto out = seeded_state(rt);
     auto input = seeded_state(rt);
     auto graph = rt.graph();
-    graph.add(Coupled(out, input),
-              [](std::size_t i, const Word* current, Word* next, const Word* other)
-              {
+    graph.add_coupled(Coupled(out, input),
+                      [](std::size_t i, const Word* current, Word* next, const Word* other)
+                      {
                   next[i] = current[i] + other[i];
-              });
+                      });
 
     State<Word> moved_input = std::move(input);
     State<Word> moved_out = std::move(out);
@@ -155,8 +155,8 @@ TEST(Integration_StateMove, ADynamicStateRuleFollowsAMovedState)
     auto field = seeded_state(rt);
     std::size_t live = K_PREFIX;
     auto graph = rt.graph();
-    graph.add(sized([&live] { return live; }), field,
-              [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
+    graph.add_dynamic(sized([&live] { return live; }), field,
+                      [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
     State<Word> moved = std::move(field);
     graph.run(K_STEPS).value();
@@ -233,8 +233,8 @@ TEST(Integration_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentFi
     auto graph = rt.graph();
     graph.add(K_WIDTH, Reads{}, Writes(field),
               [second](std::size_t i) { second[i] = K_MARK; });
-    graph.add(sized([&live] { return live; }), field,
-              [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
+    graph.add_dynamic(sized([&live] { return live; }), field,
+                      [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
     graph.run().value();
     ASSERT_EQ(field.current(), second);
 

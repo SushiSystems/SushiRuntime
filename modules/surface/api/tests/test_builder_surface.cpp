@@ -146,7 +146,7 @@ TEST(Integration_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
     auto field = seeded_state(rt);
 
     auto graph = rt.graph();
-    graph.add(K_PREFIX, field, [](std::size_t i, const Word* current, Word* next)
+    graph.add_rule(K_PREFIX, field, [](std::size_t i, const Word* current, Word* next)
     {
         next[i] = current[i] + 100u;
     });
@@ -166,7 +166,7 @@ TEST(Integration_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
     const std::string refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
-        graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
+        graph.add_rule(window, field, [](sycl::id<1>, const Word*, Word*) {});
     });
 
     EXPECT_NE(refusal.find("rule 0"), std::string::npos) << refusal;
@@ -185,16 +185,16 @@ TEST(Integration_BuilderSurface, CoupledRulesReadEveryStateNamed)
     auto input = seeded_state(rt);
 
     auto graph = rt.graph();
-    graph.add(Coupled(whole, input),
-              [](std::size_t i, const Word* current, Word* next, const Word* other)
-              {
+    graph.add_coupled(Coupled(whole, input),
+                      [](std::size_t i, const Word* current, Word* next, const Word* other)
+                      {
                   next[i] = current[i] + other[i];
-              });
-    graph.add(K_PREFIX, Coupled(prefix, input),
-              [](std::size_t i, const Word* current, Word* next, const Word* other)
-              {
+                      });
+    graph.add_coupled(K_PREFIX, Coupled(prefix, input),
+                      [](std::size_t i, const Word* current, Word* next, const Word* other)
+                      {
                   next[i] = current[i] * other[i];
-              });
+                      });
     EXPECT_EQ(graph.size(), 2u);
     graph.run().value();
 
@@ -217,8 +217,8 @@ TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd
 
     const std::string refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
-        graph.add(Coupled(output, input),
-                  [](std::size_t, const Word*, Word*, const Word*) {});
+        graph.add_coupled(Coupled(output, input),
+                          [](std::size_t, const Word*, Word*, const Word*) {});
     });
 
     EXPECT_NE(refusal.find("the count " + std::to_string(K_WIDTH)), std::string::npos) << refusal;
@@ -235,8 +235,8 @@ TEST(Integration_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
     std::size_t live = K_PREFIX;
 
     auto graph = rt.graph();
-    graph.add(sized([&live] { return live; }), K_WIDTH, Reads(target),
-              Writes(target), [words](std::size_t i) { words[i] = 0u; });
+    graph.add_dynamic(sized([&live] { return live; }), K_WIDTH, Reads(target),
+                      Writes(target), [words](std::size_t i) { words[i] = 0u; });
     graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
@@ -339,26 +339,27 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
 
     const std::string state_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
-        graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
+        graph.add_rule(window, field, [](sycl::id<1>, const Word*, Word*) {});
     });
-    EXPECT_TRUE(begins_with(state_refusal, "add(launch, state, fn), rule 0: ")) << state_refusal;
+    EXPECT_TRUE(begins_with(state_refusal, "add_rule(launch, state, kernel), rule 0: "))
+        << state_refusal;
 
     const std::string coupled_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
-        graph.add(Coupled(output, input),
-                  [](std::size_t, const Word*, Word*, const Word*) {});
+        graph.add_coupled(Coupled(output, input),
+                          [](std::size_t, const Word*, Word*, const Word*) {});
     });
-    EXPECT_TRUE(begins_with(coupled_refusal, "add(Coupled(out, in0, ...), fn), rule 0: "))
+    EXPECT_TRUE(begins_with(coupled_refusal, "add_coupled(Coupled(out, in0, ...), kernel), rule 0: "))
         << coupled_refusal;
 
     const std::string launch_coupled_refusal =
         refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
-        graph.add(window, Coupled(output, input),
-                  [](sycl::id<1>, const Word*, Word*, const Word*) {});
+        graph.add_coupled(window, Coupled(output, input),
+                          [](sycl::id<1>, const Word*, Word*, const Word*) {});
     });
     EXPECT_TRUE(begins_with(launch_coupled_refusal,
-                            "add(launch, Coupled(out, in0, ...), fn), rule 0: "))
+                            "add_coupled(launch, Coupled(out, in0, ...), kernel), rule 0: "))
         << launch_coupled_refusal;
 
     const std::string untracked_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
@@ -366,14 +367,14 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
         graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
     });
     EXPECT_TRUE(begins_with(untracked_refusal,
-                            "add_untracked(launch, On(...), fn), rule 0: "))
+                            "add_untracked(launch, On(...), kernel), rule 0: "))
         << untracked_refusal;
 
     const std::string raw_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
     {
         graph.add_untracked(On(DeviceIndex{count}), [](sycl::handler&) {});
     });
-    EXPECT_TRUE(begins_with(raw_refusal, "add_untracked(On(...), fn), rule 0: ")) << raw_refusal;
+    EXPECT_TRUE(begins_with(raw_refusal, "add_untracked(On(...), kernel), rule 0: ")) << raw_refusal;
 
     const std::string offload_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
@@ -411,13 +412,13 @@ TEST(Integration_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
 
     EXPECT_EQ(graph.refusal(), nullptr);
     graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
-    graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
+    graph.add_rule(window, field, [](sycl::id<1>, const Word*, Word*) {});
     graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
 
     const Error* refused = graph.refusal();
     ASSERT_NE(refused, nullptr);
     EXPECT_EQ(refused->code, ErrorCode::InvalidGraph);
-    EXPECT_TRUE(begins_with(refused->message, "add(launch, state, fn), rule 1: "))
+    EXPECT_TRUE(begins_with(refused->message, "add_rule(launch, state, kernel), rule 1: "))
         << refused->message;
     EXPECT_EQ(graph.size(), 2u) << "the valid rules are recorded, the refused one is not";
 

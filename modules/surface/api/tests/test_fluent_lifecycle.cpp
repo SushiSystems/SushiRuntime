@@ -47,7 +47,7 @@ TEST(Integration_FluentLifecycle, StateReplayIncrement)
         field[i] = 0;
 
     auto sim = rt.graph();
-    sim.add(field, [](std::size_t i, const int* cur, int* next)
+    sim.add_rule(field, [](std::size_t i, const int* cur, int* next)
     {
         next[i] = cur[i] + 1;
     });
@@ -76,7 +76,7 @@ TEST(Integration_FluentLifecycle, ReplayAcrossCalls)
         field[i] = 0;
 
     auto sim = rt.graph();
-    sim.add(field, [](std::size_t i, const int* cur, int* next)
+    sim.add_rule(field, [](std::size_t i, const int* cur, int* next)
     {
         next[i] = cur[i] + 1;
     });
@@ -103,7 +103,7 @@ TEST(Integration_FluentLifecycle, RunUntilStopsOnCondition)
         field[i] = 0;
 
     auto sim = rt.graph();
-    sim.add(field, [](std::size_t i, const int* cur, int* next)
+    sim.add_rule(field, [](std::size_t i, const int* cur, int* next)
     {
         next[i] = cur[i] + 1;
     });
@@ -129,11 +129,11 @@ TEST(Integration_FluentLifecycle, CoupledFieldsAreJacobi)
     for (std::size_t i = 0; i < N; ++i) { u[i] = 0; v[i] = 0; }
 
     auto sim = rt.graph();
-    sim.add(v, [](std::size_t i, const int* vc, int* vn)
+    sim.add_rule(v, [](std::size_t i, const int* vc, int* vn)
     {
         vn[i] = vc[i] + 1;
     });
-    sim.add(Coupled(u, v), [](std::size_t i, const int* uc, int* un, const int* vc)
+    sim.add_coupled(Coupled(u, v), [](std::size_t i, const int* uc, int* un, const int* vc)
     {
         un[i] = uc[i] + vc[i];
     });
@@ -163,12 +163,12 @@ TEST(Integration_FluentLifecycle, MutationRecompiles)
     for (std::size_t i = 0; i < N; ++i) a[i] = 0;
 
     auto sim = rt.graph();
-    sim.add(a, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 1; });
+    sim.add_rule(a, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 1; });
     sim.run(3).value(); // a == 3
 
     auto b = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) b[i] = 0;
-    sim.add(b, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 2; });
+    sim.add_rule(b, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 2; });
     sim.run(2).value(); // recompiles; a += 2 -> 5, b == 4
 
     for (std::size_t i = 0; i < N; ++i)

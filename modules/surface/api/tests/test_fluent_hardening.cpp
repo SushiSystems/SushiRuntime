@@ -90,7 +90,7 @@ TEST(Integration_FluentHardening, NdRange2DTiledKernel)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
 }
 
-/** @brief Tests that add(State, Extent<2>, kernel) leaves S*y in row y after S steps. */
+/** @brief Tests that add_rule(Extent<2>, state, kernel) leaves S*y in row y after S steps. */
 TEST(Integration_FluentHardening, State2DSteppedUpdate)
 {
     constexpr std::size_t W = 4, H = 4, S = 3;
@@ -101,7 +101,7 @@ TEST(Integration_FluentHardening, State2DSteppedUpdate)
         field[i] = 0;
 
     auto g = rt.graph();
-    g.add(Extent{W, H}, field, [](sycl::id<2> idx, const int* cur, int* next)
+    g.add_rule(Extent{W, H}, field, [](sycl::id<2> idx, const int* cur, int* next)
     {
         const std::size_t x = idx[0];
         const std::size_t y = idx[1];
@@ -136,9 +136,9 @@ TEST(Integration_FluentHardening, VariadicCoupledThreeInputs)
 
     auto g = rt.graph();
     // a and b have their own (identity) update rules so they advance each step.
-    g.add(a, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i]; });
-    g.add(b, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i]; });
-    g.add(Coupled(u, a, b), [](std::size_t i, const int* cur, int* next,
+    g.add_rule(a, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i]; });
+    g.add_rule(b, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i]; });
+    g.add_coupled(Coupled(u, a, b), [](std::size_t i, const int* cur, int* next,
                       const int* av, const int* bv)
     {
         next[i] = cur[i] + av[i] + bv[i];

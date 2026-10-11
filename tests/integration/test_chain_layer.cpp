@@ -81,18 +81,18 @@ namespace
         std::size_t gate_tick = 0;
 
         auto g = rt.graph();
-        g.add(field, [](std::size_t i, const float* cur, float* next)
+        g.add_rule(field, [](std::size_t i, const float* cur, float* next)
         {
             next[i] = cur[i] * 0.75f + static_cast<float>(i % 7) * 0.125f;
         });
-        g.add(sized([&size_tick] { return 1 + (size_tick++ * 37) % N; }),
-              N, Reads{}, Writes(acc),
-              [pa](std::size_t i) { pa[i] = pa[i] * 31u + static_cast<std::uint32_t>(i) + 1u; });
+        g.add_dynamic(sized([&size_tick] { return 1 + (size_tick++ * 37) % N; }),
+                      N, Reads{}, Writes(acc),
+                      [pa](std::size_t i) { pa[i] = pa[i] * 31u + static_cast<std::uint32_t>(i) + 1u; });
         g.add(N, Reads(acc), Writes(mix),
               [pa, pm](std::size_t i) { pm[i] = (pm[i] ^ (pa[i] * 2654435761u)) + 7u; });
-        g.add(when([&gate_tick] { return (gate_tick++ % 3) != 0; }),
-              N, Reads(mix), Writes(gated),
-              [pm, pg](std::size_t i) { pg[i] = pg[i] * 17u + pm[i]; });
+        g.add_dynamic(when([&gate_tick] { return (gate_tick++ % 3) != 0; }),
+                      N, Reads(mix), Writes(gated),
+                      [pm, pg](std::size_t i) { pg[i] = pg[i] * 17u + pm[i]; });
         if (native_tail)
             g.add_host([] {});
 

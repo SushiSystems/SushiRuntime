@@ -95,8 +95,8 @@ namespace
         std::size_t live_count = K_CAPACITY / 4;
         float* cells = hits.data();
         auto graph = runtime.graph();
-        graph.add(Dynamic().sized([&live_count] { return live_count; }), K_CAPACITY, Reads(),
-                  Writes(hits), [cells](std::size_t index) { cells[index] += 1.0f; })
+        graph.add_dynamic(Dynamic().sized([&live_count] { return live_count; }), K_CAPACITY, Reads(),
+                          Writes(hits), [cells](std::size_t index) { cells[index] += 1.0f; })
             .name("count_hits");
 
         // run() returns the report or an Error and throws nothing.

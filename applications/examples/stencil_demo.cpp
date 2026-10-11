@@ -61,7 +61,7 @@ namespace
 
         // The extent covers the (W-2) x (H-2) interior and offsets the kernel's index to (1,1).
         Extent<2> interior{ sycl::range<2>(W - 2, H - 2), sycl::id<2>(1, 1) };
-        g.add(interior, temp, [](sycl::id<2> idx, const float* cur, float* next)
+        g.add_rule(interior, temp, [](sycl::id<2> idx, const float* cur, float* next)
         {
             const std::size_t x = idx[0];
             const std::size_t y = idx[1];
