@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/api/graph/plan_view.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -132,17 +133,26 @@ namespace SushiRuntime
                 ::SushiRuntime::Internal::Graph::TaskGraph backing_graph(context.offload());
                 registrations_.assign(recorder.rule_count(),
                                       ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION);
+                recorded_.clear();
+                recorded_.reserve(recorder.node_count());
                 recorder.replay(backing_graph, [this, &backing_graph](std::size_t rule, std::size_t)
                 {
                     const ::SushiRuntime::Internal::Graph::Node* added =
                         backing_graph.last_node_added();
                     if (added)
+                    {
                         registrations_[rule] = added->registration_index;
+                        recorded_.push_back(RecordedNode{added, rule});
+                    }
                 });
                 Result<::SushiRuntime::Internal::Graph::CompiledGraph> compiled =
                     backing_graph.compile();
                 if (!compiled)
+                {
+                    // The nodes recorded_ names died with the backing graph.
+                    recorded_.clear();
                     return make_error(std::move(compiled.error()));
+                }
                 plan_ = std::move(*compiled);
                 plan_.profiling = profiling_requested_;
                 plan_.capture_base_state();
@@ -173,6 +183,32 @@ namespace SushiRuntime
                     ? registrations_[rule] : ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION;
             }
 
+            /**
+             * @brief Copies what the cached plan orders, one entry per recorded node.
+             * @pre stale() is false for the recorder the plan was built from.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            [[nodiscard]] PlanView describe_plan() const
+            {
+                PlanView view;
+                view.nodes.reserve(recorded_.size());
+                for (const RecordedNode& recorded : recorded_)
+                {
+                    const ::SushiRuntime::Internal::Graph::Node& node = *recorded.node;
+                    PlanNode described;
+                    described.rule = recorded.rule;
+                    if (node.metadata.name != nullptr)
+                        described.name = node.metadata.name;
+                    described.operation = node.metadata.op_id;
+                    described.predecessor_count =
+                        static_cast<std::size_t>(plan_.base_in_degree[node.plan_index]);
+                    described.reads = node.io_reads_;
+                    described.writes = node.io_writes_;
+                    view.nodes.push_back(std::move(described));
+                }
+                return view;
+            }
+
             /** @brief The compiled plan, valid while stale() is false; test seams read it. */
             ::SushiRuntime::Internal::Graph::CompiledGraph plan_;
 
@@ -184,12 +220,23 @@ namespace SushiRuntime
             void take(PlanCache& other) noexcept
             {
                 plan_ = std::exchange(other.plan_, {});
+                recorded_ = std::exchange(other.recorded_, {});
                 registrations_ = std::exchange(other.registrations_, {});
                 built_generation_ = std::exchange(other.built_generation_, 0);
                 compiles_ = std::exchange(other.compiles_, 0);
                 dirty_ = std::exchange(other.dirty_, true);
                 profiling_requested_ = other.profiling_requested_;
             }
+
+            /** @brief Names one node of plan_ and the rule that recorded it. */
+            struct RecordedNode
+            {
+                const ::SushiRuntime::Internal::Graph::Node* node = nullptr; /**< Owned by plan_. */
+                std::size_t rule = 0; /**< Position of the rule in recording order. */
+            };
+
+            /** @brief The nodes of plan_ in recording order; plan_ lists them in its own. */
+            std::vector<RecordedNode> recorded_;
 
             /** @brief Registration index of each rule, as the last build stamped it. */
             std::vector<std::uint32_t> registrations_;

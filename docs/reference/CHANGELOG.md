@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — api: Added `Graph::plan()`, which returns a `PlanView` of the nodes in recording order with their predecessor counts and regions (`plan_view.hpp`, `plan_cache.hpp`, `graph.hpp`).
 - 2026-10-12 — api: Added `compile()` to `Graph` and `DynamicGraph`, which builds the plan when none is current and runs nothing (`step_driver.hpp`).
 - 2026-10-11 — distributed: Breaking change: Made `KernelRegistry::Kernel` and `OffloadPolicy::pick_worker` take `const NodeOptions&`; the public headers include no engine header (`kernel_registry.hpp`, `offload_policy.hpp`).
 - 2026-10-11 — distributed: Breaking change: Made `TaskDispatchMessage` carry its own operation, name and parameters, set `K_PROTOCOL_VERSION` to 3 and added `ErrorCode::ProtocolMismatch` (`wire_messages.hpp`, `wire_frame.hpp`).
