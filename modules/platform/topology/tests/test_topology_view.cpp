@@ -60,9 +60,10 @@ namespace
             /**
              * @brief Returns no devices; the view never asks for them.
              */
-            std::vector<HardwareNode> enumerate(const HardwareFilterConfig&) override
+            SushiRuntime::Result<std::vector<HardwareNode>>
+            enumerate(const HardwareFilterConfig&) override
             {
-                return {};
+                return std::vector<HardwareNode>{};
             }
 
             /**

@@ -143,31 +143,16 @@ namespace SushiRuntime
 
         void MasterLink::send_hello(PeerID peer)
         {
-            HandshakeNonce nonce{};
-            std::string failure;
-            bool drawn = false;
-            try
-            {
-                nonce = nonces_();
-                drawn = true;
-            }
-            catch (const std::exception& error)
-            {
-                failure = error.what();
-            }
-            catch (...)
-            {
-                failure = "unknown exception";
-            }
-
+            const Result<HandshakeNonce> drawn = nonces_();
             if (!drawn)
             {
                 SR_LOG_ERROR("cannot draw a handshake nonce for master (peer {}): {}; closing "
                              "the connection",
-                             peer.value, failure);
+                             peer.value, drawn.error().message);
                 transport_.close_peer(peer);
                 return;
             }
+            const HandshakeNonce nonce = *drawn;
 
             {
                 const std::lock_guard<std::mutex> lock(mutex_);

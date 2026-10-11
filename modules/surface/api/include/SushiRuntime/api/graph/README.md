@@ -609,9 +609,12 @@ device failure; `api/detail/README.md` describes the ladder.
 
 | Thrown | While the plan is built | Once a step may have started |
 | --- | --- | --- |
-| `SushiException` | Its own Error | Its own Error |
 | `sycl::exception` | `KernelFailed` | `KernelFailed` |
 | Any other exception, such as one a host task throws | `CompileFailed` | `KernelFailed` |
+
+The engine returns its own failures as `Result<void>` from execute(), submit() and complete(), and
+`ChainRun` from submit_step(), wait() and finish(); the driver forwards those with their codes.
+What the ladder still catches is thrown by a hook, by the plan build or by SYCL on this thread.
 
 The build phase is plan_is_stale(), rebuild_plan() and prepare_run(). Everything after it is the
 step phase, and RunHandle::wait() settles a step through the same ladder, so a throwing host

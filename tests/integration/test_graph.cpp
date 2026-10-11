@@ -37,6 +37,7 @@
 #include <SushiRuntime/task/node.hpp>
 
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -50,7 +51,8 @@ using SushiRuntime::Test::make_order_recorder;
  */
 TEST(Integration_TaskGraphTest, SequentialUSMDependency)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskGraph graph;
 
     int dummy_data = 0;
@@ -73,7 +75,7 @@ TEST(Integration_TaskGraphTest, SequentialUSMDependency)
     auto compiled_graph = graph.compile().value();
     EXPECT_EQ(compiled_graph.roots.size(), 1) << "Graph should only have 1 root due to linear dependency.";
 
-    ctx.execution_engine().execute(std::move(compiled_graph));
+    ctx.execution_engine().execute(std::move(compiled_graph)).value();
 
     std::lock_guard<std::mutex> lock(order_mutex);
     ASSERT_EQ(execution_order.size(), 3);
@@ -89,7 +91,8 @@ TEST(Integration_TaskGraphTest, SequentialUSMDependency)
  */
 TEST(Integration_TaskGraphTest, IndependentRootsExecution)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskGraph graph;
 
     constexpr int NUM_TASKS = 10;
@@ -111,7 +114,7 @@ TEST(Integration_TaskGraphTest, IndependentRootsExecution)
 
     EXPECT_EQ(compiled_graph.roots.size(), NUM_TASKS);
 
-    ctx.execution_engine().execute(std::move(compiled_graph));
+    ctx.execution_engine().execute(std::move(compiled_graph)).value();
 
     EXPECT_EQ(completed_tasks.load(), NUM_TASKS);
 }
@@ -123,7 +126,8 @@ TEST(Integration_TaskGraphTest, IndependentRootsExecution)
  */
 TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskGraph graph;
 
     int shared_resource = 0;
@@ -161,7 +165,7 @@ TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
     });
 
     auto compiled = graph.compile().value();
-    ctx.execution_engine().execute(std::move(compiled));
+    ctx.execution_engine().execute(std::move(compiled)).value();
 
     EXPECT_TRUE(fan_out_success) << "Readers executed before the initial writer completed!";
     EXPECT_EQ(current_phase.load(), 3) << "Final writer did not complete successfully.";

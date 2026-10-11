@@ -61,6 +61,7 @@
 #include "wire_messages.hpp"
 #include "worker_options_parser.hpp"
 #include "worker_session.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -401,7 +402,11 @@ namespace
             StopSignal stop_signal_;
 
             /// @brief The runtime the agent's kernels would run on.
-            Internal::Execution::RuntimeContext context_;
+            const std::shared_ptr<Internal::Execution::RuntimeContext> context_owner_ =
+                SushiRuntime::Test::make_context();
+
+            /// @brief The context context_owner_ holds.
+            Internal::Execution::RuntimeContext& context_ = *context_owner_;
 
             /// @brief The exit code of the serving thread; declared last, so it ends first.
             std::future<WorkerExitCode> exit_code_;

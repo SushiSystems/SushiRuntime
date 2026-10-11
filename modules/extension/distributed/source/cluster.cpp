@@ -36,7 +36,9 @@
 #include <string>
 #include <utility>
 
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -47,6 +49,7 @@
 
 #include "buffer_registry.hpp"
 #include "distributed_coordinator.hpp"
+#include "handshake.hpp"
 
 namespace SushiRuntime
 {
@@ -75,42 +78,70 @@ namespace SushiRuntime
                 context.install_offload(nullptr);
             }
 
+            /** @brief Logs why a call is refused and returns the reason as InvalidState. */
+            ErrorWrapper<Error> refusal(std::string message)
+            {
+                SR_LOG_ERROR("{}", message);
+                return make_error(Error{ErrorCode::InvalidState, std::move(message)});
+            }
+
             /**
              * @brief Refuses a liveness or handshake timeout a monitor pass would already
              *        count as expired.
              * @param call The public call the value came through, for the message.
              * @param option The option's name, for the message.
-             * @throws SushiException When @p value is below K_MINIMUM_TIMEOUT.
+             * @return Nothing, or InvalidState when @p value is below K_MINIMUM_TIMEOUT.
              */
-            void check_timeout(const char* call, const char* option,
-                               std::chrono::milliseconds value)
+            Result<void> check_timeout(const char* call, const char* option,
+                                       std::chrono::milliseconds value)
             {
-                SR_THROW_IF(value < K_MINIMUM_TIMEOUT,
-                            "{}: {} is {} ms; the smallest value allowed is {} ms.", call, option,
-                            value.count(), K_MINIMUM_TIMEOUT.count());
+                if (value < K_MINIMUM_TIMEOUT)
+                    return refusal(Detail::sr_format(
+                        "{}: {} is {} ms; the smallest value allowed is {} ms.", call, option,
+                        value.count(), K_MINIMUM_TIMEOUT.count()));
+                return {};
             }
 
             /**
              * @brief Refuses options a master cannot be attached with.
-             * @throws SushiException Naming the option and the value that is allowed.
+             * @return Nothing, or InvalidState naming the option and the value that is allowed.
              */
-            void check_options(const Transport& transport, const ClusterOptions& options)
+            Result<void> check_options(const Transport& transport, const ClusterOptions& options)
             {
-                check_timeout("Cluster::attach", "ClusterOptions::liveness_timeout",
-                              options.liveness_timeout);
-                check_timeout("Cluster::attach", "ClusterOptions::handshake_timeout",
-                              options.handshake_timeout);
-                SR_THROW_IF(options.secret.empty() &&
-                                transport.exposure() == TransportExposure::Network,
-                            "Cluster::attach: the transport can be reached from other machines "
-                            "and ClusterOptions::secret is empty; load one with "
-                            "SharedSecret::from_file(), or bind the master to a loopback "
-                            "address.");
-                SR_THROW_IF(options.chunk_bytes < K_MINIMUM_CHUNK_BYTES ||
-                                options.chunk_bytes > K_MAXIMUM_CHUNK_BYTES,
-                            "Cluster::attach: ClusterOptions::chunk_bytes is {}; it must be "
-                            "between {} and {}.",
-                            options.chunk_bytes, K_MINIMUM_CHUNK_BYTES, K_MAXIMUM_CHUNK_BYTES);
+                Result<void> checked = check_timeout(
+                    "Cluster::attach", "ClusterOptions::liveness_timeout",
+                    options.liveness_timeout);
+                if (!checked)
+                    return checked;
+                checked = check_timeout("Cluster::attach", "ClusterOptions::handshake_timeout",
+                                        options.handshake_timeout);
+                if (!checked)
+                    return checked;
+                if (options.secret.empty() && transport.exposure() == TransportExposure::Network)
+                    return refusal(
+                        "Cluster::attach: the transport can be reached from other machines "
+                        "and ClusterOptions::secret is empty; load one with "
+                        "SharedSecret::from_file(), or bind the master to a loopback address.");
+                if (options.chunk_bytes < K_MINIMUM_CHUNK_BYTES ||
+                    options.chunk_bytes > K_MAXIMUM_CHUNK_BYTES)
+                    return refusal(Detail::sr_format(
+                        "Cluster::attach: ClusterOptions::chunk_bytes is {}; it must be "
+                        "between {} and {}.",
+                        options.chunk_bytes, K_MINIMUM_CHUNK_BYTES, K_MAXIMUM_CHUNK_BYTES));
+                return {};
+            }
+
+            /** @brief Returns the session identifier of one master, drawn at random. */
+            Result<std::uint64_t> draw_session_id()
+            {
+                const Result<HandshakeNonce> nonce = make_nonce();
+                if (!nonce)
+                    return make_error(nonce.error());
+
+                std::uint64_t session = 0;
+                for (std::size_t index = 0; index < sizeof(session); ++index)
+                    session |= static_cast<std::uint64_t>(nonce->bytes[index]) << (8 * index);
+                return session;
             }
         } // namespace
 
@@ -123,8 +154,9 @@ namespace SushiRuntime
             class Attachment;
 
             /** @brief Builds the registry, then the coordinator that reads it. */
-            State(std::shared_ptr<Transport> transport, ClusterOptions options)
-                : coordinator(buffers, std::move(transport), std::move(options))
+            State(std::shared_ptr<Transport> transport, ClusterOptions options,
+                  std::uint64_t session_id)
+                : coordinator(buffers, std::move(transport), std::move(options), session_id)
             {
 
             }
@@ -181,25 +213,33 @@ namespace SushiRuntime
 
         }
 
-        Cluster Cluster::attach(Runtime& runtime, std::shared_ptr<Transport> transport,
-                                ClusterOptions options)
+        Result<Cluster> Cluster::attach(Runtime& runtime, std::shared_ptr<Transport> transport,
+                                        ClusterOptions options)
         {
             return attach(runtime.unsafe_context(), std::move(transport), std::move(options));
         }
 
-        Cluster Cluster::attach(Internal::Execution::RuntimeContext& context,
-                                std::shared_ptr<Transport> transport, ClusterOptions options)
+        Result<Cluster> Cluster::attach(Internal::Execution::RuntimeContext& context,
+                                        std::shared_ptr<Transport> transport,
+                                        ClusterOptions options)
         {
-            // The scheduler of a run in flight reads the coordinator this call would replace.
-            SR_THROW_IF(has_run_in_flight(context),
-                        "Cluster::attach: a run is in flight on the runtime; wait for it to "
-                        "return, then attach. Nothing was stopped or installed.");
-            SR_THROW_IF(!transport,
-                        "Cluster::attach: the transport is null; pass a master-side transport "
-                        "that was never started.");
-            check_options(*transport, options);
+            SR_VERIFY(transport != nullptr,
+                      "Cluster::attach: the transport is null; pass a master-side transport "
+                      "that was never started.");
 
-            auto state = std::make_shared<State>(std::move(transport), std::move(options));
+            // The scheduler of a run in flight reads the coordinator this call would replace.
+            if (has_run_in_flight(context))
+                return refusal("Cluster::attach: a run is in flight on the runtime; wait for it "
+                               "to return, then attach. Nothing was stopped or installed.");
+            Result<void> checked = check_options(*transport, options);
+            if (!checked)
+                return make_error(std::move(checked.error()));
+            Result<std::uint64_t> session_id = draw_session_id();
+            if (!session_id)
+                return make_error(std::move(session_id.error()));
+
+            auto state = std::make_shared<State>(std::move(transport), std::move(options),
+                                                 *session_id);
 
             // The new master starts before the installed one is touched, so a failure costs nothing.
             state->coordinator.bind(context.offload_sink());
@@ -207,12 +247,10 @@ namespace SushiRuntime
             if (!started.is_ok())
             {
                 state->coordinator.stop();
-                throw SushiException(Error{
-                    ErrorCode::InvalidState,
-                    "Cluster::attach: the master did not start: " + started.message +
-                        (context.offload() != nullptr
-                             ? "; the cluster attached before stays installed."
-                             : "; nothing is installed on the runtime.")});
+                return refusal("Cluster::attach: the master did not start: " + started.message +
+                               (context.offload() != nullptr
+                                    ? "; the cluster attached before stays installed."
+                                    : "; nothing is installed on the runtime."));
             }
 
             release_installed(context);
@@ -256,11 +294,13 @@ namespace SushiRuntime
             return state_->coordinator.statistics().alive_workers;
         }
 
-        Cluster& Cluster::liveness_timeout(std::chrono::milliseconds timeout)
+        Result<void> Cluster::liveness_timeout(std::chrono::milliseconds timeout)
         {
-            check_timeout("Cluster::liveness_timeout", "the timeout", timeout);
+            Result<void> checked = check_timeout("Cluster::liveness_timeout", "the timeout", timeout);
+            if (!checked)
+                return checked;
             state_->coordinator.set_liveness_timeout(timeout);
-            return *this;
+            return {};
         }
 
         Cluster& Cluster::task_deadline(std::chrono::milliseconds deadline)

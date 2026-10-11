@@ -81,7 +81,7 @@ namespace
         Internal::Graph::TaskGraph backing;
         emit(backing, std::nullopt);
         Internal::Graph::CompiledGraph plan = backing.compile().value();
-        rt.unsafe_context().execution_engine().execute(plan);
+        rt.unsafe_context().execution_engine().execute(plan).value();
     }
 } // namespace
 

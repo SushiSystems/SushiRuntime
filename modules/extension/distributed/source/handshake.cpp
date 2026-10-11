@@ -56,7 +56,7 @@ namespace SushiRuntime
             }
         } // namespace
 
-        HandshakeNonce make_nonce()
+        Result<HandshakeNonce> make_nonce()
         {
             HandshakeNonce nonce{};
             std::string failure;
@@ -80,7 +80,7 @@ namespace SushiRuntime
                 failure = error.what();
             }
 
-            throw SushiException(Error{
+            return make_error(Error{
                 ErrorCode::Unsupported,
                 "cannot draw a handshake nonce from std::random_device: " + failure});
         }

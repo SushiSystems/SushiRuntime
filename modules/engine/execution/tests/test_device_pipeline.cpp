@@ -37,6 +37,7 @@
 #include <SushiRuntime/task/node.hpp>
 
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -69,7 +70,8 @@ namespace
  */
 TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
 
     if (!numa0_has_single_queue(context))
         GTEST_SKIP() << "NUMA 0 exposes multiple device queues; the engine would scatter "
@@ -127,7 +129,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
     auto compiled = graph.compile().value();
     EXPECT_EQ(compiled.roots.size(), 1u) << "Only the init node should be a root of the diamond.";
 
-    context.execution_engine().execute(std::move(compiled));
+    context.execution_engine().execute(std::move(compiled)).value();
     context.devices().wait_all().value();
 
     bool ok = true;

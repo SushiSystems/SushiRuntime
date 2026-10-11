@@ -36,6 +36,7 @@
 
 #include "test_helpers.hpp"
 #include "scheduler_fixture.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -51,7 +52,8 @@ using SushiRuntime::Test::PriorityTrackingTask;
  */
 TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskScheduler scheduler = make_scheduler(ctx);
 
     std::atomic<size_t> executed_count{0};
@@ -83,7 +85,8 @@ TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
  */
 TEST(Stress_TaskSchedulerStress, MultiProducerContention)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskScheduler scheduler = make_scheduler(ctx);
 
     std::atomic<size_t> executed_count{0};
@@ -127,7 +130,8 @@ TEST(Stress_TaskSchedulerStress, MultiProducerContention)
  */
 TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
 
     for (int i = 0; i < 500; ++i)
     {
@@ -154,7 +158,8 @@ TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
  */
 TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskScheduler scheduler = make_scheduler(ctx);
 
     std::vector<int> execution_order;

@@ -183,8 +183,8 @@ leave the other.
 
 ### `AttachStartFailureLeavesNothingInstalled`
 
-`attach` on a `StubTransport` whose `start()` returns `BindFailed` must throw
-`SushiException` carrying the transport's message, call `start()` once and leave `offload()`
+`attach` on a `StubTransport` whose `start()` returns `BindFailed` must return an error
+carrying the transport's message, call `start()` once and leave `offload()`
 null. A second `attach` on the same context must then succeed.
 
 ### `AttemptCapDoesNotOutliveTheRun`
@@ -196,8 +196,8 @@ rises by one per run and `redispatched` by the cap.
 
 ### `RefusesEmptySecretOnNetworkExposure`
 
-On a `StubTransport` that reports `Network`, `attach` with an empty secret must throw before
-`start()` is called. With a 32-byte secret the same transport attaches.
+On a `StubTransport` that reports `Network`, `attach` with an empty secret must return an error
+before `start()` is called. With a 32-byte secret the same transport attaches.
 
 ### `RegisteredTaskRunsWithAndWithoutAWorker`, `run_registered_sum`
 
@@ -209,7 +209,7 @@ master's not at all. Both outputs must be equal.
 
 Finding QC-35. One master is attached on an in-process transport, then a second context attaches
 on the same transport object. The transport answers `AlreadyStarted`, so the second `attach` must
-throw and leave its context without a coordinator. A worker started after the throw must still
+return an error and leave its context without a coordinator. A worker started after that must still
 register with the first master within 10 s, which it cannot when the failed attach stopped the
 transport.
 
@@ -223,7 +223,7 @@ is the limit of a wait that must fail, so the test does not depend on how long i
 ### `AttachIsRefusedAndDetachDeferredDuringARun`
 
 Finding QC-84. An `Accept` worker holds the only task while `execute()` waits on another thread,
-so a run is in flight. `attach` on that context must throw `InvalidState` before it calls
+so a run is in flight. `attach` on that context must return `InvalidState` before it calls
 `start()` on the new transport, and the installed coordinator, its worker and its pending task
 must be as they were. `detach()` must then stop the master, which returns the task and ends the
 run with the local result, and leave the coordinator installed. A second `detach()` after the run
@@ -239,14 +239,14 @@ name one master.
 ### `RefusesATimeoutBelowOneMillisecond`
 
 Finding QC-38. `attach` with `liveness_timeout` of 0 and with `handshake_timeout` of 0 must each
-throw a message that names the option and its value, before `start()` is called. `attach` with a
+return a message that names the option and its value, before `start()` is called. `attach` with a
 `task_deadline` of 0 and both timeouts at 1 ms must succeed. `Cluster::liveness_timeout(0 ms)` must
-throw, and 1 ms and `task_deadline(0 ms)` must not.
+return `InvalidState`, and 1 ms must succeed.
 
 ### `WorkerAgentSealsItsRegistry`
 
 Finding QC-37. A registry is open until a `WorkerAgent` is built with it and sealed from then on,
-before `start()`. `register_kernel` must then throw and add nothing.
+before `start()`. `register_kernel` must then stop the process, which the death test checks.
 
 ### The per-run offloaded count
 
@@ -885,13 +885,13 @@ A registered link says goodbye. The loss that follows and an abandoned connect b
 `LinkChange::None`, the end stays `Running`, and a connection that opens afterwards is closed
 without a `HELLO`. `stop()` then ends the link as `Stopped`.
 
-### `SealedRegistryRefusesRegistration`, `EmptyKernelIsRefused`
+### `SealedRegistryStopsARegistration`, `EmptyKernelStopsTheRegistration`
 
-Finding QC-37. `Unit_KernelRegistryTest` needs no queue: its kernel returns a default event and is
-never called. After `seal()`, called twice, `register_kernel` must throw `InvalidState` for a
+Finding QC-37. `Unit_KernelRegistryDeathTest` needs no queue: its kernel returns a default event
+and is never called. After `seal()`, called twice, `register_kernel` must stop the process for a
 new operation and for one already registered, and the registry must hold what it held. A
-default-constructed `Kernel` must throw `InvalidAccess` on an open registry and on a sealed one,
-and must register nothing.
+default-constructed `Kernel` must stop it on an open registry and on a sealed one, with the
+message that names the empty kernel.
 
 ## test_worker_main.cpp
 

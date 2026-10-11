@@ -21,20 +21,17 @@
 
 /**
  * @file test_error.cpp
- * @brief Tests the numbering and names of ErrorCode and the shape of SushiException.
+ * @brief Tests the numbering and names of ErrorCode.
  * @author Mustafa Garip
  */
 
 #include <cstdint>
-#include <stdexcept>
 #include <string>
-#include <type_traits>
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/error.hpp>
 
 using SushiRuntime::ErrorCode;
 using SushiRuntime::Error;
-using SushiRuntime::SushiException;
 
 namespace
 {
@@ -78,23 +75,4 @@ namespace
         EXPECT_STREQ(to_string(static_cast<ErrorCode>(250)), "Unknown");
     }
 
-    TEST(Unit_Error, AHandlerForRuntimeErrorCatchesSushiException)
-    {
-        static_assert(std::is_base_of<std::runtime_error, SushiException>::value,
-                      "SushiException must stay a std::runtime_error");
-
-        try
-        {
-            throw SushiException(Error{ErrorCode::InvalidState, "the call came too late"});
-        }
-        catch (const std::runtime_error& caught)
-        {
-            EXPECT_STREQ(caught.what(), "the call came too late");
-
-            const auto* typed = dynamic_cast<const SushiException*>(&caught);
-            ASSERT_NE(typed, nullptr);
-            EXPECT_EQ(typed->error().code, ErrorCode::InvalidState);
-            EXPECT_EQ(typed->error().message, "the call came too late");
-        }
-    }
 } // namespace

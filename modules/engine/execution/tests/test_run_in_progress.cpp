@@ -43,6 +43,7 @@
 #include <SushiRuntime/execution/chain_run.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include "test_context.hpp"
 
 namespace
 {
@@ -58,9 +59,9 @@ namespace
     {
         public:
             /** @brief Runs nothing. */
-            void execute(CompiledGraph&) override
+            SushiRuntime::Result<void> execute(CompiledGraph&) override
             {
-
+                return {};
             }
 
             /** @brief Stops nothing. */
@@ -151,13 +152,15 @@ TEST(Unit_RunInProgress, TheInterfaceDefaultReportsNoRun)
 
 TEST(Integration_RunInProgress, AFreshEngineReportsNoRun)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     EXPECT_FALSE(context.execution_engine().run_in_progress());
 }
 
 TEST(Integration_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     ExecutionEngine& engine = context.execution_engine();
 
     std::atomic<bool> seen_inside{false};
@@ -166,7 +169,7 @@ TEST(Integration_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
         seen_inside.store(engine.run_in_progress(), std::memory_order_relaxed);
     });
 
-    engine.execute(plan);
+    engine.execute(plan).value();
 
     EXPECT_TRUE(seen_inside.load(std::memory_order_relaxed))
         << "a host task of the run saw no run in progress";
@@ -175,7 +178,8 @@ TEST(Integration_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
 
 TEST(Integration_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturns)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     ExecutionEngine& engine = context.execution_engine();
     ASSERT_TRUE(engine.supports_asynchronous_run());
 
@@ -184,28 +188,35 @@ TEST(Integration_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturn
     const std::shared_future<void> opened = gate.get_future().share();
     CompiledGraph plan = compile_host_task([opened] { opened.wait(); });
 
-    engine.submit(plan);
+    engine.submit(plan).value();
     EXPECT_TRUE(engine.run_in_progress());
 
     gate.set_value();
-    engine.complete();
+    engine.complete().value();
     EXPECT_FALSE(engine.run_in_progress());
 }
 
-TEST(Integration_RunInProgress, ARunWhoseTaskThrowsLeavesNoRunInProgress)
+TEST(Integration_RunInProgress, ARunWhoseTaskThrowsReturnsKernelFailedAndLeavesNoRunInProgress)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     ExecutionEngine& engine = context.execution_engine();
 
     CompiledGraph blocking = compile_host_task([] { throw std::runtime_error("probe failure"); });
-    EXPECT_THROW(engine.execute(blocking), std::runtime_error);
+    const SushiRuntime::Result<void> blocked = engine.execute(blocking);
+    ASSERT_FALSE(blocked.has_value());
+    EXPECT_EQ(blocked.error().code, SushiRuntime::ErrorCode::KernelFailed);
+    EXPECT_NE(blocked.error().message.find("probe failure"), std::string::npos)
+        << blocked.error().message;
     EXPECT_FALSE(engine.run_in_progress());
 
     CompiledGraph asynchronous =
         compile_host_task([] { throw std::runtime_error("probe failure"); });
-    engine.submit(asynchronous);
+    engine.submit(asynchronous).value();
     EXPECT_TRUE(engine.run_in_progress());
-    EXPECT_THROW(engine.complete(), std::runtime_error);
+    const SushiRuntime::Result<void> completed = engine.complete();
+    ASSERT_FALSE(completed.has_value());
+    EXPECT_EQ(completed.error().code, SushiRuntime::ErrorCode::KernelFailed);
     EXPECT_FALSE(engine.run_in_progress());
 }
 
@@ -213,7 +224,8 @@ TEST(Integration_RunInProgress, AChainedRunIsInProgressUntilFinishReturnsOrItIsD
 {
     constexpr std::size_t COUNT = 64;
 
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     ExecutionEngine& engine = context.execution_engine();
     const DeviceFloats floats(context, COUNT);
     ASSERT_NE(floats.data(), nullptr);
@@ -225,9 +237,9 @@ TEST(Integration_RunInProgress, AChainedRunIsInProgressUntilFinishReturnsOrItIsD
     {
         ChainRun finished(context, plan);
         EXPECT_TRUE(engine.run_in_progress());
-        finished.submit_step(0);
+        finished.submit_step(0).value();
         EXPECT_TRUE(engine.run_in_progress());
-        finished.finish();
+        finished.finish().value();
         EXPECT_FALSE(engine.run_in_progress()) << "finish() returned and the run still shows";
     }
     EXPECT_FALSE(engine.run_in_progress());
@@ -244,7 +256,8 @@ TEST(Integration_RunInProgress, AScheduledRunInsideAChainedRunLeavesTheChainedRu
 {
     constexpr std::size_t COUNT = 64;
 
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     ExecutionEngine& engine = context.execution_engine();
     const DeviceFloats floats(context, COUNT);
     ASSERT_NE(floats.data(), nullptr);
@@ -256,12 +269,12 @@ TEST(Integration_RunInProgress, AScheduledRunInsideAChainedRunLeavesTheChainedRu
     CompiledGraph scheduled = compile_host_task([] {});
     {
         ChainRun outer(context, chained);
-        engine.execute(scheduled);
+        engine.execute(scheduled).value();
         EXPECT_TRUE(engine.run_in_progress())
             << "the scheduled run's end cleared the chained run's mark";
 
         const ChainRun inner(context, chained);
-        outer.finish();
+        outer.finish().value();
         EXPECT_TRUE(engine.run_in_progress()) << "one chained run's end cleared the other's";
     }
     EXPECT_FALSE(engine.run_in_progress());

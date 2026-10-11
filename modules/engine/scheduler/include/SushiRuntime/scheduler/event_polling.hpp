@@ -41,6 +41,7 @@
 #include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
@@ -201,6 +202,22 @@ namespace SushiRuntime
 
             private:
                 /**
+                 * @brief Turns an entry whose query or wait threw into what a skipped task is:
+                 *        ready, eventless and not executed.
+                 * @return True, the value the entry's done flag takes.
+                 */
+                static bool reap_failed(PolledEvent& entry)
+                {
+                    SR_LOG_ERROR("Polling the event of task '{}' threw; the task is reaped "
+                                 "as not executed and its successors are released.",
+                                 entry.task ? entry.task->name() : "<none>");
+                    entry.ready = true;
+                    entry.has_event = false;
+                    entry.executed = false;
+                    return true;
+                }
+
+                /**
                  * @brief Records one newly-ready task that will later be reaped here.
                  *
                  * Paired one-to-one with drop_inflight(): every task that reaches
@@ -243,17 +260,18 @@ namespace SushiRuntime
                  * @brief Checks for completed events and triggers successors.
                  *
                  * Reaps an entry whose status query or wait throws as a task that did not
-                 * execute, and returns the first such exception once the pass is over.
+                 * execute, and returns the first such failure once the pass is over.
                  * @param active_events List of events currently being monitored.
                  * @param local_queue Current thread's task queue.
-                 * @return The first exception an entry's query or wait threw, or null.
+                 * @return A KernelFailed error with the text of the first query or wait that
+                 *         threw; its code is Ok when none did.
                  */
                 template<typename QueueType>
-                [[nodiscard]] std::exception_ptr poll_events(ActiveEventList& active_events,
-                                                             QueueType& local_queue)
+                [[nodiscard]] Error poll_events(ActiveEventList& active_events,
+                                                QueueType& local_queue)
                 {
                     if (active_events.is_empty())
-                        return nullptr;
+                        return Error{};
 
                     // Backoff and stall state are read from the caller's own ActiveEventList.
                     size_t& backoff_counter = active_events.backoff_counter;
@@ -266,13 +284,13 @@ namespace SushiRuntime
                             std::this_thread::yield();
 
                         backoff_counter--;
-                        return nullptr;
+                        return Error{};
                     }
 
                     const bool profiling = profiling_.load(std::memory_order_acquire);
 
                     bool progress = false;
-                    std::exception_ptr first_failure;
+                    Error first_failure;
                     for (size_t i = 0; i < active_events.size(); )
                     {
                         PolledEvent& entry = active_events[i];
@@ -289,20 +307,19 @@ namespace SushiRuntime
                             if (done && entry.has_event)
                                 entry.event.wait();
                         }
+                        catch (const std::exception& cause)
+                        {
+                            if (first_failure.code == ErrorCode::Ok)
+                                first_failure = Error{ErrorCode::KernelFailed, cause.what()};
+                            done = reap_failed(entry);
+                        }
                         catch (...)
                         {
-                            SR_LOG_ERROR("Polling the event of task '{}' threw; the task is reaped "
-                                         "as not executed and its successors are released.",
-                                         entry.task ? entry.task->name() : "<none>");
-
-                            if (!first_failure)
-                                first_failure = std::current_exception();
-
-                            // The entry becomes what a skipped task is: ready, eventless, not executed.
-                            entry.ready = true;
-                            entry.has_event = false;
-                            entry.executed = false;
-                            done = true;
+                            if (first_failure.code == ErrorCode::Ok)
+                                first_failure = Error{
+                                    ErrorCode::KernelFailed,
+                                    "An event reported an error that is not a std::exception."};
+                            done = reap_failed(entry);
                         }
 
                         if (done)
@@ -347,8 +364,22 @@ namespace SushiRuntime
                             auto& oldest = active_events[0];
                             if (oldest.has_event)
                             {
-                                try { oldest.event.wait(); }
-                                catch (...) { SR_LOG_WARN("Stall-drive wait() threw; treating event as complete."); }
+                                try
+                                {
+                                    oldest.event.wait();
+                                }
+                                catch (const std::exception& cause)
+                                {
+                                    first_failure = Error{ErrorCode::KernelFailed, cause.what()};
+                                    reap_failed(oldest);
+                                }
+                                catch (...)
+                                {
+                                    first_failure = Error{
+                                        ErrorCode::KernelFailed,
+                                        "An event reported an error that is not a std::exception."};
+                                    reap_failed(oldest);
+                                }
                             }
                             oldest.ready = true;
                             stall_polls_ = 0;

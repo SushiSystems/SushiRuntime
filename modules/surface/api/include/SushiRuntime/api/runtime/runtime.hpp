@@ -75,16 +75,12 @@ namespace SushiRuntime
             [[nodiscard]] static Result<Runtime> create(const RuntimeConfig& config = {})
             {
                 require_matching_version();
-                std::shared_ptr<Internal::Execution::RuntimeContext> context;
-                Error failed = Detail::translate_exceptions(
-                    ErrorCode::DeviceLost, ErrorCode::AllocationFailed, [&context, &config]()
-                {
-                    context = std::make_shared<Internal::Execution::RuntimeContext>(
-                        config.devices, nullptr, nullptr, settings_of(config));
-                });
-                if (failed.code != ErrorCode::Ok)
-                    return make_error(std::move(failed));
-                return Runtime(std::move(context));
+                Result<std::shared_ptr<Internal::Execution::RuntimeContext>> context =
+                    Internal::Execution::RuntimeContext::create(config.devices, nullptr, nullptr,
+                                                                settings_of(config));
+                if (!context)
+                    return make_error(std::move(context.error()));
+                return Runtime(std::move(*context));
             }
 
             Runtime(Runtime&&) noexcept = default;

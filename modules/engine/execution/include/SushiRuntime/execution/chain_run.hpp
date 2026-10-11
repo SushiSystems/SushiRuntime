@@ -67,19 +67,24 @@ namespace SushiRuntime
                 /**
                  * @brief Submits one step's enabled nodes in compiled order without waiting.
                  * @param step Zero-based step index within the run, stamped into event records.
+                 * @return Nothing, or a KernelFailed error with what a submission threw; the
+                 *         nodes after it are not submitted.
                  */
-                void submit_step(std::uint32_t step);
+                [[nodiscard]] Result<void> submit_step(std::uint32_t step);
 
-                /** @brief Blocks until every submitted step has finished and rethrows a device error. */
-                void wait();
+                /**
+                 * @brief Blocks until every submitted step has finished.
+                 * @return Nothing, or a KernelFailed error with the first error the queue held.
+                 */
+                [[nodiscard]] Result<void> wait();
 
                 /**
                  * @brief Waits once for the whole run, then writes its event records into the ledger.
                  *
-                 * The run is over for ExecutionEngine::run_in_progress() when this returns or
-                 * throws.
+                 * The run is over for ExecutionEngine::run_in_progress() when this returns.
+                 * @return What wait() returns.
                  */
-                void finish();
+                [[nodiscard]] Result<void> finish();
 
             private:
                 /** @brief Marks a chained run in progress on an engine until released or destroyed. */

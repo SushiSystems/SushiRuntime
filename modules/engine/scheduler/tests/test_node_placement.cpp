@@ -60,10 +60,10 @@ namespace
     class SingleNodeTopology final : public SushiRuntime::Internal::Topology::TopologyProvider
     {
         public:
-            std::vector<SushiRuntime::Internal::Topology::HardwareNode>
+            SushiRuntime::Result<std::vector<SushiRuntime::Internal::Topology::HardwareNode>>
             enumerate(const SushiRuntime::Internal::Topology::HardwareFilterConfig&) override
             {
-                return {};
+                return std::vector<SushiRuntime::Internal::Topology::HardwareNode>{};
             }
     };
 
@@ -252,27 +252,9 @@ TEST_F(Unit_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
     EXPECT_EQ(dispatched_device(*node, handed), K_NO_DEVICE);
     ASSERT_TRUE(scheduler_.run_failed());
 
-    const std::exception_ptr error = scheduler_.run_error();
-    ASSERT_TRUE(error != nullptr);
-
-    std::optional<SushiRuntime::ErrorCode> code;
-    std::string message;
-    try
-    {
-        std::rethrow_exception(error);
-    }
-    catch (const SushiRuntime::SushiException& failure)
-    {
-        code = failure.error().code;
-        message = failure.what();
-    }
-    catch (const std::exception& failure)
-    {
-        message = failure.what();
-    }
-
-    ASSERT_TRUE(code.has_value()) << "the run failed with another exception type: " << message;
-    EXPECT_EQ(*code, SushiRuntime::ErrorCode::InvalidGraph);
+    const SushiRuntime::Error error = scheduler_.run_error();
+    const std::string& message = error.message;
+    EXPECT_EQ(error.code, SushiRuntime::ErrorCode::InvalidGraph) << message;
     EXPECT_NE(message.find("node 'misplaced'"), std::string::npos) << message;
     EXPECT_NE(message.find("device 2"), std::string::npos) << message;
     EXPECT_NE(message.find("2 device(s)"), std::string::npos) << message;

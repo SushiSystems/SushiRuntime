@@ -63,6 +63,7 @@
 #include <SushiRuntime/distributed/worker_agent.hpp>
 
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -234,7 +235,7 @@ namespace
                 finished_ = done->get_future();
                 thread_ = std::thread([&context, &graph, done]
                 {
-                    context.execution_engine().execute(graph);
+                    context.execution_engine().execute(graph).value().value();
                     done->set_value();
                 });
             }
@@ -304,7 +305,11 @@ namespace
 
         private:
             /// @brief The worker's own runtime; declared first, destroyed last.
-            RuntimeContext context_;
+            const std::shared_ptr<RuntimeContext> context_owner_ =
+                SushiRuntime::Test::make_context();
+
+            /// @brief The context context_owner_ holds.
+            RuntimeContext& context_ = *context_owner_;
 
             /// @brief The agent under test.
             WorkerAgent agent_;
@@ -487,7 +492,8 @@ namespace
         constexpr std::size_t K_TASKS = 4;
 
         std::atomic<int> worker_runs{0};
-        RuntimeContext master_context;
+        const auto master_context_owner = SushiRuntime::Test::make_context();
+        RuntimeContext& master_context = *master_context_owner;
         sycl::queue& queue = master_context.devices().queue(0);
         const std::unique_ptr<USMFloats> input = make_input(queue);
         std::vector<std::unique_ptr<USMFloats>> outputs;
@@ -498,7 +504,7 @@ namespace
         LocalWorker first(fabric, worker_runs, impatient_worker());
         LocalWorker second(fabric, worker_runs, impatient_worker());
         Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                          impatient_master());
+                                          impatient_master()).value();
 
         // The cluster assembles before any fault is injected; see README.md.
         if (!first.start() || !second.start() || !cluster.wait_for_workers(K_WORKERS, K_WAIT))
@@ -563,7 +569,8 @@ namespace
         std::atomic<int> worker_runs{0};
         const auto dropped = std::make_shared<std::atomic<int>>(0);
 
-        RuntimeContext master_context;
+        const auto master_context_owner = SushiRuntime::Test::make_context();
+        RuntimeContext& master_context = *master_context_owner;
         sycl::queue& queue = master_context.devices().queue(0);
         const std::unique_ptr<USMFloats> input = make_input(queue);
         USMFloats output(queue, K_UNWRITTEN);
@@ -573,7 +580,7 @@ namespace
 
         LocalWorker worker(fabric, worker_runs, impatient_worker());
         Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                          impatient_master());
+                                          impatient_master()).value();
         outcome.assembled = worker.start() && cluster.wait_for_workers(1, K_WAIT);
         if (!outcome.assembled)
         {

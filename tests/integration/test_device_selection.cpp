@@ -54,7 +54,7 @@ TEST(Integration_DeviceSelection, RequireFp64AdmitsOnlyFp64Devices)
     config.require_fp64 = true;
 
     Internal::Topology::HardwareDiscovery discovery;
-    const std::vector<Internal::Topology::HardwareNode> nodes = discovery.probe_all_devices(config);
+    const std::vector<Internal::Topology::HardwareNode> nodes = discovery.probe_all_devices(config).value();
 
     for (const auto& node : nodes)
         EXPECT_TRUE(node.sycl_dev.has(sycl::aspect::fp64))

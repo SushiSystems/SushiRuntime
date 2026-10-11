@@ -38,7 +38,9 @@ The source is `modules/platform/device/source/device_queue_set.cpp`.
 1. **`wait_all()` waits for every built queue**, including profiling and chain queues. It calls
    `wait_and_throw()` inside a `try`, so the asynchronous handler rethrows where the wait is, and it
    returns `Result<void>`: `KernelFailed` with the text of the first error, after every queue was
-   waited for.
+   waited for. `raise_asynchronous_errors()` is its sibling that does not wait: it calls
+   `throw_asynchronous()` on every built queue through the same ladder, and the engine calls it
+   when a scheduled run has drained.
 2. **The NUMA fallback is resolved and logged at construction.** `get_numa_local_queue()` logs
    nothing on a lookup. Construction logs one WARN that lists the nodes below the highest populated
    one that hold no device, and one INFO that states the rule for every id outside the table.
@@ -122,8 +124,9 @@ of the first entry in `docs/reference/KNOWN_ISSUES.md`: a kernel that captured U
 device can be submitted to another. The two functions are separate so that a caller who needs a
 stable device, such as an allocator, uses `device_for_numa`.
 
-An empty set has no route to anything. Both functions then throw `SushiException` with
-`ErrorCode::Unsupported`.
+An empty set has no route to anything, so asking it for one is a broken precondition and both
+functions stop the process through `SR_VERIFY`. `RuntimeContext::create()` returns `Unsupported`
+before it builds a set from an empty device list.
 
 ### The destructor
 

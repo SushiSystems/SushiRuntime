@@ -15,7 +15,7 @@ The twelve public headers under `include/SushiRuntime/core/`:
 | `bit.hpp` | `popcount_u64` and `countr_zero_u64`, two 64-bit bit queries for the C++17 baseline |
 | `common.hpp` | The `Backend` enumeration and the size constants `K_CACHE_LINE_SIZE`, `K_MAX_SUPPORTED_XPU`, `K_MAX_NUMA_NODES`, `K_MAX_WORKER_THREADS` and `K_DEFAULT_ALIGNMENT` |
 | `delegate.hpp` | `Delegate`, a move-only callable stored inline, with no heap allocation |
-| `error.hpp` | `ErrorCode`, its `to_string` overload, `Error` and `SushiException` |
+| `error.hpp` | `ErrorCode`, its `to_string` overload and `Error` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
 | `operation_id.hpp` | `OperationID`, the 32-bit FNV-1a hash of an operation's name, and the `_op` literal in `Literals` |
 | `ref_counted.hpp` | `RefCounted`, the intrusive reference count that `sushi_ptr` manages |
@@ -112,12 +112,12 @@ translation units.
 
 ## error.hpp
 
-### ErrorCode, Error and SushiException
+### ErrorCode and Error
 
 `ErrorCode` is a `std::uint8_t` enumeration with one code per failure class, and `to_string` returns
 the spelling of the enumerator, or "Unknown" for a number outside the enumeration. `Error` pairs an
-`ErrorCode` with a message. `SushiException` derives from `std::runtime_error`, holds an `Error`,
-and returns it from `error()`.
+`ErrorCode` with a message. The library has no exception type: a failure is an `Error` inside a
+`Result`, and a broken precondition stops the process through `assert.hpp`.
 
 `Detail::error_without_throwing()` builds an `Error`, or copies one, inside a `try`, and returns
 the code with an empty message when the text cannot be allocated. A function that must not throw

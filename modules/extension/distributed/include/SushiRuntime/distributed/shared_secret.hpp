@@ -36,6 +36,7 @@
 #include <vector>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
 
 namespace SushiRuntime
@@ -74,26 +75,28 @@ namespace SushiRuntime
 
                 /**
                  * @brief Reads a secret from a file, byte for byte.
-                 * @throws SushiException With ErrorCode::InvalidAccess, naming the file, when
-                 *         it cannot be read or holds fewer than K_MINIMUM_BYTES or more than
+                 * @return The secret, or InvalidAccess, naming the file, when it cannot be
+                 *         read or holds fewer than K_MINIMUM_BYTES or more than
                  *         K_MAXIMUM_BYTES bytes.
                  */
-                [[nodiscard]] static SharedSecret from_file(const std::filesystem::path& path);
+                [[nodiscard]] static Result<SharedSecret>
+                from_file(const std::filesystem::path& path);
 
                 /**
                  * @brief Reads a secret from the file an environment variable names.
-                 * @return The empty secret when the variable is unset or empty.
-                 * @throws SushiException As from_file(), naming the variable as well.
+                 * @return The secret, the empty one when the variable is unset or empty, or
+                 *         the error of from_file(), naming the variable as well.
                  */
-                [[nodiscard]] static SharedSecret from_environment(
-                    const std::string& variable_name);
+                [[nodiscard]] static Result<SharedSecret>
+                from_environment(const std::string& variable_name);
 
                 /**
                  * @brief Copies a secret out of memory the caller owns.
-                 * @throws SushiException With ErrorCode::InvalidAccess when @p bytes holds
-                 *         fewer than K_MINIMUM_BYTES or more than K_MAXIMUM_BYTES bytes.
+                 * @return The secret, or InvalidAccess when @p bytes holds fewer than
+                 *         K_MINIMUM_BYTES or more than K_MAXIMUM_BYTES bytes.
                  */
-                [[nodiscard]] static SharedSecret from_bytes(span<const std::uint8_t> bytes);
+                [[nodiscard]] static Result<SharedSecret>
+                from_bytes(span<const std::uint8_t> bytes);
 
                 /** @brief Returns a second owner of the same bytes. */
                 [[nodiscard]] SharedSecret clone() const;

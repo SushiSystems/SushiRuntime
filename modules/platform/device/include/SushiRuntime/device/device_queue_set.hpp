@@ -106,7 +106,7 @@ namespace SushiRuntime
                 /**
                  * @brief Returns the lowest-indexed device of a NUMA node, or device 0 when the
                  *        node has none.
-                 * @throws SushiException With ErrorCode::Unsupported when the set is empty.
+                 * @pre The set holds a device.
                  */
                 [[nodiscard]] std::size_t device_for_numa(int numa_node) const;
 
@@ -114,8 +114,7 @@ namespace SushiRuntime
                  * @brief Returns a device's plain queue, or one rotated over a NUMA node's devices.
                  * @param device The device to use; nothing selects the rotation.
                  * @param fallback_numa NUMA node the rotation runs over when @p device is empty.
-                 * @pre device, when given, names a device of the set.
-                 * @throws SushiException When the set is empty.
+                 * @pre device, when given, names a device of the set, and the set holds one.
                  * @see modules/platform/device/README.md
                  */
                 [[nodiscard]] sycl::queue& queue_or_numa_local(std::optional<std::size_t> device,
@@ -131,6 +130,13 @@ namespace SushiRuntime
                  *         waited for.
                  */
                 [[nodiscard]] Result<void> wait_all();
+
+                /**
+                 * @brief Makes every built queue report the asynchronous errors it holds,
+                 *        without waiting.
+                 * @return Nothing, or a KernelFailed error with the text of the first one.
+                 */
+                [[nodiscard]] Result<void> raise_asynchronous_errors();
 
             private:
                 /** @brief Holds one queue of the table and the guard that builds it once. */
@@ -175,7 +181,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns the next device of a NUMA node's rotation on this thread.
-                 * @throws SushiException With ErrorCode::Unsupported when the set is empty.
+                 * @pre The set holds a device.
                  */
                 [[nodiscard]] std::size_t next_device_for_numa(int numa_node) const;
 
@@ -185,6 +191,14 @@ namespace SushiRuntime
                 /** @brief Calls visit(device info, queue) for every queue built so far. */
                 template <typename Visitor>
                 void for_each_built_queue(Visitor&& visit);
+
+                /**
+                 * @brief Calls visit(queue) for every queue built so far and turns what a call
+                 *        throws into an Error.
+                 * @return Nothing, or a KernelFailed error with the text of the first throw.
+                 */
+                template <typename Visit>
+                [[nodiscard]] Result<void> first_failure_of(Visit&& visit);
 
                 /// @brief Inventory; entry i describes device i.
                 std::vector<DeviceDescription> infos_;

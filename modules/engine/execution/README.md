@@ -20,12 +20,14 @@ context did not allocate, or two devices.
 One ChainRun lives for one run. Each submit_step() walks the plan's compiled order and submits every
 enabled node with no scheduler hand-off and no polling; the queue's order stands in for the DAG's
 edges. finish() is the run's single wait. With profiling on, every submission's event becomes a
-NodeEventRecord in the plan's ledger. The destructor drains the queue, so a throwing run never
-leaves work in flight against a plan about to be destroyed.
+NodeEventRecord in the plan's ledger. The destructor drains the queue, so a failed run never
+leaves work in flight against a plan about to be destroyed. submit_step(), wait() and finish()
+return `Result<void>`: each runs its SYCL calls inside one catch ladder and returns what was
+thrown as `KernelFailed`.
 
 A ChainRun submits straight to a device queue and never calls the engine's submit(), so it marks
 itself on the engine: ExecutionEngine::run_in_progress() is true from the constructor until
-finish() returns or throws, or until the destructor has drained the queue. The mark is written
+finish() returns, or until the destructor has drained the queue. The mark is written
 once when the run starts and once when it ends; submit_step() does not touch it.
 
 ## execution_engine.hpp
@@ -87,13 +89,19 @@ submit() is the half of execute() that hands work to the scheduler. It does ever
 does up to blocking, so the work proceeds on the worker pool while the caller does something else,
 such as extracting the previous step's state for a renderer. Every submit() must be paired with
 exactly one complete(); until it is, the engine rejects another run and the compiled plan must stay
-alive. The graph runs in place and is not consumed.
+alive. The graph runs in place and is not consumed. submit() returns `Result<void>`: `InvalidState`
+after shutdown() and while another run holds the engine, `InvalidGraph` for a plan with no root.
+A refused submit() started nothing, so no complete() follows it.
 
 ### ExecutionEngine::complete
 
 complete() is the other half of execute(): it waits for the completion sentinel, drains the pool,
-releases the engine for the next run, and rethrows a task exception exactly as execute() would.
-Calling it without a matching submit() is a programming error.
+releases the engine for the next run, and returns the first failure of the run as an `Error`,
+exactly as execute() would. Once the pool has drained it calls
+`DeviceQueueSet::raise_asynchronous_errors()`, so an error SYCL holds for a queue's asynchronous
+handler, such as an exception out of a `host_task`, comes back from this run as `KernelFailed`
+and does not wait in the queue for a later one. A task's own failure wins over it.
+Calling complete() without a matching submit() is a programming error.
 
 ### run_finished
 
@@ -105,7 +113,7 @@ overlapping more work and stalling. When no run is in flight it is true and carr
 run_in_progress() answers "does this engine hold a run nobody has collected yet". A driver that
 shares the engine with other graphs asks it before it starts a run or touches the engine's
 cancellation state, because a pending marker kept per graph cannot see a run another graph started.
-It is true inside execute(), from submit() until complete() returns or throws, and while a ChainRun
+It is true inside execute(), from submit() until complete() returns, and while a ChainRun
 is alive and unfinished. Between two steps of a multi-step scheduled run, each of which is one
 execute(), it is false. The default is false, so engines that keep no such record and test doubles
 need not implement it.
@@ -325,15 +333,15 @@ and recreated. Completion flows through the one `CompletionLatch`.
 `execute()` shares one latch, one sentinel and one scheduler-arm state, so two concurrent
 runs would overwrite each other. `submit()` therefore rejects a concurrent run before it
 touches any shared state. It sets the `K_SCHEDULED_RUN` bit of `run_marker` with a
-`fetch_or`; if the bit was already set, another run owns the engine, and `submit()` throws
-without clearing the bit, which that run still holds.
+`fetch_or`; if the bit was already set, another run owns the engine, and `submit()` returns
+`InvalidState` without clearing the bit, which that run still holds.
 
 The bit is set in `submit()` and cleared by `complete()`, not by a guard scoped to
 `submit()`, because the run outlives the function. Both functions hold a
 `ScheduledRunRelease`. The one in `submit()` clears the bit only on an early exit, an
-exception while wiring or submitting, so a throwing submit does not leave the engine closed
-for good; on success it is disarmed and ownership passes to `complete()`, whose guard clears
-the bit on every exit.
+exception while wiring or submitting, so a submit that does not finish does not leave the engine
+closed for good; on success it is disarmed and ownership passes to `complete()`, whose guard
+clears the bit on every exit.
 
 #### The run marker
 
@@ -432,8 +440,8 @@ loop inside that window. Workers that do park are woken by the next arm's notify
 batch keeps running and an idle runtime goes to sleep, with no timer and no threshold to
 choose.
 
-The flag is released before a task exception is rethrown, so a failed run leaves the engine
-usable. The pool survives a task throwing, and refusing every later run would turn one bad
+The flag is released before `complete()` returns a failure, so a failed run leaves the engine
+usable. The pool survives a task that fails, and refusing every later run would turn one bad
 kernel into a dead runtime.
 
 `run_finished()` answers "has the DAG finished", not "is it safe to destroy the plan". The
@@ -537,8 +545,13 @@ with no skips, so a node and its queue share an index.
 An empty device list is reported in `probe_devices()`, where the filter that caused it is
 still in hand. Anything later asks for queue 0 and fails with a bad-index error.
 That message is true, but it names neither the machine's state nor the filter, and it is the
-first thing a player on a machine without a GPU would see. The comment this page replaces
-adds that "BB-5b's try_create() turns this into a returned Error rather than a throw".
+first thing a player on a machine without a GPU would see. `RuntimeContext::create()` returns
+it as `Unsupported`.
+
+`RuntimeContext` has no public constructor. `create()` asks the provider for the devices, builds
+the parts and then the engine, all inside one catch ladder: a `sycl::exception` from a queue
+build is `DeviceLost`, any other exception is `AllocationFailed`, and an empty or failed
+enumeration is `Unsupported`. The private constructor takes the finished parts and cannot fail.
 
 #### Transfer counters
 

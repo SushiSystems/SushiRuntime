@@ -75,15 +75,24 @@ namespace SushiRuntime
 
             // Every address in id_by_address_ has its entry in by_id_; a half insert is undone.
             by_id_.emplace(next_id_, entry);
-            try
+
+            /** @brief Erases the entry of an id unless the address was recorded too. */
+            struct HalfInsert
             {
-                id_by_address_.emplace(address, next_id_);
-            }
-            catch (const std::bad_alloc&)
-            {
-                by_id_.erase(next_id_);
-                throw std::bad_alloc();
-            }
+                std::unordered_map<std::uint64_t, Entry>& entries; /**< The map to undo in. */
+                std::uint64_t id;                                  /**< The entry's id. */
+                bool is_complete = false;                          /**< Set once both maps hold it. */
+
+                /** @brief Erases the entry when the second insert did not finish. */
+                ~HalfInsert()
+                {
+                    if (!is_complete)
+                        entries.erase(id);
+                }
+            } half_insert{by_id_, next_id_};
+
+            id_by_address_.emplace(address, next_id_);
+            half_insert.is_complete = true;
             ++next_id_;
             return entry.handle;
         }

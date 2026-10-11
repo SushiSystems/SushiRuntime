@@ -73,6 +73,7 @@
 #include "test_helpers.hpp"
 #include "wire_frame.hpp"
 #include "wire_messages.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -272,7 +273,8 @@ namespace
     {
         std::array<std::uint8_t, SharedSecret::K_MINIMUM_BYTES> bytes{};
         bytes.fill(value);
-        return SharedSecret::from_bytes(span<const std::uint8_t>(bytes.data(), bytes.size()));
+        return SharedSecret::from_bytes(span<const std::uint8_t>(bytes.data(), bytes.size()))
+            .value();
     }
 
     /** @brief Returns worker transport options that retry within 50 ms of a loss. */
@@ -363,7 +365,7 @@ namespace
                 saved_level_ = log_level();
                 set_log_synchronous(true);
                 set_log_level(LogLevel::Warn);
-                master_context_ = std::make_unique<Internal::Execution::RuntimeContext>();
+                master_context_ = SushiRuntime::Test::make_context();
             }
 
             /** @brief Stops the worker, the master and the proxy, then frees the buffers. */
@@ -392,7 +394,7 @@ namespace
                 options.policy = std::make_shared<FirstWorkerPolicy>();
                 master_transport_ = TCPTransport::make_master(transport);
                 cluster_.emplace(
-                    Cluster::attach(*master_context_, master_transport_, std::move(options)));
+                    Cluster::attach(*master_context_, master_transport_, std::move(options)).value());
             }
 
             /** @brief Returns the port the master bound; valid after start_master(). */
@@ -417,7 +419,7 @@ namespace
                               const TCPWorkerOptions& transport = quick_reconnect())
             {
                 if (!worker_context_)
-                    worker_context_ = std::make_unique<Internal::Execution::RuntimeContext>();
+                    worker_context_ = SushiRuntime::Test::make_context();
 
                 RunCounters* const runs = &runs_;
                 sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
@@ -511,7 +513,7 @@ namespace
                     if (beside)
                         graph.add_native({}, {}, beside);
 
-                    context->execution_engine().execute(graph.compile().value());
+                    context->execution_engine().execute(graph.compile().value()).value().value();
                 });
             }
 
@@ -552,10 +554,10 @@ namespace
             }
 
             /// @brief The master's runtime; declared first, so it is destroyed last.
-            std::unique_ptr<Internal::Execution::RuntimeContext> master_context_;
+            std::shared_ptr<Internal::Execution::RuntimeContext> master_context_;
 
             /// @brief The worker's runtime; built by the first start_worker().
-            std::unique_ptr<Internal::Execution::RuntimeContext> worker_context_;
+            std::shared_ptr<Internal::Execution::RuntimeContext> worker_context_;
 
             /// @brief Where the mask ran.
             RunCounters runs_;
@@ -831,7 +833,7 @@ TEST_F(Integration_DistributedTcpFaultsTest, StalledLinkReapedThenWorkerRejoins)
         const ClusterStatistics statistics = cluster_->statistics();
         return statistics.peers_lost >= 1 && statistics.alive_workers == 0;
     }));
-    cluster_->liveness_timeout(K_WAIT);
+    cluster_->liveness_timeout(K_WAIT).value();
     proxy_->set_fault(Fault::pass());
 
     ASSERT_TRUE(worker_registered());

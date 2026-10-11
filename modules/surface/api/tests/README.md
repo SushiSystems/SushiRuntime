@@ -1183,8 +1183,8 @@ A task submits a `host_task` that throws, which SYCL reports through the asynchr
 the queue and through nothing else. The test runs the graph with and without `force_scheduler` and
 expects `KernelFailed` from `run()` on both layers, then expects `Runtime::wait()` to find no error
 left in a queue. It is compiled for DPC++ only, since AdaptiveCpp has no `host_task`. The chain
-layer waits with `wait_and_throw()`; the scheduler layer polls events and waits with `wait()`, so
-this test is what tells whether that layer returns the error or leaves it in the queue.
+layer waits with `wait_and_throw()`; the scheduler layer polls events and waits with `wait()`, and
+`SchedulerExecutionEngine::complete()` then makes each queue raise what its handler holds.
 
 ## test_run_report_reuse.cpp
 

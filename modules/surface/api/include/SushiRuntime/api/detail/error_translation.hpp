@@ -55,10 +55,6 @@ namespace SushiRuntime
                 work();
                 return Error{};
             }
-            catch (const SushiException& failure)
-            {
-                return error_without_throwing(failure.error());
-            }
             catch (const sycl::exception& failure)
             {
                 return error_without_throwing(device_code, failure.what());

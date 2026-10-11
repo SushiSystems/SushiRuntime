@@ -38,6 +38,7 @@
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -70,7 +71,7 @@ TEST(Unit_TopologyTest, HardwareDiscoveryProbe)
     config.include_gpu         = true;
     config.include_accelerator = true;
 
-    std::vector<HardwareNode> nodes = discovery.probe_all_devices(config);
+    std::vector<HardwareNode> nodes = discovery.probe_all_devices(config).value();
 
     ASSERT_FALSE(nodes.empty()) << "Hardware discovery failed to find any devices!";
 
@@ -105,7 +106,8 @@ TEST(Unit_TopologyTest, NUMAMatrixDistances)
  */
 TEST(Unit_TopologyTest, InvalidNUMAFallbackQueue)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
 
     constexpr int INVALID_NUMA_ID = 999;
 
@@ -132,7 +134,8 @@ TEST(Unit_TopologyTest, InvalidNUMAFallbackQueue)
  */
 TEST(Unit_TopologyTest, InvalidNUMAFallsBackToAUsableNode)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
 
     constexpr int INVALID_NUMA_ID = -5; // negative edge case
 
@@ -158,7 +161,8 @@ TEST(Unit_TopologyTest, InvalidNUMAFallsBackToAUsableNode)
 /** @brief Tests that the live count follows each allocation, free and forgotten record. */
 TEST(Unit_TopologyTest, LiveUSMCountFollowsAllocateFreeAndForget)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     const std::size_t baseline = ctx.memory().live_count();
 
     void* shared = ctx.memory().allocate(
@@ -185,7 +189,8 @@ TEST(Unit_TopologyTest, LiveUSMCountFollowsAllocateFreeAndForget)
 /** @brief Tests that every aligned allocation returns an address on the requested alignment. */
 TEST(Unit_TopologyTest, AlignedAllocationsStartOnTheAlignment)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
 
     for (const Internal::Memory::USMKind kind : K_ALIGNED_KINDS)
     {
@@ -206,7 +211,8 @@ TEST(Unit_TopologyTest, AlignedAllocationsStartOnTheAlignment)
 /** @brief Tests that an aligned allocation is recorded once and dropped by release(). */
 TEST(Unit_TopologyTest, AlignedAllocationsAreRecordedAndFreed)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     const std::size_t baseline = ctx.memory().live_count();
 
     std::array<void*, K_ALIGNED_KIND_COUNT> pointers = {};
@@ -225,7 +231,8 @@ TEST(Unit_TopologyTest, AlignedAllocationsAreRecordedAndFreed)
 /** @brief Tests that an aligned allocation on a device index past the last one stops. */
 TEST(Unit_TopologyDeathTest, AnAlignedAllocationOnAMissingDeviceStops)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     const std::size_t missing_device = ctx.devices().count();
 
     EXPECT_DEATH(static_cast<void>(ctx.memory().allocate(

@@ -24,10 +24,10 @@ enumerates the SYCL devices of the machine it runs on.
 
 A filter that excludes every device class gives an empty vector from both `probe_all_devices` and
 `enumerate`. In this module an empty result is a value: `DeviceQueueSet` accepts it and stays empty.
-The failure for it, `SushiException` with `ErrorCode::Unsupported`, is raised by `RuntimeContext`, and
+The failure for it, `ErrorCode::Unsupported`, is returned by `RuntimeContext::create()`, and
 `tests/integration/test_error_types.cpp` covers it.
 
-Discovery itself throws `SushiException` with `ErrorCode::Unsupported` only when SYCL enumeration
+Discovery itself returns `ErrorCode::Unsupported` only when SYCL enumeration
 throws. No test reaches that path, because a test cannot make `sycl::device::get_devices` fail.
 
 ### `NoTwoNodesShareAPCIAddress`

@@ -52,14 +52,14 @@ namespace
 TEST(Unit_HardwareDiscovery, AFilterThatAdmitsNoClassYieldsNoDeviceAndDoesNotThrow)
 {
     HardwareDiscovery discovery;
-    std::vector<HardwareNode> probed;
-    ASSERT_NO_THROW(probed = discovery.probe_all_devices(filter_admitting_nothing()));
-    EXPECT_TRUE(probed.empty());
+    const auto probed = discovery.probe_all_devices(filter_admitting_nothing());
+    ASSERT_TRUE(probed.has_value()) << probed.error().message;
+    EXPECT_TRUE(probed->empty());
 
     HwlocTopologyProvider provider;
-    std::vector<HardwareNode> enumerated;
-    ASSERT_NO_THROW(enumerated = provider.enumerate(filter_admitting_nothing()));
-    EXPECT_TRUE(enumerated.empty());
+    const auto enumerated = provider.enumerate(filter_admitting_nothing());
+    ASSERT_TRUE(enumerated.has_value()) << enumerated.error().message;
+    EXPECT_TRUE(enumerated->empty());
 }
 
 // Holds on any machine; it can fail only where two backends expose one GPU.
@@ -69,7 +69,9 @@ TEST(Unit_HardwareDiscovery, NoTwoNodesShareAPCIAddress)
 
     HardwareDiscovery discovery;
     std::set<PCIKey> seen;
-    for (const HardwareNode& node : discovery.probe_all_devices())
+    const auto probed = discovery.probe_all_devices();
+    ASSERT_TRUE(probed.has_value()) << probed.error().message;
+    for (const HardwareNode& node : *probed)
     {
         if (!node.pci_address.has_value())
             continue;
@@ -87,6 +89,6 @@ TEST(Unit_HardwareDiscovery, EveryNodeTheGPUOnlyFilterAdmitsIsAGPU)
     config.include_accelerator = false;
 
     HardwareDiscovery discovery;
-    for (const HardwareNode& node : discovery.probe_all_devices(config))
+    for (const HardwareNode& node : discovery.probe_all_devices(config).value())
         EXPECT_TRUE(node.sycl_dev.is_gpu()) << "device [" << node.name << "] is not a GPU";
 }

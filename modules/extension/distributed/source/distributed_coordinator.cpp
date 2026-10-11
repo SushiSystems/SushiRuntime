@@ -112,16 +112,6 @@ namespace SushiRuntime
                     std::clamp<std::int64_t>(duration.count(), 0, upper));
             }
 
-            /** @brief Returns the session identifier of one coordinator, drawn at random. */
-            std::uint64_t draw_session_id()
-            {
-                const HandshakeNonce nonce = make_nonce();
-                std::uint64_t session = 0;
-                for (std::size_t index = 0; index < sizeof(session); ++index)
-                    session |= static_cast<std::uint64_t>(nonce.bytes[index]) << (8 * index);
-                return session;
-            }
-
             /** @brief Returns the given policy, or LeastLoadedOffloadPolicy when it is null. */
             std::shared_ptr<OffloadPolicy> policy_or_default(
                 std::shared_ptr<OffloadPolicy> policy)
@@ -133,12 +123,12 @@ namespace SushiRuntime
 
             /**
              * @brief Returns the transport after checking it is there.
-             * @throws SushiException When @p transport is null.
+             * @pre transport is not null.
              */
             std::shared_ptr<Transport> require_transport(std::shared_ptr<Transport> transport)
             {
-                SR_THROW_IF(!transport,
-                            "DistributedCoordinator needs a master-side transport; got null.");
+                SR_VERIFY(transport != nullptr,
+                          "DistributedCoordinator needs a master-side transport; got null.");
                 return transport;
             }
 
@@ -187,7 +177,7 @@ namespace SushiRuntime
 
             /** @brief Builds the bricks in the order they are declared and sets the handlers. */
             Impl(BufferRegistry& shared_buffers, std::shared_ptr<Transport> master_transport,
-                 ClusterOptions cluster_options)
+                 ClusterOptions cluster_options, std::uint64_t session)
                 : options(std::move(cluster_options)),
                   registry(shared_buffers),
                   transport(require_transport(std::move(master_transport))),
@@ -196,7 +186,7 @@ namespace SushiRuntime
                   dispatcher(registry, directory, pending, *transport),
                   monitor(directory, pending, registry, exchange, *transport,
                           monitor_options(options)),
-                  session_id(draw_session_id())
+                  session_id(session)
             {
                 handle(&Impl::on_hello);
                 handle(&Impl::on_proof);
@@ -297,7 +287,14 @@ namespace SushiRuntime
             /** @brief Answers HELLO with CHALLENGE, or with WELCOME for a registered worker. */
             void on_hello(PeerID peer, std::uint8_t /*flags*/, const Wire::HelloMessage& hello)
             {
-                const HandshakeNonce master_nonce = make_nonce();
+                const Result<HandshakeNonce> drawn = make_nonce();
+                if (!drawn)
+                {
+                    SR_LOG_ERROR("worker {} said HELLO and no CHALLENGE answers it: {}",
+                                 peer.value, drawn.error().message);
+                    return;
+                }
+                const HandshakeNonce master_nonce = *drawn;
                 const HelloReply reply = directory.accept_hello(peer, hello, master_nonce);
                 if (reply.step == HandshakeStep::AlreadyRegistered)
                 {
@@ -631,8 +628,10 @@ namespace SushiRuntime
 
         DistributedCoordinator::DistributedCoordinator(BufferRegistry& registry,
                                                        std::shared_ptr<Transport> transport,
-                                                       ClusterOptions options)
-            : impl_(std::make_unique<Impl>(registry, std::move(transport), std::move(options)))
+                                                       ClusterOptions options,
+                                                       std::uint64_t session_id)
+            : impl_(std::make_unique<Impl>(registry, std::move(transport), std::move(options),
+                                           session_id))
         {
 
         }

@@ -103,8 +103,10 @@ what skipped_event() of task_scheduler.cpp builds for a task whose work threw: r
 not executed. It then takes the four steps above like any other entry. Profiling writes nothing for
 an entry with no event, the offload coordinator is not told, the successors are released and the
 in-flight count drops, so the run reaches its sentinel. Each such entry is logged at error level
-with its task's name. The first exception of the pass is kept and returned after the backoff update;
-dispatch_loop() records it in the RunOutcome. Left in the list, the entry would be queried again on
+with its task's name. The first failure of the pass is kept as a `KernelFailed` `Error` and returned
+after the backoff update; dispatch_loop() records it in the RunOutcome. The wait on the oldest
+event after K_STALL_DRIVE_THRESHOLD idle polls goes the same way: an event whose wait throws
+there is reaped as not executed and its error is returned. Left in the list, the entry would be queried again on
 every poll, and an event that throws each time would keep wait_quiescent() from returning.
 
 The try scope covers the status query and the wait of one entry. A pass in which nothing throws
@@ -168,14 +170,14 @@ tasks go where any worker can take them.
 
 ### RunOutcome
 
-RunOutcome holds the two ways a run ends early: the first exception a task threw, and a
+RunOutcome holds the two ways a run ends early: the first failure of a task, as an `Error`, and a
 cancellation asked for from another thread. TaskScheduler holds one by value and its run-error
 members forward to it. The dispatch loop reads is_aborting() once per task, which is two atomic
 loads.
 
 ### A failure
 
-record() keeps the first exception and drops later ones. A failure aborts only the current run.
+record() keeps the first `Error` and drops later ones. A failure aborts only the current run.
 Remaining tasks drain without executing so the DAG still reaches the sentinel, and the worker
 pool stays alive and re-armable. It is distinct from shutdown_requested, which permanently tears
 the pool down. arm_for_execution() calls clear_failure() at the start of each round.
@@ -675,15 +677,17 @@ a `sycl::event{}` to compare against.
 
 ##### A throwing task
 
-A task that throws fails only its run. The first exception is recorded in the scheduler's
+A task that throws fails only its run. The catch ladder of the dispatch turns what it catches
+into an `Error` on the spot, `KernelFailed` with the task's name in the message, and an `Error` a
+dispatch step returned keeps its code. The first one is recorded in the scheduler's
 `RunOutcome`, but `shutdown_requested` is not latched, so the pool survives and can be re-armed for
 the next graph. The failed task is pushed to the poller as ready so its successors still
 fire; with the skip path for an aborting run, the whole DAG drains to the sentinel.
 
-In `record_run_error()` only the first failing task wins and later exceptions are dropped.
-The mutex makes the exception write and the flag publish atomic relative to other workers,
+In `RunOutcome::record()` only the first failing task wins and later errors are dropped.
+The mutex makes the error write and the flag publish atomic relative to other workers,
 and its release pairs with the acquire in `run_failed()` and `run_error()`, so the sentinel
-sees a fully written exception.
+sees a fully written `Error`.
 
 #### submit and submit_batch
 

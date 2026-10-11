@@ -37,6 +37,7 @@
 #include <SushiRuntime/task/node.hpp>
 
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -50,7 +51,8 @@ using SushiRuntime::Test::USMShared;
  */
 TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     TaskGraph graph;
 
     sycl::queue& device_queue = context.devices().queue_or_numa_local(std::nullopt, 0);
@@ -98,7 +100,7 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
     graph.add_task(meta_compute, {A, B}, {C}, compute_work);
 
     auto compiled = graph.compile().value();
-    context.execution_engine().execute(std::move(compiled));
+    context.execution_engine().execute(std::move(compiled)).value().value();
 
     bool passed = true;
     for (size_t i = 0; i < VECTOR_SIZE; ++i)
@@ -121,7 +123,8 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
  */
 TEST(Integration_SyclExecutionTest, MultiStageChain)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     TaskGraph graph;
 
     constexpr size_t N     = 2048;
@@ -169,7 +172,7 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     });
 
     auto compiled = graph.compile().value();
-    context.execution_engine().execute(std::move(compiled));
+    context.execution_engine().execute(std::move(compiled)).value().value();
 
     // SCALE * sum_{i=0}^{N-1} i = SCALE * (N-1)*N/2.
     double expected = static_cast<double>(SCALE) *

@@ -36,6 +36,7 @@
 #include <utility>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
@@ -121,23 +122,25 @@ namespace SushiRuntime
                 /**
                  * @brief Builds a master, installs it as the runtime's offload coordinator and
                  *        starts it and the transport.
-                 * @pre @p transport was never started.
-                 * @throws SushiException When a run is in flight on @p runtime, @p transport
-                 *         is null, an option is refused or the transport does not start; a
-                 *         cluster attached before stays installed and keeps running.
+                 * @pre @p transport is not null and was never started.
+                 * @return The handle, or InvalidState when a run is in flight on @p runtime,
+                 *         an option is refused or the transport does not start, and
+                 *         Unsupported when the platform has no random source; a cluster
+                 *         attached before stays installed and keeps running.
                  */
-                [[nodiscard]] static Cluster attach(Runtime& runtime,
-                                                    std::shared_ptr<Transport> transport,
-                                                    ClusterOptions options = ClusterOptions());
+                [[nodiscard]] static Result<Cluster>
+                attach(Runtime& runtime, std::shared_ptr<Transport> transport,
+                       ClusterOptions options = ClusterOptions());
 
                 /**
                  * @brief Builds a master on a bare context; the Runtime overload forwards here.
                  * @param transport A master-side transport that was never started.
-                 * @throws SushiException As the Runtime overload.
+                 * @return What the Runtime overload returns.
                  */
-                [[nodiscard]] static Cluster attach(Internal::Execution::RuntimeContext& context,
-                                                    std::shared_ptr<Transport> transport,
-                                                    ClusterOptions options = ClusterOptions());
+                [[nodiscard]] static Result<Cluster>
+                attach(Internal::Execution::RuntimeContext& context,
+                       std::shared_ptr<Transport> transport,
+                       ClusterOptions options = ClusterOptions());
 
                 /** @brief Copies the handle; both name the same master. */
                 Cluster(const Cluster&) = default;
@@ -172,10 +175,10 @@ namespace SushiRuntime
                  * @brief Sets how long a worker may stay silent before it is closed.
                  *
                  * Workers registered earlier keep the value their WELCOME carried.
-                 * @param timeout At least K_MINIMUM_TIMEOUT.
-                 * @throws SushiException With InvalidState for a shorter value.
+                 * @return Nothing, or InvalidState for a value below K_MINIMUM_TIMEOUT, which
+                 *         changes nothing.
                  */
-                Cluster& liveness_timeout(std::chrono::milliseconds timeout);
+                [[nodiscard]] Result<void> liveness_timeout(std::chrono::milliseconds timeout);
 
                 /**
                  * @brief Sets the bound on a kernel's run on a worker; 0 sets no bound.

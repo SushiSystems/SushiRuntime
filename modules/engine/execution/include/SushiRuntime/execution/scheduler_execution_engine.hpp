@@ -77,9 +77,10 @@ namespace SushiRuntime
 
             /**
              * @brief Executes a compiled graph synchronously on the persistent scheduler.
+             * @return What submit() refused with, or what complete() returns.
              * @see modules/engine/execution/README.md
              */
-            void execute(CompiledGraph& graph) override;
+            [[nodiscard]] Result<void> execute(CompiledGraph& graph) override;
 
             using ExecutionEngine::execute; // keep the rvalue convenience overload visible
 
@@ -90,16 +91,19 @@ namespace SushiRuntime
              * @brief Starts a run on the worker pool and returns immediately.
              * @param graph Graph to run in place; it must stay alive until the matching complete()
              *        returns.
+             * @return Nothing, or InvalidState when the engine is shut down or a run is already
+             *         in progress, and InvalidGraph when the graph has no roots.
              * @see modules/engine/execution/README.md
              */
-            void submit(CompiledGraph& graph) override;
+            [[nodiscard]] Result<void> submit(CompiledGraph& graph) override;
 
             /**
              * @brief Blocks until the submitted run finishes, then releases the engine.
-             *
-             * @throws The first exception a task threw during the run.
+             * @return Nothing, or the first failure of the run: what a task reported, or an
+             *         error a device queue held for its asynchronous handler.
+             * @see modules/engine/execution/README.md
              */
-            void complete() override;
+            [[nodiscard]] Result<void> complete() override;
 
             /** @brief Whether the submitted run's sentinel has already reported in. */
             bool run_finished() override;

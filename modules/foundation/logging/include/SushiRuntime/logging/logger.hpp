@@ -21,7 +21,7 @@
 
 /**
  * @file logger.hpp
- * @brief Declares the process-wide logger, the SR_LOG macros and SR_THROW_IF.
+ * @brief Declares the process-wide logger and the SR_LOG macros.
  * @author Mustafa Garip
  * @see modules/foundation/logging/README.md
  */
@@ -166,48 +166,3 @@ namespace SushiRuntime
 
 /** @brief Forwards to set_log_synchronous(); tests pass true to read records in order. */
 #define SR_LOGGER_SET_SYNC_MODE(mode) SushiRuntime::set_log_synchronous(mode)
-
-namespace SushiRuntime
-{
-    namespace Detail
-    {
-        /**
-         * @brief Logs the formatted message at error level, then throws it as InvalidState.
-         * @param file The source file of the call the record names.
-         * @param line The line of that call.
-         * @param function The function that holds that call.
-         * @param format The format string; each {} takes the next value.
-         */
-        template <typename... Args>
-        [[noreturn]] void throw_invalid_state(const char* file, int line, const char* function,
-                                              std::string_view format, const Args&... args)
-        {
-            std::string message = sr_format(format, args...);
-            if constexpr (K_LOG_LEVEL_CEILING >= LogLevel::Error)
-            {
-                if (active_log_level.load(std::memory_order_relaxed) >=
-                        static_cast<int>(LogLevel::Error) &&
-                    is_log_enabled(LogLevel::Error))
-                {
-                    log_record(LogLevel::Error, file, line, function,
-                               "Runtime exception: {}", message);
-                }
-            }
-            throw SushiException(Error{ErrorCode::InvalidState, std::move(message)});
-        }
-    } // namespace Detail
-} // namespace SushiRuntime
-
-/**
- * @brief Logs the message at error level and throws it when @p condition holds.
- *
- * Throws SushiException with ErrorCode::InvalidState. The arguments after the condition are
- * a format string and its values, and are evaluated only when the condition holds.
- */
-#define SR_THROW_IF(condition, ...)                                                          \
-    do                                                                                       \
-    {                                                                                        \
-        if (condition)                                                                       \
-            SushiRuntime::Detail::throw_invalid_state(__FILE__, __LINE__, __func__,    \
-                                                            __VA_ARGS__);                    \
-    } while (0)

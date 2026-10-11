@@ -1232,24 +1232,10 @@ namespace
                   const Internal::Graph::TaskMetadata&) { return sycl::event{}; };
     }
 
-    /** @brief Returns the code of the exception a call throws, or ok when it throws none. */
-    template <typename Call>
-    ErrorCode refusal_of(Call call)
-    {
-        try
-        {
-            call();
-        }
-        catch (const SushiException& error)
-        {
-            return error.error().code;
-        }
-        return ErrorCode::Ok;
-    }
 } // namespace
 
-/** @brief Tests that a sealed registry keeps its kernels and refuses a new one. */
-TEST(Unit_KernelRegistryTest, SealedRegistryRefusesRegistration)
+/** @brief Tests that a sealed registry keeps its kernels and stops a registration. */
+TEST(Unit_KernelRegistryDeathTest, SealedRegistryStopsARegistration)
 {
     const OperationID early(21);
     const OperationID late(22);
@@ -1261,28 +1247,24 @@ TEST(Unit_KernelRegistryTest, SealedRegistryRefusesRegistration)
     kernels->seal();
 
     EXPECT_TRUE(kernels->is_sealed());
-    EXPECT_EQ(refusal_of([&] { kernels->register_kernel(late, idle_kernel()); }),
-              ErrorCode::InvalidState);
-    EXPECT_EQ(refusal_of([&] { kernels->register_kernel(early, idle_kernel()); }),
-              ErrorCode::InvalidState)
-        << "a sealed registry replaced a kernel";
+    EXPECT_DEATH(kernels->register_kernel(late, idle_kernel()), "the registry is sealed");
+    EXPECT_DEATH(kernels->register_kernel(early, idle_kernel()), "the registry is sealed");
     EXPECT_TRUE(kernels->has(early));
     EXPECT_FALSE(kernels->has(late));
     EXPECT_EQ(kernels->known_ops().size(), 1u);
 }
 
-/** @brief Tests that a kernel that holds no callable is refused and registers nothing. */
-TEST(Unit_KernelRegistryTest, EmptyKernelIsRefused)
+/** @brief Tests that a kernel that holds no callable stops the process, sealed or not. */
+TEST(Unit_KernelRegistryDeathTest, EmptyKernelStopsTheRegistration)
 {
     const OperationID operation(23);
     const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
 
-    EXPECT_EQ(refusal_of([&] { kernels->register_kernel(operation, KernelRegistry::Kernel()); }),
-              ErrorCode::InvalidAccess);
-    EXPECT_FALSE(kernels->has(operation)) << "an empty kernel would be sent in PROOF";
+    EXPECT_DEATH(kernels->register_kernel(operation, KernelRegistry::Kernel()),
+                 "the kernel of operation 23 is empty");
 
+    // An empty kernel is named as the fault before the seal is.
     kernels->seal();
-    EXPECT_EQ(refusal_of([&] { kernels->register_kernel(operation, KernelRegistry::Kernel()); }),
-              ErrorCode::InvalidAccess)
-        << "an empty kernel is named as the fault before the seal is";
+    EXPECT_DEATH(kernels->register_kernel(operation, KernelRegistry::Kernel()),
+                 "the kernel of operation 23 is empty");
 }

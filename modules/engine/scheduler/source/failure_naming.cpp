@@ -21,13 +21,11 @@
 
 /**
  * @file failure_naming.cpp
- * @brief Names the task behind a failed run and rebuilds its exception with that name.
+ * @brief Names the task behind a failed run and builds the Error that carries the name.
  * @author Mustafa Garip
  */
 
 #include "failure_naming.hpp"
-
-#include <stdexcept>
 
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -55,72 +53,34 @@ namespace SushiRuntime
          * @param task The task that failed.
          * @param cause The error a step of its dispatch returned.
          */
-        NamedFailure name_failure(const Task& task, const Error& cause)
+        Error name_failure(const Task& task, const Error& cause)
         {
-            NamedFailure failure;
-            failure.message = Detail::sr_format("{} failed: {}", describe_task(task),
-                                                      cause.message);
-            failure.error = std::make_exception_ptr(
-                SushiException(Error{cause.code, failure.message}));
-            return failure;
+            return Error{cause.code,
+                         Detail::sr_format("{} failed: {}", describe_task(task), cause.message)};
         }
 
         /**
-         * @brief Builds the failure of @p task from a SushiException, keeping its code.
+         * @brief Builds the KernelFailed failure of @p task from an exception it let out.
          * @param task The task that threw.
          * @param cause The exception it threw.
          */
-        NamedFailure name_failure(const Task& task, const SushiException& cause)
+        Error name_failure(const Task& task, const std::exception& cause)
         {
-            NamedFailure failure;
-            failure.message = Detail::sr_format("{} failed: {}", describe_task(task),
-                                                      cause.what());
-            failure.error = std::make_exception_ptr(
-                SushiException(Error{cause.error().code, failure.message}));
-            return failure;
+            return Error{ErrorCode::KernelFailed,
+                         Detail::sr_format("{} failed: {}", describe_task(task), cause.what())};
         }
 
         /**
-         * @brief Builds the failure of @p task from a sycl::exception, keeping its code.
-         * @param task The task that threw.
-         * @param cause The exception it threw.
-         */
-        NamedFailure name_failure(const Task& task, const sycl::exception& cause)
-        {
-            NamedFailure failure;
-            failure.message = Detail::sr_format("{} failed: {}", describe_task(task),
-                                                      cause.what());
-            failure.error = std::make_exception_ptr(
-                sycl::exception(cause.code(), failure.message));
-            return failure;
-        }
-
-        /**
-         * @brief Builds the failure of @p task from any other standard exception.
-         * @param task The task that threw.
-         * @param cause The exception it threw.
-         */
-        NamedFailure name_failure(const Task& task, const std::exception& cause)
-        {
-            NamedFailure failure;
-            failure.message = Detail::sr_format("{} failed: {}", describe_task(task),
-                                                      cause.what());
-            failure.error = std::make_exception_ptr(std::runtime_error(failure.message));
-            return failure;
-        }
-
-        /**
-         * @brief Builds the failure of @p task from a throw that is not a std::exception.
+         * @brief Builds the KernelFailed failure of @p task from an object that is not a
+         *        std::exception.
          * @param task The task that threw.
          */
-        NamedFailure name_failure(const Task& task)
+        Error name_failure(const Task& task)
         {
-            NamedFailure failure;
-            failure.message = Detail::sr_format(
-                "{} failed with an exception that is not a std::exception",
-                describe_task(task));
-            failure.error = std::make_exception_ptr(std::runtime_error(failure.message));
-            return failure;
+            return Error{ErrorCode::KernelFailed,
+                         Detail::sr_format(
+                             "{} failed with an exception that is not a std::exception",
+                             describe_task(task))};
         }
 
     } // namespace Scheduler

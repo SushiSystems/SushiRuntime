@@ -36,6 +36,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include "test_context.hpp"
 
 using namespace SushiRuntime::Internal::Execution;
 
@@ -75,7 +76,8 @@ namespace
  */
 TEST(Performance_ProfilingQueueBench, ProfilingQueueDeltaOverPlainQueue)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     SushiRuntime::Internal::Device::DeviceQueueSet& devices = ctx.devices();
     ASSERT_GT(devices.count(), 0u) << "no device to benchmark on";
 

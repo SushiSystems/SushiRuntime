@@ -56,11 +56,15 @@ namespace SushiRuntime
          * @brief Enumerates hardware nodes and remaps their NUMA IDs.
          * Distributes discovered devices across the synthetic NUMA nodes in a round-robin fashion.
          * @param config The hardware filter configuration.
-         * @return A vector of hardware nodes with synthetic NUMA node IDs.
+         * @return The hardware nodes with synthetic NUMA node IDs, or the inner provider's error.
          */
-        std::vector<HardwareNode> RemappingTopologyProvider::enumerate(const HardwareFilterConfig& config)
+        Result<std::vector<HardwareNode>>
+        RemappingTopologyProvider::enumerate(const HardwareFilterConfig& config)
         {
-            std::vector<HardwareNode> nodes = inner_->enumerate(config);
+            Result<std::vector<HardwareNode>> enumerated = inner_->enumerate(config);
+            if (!enumerated)
+                return enumerated;
+            std::vector<HardwareNode>& nodes = *enumerated;
 
             // Only numa_node_id is faked; the devices stay real (modules/platform/topology/README.md).
             for (size_t i = 0; i < nodes.size(); ++i)
@@ -73,7 +77,7 @@ namespace SushiRuntime
 
             SR_LOG_INFO("RemappingTopologyProvider: {} devices spread across {} synthetic NUMA nodes.",
                         nodes.size(), fake_node_count_);
-            return nodes;
+            return enumerated;
         }
 
         /**

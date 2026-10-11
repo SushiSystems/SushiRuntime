@@ -43,6 +43,7 @@
 
 #include "measurement.hpp"
 #include "scheduler_fixture.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime::Internal::Execution;
 using namespace SushiRuntime::Internal::Scheduler;
@@ -125,7 +126,8 @@ TEST(Performance_WideFanout, ManySmallStepDrainLatency)
 {
     using clock = std::chrono::steady_clock;
 
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     std::atomic<std::size_t> counter{0};
 
     // The signal and the tasks are declared before the scheduler, so they outlive its workers.

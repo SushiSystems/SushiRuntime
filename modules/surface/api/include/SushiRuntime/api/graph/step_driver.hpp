@@ -195,12 +195,17 @@ namespace SushiRuntime
                 if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
-                failure = guarded(ErrorCode::KernelFailed, [this, &state]()
+                Error refused;
+                failure = guarded(ErrorCode::KernelFailed, [this, &state, &refused]()
                 {
-                    submit_async_step(state);
+                    Result<void> submitted = submit_async_step(state);
+                    if (!submitted)
+                        refused = std::move(submitted.error());
                 });
                 if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
+                if (refused.code != ErrorCode::Ok)
+                    return make_error(std::move(refused));
 
                 return RunHandle<Owner>(&owner(), async_record_, state);
             }
@@ -303,7 +308,9 @@ namespace SushiRuntime
                 close_async_step();
                 const Error dropped = guarded(ErrorCode::KernelFailed, [this]()
                 {
-                    async_engine().complete();
+                    // A step the engine failed advances no State.
+                    if (!async_engine().complete())
+                        return;
                     const Detail::StepMachinery& steps = owner().run_steps();
                     if (!steps.take_fault())
                         steps.after_step();
@@ -515,9 +522,10 @@ namespace SushiRuntime
             /**
              * @brief Submits one step to the pool and marks it pending.
              * @param state Receives what the settling call needs; compile_ms is kept.
+             * @return Nothing, or why the engine did not take the step; none is pending then.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            void submit_async_step(Detail::AsyncRunState& state)
+            Result<void> submit_async_step(Detail::AsyncRunState& state)
             {
                 Owner& self = owner();
                 Internal::Execution::RuntimeContext& context = self.run_context();
@@ -546,13 +554,16 @@ namespace SushiRuntime
                 steps.before_step();
                 self.rearm_plan();
                 state.started = std::chrono::steady_clock::now();
-                engine.submit(plan);
+                Result<void> submitted = engine.submit(plan);
+                if (!submitted)
+                    return submitted;
 
                 in_flight.keep();
                 if (++async_step_serial_ == Detail::AsyncStepRecord::K_NO_STEP)
                     ++async_step_serial_;
                 state.serial = async_step_serial_;
                 async_record_->pending_serial = state.serial;
+                return {};
             }
 
             /** @brief Returns whether a run_async() step has not been settled yet. */
@@ -591,8 +602,9 @@ namespace SushiRuntime
                 Error faulted;
                 Error thrown = guarded(ErrorCode::KernelFailed, [this, &state, &report, &faulted]()
                 {
-                    async_engine().complete();
-                    Result<void> finished = finish_async_step(state, report);
+                    Result<void> finished = async_engine().complete();
+                    if (finished)
+                        finished = finish_async_step(state, report);
                     if (!finished)
                         faulted = std::move(finished.error());
                 });
@@ -801,7 +813,9 @@ namespace SushiRuntime
                     steps.before_step();
 
                     self.rearm_plan();
-                    engine.execute(plan);
+                    Result<void> ran = engine.execute(plan);
+                    if (!ran)
+                        return make_error(std::move(ran.error()));
                     if (std::optional<Error> fault = steps.take_fault())
                         return make_error(std::move(*fault));
 
@@ -839,17 +853,24 @@ namespace SushiRuntime
                     step_hooks_.run(executed);
                     steps.before_step();
                     self.rearm_plan();
-                    chain.submit_step(static_cast<std::uint32_t>(executed));
+                    Result<void> submitted =
+                        chain.submit_step(static_cast<std::uint32_t>(executed));
+                    if (!submitted)
+                        return make_error(std::move(submitted.error()));
                     if (sync == StepSync::EveryStep)
                     {
-                        chain.wait();
+                        Result<void> waited = chain.wait();
+                        if (!waited)
+                            return make_error(std::move(waited.error()));
                         if (std::optional<Error> fault = steps.take_fault())
                             return make_error(std::move(*fault));
                         steps.after_step();
                     }
                     ++executed;
                 }
-                chain.finish();
+                Result<void> finished = chain.finish();
+                if (!finished)
+                    return make_error(std::move(finished.error()));
                 if (std::optional<Error> fault = steps.take_fault())
                     return make_error(std::move(*fault));
 

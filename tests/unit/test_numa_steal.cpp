@@ -35,6 +35,7 @@
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 
 #include "scheduler_fixture.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -62,7 +63,7 @@ namespace
             matrix[i][i] = 10;
         auto distance = std::make_shared<MatrixDistanceModel>(std::move(matrix));
 
-        return std::make_shared<RuntimeContext>(Internal::Topology::HardwareFilterConfig{}, provider, distance);
+        return SushiRuntime::Test::make_context({}, provider, distance);
     }
 }
 
@@ -115,7 +116,8 @@ TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
  */
 TEST(Unit_NumaStealTest, FlatTopologyKeepsAllVictims)
 {
-    RuntimeContext ctx; // default Hwloc provider/model.
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskScheduler sched = make_scheduler(ctx);
 
     const int workers = static_cast<int>(sched.worker_count());

@@ -38,6 +38,7 @@
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include "test_context.hpp"
 
 namespace
 {
@@ -155,7 +156,8 @@ TEST(Integration_OffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
         std::make_shared<PoolProbingCoordinator>();
 
     {
-        SushiRuntime::Internal::Execution::RuntimeContext context;
+        const auto context_owner = SushiRuntime::Test::make_context();
+        SushiRuntime::Internal::Execution::RuntimeContext& context = *context_owner;
         context.install_offload(coordinator);
 
         context.shutdown();

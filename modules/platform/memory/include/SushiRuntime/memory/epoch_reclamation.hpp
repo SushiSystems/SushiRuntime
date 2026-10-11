@@ -30,6 +30,7 @@
 
 #include <atomic>
 #include <string>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/error.hpp>
 
@@ -171,7 +172,7 @@ namespace SushiRuntime
             /**
              * @brief Registers the calling thread and returns its slot id.
              * @return Slot index in [0, K_MAX_EPOCH_THREADS).
-             * @throws SushiException With ErrorCode::Unsupported if every slot is held.
+             * @pre Fewer than K_MAX_EPOCH_THREADS live threads hold a slot.
              */
             int register_thread()
             {
@@ -190,11 +191,11 @@ namespace SushiRuntime
                         return i;
                     }
                 }
-                throw SushiException(Error{
-                    ErrorCode::Unsupported,
-                    "EpochManager::register_thread: all " + std::to_string(K_MAX_EPOCH_THREADS) +
-                        " epoch slots are held by live threads. A thread frees its slot when it "
-                        "exits; lower the number of threads that use the runtime at once."});
+                SR_FATAL(("EpochManager::register_thread: all " +
+                          std::to_string(K_MAX_EPOCH_THREADS) +
+                          " epoch slots are held by live threads. A thread frees its slot when it "
+                          "exits; lower the number of threads that use the runtime at once.")
+                             .c_str());
             }
 
             /**
