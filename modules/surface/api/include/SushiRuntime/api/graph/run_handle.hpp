@@ -37,19 +37,27 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/report/run_report.hpp>
-#include <SushiRuntime/execution/execution_engine.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
+        /** @brief Holds the scheduler's counters at one moment of a run. */
+        struct RunCounters
+        {
+            std::size_t local_steals = 0;    /**< Steals from a victim of the same NUMA node. */
+            std::size_t remote_steals = 0;   /**< Steals that crossed NUMA nodes. */
+            std::size_t tasks_completed = 0; /**< Tasks completed across all workers. */
+            std::size_t tasks_offloaded = 0; /**< Dispatches an offload coordinator took. */
+        };
+
         /**
          * @brief Holds what an asynchronous step must remember from the moment it started.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         struct AsyncRunState
         {
-            Internal::Execution::ExecutionMetrics before{};      /**< Scheduler counters at submit. */
+            RunCounters before{};                      /**< Scheduler counters at submit. */
             std::size_t device_to_host_before = 0;     /**< Transfer counter at submit. */
             std::size_t host_to_device_before = 0;     /**< Transfer counter at submit. */
             std::chrono::steady_clock::time_point started{}; /**< When the roots went in. */

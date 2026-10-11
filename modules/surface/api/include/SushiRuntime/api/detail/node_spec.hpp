@@ -29,20 +29,18 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
-#include <optional>
-#include <type_traits>
 #include <utility>
 
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/detail/node_stamp.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
         /**
-         * @brief Holds one recorded node: its replay callable and the rule it belongs to.
+         * @brief Holds one recorded node: its description, its stamp and the rule it belongs
+         *        to.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         struct NodeSpec
@@ -50,22 +48,16 @@ namespace SushiRuntime
             /** @brief Stands for "no rule": the value a replay starts from. */
             static constexpr std::uint32_t K_NO_RULE = static_cast<std::uint32_t>(-1);
 
-            /**
-             * @brief Wraps a callable invoked as emit(TaskGraph&, registration) per replay.
-             * @param f The replay callable; it adds one node and stamps the registration given.
-             */
-            template <class F,
-                      std::enable_if_t<!std::is_same<std::decay_t<F>, NodeSpec>::value,
-                                       int> = 0>
-            explicit NodeSpec(F&& f) : emit(std::forward<F>(f))
+            /** @brief Takes the description of one node. */
+            explicit NodeSpec(NodeDescription&& described)
+                : description(std::move(described))
             {
             }
 
-            /** @brief Adds this node to a backing graph; no registration draws a fresh one. */
-            std::function<void(::SushiRuntime::Internal::Graph::TaskGraph&,
-                               std::optional<std::uint32_t>)> emit;
+            /** @brief What the library adds to a plan for this node at every build. */
+            NodeDescription description;
 
-            /** @brief What the caller stated about this node; replay writes it on the node. */
+            /** @brief What the caller stated about this node; a build writes it on the node. */
             NodeStamp stamp;
 
             /** @brief Position of this node's rule in the recorder's rule order. */

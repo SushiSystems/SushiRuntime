@@ -21,10 +21,14 @@ symbol or passage it explains, and that header's file block cites this page.
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
 | `plan_view.hpp` | PlanView and PlanNode: the copy of a plan that Graph::plan() returns |
 | `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel(), set_profiling() and the step loop |
-| `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
-The replay callable of each node shape is in `detail/emit_*.hpp`.
+The description of each node shape is in `detail/emit_*.hpp`.
+
+No header of this folder includes a header of the engine. The members that name an engine type
+are defined in `modules/surface/api/source/`: `recorder.cpp`, `plan_cache.cpp`,
+`region_composer.cpp` and `step_run.cpp`. `boundary_access.hpp` and `recorder_replay.hpp` are
+private headers of that folder; their sections below say so.
 
 ## graph.hpp
 
@@ -95,7 +99,7 @@ nodes of other regions.
 ### Friends
 
 Runtime constructs a Graph. StepDriver\<Graph> reads the plan and calls the private members named
-in the step_driver.hpp section. The two test seams read `plan_`. Region and DynamicGraph are not
+in the step_driver.hpp section. The two test seams read compiled_plan(). Region and DynamicGraph are not
 friends: a Region owns its own Recorder, and DynamicGraph reads a region through
 Region::recorder().
 
@@ -133,7 +137,7 @@ its owner rebuilds once.
 Every node belongs to one rule. rule() opens a scope, and the nodes recorded until it ends form one
 rule; a node recorded outside a scope is a rule of its own. At replay the recorder reserves one
 registration index on the backing graph when the first node of a rule is added and stamps it on all
-of them. The nodes of a rule are contiguous, so replay() needs two locals and no allocation. A
+of them. The nodes of a rule are contiguous, so the replay needs two locals and no allocation. A
 scope that records nothing adds no rule.
 
 ### name_last_rule
@@ -141,7 +145,7 @@ scope that records nothing adds no rule.
 name_last_rule() names the last rule and copies the text, so the caller's string may be a temporary.
 The copies live in a node-based set, one per distinct label: a compiled node keeps a `const char*`
 to its name, and an entry of that set never moves when another label is added or the recorder is
-moved. The rule keeps the pointer. replay() stamps it on every node the rule lowers to, which is
+moved. The rule keeps the pointer. The replay stamps it on every node the rule lowers to, which is
 why a name given after the last node of a scope still reaches the first. A node that stated a
 name through NodeOptions keeps its own. A rename advances generation(), so the next run rebuilds
 the plan with the new name.
@@ -193,19 +197,26 @@ has_dangling_resource() is true when the allocation behind any recorded handle h
 graph checks it once per run, so a graph that outlives its data fails cleanly instead of dispatching
 against released memory. The walk is as long as the number of distinct allocations.
 
-### replay
+### RecorderReplay
 
-replay() adds every recorded node to a backing graph in recording order, names each after its
-rule and writes on it what its NodeOptions stated. PlanCache::build() and
-RegionComposer::build_region() both call it, so a static graph and a region are replayed by the
-same code. The visitor reports each node, with the position of its rule, once it is added;
-PlanCache uses it to read back the registration index of each rule, and the composer to remember
-a node of each rule.
+RecorderReplay::replay() of the private header `source/recorder_replay.hpp` adds every recorded
+node to a backing graph in recording order, names each after its rule and writes on it what its
+NodeOptions stated. PlanCache::build() and the composer's build_region() both call it, so a
+static graph and a region are replayed by the same code. The visitor reports each node, with the
+position of its rule, once it is added; PlanCache uses it to read back the registration index of
+each rule, and the composer to remember a node of each rule.
 
-replay() is private, and PlanCache and RegionComposer are the Recorder's two friends. It is the
-one member of the Recorder whose signature names the engine's TaskGraph, and a caller of the
-surface has no use for it: every recorded node is one the public members recorded, and each adds
-exactly one node to the backing graph.
+RecorderReplay is the Recorder's one friend. It is the one place that reads the recorded
+descriptions and names the engine's TaskGraph, and it is not installed: every recorded node is one
+the public members recorded, and each adds exactly one node to the backing graph.
+
+### record
+
+record() is where every recording member ends. It takes a NodeDescription
+(detail/README.md), which the member's header template built from the caller's kernel, and
+appends it with its stamp and its rule. It is compiled into the library, as are the members that
+ask the runtime for something: scratch_block() behind scratch(), the placement and device slot
+refusals, and the fault records.
 
 ### kernel(DeviceSized, ...)
 
@@ -556,7 +567,9 @@ name, and so does a null `const char*`.
 
 PlanCache holds the plan compiled from one recorder. It is stale until the first build, after a
 change of the profiling request, and whenever the recorder's generation() differs from the one the
-plan was built at. `plan_` is protected because the test seams of the owning Graph read it. It
+plan was built at. The plan and the list of its recorded nodes sit behind one pointer to
+`Detail::PlanCacheState`, which `source/plan_cache.cpp` defines; the pointer is null until the
+first build. compiled_plan() is protected because the test seams of the owning Graph read it. It
 keeps one registration index per rule. compile_count() is its one public member; the profiling
 pair is protected, so the pair a Graph shows is StepDriver's. The source of a move has no plan, is stale, and counts zero
 compiles.
@@ -607,14 +620,14 @@ flight that cancel() reads.
 
 | Member | Answers |
 | --- | --- |
-| `run_context()` | The context whose engine runs the steps |
+| `run_context()` | The ContextHandle of the runtime whose engine runs the steps |
 | `has_work()`, `K_NOTHING_TO_RUN` | Whether anything is recorded, and the error text when nothing is |
 | `has_dangling_resource()`, `K_DANGLING_RESOURCE` | Whether a recorded handle was freed, and the error text |
 | `plan_is_stale()`, `rebuild_plan()` | Whether the plan must be built, and the build; only the build is timed as compile time |
 | `prepare_run()` | What must happen after the build and before the first step |
 | `run_plan()`, `run_steps()` | The plan a step runs and the per-step hooks around it |
 | `rearm_plan()` | Restores the plan's per-run state before each step |
-| `runs_chained()` | Whether the steps run as an in-order chain from the calling thread |
+| `may_chain()` | Whether the graph allows its steps to run as an in-order chain from the calling thread |
 | `node_count()` | The count a report multiplies by the steps run |
 | `request_profiling()`, `profiling_request()` | Stores and returns the profiling request behind set_profiling() |
 
@@ -838,12 +851,12 @@ gone.
 settle_async_step() is what a handle calls to wait, after the handle has checked that its step is
 still the one pending. It clears the record and the count of runs in flight before the blocking
 call, because the step is over however it ends and the graph must be runnable again; one throwing
-kernel must not make the graph refuse every later run. The wait and finish_async_step() run under
+kernel must not make the graph refuse every later run. The wait and finish_step() run under
 guarded().
 
-### finish_async_step
+### finish_step
 
-finish_async_step() is the tail of the synchronous loop body plus its report building, split out
+finish_step() is the tail of the synchronous loop body plus its report building, split out
 because those happen in a different call from the submission. Advancing every State in it, and not
 at submit, is what makes an asynchronous step observationally identical to a synchronous one: the
 just-written field becomes current only after the step has genuinely finished. `state` is what
@@ -1022,8 +1035,10 @@ It is created with the first region.
 
 RegionComposer owns the compiled sub-graph of every region, the cross-region edges per shared
 allocation and the stitched plan. commit() receives the changed and the dropped keys and a callable
-that returns a region's Recorder, so the composer depends on Recorder alone. `plan_` is protected
-because the test seam of the owning DynamicGraph reads it.
+that returns a region's Recorder, so the composer depends on Recorder alone. Everything it owns
+sits behind one pointer to `Detail::RegionComposerState`, which `source/region_composer.cpp`
+defines and whose members the sections below describe. compiled_plan() is protected because the
+test seam of the owning DynamicGraph reads it.
 
 The composer owns the profiling request, as PlanCache does for a static graph: a constructor
 argument seeds it, the protected set_profiling() and is_profiling_requested() write and read it,
@@ -1128,8 +1143,8 @@ plan have gaps; nothing in the composed plan indexes a table by them.
 
 ### RegionComposer: moves
 
-The source of a move has no region state, no plan and no sentinel; commit() creates a sentinel when
-it finds none, so the source composes again.
+The source of a move holds no state: no region, no plan and no sentinel. commit() creates the
+state, with its sentinel, when it finds none, so the source composes again.
 
 ### rearm
 
@@ -1139,6 +1154,8 @@ nodes) per step. The per-step State and late-binding updaters are not its work; 
 runs them from the StepMachinery that DynamicGraph::refresh_updaters() gathers.
 
 ## boundary_access.hpp
+
+A private header of `source/`.
 
 ### Pin
 
@@ -1323,7 +1340,7 @@ and a destructor that tried to wait again would block forever on a latch nobody 
 
 wait() clears the report before anything else, so a step that ends in a task exception, or a
 handle that owns no step, cannot leave the previous step's numbers readable in a report the caller
-reuses. finish_async_step sets the flag back on success.
+reuses. finish_step sets the flag back on success.
 
 ### settle
 

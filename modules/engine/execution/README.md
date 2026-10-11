@@ -36,6 +36,20 @@ itself on the engine: ExecutionEngine::run_in_progress() is true from the constr
 finish() returns, or until the destructor has drained the queue. The mark is written
 once when the run starts and once when it ends; submit_step() does not touch it.
 
+## context_access.hpp
+
+### ContextAccess
+
+A surface handle (a Runtime, a graph, a buffer) shares the runtime's context through a
+`ContextHandle`, which names the context by a forward declaration and gives no way to it.
+ContextAccess is that way, for the library's own sources, the distributed extension and the
+tests. It is the one friend of `ContextHandle` and of `Runtime`.
+
+The struct is declared here, in an internal module, so that it is not installed; this header
+names `ContextHandle` and `Runtime` by forward declaration only, and includes nothing of the
+surface. Its three functions are defined in `modules/surface/api/source/context_handle.cpp`,
+where both types are complete.
+
 ## execution_engine.hpp
 
 ### Including the Node definition

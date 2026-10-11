@@ -13,8 +13,36 @@ the Runtime entry point.
 | `runtime/` | [runtime/README.md](include/SushiRuntime/api/runtime/README.md) |
 | `vocabulary/` | [vocabulary/README.md](include/SushiRuntime/api/vocabulary/README.md) |
 
+`source/` holds the part of the layer that names an engine type; the section "The compiled
+boundary" says what crosses into it.
+
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
+
+## The compiled boundary
+
+The headers under `include/` hold the templates a caller's kernel instantiates. Whatever names a
+type of the engine is compiled into the library, from `source/`.
+
+| Source | Holds |
+| --- | --- |
+| `context_handle.cpp` | `Detail::ContextAccess`, the way from a `ContextHandle` to the context |
+| `recorder.cpp` | `Recorder::record()`, scratch, the fault records and the refusals that ask the runtime |
+| `node_emitters.cpp` | One function per `NodeKind` that adds a described node to the engine's graph |
+| `late_window.cpp` | The per-step controls of a late-bound node: creation, update and read |
+| `plan_cache.cpp` | `PlanCache`: the build and the compiled plan of one recorder |
+| `region_composer.cpp` | `RegionComposer`: the sub-graph of each region and the stitched plan |
+| `step_run.cpp` | The scheduler loop, the chain loop and the report of a run |
+
+A recording verb is a template. It wraps the caller's kernel once in the `std::function` the
+engine runs and fills a `Detail::NodeDescription` (detail/README.md); `Recorder::record()` stores
+it, and each plan build hands it to the function of its kind. The engine ran a node's work
+through that same `std::function` type before the boundary existed, so a step calls what it
+called then. The per-element path is a template inside the SYCL command group and is compiled
+into the caller, as before.
+
+A run entry is a template too, over the graph and over the stop test. It hands the library a
+`Detail::StepTarget` and a `Detail::StepPredicate`, and the loops run in `step_run.cpp`.
 
 ## fluent.hpp
 

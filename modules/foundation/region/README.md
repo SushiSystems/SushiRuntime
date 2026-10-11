@@ -1,8 +1,8 @@
 # region
 
 The module holds `BufferRegion`, the byte window of one allocation that a node declares it reads
-or writes, and `ResourceID`, the address that names the allocation. It is header-only, and its
-header is installed.
+or writes, `ResourceID`, the address that names the allocation, and the liveness token that tells
+whether the allocation still exists. It is header-only, and its headers are installed.
 
 It depends on the C++ standard library and on no other module of the repository.
 
@@ -11,8 +11,9 @@ It depends on the C++ standard library and on no other module of the repository.
 | Header | Holds |
 | --- | --- |
 | `buffer_region.hpp` | `BufferRegion` and `ResourceID` |
+| `liveness.hpp` | `Liveness`, `LivenessToken`, `LivenessObserver` and `make_liveness()` |
 
-Both names are declared in `SushiRuntime`. A consumer builds a region from a `Buffer` and passes it
+Every name is declared in `SushiRuntime`. A consumer builds a region from a `Buffer` and passes it
 to a recording verb; the dependency tracker of the engine orders nodes by it. The module sits in
 the foundation tier so that both sides include the one definition.
 
@@ -40,6 +41,20 @@ region included; contains() answers false for it the same way.
 contains() is true if `r` lies entirely within this region. It lets the tracker stop walking history
 early: once a write that covers the accessed region is found, every earlier access to that range is
 already ordered behind it transitively.
+
+## liveness.hpp
+
+### Why the liveness token exists
+
+A LivenessToken is a token a data handle owns and a graph weakly observes.
+
+A fluent graph records the base pointers of the Buffers and States its tasks touch, but it does not
+own them. If a handle is destroyed before the graph runs, those pointers dangle and a run is silent
+undefined behaviour. A handle holds one shared LivenessToken; the graph keeps a weak observer of it
+per recorded resource. When the handle dies the token expires, so the graph can detect a stale
+resource at run time and fail cleanly instead of dispatching against freed memory. The token carries
+no state: its existence is the signal, so observing it costs a weak_ptr lock and never touches the
+dependency hot path.
 
 ## Tests
 

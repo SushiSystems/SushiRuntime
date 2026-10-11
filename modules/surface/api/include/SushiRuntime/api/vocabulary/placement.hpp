@@ -31,7 +31,7 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 
 namespace SushiRuntime
 {
@@ -42,7 +42,7 @@ namespace SushiRuntime
     struct On
     {
         DeviceIndex device;          /**< Device the kernel runs on. */
-        Internal::Memory::LivenessObserver life; /**< Observer of the handle named, or empty. */
+        LivenessObserver life; /**< Observer of the handle named, or empty. */
 
         /**
          * @brief Places the kernel on a device by index.

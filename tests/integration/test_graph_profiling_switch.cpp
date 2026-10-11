@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 
 using namespace SushiRuntime;
 

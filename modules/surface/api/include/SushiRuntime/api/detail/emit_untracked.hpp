@@ -21,7 +21,7 @@
 
 /**
  * @file emit_untracked.hpp
- * @brief Declares the replay callables of the launches that name no region.
+ * @brief Declares the descriptions of the launches that name no region.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
@@ -29,76 +29,69 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <optional>
 #include <utility>
-#include <vector>
 
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/detail/emit_launch.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/api/detail/node_description.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
         /**
-         * @brief Builds the replay of a launch that names no region and runs on one device.
+         * @brief Describes a launch that names no region and runs on one device.
          * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
          * @param device Index of the device the node is placed on.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class F>
-        auto untracked_launch_node(Launch launch, std::size_t device, F&& kernel)
+        NodeDescription untracked_launch_node(Launch launch, std::size_t device, F&& kernel)
         {
-            return [kernel = std::forward<F>(kernel), launch, device]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                auto& node = backing_graph.add_node([kernel, launch](sycl::handler& h)
+            NodeDescription description;
+            description.kind = NodeKind::Untracked;
+            description.device = device;
+            description.width = launch_count(launch);
+            description.work = CommandGroupWork(
+                [kernel = std::forward<F>(kernel), launch](sycl::handler& h)
                 {
                     submit_launch(h, launch, kernel);
-                }, std::vector<sycl::event>{}, registration);
-                node.place_on(device);
-                node.baked_width = launch_count(launch);
-            };
+                });
+            return description;
         }
 
         /**
-         * @brief Builds the replay of a region-less launch that drives the handler itself.
+         * @brief Describes a region-less launch that drives the handler itself.
          * @param device Index of the device the node is placed on.
          */
         template <class F>
-        auto untracked_range_node(std::size_t n, std::size_t device, F&& kernel)
+        NodeDescription untracked_range_node(std::size_t n, std::size_t device, F&& kernel)
         {
-            return [kernel = std::forward<F>(kernel), n, device]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                auto& node = backing_graph.add_node([kernel, n](sycl::handler& h)
+            NodeDescription description;
+            description.kind = NodeKind::Untracked;
+            description.device = device;
+            description.width = n;
+            description.work = CommandGroupWork(
+                [kernel = std::forward<F>(kernel), n](sycl::handler& h)
                 {
                     kernel(std::size_t{0}, n, h);
-                }, std::vector<sycl::event>{}, registration);
-                node.place_on(device);
-                node.baked_width = n;
-            };
+                });
+            return description;
         }
 
         /**
-         * @brief Builds the replay of a raw command group with no region.
+         * @brief Describes a raw command group with no region.
          * @param device Index of the device the node is placed on.
          */
         template <class F>
-        auto untracked_raw_node(std::size_t device, F&& kernel)
+        NodeDescription untracked_raw_node(std::size_t device, F&& kernel)
         {
-            return [kernel = std::forward<F>(kernel), device]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                backing_graph.add_node(kernel, std::vector<sycl::event>{},
-                                       registration).place_on(device);
-            };
+            NodeDescription description;
+            description.kind = NodeKind::Untracked;
+            description.device = device;
+            description.work = CommandGroupWork(std::forward<F>(kernel));
+            return description;
         }
     } // namespace Detail
 } // namespace SushiRuntime

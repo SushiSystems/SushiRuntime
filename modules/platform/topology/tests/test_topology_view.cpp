@@ -36,6 +36,7 @@
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
+#include <SushiRuntime/topology/hw_discovery.hpp>
 
 using namespace SushiRuntime::Internal::Topology;
 using SushiRuntime::DeviceFilter;

@@ -36,7 +36,7 @@
 #include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -52,12 +52,12 @@ namespace SushiRuntime
          */
         inline bool gather_device_read(const LateCount& count,
                                        std::vector<BufferRegion>& reads,
-                                       std::vector<Internal::Memory::LivenessObserver>& lives)
+                                       std::vector<LivenessObserver>& lives)
         {
             if (LateCountAccess::slot(count) == nullptr)
                 return false;
             reads.push_back(LateCountAccess::slot_region(count));
-            const Internal::Memory::LivenessObserver& life = LateCountAccess::slot_life(count);
+            const LivenessObserver& life = LateCountAccess::slot_life(count);
             if (!life.expired())
                 lives.push_back(life);
             return true;

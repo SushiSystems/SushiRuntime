@@ -35,6 +35,7 @@
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
+#include <SushiRuntime/topology/hw_discovery.hpp>
 #include "test_context.hpp"
 
 using namespace SushiRuntime;

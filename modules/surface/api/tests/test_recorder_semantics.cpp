@@ -38,6 +38,7 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/task/task_types.hpp>
 
 using namespace SushiRuntime;
 

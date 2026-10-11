@@ -32,6 +32,7 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 
 using namespace SushiRuntime;
 

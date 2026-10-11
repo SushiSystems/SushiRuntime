@@ -43,17 +43,18 @@
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/task_work.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        // Test-only friend seam onto Graph::plan_ (Graph has no public accessor).
+        // Test-only friend seam onto the plan of a Graph, which has no public accessor.
         struct RegistrationIndexTestAccess
         {
             static const SushiRuntime::Internal::Graph::CompiledGraph& plan(const Graph& g) noexcept
             {
-                return g.plan_;
+                return g.compiled_plan();
             }
         };
     }

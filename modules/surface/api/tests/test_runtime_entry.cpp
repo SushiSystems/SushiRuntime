@@ -38,6 +38,8 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/execution/runtime_settings.hpp>
 
 using namespace SushiRuntime;
 

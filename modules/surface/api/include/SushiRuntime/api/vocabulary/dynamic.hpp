@@ -38,7 +38,7 @@
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -50,7 +50,7 @@ namespace SushiRuntime
         {
             const std::uint32_t* words = nullptr; /**< First element, or null for no slot. */
             std::size_t index = 0;                /**< Element that holds the value. */
-            Internal::Memory::LivenessObserver life;        /**< Observer of the buffer; empty for none. */
+            LivenessObserver life;        /**< Observer of the buffer; empty for none. */
         };
 
         /** @brief Returns the dependency key of the buffer a slot lies in; null for no slot. */

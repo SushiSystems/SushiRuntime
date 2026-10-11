@@ -34,6 +34,8 @@
 #include <gtest/gtest.h>
 #include "work_stealing_deque.hpp"
 
+#include <SushiRuntime/task/task.hpp>
+
 using SushiRuntime::Internal::Scheduler::Deque;
 using SushiRuntime::Internal::Scheduler::Task;
 

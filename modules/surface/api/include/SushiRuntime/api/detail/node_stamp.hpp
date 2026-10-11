@@ -38,16 +38,13 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/task/task_types.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
         /** @brief How many parameters one node carries. */
-        inline constexpr std::size_t K_MAX_NODE_PARAMETERS =
-            ::SushiRuntime::Internal::Graph::TaskMetadata::K_MAX_PARAMS;
+        inline constexpr std::size_t K_MAX_NODE_PARAMETERS = 8;
 
         /**
          * @brief Returns the refusal of more parameters than a node carries.
@@ -89,22 +86,6 @@ namespace SushiRuntime
             {
                 for (std::size_t i = 0; i < parameter_count; ++i)
                     parameters[i] = options.parameters[i];
-            }
-
-            /**
-             * @brief Writes on a node what the caller stated and leaves the rest as it is.
-             * @param node A node of a graph that has not been compiled.
-             */
-            void apply(::SushiRuntime::Internal::Graph::Node& node) const noexcept
-            {
-                if (name != nullptr)
-                    node.metadata.name = name;
-                if (operation.is_named())
-                    node.metadata.op_id = operation;
-                for (std::size_t i = 0; i < parameter_count; ++i)
-                    node.metadata.set_param<std::uint64_t>(static_cast<int>(i), parameters[i]);
-                if (width != ::SushiRuntime::K_WIDTH_UNKNOWN)
-                    node.baked_width = width;
             }
 
             /** @brief Label the recorder owns, or null when the caller gave none. */

@@ -21,7 +21,7 @@
 
 /**
  * @file emit_tracked.hpp
- * @brief Declares the replay callables of the launches ordered by the regions they name.
+ * @brief Declares the descriptions of the launches ordered by the regions they name.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
@@ -29,15 +29,13 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <optional>
 #include <utility>
 #include <vector>
 
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/detail/emit_launch.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -45,59 +43,58 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Builds the replay of a launch ordered by the regions it names.
+         * @brief Describes a launch ordered by the regions it names.
          * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
-         * @param width Launch width stamped on the node.
+         * @param width Launch width baked on the node.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class F>
-        auto launch_node(std::vector<BufferRegion> reads,
-                         std::vector<BufferRegion> writes,
-                         Launch launch, F&& kernel, std::size_t width)
+        NodeDescription launch_node(std::vector<BufferRegion> reads,
+                                    std::vector<BufferRegion> writes,
+                                    Launch launch, F&& kernel, std::size_t width)
         {
-            return [kernel = std::forward<F>(kernel), launch, reads = std::move(reads),
-                    writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                backing_graph.add_node([kernel, launch](sycl::handler& h)
+            NodeDescription description;
+            description.reads = std::move(reads);
+            description.writes = std::move(writes);
+            description.width = width;
+            description.work = CommandGroupWork(
+                [kernel = std::forward<F>(kernel), launch](sycl::handler& h)
                 {
                     submit_launch(h, launch, kernel);
-                }, reads, writes, {}, registration).baked_width = width;
-            };
+                });
+            return description;
         }
 
-        /** @brief Builds the replay of a launch that drives the handler over [0, n) itself. */
+        /** @brief Describes a launch that drives the handler over [0, n) itself. */
         template <class F>
-        auto range_node(std::vector<BufferRegion> reads,
-                        std::vector<BufferRegion> writes,
-                        std::size_t n, F&& kernel, std::size_t width)
+        NodeDescription range_node(std::vector<BufferRegion> reads,
+                                   std::vector<BufferRegion> writes,
+                                   std::size_t n, F&& kernel, std::size_t width)
         {
-            return [kernel = std::forward<F>(kernel), n, reads = std::move(reads),
-                    writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                backing_graph.add_node([kernel, n](sycl::handler& h)
+            NodeDescription description;
+            description.reads = std::move(reads);
+            description.writes = std::move(writes);
+            description.width = width;
+            description.work = CommandGroupWork(
+                [kernel = std::forward<F>(kernel), n](sycl::handler& h)
                 {
                     kernel(std::size_t{0}, n, h);
-                }, reads, writes, {}, registration).baked_width = width;
-            };
+                });
+            return description;
         }
 
-        /** @brief Builds the replay of a raw command group. */
+        /** @brief Describes a raw command group. */
         template <class F>
-        auto raw_node(std::vector<BufferRegion> reads,
-                      std::vector<BufferRegion> writes, F&& kernel,
-                      std::size_t width)
+        NodeDescription raw_node(std::vector<BufferRegion> reads,
+                                 std::vector<BufferRegion> writes, F&& kernel,
+                                 std::size_t width)
         {
-            return [kernel = std::forward<F>(kernel), reads = std::move(reads),
-                    writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                backing_graph.add_node(kernel, reads, writes, {}, registration).baked_width = width;
-            };
+            NodeDescription description;
+            description.reads = std::move(reads);
+            description.writes = std::move(writes);
+            description.width = width;
+            description.work = CommandGroupWork(std::forward<F>(kernel));
+            return description;
         }
     } // namespace Detail
 } // namespace SushiRuntime

@@ -35,7 +35,7 @@
 
 #include <SushiRuntime/api/graph/builder_surface.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/api/runtime/context_handle.hpp>
 
 namespace SushiRuntime
 {
@@ -89,10 +89,10 @@ namespace SushiRuntime
     {
         public:
             /**
-             * @brief Starts an empty region on a runtime context, owned by no graph.
-             * @param context Context the region's recorder allocates scratch from.
+             * @brief Starts an empty region on a runtime, owned by no graph.
+             * @param context Runtime the region's recorder allocates scratch from.
              */
-            explicit Region(std::shared_ptr<Internal::Execution::RuntimeContext> context)
+            explicit Region(ContextHandle context)
                 : recorder_(std::move(context))
             {
             }
@@ -102,9 +102,7 @@ namespace SushiRuntime
              * @param changes Log of the owning graph; must outlive this region.
              * @param key     Identity the graph knows this region by.
              */
-            Region(std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                   RegionChangeLog& changes,
-                   std::uint64_t key)
+            Region(ContextHandle context, RegionChangeLog& changes, std::uint64_t key)
                 : recorder_(std::move(context)), changes_(&changes), key_(key)
             {
             }

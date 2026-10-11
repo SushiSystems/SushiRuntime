@@ -32,6 +32,7 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/topology/hw_discovery.hpp>
 
 using namespace SushiRuntime;
 

@@ -21,7 +21,7 @@
 
 /**
  * @file emit_dynamic.hpp
- * @brief Declares the replay callables of the launches whose window is bound per step.
+ * @brief Declares the descriptions of the launches whose window is bound per step.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
@@ -31,7 +31,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <utility>
 #include <vector>
 
@@ -39,11 +38,11 @@
 
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/late_window.hpp>
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
-#include <SushiRuntime/task/late_bindings.hpp>
 
 namespace SushiRuntime
 {
@@ -58,7 +57,7 @@ namespace SushiRuntime
          */
         inline void register_device_slot(const DeviceSlot& slot,
                                          std::vector<BufferRegion>& reads,
-                                         std::vector<Internal::Memory::LivenessObserver>& lives)
+                                         std::vector<LivenessObserver>& lives)
         {
             reads.push_back(BufferRegion{
                 slot_buffer_key(slot),
@@ -69,82 +68,73 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Copies a Dynamic's device count slot and device base slot onto the bindings
-         *        and registers each as a read.
+         * @brief Creates the per-step controls of a late-bound node, pointed at the device
+         *        count slot and the device base slot of a Dynamic.
          * @param reads Gains one four-byte region per slot the Dynamic has.
          * @param lives Gains the observer of each slot's buffer.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
-        inline void adopt_device_bindings(::SushiRuntime::Internal::Graph::LateBindings& lb,
-                                          const Dynamic& dyn,
-                                          std::vector<BufferRegion>& reads,
-                                          std::vector<Internal::Memory::LivenessObserver>& lives)
-        {
-            const DeviceSlot& count = DynamicAccess::count_slot(dyn);
-            if (count.words != nullptr)
-            {
-                lb.device_count = count.words;
-                lb.device_count_index = count.index;
-                register_device_slot(count, reads, lives);
-            }
-            const DeviceSlot& base = DynamicAccess::base_slot(dyn);
-            if (base.words != nullptr)
-            {
-                lb.device_base = base.words;
-                lb.device_base_index = base.index;
-                register_device_slot(base, reads, lives);
-            }
-        }
+        [[nodiscard]] SUSHIRUNTIME_API std::shared_ptr<Internal::Graph::LateBindings>
+        make_late_bindings(const Dynamic& dyn, std::vector<BufferRegion>& reads,
+                           std::vector<LivenessObserver>& lives);
 
         /**
-         * @brief Builds the replay of a per-element launch whose window varies per step.
+         * @brief Describes a per-element launch whose window varies per step.
          *
          * The node is compiled once and follows per-step changes without a recompile; its
          * reads cover the full capacity and any device slot, so a slot's producer is always
          * a predecessor. See submit_late_window().
          */
         template <class F>
-        auto dynamic_node(std::shared_ptr<::SushiRuntime::Internal::Graph::LateBindings> lb,
-                          std::uint32_t* fault,
-                          std::vector<BufferRegion> reads,
-                          std::vector<BufferRegion> writes,
-                          std::size_t capacity, F&& kernel, std::size_t width)
+        NodeDescription dynamic_node(std::shared_ptr<Internal::Graph::LateBindings> lb,
+                                     std::uint32_t* fault,
+                                     std::vector<BufferRegion> reads,
+                                     std::vector<BufferRegion> writes,
+                                     std::size_t capacity, F&& kernel, std::size_t width)
         {
-            return [kernel = std::forward<F>(kernel), capacity, lb, fault, reads = std::move(reads),
-                    writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                backing_graph.add_node([kernel, capacity, lb, fault](sycl::handler& h)
+            NodeDescription description;
+            description.kind = NodeKind::Dynamic;
+            description.reads = std::move(reads);
+            description.writes = std::move(writes);
+            description.width = width;
+            description.work = CommandGroupWork(
+                [kernel = std::forward<F>(kernel), capacity, lb, fault](sycl::handler& h)
                 {
                     submit_late_window(h, *lb, capacity, fault, kernel);
-                }, reads, writes, lb, {}, registration).baked_width = width;
-            };
+                });
+            description.bindings = std::move(lb);
+            return description;
         }
 
         /**
-         * @brief Builds the replay of a State rule with a late-bound window.
-         * @param view       The State's own view; its keys are read at every replay.
+         * @brief Describes a State rule with a late-bound window.
+         * @param view       The State's own view; its keys are read at every plan build.
          * @param capacity   The State's size, which bounds the live window.
          * @param slot_reads The regions read besides the State's current field.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <typename T, class F>
-        auto dynamic_state_node(std::shared_ptr<StateView<T>> view, std::size_t capacity,
-                                std::shared_ptr<::SushiRuntime::Internal::Graph::LateBindings> lb,
-                                std::uint32_t* fault,
-                                std::vector<BufferRegion> slot_reads,
-                                F&& kernel)
+        NodeDescription dynamic_state_node(std::shared_ptr<StateView<T>> view,
+                                           std::size_t capacity,
+                                           std::shared_ptr<Internal::Graph::LateBindings> lb,
+                                           std::uint32_t* fault,
+                                           std::vector<BufferRegion> slot_reads,
+                                           F&& kernel, LiveFields live = {})
         {
-            return [kernel = std::forward<F>(kernel), view, capacity, lb, fault,
-                    slot_reads = std::move(slot_reads)]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                std::vector<BufferRegion> reads{
-                    BufferRegion(static_cast<void*>(view->current)) };
-                reads.insert(reads.end(), slot_reads.begin(), slot_reads.end());
-                backing_graph.add_node([kernel, view, lb, capacity, fault](sycl::handler& h)
+            NodeDescription description;
+            description.kind = NodeKind::DynamicState;
+            description.width = capacity;
+            description.live = std::move(live);
+            description.state_access =
+                [view, slot_reads = std::move(slot_reads)](std::vector<BufferRegion>& reads,
+                                                           std::vector<BufferRegion>& writes)
+                {
+                    reads.push_back(BufferRegion(static_cast<void*>(view->current)));
+                    reads.insert(reads.end(), slot_reads.begin(), slot_reads.end());
+                    writes.push_back(BufferRegion(static_cast<void*>(view->next)));
+                };
+            description.work = CommandGroupWork(
+                [kernel = std::forward<F>(kernel), view, lb, capacity, fault](sycl::handler& h)
                 {
                     const T* current = view->current;
                     T* next = view->next;
@@ -153,9 +143,9 @@ namespace SushiRuntime
                                        {
                                            kernel(i, current, next);
                                        });
-                }, reads, { BufferRegion(static_cast<void*>(view->next)) }, lb, {},
-                registration).baked_width = capacity;
-            };
+                });
+            description.bindings = std::move(lb);
+            return description;
         }
     } // namespace Detail
 } // namespace SushiRuntime
