@@ -208,7 +208,6 @@ device code does not change. Task 6.7 is the proof, not this paragraph.
 | 9.1 | The BLAS seam of `engine/foundation/blas`, owed from the earlier session, is built for the first time, on the new SushiRuntime, and committed | `se build` and the unit tests pass on both backends |
 | 9.2 | The ten files that include SushiRuntime move to the new names, verbs and `Result` | No `API::` spelling is left |
 | 9.3 | The acronym rename owed from the earlier session | The acronym script lists nothing |
-| 9.4 | One render through the editor on the new SushiRuntime | The owner has seen the frame |
 
 The engine's own sweep is not in this plan: 106 `I`-prefixed types, 2 121 constants without `K_`,
 three enums with lower-case enumerators and 20 files with `namespace detail`. It is larger than
@@ -228,7 +227,7 @@ the three steps above together and gets a work folder of its own in SushiEngine.
 
 The stages run in this order: 0 to 5, then 7, 8 and 9, then 6, then 10. The owner set the
 outer order on 2026-10-11: SushiRuntime is broken first, SushiBLAS and SushiAI follow it,
-SushiEngine is repaired and renders once, then the repositories go public and CI comes up, the
+SushiEngine is repaired and built once, then the repositories go public and CI comes up, the
 owner tests, and the release follows. SushiEngine is not built on the old SushiRuntime first.
 
 Stages 1 to 5 run inside SushiRuntime. Stage 4 precedes stage 5 because the offload verbs are the
@@ -261,6 +260,6 @@ From task 1.1 until stage 8 closes, SushiBLAS and SushiAI do not build against t
 
 ## Size
 
-52 tasks, each with one build and one test run. A SushiRuntime build and test run took about ten
+51 tasks, each with one build and one test run. A SushiRuntime build and test run took about ten
 minutes in the acronym pass, and a SushiBLAS one about forty. The plan has not been estimated
 beyond that, and stage 6 is the one whose size is least known.
