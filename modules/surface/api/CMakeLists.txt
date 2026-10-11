@@ -18,7 +18,8 @@ sushiruntime_add_module(
         scheduler
         graph
         execution
-        interop)
+        interop
+        report)
 
 sushiruntime_add_module_tests(
     MODULE api

@@ -20,6 +20,7 @@ sushiruntime_add_module(
         observability
         scheduler
         graph
+        report
     PRIVATE_DEPENDS logging sycl task)
 
 sushiruntime_add_module_tests(

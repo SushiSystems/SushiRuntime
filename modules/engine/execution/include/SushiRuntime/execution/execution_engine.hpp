@@ -38,7 +38,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/observability/run_report.hpp>
+#include <SushiRuntime/report/run_report.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
 // runtime_settings.hpp is a leaf header, so this include creates no cycle.
@@ -226,7 +226,7 @@ namespace SushiRuntime
              * @param report The report whose profiling rows are populated.
              */
             virtual void collect_profiling(CompiledGraph& /*graph*/,
-                                           Internal::Observability::RunReport& /*report*/) const {}
+                                           RunReport& /*report*/) const {}
 
             /**
              * @brief Reports whether a run handed to this engine has not been collected yet.

@@ -37,7 +37,7 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
-#include <SushiRuntime/observability/dispatch_width.hpp>
+#include <SushiRuntime/report/dispatch_width.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 
@@ -103,7 +103,7 @@ namespace SushiRuntime
                     node.metadata.op_id = operation;
                 for (std::size_t i = 0; i < parameter_count; ++i)
                     node.metadata.set_param<std::uint64_t>(static_cast<int>(i), parameters[i]);
-                if (width != ::SushiRuntime::Internal::Observability::K_WIDTH_UNKNOWN)
+                if (width != ::SushiRuntime::K_WIDTH_UNKNOWN)
                     node.baked_width = width;
             }
 
@@ -114,7 +114,7 @@ namespace SushiRuntime
             OperationID operation;
 
             /** @brief Launch width the caller stated, or K_WIDTH_UNKNOWN. */
-            std::size_t width = ::SushiRuntime::Internal::Observability::K_WIDTH_UNKNOWN;
+            std::size_t width = ::SushiRuntime::K_WIDTH_UNKNOWN;
 
             /** @brief The first parameter_count entries are the caller's parameters. */
             std::array<std::uint64_t, K_MAX_NODE_PARAMETERS> parameters{};

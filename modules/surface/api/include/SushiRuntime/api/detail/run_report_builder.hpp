@@ -31,7 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <SushiRuntime/observability/run_report.hpp>
+#include <SushiRuntime/report/run_report.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -46,7 +46,7 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         inline void fill_run_report(
-            Internal::Observability::RunReport&                   report,
+            RunReport&                   report,
             Internal::Execution::RuntimeContext&         context,
             const Internal::Execution::ExecutionMetrics& before,
             const Internal::Execution::ExecutionMetrics& after,
@@ -61,7 +61,7 @@ namespace SushiRuntime
             report.total_duration_ms = total_ms;
 
             // The device class comes from the runtime's own inventory, which does not allocate.
-            Internal::Observability::NUMANodeStatistics node;
+            NUMANodeStatistics node;
             const Internal::Device::DeviceQueueSet& devices = context.devices();
             if (devices.count() > 0 && devices.is_gpu(0))
                 node.gpu_tasks_executed = total_tasks;

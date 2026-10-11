@@ -287,7 +287,7 @@ namespace SushiRuntime
                 if (slot == Internal::Observability::ProfilingLedger::npos)
                     continue;
 
-                Internal::Observability::NodeEventRecord rec{};
+                NodeEventRecord rec{};
                 rec.node_index = index;
                 rec.invocation = pe.step;
                 rec.launched_width = pe.widths.launched;

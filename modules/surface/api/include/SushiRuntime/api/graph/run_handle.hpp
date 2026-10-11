@@ -36,7 +36,7 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/observability/run_report.hpp>
+#include <SushiRuntime/report/run_report.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 
 namespace SushiRuntime
@@ -144,10 +144,10 @@ namespace SushiRuntime
              * @return The report, or the Error that ended the step.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            [[nodiscard]] Result<Internal::Observability::RunReport, Error>
+            [[nodiscard]] Result<RunReport, Error>
             wait() noexcept
             {
-                Internal::Observability::RunReport report;
+                RunReport report;
                 auto waited = wait(report);
                 if (!waited)
                     return make_error(std::move(waited.error()));
@@ -160,8 +160,8 @@ namespace SushiRuntime
              * @return A pointer to reuse, or the Error that ended the step.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
-            wait(Internal::Observability::RunReport& reuse) noexcept
+            [[nodiscard]] Result<RunReport*, Error>
+            wait(RunReport& reuse) noexcept
             {
                 // Every return below leaves reuse reset and marked unsuccessful.
                 reuse.reset();
@@ -218,7 +218,7 @@ namespace SushiRuntime
             {
                 if (owner_ == nullptr)
                     return;
-                Internal::Observability::RunReport dropped;
+                RunReport dropped;
                 static_cast<void>(wait(dropped));
             }
 

@@ -29,7 +29,7 @@
 
 #include <cstdint>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/observability/dispatch_width.hpp>
+#include <SushiRuntime/report/dispatch_width.hpp>
 
 namespace SushiRuntime
 {
@@ -40,8 +40,8 @@ namespace SushiRuntime
         /** @brief Pairs the range a dispatch launched over with the count that did work. */
         struct NodeWidths
         {
-            std::uint32_t launched = Internal::Observability::K_WIDTH_UNKNOWN; /**< Elements the dispatch launched over. */
-            std::uint32_t live     = Internal::Observability::K_WIDTH_UNKNOWN; /**< Elements that did work. */
+            std::uint32_t launched = K_WIDTH_UNKNOWN; /**< Elements the dispatch launched over. */
+            std::uint32_t live     = K_WIDTH_UNKNOWN; /**< Elements that did work. */
         };
 
         /**

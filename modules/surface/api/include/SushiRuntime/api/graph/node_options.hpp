@@ -34,7 +34,7 @@
 
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/observability/dispatch_width.hpp>
+#include <SushiRuntime/report/dispatch_width.hpp>
 
 namespace SushiRuntime
 {
@@ -45,7 +45,7 @@ namespace SushiRuntime
     struct NodeOptions
     {
         /** @brief Launch width stamped into the node's event records. */
-        std::size_t width = Internal::Observability::K_WIDTH_UNKNOWN;
+        std::size_t width = K_WIDTH_UNKNOWN;
 
         /** @brief Label the node reports under; copied when the node is recorded. */
         std::string_view name = {};

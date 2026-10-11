@@ -98,7 +98,7 @@ TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
     // The caller is still running: this is the work a frame would overlap.
     released.store(true, std::memory_order_release);
 
-    const Internal::Observability::RunReport report = step.wait().value();
+    const RunReport report = step.wait().value();
 
     EXPECT_TRUE(saw_release.load())
         << "the step's task never observed the flag, so run_async() blocked";
@@ -375,7 +375,7 @@ TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
     EXPECT_EQ(other[0], 0) << "a refused run ran its task";
 
     released.store(true, std::memory_order_release);
-    const Internal::Observability::RunReport report = step.wait().value();
+    const RunReport report = step.wait().value();
     EXPECT_TRUE(report.is_successful);
     EXPECT_EQ(first[0], 7);
 
@@ -515,7 +515,7 @@ TEST(Integration_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
     EXPECT_EQ(kept[0], 1);
     EXPECT_EQ(gone[0], 1) << "the dropped region's task did not finish its write";
 
-    const Internal::Observability::RunReport next = world.run().value();
+    const RunReport next = world.run().value();
     EXPECT_TRUE(next.is_successful);
     EXPECT_EQ(kept[0], 2);
     EXPECT_EQ(gone[0], 1) << "the dropped region ran again";

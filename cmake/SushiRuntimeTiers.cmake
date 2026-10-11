@@ -18,6 +18,7 @@ set(SUSHIRUNTIME_TIER_ORDER
 # Module, then its tier. Inside a tier a dependency is listed before its consumer.
 set(SUSHIRUNTIME_MODULE_TIERS
     core            foundation
+    report          foundation
     logging         foundation
     sycl            foundation
     topology        platform
@@ -34,6 +35,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
 
 # Consumer, then dependency: the edges allowed between two modules of one tier.
 set(SUSHIRUNTIME_SAME_TIER_EDGES
+    report          core
     logging         core
     scheduler       task
     graph           task

@@ -47,7 +47,7 @@ namespace
         std::vector<std::uint32_t> mix;    /**< Reads acc, so it orders after it. */
         std::vector<std::uint32_t> gated;  /**< Written only on the steps its when() allows. */
         /** @brief Layer of the last run. */
-        Internal::Observability::ExecutionLayer layer = Internal::Observability::ExecutionLayer::Scheduler;
+        ExecutionLayer layer = ExecutionLayer::Scheduler;
         std::size_t tasks = 0;             /**< total_tasks_executed summed over the runs. */
     };
 
@@ -148,9 +148,9 @@ TEST(Integration_ChainLayer, ChainMatchesForcedSchedulerBitForBit)
     const Outputs chained   = run_workload(chained_rt, RUNS, STEPS, false);
     const Outputs scheduled = run_workload(scheduled_rt, RUNS, STEPS, false);
 
-    EXPECT_EQ(chained.layer, Internal::Observability::ExecutionLayer::Chain)
+    EXPECT_EQ(chained.layer, ExecutionLayer::Chain)
         << "a plan of tracked kernels on one device must take the chain";
-    EXPECT_EQ(scheduled.layer, Internal::Observability::ExecutionLayer::Scheduler)
+    EXPECT_EQ(scheduled.layer, ExecutionLayer::Scheduler)
         << "force_scheduler must keep every plan on the scheduler";
     expect_identical(chained, scheduled);
 }
@@ -165,8 +165,8 @@ TEST(Integration_ChainLayer, NonChainablePlanMatchesChainBitForBit)
     const Outputs chained = run_workload(rt, RUNS, STEPS, false);
     const Outputs native  = run_workload(rt, RUNS, STEPS, true);
 
-    EXPECT_EQ(chained.layer, Internal::Observability::ExecutionLayer::Chain);
-    EXPECT_EQ(native.layer, Internal::Observability::ExecutionLayer::Scheduler)
+    EXPECT_EQ(chained.layer, ExecutionLayer::Chain);
+    EXPECT_EQ(native.layer, ExecutionLayer::Scheduler)
         << "a native host task must keep the plan on the scheduler";
 
     EXPECT_TRUE(same_bytes(chained.field, native.field));
@@ -206,7 +206,7 @@ TEST(Integration_ChainLayer, ANamedNodeRunsOnTheChainWithNoClusterAttached)
     constexpr std::size_t STEPS = 3;
     const auto report = graph.run(STEPS);
     ASSERT_TRUE(report.has_value()) << report.error().message;
-    EXPECT_EQ(report->layer, Internal::Observability::ExecutionLayer::Chain)
+    EXPECT_EQ(report->layer, ExecutionLayer::Chain)
         << "a named node kept the plan off the chain although nothing can take it";
     for (std::size_t i = 0; i < N; ++i)
     {
@@ -230,7 +230,7 @@ TEST(Integration_ChainLayer, RunUntilSeesEveryStepsResult)
     // The stop test reads a device result, so the chain must wait after every step.
     const auto report = g.run_until([&counter] { return counter[0] >= TARGET; }).value();
 
-    EXPECT_EQ(report.layer, Internal::Observability::ExecutionLayer::Chain);
+    EXPECT_EQ(report.layer, ExecutionLayer::Chain);
     EXPECT_EQ(report.total_tasks_executed, static_cast<std::size_t>(TARGET));
     EXPECT_EQ(counter[0], TARGET);
 }
@@ -257,7 +257,7 @@ TEST(Integration_ChainLayer, ProfiledChainRecordsEveryDispatch)
 
     const auto report = g.run(STEPS).value();
 
-    EXPECT_EQ(report.layer, Internal::Observability::ExecutionLayer::Chain)
+    EXPECT_EQ(report.layer, ExecutionLayer::Chain)
         << "profiling must not move a chainable plan off layer 1";
     ASSERT_EQ(report.node_events.size(), 2 * STEPS);
 

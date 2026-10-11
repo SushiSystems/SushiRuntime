@@ -34,7 +34,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
-#include <SushiRuntime/observability/run_report.hpp>
+#include <SushiRuntime/report/run_report.hpp>
 
 namespace SushiRuntime
 {

@@ -41,7 +41,7 @@ using namespace SushiRuntime;
 namespace
 {
     /** @brief Checks that the report holds one event per expected width, in recording order. */
-    void expect_widths(const Internal::Observability::RunReport& report,
+    void expect_widths(const RunReport& report,
                        const std::vector<std::uint32_t>& expected)
     {
         ASSERT_EQ(report.node_events.size(), expected.size());

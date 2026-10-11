@@ -7,12 +7,10 @@
 sushiruntime_add_module(
     NAME observability TIER platform
     HEADER_ONLY SYCL
-    DEPENDS core)
+    DEPENDS core report)
 
 sushiruntime_add_module_tests(
     MODULE observability
     SOURCES
-        test_node_event_record.cpp
         test_profiling_ledger.cpp
-        test_run_report_names.cpp
         test_transfer_counters.cpp)

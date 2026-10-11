@@ -708,14 +708,14 @@ reads what step k wrote only if the States advance between the two submissions. 
 recorded by any step of such a run is therefore seen at the end, and by then every step but the
 last has advanced. run_for() and run_until() wait and check after every step on both layers.
 
-### run(Internal::Observability::RunReport&)
+### run(RunReport&)
 
-run(Internal::Observability::RunReport&) is the allocation-free form of run(). A fixed-step loop keeps one report alive
+run(RunReport&) is the allocation-free form of run(). A fixed-step loop keeps one report alive
 and passes it every tick; the report is reset and refilled in place, so after the first run the
 per-run vectors are reused and not reallocated:
 
 ```cpp
-Internal::Observability::RunReport report;
+RunReport report;
 while (running)
     simulation.run(report);
 ```
@@ -733,7 +733,7 @@ the returned handle:
 ```cpp
 auto step = simulation.run_async();
 extract_previous_frame();
-Internal::Observability::RunReport report = step.wait();
+RunReport report = step.wait();
 ```
 
 It runs one step only. The multi-step drivers (run(n), run_for, run_until) stay synchronous, because
@@ -1249,7 +1249,7 @@ extract and then settle up:
 ```cpp
 auto step = simulation.run_async();
 extract_previous_frame();          // overlaps with the step
-Internal::Observability::RunReport report = step.wait();
+RunReport report = step.wait();
 ```
 
 The handle is move-only and owns the obligation to finish the step: its destructor waits if `wait()`
@@ -1307,9 +1307,9 @@ one step leaves its states untouched.
 wait() resets the report, consumes the handle, checks that the handle still owns its step and asks
 the driver to settle it. It is `noexcept` and returns the report or the Error that ended the step.
 
-### wait(Internal::Observability::RunReport&)
+### wait(RunReport&)
 
-wait(Internal::Observability::RunReport&) is the allocation-free counterpart of wait(), for the same reason
+wait(RunReport&) is the allocation-free counterpart of wait(), for the same reason
 Graph::run(RunReport&) exists: an overlapped frame loop settles a step every tick, and a report it
 already owns costs nothing to refill. The report is reset before it is written, so a stale field
 from the previous step can never survive into this one.

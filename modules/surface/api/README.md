@@ -79,8 +79,7 @@ promotes `LogLevel`, `set_log_level` and `set_log_sink`.
 inline namespace, by `core/operation_id.hpp` of the core module, outside `api/`.
 `graph/node_options.hpp` includes it. `TaskMetadata` is declared in
 `SushiRuntime::Internal::Graph` by `task/task_types.hpp`. `RunReport` is declared in
-`Observability` by `observability/run_report.hpp`, which promotes it into `SushiRuntime` with a
-`using` declaration.
+`SushiRuntime` by `report/run_report.hpp` of the report module.
 
 The graph type stays `Graph`, because `SushiRuntime::Internal::Graph` is the engine's namespace. `when`,
 `sized`, `based_at` and their device forms stay in `API`, so `using namespace SushiRuntime` does not
