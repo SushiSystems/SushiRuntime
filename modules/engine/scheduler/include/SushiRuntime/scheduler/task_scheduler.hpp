@@ -490,6 +490,13 @@ namespace SushiRuntime
                 void set_offload_coordinator(Internal::Graph::OffloadCoordinator* offload);
 
                 /**
+                 * @brief Lets the installed coordinator mark the nodes a worker may run.
+                 * @pre None of the nodes has been submitted.
+                 * @param nodes Borrowed for the call; with no coordinator nothing happens.
+                 */
+                void prepare_offload(span<const sushi_ptr<Internal::Graph::Node>> nodes);
+
+                /**
                  * @brief Queues a node no worker finished and drops the coordinator's reference.
                  * @param node Accepted by the coordinator's try_offload().
                  */

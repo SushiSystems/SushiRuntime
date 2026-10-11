@@ -448,6 +448,11 @@ namespace SushiRuntime
             return m;
         }
 
+        void SchedulerExecutionEngine::prepare(CompiledGraph& graph)
+        {
+            impl_->scheduler.prepare_offload(graph.all_nodes);
+        }
+
         /** @brief Forwards to the scheduler's set_offload_coordinator(). */
         void SchedulerExecutionEngine::install_offload(Internal::Graph::OffloadCoordinator* offload)
         {

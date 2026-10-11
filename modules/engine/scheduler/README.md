@@ -558,7 +558,8 @@ no clock samples in this loop.
 The branch is `OffloadGate::offer()` of `offload_gate.hpp`, which the scheduler holds by value.
 With no coordinator installed it is one load of the gate's pointer and a branch
 never taken; the node's offload state is not read. With one installed, only nodes its
-`prepare()` marked offloadable at `compile()` reach `try_offload()`, one virtual call each.
+`prepare()` marked offloadable reach `try_offload()`, one virtual call each. The marking runs
+through `OffloadGate::prepare()`, which the engine calls once per compiled plan.
 The run's failed and cancelled flags are read inside that branch, after the offloadable test,
 so a node that is not offloadable pays nothing for them. An offloadable node of an aborting
 run is not offered; it goes to `execute_task()`, which skips it.

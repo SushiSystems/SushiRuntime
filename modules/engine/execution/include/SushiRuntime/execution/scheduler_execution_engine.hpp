@@ -82,6 +82,13 @@ namespace SushiRuntime
              */
             [[nodiscard]] Result<void> execute(CompiledGraph& graph) override;
 
+            /**
+             * @brief Hands the graph's nodes to the installed offload coordinator, if any.
+             * @pre No node of graph has been submitted.
+             * @see modules/engine/execution/README.md
+             */
+            void prepare(CompiledGraph& graph) override;
+
             using ExecutionEngine::execute; // keep the rvalue convenience overload visible
 
             /** @brief This engine implements the submit()/complete() split. */

@@ -58,7 +58,7 @@ namespace SushiRuntime
                 if (!submits_device)
                     return false;
 
-                // OffloadCoordinator::prepare() ran at compile and set the flag, or none is installed.
+                // ExecutionEngine::prepare() ran first and set the flag, or no coordinator is installed.
                 const Internal::Graph::OffloadState* offload = node.offload_state();
                 return offload == nullptr || !offload->offloadable;
             }

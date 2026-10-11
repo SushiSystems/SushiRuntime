@@ -95,6 +95,16 @@ namespace SushiRuntime
             virtual ExecutionMetrics metrics() const { return {}; }
 
             /**
+             * @brief Readies a freshly compiled graph for this engine, once, before it runs.
+             *
+             * Does nothing by default. The work-stealing engine hands the nodes to the
+             * installed offload coordinator, which marks those a worker may run.
+             * @pre No node of graph has been submitted.
+             * @see modules/engine/execution/README.md
+             */
+            virtual void prepare(CompiledGraph& /*graph*/) {}
+
+            /**
              * @brief Runs a compiled graph in place and blocks until completion.
              * @param graph The graph to run. Before it runs again, CompiledGraph::rearm() restores
              *        its nodes' per-run state from what capture_base_state() recorded.
