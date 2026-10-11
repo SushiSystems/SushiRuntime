@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — examples: Fixed six examples ending in an uncaught exception; each prints the message and returns 1 (`quickstart.cpp`, `vecadd_demo.cpp`, `stencil_demo.cpp`).
 - 2026-10-11 — api: Fixed `DynamicGraph::drop` freeing a region under a pending `run_async` step, and `Graph::set_profiling` recompiling for an unchanged value (`dynamic_graph.hpp`, `graph.hpp`).
 - 2026-10-11 — api: Made `PlanCache::set_profiling` and `is_profiling_requested` protected and removed the profiling parameter of `RegionComposer::commit` (`plan_cache.hpp`, `region_composer.hpp`).
 - 2026-10-11 — distributed: Added `KernelRegistry::seal()` and `is_sealed()`; a worker seals its registry, and `register_kernel()` throws after that and for an empty kernel (`kernel_registry.hpp`).

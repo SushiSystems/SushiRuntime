@@ -35,58 +35,77 @@
 
 using namespace SushiRuntime;
 
+namespace
+{
+    /** @brief Runs two windows of active tiles and checks each tile's count of steps in view. */
+    int run_streaming_world()
+    {
+        constexpr std::size_t TILES  = 8;
+        constexpr std::size_t CELL_N = 4096;
+        constexpr std::size_t STEPS  = 50;
+
+        auto rt = Runtime::create();
+
+        // One buffer per tile, allocated up front so every handle outlives the graph.
+        std::vector<Buffer<int>> tile;
+        tile.reserve(TILES);
+        for (std::size_t k = 0; k < TILES; ++k)
+        {
+            auto buf = rt.buffer<int>(CELL_N);
+            for (std::size_t i = 0; i < CELL_N; ++i) buf[i] = 0;
+            tile.push_back(std::move(buf));
+        }
+
+        auto world = rt.dynamic_graph();
+
+        // Records the per-step "increment every cell" task on tile k's region.
+        auto activate = [&](std::uint64_t k)
+        {
+            int* p = tile[k].data();
+            world.region(k).add(CELL_N, Reads(), Writes(tile[k]),
+                                [p](std::size_t i) { p[i] += 1; });
+        };
+
+        // Window 1: tiles {0,1,2,3} in view.
+        for (std::uint64_t k = 0; k < 4; ++k) activate(k);
+        world.run(STEPS);
+
+        // Tiles 0 and 1 stream out, 4 and 5 in; tiles 2 and 3 are not rebuilt.
+        world.drop(0);
+        world.drop(1);
+        activate(4);
+        activate(5);
+        world.run(STEPS);
+
+        std::printf("streaming world: %zu tiles, 2 windows of %zu steps\n", TILES, STEPS);
+        std::printf("  live regions = %zu, compositions = %zu\n",
+                    world.region_count(), world.compose_count());
+        for (std::size_t k = 0; k < TILES; ++k)
+            std::printf("  tile %zu: cell[0] = %d\n", k, tile[k][0]);
+
+        // A tile's cell counts the steps it was in view: STEPS, 2 * STEPS or 0.
+        const bool ok = tile[0][0] == static_cast<int>(STEPS) &&
+                        tile[1][0] == static_cast<int>(STEPS) &&
+                        tile[2][0] == static_cast<int>(2 * STEPS) &&
+                        tile[3][0] == static_cast<int>(2 * STEPS) &&
+                        tile[4][0] == static_cast<int>(STEPS) &&
+                        tile[5][0] == static_cast<int>(STEPS) &&
+                        tile[6][0] == 0 && tile[7][0] == 0;
+
+        std::printf("  result: %s\n", ok ? "CORRECT" : "WRONG");
+        return ok ? 0 : 1;
+    }
+} // namespace
+
 int main()
 {
-    constexpr std::size_t TILES  = 8;
-    constexpr std::size_t CELL_N = 4096;
-    constexpr std::size_t STEPS  = 50;
-
-    auto rt = Runtime::create();
-
-    // One buffer per tile, allocated up front so every handle outlives the graph.
-    std::vector<Buffer<int>> tile;
-    tile.reserve(TILES);
-    for (std::size_t k = 0; k < TILES; ++k)
+    try
     {
-        auto buf = rt.buffer<int>(CELL_N);
-        for (std::size_t i = 0; i < CELL_N; ++i) buf[i] = 0;
-        tile.push_back(std::move(buf));
+        return run_streaming_world();
     }
-
-    auto world = rt.dynamic_graph();
-
-    // Records the per-step "increment every cell" task on tile k's region.
-    auto activate = [&](std::uint64_t k)
+    catch (const SushiException& error)
     {
-        int* p = tile[k].data();
-        world.region(k).add(CELL_N, Reads(), Writes(tile[k]),
-                            [p](std::size_t i) { p[i] += 1; });
-    };
-
-    // Window 1: tiles {0,1,2,3} in view.
-    for (std::uint64_t k = 0; k < 4; ++k) activate(k);
-    world.run(STEPS);
-
-    // Tiles 0 and 1 stream out, 4 and 5 in; tiles 2 and 3 are not rebuilt.
-    world.drop(0);
-    world.drop(1);
-    activate(4);
-    activate(5);
-    world.run(STEPS);
-
-    std::printf("streaming world: %zu tiles, 2 windows of %zu steps\n", TILES, STEPS);
-    std::printf("  live regions = %zu, compositions = %zu\n",
-                world.region_count(), world.compose_count());
-    for (std::size_t k = 0; k < TILES; ++k)
-        std::printf("  tile %zu: cell[0] = %d\n", k, tile[k][0]);
-
-    // A tile's cell counts the steps it was in view: STEPS, 2 * STEPS or 0.
-    const bool ok =
-        tile[0][0] == static_cast<int>(STEPS)     && tile[1][0] == static_cast<int>(STEPS) &&
-        tile[2][0] == static_cast<int>(2 * STEPS) && tile[3][0] == static_cast<int>(2 * STEPS) &&
-        tile[4][0] == static_cast<int>(STEPS)     && tile[5][0] == static_cast<int>(STEPS) &&
-        tile[6][0] == 0                           && tile[7][0] == 0;
-
-    std::printf("  result: %s\n", ok ? "CORRECT" : "WRONG");
-    return ok ? 0 : 1;
+        std::fprintf(stderr, "streaming_world: %s\n", error.what());
+        return 1;
+    }
 }
