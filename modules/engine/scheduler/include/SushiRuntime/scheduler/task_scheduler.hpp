@@ -490,6 +490,15 @@ namespace SushiRuntime
                 void set_offload_coordinator(Internal::Graph::OffloadCoordinator* offload);
 
                 /**
+                 * @brief Returns how many dispatched nodes a coordinator has taken so far.
+                 * @return A lifetime total; diff two readings to measure one run.
+                 */
+                [[nodiscard]] std::uint64_t offloaded_task_count() const noexcept
+                {
+                    return offload_gate_.accepted_count();
+                }
+
+                /**
                  * @brief Lets the installed coordinator mark the nodes a worker may run.
                  * @pre None of the nodes has been submitted.
                  * @param nodes Borrowed for the call; with no coordinator nothing happens.

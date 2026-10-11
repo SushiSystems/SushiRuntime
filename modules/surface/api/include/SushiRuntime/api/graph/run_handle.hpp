@@ -52,7 +52,6 @@ namespace SushiRuntime
             Internal::Execution::ExecutionMetrics before{};      /**< Scheduler counters at submit. */
             std::size_t device_to_host_before = 0;     /**< Transfer counter at submit. */
             std::size_t host_to_device_before = 0;     /**< Transfer counter at submit. */
-            std::uint64_t offloaded_before = 0;        /**< Offload counter at submit. */
             std::chrono::steady_clock::time_point started{}; /**< When the roots went in. */
             double compile_ms = 0.0;                   /**< Time spent compiling, if it did. */
             std::size_t task_count = 0;                /**< Tasks this step dispatched. */

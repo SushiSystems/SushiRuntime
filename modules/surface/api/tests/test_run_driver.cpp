@@ -29,9 +29,11 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -177,29 +179,48 @@ namespace
         EXPECT_TRUE(report.is_successful);
     }
 
-    /** @brief Offloads nothing and reports a count the test moves. */
-    class CountingCoordinator final : public Internal::Graph::OffloadCoordinator
+    /** @brief Takes every node it is offered and returns it finished from its own thread. */
+    class AcceptingCoordinator final : public Internal::Graph::OffloadCoordinator
     {
         public:
-            /** @brief Adds to the count statistics() reports as offloaded. */
-            void accept(std::uint64_t dispatches) noexcept
-            {
-                offloaded_.fetch_add(dispatches, std::memory_order_relaxed);
-            }
-
-            void bind(Internal::Graph::OffloadSink&) override
+            AcceptingCoordinator() : returner_([this] { return_accepted_nodes(); })
             {
 
             }
 
-            void prepare(span<const sushi_ptr<Internal::Graph::Node>>) override
-            {
+            AcceptingCoordinator(const AcceptingCoordinator&) = delete;
+            AcceptingCoordinator& operator=(const AcceptingCoordinator&) = delete;
+            AcceptingCoordinator(AcceptingCoordinator&&) = delete;
+            AcceptingCoordinator& operator=(AcceptingCoordinator&&) = delete;
 
+            ~AcceptingCoordinator() override
+            {
+                stop();
             }
 
-            [[nodiscard]] bool try_offload(Internal::Graph::Node&) override
+            void bind(Internal::Graph::OffloadSink& sink) override
             {
-                return false;
+                std::lock_guard<std::mutex> lock(mutex_);
+                sink_ = &sink;
+            }
+
+            void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) override
+            {
+                for (const sushi_ptr<Internal::Graph::Node>& node : nodes)
+                    if (node)
+                        node->offload().offloadable = true;
+            }
+
+            [[nodiscard]] bool try_offload(Internal::Graph::Node& node) override
+            {
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    if (stopped_)
+                        return false;
+                    accepted_.push_back(&node);
+                }
+                accepted_cv_.notify_one();
+                return true;
             }
 
             void on_local_completion(Internal::Graph::Node&) noexcept override
@@ -207,22 +228,49 @@ namespace
 
             }
 
-            [[nodiscard]] Internal::Graph::OffloadStatistics statistics() const noexcept override
-            {
-                Internal::Graph::OffloadStatistics now;
-                now.offloaded = offloaded_.load(std::memory_order_relaxed);
-                now.alive_workers = 1;
-                return now;
-            }
-
             void stop() noexcept override
             {
-
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    stopped_ = true;
+                }
+                accepted_cv_.notify_all();
+                if (returner_.joinable())
+                    returner_.join();
             }
 
         private:
-            /// @brief Dispatches the test said a worker accepted.
-            std::atomic<std::uint64_t> offloaded_{0};
+            /** @brief Hands each accepted node back as finished until stop() and an empty list. */
+            void return_accepted_nodes()
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                for (;;)
+                {
+                    accepted_cv_.wait(lock, [this] { return stopped_ || !accepted_.empty(); });
+                    if (accepted_.empty())
+                        return;
+                    std::vector<Internal::Graph::Node*> batch;
+                    batch.swap(accepted_);
+                    Internal::Graph::OffloadSink* const sink = sink_;
+                    lock.unlock();
+                    for (Internal::Graph::Node* node : batch)
+                        sink->complete_remote(*node);
+                    lock.lock();
+                }
+            }
+
+            /// @brief Guards every member below but the thread.
+            std::mutex mutex_;
+            /// @brief Signalled by an accepted node and by stop().
+            std::condition_variable accepted_cv_;
+            /// @brief The scheduler, as bind() received it.
+            Internal::Graph::OffloadSink* sink_ = nullptr;
+            /// @brief Nodes accepted and not yet returned.
+            std::vector<Internal::Graph::Node*> accepted_;
+            /// @brief Set by stop(); no node is accepted after it.
+            bool stopped_ = false;
+            /// @brief Runs return_accepted_nodes(); declared last, so it starts last.
+            std::thread returner_;
     };
 
     constexpr std::size_t K_COUNT_CAPACITY = 8;
@@ -515,32 +563,35 @@ TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 #endif
 }
 
-/** @brief Tests that a report counts the dispatches offloaded during its own run. */
+/** @brief Tests that a report counts the dispatches a coordinator took during its own run. */
 TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
 {
-    constexpr std::uint64_t BEFORE_ANY_RUN = 5;
-    constexpr std::uint64_t PER_STEP = 3;
-
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
+    std::atomic<int> local_runs{0};
 
-    const auto coordinator = std::make_shared<CountingCoordinator>();
-    rt.unsafe_context().install_offload(coordinator);
-    coordinator->accept(BEFORE_ANY_RUN);
+    auto local = rt.graph();
+    local.add_host(Reads{}, Writes(buf), [&local_runs]() { local_runs.fetch_add(1); });
+    const Internal::Observability::RunReport without = local.run().value();
+    EXPECT_EQ(without.distributed_statistics.tasks_offloaded_to_network, 0u);
+    ASSERT_EQ(local_runs.load(), 1);
 
-    CountingCoordinator* counter = coordinator.get();
+    rt.unsafe_context().install_offload(std::make_shared<AcceptingCoordinator>());
+
+    // A plan is marked when it is built, so the graph is recorded after the install.
     auto g = rt.graph();
-    g.add_host(Reads{}, Writes(buf), [counter]() { counter->accept(PER_STEP); });
+    g.add_host(Reads{}, Writes(buf), [&local_runs]() { local_runs.fetch_add(1); });
 
     const Internal::Observability::RunReport first = g.run().value();
-    EXPECT_EQ(first.distributed_statistics.tasks_offloaded_to_network, PER_STEP);
-    EXPECT_EQ(first.distributed_statistics.remote_nodes_involved, 1u);
+    EXPECT_EQ(first.distributed_statistics.tasks_offloaded_to_network, 1u);
 
     const Internal::Observability::RunReport second = g.run(std::size_t{2}).value();
-    EXPECT_EQ(second.distributed_statistics.tasks_offloaded_to_network, 2 * PER_STEP);
+    EXPECT_EQ(second.distributed_statistics.tasks_offloaded_to_network, 2u);
 
     const Internal::Observability::RunReport third = g.run_async().value().wait().value();
-    EXPECT_EQ(third.distributed_statistics.tasks_offloaded_to_network, PER_STEP);
+    EXPECT_EQ(third.distributed_statistics.tasks_offloaded_to_network, 1u);
+
+    EXPECT_EQ(local_runs.load(), 1) << "a node the coordinator took must not run here";
 }
 
 /** @brief Tests that a failed chained run of one step advances no State. */

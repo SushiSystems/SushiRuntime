@@ -33,7 +33,6 @@
 
 #include <SushiRuntime/observability/run_report.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -42,20 +41,8 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Returns how many dispatches the offload coordinator has accepted so far.
-         * @return Zero when the context has no coordinator.
-         */
-        [[nodiscard]] inline std::uint64_t offloaded_dispatches(
-            const Internal::Execution::RuntimeContext& context) noexcept
-        {
-            const auto* offload = context.offload();
-            return offload != nullptr ? offload->statistics().offloaded : 0;
-        }
-
-        /**
          * @brief Assembles a RunReport from a finished run's raw measurements.
          * @param report The report to overwrite; reset before it is filled.
-         * @param offloaded_before What offloaded_dispatches() returned before the run.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         inline void fill_run_report(
@@ -63,7 +50,6 @@ namespace SushiRuntime
             Internal::Execution::RuntimeContext&         context,
             const Internal::Execution::ExecutionMetrics& before,
             const Internal::Execution::ExecutionMetrics& after,
-            std::uint64_t                      offloaded_before,
             std::size_t                        total_tasks,
             double                             compile_ms,
             double                             total_ms)
@@ -92,18 +78,8 @@ namespace SushiRuntime
             node.tasks_popped_local = (completed > stolen_total) ? (completed - stolen_total) : 0;
             report.numa_statistics.push_back(node);
 
-            // report.reset() zeroed the offload figures; they stay zero with no coordinator.
-            if (const auto* offload = context.offload())
-            {
-                const auto offload_statistics = offload->statistics();
-                const std::uint64_t offloaded_now = offload_statistics.offloaded;
-                auto& distributed = report.distributed_statistics;
-                // A coordinator installed during the run starts below the earlier reading.
-                distributed.tasks_offloaded_to_network = static_cast<std::size_t>(
-                    offloaded_now >= offloaded_before ? offloaded_now - offloaded_before
-                                                      : offloaded_now);
-                distributed.remote_nodes_involved = offload_statistics.alive_workers;
-            }
+            report.distributed_statistics.tasks_offloaded_to_network =
+                after.tasks_offloaded - before.tasks_offloaded;
         }
 
     } // namespace Detail

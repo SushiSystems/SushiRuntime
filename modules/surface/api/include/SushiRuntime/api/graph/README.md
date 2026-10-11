@@ -854,10 +854,11 @@ aggregated from all of them.
 
 ### Offloaded count
 
-`tasks_offloaded_to_network` in a report is the number of dispatches a worker accepted during that
-run. The coordinator's counter is cumulative, so the driver reads it before the first step and the
-report builder subtracts. The reading happens once per run, and it is one null check when no
-coordinator is installed.
+`tasks_offloaded_to_network` in a report is the number of dispatches an offload coordinator took
+during that run. The scheduler's gate counts them, the count is one field of the engine's
+`ExecutionMetrics`, and the report builder subtracts the reading taken before the first step
+from the one taken after the last, as it does for the steal counts. The surface names no
+coordinator. How many workers are alive is not in the report; `Cluster::statistics()` has it.
 
 ### drive: report reset
 

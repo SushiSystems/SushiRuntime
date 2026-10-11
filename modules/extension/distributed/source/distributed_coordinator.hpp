@@ -49,6 +49,18 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
+         * @brief Holds the coordinator's four counters since it was built and one gauge.
+         */
+        struct CoordinatorStatistics
+        {
+            std::uint64_t offloaded = 0;        /**< Dispatches queued to a worker. */
+            std::uint64_t declined = 0;         /**< Offloadable dispatches left to run locally. */
+            std::uint64_t redispatched = 0;     /**< Nodes taken back from a lost worker or task. */
+            std::uint64_t stale_writebacks = 0; /**< Worker outputs dropped as out of date. */
+            std::size_t alive_workers = 0;      /**< Workers registered and answering now. */
+        };
+
+        /**
          * @brief Implements Internal::Graph::OffloadCoordinator by wiring the master's bricks together.
          *
          * It builds the directory, the pending table, the exchange, the dispatcher and the
@@ -114,11 +126,11 @@ namespace SushiRuntime
                 void share(void* address, std::size_t bytes);
 
                 /**
-                 * @brief Returns the four seam counters and the alive worker count.
+                 * @brief Returns the four counters and the alive worker count.
                  *
                  * Reads atomics of the bricks only; takes no lock.
                  */
-                [[nodiscard]] Internal::Graph::OffloadStatistics statistics() const noexcept override;
+                [[nodiscard]] CoordinatorStatistics statistics() const noexcept;
 
                 /**
                  * @brief Unshares a released address and tells each worker to drop the buffer.

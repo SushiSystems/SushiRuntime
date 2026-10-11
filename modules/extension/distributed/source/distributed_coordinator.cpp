@@ -762,12 +762,12 @@ namespace SushiRuntime
             impl_->registry.register_buffer(address, bytes);
         }
 
-        Internal::Graph::OffloadStatistics DistributedCoordinator::statistics() const noexcept
+        CoordinatorStatistics DistributedCoordinator::statistics() const noexcept
         {
             const Impl& impl = *impl_;
             const OffloadDispatcherStatistics dispatched = impl.dispatcher.statistics();
 
-            Internal::Graph::OffloadStatistics snapshot;
+            CoordinatorStatistics snapshot;
             snapshot.offloaded = dispatched.offloaded;
             snapshot.declined = dispatched.declined;
             snapshot.redispatched = impl.monitor.statistics().redispatched +
