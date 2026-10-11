@@ -122,11 +122,19 @@ TEST(Unit_Allocation, ResetOnANonNullAddressWithNoOwnerReleasesNothing)
 
 namespace
 {
-    /** @brief Builds an Allocation owned by a CountingOwner, for Buffer tests. */
-    Allocation counted_allocation(std::uintptr_t address, std::size_t bytes,
-                                   int& releases, void*& last)
+    /** @brief Builds a block whose owner counts its one release, for Buffer tests. */
+    SushiRuntime::Detail::MemoryBlock counted_block(std::uintptr_t address, std::size_t bytes,
+                                                    int& releases, void*& last)
     {
-        return Allocation(fake(address), bytes, std::make_unique<CountingOwner>(releases, last));
+        SushiRuntime::Detail::MemoryBlock block;
+        block.address = fake(address);
+        block.bytes = bytes;
+        block.owner = std::shared_ptr<void>(fake(address), [&releases, &last](void* released)
+        {
+            ++releases;
+            last = released;
+        });
+        return block;
     }
 }
 
@@ -135,7 +143,7 @@ TEST(Unit_Buffer, AdoptingConstructorExposesTheAdoptedAddress)
     int releases = 0;
     void* last = nullptr;
     auto buffer = HandleAccess::construct<Buffer<std::uint8_t>>(
-        nullptr, counted_allocation(5, 16, releases, last), 16,
+        SushiRuntime::ContextHandle(), counted_block(5, 16, releases, last), 16,
         DeviceIndex{0}, Residency::Shared);
     EXPECT_EQ(buffer.data(), fake(5));
     EXPECT_EQ(releases, 0);
@@ -147,7 +155,7 @@ TEST(Unit_Buffer, DestructionReleasesTheAdoptedAllocationOnce)
     void* last = nullptr;
     {
         auto buffer = HandleAccess::construct<Buffer<std::uint8_t>>(
-            nullptr, counted_allocation(6, 16, releases, last), 16,
+            SushiRuntime::ContextHandle(), counted_block(6, 16, releases, last), 16,
             DeviceIndex{0}, Residency::Shared);
     }
     EXPECT_EQ(releases, 1);
@@ -161,7 +169,7 @@ TEST(Unit_BufferDeathTest, AdoptingATooSmallAllocationStops)
     EXPECT_DEATH(
         {
             auto buffer = HandleAccess::construct<Buffer<std::uint32_t>>(
-                nullptr, counted_allocation(7, 4, releases, last), 4,
+                SushiRuntime::ContextHandle(), counted_block(7, 4, releases, last), 4,
                 DeviceIndex{0}, Residency::Shared);
         },
         "Buffer adoption: an allocation of 4 bytes cannot hold 4 elements");
@@ -175,7 +183,7 @@ TEST(Unit_BufferDeathTest, AdoptingACountThatOverflowsItsByteSizeStops)
     EXPECT_DEATH(
         {
             auto buffer = HandleAccess::construct<Buffer<std::uint32_t>>(
-                nullptr, counted_allocation(8, 4, releases, last), huge,
+                SushiRuntime::ContextHandle(), counted_block(8, 4, releases, last), huge,
                 DeviceIndex{0}, Residency::Shared);
         },
         "Buffer adoption: " + std::to_string(huge) + " elements");

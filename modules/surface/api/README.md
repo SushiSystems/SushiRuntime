@@ -19,6 +19,10 @@ boundary" says what crosses into it.
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
 
+The module depends on `core`, `report`, `region`, `log`, `machine` and `interop`, the other
+public modules, through its headers. Its sources depend on `memory`, `device`, `observability`,
+`task`, `graph`, `execution` and `interop_engine`.
+
 ## The compiled boundary
 
 The headers under `include/` hold the templates a caller's kernel instantiates. Whatever names a
@@ -27,6 +31,10 @@ type of the engine is compiled into the library, from `source/`.
 | Source | Holds |
 | --- | --- |
 | `context_handle.cpp` | `Detail::ContextAccess`, the way from a `ContextHandle` to the context |
+| `runtime.cpp` | `Runtime`: building the context, the rebalancer switch and the wait |
+| `advanced_controls.cpp` | `AdvancedControls`: every answer it reads from the context |
+| `buffer.cpp` | The allocation of a `Buffer` and its window copies |
+| `interop.cpp` | `Interop`: the capabilities, the host export and the device import |
 | `recorder.cpp` | `Recorder::record()`, scratch, the fault records and the refusals that ask the runtime |
 | `node_emitters.cpp` | One function per `NodeKind` that adds a described node to the engine's graph |
 | `late_window.cpp` | The per-step controls of a late-bound node: creation, update and read |
@@ -40,6 +48,10 @@ it, and each plan build hands it to the function of its kind. The engine ran a n
 through that same `std::function` type before the boundary existed, so a step calls what it
 called then. The per-element path is a template inside the SYCL command group and is compiled
 into the caller, as before.
+
+A data handle caches its address and its size, so element access touches the handle alone.
+Buffer, State, Runtime, AdvancedControls and Interop hold a `ContextHandle`
+(runtime/README.md) and name no type of the engine.
 
 A run entry is a template too, over the graph and over the stop test. It hands the library a
 `Detail::StepTarget` and a `Detail::StepPredicate`, and the loops run in `step_run.cpp`.

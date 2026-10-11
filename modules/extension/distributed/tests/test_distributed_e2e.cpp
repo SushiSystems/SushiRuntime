@@ -67,6 +67,8 @@
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 
 #include "test_helpers.hpp"
 
@@ -906,7 +908,8 @@ namespace
         std::atomic<int> worker_runs{0};
 
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = master_runtime.unsafe_context();
+        RuntimeContext& master_context =
+            SushiRuntime::Detail::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, count, 0.0f);
         USMFloats b(queue, count, 0.0f);
@@ -965,7 +968,7 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
     constexpr std::size_t K_COUNT = 1024;
     std::atomic<int> worker_runs{0};
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1006,7 +1009,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     std::atomic<int> first_runs{0};
     std::atomic<int> second_runs{0};
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats in(queue, K_COUNT, 0.0f);
     USMFloats first_out(queue, K_COUNT, K_UNWRITTEN);
@@ -1050,7 +1053,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     constexpr std::size_t K_COUNT = 512;
     std::atomic<int> worker_runs{0};
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats x(queue, K_COUNT, -7.0f);
     USMFloats y(queue, K_COUNT, K_UNWRITTEN);
@@ -1107,7 +1110,7 @@ TEST(Integration_DistributedE2ETest, OffloadOverTCPLoopback)
     constexpr std::size_t K_COUNT = 1024;
     std::atomic<int> worker_runs{0};
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1151,7 +1154,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
 
     constexpr std::size_t K_COUNT = 1024;
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1194,7 +1197,7 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
     constexpr float K_POISON = 999.0f;
     constexpr float K_FRESH = 42.0f;
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 1.0f);
     USMFloats b(queue, K_COUNT, 2.0f);
@@ -1254,7 +1257,7 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
     constexpr std::size_t K_COUNT = 64;
     std::atomic<int> worker_runs{0};
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1378,7 +1381,7 @@ TEST(Integration_DistributedE2ETest, ClusterDetachAndDisplacement)
         GTEST_SKIP() << "SYCL reports no device.";
 
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     EXPECT_EQ(master_context.offload(), nullptr);
 
     const auto attach_master = [&master_runtime](InProcessFabric& fabric)
@@ -1438,7 +1441,7 @@ TEST(Integration_DistributedE2ETest, StopResubmitsPendingNodes)
 
     constexpr std::size_t K_COUNT = 128;
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1483,7 +1486,7 @@ TEST(Integration_DistributedE2ETest, TryOffloadAfterStopRunsLocally)
     constexpr std::size_t K_COUNT = 128;
     std::atomic<int> worker_runs{0};
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1583,7 +1586,7 @@ TEST(Integration_DistributedE2ETest, AttachStartFailureLeavesNothingInstalled)
 
     const std::string refusal = "cannot listen on 127.0.0.1:9: the stub refuses";
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     const auto transport = std::make_shared<StubTransport>(
         TransportExposure::Loopback, TransportResult{TransportStatus::BindFailed, refusal});
 
@@ -1611,7 +1614,7 @@ TEST(Integration_DistributedE2ETest, AttemptCapDoesNotOutliveTheRun)
     constexpr std::size_t K_COUNT = 128;
     constexpr std::size_t K_RUNS = 2;
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1661,7 +1664,7 @@ TEST(Integration_DistributedE2ETest, RefusesEmptySecretOnNetworkExposure)
         GTEST_SKIP() << "SYCL reports no device.";
 
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     const auto exposed =
         std::make_shared<StubTransport>(TransportExposure::Network, TransportResult());
 
@@ -1711,9 +1714,9 @@ TEST(Integration_DistributedE2ETest, AttachOnAStartedTransportLeavesTheFirstMast
 
     std::atomic<int> worker_runs{0};
     Runtime first_runtime = Runtime::create().value();
-    RuntimeContext& first_context = first_runtime.unsafe_context();
+    RuntimeContext& first_context = SushiRuntime::Detail::ContextAccess::context(first_runtime);
     Runtime second_runtime = Runtime::create().value();
-    RuntimeContext& second_context = second_runtime.unsafe_context();
+    RuntimeContext& second_context = SushiRuntime::Detail::ContextAccess::context(second_runtime);
     InProcessFabric fabric;
     const std::shared_ptr<InProcessTransport> transport = InProcessTransport::make_master(fabric);
     Cluster first = Cluster::attach(first_runtime, transport).value();
@@ -1778,7 +1781,7 @@ TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
 
     constexpr std::size_t K_COUNT = 128;
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1835,7 +1838,7 @@ TEST(Integration_DistributedE2ETest, MovedFromHandleStillNamesTheMaster)
         GTEST_SKIP() << "SYCL reports no device.";
 
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     InProcessFabric fabric;
     Cluster source = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric)).value();
     Cluster moved = std::move(source);
@@ -1861,7 +1864,7 @@ TEST(Integration_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
         GTEST_SKIP() << "SYCL reports no device.";
 
     Runtime master_runtime = Runtime::create().value();
-    RuntimeContext& master_context = master_runtime.unsafe_context();
+    RuntimeContext& master_context = SushiRuntime::Detail::ContextAccess::context(master_runtime);
     const auto refusal_of = [&master_runtime](ClusterOptions options)
     {
         const auto transport =

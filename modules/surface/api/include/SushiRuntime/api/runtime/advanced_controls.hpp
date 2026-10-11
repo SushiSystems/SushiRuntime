@@ -37,12 +37,11 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
-#include <SushiRuntime/observability/transfer_counters.hpp>
 
+#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/api/runtime/runtime_config.hpp>
+#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/machine/worker_pool.hpp>
 
 namespace SushiRuntime
 {
@@ -60,10 +59,7 @@ namespace SushiRuntime
     {
         public:
             /** @brief Returns how many devices the runtime drives; indices are [0, this). */
-            [[nodiscard]] std::size_t device_count() const
-            {
-                return context_->devices().count();
-            }
+            [[nodiscard]] SUSHIRUNTIME_API std::size_t device_count() const;
 
             /**
              * @brief Returns the device inventory in SYCL enumeration order.
@@ -71,10 +67,7 @@ namespace SushiRuntime
              *         runtime lives.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            [[nodiscard]] const std::vector<DeviceDescription>& devices() const
-            {
-                return context_->devices().devices();
-            }
+            [[nodiscard]] SUSHIRUNTIME_API const std::vector<DeviceDescription>& devices() const;
 
             /**
              * @brief Returns the queue the runtime submits a device's work on.
@@ -82,75 +75,53 @@ namespace SushiRuntime
              * @pre device names a device of this runtime.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            [[nodiscard]] sycl::queue& queue(DeviceIndex device) const
-            {
-                return context_->devices().queue(device.value());
-            }
+            [[nodiscard]] SUSHIRUNTIME_API sycl::queue& queue(DeviceIndex device) const;
 
             /** @brief Returns whether the queues were built to record device timing. */
-            [[nodiscard]] bool is_profiling_enabled() const noexcept
-            {
-                return context_->settings().profiling;
-            }
+            [[nodiscard]] SUSHIRUNTIME_API bool is_profiling_enabled() const noexcept;
 
             /** @brief Returns whether the background thermal rebalancer is running. */
-            [[nodiscard]] bool is_rebalancer_enabled() const
-            {
-                return context_->execution_engine().rebalancer_enabled();
-            }
+            [[nodiscard]] SUSHIRUNTIME_API bool is_rebalancer_enabled() const;
 
             /**
              * @brief Returns the worker pool as built, which may differ from the request.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            [[nodiscard]] WorkerPool worker_pool() const
-            {
-                return context_->execution_engine().worker_pool();
-            }
+            [[nodiscard]] SUSHIRUNTIME_API WorkerPool worker_pool() const;
 
             /**
              * @brief Returns how many USM allocations of the runtime are live.
              * @return The allocations made through this runtime and not yet released: one per
              *         Buffer, two per State, and what its graphs and extensions hold.
              */
-            [[nodiscard]] std::size_t live_allocation_count() const
-            {
-                return context_->memory().live_count();
-            }
+            [[nodiscard]] SUSHIRUNTIME_API std::size_t live_allocation_count() const;
 
             /**
              * @brief Returns the bytes explicit transfers copied host to device since startup.
              * @return A cumulative count; implicit shared-USM migration is not in it.
              */
-            [[nodiscard]] std::size_t host_to_device_bytes() const noexcept
-            {
-                return context_->transfers().host_to_device();
-            }
+            [[nodiscard]] SUSHIRUNTIME_API std::size_t host_to_device_bytes() const noexcept;
 
             /**
              * @brief Returns the bytes explicit transfers copied device to host since startup.
              * @return A cumulative count; implicit shared-USM migration is not in it.
              */
-            [[nodiscard]] std::size_t device_to_host_bytes() const noexcept
-            {
-                return context_->transfers().device_to_host();
-            }
+            [[nodiscard]] SUSHIRUNTIME_API std::size_t device_to_host_bytes() const noexcept;
 
         private:
             friend class Runtime;
 
             /**
              * @brief Shares ownership of a runtime's context.
-             * @param context Must not be null.
+             * @param context Must not be empty.
              */
-            explicit AdvancedControls(
-                std::shared_ptr<Internal::Execution::RuntimeContext> context) noexcept
+            explicit AdvancedControls(ContextHandle context) noexcept
                 : context_(std::move(context))
             {
             }
 
-            /// @brief Context the answers are read from; never null.
-            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
+            /** @brief The runtime the answers are read from; never empty. */
+            ContextHandle context_;
     };
 
 

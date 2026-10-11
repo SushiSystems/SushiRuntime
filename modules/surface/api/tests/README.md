@@ -490,7 +490,7 @@ The file covers the parts of the fluent API that `test_fluent_lifecycle.cpp` doe
 - `Reads` and `Writes` over `Buffer::region()`, which track a sub-region
 - a standalone `Buffer<T>` allocation used in a graph
 - `Graph::size()`
-- the `Runtime::advanced()` and `unsafe_context()` accessors
+- the `Runtime::advanced()` accessor against the context behind the runtime
 - `run(0)`
 
 ### `TryRunSuccessPath`
@@ -572,8 +572,8 @@ a recompilation.
 
 ### `ContextAccessorIsConsistent`
 
-`Runtime::unsafe_context()` must return a reference to the `RuntimeContext` the fluent `Runtime`
-wraps, and `advanced()` must read through to it. The test verifies both by comparing device counts.
+`Detail::ContextAccess::context()` must return the `RuntimeContext` the fluent `Runtime` wraps,
+and `advanced()` must read through to it. The test verifies both by comparing device counts.
 
 ### `RunZeroStepsIsNoOp`
 

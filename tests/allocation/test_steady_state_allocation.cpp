@@ -36,6 +36,9 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 
 using namespace SushiRuntime;
 
@@ -208,8 +211,8 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
     const std::size_t value_short = allocations_for_value_ticks(g, TICKS);
 
     // The baseline queue is the in-order queue the chain itself submits to; see README.md.
-    sycl::queue& baseline_queue =
-        rt.unsafe_context().devices().queue(0, Internal::Device::QueueFlavour{true, false});
+    sycl::queue& baseline_queue = SushiRuntime::Detail::ContextAccess::context(rt)
+        .devices().queue(0, Internal::Device::QueueFlavour{true, false});
     const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS);
     const std::size_t baseline_long  = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS * 4);
 
@@ -324,8 +327,8 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
     const std::size_t reuse_long  = allocations_for_reuse_ticks(g, TICKS * 4);
 
     // The baseline uses the profiling flavour of the chain's in-order queue; see README.md.
-    sycl::queue& baseline_queue =
-        rt.unsafe_context().devices().queue(0, Internal::Device::QueueFlavour{true, true});
+    sycl::queue& baseline_queue = SushiRuntime::Detail::ContextAccess::context(rt)
+        .devices().queue(0, Internal::Device::QueueFlavour{true, true});
     const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS);
     const std::size_t baseline_long  = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS * 4);
 

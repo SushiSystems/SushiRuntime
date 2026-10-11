@@ -34,11 +34,11 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/interop/host_export.hpp>
+#include <SushiRuntime/api/runtime/context_handle.hpp>
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>
-#include <SushiRuntime/interop_engine/interop_engine.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
-#include <SushiRuntime/memory/allocation.hpp>
 
 namespace SushiRuntime
 {
@@ -58,11 +58,8 @@ namespace SushiRuntime
              * @return The capabilities, or a DeviceLost error when the device does not answer.
              * @pre device names a device of this runtime.
              */
-            [[nodiscard]] Result<SushiRuntime::InteropCapabilities>
-            capabilities(DeviceIndex device) const
-            {
-                return SushiRuntime::Detail::query_capabilities(*context_, device.value());
-            }
+            [[nodiscard]] SUSHIRUNTIME_API Result<SushiRuntime::InteropCapabilities>
+            capabilities(DeviceIndex device) const;
 
             /**
              * @brief Allocates a host-addressable buffer another API can import.
@@ -81,15 +78,13 @@ namespace SushiRuntime
             {
                 const std::size_t requested =
                     Detail::checked_byte_count("Interop::export_host", count, sizeof(T));
-                Result<Internal::Memory::Allocation> allocation =
-                    SushiRuntime::Detail::export_host_memory(context_, requested, device.value(),
-                                                             alignment);
-                if (!allocation)
-                    return make_error(std::move(allocation.error()));
-                void* address = allocation->address();
-                const std::size_t bytes = allocation->bytes();
+                Result<Detail::MemoryBlock> block = export_host_block(requested, device, alignment);
+                if (!block)
+                    return make_error(std::move(block.error()));
+                void* address = block->address;
+                const std::size_t bytes = block->bytes;
                 return HostExport<T>{
-                    Buffer<T>(context_, std::move(*allocation), count, device, Residency::Shared),
+                    Buffer<T>(context_, std::move(*block), count, device, Residency::Shared),
                     address, bytes};
             }
 
@@ -112,28 +107,41 @@ namespace SushiRuntime
             {
                 const std::size_t requested =
                     Detail::checked_byte_count("Interop::import_device", count, sizeof(T));
-                Result<Internal::Memory::Allocation> allocation =
-                    SushiRuntime::Detail::import_device_memory(context_, descriptor, requested,
-                                                               device.value());
-                if (!allocation)
-                    return make_error(std::move(allocation.error()));
-                return Buffer<T>(context_, std::move(*allocation), count, device,
-                                 Residency::Device);
+                Result<Detail::MemoryBlock> block =
+                    import_device_block(descriptor, requested, device);
+                if (!block)
+                    return make_error(std::move(block.error()));
+                return Buffer<T>(context_, std::move(*block), count, device, Residency::Device);
             }
 
         private:
             friend class Runtime;
 
             /**
-             * @brief Binds the facade to the runtime context it forwards to.
-             * @param context Must not be null.
+             * @brief Binds the facade to the runtime it forwards to.
+             * @param context Must not be empty.
              */
-            explicit Interop(std::shared_ptr<Internal::Execution::RuntimeContext> context) noexcept
-                : context_(std::move(context))
+            explicit Interop(ContextHandle context) noexcept : context_(std::move(context))
             {
             }
 
-            /** @brief Holds the runtime context the facade forwards to; never null. */
-            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
+            /**
+             * @brief Allocates host memory another API can import.
+             * @param bytes Size requested; the block holds it rounded up to alignment.
+             * @return The block, or an AllocationFailed error.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API Result<Detail::MemoryBlock>
+            export_host_block(std::size_t bytes, DeviceIndex device, std::size_t alignment) const;
+
+            /**
+             * @brief Imports device memory another API exported.
+             * @return The block, or why nothing was imported.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API Result<Detail::MemoryBlock>
+            import_device_block(const SushiRuntime::ExternalMemoryDescriptor& descriptor,
+                                std::size_t bytes, DeviceIndex device) const;
+
+            /** @brief The runtime the facade forwards to; never empty. */
+            ContextHandle context_;
     };
 } // namespace SushiRuntime

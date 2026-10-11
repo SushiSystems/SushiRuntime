@@ -35,10 +35,9 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/version.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/execution/runtime_settings.hpp>
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
@@ -76,9 +75,7 @@ namespace SushiRuntime
             [[nodiscard]] static Result<Runtime> create(const RuntimeConfig& config = {})
             {
                 require_matching_version();
-                Result<std::shared_ptr<Internal::Execution::RuntimeContext>> context =
-                    Internal::Execution::RuntimeContext::create(config.devices, nullptr, nullptr,
-                                                                settings_of(config));
+                Result<ContextHandle> context = create_context(config);
                 if (!context)
                     return make_error(std::move(context.error()));
                 return Runtime(std::move(*context));
@@ -91,7 +88,7 @@ namespace SushiRuntime
             ~Runtime() = default;
 
             /** @brief Returns a new, empty graph that runs on this runtime. */
-            [[nodiscard]] Graph graph() const { return Graph(ContextHandle(context_)); }
+            [[nodiscard]] Graph graph() const { return Graph(context_); }
 
             /**
              * @brief Returns a new, empty graph whose work is grouped into regions.
@@ -99,7 +96,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] DynamicGraph dynamic_graph() const
             {
-                return DynamicGraph(ContextHandle(context_));
+                return DynamicGraph(context_);
             }
 
             /**
@@ -143,21 +140,14 @@ namespace SushiRuntime
              * @pre No run is in flight.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            const Runtime& set_rebalancer_enabled(bool enabled) const
-            {
-                context_->execution_engine().set_rebalancer_enabled(enabled);
-                return *this;
-            }
+            SUSHIRUNTIME_API const Runtime& set_rebalancer_enabled(bool enabled) const;
 
             /**
              * @brief Blocks until every device queue of this runtime has finished its work.
              * @return Nothing, or a KernelFailed error when a queue reports a failed command.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            [[nodiscard]] Result<void> wait() const
-            {
-                return context_->devices().wait_all();
-            }
+            [[nodiscard]] SUSHIRUNTIME_API Result<void> wait() const;
 
             /** @brief Returns the view of this runtime's devices, queues and counters. */
             [[nodiscard]] AdvancedControls advanced() const noexcept
@@ -168,46 +158,25 @@ namespace SushiRuntime
             /** @brief Returns the facade that exchanges this runtime's memory with Vulkan. */
             [[nodiscard]] Interop interop() const noexcept { return Interop(context_); }
 
-            /**
-             * @brief Returns the runtime context, a type outside the stable surface.
-             * @return A reference valid while a handle of this runtime lives.
-             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-             */
-            [[nodiscard]] Internal::Execution::RuntimeContext& unsafe_context() const noexcept
-            {
-                return *context_;
-            }
-
         private:
             friend struct Detail::ContextAccess;
 
-            /** @brief Returns the settings the context takes from a RuntimeConfig. */
-            [[nodiscard]] static Internal::Execution::RuntimeSettings
-            settings_of(const RuntimeConfig& config) noexcept
-            {
-                Internal::Execution::RuntimeSettings settings;
-                settings.profiling = config.profiling;
-                settings.worker_count = config.worker_count;
-                settings.first_core = config.first_core;
-                settings.pinning = config.pinning;
-                settings.rebalancer = config.rebalancer;
-                settings.force_scheduler = config.force_scheduler;
-                return settings;
-            }
+            /**
+             * @brief Builds the context of a runtime on the devices and settings of a config.
+             * @return The handle that shares the context, or why none was built.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API static Result<ContextHandle>
+            create_context(const RuntimeConfig& config);
 
             /**
              * @brief Takes ownership of a built context.
-             * @param context Must not be null.
+             * @param context Must not be empty.
              */
-            explicit Runtime(std::shared_ptr<Internal::Execution::RuntimeContext> context) noexcept
-                : context_(std::move(context))
+            explicit Runtime(ContextHandle context) noexcept : context_(std::move(context))
             {
             }
 
-            /// @brief Context shared with every handle; null only after a move.
-            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
+            /** @brief The context shared with every handle; empty only after a move. */
+            ContextHandle context_;
     };
-
-
-
 } // namespace SushiRuntime

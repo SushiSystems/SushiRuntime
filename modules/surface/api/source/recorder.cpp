@@ -48,6 +48,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 
+#include "context_memory.hpp"
 #include "host_slot_check.hpp"
 
 namespace SushiRuntime

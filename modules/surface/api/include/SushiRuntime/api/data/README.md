@@ -40,6 +40,19 @@ the message states what was asked for (element count, element size, bytes, resid
 device) and gives no cause, since the allocator reports
 none.
 
+### MemoryBlock
+
+A Buffer holds its memory as a `Detail::MemoryBlock`: the base address, the byte count and a
+`std::shared_ptr<void>` that returns the memory when the last copy of it goes. The header names
+nothing of how the memory was made. `Detail::allocate_block()` of `source/buffer.cpp` allocates
+USM through the runtime and puts the engine's `Allocation` behind that owner; Interop does the
+same with memory it exported or imported. data(), operator[] and host() read the cached address
+and size and call nothing.
+
+A window copy is the other call into the library: `Detail::copy_to_host()` and
+`Detail::copy_to_device()` find the queue that owns the allocation, copy, wait and count the
+bytes. The vector a read fills is sized in the header, where the element type is known.
+
 ### Argument types
 
 `DeviceIndex` is a strong typedef over `StrongID`, so a device selector cannot be confused
@@ -82,13 +95,13 @@ destruction, so it must outlive every graph run that touches it. A Buffer is mov
 
 ### Buffer(ctx, count, device_index, residency)
 
-The two constructors that take a runtime context are private. Runtime::buffer() and
-Runtime::state() reach the allocating one and Interop reaches the adopting one, through friendship,
-so a caller never spells `Internal::Execution::RuntimeContext`.
+A Buffer is built in one of two private ways. Runtime::buffer() and Runtime::state() reach
+allocate() and Interop reaches the adopting constructor, through friendship. Both take a
+`ContextHandle`, so no member of Buffer names `Internal::Execution::RuntimeContext`.
 
 The allocation is pinned to `device_index` and its owner recorded, so buffers used together (a
 State's two fields, for example) share a context and a kernel touching them never makes a
-cross-context access. `context` is the runtime context that owns the allocation, and `residency` is one
+cross-context access. `context` is the handle of the runtime that owns the allocation, and `residency` is one
 of the three kinds the Residency section describes. A Buffer must not be constructed over foreign
 USM.
 

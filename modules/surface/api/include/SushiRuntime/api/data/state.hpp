@@ -37,10 +37,10 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
 
 namespace SushiRuntime
 {
@@ -242,7 +242,7 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             [[nodiscard]] static Result<State> allocate(
-                const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
+                const char* call, const ContextHandle& context,
                 std::size_t count, DeviceIndex device_index, Residency residency,
                 std::size_t alignment)
             {
@@ -250,8 +250,8 @@ namespace SushiRuntime
                     Buffer<T>::allocate(call, context, count, device_index, residency, alignment);
                 if (!current)
                     return make_error(std::move(current.error()));
-                Result<Buffer<T>> next = Buffer<T>::allocate(call, std::move(context), count,
-                                                             device_index, residency, alignment);
+                Result<Buffer<T>> next =
+                    Buffer<T>::allocate(call, context, count, device_index, residency, alignment);
                 if (!next)
                     return make_error(std::move(next.error()));
 

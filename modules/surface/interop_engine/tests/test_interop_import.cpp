@@ -35,6 +35,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
 
 using namespace SushiRuntime;
 
@@ -104,7 +105,9 @@ TEST(Unit_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
 
     for (std::size_t index = 0; index < count; ++index)
     {
-        const sycl::device device = runtime.unsafe_context().devices().queue(index).get_device();
+        Internal::Execution::RuntimeContext& context =
+            SushiRuntime::Detail::ContextAccess::context(runtime);
+        const sycl::device device = context.devices().queue(index).get_device();
         EXPECT_EQ(runtime.interop().capabilities(DeviceIndex{index}).value().host_export,
                   device.has(sycl::aspect::usm_host_allocations))
             << "device " << index;

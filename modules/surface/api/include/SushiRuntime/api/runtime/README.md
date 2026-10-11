@@ -47,9 +47,9 @@ the same types, so a value passes to it without a conversion.
 `AdvancedControls` is the supported way to reach the few internal facts a caller needs (the device
 list, the queue of a device, profiling and rebalancer state, the worker pool, the number of live
 allocations, cumulative transfer bytes) without the whole `RuntimeContext`. `Runtime::advanced()` returns it and nothing else can
-construct it. It shares ownership of the context like every other handle; see Lifetime. For
-anything beyond this surface, `Runtime::unsafe_context()` returns the internal `RuntimeContext`.
-Code calls it only for an operation that neither the fluent API nor `advanced()` covers.
+construct it. It shares ownership of the context like every other handle; see Lifetime. The
+surface gives no way to the `RuntimeContext` itself. Its members are defined in
+`source/advanced_controls.cpp`.
 
 ### queue
 
@@ -152,15 +152,16 @@ its own steps, so `wait()` is for work outside a graph and for a caller that wan
 quiet before it reads memory. It does not settle a step started with run_async(); the RunHandle
 does. A command that failed on a device arrives as `KernelFailed` with the device's text.
 
-### unsafe_context
+### The context is not reachable
 
-`unsafe_context()` exposes the internal `RuntimeContext` for uses the fluent surface and
-`advanced()` do not cover. The name is a warning: code that reaches it couples to a non-public type
-and may break across versions. The fluent API or `advanced()` is the better choice wherever either
-is enough. The reference stays valid while any handle of the runtime lives.
+Runtime holds a `ContextHandle` and has no member that returns the context. The members that need
+it, `create()`, `set_rebalancer_enabled()` and `wait()`, are defined in `source/runtime.cpp`.
+`create()` stays inline as far as the version check, which must compare the headers a program
+was compiled with against the library it loaded.
 
-The distributed layer sits above this one and enters through it: `Distributed::Cluster::attach()`
-takes the Runtime and installs its master on this context, so no header here names a transport.
+The distributed layer sits above this one and enters through a `Runtime&`:
+`Distributed::Cluster::attach()` takes the Runtime, reaches its context through
+`Detail::ContextAccess` and installs its master there, so no header here names a transport.
 
 ## errors.hpp
 

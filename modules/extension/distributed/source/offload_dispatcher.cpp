@@ -43,6 +43,7 @@
 #include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
+#include <SushiRuntime/task/task_types.hpp>
 
 #include "offload_handles.hpp"
 #include "task_description.hpp"
