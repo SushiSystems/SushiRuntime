@@ -128,7 +128,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
     EXPECT_EQ(compiled.roots.size(), 1u) << "Only the init node should be a root of the diamond.";
 
     context.execution_engine().execute(std::move(compiled));
-    context.devices().wait_all();
+    context.devices().wait_all().value();
 
     bool ok = true;
     for (size_t i = 0; i < N; ++i)

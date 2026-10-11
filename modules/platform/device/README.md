@@ -35,7 +35,10 @@ The source is `modules/platform/device/source/device_queue_set.cpp`.
 
 `DeviceQueueSet` owns every device queue. Four rules hold.
 
-1. **`wait_all()` waits for every built queue**, including profiling and chain queues.
+1. **`wait_all()` waits for every built queue**, including profiling and chain queues. It calls
+   `wait_and_throw()` inside a `try`, so the asynchronous handler rethrows where the wait is, and it
+   returns `Result<void>`: `KernelFailed` with the text of the first error, after every queue was
+   waited for.
 2. **The NUMA fallback is resolved and logged at construction.** `get_numa_local_queue()` logs
    nothing on a lookup. Construction logs one WARN that lists the nodes below the highest populated
    one that hold no device, and one INFO that states the rule for every id outside the table.

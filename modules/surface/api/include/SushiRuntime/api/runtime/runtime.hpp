@@ -65,19 +65,20 @@ namespace SushiRuntime
             /**
              * @brief Creates a runtime on the devices and with the settings of one struct.
              * @return The runtime, or why it has none: Unsupported when no device passes
-             *         config.devices or the loaded library is of another release than these
-             *         headers, DeviceLost when a device queue cannot be built, and
+             *         config.devices, DeviceLost when a device queue cannot be built, and
              *         AllocationFailed when the host cannot give the runtime its memory or
              *         its threads.
+             * @pre The loaded library is of the release of these headers; version_matches()
+             *      tells.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             [[nodiscard]] static Result<Runtime> create(const RuntimeConfig& config = {})
             {
+                require_matching_version();
                 std::shared_ptr<Internal::Execution::RuntimeContext> context;
                 Error failed = Detail::translate_exceptions(
                     ErrorCode::DeviceLost, ErrorCode::AllocationFailed, [&context, &config]()
                 {
-                    require_matching_version();
                     context = std::make_shared<Internal::Execution::RuntimeContext>(
                         config.devices, nullptr, nullptr, settings_of(config));
                 });
@@ -149,14 +150,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] Result<void> wait() const
             {
-                Error failed = Detail::translate_exceptions(
-                    ErrorCode::KernelFailed, ErrorCode::KernelFailed, [this]()
-                {
-                    context_->devices().wait_all();
-                });
-                if (failed.code != ErrorCode::Ok)
-                    return make_error(std::move(failed));
-                return {};
+                return context_->devices().wait_all();
             }
 
             /** @brief Returns the view of this runtime's devices, queues and counters. */

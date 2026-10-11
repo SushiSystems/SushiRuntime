@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — core: Breaking change: Made `require_matching_version` stop the process on a mismatch, `DeviceQueueSet::wait_all` return `Result`, and `poll_events` return its failure (`version.hpp`, `device_queue_set.cpp`, `event_polling.hpp`).
 - 2026-10-11 — api: Made a late count or a late window that does not fit its capacity a fault record the run returns as `InvalidGraph`, with no throw (`device_fault.hpp`, `late_count_resolution.hpp`, `late_window.hpp`).
 - 2026-10-11 — api: Breaking change: Removed `try_run`, `try_run_for`, `try_run_until`, `try_run_async`, `try_wait` and the throwing forms; `run`, `run_for`, `run_until`, `run_async` and `wait` return `Result` (`step_driver.hpp`, `run_handle.hpp`).
 - 2026-10-11 — api: Breaking change: Made `Runtime::create`, `buffer`, `state`, `wait`, `read_range`, `write_range`, `Recorder::scratch` and the three `Interop` calls return `Result` (`runtime.hpp`, `buffer.hpp`, `interop.hpp`).

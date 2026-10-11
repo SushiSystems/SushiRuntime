@@ -709,3 +709,45 @@ TEST(Integration_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
 
     EXPECT_EQ(seen, 7u);
 }
+
+#if defined(SYCL_IMPLEMENTATION_ONEAPI)
+/**
+ * @brief Tests that an error SYCL reports only through its asynchronous handler fails the run on
+ *        both layers; see README.md.
+ */
+TEST(Integration_RunDriver, AnErrorOnlyTheAsynchronousHandlerSeesFailsTheRunOnBothLayers)
+{
+    for (const bool force_scheduler : {false, true})
+    {
+        RuntimeConfig config;
+        config.force_scheduler = force_scheduler;
+        auto rt  = Runtime::create(config).value();
+        auto buf = rt.buffer<int>(N).value();
+
+        auto g = rt.graph();
+        g.add_task(Reads{}, Writes(buf),
+                   [](sycl::queue& queue, const std::vector<sycl::event>& events)
+        {
+            // A host_task that throws reaches the caller through the asynchronous handler only.
+            return queue.submit([&events](sycl::handler& handler)
+            {
+                handler.depends_on(events);
+                handler.host_task([]() { throw std::runtime_error(K_TASK_FAILURE); });
+            });
+        });
+
+        const auto run = g.run();
+        EXPECT_FALSE(run.has_value())
+            << "force_scheduler = " << force_scheduler << ": the run reported success";
+        if (!run.has_value())
+            EXPECT_EQ(run.error().code, ErrorCode::KernelFailed)
+                << "force_scheduler = " << force_scheduler;
+
+        // An error the run did not return is still in the queue and comes out of this wait.
+        const auto drained = rt.wait();
+        EXPECT_TRUE(drained.has_value())
+            << "force_scheduler = " << force_scheduler
+            << ": the error outlived the run that caused it";
+    }
+}
+#endif

@@ -31,30 +31,14 @@
 #include <SushiRuntime/core/version.hpp>
 
 using SushiRuntime::ErrorCode;
-using SushiRuntime::SushiException;
 using SushiRuntime::Version;
 
 namespace
 {
-    /** @brief Returns the message of the mismatch between two versions, or "" when they agree. */
-    std::string mismatch_message(const Version& headers, const Version& loaded)
-    {
-        try
-        {
-            SushiRuntime::Detail::require_same_release(headers, loaded);
-        }
-        catch (const SushiException& mismatch)
-        {
-            EXPECT_EQ(mismatch.error().code, ErrorCode::Unsupported);
-            return mismatch.what();
-        }
-        return std::string();
-    }
-
     TEST(Unit_Version, TheTestProgramMatchesTheLibraryItLoaded)
     {
         EXPECT_TRUE(SushiRuntime::version_matches());
-        EXPECT_NO_THROW(SushiRuntime::require_matching_version());
+        SushiRuntime::require_matching_version();
     }
 
     TEST(Unit_Version, TheHeaderMacrosAndTheLibraryReportOneVersion)
@@ -69,24 +53,24 @@ namespace
 
     TEST(Unit_Version, APatchDifferenceIsAMatch)
     {
-        EXPECT_EQ(mismatch_message(Version{0, 4, 0}, Version{0, 4, 7}), "");
+        SushiRuntime::Detail::require_same_release(Version{0, 4, 0}, Version{0, 4, 7});
     }
 
-    TEST(Unit_Version, AnOlderLibraryIsRefusedWithBothVersions)
+    TEST(Unit_VersionDeathTest, AnOlderLibraryStopsWithBothVersions)
     {
-        const std::string message = mismatch_message(Version{0, 4, 0}, Version{0, 3, 2});
-
-        EXPECT_EQ(message, "SushiRuntime headers are 0.4.0 and the loaded library is 0.3.2; "
-                           "an older sushiruntime shared library is earlier on the loader path.");
+        EXPECT_DEATH(
+            SushiRuntime::Detail::require_same_release(Version{0, 4, 0}, Version{0, 3, 2}),
+            "SushiRuntime headers are 0\\.4\\.0 and the loaded library is 0\\.3\\.2; an older "
+            "sushiruntime shared library is earlier on the loader path");
     }
 
-    TEST(Unit_Version, ANewerLibraryIsRefusedAndCalledNewer)
+    TEST(Unit_VersionDeathTest, ANewerLibraryStopsAndIsCalledNewer)
     {
-        const std::string by_minor = mismatch_message(Version{0, 4, 0}, Version{0, 5, 1});
-        const std::string by_major = mismatch_message(Version{0, 9, 0}, Version{1, 0, 0});
-
-        EXPECT_NE(by_minor.find("headers are 0.4.0"), std::string::npos) << by_minor;
-        EXPECT_NE(by_minor.find("library is 0.5.1; a newer"), std::string::npos) << by_minor;
-        EXPECT_NE(by_major.find("library is 1.0.0; a newer"), std::string::npos) << by_major;
+        EXPECT_DEATH(
+            SushiRuntime::Detail::require_same_release(Version{0, 4, 0}, Version{0, 5, 1}),
+            "headers are 0\\.4\\.0 and the loaded library is 0\\.5\\.1; a newer");
+        EXPECT_DEATH(
+            SushiRuntime::Detail::require_same_release(Version{0, 9, 0}, Version{1, 0, 0}),
+            "library is 1\\.0\\.0; a newer");
     }
 } // namespace

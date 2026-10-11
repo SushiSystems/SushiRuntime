@@ -276,12 +276,33 @@ namespace SushiRuntime
             return queues;
         }
 
-        void DeviceQueueSet::wait_all()
+        Result<void> DeviceQueueSet::wait_all()
         {
-            for_each_built_queue([](const DeviceDescription&, sycl::queue& built)
+            Error first;
+            for_each_built_queue([&first](const DeviceDescription&, sycl::queue& built)
             {
-                built.wait_and_throw();
+                // The asynchronous handler rethrows here, where the wait is.
+                try
+                {
+                    built.wait_and_throw();
+                }
+                catch (const std::exception& failure)
+                {
+                    if (first.code == ErrorCode::Ok)
+                        first = Detail::error_without_throwing(ErrorCode::KernelFailed,
+                                                               failure.what());
+                }
+                catch (...)
+                {
+                    if (first.code == ErrorCode::Ok)
+                        first = Detail::error_without_throwing(
+                            ErrorCode::KernelFailed,
+                            "A device queue reported an error that is not a std::exception.");
+                }
             });
+            if (first.code != ErrorCode::Ok)
+                return make_error(std::move(first));
+            return {};
         }
 
         void DeviceQueueSet::require_index(std::size_t index) const
