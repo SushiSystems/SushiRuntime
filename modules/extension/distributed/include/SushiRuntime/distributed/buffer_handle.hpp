@@ -75,7 +75,7 @@ namespace SushiRuntime::Distributed
     };
 
     /**
-     * @brief Holds the private codec of protocol version 2; these names reach it unqualified.
+     * @brief Holds the private codec of protocol version 3; these names reach it unqualified.
      */
     namespace Wire
     {

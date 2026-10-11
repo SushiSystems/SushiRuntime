@@ -21,7 +21,7 @@
 
 /**
  * @file wire_messages.hpp
- * @brief Declares the sixteen messages of protocol version 2, each with encode and decode.
+ * @brief Declares the sixteen messages of protocol version 3, each with encode and decode.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */
@@ -31,12 +31,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/core/operation_id.hpp>
 
 #include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
@@ -267,6 +268,12 @@ namespace SushiRuntime::Distributed::Wire
         std::string_view text;
     };
 
+    /** @brief Holds the most scalar parameters one dispatch carries. */
+    inline constexpr std::size_t K_MAX_DISPATCH_PARAMETERS = 8;
+
+    /** @brief Holds the longest task name one dispatch carries, in bytes. */
+    inline constexpr std::size_t K_MAX_DISPATCH_NAME_BYTES = 63;
+
     /**
      * @brief Tells a worker to run one kernel on the named buffers.
      */
@@ -285,8 +292,20 @@ namespace SushiRuntime::Distributed::Wire
         /** @brief Holds the master's id for the task. */
         std::uint64_t task_id = 0;
 
-        /** @brief Holds the metadata; op_id selects the kernel and name stays off the wire. */
-        Internal::Graph::TaskMetadata metadata;
+        /** @brief Selects the kernel the worker runs. */
+        OperationID operation;
+
+        /**
+         * @brief Names the task in the worker's log; encode() refuses more than
+         *        K_MAX_DISPATCH_NAME_BYTES bytes.
+         */
+        std::string name;
+
+        /** @brief Counts the entries of parameters that are sent; at most its size. */
+        std::uint8_t parameter_count = 0;
+
+        /** @brief Holds the scalars the kernel is handed; the entries past the count are zero. */
+        std::array<std::uint64_t, K_MAX_DISPATCH_PARAMETERS> parameters{};
 
         /** @brief Holds the buffers the kernel reads. */
         std::vector<BufferHandle> inputs;

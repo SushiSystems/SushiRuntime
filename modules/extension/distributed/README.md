@@ -85,7 +85,7 @@ new master, binds it to `RuntimeContext::offload_sink()` and calls
 DistributedCoordinator::start(). Only when that returns `Ok` does it stop and remove the
 coordinator the runtime held before, set the release observer and install the new coordinator.
 start() starts the transport, then the monitor, and logs
-`distributed master listening on 127.0.0.1:7000, protocol v2, authentication off`. The endpoint is
+`distributed master listening on 127.0.0.1:7000, protocol v3, authentication off`. The endpoint is
 the message of the `TransportResult` the transport's `start()` returned: the bound `address:port`
 for TCP, so a bind to port 0 shows the port the OS chose, and `in-process` for a fabric.
 
@@ -145,7 +145,7 @@ Internal::Graph::OffloadCoordinator has no share: a runtime without this module 
 
 ### The transport contract
 
-A transport moves frames of protocol version 2. It checks each frame's 12-byte header and knows
+A transport moves frames of protocol version 3. It checks each frame's 12-byte header and knows
 nothing about what a payload means; the handshake runs above it, so both transports exercise the
 same session code.
 
@@ -499,6 +499,19 @@ The steps run in this order, and no lock is held across two of them.
 7. `Transport::send()`. On any status but `Queued` it calls `take()`; with the task back it
    lowers the worker's inflight count and returns false, without it a removal owns the node and
    the answer is true.
+
+A `TaskDispatchMessage` declares what it sends and embeds no type of the engine: the task id,
+the operation, a name of at most `K_MAX_DISPATCH_NAME_BYTES` bytes for the worker's log, a
+parameter count and at most `K_MAX_DISPATCH_PARAMETERS` parameters, then the input and the
+output handles. Both limits are constants of `wire_messages.hpp`, and encode() returns `TooLong`
+for a message that breaks one. The dispatcher fills the message from the node: it cuts the name
+to the limit and sends the parameters up to the last one that is not zero. The worker builds the
+metadata its kernel is handed from the same fields.
+
+A frame header carries `K_PROTOCOL_VERSION`, which is 3. check_protocol_version() of
+`wire_frame.hpp` turns a header of another version into `ErrorCode::ProtocolMismatch` with both
+versions in its message, and that message is the text of the `REJECT` the receiver sends before
+it closes the connection.
 
 The addresses, the handles, the `TaskDispatchMessage` and the encoded payload live in one
 thread-local scratch per pool thread, so the dispatcher's own code allocates nothing once the

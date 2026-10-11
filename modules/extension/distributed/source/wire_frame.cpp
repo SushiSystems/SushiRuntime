@@ -29,6 +29,9 @@
 #include "wire_frame.hpp"
 
 #include <cstring>
+#include <string>
+
+#include <SushiRuntime/core/error.hpp>
 
 namespace SushiRuntime::Distributed::Wire
 {
@@ -83,6 +86,16 @@ namespace SushiRuntime::Distributed::Wire
 
         out = FrameHeader{version, static_cast<MessageType>(type), flags, payload_length};
         return FrameStatus::Ok;
+    }
+
+    Result<void> check_protocol_version(std::uint16_t announced)
+    {
+        if (announced == K_PROTOCOL_VERSION)
+            return {};
+        return make_error(Error{
+            ErrorCode::ProtocolMismatch,
+            "the peer speaks protocol v" + std::to_string(announced) + " and this build v" +
+                std::to_string(K_PROTOCOL_VERSION) + "; build both ends from one commit"});
     }
 
     void patch_payload_length(std::vector<std::byte>& frame, std::size_t header_offset,

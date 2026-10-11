@@ -106,21 +106,18 @@ namespace
     /** @brief Returns a dispatch whose every wire field is drawn from @p random. */
     TaskDispatchMessage random_dispatch(std::mt19937_64& random)
     {
-        const auto first_type = static_cast<std::uint64_t>(Internal::Graph::TaskType::None);
-        const auto last_type = static_cast<std::uint64_t>(Internal::Graph::TaskType::ControlFlow);
-
         TaskDispatchMessage message;
         message.task_id = random();
-        message.metadata.name = "never_on_the_wire";
-        message.metadata.op_id = OperationID(static_cast<std::uint32_t>(random()));
-        message.metadata.task_type = static_cast<Internal::Graph::TaskType>(
-            first_type + random() % (last_type - first_type + 1));
-        message.metadata.priority = static_cast<std::int32_t>(random());
-        message.metadata.numa_affinity = static_cast<std::int32_t>(random());
+        message.operation = OperationID(static_cast<std::uint32_t>(random()));
 
-        // A parameter is zero one time in four, so the trailing-zero cut is exercised.
-        for (std::uint64_t& parameter : message.metadata.params)
-            parameter = random() % 4 == 0 ? 0 : random();
+        // The name has every length a dispatch carries, the empty one among them.
+        message.name.assign(random() % (K_MAX_DISPATCH_NAME_BYTES + 1), 'n');
+
+        // The count runs from none to all, and the entries past it stay zero.
+        message.parameter_count =
+            static_cast<std::uint8_t>(random() % (K_MAX_DISPATCH_PARAMETERS + 1));
+        for (std::size_t index = 0; index < message.parameter_count; ++index)
+            message.parameters[index] = random();
 
         message.inputs = random_handles(random, 6);
         message.outputs = random_handles(random, 4);
@@ -407,14 +404,12 @@ TEST(Unit_DistributedTest, SeededDispatchesSurviveAWholeFrame)
         ASSERT_TRUE(decoded.ok()) << "offset " << decoded.offset;
 
         EXPECT_EQ(received.task_id, sent.task_id);
-        EXPECT_EQ(received.metadata.op_id.value, sent.metadata.op_id.value);
-        EXPECT_EQ(received.metadata.task_type, sent.metadata.task_type);
-        EXPECT_EQ(received.metadata.priority, sent.metadata.priority);
-        EXPECT_EQ(received.metadata.numa_affinity, sent.metadata.numa_affinity);
-        for (std::size_t index = 0; index < Internal::Graph::TaskMetadata::K_MAX_PARAMS; ++index)
-            EXPECT_EQ(received.metadata.params[index], sent.metadata.params[index])
+        EXPECT_EQ(received.operation.value, sent.operation.value);
+        EXPECT_EQ(received.name, sent.name);
+        EXPECT_EQ(received.parameter_count, sent.parameter_count);
+        for (std::size_t index = 0; index < K_MAX_DISPATCH_PARAMETERS; ++index)
+            EXPECT_EQ(received.parameters[index], sent.parameters[index])
                 << "parameter " << index;
-        EXPECT_STRNE(received.metadata.name, sent.metadata.name);
         expect_same_handles(received.inputs, sent.inputs);
         expect_same_handles(received.outputs, sent.outputs);
     }

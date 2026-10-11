@@ -265,7 +265,7 @@ namespace
                                         ? Wire::RejectReason::Version
                                         : Wire::RejectReason::Authentication;
                     reject.sender_version = script_ == MasterScript::RejectVersion
-                                                ? std::uint16_t{3}
+                                                ? std::uint16_t{2}
                                                 : Wire::K_PROTOCOL_VERSION;
                     reject.text = "refused by the test's master";
                     send(peer, reject);

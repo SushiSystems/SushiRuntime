@@ -32,6 +32,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -113,6 +114,31 @@ namespace SushiRuntime
                     return no_worker + not_shared + written_twice;
                 }
             };
+
+            /**
+             * @brief Copies what a dispatch says of a task: its operation, its name cut to
+             *        what a dispatch carries, and its parameters up to the last one that is
+             *        not zero.
+             */
+            void describe_task(const Internal::Graph::TaskMetadata& metadata,
+                               Wire::TaskDispatchMessage& message)
+            {
+                static_assert(Wire::K_MAX_DISPATCH_PARAMETERS ==
+                                  Internal::Graph::TaskMetadata::K_MAX_PARAMS,
+                              "a dispatch carries every parameter a node holds");
+
+                message.operation = metadata.op_id;
+                const std::string_view name = metadata.name != nullptr ? metadata.name : "";
+                message.name.assign(name.substr(0, Wire::K_MAX_DISPATCH_NAME_BYTES));
+
+                std::size_t count = Wire::K_MAX_DISPATCH_PARAMETERS;
+                while (count > 0 && metadata.params[count - 1] == 0)
+                    --count;
+                message.parameter_count = static_cast<std::uint8_t>(count);
+                message.parameters.fill(0);
+                for (std::size_t index = 0; index < count; ++index)
+                    message.parameters[index] = metadata.params[index];
+            }
 
             /** @brief Returns the calling thread's scratch. */
             DispatchScratch& dispatch_scratch()
@@ -385,7 +411,7 @@ namespace SushiRuntime
             const auto first_output =
                 scratch.handles.begin() + static_cast<std::ptrdiff_t>(*input_count);
             scratch.message.task_id = task_id;
-            scratch.message.metadata = node.metadata;
+            describe_task(node.metadata, scratch.message);
             scratch.message.inputs.assign(scratch.handles.begin(), first_output);
             scratch.message.outputs.assign(first_output, scratch.handles.end());
 

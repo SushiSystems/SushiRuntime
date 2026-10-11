@@ -64,7 +64,7 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Describes one frame of protocol version 2 to a fault policy.
+         * @brief Describes one frame of protocol version 3 to a fault policy.
          */
         struct FaultedFrame
         {

@@ -140,12 +140,16 @@ namespace SushiRuntime
                 return loss;
             }
 
-            /** @brief Queues the REJECT that tells a peer of another version why it is closed. */
-            void queue_version_reject(Outbox& outbox, const PeerDescription& info)
+            /**
+             * @brief Queues the REJECT that tells a peer of another version why it is closed.
+             * @param announced The version the peer's header carries; not this build's.
+             */
+            void queue_version_reject(Outbox& outbox, const PeerDescription& info,
+                                      std::uint16_t announced)
             {
-                const std::string text = "the receiver speaks protocol v" +
-                                         std::to_string(Wire::K_PROTOCOL_VERSION) +
-                                         "; build both ends from one commit";
+                const Result<void> checked = Wire::check_protocol_version(announced);
+                const std::string text =
+                    checked.has_value() ? std::string() : checked.error().message;
                 Wire::RejectMessage reject;
                 reject.reason = Wire::RejectReason::Version;
                 reject.sender_version = Wire::K_PROTOCOL_VERSION;
@@ -360,7 +364,7 @@ namespace SushiRuntime
                     checked = Wire::decode_frame_header(
                         {header_bytes.data(), header_bytes.size()}, header);
                     if (checked == Wire::FrameStatus::VersionMismatch)
-                        queue_version_reject(outbox_, info_);
+                        queue_version_reject(outbox_, info_, header.version);
                 }
                 if (read.is_ok() && checked != Wire::FrameStatus::Ok)
                 {
