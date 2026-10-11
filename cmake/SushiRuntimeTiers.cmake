@@ -20,6 +20,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     core            foundation
     report          foundation
     region          foundation
+    log             foundation
     logging         foundation
     sycl            foundation
     topology        platform
@@ -38,7 +39,9 @@ set(SUSHIRUNTIME_MODULE_TIERS
 # Consumer, then dependency: the edges allowed between two modules of one tier.
 set(SUSHIRUNTIME_SAME_TIER_EDGES
     report          core
+    log             core
     logging         core
+    logging         log
     scheduler       task
     graph           task
     execution       task

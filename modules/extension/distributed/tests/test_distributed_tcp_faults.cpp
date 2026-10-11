@@ -47,8 +47,9 @@
 
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/logging/log_level.hpp>
-#include <SushiRuntime/logging/log_sink.hpp>
+#include <SushiRuntime/log/log_level.hpp>
+#include <SushiRuntime/log/log_sink.hpp>
+#include <SushiRuntime/logging/log_gate.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>

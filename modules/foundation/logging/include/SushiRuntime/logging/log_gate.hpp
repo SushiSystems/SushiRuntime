@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* log_sink.hpp                                                           */
+/* log_gate.hpp                                                           */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,43 +20,50 @@
 /**************************************************************************/
 
 /**
- * @file log_sink.hpp
- * @brief Declares LogSink, the callable that receives each log line, and its setter.
+ * @file log_gate.hpp
+ * @brief Declares the compile-time ceiling and the run-time gate the log macros read.
  * @author Mustafa Garip
  * @see modules/foundation/logging/README.md
  */
 
 #pragma once
 
-#include <string_view>
+#include <atomic>
 
-#include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/log/log_level.hpp>
 
-#include <SushiRuntime/logging/log_level.hpp>
+#ifndef SR_ENABLE_LOGGING
+    #define SR_ENABLE_LOGGING 1
+#endif
 
 namespace SushiRuntime
 {
-    /**
-     * @brief Receives one record: its level and its line, which carries no line break.
-     *
-     * The line is valid only during the call. A sink does not log and does not call
-     * set_log_sink().
-     */
-    using LogSink = Delegate<void(LogLevel level, std::string_view line), 48>;
+    #if !SR_ENABLE_LOGGING
+        /** @brief Holds the highest level this translation unit compiles log calls for. */
+        constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Off;
+    #elif defined(NDEBUG)
+        /** @brief Holds the highest level this translation unit compiles log calls for. */
+        constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Info;
+    #else
+        /** @brief Holds the highest level this translation unit compiles log calls for. */
+        constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Debug;
+    #endif
 
     /**
-     * @brief Replaces the sink of the whole process and returns once the old one is idle.
-     * @param sink An empty sink restores the default, which writes every line to stderr.
-     * @see modules/foundation/logging/README.md
+     * @brief Holds what the log macros read; nothing else calls into it.
      */
-    SUSHIRUNTIME_API void set_log_sink(LogSink sink);
+    namespace Detail
+    {
+        /** @brief Marks a level that SR_LOG_LEVEL has not been read for; above every level. */
+        constexpr int K_LOG_LEVEL_UNRESOLVED = 127;
 
-    /**
-     * @brief Chooses whether a record reaches the sink before its log call returns.
-     * @param synchronous True first delivers every record still queued, then makes each
-     *        log call run the sink itself; false hands records to the logger's thread.
-     * @see modules/foundation/logging/README.md
-     */
-    SUSHIRUNTIME_API void set_log_synchronous(bool synchronous);
+        /** @brief Holds the process level as an int, or K_LOG_LEVEL_UNRESOLVED. */
+        SUSHIRUNTIME_API extern std::atomic<int> active_log_level;
+
+        /**
+         * @brief Returns whether a record of @p level is written, reading SR_LOG_LEVEL once.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API bool is_log_enabled(LogLevel level) noexcept;
+    } // namespace Detail
 } // namespace SushiRuntime

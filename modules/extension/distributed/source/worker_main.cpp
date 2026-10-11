@@ -37,7 +37,7 @@
 
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/version.hpp>
-#include <SushiRuntime/logging/log_level.hpp>
+#include <SushiRuntime/log/log_level.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
