@@ -73,14 +73,14 @@ namespace SushiRuntime
             /**
              * @brief Publishes a finished run's outcome and wakes the waiter.
              * @param run_failed Whether a task threw during the run.
-             * @param err        The first exception when @p run_failed, else null.
+             * @param failure        The first exception when @p run_failed, else null.
              */
-            void signal(bool run_failed, std::exception_ptr err)
+            void signal(bool run_failed, std::exception_ptr failure)
             {
                 {
                     std::lock_guard<std::mutex> lock(mutex);
                     failed = run_failed;
-                    error = std::move(err);
+                    error = std::move(failure);
                     done = true;
                 }
                 cv.notify_one();
@@ -183,11 +183,11 @@ namespace SushiRuntime
              *
              * Starts the task scheduler and workload rebalancer.
              *
-             * @param ctx The runtime context to attach to.
+             * @param context The runtime context to attach to.
              */
-            Impl(RuntimeContext& ctx)
-                : scheduler(worker_pool_settings(ctx.settings()), ctx.topology(), ctx.devices(),
-                            ctx.memory())
+            Impl(RuntimeContext& context)
+                : scheduler(worker_pool_settings(context.settings()), context.topology(),
+                            context.devices(), context.memory())
             {
                 scheduler.start();
 
@@ -198,7 +198,7 @@ namespace SushiRuntime
                     std::make_unique<SushiRuntime::Internal::Scheduler::ThermalProxyStrategy>()
                 );
 
-                if (ctx.settings().rebalancer)
+                if (context.settings().rebalancer)
                 {
                     rebalancer_on.store(true, std::memory_order_relaxed);
                     rebalancer->start();
@@ -234,10 +234,10 @@ namespace SushiRuntime
         /**
          * @brief Constructs an SchedulerExecutionEngine.
          *
-         * @param ctx The runtime context the engine is bound to.
+         * @param context The runtime context the engine is bound to.
          */
-        SchedulerExecutionEngine::SchedulerExecutionEngine(RuntimeContext& ctx)
-            : impl_(make_sushi<Impl>(ctx))
+        SchedulerExecutionEngine::SchedulerExecutionEngine(RuntimeContext& context)
+            : impl_(make_sushi<Impl>(context))
         {}
 
         /**
@@ -495,22 +495,22 @@ namespace SushiRuntime
                 const bool profiling = graph.profiling;
                 graph.sentinel->host_work =
                     [latch, sched_ptr, profiling]
-                    (sycl::queue&, const std::vector<sycl::event>& deps) -> sycl::event
+                    (sycl::queue&, const std::vector<sycl::event>& dependencies) -> sycl::event
                     {
                         // Deps are waited, then the latch is signalled (modules/engine/execution/README.md).
                         const sycl::event no_event{};
-                        for (auto e : deps)
+                        for (auto e : dependencies)
                             if (e != no_event)
                                 e.wait();
 
                         // The outcome is read before re-arming clears it (modules/engine/execution/README.md).
                         const bool failed = sched_ptr->run_failed();
-                        std::exception_ptr err = failed ? sched_ptr->run_error() : nullptr;
+                        std::exception_ptr failure = failed ? sched_ptr->run_error() : nullptr;
 
                         // The pool stays armed through the drain tail (modules/engine/execution/README.md).
                         sched_ptr->arm_for_execution(profiling);
 
-                        latch->signal(failed, std::move(err));
+                        latch->signal(failed, std::move(failure));
                         return {};
                     };
             }

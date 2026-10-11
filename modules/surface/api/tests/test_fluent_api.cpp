@@ -128,7 +128,7 @@ TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
     EXPECT_GE(report.total_duration_ms, 0.0);
 }
 
-/** @brief Tests the add_untracked(fn) overload whose callable takes a sycl::handler. */
+/** @brief Tests the add_untracked(kernel) overload whose callable takes a sycl::handler. */
 TEST(Integration_FluentAPI, RawHandlerKernelAdd)
 {
     constexpr std::size_t N = 128;
@@ -155,7 +155,7 @@ TEST(Integration_FluentAPI, RawHandlerKernelAdd)
         ASSERT_EQ(buf[i], static_cast<int>(i * 2)) << "at i=" << i;
 }
 
-/** @brief Tests the add_untracked(n, fn) range kernel overload. */
+/** @brief Tests the add_untracked(n, kernel) range kernel overload. */
 TEST(Integration_FluentAPI, RangeKernelAdd)
 {
     constexpr std::size_t N = 64;
@@ -183,8 +183,8 @@ TEST(Integration_FluentAPI, RangeKernelAdd)
 }
 
 /**
- * @brief Tests that add(reads, writes, n, fn) orders a writer before the reader that squares its
- *        values.
+ * @brief Tests that add(reads, writes, n, kernel) orders a writer before the reader that
+ *        squares its values.
  */
 TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
 {
@@ -403,11 +403,11 @@ TEST(Integration_FluentAPI, GraphSizeTracksAdds)
 TEST(Integration_FluentAPI, ContextAccessorIsConsistent)
 {
     auto rt = Runtime::create();
-    Internal::Execution::RuntimeContext& ctx = rt.unsafe_context();
+    Internal::Execution::RuntimeContext& context = rt.unsafe_context();
 
     // At least a CPU device is always present.
-    EXPECT_GE(ctx.devices().count(), 1u);
-    EXPECT_EQ(rt.advanced().device_count(), ctx.devices().count());
+    EXPECT_GE(context.devices().count(), 1u);
+    EXPECT_EQ(rt.advanced().device_count(), context.devices().count());
 }
 
 /** @brief Tests that run(0) returns immediately and reports no work. */

@@ -46,8 +46,8 @@ device queue, and a chain is either all device or all host.
 
 ### `ManyChainsHostDeviceHost`
 
-The test uses one explicit queue per device. It iterates the deduplicated queue set of `ctx` and not
-`sycl::device::get_devices()`. The SYCL list can hold more devices than `ctx` exposes, for example
+The test uses one explicit queue per device. It iterates the deduplicated queue set of `context` and not
+`sycl::device::get_devices()`. The SYCL list can hold more devices than `context` exposes, for example
 the duplicate OpenMP host device of AdaptiveCpp, so indexing `devices().queue()` by the raw SYCL
 list overruns it and fails with "Queue index out of bounds".
 

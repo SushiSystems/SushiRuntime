@@ -58,13 +58,13 @@ namespace SushiRuntime
         /**
          * @brief Binds the run to the plan's device queue of the right flavour.
          */
-        ChainRun::ChainRun(RuntimeContext& ctx, CompiledGraph& graph)
+        ChainRun::ChainRun(RuntimeContext& context, CompiledGraph& graph)
             : graph_(graph),
-              queue_(ctx.devices().queue(graph.chain.queue_index,
+              queue_(context.devices().queue(graph.chain.queue_index,
                                          Internal::Device::QueueFlavour{true, graph.profiling})),
               profiling_(graph.profiling),
               // RuntimeContext builds an SchedulerExecutionEngine and no other engine, so the cast holds.
-              run_mark_(static_cast<SchedulerExecutionEngine&>(ctx.execution_engine()))
+              run_mark_(static_cast<SchedulerExecutionEngine&>(context.execution_engine()))
         {
             // The plan owns the reserved event buffer (modules/engine/execution/README.md).
             if (profiling_ && graph.chain.pending_events.capacity() < graph.chain.order.size())
@@ -169,11 +169,11 @@ namespace SushiRuntime
         {
             if (node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host)
             {
-                std::vector<sycl::event> deps;
-                deps.reserve(node.sycl_deps.size());
+                std::vector<sycl::event> dependencies;
+                dependencies.reserve(node.sycl_deps.size());
                 for (const auto& ev : node.sycl_deps)
-                    deps.push_back(ev);
-                return node.execute_host(queue_, deps);
+                    dependencies.push_back(ev);
+                return node.execute_host(queue_, dependencies);
             }
 
             return queue_.submit([&node](sycl::handler& h)
@@ -195,11 +195,11 @@ namespace SushiRuntime
         {
             if (node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host)
             {
-                std::vector<sycl::event> deps;
-                deps.reserve(node.sycl_deps.size());
+                std::vector<sycl::event> dependencies;
+                dependencies.reserve(node.sycl_deps.size());
                 for (const auto& ev : node.sycl_deps)
-                    deps.push_back(ev);
-                node.execute_host(queue_, deps);
+                    dependencies.push_back(ev);
+                node.execute_host(queue_, dependencies);
                 return;
             }
 

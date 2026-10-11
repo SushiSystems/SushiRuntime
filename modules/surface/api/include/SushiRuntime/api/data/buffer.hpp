@@ -127,17 +127,18 @@ namespace SushiRuntime
 
         /**
          * @brief Allocates USM of the given residency on one device queue.
-         * @param ctx          Runtime context that performs and records the allocation.
+         * @param context          Runtime context that performs and records the allocation.
          * @param bytes        Allocation size in bytes.
          * @param device_index Device queue that owns the allocation.
          * @param residency    Kind of USM to allocate.
          * @return The USM pointer, or nullptr on failure.
          */
-        inline void* malloc_residency_on(Internal::Execution::RuntimeContext& ctx, std::size_t bytes,
+        inline void* malloc_residency_on(Internal::Execution::RuntimeContext& context,
+                                         std::size_t bytes,
                                          DeviceIndex device_index, Residency residency)
         {
             const std::size_t device = device_index.value();
-            Internal::Memory::USMAllocator& memory = ctx.memory();
+            Internal::Memory::USMAllocator& memory = context.memory();
             switch (residency)
             {
                 case Residency::Device:
@@ -154,10 +155,11 @@ namespace SushiRuntime
          * @brief Returns the queue of the device that owns an address, or a queue of
          *        NUMA node 0 when no device of the context owns it.
          */
-        inline sycl::queue& owning_queue(Internal::Execution::RuntimeContext& ctx, void* address)
+        inline sycl::queue& owning_queue(Internal::Execution::RuntimeContext& context,
+                                         void* address)
         {
-            const std::optional<std::size_t> device = ctx.memory().owning_device(address);
-            return ctx.devices().queue_or_numa_local(device, 0);
+            const std::optional<std::size_t> device = context.memory().owning_device(address);
+            return context.devices().queue_or_numa_local(device, 0);
         }
 
         /**
@@ -271,7 +273,7 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             Buffer(Buffer&& other) noexcept
-                : ctx_(std::move(other.ctx_)),
+                : context_(std::move(other.context_)),
                   allocation_(std::move(other.allocation_)),
                   size_(other.size_),
                   device_index_(other.device_index_),
@@ -291,7 +293,7 @@ namespace SushiRuntime
                 if (this != &other)
                 {
                     reset();
-                    ctx_ = std::move(other.ctx_);
+                    context_ = std::move(other.context_);
                     allocation_ = std::move(other.allocation_);
                     size_ = other.size_;
                     device_index_ = other.device_index_;
@@ -451,21 +453,22 @@ namespace SushiRuntime
              *         nothing.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
-            Buffer(const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> ctx,
+            Buffer(const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
                    std::size_t count, DeviceIndex device_index, Residency residency)
-                : ctx_(std::move(ctx)),
+                : context_(std::move(context)),
                   size_(count),
                   device_index_(device_index),
                   residency_(residency),
                   liveness_(Internal::Memory::make_liveness())
             {
-                Detail::require_device(call, device_index, ctx_->devices().count());
+                Detail::require_device(call, device_index, context_->devices().count());
                 const std::size_t bytes =
                     Detail::checked_byte_count("Buffer allocation", count, sizeof(T));
                 auto owner =
-                    std::make_unique<Internal::Memory::USMAllocationOwner>(ctx_->shared_memory());
+                    std::make_unique<Internal::Memory::USMAllocationOwner>(
+                        context_->shared_memory());
                 void* address =
-                    Detail::malloc_residency_on(*ctx_, bytes, device_index, residency);
+                    Detail::malloc_residency_on(*context_, bytes, device_index, residency);
                 // A null address would give the handle a null key, which skips tracking.
                 if (count > 0 && address == nullptr)
                     throw SushiException(Error{
@@ -484,10 +487,10 @@ namespace SushiRuntime
              *        overflows or @p allocation is smaller than it; @p allocation is released
              *        before the exception propagates.
              */
-            Buffer(std::shared_ptr<Internal::Execution::RuntimeContext> ctx,
+            Buffer(std::shared_ptr<Internal::Execution::RuntimeContext> context,
                    Internal::Memory::Allocation allocation, std::size_t count,
                    DeviceIndex device_index, Residency residency)
-                : ctx_(std::move(ctx)),
+                : context_(std::move(context)),
                   allocation_(std::move(allocation)),
                   size_(count),
                   device_index_(device_index),
@@ -518,9 +521,9 @@ namespace SushiRuntime
                     return out;
                 // A non-zero size_ implies a context and a non-null address.
                 T* first = data();
-                sycl::queue& queue = Detail::owning_queue(*ctx_, static_cast<void*>(first));
+                sycl::queue& queue = Detail::owning_queue(*context_, static_cast<void*>(first));
                 queue.memcpy(out.data(), first + range.offset, range.count * sizeof(T)).wait();
-                ctx_->transfers().add_device_to_host(range.count * sizeof(T));
+                context_->transfers().add_device_to_host(range.count * sizeof(T));
                 return out;
             }
 
@@ -548,10 +551,10 @@ namespace SushiRuntime
                         std::to_string(range.count) + "; pass at least that many."});
                 // A non-zero size_ implies a context and a non-null address.
                 T* first = data();
-                sycl::queue& queue = Detail::owning_queue(*ctx_, static_cast<void*>(first));
+                sycl::queue& queue = Detail::owning_queue(*context_, static_cast<void*>(first));
                 queue.memcpy(first + range.offset, source.data(), range.count * sizeof(T))
                     .wait();
-                ctx_->transfers().add_host_to_device(range.count * sizeof(T));
+                context_->transfers().add_host_to_device(range.count * sizeof(T));
             }
 
             /**
@@ -575,10 +578,10 @@ namespace SushiRuntime
              */
             void share_with_offload(const char* where)
             {
-                if (!ctx_ || !data())
+                if (!context_ || !data())
                     return;
                 require_shareable(where);
-                if (auto* offload = ctx_->offload())
+                if (auto* offload = context_->offload())
                     offload->share(data(), size_ * sizeof(T));
                 else
                     Detail::warn_distributed_without_coordinator();
@@ -620,7 +623,7 @@ namespace SushiRuntime
                 liveness_.reset();
             }
 
-            std::shared_ptr<Internal::Execution::RuntimeContext> ctx_;
+            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
             Internal::Memory::Allocation allocation_;
             std::size_t size_ = 0;
             DeviceIndex device_index_ = DeviceIndex{0};

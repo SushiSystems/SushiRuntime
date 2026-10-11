@@ -49,11 +49,11 @@ namespace SushiRuntime
          */
         template <typename T>
         inline std::shared_ptr<T> make_usm_scratch(
-            std::shared_ptr<Internal::Execution::RuntimeContext> ctx,
+            std::shared_ptr<Internal::Execution::RuntimeContext> context,
             std::size_t count, DeviceIndex device_index, Residency residency)
         {
             const std::size_t bytes = count * sizeof(T);
-            void* raw = malloc_residency_on(*ctx, bytes, device_index, residency);
+            void* raw = malloc_residency_on(*context, bytes, device_index, residency);
 
             if (raw == nullptr)
                 throw SushiException(Error{
@@ -62,7 +62,7 @@ namespace SushiRuntime
                     " bytes failed (out of USM memory)."});
 
             return std::shared_ptr<T>(static_cast<T*>(raw),
-                                      [ctx](T* p) { ctx->memory().release(p); });
+                                      [context](T* p) { context->memory().release(p); });
         }
     } // namespace Detail
 } // namespace SushiRuntime

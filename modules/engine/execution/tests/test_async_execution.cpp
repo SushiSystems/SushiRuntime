@@ -81,9 +81,9 @@ TEST(Integration_AsyncExecutionTest, CPUGPUConcurrentVectorAdd)
     if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
         GTEST_SKIP() << "Need both a CPU and a GPU SYCL device for concurrency test.";
 
-    RuntimeContext ctx;
-    sycl::queue& gpu_q = ctx.devices().queue(gpu_idx);
-    sycl::queue& cpu_q = ctx.devices().queue(cpu_idx);
+    RuntimeContext context;
+    sycl::queue& gpu_q = context.devices().queue(gpu_idx);
+    sycl::queue& cpu_q = context.devices().queue(cpu_idx);
 
     ASSERT_TRUE(gpu_q.get_device().is_gpu());
     ASSERT_TRUE(cpu_q.get_device().is_cpu());
@@ -165,8 +165,8 @@ TEST(Integration_AsyncExecutionTest, AsyncDispatchDoesNotBlock)
     if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
         GTEST_SKIP() << "Need a GPU SYCL device for async dispatch test.";
 
-    RuntimeContext ctx;
-    sycl::queue& gpu_q = ctx.devices().queue(gpu_idx);
+    RuntimeContext context;
+    sycl::queue& gpu_q = context.devices().queue(gpu_idx);
 
     constexpr size_t N = 1u << 20;
     USMShared<float> in(gpu_q, N), out(gpu_q, N);

@@ -205,7 +205,7 @@ one error instead of the assertion followed by a chain from inside the emitter.
 
 ### is_launch_kernel_v
 
-is_launch_kernel_v\<Launch, F, Extra...> says whether a launch can call `fn(index, extra...)`,
+is_launch_kernel_v\<Launch, F, Extra...> says whether a launch can call `kernel(index, extra...)`,
 where the index is the one that launch hands over. It is specialised once per launch, so every
 family checks the index the same way and a new launch adds one specialisation. An NdRange accepts
 two shapes, with and without the shifted id. The callable is tested as a const object because a

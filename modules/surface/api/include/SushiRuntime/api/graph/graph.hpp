@@ -78,7 +78,7 @@ namespace SushiRuntime
                 : BuilderSurface<Graph>(std::move(other)),
                   StepDriver<Graph>(std::move(other)),
                   PlanCache(std::move(other)),
-                  ctx_(other.ctx_),
+                  context_(other.context_),
                   recorder_(std::move(other.recorder_))
             {
             }
@@ -94,7 +94,7 @@ namespace SushiRuntime
                 {
                     StepDriver<Graph>::operator=(std::move(other));
                     PlanCache::operator=(std::move(other));
-                    ctx_ = other.ctx_;
+                    context_ = other.context_;
                     recorder_ = std::move(other.recorder_);
                 }
                 return *this;
@@ -154,13 +154,14 @@ namespace SushiRuntime
             static constexpr const char* K_DANGLING_RESOURCE =
                 "Graph references a Buffer/State freed before the run.";
 
-            explicit Graph(std::shared_ptr<Internal::Execution::RuntimeContext> ctx)
-                : PlanCache(ctx->settings().profiling), ctx_(std::move(ctx)), recorder_(ctx_)
+            explicit Graph(std::shared_ptr<Internal::Execution::RuntimeContext> context)
+                : PlanCache(context->settings().profiling), context_(std::move(context)),
+                recorder_(context_)
             {
             }
 
             /** @brief Returns the context whose engine runs this graph. */
-            Internal::Execution::RuntimeContext& run_context() noexcept { return *ctx_; }
+            Internal::Execution::RuntimeContext& run_context() noexcept { return *context_; }
 
             /** @brief Records the profiling request; a changed one rebuilds the plan. */
             void request_profiling(bool requested) noexcept
@@ -190,7 +191,7 @@ namespace SushiRuntime
             [[nodiscard]] bool plan_is_stale() const noexcept { return stale(recorder_); }
 
             /** @brief Builds the plan from the recorder. */
-            void rebuild_plan() { build(recorder_, *ctx_); }
+            void rebuild_plan() { build(recorder_, *context_); }
 
             /** @brief Does nothing: a built plan needs no further preparation. */
             void prepare_run() noexcept
@@ -212,10 +213,10 @@ namespace SushiRuntime
             /** @brief Returns whether the steps run as an in-order chain from this thread. */
             [[nodiscard]] bool runs_chained() const
             {
-                return plan_.chain.chainable && !ctx_->settings().force_scheduler;
+                return plan_.chain.chainable && !context_->settings().force_scheduler;
             }
 
-            std::shared_ptr<Internal::Execution::RuntimeContext> ctx_;
+            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
 
             /** @brief Owns the recorded tasks, their scratch and their per-step hooks. */
             Recorder recorder_;

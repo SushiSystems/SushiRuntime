@@ -349,9 +349,10 @@ namespace SushiRuntime
             void execute(sycl::handler& h) override             { if(work) work(h); }
 
             /** @brief Executes the host work with a queue. */
-            sycl::event execute_host(sycl::queue& q, const std::vector<sycl::event>& deps) override 
+            sycl::event execute_host(sycl::queue& queue,
+                                     const std::vector<sycl::event>& dependencies) override
             {
-                if(host_work) return host_work(q, deps);
+                if(host_work) return host_work(queue, dependencies);
                 return {};
             }
 

@@ -41,7 +41,7 @@
 namespace SushiRuntime
 {
     /**
-     * @brief Tells whether a const F is callable as fn(std::size_t) and is not a range kernel.
+     * @brief Tells whether a const F is callable as kernel(std::size_t) and is not a range kernel.
      * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
      */
     template <class F>
@@ -51,7 +51,7 @@ namespace SushiRuntime
                              sycl::handler&>;
 
     /**
-     * @brief Tells whether F is callable as fn(sycl::handler&), the raw kernel shape.
+     * @brief Tells whether F is callable as kernel(sycl::handler&), the raw kernel shape.
      * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
      */
     template <class F>
@@ -59,7 +59,7 @@ namespace SushiRuntime
         std::is_invocable_v<F, sycl::handler&>;
 
     /**
-     * @brief Tells whether a const F is callable as fn(std::size_t begin, std::size_t end,
+     * @brief Tells whether a const F is callable as kernel(std::size_t begin, std::size_t end,
      *        sycl::handler&), the range kernel shape.
      * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
      */
@@ -69,7 +69,7 @@ namespace SushiRuntime
                             sycl::handler&>;
 
     /**
-     * @brief Tells whether F is callable as fn(sycl::queue&, const std::vector<sycl::event>&)
+     * @brief Tells whether F is callable as kernel(sycl::queue&, const std::vector<sycl::event>&)
      *        and returns a sycl::event, the task body shape.
      * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
      */

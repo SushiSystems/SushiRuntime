@@ -46,9 +46,9 @@ namespace SushiRuntime
          * @return Zero when the context has no coordinator.
          */
         [[nodiscard]] inline std::uint64_t offloaded_dispatches(
-            const Internal::Execution::RuntimeContext& ctx) noexcept
+            const Internal::Execution::RuntimeContext& context) noexcept
         {
-            const auto* offload = ctx.offload();
+            const auto* offload = context.offload();
             return offload != nullptr ? offload->statistics().offloaded : 0;
         }
 
@@ -60,7 +60,7 @@ namespace SushiRuntime
          */
         inline void fill_run_report(
             Internal::Observability::RunReport&                   report,
-            Internal::Execution::RuntimeContext&         ctx,
+            Internal::Execution::RuntimeContext&         context,
             const Internal::Execution::ExecutionMetrics& before,
             const Internal::Execution::ExecutionMetrics& after,
             std::uint64_t                      offloaded_before,
@@ -76,7 +76,7 @@ namespace SushiRuntime
 
             // The device class comes from the runtime's own inventory, which does not allocate.
             Internal::Observability::NUMANodeStatistics node;
-            const Internal::Device::DeviceQueueSet& devices = ctx.devices();
+            const Internal::Device::DeviceQueueSet& devices = context.devices();
             if (devices.count() > 0 && devices.is_gpu(0))
                 node.gpu_tasks_executed = total_tasks;
             else
@@ -93,7 +93,7 @@ namespace SushiRuntime
             report.numa_statistics.push_back(node);
 
             // report.reset() zeroed the offload figures; they stay zero with no coordinator.
-            if (const auto* offload = ctx.offload())
+            if (const auto* offload = context.offload())
             {
                 const auto offload_statistics = offload->statistics();
                 const std::uint64_t offloaded_now = offload_statistics.offloaded;

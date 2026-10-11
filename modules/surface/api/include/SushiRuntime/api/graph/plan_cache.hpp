@@ -127,16 +127,17 @@ namespace SushiRuntime
              */
             void build(const Recorder& recorder, Internal::Execution::RuntimeContext& context)
             {
-                ::SushiRuntime::Internal::Graph::TaskGraph bg(context.offload());
+                ::SushiRuntime::Internal::Graph::TaskGraph backing_graph(context.offload());
                 registrations_.assign(recorder.rule_count(),
                                       ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION);
-                recorder.replay(bg, [this, &bg](std::size_t rule, std::size_t)
+                recorder.replay(backing_graph, [this, &backing_graph](std::size_t rule, std::size_t)
                 {
-                    const ::SushiRuntime::Internal::Graph::Node* added = bg.last_node_added();
+                    const ::SushiRuntime::Internal::Graph::Node* added =
+                        backing_graph.last_node_added();
                     if (added)
                         registrations_[rule] = added->registration_index;
                 });
-                plan_ = bg.compile();
+                plan_ = backing_graph.compile();
                 plan_.profiling = profiling_requested_;
                 plan_.capture_base_state();
                 plan_.chain = Internal::Execution::classify_chain(plan_, context);

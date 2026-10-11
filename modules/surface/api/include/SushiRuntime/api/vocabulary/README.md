@@ -152,7 +152,7 @@ offset shifts as soon as constraints are added or removed. Without based_at() th
 reach its own work through an index-indirection buffer, paying an extra load per element for
 something the launch could have carried for free.
 
-The offset is applied by the runtime, so the callable still receives absolute indices: `fn(base +
+The offset is applied by the runtime, so the callable still receives absolute indices: `kernel(base +
 i)` for i in [0, count). The window must fit inside the capacity the node was compiled for; one that
 does not fails the run instead of reading past the end.
 

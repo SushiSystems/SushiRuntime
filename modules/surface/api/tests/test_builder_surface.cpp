@@ -137,7 +137,7 @@ TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
     }
 }
 
-/** @brief Tests that add(count, state, fn) updates the first count elements and no more. */
+/** @brief Tests that add(count, state, kernel) updates the first count elements and no more. */
 TEST(Integration_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
 {
     auto rt = Runtime::create();

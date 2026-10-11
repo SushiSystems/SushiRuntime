@@ -55,17 +55,17 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <typename T, class Launch, class F>
-        void add_state_node(::SushiRuntime::Internal::Graph::TaskGraph& bg,
+        void add_state_node(::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                             std::optional<std::uint32_t> registration,
                             const std::shared_ptr<StateView<T>>& view, const Launch& launch,
-                            const F& fn)
+                            const F& kernel)
         {
-            bg.add_node([fn, view, launch](sycl::handler& h)
+            backing_graph.add_node([kernel, view, launch](sycl::handler& h)
             {
                 // The view is read at each submit, so the kernel follows the swap.
                 const T* current = view->current;
                 T* next = view->next;
-                submit_launch(h, launch, fn, current, next);
+                submit_launch(h, launch, kernel, current, next);
             }, { Internal::Memory::ResourceRegion(static_cast<void*>(view->current)) },
             { Internal::Memory::ResourceRegion(static_cast<void*>(view->next)) }, {},
             registration).baked_width = launch_count(launch);
@@ -79,13 +79,13 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <typename T, class Launch, class F>
-        auto state_launch_node(std::shared_ptr<StateView<T>> view, Launch launch, F&& fn)
+        auto state_launch_node(std::shared_ptr<StateView<T>> view, Launch launch, F&& kernel)
         {
-            return [fn = std::forward<F>(fn), view, launch]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+            return [kernel = std::forward<F>(kernel), view, launch]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                add_state_node(bg, registration, view, launch, fn);
+                add_state_node(backing_graph, registration, view, launch, kernel);
             };
         }
 
@@ -95,23 +95,23 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <typename T, class Views, class Launch, class F>
-        void add_coupled_node(::SushiRuntime::Internal::Graph::TaskGraph& bg,
+        void add_coupled_node(::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                               std::optional<std::uint32_t> registration,
                               const std::shared_ptr<StateView<T>>& out_view,
-                              const Views& views, const Launch& launch, const F& fn)
+                              const Views& views, const Launch& launch, const F& kernel)
         {
             using Seq = std::make_index_sequence<std::tuple_size<Views>::value>;
             std::vector<Internal::Memory::ResourceRegion> reads = read_keys_of_views(views, Seq{});
             reads.insert(reads.begin(),
                          Internal::Memory::ResourceRegion(static_cast<void*>(out_view->current)));
-            bg.add_node([fn, out_view, views, launch](sycl::handler& h)
+            backing_graph.add_node([kernel, out_view, views, launch](sycl::handler& h)
             {
                 const T* current = out_view->current;
                 T* next = out_view->next;
                 // The inputs are resolved at each submit, so the kernel holds raw pointers.
-                std::apply([&h, &fn, &launch, current, next](auto... input)
+                std::apply([&h, &kernel, &launch, current, next](auto... input)
                 {
-                    submit_launch(h, launch, fn, current, next, input...);
+                    submit_launch(h, launch, kernel, current, next, input...);
                 }, views_current(views, Seq{}));
             }, reads, { Internal::Memory::ResourceRegion(static_cast<void*>(out_view->next)) }, {},
             registration).baked_width = launch_count(launch);
@@ -126,13 +126,13 @@ namespace SushiRuntime
          */
         template <typename T, class Views, class Launch, class F>
         auto coupled_launch_node(std::shared_ptr<StateView<T>> out_view, Views views,
-                                 Launch launch, F&& fn)
+                                 Launch launch, F&& kernel)
         {
-            return [fn = std::forward<F>(fn), out_view, views, launch]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+            return [kernel = std::forward<F>(kernel), out_view, views, launch]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                add_coupled_node(bg, registration, out_view, views, launch, fn);
+                add_coupled_node(backing_graph, registration, out_view, views, launch, kernel);
             };
         }
     } // namespace Detail

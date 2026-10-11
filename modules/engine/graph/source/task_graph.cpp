@@ -317,7 +317,7 @@ namespace SushiRuntime
          * @param registration Index to stamp on this node; absent draws a fresh one.
          * @return The node added.
          */
-        Node& TaskGraph::add_task(const TaskMetadata& meta,
+        Node& TaskGraph::add_task(const TaskMetadata& metadata,
                                   const std::vector<Internal::Memory::ResourceRegion>& read_access,
                                   const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                   TaskWork device_work,
@@ -328,7 +328,7 @@ namespace SushiRuntime
             impl_->require_issued("add_task", registration);
 
             auto node = make_sushi<Node>();
-            node->metadata = meta;
+            node->metadata = metadata;
             node->work = std::move(device_work);
             node->host_work = std::move(fallback_work);
             node->sycl_deps = dependencies;
@@ -337,7 +337,7 @@ namespace SushiRuntime
             const bool has_host_work = static_cast<bool>(node->host_work);
 
             // KERNEL needs device work and a type other than CUSTOM_HOST (modules/engine/graph/README.md).
-            if (has_device_work && meta.task_type != TaskType::CustomHost)
+            if (has_device_work && metadata.task_type != TaskType::CustomHost)
             {
                 node->mode = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Kernel;
             }
@@ -349,11 +349,15 @@ namespace SushiRuntime
             // A task with no executable work is the only defect (modules/engine/graph/README.md).
             if (!has_device_work && !has_host_work)
             {
-                SR_LOG_WARN("Semantic task '{}' has neither device work nor host fallback — it will be a no-op.", meta.name);
+                SR_LOG_WARN("Semantic task '{}' has neither device work nor host fallback — "
+                            "it will be a no-op.",
+                            metadata.name);
             }
             else if (!has_device_work)
             {
-                SR_LOG_DEBUG("Semantic task '{}' scheduled as host execution (its host_work may still submit device kernels).", meta.name);
+                SR_LOG_DEBUG("Semantic task '{}' scheduled as host execution (its host_work may "
+                             "still submit device kernels).",
+                             metadata.name);
             }
             
             // Resolve USM dependencies utilizing Lock-Free Access History
@@ -368,7 +372,7 @@ namespace SushiRuntime
             node->io_writes_ = write_access;
 
             SR_LOG_DEBUG("Semantic Node '{}' (Type: {}) added (R: {}, W: {}).",
-                         meta.name, static_cast<int>(meta.task_type), 
+                         metadata.name, static_cast<int>(metadata.task_type), 
                          read_access.size(), write_access.size());
             
             // O(1) Lock-Free insertion
@@ -380,14 +384,14 @@ namespace SushiRuntime
          * @param registration Index to stamp on this node; absent draws a fresh one.
          * @return The node added.
          */
-        Node& TaskGraph::add_task(const TaskMetadata& meta,
+        Node& TaskGraph::add_task(const TaskMetadata& metadata,
                                   const std::vector<Internal::Memory::ResourceRegion>& read_access,
                                   const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                   HostWork fallback_work,
                                   const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
         {
-            return add_task(meta,
+            return add_task(metadata,
                             read_access,
                             write_access,
                             TaskWork{},
@@ -398,11 +402,11 @@ namespace SushiRuntime
 
         /**
          * @brief Adds an offloadable task whose touched buffers rotate every step.
-         * @param meta Metadata carrying the offloadable op_id.
+         * @param metadata Metadata carrying the offloadable op_id.
          * @param registration Index to stamp on this node; absent draws a fresh one.
          * @return The node added.
          */
-        Node& TaskGraph::add_offload_dynamic(const TaskMetadata& meta,
+        Node& TaskGraph::add_offload_dynamic(const TaskMetadata& metadata,
                                              std::shared_ptr<std::vector<void*>> live_reads,
                                              std::shared_ptr<std::vector<void*>> live_writes,
                                              HostWork fallback_work,
@@ -412,7 +416,7 @@ namespace SushiRuntime
             impl_->require_issued("add_offload_dynamic", registration);
 
             auto node = make_sushi<Node>();
-            node->metadata  = meta;
+            node->metadata  = metadata;
             node->host_work = std::move(fallback_work);
             node->sycl_deps = dependencies;
             node->mode      = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Host;
