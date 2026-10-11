@@ -44,12 +44,21 @@ lower module, so a value passes to that module without a conversion.
 
 ### AdvancedControls
 
-`AdvancedControls` is the supported way to read the few internal facts a caller needs (the device
-list, profiling and rebalancer state, the worker pool, cumulative transfer bytes) without the whole
-`RuntimeContext`. `Runtime::advanced()` returns it and nothing else can construct it. It shares
-ownership of the context like every other handle; see Lifetime. For anything beyond this surface,
-`Runtime::unsafe_context()` returns the internal `RuntimeContext`. Code calls it only for an
-operation that neither the fluent API nor `advanced()` covers.
+`AdvancedControls` is the supported way to reach the few internal facts a caller needs (the device
+list, the queue of a device, profiling and rebalancer state, the worker pool, cumulative transfer
+bytes) without the whole `RuntimeContext`. `Runtime::advanced()` returns it and nothing else can
+construct it. It shares ownership of the context like every other handle; see Lifetime. For
+anything beyond this surface, `Runtime::unsafe_context()` returns the internal `RuntimeContext`.
+Code calls it only for an operation that neither the fluent API nor `advanced()` covers.
+
+### queue
+
+`queue(device)` returns the plain `sycl::queue` the runtime submits that device's work on. A
+library uses it for the host side of its own work, a `memcpy` between a host array and a Buffer
+or a wait on one event, with no `RuntimeContext` in its code. Work a caller submits on it is
+outside every graph: no rule is ordered against it, so the caller waits for it, or calls
+`Runtime::wait()`, before a graph that touches the same memory runs. The reference stays valid
+while any handle of the runtime lives. A device the runtime does not have throws `invalid_access`.
 
 ### devices
 
@@ -104,6 +113,14 @@ The rebalancer is off unless `RuntimeConfig::rebalancer` asked for it. Running i
 reproducibility and the jitter floor for throughput, by migrating tasks between workers on a 5 ms
 heartbeat. That is worth it for long batch work and wrong for a simulation frame.
 `set_rebalancer_enabled()` is safe to call between runs.
+
+### wait
+
+`wait()` blocks until every device queue of the runtime is idle: the queues the graphs ran on and
+any work a caller submitted through `advanced().queue()`. A blocking run has already waited for
+its own steps, so `wait()` is for work outside a graph and for a caller that wants the devices
+quiet before it reads memory. It does not settle a step started with run_async(); the RunHandle
+does. A command that failed on a device arrives as `kernel_failed` with the device's text.
 
 ### unsafe_context
 

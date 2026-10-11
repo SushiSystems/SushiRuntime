@@ -1299,6 +1299,16 @@ function forgets would otherwise keep its default silently.
 
 A move hands the context over and does not build a second one.
 
+### `ACallerWaitsAndCopiesThroughTheDeviceQueue`
+
+The test submits a kernel on the queue `advanced().queue()` returns and does not wait for its
+event. `Runtime::wait()` returns once the kernel has written the buffer, and a `memcpy` through
+the same queue brings the values to a host vector. The test names no type of `Internal::`.
+
+### `AQueueOfAnUnknownDeviceIsRefused`
+
+`advanced().queue()` asked for the device after the last one throws `invalid_access`.
+
 ## test_builder_surface.cpp
 
 The file covers the add() overloads of BuilderSurface that v0.4.0 adds or reorders: launch first,

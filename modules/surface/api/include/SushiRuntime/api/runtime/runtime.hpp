@@ -32,6 +32,9 @@
 #include <memory>
 #include <utility>
 
+#include <sycl/sycl.hpp>
+
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
@@ -126,7 +129,25 @@ namespace SushiRuntime
                 return *this;
             }
 
-            /** @brief Returns the read-only view of this runtime's devices and counters. */
+            /**
+             * @brief Blocks until every device queue of this runtime has finished its work.
+             * @throws SushiException With Errc::kernel_failed when a queue reports a
+             *         failed command.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            void wait() const
+            {
+                try
+                {
+                    context_->devices().wait_all();
+                }
+                catch (const sycl::exception& failure)
+                {
+                    throw SushiException(Error{Errc::kernel_failed, failure.what()});
+                }
+            }
+
+            /** @brief Returns the view of this runtime's devices, queues and counters. */
             [[nodiscard]] AdvancedControls advanced() const noexcept
             {
                 return AdvancedControls(context_);

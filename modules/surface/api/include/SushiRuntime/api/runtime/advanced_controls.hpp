@@ -33,6 +33,9 @@
 #include <utility>
 #include <vector>
 
+#include <sycl/sycl.hpp>
+
+#include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/device/device_description.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -45,11 +48,11 @@ namespace SushiRuntime
     class Runtime;
 
     /**
-     * @brief Answers read-only questions about a runtime's devices, workers and counters.
+     * @brief Answers questions about a runtime's devices, workers and counters, and hands
+     *        out the queue of a device.
      *
      * A view shares ownership of the runtime's context, so it answers after the Runtime
      * it came from is destroyed.
-     *
      * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
      */
     class AdvancedControls
@@ -70,6 +73,18 @@ namespace SushiRuntime
             [[nodiscard]] const std::vector<Internal::Device::DeviceDescription>& devices() const
             {
                 return context_->devices().devices();
+            }
+
+            /**
+             * @brief Returns the queue the runtime submits a device's work on.
+             * @return A reference valid while a handle of this runtime lives.
+             * @throws SushiException With Errc::invalid_access for a device the runtime
+             *         does not have.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] sycl::queue& queue(DeviceIndex device) const
+            {
+                return context_->devices().queue(device.value());
             }
 
             /** @brief Returns whether the queues were built to record device timing. */
