@@ -31,6 +31,7 @@
 #include <exception>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -38,6 +39,7 @@
 
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include "bindless_detection.hpp"
@@ -127,40 +129,40 @@ namespace SushiRuntime
             return text;
         }
 
-        /// @brief Builds the exception import_device throws for a descriptor it rejects.
-        SushiException descriptor_error(std::string detail)
+        /// @brief Builds the error import_device returns for a descriptor it refuses.
+        Error descriptor_error(std::string detail)
         {
-            return SushiException(Error{
-                ErrorCode::InvalidAccess, "import_device: " + std::move(detail)});
+            return Error{ErrorCode::InvalidAccess, "import_device: " + std::move(detail)};
         }
 
         /**
-         * @brief Throws unless @p descriptor can describe @p bytes on this platform.
-         * @throws SushiException With InvalidAccess, naming the field at fault.
+         * @brief Returns why @p descriptor cannot describe @p bytes on this platform.
+         * @return An InvalidAccess error naming the field at fault, or nothing.
          */
-        void require_importable(const ExternalMemoryDescriptor& descriptor, std::size_t bytes)
+        std::optional<Error> descriptor_refusal(const ExternalMemoryDescriptor& descriptor,
+                                                std::size_t bytes)
         {
             if (descriptor.kind == ExternalHandleKind::Unspecified)
-                throw descriptor_error(
+                return descriptor_error(
                     std::string("descriptor.kind is Unspecified; the exporter must state ") +
                     "it, and this platform imports " + kind_name(K_PLATFORM_HANDLE_KIND) +
                     " handles.");
 
             if (descriptor.kind != K_PLATFORM_HANDLE_KIND)
-                throw descriptor_error(
+                return descriptor_error(
                     std::string("descriptor.kind is ") + kind_name(descriptor.kind) +
                     " (value " + std::to_string(static_cast<unsigned>(descriptor.kind)) +
                     ") and this platform imports " + kind_name(K_PLATFORM_HANDLE_KIND) +
                     " handles only.");
 
             if (descriptor.kind == ExternalHandleKind::OpaqueWin32 && descriptor.handle == 0)
-                throw descriptor_error(
+                return descriptor_error(
                     "descriptor.handle is null; set it to the Win32 NT handle the exporting "
                     "API returned.");
 
             if (descriptor.kind == ExternalHandleKind::OpaqueFd &&
                 descriptor.handle > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
-                throw descriptor_error(
+                return descriptor_error(
                     "descriptor.handle is " + std::to_string(descriptor.handle) +
                     ", above the largest file descriptor, " +
                     std::to_string(std::numeric_limits<int>::max()) +
@@ -168,32 +170,34 @@ namespace SushiRuntime
 
             if (descriptor.offset > descriptor.allocation_bytes ||
                 bytes > descriptor.allocation_bytes - descriptor.offset)
-                throw descriptor_error(
+                return descriptor_error(
                     "the region of " + std::to_string(bytes) + " bytes at offset " +
                     std::to_string(descriptor.offset) + " ends past the allocation of " +
                     std::to_string(descriptor.allocation_bytes) +
                     " bytes that descriptor.allocation_bytes states.");
+            return std::nullopt;
         }
 
         /**
-         * @brief Throws unless device @p device_index is the one @p descriptor names.
-         * @throws SushiException With InvalidAccess, naming both UUIDs when both exist.
+         * @brief Returns why device @p device_index is not the one @p descriptor names.
+         * @return An InvalidAccess error naming both UUIDs when both exist, or nothing.
          */
-        void require_same_device(const InteropCapabilities& capabilities,
-                                 const ExternalMemoryDescriptor& descriptor,
-                                 std::size_t device_index)
+        std::optional<Error> device_refusal(const InteropCapabilities& capabilities,
+                                            const ExternalMemoryDescriptor& descriptor,
+                                            std::size_t device_index)
         {
             if (!capabilities.device_uuid)
-                throw descriptor_error(
+                return descriptor_error(
                     "device " + std::to_string(device_index) + " reports no UUID, so it " +
                     "cannot be matched to descriptor.device; import on a device whose " +
                     "capabilities() hold a device_uuid.");
 
             if (*capabilities.device_uuid != descriptor.device)
-                throw descriptor_error(
+                return descriptor_error(
                     "descriptor.device is " + hex(descriptor.device) + " and device " +
                     std::to_string(device_index) + " is " + hex(*capabilities.device_uuid) +
                     "; import on the device that exported the handle.");
+            return std::nullopt;
         }
 
         /// @brief Runs one step of releasing an import and logs a failure in place of a throw.
@@ -340,15 +344,29 @@ namespace SushiRuntime
 
     namespace Detail
     {
-        InteropCapabilities query_capabilities(Internal::Execution::RuntimeContext& context, std::size_t device_index)
+        Result<InteropCapabilities> query_capabilities(
+            Internal::Execution::RuntimeContext& context, std::size_t device_index)
         {
             sycl::queue& queue = context.devices().queue(device_index);
-            return capabilities_for(context, queue, device_index);
+            try
+            {
+                return capabilities_for(context, queue, device_index);
+            }
+            catch (const sycl::exception& failure)
+            {
+                return make_error(
+                    error_without_throwing(ErrorCode::DeviceLost, failure.what()));
+            }
+            catch (const std::exception& failure)
+            {
+                return make_error(
+                    error_without_throwing(ErrorCode::DeviceLost, failure.what()));
+            }
         }
 
-        Internal::Memory::Allocation export_host_memory(const std::shared_ptr<Internal::Execution::RuntimeContext>& context,
-                                              std::size_t bytes, std::size_t device_index,
-                                              std::size_t alignment)
+        Result<Internal::Memory::Allocation> export_host_memory(
+            const std::shared_ptr<Internal::Execution::RuntimeContext>& context,
+            std::size_t bytes, std::size_t device_index, std::size_t alignment)
         {
             alignment = std::max(alignment, alignof(std::max_align_t));
             SR_VERIFY(is_power_of_two(alignment),
@@ -366,80 +384,114 @@ namespace SushiRuntime
                           .c_str());
 
             const std::size_t rounded = round_up(bytes, alignment);
+            try
+            {
+                // The owner exists before the allocation it will free (modules/surface/interop/README.md).
+                auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
+                    context->shared_memory());
+                void* address = context->memory().allocate(
+                    {Internal::Memory::USMKind::Host, rounded, alignment, device_index});
+                if (address == nullptr)
+                    return make_error(Error{
+                        ErrorCode::AllocationFailed,
+                        "export_host: host allocation of " + std::to_string(rounded) +
+                        " bytes, aligned to " + std::to_string(alignment) +
+                        ", failed on device " + std::to_string(device_index) +
+                        "; capabilities(" + std::to_string(device_index) +
+                        ").host_export tells whether its queue offers host USM."});
 
-            // The owner exists before the allocation it will free (modules/surface/interop/README.md).
-            auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(context->shared_memory());
-            void* address = context->memory().allocate(
-                {Internal::Memory::USMKind::Host, rounded, alignment, device_index});
-            if (address == nullptr)
-                throw SushiException(Error{
-                    ErrorCode::AllocationFailed,
-                    "export_host: host allocation of " + std::to_string(rounded) +
-                    " bytes, aligned to " + std::to_string(alignment) + ", failed on device " +
-                    std::to_string(device_index) + "; capabilities(" +
-                    std::to_string(device_index) + ").host_export tells whether its queue " +
-                    "offers host USM."});
-
-            return Internal::Memory::Allocation(address, rounded, std::move(owner));
+                return Internal::Memory::Allocation(address, rounded, std::move(owner));
+            }
+            catch (const sycl::exception& failure)
+            {
+                return make_error(
+                    error_without_throwing(ErrorCode::AllocationFailed, failure.what()));
+            }
+            catch (const std::exception& failure)
+            {
+                return make_error(
+                    error_without_throwing(ErrorCode::AllocationFailed, failure.what()));
+            }
         }
 
-        Internal::Memory::Allocation import_device_memory(const std::shared_ptr<Internal::Execution::RuntimeContext>& context,
-                                                const ExternalMemoryDescriptor& descriptor,
-                                                std::size_t bytes, std::size_t device_index)
+        Result<Internal::Memory::Allocation> import_device_memory(
+            const std::shared_ptr<Internal::Execution::RuntimeContext>& context,
+            const ExternalMemoryDescriptor& descriptor, std::size_t bytes,
+            std::size_t device_index)
         {
 #if defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
             sycl::queue& queue = context->devices().queue(device_index);
-            const InteropCapabilities capabilities = capabilities_for(*context, queue, device_index);
-            if (!capabilities.device_import)
-                throw SushiException(Error{
-                    ErrorCode::Unsupported,
-                    "import_device: device " + std::to_string(device_index) +
-                    " cannot import external memory; capabilities(" +
-                    std::to_string(device_index) + ").device_import is false."});
-            require_importable(descriptor, bytes);
-            require_same_device(capabilities, descriptor, device_index);
-
-            if (bytes == 0)
-                return Internal::Memory::Allocation();
-
-            ImportGuard guard(context, device_index);
-
-            Experimental::external_mem memory{};
-            if (K_PLATFORM_HANDLE_KIND == ExternalHandleKind::OpaqueWin32)
+            try
             {
-                Experimental::external_mem_descriptor<Experimental::resource_win32_handle> native{
-                    {reinterpret_cast<void*>(static_cast<std::uintptr_t>(descriptor.handle))},
-                    Experimental::external_mem_handle_type::win32_nt_handle,
-                    static_cast<std::size_t>(descriptor.allocation_bytes)};
-                memory = Experimental::import_external_memory(native, queue);
+                const InteropCapabilities capabilities =
+                    capabilities_for(*context, queue, device_index);
+                if (!capabilities.device_import)
+                    return make_error(Error{
+                        ErrorCode::Unsupported,
+                        "import_device: device " + std::to_string(device_index) +
+                        " cannot import external memory; capabilities(" +
+                        std::to_string(device_index) + ").device_import is false."});
+                if (std::optional<Error> refused = descriptor_refusal(descriptor, bytes))
+                    return make_error(std::move(*refused));
+                if (std::optional<Error> refused =
+                        device_refusal(capabilities, descriptor, device_index))
+                    return make_error(std::move(*refused));
+
+                if (bytes == 0)
+                    return Internal::Memory::Allocation();
+
+                ImportGuard guard(context, device_index);
+
+                Experimental::external_mem memory{};
+                if (K_PLATFORM_HANDLE_KIND == ExternalHandleKind::OpaqueWin32)
+                {
+                    Experimental::external_mem_descriptor<Experimental::resource_win32_handle>
+                        native{
+                            {reinterpret_cast<void*>(
+                                static_cast<std::uintptr_t>(descriptor.handle))},
+                            Experimental::external_mem_handle_type::win32_nt_handle,
+                            static_cast<std::size_t>(descriptor.allocation_bytes)};
+                    memory = Experimental::import_external_memory(native, queue);
+                }
+                else
+                {
+                    Experimental::external_mem_descriptor<Experimental::resource_fd> native{
+                        {static_cast<int>(descriptor.handle)},
+                        Experimental::external_mem_handle_type::opaque_fd,
+                        static_cast<std::size_t>(descriptor.allocation_bytes)};
+                    memory = Experimental::import_external_memory(native, queue);
+                }
+                guard.mark_imported(memory);
+
+                void* address = Experimental::map_external_linear_memory(
+                    memory, descriptor.offset, bytes, queue);
+                guard.mark_mapped(address);
+
+                context->memory().adopt(address, device_index, bytes);
+                guard.mark_adopted();
+
+                auto owner = std::make_unique<DeviceImportOwner>(context, device_index, memory);
+                guard.disarm();
+                return Internal::Memory::Allocation(address, bytes, std::move(owner));
             }
-            else
+            catch (const sycl::exception& failure)
             {
-                Experimental::external_mem_descriptor<Experimental::resource_fd> native{
-                    {static_cast<int>(descriptor.handle)},
-                    Experimental::external_mem_handle_type::opaque_fd,
-                    static_cast<std::size_t>(descriptor.allocation_bytes)};
-                memory = Experimental::import_external_memory(native, queue);
+                return make_error(
+                    error_without_throwing(ErrorCode::InvalidAccess, failure.what()));
             }
-            guard.mark_imported(memory);
-
-            void* address = Experimental::map_external_linear_memory(memory, descriptor.offset, bytes, queue);
-            guard.mark_mapped(address);
-
-            context->memory().adopt(address, device_index, bytes);
-            guard.mark_adopted();
-
-            auto owner = std::make_unique<DeviceImportOwner>(context, device_index, memory);
-            guard.disarm();
-            return Internal::Memory::Allocation(address, bytes, std::move(owner));
+            catch (const std::exception& failure)
+            {
+                return make_error(
+                    error_without_throwing(ErrorCode::AllocationFailed, failure.what()));
+            }
 #else
-            (void)context;
-            (void)descriptor;
-            (void)bytes;
-            (void)device_index;
-            throw SushiException(Error{
+            static_cast<void>(context);
+            static_cast<void>(descriptor);
+            static_cast<void>(bytes);
+            static_cast<void>(device_index);
+            return make_error(error_without_throwing(
                 ErrorCode::Unsupported,
-                "import_device: this toolchain has no bindless images extension."});
+                "import_device: this toolchain has no bindless images extension."));
 #endif
         }
 

@@ -159,11 +159,11 @@ TEST(Unit_BoundaryAccess, OnlyAContainingSuccessorWriteShadowsAnExit)
 /** @brief Tests that an earlier region's writer orders a reader its predecessor half covers. */
 TEST(Integration_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto shared = rt.buffer<int>(K_ELEMENTS);
-    auto total = rt.buffer<int>(1);
+    auto shared = rt.buffer<int>(K_ELEMENTS).value();
+    auto total = rt.buffer<int>(1).value();
     for (std::size_t i = 0; i < K_ELEMENTS; ++i)
         shared[i] = 0;
     total[0] = 0;
@@ -200,11 +200,11 @@ TEST(Integration_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfC
 /** @brief Tests that a reader its predecessor fully covers gains no edge of its own. */
 TEST(Integration_BoundaryAccess, AReaderItsPredecessorCoversGainsNoEdge)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto shared = rt.buffer<int>(K_ELEMENTS);
-    auto total = rt.buffer<int>(1);
+    auto shared = rt.buffer<int>(K_ELEMENTS).value();
+    auto total = rt.buffer<int>(1).value();
     for (std::size_t i = 0; i < K_ELEMENTS; ++i)
         shared[i] = 0;
     total[0] = 0;
@@ -244,12 +244,12 @@ TEST(Integration_BoundaryAccess, AReaderItsPredecessorCoversGainsNoEdge)
 /** @brief Tests that an earlier region's reader orders a writer whose predecessor only reads. */
 TEST(Integration_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPredecessor)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto shared = rt.buffer<int>(K_ELEMENTS);
-    auto early = rt.buffer<int>(1);
-    auto late = rt.buffer<int>(1);
+    auto shared = rt.buffer<int>(K_ELEMENTS).value();
+    auto early = rt.buffer<int>(1).value();
+    auto late = rt.buffer<int>(1).value();
     for (std::size_t i = 0; i < K_ELEMENTS; ++i)
         shared[i] = 3;
     early[0] = 0;

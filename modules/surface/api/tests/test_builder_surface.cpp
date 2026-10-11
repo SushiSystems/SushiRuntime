@@ -58,7 +58,7 @@ namespace
     Buffer<Word> seeded(Runtime& rt, std::size_t count = K_WIDTH,
                              DeviceIndex device = DeviceIndex{0})
     {
-        auto buffer = rt.buffer<Word>(count, device);
+        auto buffer = rt.buffer<Word>(count, device).value();
         for (std::size_t i = 0; i < count; ++i)
             buffer[i] = static_cast<Word>(i) + K_SEED;
         return buffer;
@@ -67,7 +67,7 @@ namespace
     /** @brief Allocates a State of count words whose current field holds index plus K_SEED. */
     State<Word> seeded_state(Runtime& rt, std::size_t count = K_WIDTH)
     {
-        auto state = rt.state<Word>(count);
+        auto state = rt.state<Word>(count).value();
         for (std::size_t i = 0; i < count; ++i)
             state[i] = static_cast<Word>(i) + K_SEED;
         return state;
@@ -101,7 +101,7 @@ namespace
 /** @brief Tests that a count launch hands its kernel the pointer of each capture. */
 TEST(Integration_BuilderSurface, CountLaunchWithCapturesPassesPointers)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto source = seeded(rt);
     auto target = seeded(rt);
 
@@ -117,7 +117,7 @@ TEST(Integration_BuilderSurface, CountLaunchWithCapturesPassesPointers)
 /** @brief Tests that an NdRange with an origin hands the shifted id to a two-index kernel. */
 TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto target = seeded(rt);
 
     const NdRange<1> tiles =
@@ -142,7 +142,7 @@ TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
 /** @brief Tests that add(count, state, kernel) updates the first count elements and no more. */
 TEST(Integration_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
 
     auto graph = rt.graph();
@@ -159,7 +159,7 @@ TEST(Integration_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
 /** @brief Tests that a launch reaching past its State is refused where add() is called. */
 TEST(Integration_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     auto graph = rt.graph();
 
@@ -179,7 +179,7 @@ TEST(Integration_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
 /** @brief Tests both coupled forms: the whole field and a launch, each reading two States. */
 TEST(Integration_BuilderSurface, CoupledRulesReadEveryStateNamed)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto whole = seeded_state(rt);
     auto prefix = seeded_state(rt);
     auto input = seeded_state(rt);
@@ -210,7 +210,7 @@ TEST(Integration_BuilderSurface, CoupledRulesReadEveryStateNamed)
 /** @brief Tests that a coupled rule whose input is shorter than its output is refused. */
 TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto output = seeded_state(rt);
     auto input = seeded_state(rt, K_PREFIX);
     auto graph = rt.graph();
@@ -229,7 +229,7 @@ TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd
 /** @brief Tests the late-bound order: Dynamic, capacity, access, callable. */
 TEST(Integration_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto target = seeded(rt);
     Word* words = target.data();
     std::size_t live = K_PREFIX;
@@ -246,7 +246,7 @@ TEST(Integration_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
 /** @brief Tests that untracked kernels placed with On() write buffers of the device named. */
 TEST(Integration_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     const DeviceIndex last{rt.advanced().device_count() - 1};
     auto by_handle = seeded(rt, K_WIDTH, last);
     auto by_index = seeded(rt, K_WIDTH, last);
@@ -275,7 +275,7 @@ TEST(Integration_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
 /** @brief Tests that On() rejects a device the runtime lacks and watches the handle it names. */
 TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     const std::size_t count = rt.advanced().device_count();
     auto graph = rt.graph();
 
@@ -301,7 +301,7 @@ TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
 /** @brief Tests that extend() runs its callable once and counts what it records as one rule. */
 TEST(Integration_BuilderSurface, ExtendRecordsOneNamedRule)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto target = seeded(rt);
     Word* words = target.data();
     std::size_t calls = 0;
@@ -328,7 +328,7 @@ TEST(Integration_BuilderSurface, ExtendRecordsOneNamedRule)
 /** @brief Tests that each refusal names the add() call the user wrote, through the public add(). */
 TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     auto output = seeded_state(rt);
     auto input = seeded_state(rt, K_PREFIX);
@@ -400,7 +400,7 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
 /** @brief Tests that a refused add is kept, records nothing, and is what the next run returns. */
 TEST(Integration_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     auto target = seeded(rt);
     Word* words = target.data();

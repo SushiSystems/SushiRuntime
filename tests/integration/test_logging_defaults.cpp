@@ -56,7 +56,7 @@ namespace
         testing::internal::CaptureStdout();
         testing::internal::CaptureStderr();
         {
-            auto runtime = Runtime::create();
+            auto runtime = Runtime::create().value();
             EXPECT_GE(runtime.advanced().device_count(), 1u);
         }
         captured.standard_error = testing::internal::GetCapturedStderr();

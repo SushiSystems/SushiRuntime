@@ -274,9 +274,9 @@ namespace
     {
         /** @brief Records the step on @p rt; a kernel writes @p count before the sized launch. */
         CountedStep(Runtime& rt, std::uint32_t count)
-            : field(rt.state<int>(N)),
-              counter(rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host)),
-              marks(rt.buffer<std::uint32_t>(K_COUNT_CAPACITY)),
+            : field(rt.state<int>(N).value()),
+              counter(rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value()),
+              marks(rt.buffer<std::uint32_t>(K_COUNT_CAPACITY).value()),
               graph(rt.graph())
         {
             for (std::size_t i = 0; i < N; ++i)
@@ -316,8 +316,8 @@ namespace
         constexpr int STEPS_BEFORE_CANCEL = 3;
         constexpr int STEP_LIMIT = 1000;
 
-        auto rt  = Runtime::create();
-        auto buf = rt.buffer<int>(N);
+        auto rt  = Runtime::create().value();
+        auto buf = rt.buffer<int>(N).value();
         std::atomic<int> steps{0};
 
         auto g = rt.graph();
@@ -343,8 +343,8 @@ namespace
 /** @brief Tests that a Graph reports a throwing host task as KernelFailed from every entry. */
 TEST(Integration_RunDriver, GraphReportsAThrowingHostTaskAsKernelFailed)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
 
     auto g = rt.graph();
     g.add_host(Reads{}, Writes(buf), fail_the_task);
@@ -355,8 +355,8 @@ TEST(Integration_RunDriver, GraphReportsAThrowingHostTaskAsKernelFailed)
 /** @brief Tests that a DynamicGraph reports a throwing host task the way a Graph does. */
 TEST(Integration_RunDriver, DynamicGraphReportsAThrowingHostTaskAsKernelFailed)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
 
     auto world = rt.dynamic_graph();
     world.region(0).add_host(Reads{}, Writes(buf), fail_the_task);
@@ -367,8 +367,8 @@ TEST(Integration_RunDriver, DynamicGraphReportsAThrowingHostTaskAsKernelFailed)
 /** @brief Tests that an exception thrown while the plan is built is CompileFailed. */
 TEST(Integration_RunDriver, AThrowingBuildIsCompileFailed)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -391,9 +391,9 @@ TEST(Integration_RunDriver, EveryTryEntryRunsOnBothGraphs)
 {
     constexpr int STEPS_OF_ALL_ENTRIES = 12;
 
-    auto rt = Runtime::create();
-    auto static_count  = rt.buffer<int>(N);
-    auto dynamic_count = rt.buffer<int>(N);
+    auto rt = Runtime::create().value();
+    auto static_count  = rt.buffer<int>(N).value();
+    auto dynamic_count = rt.buffer<int>(N).value();
     static_count[0]  = 0;
     dynamic_count[0] = 0;
     int* ps = static_count.data();
@@ -413,8 +413,8 @@ TEST(Integration_RunDriver, EveryTryEntryRunsOnBothGraphs)
 /** @brief Tests that a run refused for the graph's state reports InvalidState. */
 TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
     std::atomic<bool> released{false};
 
@@ -447,7 +447,7 @@ TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 /** @brief Tests that set_profiling() chains and is read back on both graph types. */
 TEST(Integration_RunDriver, SetProfilingChainsAndReadsBack)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
 
     auto g = rt.graph();
     EXPECT_FALSE(g.is_profiling_requested());
@@ -463,8 +463,8 @@ TEST(Integration_RunDriver, SetProfilingChainsAndReadsBack)
 /** @brief Tests that set_profiling() with the value already stored rebuilds no plan. */
 TEST(Integration_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -489,8 +489,8 @@ TEST(Integration_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
 /** @brief Tests that a profiling toggle on a DynamicGraph composes once and times its nodes. */
 TEST(Integration_RunDriver, AProfilingToggleOnADynamicGraphComposesOnceAndTimesItsNodes)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
     int* p = buf.data();
 
@@ -518,8 +518,8 @@ TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 #ifndef NDEBUG
     GTEST_SKIP() << "a debug build asserts on this move; the release result is tested";
 #else
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     buf[0] = 0;
     int* p = buf.data();
     std::atomic<bool> released{false};
@@ -554,8 +554,8 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
     constexpr std::uint64_t BEFORE_ANY_RUN = 5;
     constexpr std::uint64_t PER_STEP = 3;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
 
     const auto coordinator = std::make_shared<CountingCoordinator>();
     rt.unsafe_context().install_offload(coordinator);
@@ -579,7 +579,7 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
 /** @brief Tests that a failed chained run of one step advances no State. */
 TEST(Integration_RunDriver, AFailedChainedRunOfOneStepAdvancesNoState)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     if (!counted_step_runs_chained(rt))
         GTEST_SKIP() << "the counted step does not take the chain on this runtime";
 
@@ -599,7 +599,7 @@ TEST(Integration_RunDriver, AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast
 {
     constexpr std::size_t STEPS = 3;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     if (!counted_step_runs_chained(rt))
         GTEST_SKIP() << "the counted step does not take the chain on this runtime";
 
@@ -626,9 +626,9 @@ TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfOnePlan)
     constexpr std::size_t K_STEPS = 8;
     constexpr std::uint32_t K_BASE = 100;
 
-    auto rt   = Runtime::create();
-    auto word = rt.buffer<std::uint32_t>(2);
-    auto seen = rt.buffer<std::uint32_t>(K_STEPS);
+    auto rt   = Runtime::create().value();
+    auto word = rt.buffer<std::uint32_t>(2).value();
+    auto seen = rt.buffer<std::uint32_t>(K_STEPS).value();
     for (std::size_t i = 0; i < K_STEPS; ++i)
         seen[i] = 0;
     std::uint32_t* w = word.data();
@@ -671,9 +671,9 @@ TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfADynamicGraph)
     constexpr std::size_t K_STEPS = 8;
     constexpr std::uint32_t K_BASE = 100;
 
-    auto rt   = Runtime::create();
-    auto word = rt.buffer<std::uint32_t>(2);
-    auto seen = rt.buffer<std::uint32_t>(K_STEPS);
+    auto rt   = Runtime::create().value();
+    auto word = rt.buffer<std::uint32_t>(2).value();
+    auto seen = rt.buffer<std::uint32_t>(K_STEPS).value();
     for (std::size_t i = 0; i < K_STEPS; ++i)
         seen[i] = 0;
     std::uint32_t* w = word.data();
@@ -701,8 +701,8 @@ TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfADynamicGraph)
 /** @brief Tests that a moved graph keeps its step hooks and its source has none. */
 TEST(Integration_RunDriver, AStepHookMovesWithItsGraph)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     std::size_t calls = 0;
@@ -722,8 +722,8 @@ TEST(Integration_RunDriver, AStepHookMovesWithItsGraph)
 /** @brief Tests that a hook too large for the inline storage is held and called. */
 TEST(Integration_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     std::array<std::uint64_t, 16> payload{};

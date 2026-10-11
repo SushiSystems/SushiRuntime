@@ -39,9 +39,11 @@
 #include <vector>
 
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
@@ -372,10 +374,11 @@ namespace SushiRuntime
              * @brief Copies a window out to a host vector through the owning queue and waits
              *        for it.
              * @param range Element window to read.
+             * @return The elements, or a KernelFailed error when the device fails the copy.
              * @pre range fits size().
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
-            [[nodiscard]] std::vector<T> read_range(ElementRange range) const
+            [[nodiscard]] Result<std::vector<T>> read_range(ElementRange range) const
             {
                 return read_window("Buffer::read_range", range);
             }
@@ -385,11 +388,12 @@ namespace SushiRuntime
              * @param range  Element window to write.
              * @param source Holds at least range.count elements; the first range.count are
              *        copied.
+             * @return Nothing, or a KernelFailed error when the device fails the copy.
              * @pre range fits size(), and source holds at least range.count elements.
              */
-            void write_range(ElementRange range, span<const T> source) const
+            [[nodiscard]] Result<void> write_range(ElementRange range, span<const T> source) const
             {
-                write_window("Buffer::write_range", range, source);
+                return write_window("Buffer::write_range", range, source);
             }
 
             /**
@@ -439,34 +443,46 @@ namespace SushiRuntime
             /**
              * @brief Allocates count elements of USM pinned to one device.
              * @param call Names the public operation in a message.
+             * @return The buffer, or an AllocationFailed error when the device returns nothing.
              * @pre device_index names a device, and the byte size of count fits std::size_t.
-             * @throws SushiException With AllocationFailed when the device returns nothing.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
-            Buffer(const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                   std::size_t count, DeviceIndex device_index, Residency residency)
-                : context_(std::move(context)),
-                  size_(count),
-                  device_index_(device_index),
-                  residency_(residency),
-                  liveness_(Internal::Memory::make_liveness())
+            [[nodiscard]] static Result<Buffer> allocate(
+                const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
+                std::size_t count, DeviceIndex device_index, Residency residency)
             {
-                Detail::require_device(call, device_index, context_->devices().count());
+                Detail::require_device(call, device_index, context->devices().count());
                 const std::size_t bytes =
                     Detail::checked_byte_count("Buffer allocation", count, sizeof(T));
-                auto owner =
-                    std::make_unique<Internal::Memory::USMAllocationOwner>(
-                        context_->shared_memory());
-                void* address =
-                    Detail::malloc_residency_on(*context_, bytes, device_index, residency);
-                // A null address would give the handle a null key, which skips tracking.
-                if (count > 0 && address == nullptr)
-                    throw SushiException(Error{
-                        ErrorCode::AllocationFailed,
-                        "Buffer allocation: the device returned no memory for " +
-                        Detail::describe_request(count, sizeof(T), device_index, residency) +
-                        "."});
-                allocation_ = Internal::Memory::Allocation(address, bytes, std::move(owner));
+
+                std::optional<Buffer> made;
+                Error refused;
+                Error thrown = Detail::translate_exceptions(
+                    ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
+                {
+                    auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
+                        context->shared_memory());
+                    void* address =
+                        Detail::malloc_residency_on(*context, bytes, device_index, residency);
+                    // A null address would give the handle a null key, which skips tracking.
+                    if (count > 0 && address == nullptr)
+                    {
+                        refused = Error{
+                            ErrorCode::AllocationFailed,
+                            "Buffer allocation: the device returned no memory for " +
+                            Detail::describe_request(count, sizeof(T), device_index, residency) +
+                            "."};
+                        return;
+                    }
+                    made.emplace(Buffer(
+                        context, Internal::Memory::Allocation(address, bytes, std::move(owner)),
+                        count, device_index, residency));
+                });
+                if (thrown.code != ErrorCode::Ok)
+                    return make_error(std::move(thrown));
+                if (refused.code != ErrorCode::Ok)
+                    return make_error(std::move(refused));
+                return std::move(*made);
             }
 
             /**
@@ -498,32 +514,45 @@ namespace SushiRuntime
             /**
              * @brief Copies a window out to a host vector and counts the bytes moved.
              * @param call Names the public operation in a message.
+             * @return The elements, or a KernelFailed error when the device fails the copy.
              * @pre range fits size().
              */
-            std::vector<T> read_window(const char* call, ElementRange range) const
+            [[nodiscard]] Result<std::vector<T>> read_window(const char* call,
+                                                             ElementRange range) const
             {
                 Detail::require_window(call, range, size_);
-                std::vector<T> out(range.count);
-                if (range.count == 0)
-                    return out;
-                // A non-zero size_ implies a context and a non-null address.
-                T* first = data();
-                sycl::queue& queue = Detail::owning_queue(*context_, static_cast<void*>(first));
-                queue.memcpy(out.data(), first + range.offset, range.count * sizeof(T)).wait();
-                context_->transfers().add_device_to_host(range.count * sizeof(T));
-                return out;
+                std::vector<T> out;
+                Error failed = Detail::translate_exceptions(
+                    ErrorCode::KernelFailed, ErrorCode::AllocationFailed, [&]()
+                {
+                    out.resize(range.count);
+                    if (range.count == 0)
+                        return;
+                    // A non-zero size_ implies a context and a non-null address.
+                    T* first = data();
+                    sycl::queue& queue =
+                        Detail::owning_queue(*context_, static_cast<void*>(first));
+                    queue.memcpy(out.data(), first + range.offset, range.count * sizeof(T))
+                        .wait();
+                    context_->transfers().add_device_to_host(range.count * sizeof(T));
+                });
+                if (failed.code != ErrorCode::Ok)
+                    return make_error(std::move(failed));
+                return std::move(out);
             }
 
             /**
              * @brief Copies host elements into a window and counts the bytes moved.
              * @param call Names the public operation in a message.
+             * @return Nothing, or a KernelFailed error when the device fails the copy.
              * @pre range fits size(), and source holds at least range.count elements.
              */
-            void write_window(const char* call, ElementRange range, span<const T> source) const
+            [[nodiscard]] Result<void> write_window(const char* call, ElementRange range,
+                                                    span<const T> source) const
             {
                 Detail::require_window(call, range, size_);
                 if (range.count == 0)
-                    return;
+                    return {};
                 SR_VERIFY(source.data() != nullptr,
                           (std::string(call) + ": the source is null for a window of count " +
                            std::to_string(range.count) + "; pass that many elements.")
@@ -533,12 +562,20 @@ namespace SushiRuntime
                            std::to_string(source.size()) + " elements for a window of count " +
                            std::to_string(range.count) + "; pass at least that many.")
                               .c_str());
-                // A non-zero size_ implies a context and a non-null address.
-                T* first = data();
-                sycl::queue& queue = Detail::owning_queue(*context_, static_cast<void*>(first));
-                queue.memcpy(first + range.offset, source.data(), range.count * sizeof(T))
-                    .wait();
-                context_->transfers().add_host_to_device(range.count * sizeof(T));
+                Error failed = Detail::translate_exceptions(
+                    ErrorCode::KernelFailed, ErrorCode::KernelFailed, [&]()
+                {
+                    // A non-zero size_ implies a context and a non-null address.
+                    T* first = data();
+                    sycl::queue& queue =
+                        Detail::owning_queue(*context_, static_cast<void*>(first));
+                    queue.memcpy(first + range.offset, source.data(), range.count * sizeof(T))
+                        .wait();
+                    context_->transfers().add_host_to_device(range.count * sizeof(T));
+                });
+                if (failed.code != ErrorCode::Ok)
+                    return make_error(std::move(failed));
+                return {};
             }
 
             /**

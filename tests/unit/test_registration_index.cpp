@@ -101,8 +101,9 @@ namespace
     /** @brief Allocates the stage buffers and seeds the first with its indices. */
     Stages make_stages(Runtime& rt)
     {
-        Stages s{rt.buffer<std::uint32_t>(K_WIDTH), rt.buffer<std::uint32_t>(K_WIDTH),
-                 rt.buffer<std::uint32_t>(K_WIDTH)};
+        Stages s{rt.buffer<std::uint32_t>(K_WIDTH).value(),
+                 rt.buffer<std::uint32_t>(K_WIDTH).value(),
+                 rt.buffer<std::uint32_t>(K_WIDTH).value()};
         for (std::size_t i = 0; i < K_WIDTH; ++i)
         {
             s.first[i] = static_cast<std::uint32_t>(i);
@@ -140,7 +141,7 @@ namespace
                                 const LateCount& count)
     {
         std::uint32_t* live = recorder.scratch<std::uint32_t>(
-            1, stages.first.device_index(), stages.first.residency());
+            1, stages.first.device_index(), stages.first.residency()).value();
         const Internal::Memory::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
         std::uint32_t* a = stages.first.data();
         std::uint32_t* b = stages.second.data();
@@ -286,7 +287,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
 {
     using Detail::RegistrationIndexTestAccess;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     Stages stages = make_stages(rt);
 
     auto g = rt.graph();
@@ -310,7 +311,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
 {
     using Detail::RegistrationIndexTestAccess;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     Stages stages = make_stages(rt);
 
     auto g = rt.graph();
@@ -345,7 +346,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneI
 {
     using Detail::RegistrationIndexTestAccess;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     Stages stages = make_stages(rt);
 
     const LateCount count = LateCount::from_host(K_WIDTH, []() { return K_WIDTH; });

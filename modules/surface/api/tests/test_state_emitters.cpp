@@ -59,7 +59,7 @@ namespace
     /** @brief Allocates a State whose current field holds index plus K_SEED and next K_CANARY. */
     State<Word> seeded_state(Runtime& rt, std::size_t count = K_WIDTH)
     {
-        auto state = rt.state<Word>(count);
+        auto state = rt.state<Word>(count).value();
         for (std::size_t i = 0; i < count; ++i)
         {
             state[i] = static_cast<Word>(i) + K_SEED;
@@ -88,7 +88,7 @@ namespace
 /** @brief Tests that a coupled rule with const inputs computes from both States it reads. */
 TEST(Integration_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto out = seeded_state(rt);
     auto left = seeded_state(rt);
     auto right = seeded_state(rt);
@@ -113,11 +113,11 @@ TEST(Integration_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
 /** @brief Tests that State, coupled and untracked nodes report the width of their launch. */
 TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto whole = seeded_state(rt);
     auto prefix = seeded_state(rt);
     auto input = seeded_state(rt);
-    auto loose = rt.buffer<Word>(K_WIDTH);
+    auto loose = rt.buffer<Word>(K_WIDTH).value();
     Word* words = loose.data();
 
     auto graph = rt.graph();
@@ -146,7 +146,7 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
 /** @brief Tests the State emitter over a launch, replayed outside a recorder. */
 TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     auto emit = Detail::state_launch_node(
         view_of(field), K_PREFIX, [](std::size_t i, const Word* current, Word* next)
@@ -164,7 +164,7 @@ TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 /** @brief Tests the coupled emitter over a launch, replayed outside a recorder. */
 TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto out = seeded_state(rt);
     auto input = seeded_state(rt);
     auto emit = Detail::coupled_launch_node(
@@ -183,7 +183,7 @@ TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
 /** @brief Tests the late-bound State emitter, replayed outside a recorder. */
 TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(K_PREFIX);

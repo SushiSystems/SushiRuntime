@@ -38,8 +38,8 @@ TEST(Integration_LateBindings, DynamicSizePerElement)
 {
     constexpr std::size_t CAP = 8;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(CAP);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(CAP).value();
     for (std::size_t i = 0; i < CAP; ++i)
         buf[i] = 0;
 
@@ -68,8 +68,8 @@ TEST(Integration_LateBindings, EnableTogglePerElement)
     constexpr std::size_t N     = 16;
     constexpr std::size_t STEPS = 10;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0;
 
@@ -100,9 +100,9 @@ TEST(Integration_LateBindings, DisabledNodeStillReleasesSuccessors)
     constexpr std::size_t N     = 8;
     constexpr std::size_t STEPS = 6;
 
-    auto rt   = Runtime::create();
-    auto gate = rt.buffer<int>(N);   // written by the toggled upstream node
-    auto sink = rt.buffer<int>(N);   // written by the always-on downstream node
+    auto rt   = Runtime::create().value();
+    auto gate = rt.buffer<int>(N).value();   // written by the toggled upstream node
+    auto sink = rt.buffer<int>(N).value();   // written by the always-on downstream node
     for (std::size_t i = 0; i < N; ++i) { gate[i] = 0; sink[i] = 0; }
 
     int* gp = gate.data();
@@ -135,8 +135,8 @@ TEST(Integration_LateBindings, DynamicSizeState)
     constexpr std::size_t CAP   = 8;
     constexpr std::size_t STEPS = 4;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(CAP);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(CAP).value();
     for (std::size_t i = 0; i < CAP; ++i)
         field[i] = 0;
 
@@ -163,8 +163,8 @@ TEST(Integration_LateBindings, ComposedWhenAndSized)
     constexpr std::size_t CAP   = 4;
     constexpr std::size_t STEPS = 8;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(CAP);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(CAP).value();
     for (std::size_t i = 0; i < CAP; ++i)
         buf[i] = 0;
 
@@ -196,8 +196,8 @@ TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
 {
     constexpr std::size_t CAPACITY = 64;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(CAPACITY);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(CAPACITY).value();
     int* p = buf.data();
 
     std::size_t base = 0;
@@ -243,8 +243,8 @@ TEST(Integration_LateBindings, BaseWithoutASizeRunsToTheEnd)
     constexpr std::size_t CAPACITY = 32;
     constexpr std::size_t BASE = 12;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(CAPACITY);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(CAPACITY).value();
     int* p = buf.data();
     for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = 0;
 
@@ -268,9 +268,10 @@ TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
 {
     constexpr std::size_t CAPACITY = 128;
 
-    auto rt     = Runtime::create();
-    auto slice  = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);   // [0] = base, [1] = count
-    auto buf    = rt.buffer<int>(CAPACITY);
+    auto rt     = Runtime::create().value();
+    // slice[0] is the base and slice[1] the count.
+    auto slice  = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
+    auto buf    = rt.buffer<int>(CAPACITY).value();
 
     std::uint32_t* s = slice.data();
     int* p = buf.data();
@@ -299,8 +300,8 @@ TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
 {
     constexpr std::size_t CAPACITY = 16;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(CAPACITY);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(CAPACITY).value();
     int* p = buf.data();
 
     std::size_t base = 10;
@@ -320,10 +321,10 @@ TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
 /** @brief Tests that based_at_device stops on an unreadable slot at the call site. */
 TEST(Integration_LateBindingsDeathTest, BasedAtDeviceStopsOnAnUnreadableSlot)
 {
-    auto rt = Runtime::create();
-    auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device);
-    auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
-    auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);
+    auto rt = Runtime::create().value();
+    auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value();
+    auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared).value();
+    auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
 
     EXPECT_DEATH(static_cast<void>(based_at_device(resident)),
                  "based_at_device: the buffer is Residency::Device");
@@ -337,8 +338,8 @@ TEST(Integration_LateBindingsDeathTest, BasedAtDeviceStopsOnAnUnreadableSlot)
 /** @brief Tests that the member sized_from_device stops on a Shared slot where it is called. */
 TEST(Integration_LateBindingsDeathTest, TheMemberSetterStopsOnASharedSlot)
 {
-    auto rt     = Runtime::create();
-    auto shared = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Shared);
+    auto rt     = Runtime::create().value();
+    auto shared = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Shared).value();
 
     Dynamic dyn;
     EXPECT_DEATH(static_cast<void>(dyn.sized_from_device(shared, 1)),

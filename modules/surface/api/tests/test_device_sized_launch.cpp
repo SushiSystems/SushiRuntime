@@ -65,7 +65,7 @@ namespace
                              const LateCount& width, const LateCount& salt)
     {
         std::uint32_t* live =
-            recorder.scratch<std::uint32_t>(2, marks.device_index(), marks.residency());
+            recorder.scratch<std::uint32_t>(2, marks.device_index(), marks.residency()).value();
         const Internal::Memory::ResourceRegion live_region{live, 0, 2 * sizeof(std::uint32_t)};
         std::uint32_t* words = marks.data();
 
@@ -130,10 +130,10 @@ namespace
 
         /** @brief Allocates the shared buffers for a schedule over capacity. */
         Harness(Runtime& rt, std::size_t capacity)
-            : counter(rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host)),
-              step(rt.buffer<std::uint32_t>(1)),
-              schedule(rt.buffer<std::uint32_t>(schedule_for(capacity).size())),
-              history(rt.buffer<std::uint32_t>(K_STEPS))
+            : counter(rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value()),
+              step(rt.buffer<std::uint32_t>(1).value()),
+              schedule(rt.buffer<std::uint32_t>(schedule_for(capacity).size()).value()),
+              history(rt.buffer<std::uint32_t>(K_STEPS).value())
         {
             const std::vector<std::uint32_t> s = schedule_for(capacity);
             for (std::size_t i = 0; i < s.size(); ++i)
@@ -196,10 +196,10 @@ namespace
      */
     void expect_chain_matches_scheduler(const std::function<Recording(Runtime&)>& workload)
     {
-        auto chained_rt = Runtime::create();
+        auto chained_rt = Runtime::create().value();
         RuntimeConfig forced;
         forced.force_scheduler = true;
-        auto scheduled_rt = Runtime::create(forced);
+        auto scheduled_rt = Runtime::create(forced).value();
 
         const Recording chained = workload(chained_rt);
         const Recording scheduled = workload(scheduled_rt);
@@ -224,8 +224,8 @@ TEST(Integration_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
     constexpr std::size_t CAPACITY = 600;
     constexpr std::size_t SALT = 7;
 
-    auto rt    = Runtime::create();
-    auto marks = rt.buffer<std::uint32_t>(CAPACITY + 1);
+    auto rt    = Runtime::create().value();
+    auto marks = rt.buffer<std::uint32_t>(CAPACITY + 1).value();
     std::vector<std::uint32_t> expected(CAPACITY + 1, K_CANARY);
     for (std::size_t i = 0; i <= CAPACITY; ++i)
         marks[i] = K_CANARY;
@@ -256,9 +256,9 @@ TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksT
     constexpr std::size_t CAPACITY = 300;
     constexpr std::size_t LIVE = 123;
 
-    auto rt     = Runtime::create();
-    auto plain  = rt.buffer<std::uint32_t>(CAPACITY);
-    auto worded = rt.buffer<std::uint32_t>(CAPACITY);
+    auto rt     = Runtime::create().value();
+    auto plain  = rt.buffer<std::uint32_t>(CAPACITY).value();
+    auto worded = rt.buffer<std::uint32_t>(CAPACITY).value();
     for (std::size_t i = 0; i < CAPACITY; ++i)
     {
         plain[i] = K_CANARY;
@@ -270,7 +270,7 @@ TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksT
     auto g = rt.graph();
     Recorder& recorder = g.recorder();
     std::uint32_t* word =
-        recorder.scratch<std::uint32_t>(1, plain.device_index(), plain.residency());
+        recorder.scratch<std::uint32_t>(1, plain.device_index(), plain.residency()).value();
     const Internal::Memory::ResourceRegion word_region{word, 0, sizeof(std::uint32_t)};
     std::uint32_t* p = plain.data();
     std::uint32_t* w = worded.data();
@@ -302,9 +302,9 @@ TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksT
 /** @brief Tests that a launch of capacity zero runs no item and still releases its successor. */
 TEST(Integration_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsSuccessor)
 {
-    auto rt     = Runtime::create();
-    auto target = rt.buffer<std::uint32_t>(1);
-    auto done   = rt.buffer<std::uint32_t>(1);
+    auto rt     = Runtime::create().value();
+    auto target = rt.buffer<std::uint32_t>(1).value();
+    auto done   = rt.buffer<std::uint32_t>(1).value();
     target[0] = K_CANARY;
     done[0] = 0;
     std::uint32_t* t = target.data();
@@ -333,7 +333,7 @@ TEST(Integration_DeviceSizedLaunch, DeviceSizedRuleChainMatchesSchedulerAsTheCou
     expect_chain_matches_scheduler([](Runtime& rt)
     {
         Harness hx(rt, CAPACITY);
-        auto marks = rt.buffer<std::uint32_t>(CAPACITY);
+        auto marks = rt.buffer<std::uint32_t>(CAPACITY).value();
         for (std::size_t i = 0; i < CAPACITY; ++i)
             marks[i] = static_cast<std::uint32_t>(i);
 
@@ -358,7 +358,7 @@ TEST(Integration_DeviceSizedLaunch, SizedFromDeviceChainMatchesSchedulerAsTheCou
     expect_chain_matches_scheduler([](Runtime& rt)
     {
         Harness hx(rt, CAPACITY);
-        auto acc = rt.buffer<std::uint32_t>(CAPACITY);
+        auto acc = rt.buffer<std::uint32_t>(CAPACITY).value();
         for (std::size_t i = 0; i < CAPACITY; ++i)
             acc[i] = static_cast<std::uint32_t>(i);
         std::uint32_t* a = acc.data();
@@ -377,9 +377,9 @@ TEST(Integration_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
 {
     constexpr std::size_t CAPACITY = 100;
 
-    auto rt = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto marks = rt.buffer<std::uint32_t>(CAPACITY);
+    auto rt = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto marks = rt.buffer<std::uint32_t>(CAPACITY).value();
     for (std::size_t i = 0; i < CAPACITY; ++i)
         marks[i] = 0;
     std::uint32_t* c = counter.data();

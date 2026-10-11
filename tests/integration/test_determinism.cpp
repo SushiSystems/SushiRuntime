@@ -70,7 +70,8 @@ namespace
     void record_tiled_total(Recorder& recorder, const Buffer<float>& input,
                             const Buffer<float>& total)
     {
-        float* partials = recorder.scratch<float>(TILES, input.device_index(), input.residency());
+        float* partials =
+            recorder.scratch<float>(TILES, input.device_index(), input.residency()).value();
         const Internal::Memory::ResourceRegion partial_region{partials, 0, TILES * sizeof(float)};
         const float* in = input.data();
         float* out = total.data();
@@ -116,13 +117,13 @@ namespace
         config.worker_count = worker_count;
         config.rebalancer   = rebalancer;
 
-        auto rt = Runtime::create(config);
+        auto rt = Runtime::create(config).value();
 
-        auto first   = rt.buffer<float>(N);
-        auto second  = rt.buffer<float>(N);
-        auto total_a = rt.buffer<float>(1);
-        auto total_b = rt.buffer<float>(1);
-        auto out     = rt.buffer<float>(N);
+        auto first   = rt.buffer<float>(N).value();
+        auto second  = rt.buffer<float>(N).value();
+        auto total_a = rt.buffer<float>(1).value();
+        auto total_b = rt.buffer<float>(1).value();
+        auto out     = rt.buffer<float>(N).value();
 
         for (std::size_t i = 0; i < N; ++i)
         {
@@ -272,10 +273,10 @@ TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
 {
     RuntimeConfig config;
     config.rebalancer = false;
-    auto rt = Runtime::create(config);
+    auto rt = Runtime::create(config).value();
 
-    auto in    = rt.buffer<float>(N);
-    auto total = rt.buffer<float>(1);
+    auto in    = rt.buffer<float>(N).value();
+    auto total = rt.buffer<float>(1).value();
     for (std::size_t i = 0; i < N; ++i)
         in[i] = order_sensitive_value(i);
     total[0] = 0.0f;

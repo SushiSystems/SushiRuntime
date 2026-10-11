@@ -124,13 +124,13 @@ TEST(Regression_Sentinel, AThreadOutlivingTheRuntimeTearsDownCleanly)
     std::thread outliver;
 
     {
-        auto rt = SushiRuntime::Runtime::create();
+        auto rt = SushiRuntime::Runtime::create().value();
 
         outliver = std::thread([&]()
         {
             // The thread's exit-time destructors touch per-thread runtime state; see README.md.
             {
-                auto scratch = rt.buffer<int>(4096);
+                auto scratch = rt.buffer<int>(4096).value();
                 for (std::size_t i = 0; i < 64; ++i)
                     scratch[i] = static_cast<int>(i);
             }

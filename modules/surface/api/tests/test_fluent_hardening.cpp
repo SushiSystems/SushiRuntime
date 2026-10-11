@@ -41,8 +41,8 @@ TEST(Integration_FluentHardening, Extent2DPerElementMap)
 {
     constexpr std::size_t W = 8, H = 6;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(W * H);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(W * H).value();
     for (std::size_t i = 0; i < W * H; ++i)
         buf[i] = -1;
 
@@ -69,8 +69,8 @@ TEST(Integration_FluentHardening, NdRange2DTiledKernel)
 {
     constexpr std::size_t W = 8, H = 8;   // tiles by 4x4
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(W * H);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(W * H).value();
     for (std::size_t i = 0; i < W * H; ++i)
         buf[i] = -1;
 
@@ -95,8 +95,8 @@ TEST(Integration_FluentHardening, State2DSteppedUpdate)
 {
     constexpr std::size_t W = 4, H = 4, S = 3;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(W * H);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(W * H).value();
     for (std::size_t i = 0; i < W * H; ++i)
         field[i] = 0;
 
@@ -123,10 +123,10 @@ TEST(Integration_FluentHardening, VariadicCoupledThreeInputs)
 {
     constexpr std::size_t N = 32;
 
-    auto rt = Runtime::create();
-    auto u  = rt.state<int>(N);
-    auto a  = rt.state<int>(N);
-    auto b  = rt.state<int>(N);
+    auto rt = Runtime::create().value();
+    auto u  = rt.state<int>(N).value();
+    auto a  = rt.state<int>(N).value();
+    auto b  = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
     {
         u[i] = 0;
@@ -154,8 +154,8 @@ TEST(Integration_FluentHardening, ReadsWritesWrappersOrdering)
 {
     constexpr std::size_t N = 32;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0;
 
@@ -178,9 +178,9 @@ TEST(Integration_FluentHardening, InOutCapturedArguments)
 {
     constexpr std::size_t N = 64;
 
-    auto rt  = Runtime::create();
-    auto src = rt.buffer<int>(N);
-    auto dst = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto src = rt.buffer<int>(N).value();
+    auto dst = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
     {
         src[i] = static_cast<int>(i);
@@ -201,8 +201,8 @@ TEST(Integration_FluentHardening, InteriorOnlyHaloUpdate)
 {
     constexpr std::size_t W = 6, H = 6;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(W * H);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(W * H).value();
     for (std::size_t i = 0; i < W * H; ++i)
         buf[i] = 0;
 

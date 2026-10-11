@@ -90,6 +90,7 @@ reference.
 `value()` and `operator*` on a temporary `Result` of `std::unique_ptr<int>` move the pointer out,
 which a copy could not do. On a temporary that holds `lost_device()` both stop the process with
 the stored message.
+
 ### `ErrorOnErrorReturnsTheStoredError`
 
 `error()` on a `Result` that holds an error returns the stored code and message, and a write

@@ -44,14 +44,14 @@ namespace
         constexpr std::size_t CELL_N = 4096;
         constexpr std::size_t STEPS  = 50;
 
-        auto rt = Runtime::create();
+        auto rt = Runtime::create().value();
 
         // One buffer per tile, allocated up front so every handle outlives the graph.
         std::vector<Buffer<int>> tile;
         tile.reserve(TILES);
         for (std::size_t k = 0; k < TILES; ++k)
         {
-            auto buf = rt.buffer<int>(CELL_N);
+            auto buf = rt.buffer<int>(CELL_N).value();
             for (std::size_t i = 0; i < CELL_N; ++i) buf[i] = 0;
             tile.push_back(std::move(buf));
         }

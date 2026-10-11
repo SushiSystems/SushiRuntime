@@ -194,8 +194,8 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
 {
     const auto kernel = [](float* p) { return [p](std::size_t i) { p[i] = static_cast<float>(i) * 0.5f; }; };
 
-    auto rt  = Runtime::create();               // rebalancer off, profiling off, chain path
-    auto buf = rt.buffer<float>(N);
+    auto rt  = Runtime::create().value();               // rebalancer off, profiling off, chain path
+    auto buf = rt.buffer<float>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0.0f;
 
@@ -241,8 +241,8 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
     // Claim 3: the scheduler submits from a worker, which this counter cannot see; see README.md.
     RuntimeConfig forced;
     forced.force_scheduler = true;
-    auto scheduled_rt  = Runtime::create(forced);
-    auto scheduled_buf = scheduled_rt.buffer<float>(N);
+    auto scheduled_rt  = Runtime::create(forced).value();
+    auto scheduled_buf = scheduled_rt.buffer<float>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         scheduled_buf[i] = 0.0f;
 
@@ -266,8 +266,8 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
 /** @brief Tests the same allocation claims on the asynchronous path. */
 TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<float>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<float>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0.0f;
 
@@ -312,8 +312,8 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
 {
     const auto kernel = [](int* p) { return [p](std::size_t i) { p[i] = static_cast<int>(i); }; };
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -347,8 +347,8 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
 
     RuntimeConfig forced;
     forced.force_scheduler = true;
-    auto scheduled_rt  = Runtime::create(forced);
-    auto scheduled_buf = scheduled_rt.buffer<int>(N);
+    auto scheduled_rt  = Runtime::create(forced).value();
+    auto scheduled_buf = scheduled_rt.buffer<int>(N).value();
 
     auto sg = scheduled_rt.graph();
     sg.set_profiling(true);

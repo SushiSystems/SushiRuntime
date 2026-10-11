@@ -64,11 +64,11 @@ TEST(Integration_RegionEmitter, ExtensionTasksOrderAgainstANeighbourRegion)
 {
     constexpr std::size_t N = 32;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto x = rt.buffer<int>(N);
-    auto y = rt.buffer<int>(N);
+    auto x = rt.buffer<int>(N).value();
+    auto y = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = -1; }
 
     int* px = x.data();
@@ -96,10 +96,10 @@ TEST(Integration_RegionEmitter, AnExtensionIsOneRule)
 {
     constexpr std::size_t N = 4;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto x = rt.buffer<int>(N);
+    auto x = rt.buffer<int>(N).value();
     int* px = x.data();
     for (std::size_t i = 0; i < N; ++i)
         x[i] = 0;
@@ -127,11 +127,11 @@ TEST(Integration_RegionEmitter, AnExtensionRunsOnceWhenItIsCalled)
 {
     constexpr std::size_t N = 8;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
     int* pa = a.data();
@@ -175,11 +175,11 @@ TEST(Integration_RegionEmitter, AStaticGraphTakesAnExtension)
 {
     constexpr std::size_t N = 16;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto x = rt.buffer<int>(N);
-    auto y = rt.buffer<int>(N);
+    auto x = rt.buffer<int>(N).value();
+    auto y = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = 0; }
 
     int* px = x.data();

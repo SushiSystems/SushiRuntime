@@ -40,9 +40,9 @@ namespace
         constexpr std::size_t N     = 1024;
         constexpr std::size_t STEPS = 100;
 
-        auto rt = Runtime::create();
-        auto u  = rt.state<int>(N);
-        auto v  = rt.state<int>(N);
+        auto rt = Runtime::create().value();
+        auto u  = rt.state<int>(N).value();
+        auto v  = rt.state<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) { u[i] = 0; v[i] = 0; }
 
         auto sim = rt.graph();

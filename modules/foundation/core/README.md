@@ -119,6 +119,10 @@ the spelling of the enumerator, or "Unknown" for a number outside the enumeratio
 `ErrorCode` with a message. `SushiException` derives from `std::runtime_error`, holds an `Error`,
 and returns it from `error()`; `require_matching_version()` throws it.
 
+`Detail::error_without_throwing()` builds an `Error`, or copies one, inside a `try`, and returns
+the code with an empty message when the text cannot be allocated. A function that must not throw
+builds its errors with it.
+
 New enumerators go at the end of `ErrorCode`. `tests/test_error.cpp` pins the number of each one.
 
 ## export.hpp

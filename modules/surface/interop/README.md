@@ -10,10 +10,14 @@ The non-template entry points behind the `Interop` facade. The headers are in
 `export_host_memory` builds the `USMAllocationOwner` before it makes the allocation that owner
 will free. A throw between the two, for example `bad_alloc` from `make_unique`, then never leaves
 an allocation that nothing records. Zero bytes return an empty `Allocation` and allocate nothing.
+The function returns `Result<Allocation>`: its `try` covers the owner and the SYCL allocation, and
+both a `sycl::exception` and a null address become an `AllocationFailed` error.
 
 ### import_device_memory
 
-The checks run in this order, and the first that fails throws:
+The function returns `Result<Allocation>`. The checks run in this order, and the first that fails
+is the error returned; `descriptor_refusal()` and `device_refusal()` hold the checks of the
+descriptor and return `std::optional<Error>`:
 
 | Check | Error |
 | --- | --- |

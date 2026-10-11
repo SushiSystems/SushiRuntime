@@ -37,8 +37,8 @@ TEST(Integration_CompletionLatch, ManyStepReplayReachesCorrectState)
     constexpr std::size_t N = 1024;
     constexpr std::size_t STEPS = 5000;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
     auto g = rt.graph();
@@ -57,8 +57,8 @@ TEST(Integration_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
 {
     constexpr std::size_t N = 256;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
     auto g = rt.graph();
@@ -77,8 +77,8 @@ TEST(Integration_CompletionLatch, SingleStepRunsRepeatedlyWithoutLeak)
 {
     constexpr std::size_t N = 64;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();

@@ -428,4 +428,19 @@ make_usm_scratch() allocates on the device and with the residency the caller nam
 those of the data it works on, so its nodes never straddle a device context and a device-resident
 field is not dragged into host-addressable memory. The returned pointer owns the
 allocation through a deleter that keeps the context alive, so scratch cannot outlive the runtime
-that owns it.
+that owns it. It returns `Result<std::shared_ptr<T>>`, with `AllocationFailed` when the device
+returns nothing.
+
+## error_translation.hpp
+
+### translate_exceptions
+
+translate_exceptions() is the one catch ladder of the surface. It runs a callable and returns an
+`Error` whose code is `Ok` when the callable returned. A `SushiException` keeps its code, a
+`sycl::exception` takes the code the caller names for a device failure, and every other
+exception takes the fallback. The ladder is written out in the function that owns the `try`, with
+no rethrow, because a rethrow from a helper called inside a catch block crashes the process on
+the Windows intel-llvm toolchain. Each `Error` is built by `Detail::error_without_throwing()` of
+`core/error.hpp`, which returns the code with an empty message when the text cannot be allocated.
+StepDriver::guarded() calls it with `KernelFailed` for a device failure; the factories and
+read_range() and write_range() call it too.

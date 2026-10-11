@@ -78,8 +78,8 @@ TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
 {
     constexpr std::size_t N = 8;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
 
     std::atomic<bool> released{false};
@@ -113,15 +113,15 @@ TEST(Integration_AsyncStep, MatchesTheSynchronousResult)
     constexpr std::size_t N = 32;
     constexpr std::size_t STEPS = 6;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
 
-    auto synchronous = rt.state<int>(N);
+    auto synchronous = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) synchronous.current()[i] = 1;
     auto sg = rt.graph();
     sg.add(synchronous, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] * 2; });
     sg.run(STEPS);
 
-    auto asynchronous = rt.state<int>(N);
+    auto asynchronous = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) asynchronous.current()[i] = 1;
     auto ag = rt.graph();
     ag.add(asynchronous, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] * 2; });
@@ -138,8 +138,8 @@ TEST(Integration_AsyncStep, StateAdvancesOnWaitNotOnSubmit)
 {
     constexpr std::size_t N = 4;
 
-    auto rt = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) field.current()[i] = 5;
 
     auto g = rt.graph();
@@ -164,8 +164,8 @@ TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
 {
     constexpr std::size_t N = 8;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
     int* p = buf.data();
 
@@ -189,8 +189,8 @@ TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
 /** @brief Tests that a second wait on the same handle throws. */
 TEST(Integration_AsyncStep, WaitingTwiceThrows)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(4);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(4).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -207,8 +207,8 @@ TEST(Integration_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
 {
     constexpr std::size_t N = 4;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
     int* p = buf.data();
 
@@ -239,8 +239,8 @@ TEST(Integration_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
 /** @brief Tests that a task exception surfaces from wait() and leaves the graph usable. */
 TEST(Integration_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(4);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(4).value();
     int* p = buf.data();
 
     {
@@ -267,8 +267,8 @@ TEST(Integration_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
 // try_wait() reports the same failure as a value instead of an exception.
 TEST(Integration_AsyncStep, TryWaitReportsFailureAsAValue)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(4);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(4).value();
 
     auto g = rt.graph();
     g.add_host(Reads{}, Writes(buf),
@@ -283,8 +283,8 @@ TEST(Integration_AsyncStep, TryWaitReportsFailureAsAValue)
 /** @brief Tests that ready() is false while the step is held open and true once it has finished. */
 TEST(Integration_AsyncStep, ReadyTracksTheStep)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(4);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(4).value();
     int* p = buf.data();
 
     std::atomic<bool> released{false};
@@ -312,11 +312,11 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
 {
     constexpr std::size_t N = 16;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
     int* pa = a.data();
@@ -334,7 +334,7 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
     }
 
     // A region added between steps is committed by the asynchronous path too.
-    auto c = rt.buffer<int>(N);
+    auto c = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) c[i] = 0;
     int* pc = c.data();
     world.region(2).add(N, Reads{}, Writes(c), [pc](std::size_t i) { pc[i] += 5; });
@@ -348,9 +348,9 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
 /** @brief Tests that another graph's run entries are refused while a step is pending. */
 TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
 {
-    auto rt    = Runtime::create();
-    auto first = rt.buffer<int>(4);
-    auto other = rt.buffer<int>(4);
+    auto rt    = Runtime::create().value();
+    auto first = rt.buffer<int>(4).value();
+    auto other = rt.buffer<int>(4).value();
     first[0] = 0;
     other[0] = 0;
     int* pf = first.data();
@@ -394,9 +394,9 @@ TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
 /** @brief Tests that cancel() stops the pending step of its own graph and of no other. */
 TEST(Integration_AsyncStep, CancelReachesOnlyTheGraphItIsCalledOn)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(4);
-    auto idle_buf = rt.buffer<int>(4);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(4).value();
+    auto idle_buf = rt.buffer<int>(4).value();
     int* p = buf.data();
     int* pi = idle_buf.data();
 
@@ -429,8 +429,8 @@ TEST(Integration_AsyncStep, CancelReachesOnlyTheGraphItIsCalledOn)
 /** @brief Tests that a Graph destroyed with a step pending waits for it and ends it. */
 TEST(Integration_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(4);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(4).value();
     buf[0] = 0;
     int* p = buf.data();
 
@@ -461,8 +461,8 @@ TEST(Integration_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
 /** @brief Tests that a DynamicGraph destroyed with a step pending waits for it and ends it. */
 TEST(Integration_AsyncStep, ADynamicGraphDestroyedWithAPendingStepEndsTheStep)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(4);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(4).value();
     buf[0] = 0;
     int* p = buf.data();
 
@@ -488,9 +488,9 @@ TEST(Integration_AsyncStep, ADynamicGraphDestroyedWithAPendingStepEndsTheStep)
 /** @brief Tests that a region dropped while a step is pending finishes that step and no later one. */
 TEST(Integration_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
 {
-    auto rt   = Runtime::create();
-    auto kept = rt.buffer<int>(4);
-    auto gone = rt.buffer<int>(4);
+    auto rt   = Runtime::create().value();
+    auto kept = rt.buffer<int>(4).value();
+    auto gone = rt.buffer<int>(4).value();
     kept[0] = 0;
     gone[0] = 0;
     int* pk = kept.data();
@@ -532,9 +532,9 @@ TEST(Integration_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
 /** @brief Tests that a key dropped and recorded again while a step is pending runs its new work. */
 TEST(Integration_AsyncStep, ARegionDroppedAndRecordedAgainWhileAStepIsPendingRunsItsNewWork)
 {
-    auto rt    = Runtime::create();
-    auto old   = rt.buffer<int>(4);
-    auto fresh = rt.buffer<int>(4);
+    auto rt    = Runtime::create().value();
+    auto old   = rt.buffer<int>(4).value();
+    auto fresh = rt.buffer<int>(4).value();
     old[0] = 0;
     fresh[0] = 0;
     int* po = old.data();

@@ -83,8 +83,12 @@ namespace
      */
     Recorded record(Runtime& rt)
     {
-        Recorded r{rt.graph(), rt.buffer<float>(K_WIDTH), rt.buffer<std::uint32_t>(K_WIDTH),
-                   rt.buffer<std::uint32_t>(K_WIDTH), rt.buffer<std::uint32_t>(K_WIDTH), 0};
+        Recorded r{rt.graph(),
+                   rt.buffer<float>(K_WIDTH).value(),
+                   rt.buffer<std::uint32_t>(K_WIDTH).value(),
+                   rt.buffer<std::uint32_t>(K_WIDTH).value(),
+                   rt.buffer<std::uint32_t>(K_WIDTH).value(),
+                   0};
         for (std::size_t i = 0; i < K_WIDTH; ++i)
         {
             r.values[i] = 1.0f;
@@ -107,7 +111,7 @@ namespace
 
 TEST(Integration_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     Recorded r = record(rt);
 
     ASSERT_EQ(r.graph.size(), K_PLAIN_RULES + 1u);
@@ -119,7 +123,7 @@ TEST(Integration_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
 
 TEST(Integration_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     Recorded r = record(rt);
     Internal::Observability::RunReport report;
     r.graph.run(1, report);
@@ -149,7 +153,7 @@ TEST(Integration_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
 
 TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     Recorded r = record(rt);
     Internal::Observability::RunReport report;
     r.graph.run(1, report);
@@ -169,7 +173,7 @@ TEST(Integration_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
 {
     constexpr std::size_t STEPS = 4;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     Recorded r = record(rt);
     Internal::Observability::RunReport report;
     r.graph.run(STEPS, report);
@@ -197,9 +201,9 @@ TEST(Integration_RuleRegistration, AVerbReturnsThePositionOfTheRuleItRecorded)
     constexpr std::uint32_t K_SCALE_MARK = 11;
     constexpr std::uint32_t K_COPY_MARK = 22;
 
-    auto rt = Runtime::create();
-    auto words = rt.buffer<std::uint32_t>(K_WIDTH);
-    auto copies = rt.buffer<std::uint32_t>(K_WIDTH);
+    auto rt = Runtime::create().value();
+    auto words = rt.buffer<std::uint32_t>(K_WIDTH).value();
+    auto copies = rt.buffer<std::uint32_t>(K_WIDTH).value();
     std::uint32_t* w = words.data();
     std::uint32_t* c = copies.data();
     for (std::size_t i = 0; i < K_WIDTH; ++i)

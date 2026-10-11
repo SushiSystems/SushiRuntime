@@ -77,7 +77,7 @@ namespace
         RuntimeConfig config;
         config.worker_count = 2;
         config.pinning = PinPolicy::Float;
-        auto runtime = Runtime::create(config);
+        auto runtime = Runtime::create(config).value();
 
         // advanced() answers what was built: the devices by index and the worker pool.
         const AdvancedControls built = runtime.advanced();
@@ -86,9 +86,9 @@ namespace
         std::printf("  workers: %zu\n", built.worker_pool().count);
 
         // A device-resident buffer is not host-addressable, so write_range() seeds it.
-        auto hits = runtime.buffer<float>(K_CAPACITY, DeviceIndex{0}, Residency::Device);
+        auto hits = runtime.buffer<float>(K_CAPACITY, DeviceIndex{0}, Residency::Device).value();
         const std::vector<float> zeros(K_CAPACITY, 0.0f);
-        hits.write_range({0, K_CAPACITY}, zeros);
+        hits.write_range({0, K_CAPACITY}, zeros).value();
 
         // sized() is polled before each step, so the launch width changes with no recompile.
         std::size_t live_count = K_CAPACITY / 4;
@@ -127,9 +127,9 @@ namespace
                     remedy_for(refused.error().code));
 
         // read_range() copies one window through the owning queue and maps nothing else.
-        const float in_both_runs = hits.read_range({0, 1})[0];
-        const float in_second_run = hits.read_range({K_CAPACITY / 4, 1})[0];
-        const float in_neither_run = hits.read_range({K_CAPACITY / 2, 1})[0];
+        const float in_both_runs = hits.read_range({0, 1}).value()[0];
+        const float in_second_run = hits.read_range({K_CAPACITY / 4, 1}).value()[0];
+        const float in_neither_run = hits.read_range({K_CAPACITY / 2, 1}).value()[0];
 
         const bool is_correct = in_both_runs == static_cast<float>(2 * K_STEPS) &&
                                 in_second_run == static_cast<float>(K_STEPS) &&

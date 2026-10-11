@@ -58,7 +58,8 @@ library uses it for the host side of its own work, a `memcpy` between a host arr
 or a wait on one event, with no `RuntimeContext` in its code. Work a caller submits on it is
 outside every graph: no rule is ordered against it, so the caller waits for it, or calls
 `Runtime::wait()`, before a graph that touches the same memory runs. The reference stays valid
-while any handle of the runtime lives. A device the runtime does not have throws `InvalidAccess`.
+while any handle of the runtime lives. A device the runtime does not have stops the process, as
+`DeviceQueueSet::require_index()` checks the index with `SR_VERIFY`.
 
 ### devices
 
@@ -96,11 +97,22 @@ at, and a `const Runtime&` parameter can allocate and build graphs.
 (`region(key)`) that can be added or dropped between steps, so a streaming open world re-stitches
 only the cells that changed instead of recompiling the whole graph.
 
-### buffer
+### create
+
+`create()` returns `Result<Runtime>`. Nothing a runtime needs at construction is a rule of the
+caller, so every failure comes back as an `Error`: `Unsupported` when no device passes
+`config.devices` or the loaded library is of another release than the headers, `DeviceLost` when
+SYCL cannot build a device queue, and `AllocationFailed` when the host cannot give the runtime
+its memory or its threads. A program that cannot go on without a runtime writes
+`Runtime::create().value()`, which stops the process with the error's message on standard error.
+
+### buffer and state
 
 `buffer()` allocates on the device its `DeviceIndex` names, and the buffer frees the memory when it
-is destroyed. An index outside `[0, advanced().device_count())` throws `SushiException` with
-`ErrorCode::InvalidAccess`, and the message carries the index and the device count.
+is destroyed; `state()` allocates the two fields of a State the same way. Both return `Result`:
+a device that returns no memory is an `AllocationFailed` error, and a State whose second field
+fails releases the first. An index outside `[0, advanced().device_count())` is a rule the caller
+broke and stops the process; `api/data/README.md` has the checks.
 
 ### state
 
@@ -138,8 +150,8 @@ takes the Runtime and installs its master on this context, so no header here nam
 
 errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp` and promotes
 `Error`, `ErrorCode`, `Result` and `SushiException` into `SushiRuntime`, so a program that handles a
-failed `try_run()` spells them without ``. The foundation modules sit below the public surface
-and promote nothing themselves.
+failed `create()` or `try_run()` spells them without a module name. The foundation modules sit
+below the public surface and promote nothing themselves.
 
 ## logging.hpp
 

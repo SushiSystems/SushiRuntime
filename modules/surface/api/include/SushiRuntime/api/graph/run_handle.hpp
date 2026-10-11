@@ -70,41 +70,6 @@ namespace SushiRuntime
 
             std::uint32_t pending_serial = K_NO_STEP;  /**< Number of the pending step. */
         };
-
-        /**
-         * @brief Builds an Error without throwing.
-         * @param message Text of the Error; null-terminated.
-         * @return The Error, with an empty message when the text could not be allocated.
-         */
-        [[nodiscard]] inline Error error_without_throwing(ErrorCode code,
-                                                                const char* message) noexcept
-        {
-            try
-            {
-                return Error{code, message};
-            }
-            catch (...)
-            {
-                return Error{code, {}};
-            }
-        }
-
-        /**
-         * @brief Copies an Error without throwing.
-         * @return The copy, with an empty message when the text could not be allocated.
-         */
-        [[nodiscard]] inline Error error_without_throwing(
-            const Error& source) noexcept
-        {
-            try
-            {
-                return source;
-            }
-            catch (...)
-            {
-                return Error{source.code, {}};
-            }
-        }
     } // namespace Detail
 
     template <class Owner>

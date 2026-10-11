@@ -62,13 +62,13 @@ namespace
     {
         RuntimeConfig config;
         config.force_scheduler = force_scheduler;
-        auto rt = Runtime::create(config);
+        auto rt = Runtime::create(config).value();
         rt.set_rebalancer_enabled(false);
 
         std::vector<Buffer<int>> bufs;
         bufs.reserve(length + 1);
         for (std::size_t i = 0; i <= length; ++i)
-            bufs.push_back(rt.buffer<int>(1));
+            bufs.push_back(rt.buffer<int>(1).value());
         bufs[0][0] = 0;
 
         auto g = rt.graph();

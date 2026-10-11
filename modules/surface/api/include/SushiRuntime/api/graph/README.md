@@ -208,7 +208,9 @@ the run.
 
 scratch() hands out USM the recorder owns. It is allocated when the node is recorded, not when the
 plan compiles, so the pointer a kernel captured stays valid across a recompile and across the
-composer rebuilding a region. Fault records come from the same store.
+composer rebuilding a region. Fault records come from the same store. scratch() returns
+`Result<T*>`, with `AllocationFailed` when the device has no room. A recording verb that needs a
+fault record and cannot get one keeps that error as the recorder's refusal.
 
 ### steps
 
@@ -591,9 +593,9 @@ the RunHandle. The throwing form calls its try_ form and throws the Error it got
 `modules/surface/api/tests/test_run_driver.cpp` holds the list as `static_assert`s over both types.
 
 No try_ form throws, also when memory runs out while it builds an Error: every Error of the driver
-and of RunHandle is built by Detail::error_without_throwing(), which returns the code with an empty
-message when the text cannot be allocated. try_run_until() moves its stop test, so the stop test
-must be nothrow move constructible, and a `static_assert` says so.
+and of RunHandle is built by Detail::error_without_throwing() of `core/error.hpp`, which returns the
+code with an empty message when the text cannot be allocated. try_run_until() moves its stop test,
+so the stop test must be nothrow move constructible, and a `static_assert` says so.
 
 run_for(budget) stops at `now + budget`. A budget the steady clock cannot add to now, such as
 `std::chrono::hours::max()`, saturates at the clock's last time point, and a budget of zero or less

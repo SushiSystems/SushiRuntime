@@ -35,8 +35,10 @@
 
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/core/assert.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -193,10 +195,11 @@ namespace SushiRuntime
              * @brief Copies a window of the current field out to a host vector and waits for
              *        it.
              * @param range Element window to read.
+             * @return The elements, or a KernelFailed error when the device fails the copy.
              * @pre range fits size().
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
-            [[nodiscard]] std::vector<T> read_range(ElementRange range) const
+            [[nodiscard]] Result<std::vector<T>> read_range(ElementRange range) const
             {
                 return current_.read_window("State::read_range", range);
             }
@@ -206,11 +209,12 @@ namespace SushiRuntime
              * @param range  Element window to write.
              * @param source Holds at least range.count elements; the first range.count are
              *        copied.
+             * @return Nothing, or a KernelFailed error when the device fails the copy.
              * @pre range fits size(), and source holds at least range.count elements.
              */
-            void write_range(ElementRange range, span<const T> source) const
+            [[nodiscard]] Result<void> write_range(ElementRange range, span<const T> source) const
             {
-                current_.write_window("State::write_range", range, source);
+                return current_.write_window("State::write_range", range, source);
             }
 
             /**
@@ -259,15 +263,42 @@ namespace SushiRuntime
             /**
              * @brief Allocates both fields of count elements on one device.
              * @param call Names the public operation in a message.
+             * @return The state, or an AllocationFailed error when the device returns nothing
+             *         for a field; a field already allocated is released.
              * @pre device_index names a device, and the byte size of count fits std::size_t.
-             * @throws SushiException With AllocationFailed when the device returns nothing.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
-            State(const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                  std::size_t count, DeviceIndex device_index, Residency residency)
-                : current_(call, context, count, device_index, residency),
-                  next_(call, std::move(context), count, device_index, residency),
-                  view_(std::make_shared<Detail::StateView<T>>())
+            [[nodiscard]] static Result<State> allocate(
+                const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
+                std::size_t count, DeviceIndex device_index, Residency residency)
+            {
+                Result<Buffer<T>> current =
+                    Buffer<T>::allocate(call, context, count, device_index, residency);
+                if (!current)
+                    return make_error(std::move(current.error()));
+                Result<Buffer<T>> next =
+                    Buffer<T>::allocate(call, std::move(context), count, device_index, residency);
+                if (!next)
+                    return make_error(std::move(next.error()));
+
+                std::shared_ptr<Detail::StateView<T>> view;
+                Error thrown = Detail::translate_exceptions(
+                    ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&view]()
+                {
+                    view = std::make_shared<Detail::StateView<T>>();
+                });
+                if (thrown.code != ErrorCode::Ok)
+                    return make_error(std::move(thrown));
+                return State(std::move(*current), std::move(*next), std::move(view));
+            }
+
+            /**
+             * @brief Takes the two fields and the view a State is made of.
+             * @pre view is not null, and the fields have one size, device and residency.
+             */
+            State(Buffer<T> current, Buffer<T> next,
+                  std::shared_ptr<Detail::StateView<T>> view) noexcept
+                : current_(std::move(current)), next_(std::move(next)), view_(std::move(view))
             {
                 publish_view();
             }

@@ -61,10 +61,10 @@ namespace
      */
     Outputs run_workload(Runtime& rt, std::size_t runs, std::size_t steps, bool native_tail)
     {
-        auto field = rt.state<float>(N);
-        auto acc   = rt.buffer<std::uint32_t>(N);
-        auto mix   = rt.buffer<std::uint32_t>(N);
-        auto gated = rt.buffer<std::uint32_t>(N);
+        auto field = rt.state<float>(N).value();
+        auto acc   = rt.buffer<std::uint32_t>(N).value();
+        auto mix   = rt.buffer<std::uint32_t>(N).value();
+        auto gated = rt.buffer<std::uint32_t>(N).value();
         for (std::size_t i = 0; i < N; ++i)
         {
             field[i] = static_cast<float>(i) * 0.5f;
@@ -140,10 +140,10 @@ TEST(Integration_ChainLayer, ChainMatchesForcedSchedulerBitForBit)
     constexpr std::size_t RUNS  = 3;
     constexpr std::size_t STEPS = 40;
 
-    auto chained_rt = Runtime::create();
+    auto chained_rt = Runtime::create().value();
     RuntimeConfig forced;
     forced.force_scheduler = true;
-    auto scheduled_rt = Runtime::create(forced);
+    auto scheduled_rt = Runtime::create(forced).value();
 
     const Outputs chained   = run_workload(chained_rt, RUNS, STEPS, false);
     const Outputs scheduled = run_workload(scheduled_rt, RUNS, STEPS, false);
@@ -160,7 +160,7 @@ TEST(Integration_ChainLayer, NonChainablePlanMatchesChainBitForBit)
     constexpr std::size_t RUNS  = 2;
     constexpr std::size_t STEPS = 64;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
 
     const Outputs chained = run_workload(rt, RUNS, STEPS, false);
     const Outputs native  = run_workload(rt, RUNS, STEPS, true);
@@ -179,8 +179,8 @@ TEST(Integration_ChainLayer, RunUntilSeesEveryStepsResult)
 {
     constexpr std::uint32_t TARGET = 9;
 
-    auto rt = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1);
+    auto rt = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1).value();
     counter[0] = 0;
     std::uint32_t* pc = counter.data();
 
@@ -199,9 +199,9 @@ TEST(Integration_ChainLayer, ProfiledChainRecordsEveryDispatch)
 {
     constexpr std::size_t STEPS = 12;
 
-    auto rt = Runtime::create();
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
+    auto rt = Runtime::create().value();
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
     {
         a[i] = 0;

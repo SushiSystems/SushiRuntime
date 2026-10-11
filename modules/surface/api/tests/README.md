@@ -903,6 +903,11 @@ reading what the first wrote. Before the last round the test renames the rule of
 changes its recording, so the composer replays its nodes onto a new sub-graph with the scratch they
 captured. Asking for the region would not do it: `region(key)` is not a mutation.
 
+### `AScratchRequestNoDeviceCanSatisfyReturnsAllocationFailed`
+
+The memory module has no seam that makes an allocation fail, so the test asks for half the
+address space in bytes, which no device has. `scratch()` returns `AllocationFailed`, and a request
+of 16 bytes on the same recorder is granted.
 ## test_recorder_semantics.cpp
 
 The file covers what the recorder's words mean: a rule against a node, a name, a move, a region
@@ -1267,9 +1272,15 @@ The test submits a kernel on the queue `advanced().queue()` returns and does not
 event. `Runtime::wait()` returns once the kernel has written the buffer, and a `memcpy` through
 the same queue brings the values to a host vector. The test names no type of `Internal::`.
 
-### `AQueueOfAnUnknownDeviceIsRefused`
+### `AQueueOfAnUnknownDeviceStops`
 
-`advanced().queue()` asked for the device after the last one throws `InvalidAccess`.
+`advanced().queue()` asked for the device after the last one stops the process.
+
+### `ARequestNoDeviceCanSatisfyReturnsAllocationFailed`
+
+`buffer()` and `state()` are asked for half the address space in bytes, which no device has; the
+memory module has no seam that makes an allocation fail. Both return `AllocationFailed`, the
+buffer's message holds the element count, and a buffer of 16 bytes is granted afterwards.
 
 ## test_builder_surface.cpp
 

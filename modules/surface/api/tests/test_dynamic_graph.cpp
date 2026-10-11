@@ -41,11 +41,11 @@ TEST(Integration_DynamicGraph, IndependentRegionsRunAndComposeOnce)
     constexpr std::size_t N     = 16;
     constexpr std::size_t STEPS = 5;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
     int* pa = a.data();
@@ -73,11 +73,11 @@ TEST(Integration_DynamicGraph, CrossRegionDependencyOrders)
 {
     constexpr std::size_t N = 32;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto x = rt.buffer<int>(N);
-    auto y = rt.buffer<int>(N);
+    auto x = rt.buffer<int>(N).value();
+    auto y = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = -1; }
 
     int* px = x.data();
@@ -102,11 +102,11 @@ TEST(Integration_DynamicGraph, DropRegionStopsItsWork)
 {
     constexpr std::size_t N = 8;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
     int* pa = a.data();
@@ -137,11 +137,11 @@ TEST(Integration_DynamicGraph, AddRegionBetweenSteps)
 {
     constexpr std::size_t N = 8;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
     int* pa = a.data();
@@ -169,13 +169,13 @@ TEST(Integration_DynamicGraph, SingleRecomposePerMutation)
     constexpr std::size_t N        = 4;
     constexpr std::size_t REGIONS  = 32;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
     std::vector<Buffer<int>> bufs;
     bufs.reserve(REGIONS);
     for (std::size_t r = 0; r < REGIONS; ++r)
-        bufs.push_back(rt.buffer<int>(N));
+        bufs.push_back(rt.buffer<int>(N).value());
     for (auto& buf : bufs)
         for (std::size_t i = 0; i < N; ++i)
             buf[i] = 0;
@@ -213,10 +213,10 @@ TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
 {
     constexpr std::size_t N = 4;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto a = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
     int* pa = a.data();
     for (std::size_t i = 0; i < N; ++i)
         a[i] = 0;
@@ -243,12 +243,12 @@ TEST(Integration_DynamicGraph, ThreeRegionChainThreadsValue)
 {
     constexpr std::size_t N = 24;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto x = rt.buffer<int>(N);
-    auto y = rt.buffer<int>(N);
-    auto z = rt.buffer<int>(N);
+    auto x = rt.buffer<int>(N).value();
+    auto y = rt.buffer<int>(N).value();
+    auto z = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = 0; z[i] = 0; }
 
     int* px = x.data();
@@ -274,12 +274,12 @@ TEST(Integration_DynamicGraph, ReadReadSharingStaysConsistent)
 {
     constexpr std::size_t N = 24;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto base = rt.buffer<int>(N);
-    auto o1   = rt.buffer<int>(N);
-    auto o2   = rt.buffer<int>(N);
+    auto base = rt.buffer<int>(N).value();
+    auto o1   = rt.buffer<int>(N).value();
+    auto o2   = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { base[i] = 0; o1[i] = 0; o2[i] = 0; }
 
     int* pb = base.data();
@@ -308,11 +308,11 @@ TEST(Integration_DynamicGraph, StreamInConsumerRewiresProducer)
 {
     constexpr std::size_t N = 16;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto x = rt.buffer<int>(N);
-    auto y = rt.buffer<int>(N);
+    auto x = rt.buffer<int>(N).value();
+    auto y = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = -1; }
 
     int* px = x.data();
@@ -338,11 +338,11 @@ TEST(Integration_DynamicGraph, DropProducerLeavesConsumerRunnable)
 {
     constexpr std::size_t N = 16;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto x = rt.buffer<int>(N);
-    auto y = rt.buffer<int>(N);
+    auto x = rt.buffer<int>(N).value();
+    auto y = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { x[i] = 7; y[i] = 0; }
 
     int* px = x.data();
@@ -377,10 +377,10 @@ TEST(Integration_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
     constexpr std::size_t N = 64;
     constexpr std::size_t HALF = N / 2;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto shared = rt.buffer<int>(N);
+    auto shared = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) shared[i] = 0;
 
     std::atomic<int> arrived{0};
@@ -415,10 +415,10 @@ TEST(Integration_DynamicGraph, OverlappingRangeRegionsStillSerialize)
 {
     constexpr std::size_t N = 64;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto shared = rt.buffer<int>(N);
+    auto shared = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) shared[i] = 0;
     int* p = shared.data();
 
@@ -464,11 +464,11 @@ TEST(Integration_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
     constexpr std::size_t N = 128;
     constexpr std::size_t HALF = N / 2;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto shared = rt.buffer<int>(N);
-    auto total  = rt.buffer<int>(1);
+    auto shared = rt.buffer<int>(N).value();
+    auto total  = rt.buffer<int>(1).value();
     for (std::size_t i = 0; i < N; ++i) shared[i] = -1;
     total[0] = 0;
 

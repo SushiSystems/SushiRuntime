@@ -41,15 +41,15 @@ TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
 {
     constexpr std::size_t CAPACITY = 4096;
 
-    auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto marks   = rt.buffer<int>(CAPACITY);
+    auto rt      = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto marks   = rt.buffer<int>(CAPACITY).value();
 
     std::uint32_t* c = counter.data();
     int* m = marks.data();
 
     // The producer reads the count through a pointer, so the device computes it; see README.md.
-    auto wanted = rt.buffer<std::uint32_t>(1);
+    auto wanted = rt.buffer<std::uint32_t>(1).value();
     std::uint32_t* w = wanted.data();
 
     counter[0] = 0;
@@ -96,9 +96,9 @@ TEST(Integration_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
     constexpr std::size_t CAPACITY = 512;
     constexpr std::uint32_t LIVE = 300;
 
-    auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto out     = rt.buffer<int>(CAPACITY);
+    auto rt      = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto out     = rt.buffer<int>(CAPACITY).value();
 
     std::uint32_t* c = counter.data();
     int* o = out.data();
@@ -127,11 +127,11 @@ TEST(Integration_DeviceCount, ChainedProducerCountsInOneComposition)
 {
     constexpr std::size_t CAPACITY = 1024;
 
-    auto rt     = Runtime::create();
-    auto first  = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto second = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto stage1 = rt.buffer<int>(CAPACITY);
-    auto stage2 = rt.buffer<int>(CAPACITY);
+    auto rt     = Runtime::create().value();
+    auto first  = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto second = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto stage1 = rt.buffer<int>(CAPACITY).value();
+    auto stage2 = rt.buffer<int>(CAPACITY).value();
 
     std::uint32_t* c1 = first.data();
     std::uint32_t* c2 = second.data();
@@ -172,9 +172,9 @@ TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
 {
     constexpr std::size_t CAPACITY = 256;
 
-    auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto out     = rt.buffer<int>(CAPACITY);
+    auto rt      = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto out     = rt.buffer<int>(CAPACITY).value();
 
     std::uint32_t* c = counter.data();
     int* o = out.data();
@@ -211,9 +211,9 @@ TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
 {
     constexpr std::size_t CAPACITY = 64;
 
-    auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto out     = rt.buffer<int>(CAPACITY);
+    auto rt      = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto out     = rt.buffer<int>(CAPACITY).value();
 
     std::uint32_t* c = counter.data();
     int* o = out.data();
@@ -236,10 +236,10 @@ TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
 /** @brief Tests that a counter the host cannot read is rejected where it is written. */
 TEST(Integration_DeviceCount, RejectsACounterThatIsNotHostResident)
 {
-    auto rt = Runtime::create();
-    auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device);
-    auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
-    auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);
+    auto rt = Runtime::create().value();
+    auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value();
+    auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared).value();
+    auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
 
     for (const Buffer<std::uint32_t>* rejected : { &resident, &shared })
     {
@@ -265,9 +265,9 @@ TEST(Integration_DeviceCount, ReadsTheCountAtTheGivenIndex)
     constexpr std::size_t CAPACITY = 16;
     constexpr std::size_t SLOT     = 5;
 
-    auto rt   = Runtime::create();
-    auto plan = rt.buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host);
-    auto out  = rt.buffer<int>(CAPACITY);
+    auto rt   = Runtime::create().value();
+    auto plan = rt.buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host).value();
+    auto out  = rt.buffer<int>(CAPACITY).value();
 
     for (std::size_t i = 0; i < CAPACITY; ++i)
         out[i] = -1;
@@ -293,9 +293,9 @@ TEST(Integration_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
     constexpr std::size_t CAPACITY = 16;
     constexpr std::size_t SLOT     = 3;
 
-    auto rt   = Runtime::create();
-    auto plan = rt.buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host);
-    auto out  = rt.buffer<int>(CAPACITY);
+    auto rt   = Runtime::create().value();
+    auto plan = rt.buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host).value();
+    auto out  = rt.buffer<int>(CAPACITY).value();
 
     plan[SLOT] = 4;
 
@@ -308,9 +308,9 @@ TEST(Integration_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
 /** @brief Tests that the member setters check their slot as the free builders do. */
 TEST(Integration_DeviceCount, MemberSettersRefuseASlotThatIsNotHostResident)
 {
-    auto rt       = Runtime::create();
-    auto resident = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Device);
-    auto host     = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host);
+    auto rt       = Runtime::create().value();
+    auto resident = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Device).value();
+    auto host     = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
 
     Dynamic dyn;
     try

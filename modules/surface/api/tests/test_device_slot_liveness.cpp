@@ -47,7 +47,7 @@ namespace
     /** @brief Allocates a one-word Residency::Host buffer that holds value. */
     Buffer<Word> host_slot(Runtime& rt, Word value)
     {
-        auto slot = rt.buffer<Word>(1, DeviceIndex{0}, Residency::Host);
+        auto slot = rt.buffer<Word>(1, DeviceIndex{0}, Residency::Host).value();
         slot[0] = value;
         return slot;
     }
@@ -56,8 +56,8 @@ namespace
 /** @brief Tests that a run is refused once the buffer of sized_from_device() is destroyed. */
 TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
 {
-    auto rt = Runtime::create();
-    auto target = rt.buffer<Word>(K_WIDTH);
+    auto rt = Runtime::create().value();
+    auto target = rt.buffer<Word>(K_WIDTH).value();
     std::optional<Buffer<Word>> counter(host_slot(rt, K_LIVE));
     Word* words = target.data();
 
@@ -79,8 +79,8 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
 /** @brief Tests that a run is refused once the buffer of based_at_device() is destroyed. */
 TEST(Integration_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
 {
-    auto rt = Runtime::create();
-    auto target = rt.buffer<Word>(K_WIDTH);
+    auto rt = Runtime::create().value();
+    auto target = rt.buffer<Word>(K_WIDTH).value();
     std::optional<Buffer<Word>> base(host_slot(rt, 0u));
     Word* words = target.data();
 
@@ -99,8 +99,8 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
 /** @brief Tests that a late-bound State rule watches its count buffer as well as its State. */
 TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesAStateRule)
 {
-    auto rt = Runtime::create();
-    auto field = rt.state<Word>(K_WIDTH);
+    auto rt = Runtime::create().value();
+    auto field = rt.state<Word>(K_WIDTH).value();
     std::optional<Buffer<Word>> counter(host_slot(rt, K_LIVE));
 
     auto graph = rt.graph();

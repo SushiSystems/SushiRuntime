@@ -52,7 +52,7 @@ namespace
 TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
 {
     constexpr std::size_t N = 64;
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
 
     // execute() must report the throw from the first graph's command group; see README.md.
     {
@@ -62,7 +62,7 @@ TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
     }
 
     // Second graph on the SAME Runtime must run cleanly — proof the pool survived.
-    auto buf = rt.buffer<int>(N);
+    auto buf = rt.buffer<int>(N).value();
     int* p   = buf.data();
     for (std::size_t i = 0; i < N; ++i) p[i] = 0;
 
@@ -76,7 +76,7 @@ TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
  */
 TEST(Integration_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto g  = rt.graph();
     g.add_host([] {}).name("healthy");
     g.add_host([] { throw std::runtime_error("boom"); }).name("faulty");
@@ -96,8 +96,8 @@ TEST(Integration_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationInde
 TEST(Integration_ErrorIsolation, RuntimeSurvivesRepeatedFailures)
 {
     constexpr std::size_t N = 32;
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p   = buf.data();
 
     for (int round = 0; round < 5; ++round)

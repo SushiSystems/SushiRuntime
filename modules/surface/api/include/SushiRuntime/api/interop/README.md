@@ -30,7 +30,8 @@ alignment is raised to at least alignof(std::max_align_t) and must be a power of
 is rounded up to a multiple of it, and HostExport::bytes holds the rounded size. A count of zero
 returns an empty Buffer, a null address and zero bytes without allocating. An alignment that is not
 a power of two, or a size that overflows when rounded, is a rule the caller broke and stops the
-process through `SR_VERIFY`. A failed allocation throws SushiException with AllocationFailed.
+process through `SR_VERIFY`. A failed allocation comes back as an `AllocationFailed` error in the
+`Result<HostExport<T>>` the call returns.
 
 ### import_device
 
@@ -38,11 +39,13 @@ import_device maps memory another API exported and returns it as a Device Buffer
 it, the host may not index it. The runtime records the mapped address in its USM registry, so a task
 that touches the Buffer is routed to the importing device like any other.
 
-The call throws SushiException with unsupported when the device cannot import (see capabilities()),
-and with InvalidAccess when the descriptor's kind is Unspecified (the default) or belongs to
-another platform, when an OpaqueWin32 handle is null or an OpaqueFd handle is above INT_MAX, when
-its region ends past allocation_bytes, or when the device's UUID differs from
-ExternalMemoryDescriptor::device. A throw part-way through releases whatever steps had completed.
+The call returns `Result<Buffer<T>>`. The error is `Unsupported` when the device cannot import (see
+capabilities()), and `InvalidAccess` when the descriptor's kind is Unspecified (the default) or
+belongs to another platform, when an OpaqueWin32 handle is null or an OpaqueFd handle is above
+INT_MAX, when its region ends past allocation_bytes, when the device's UUID differs from
+ExternalMemoryDescriptor::device, or when SYCL refuses the handle. A failure part-way through
+releases whatever steps had completed. capabilities() returns `Result<InteropCapabilities>`, with
+`DeviceLost` for a device that does not answer the query.
 
 A count of zero with a descriptor that passes those checks returns an empty Buffer and imports
 nothing.

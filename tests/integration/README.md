@@ -229,8 +229,8 @@ The filter does not reject the whole machine: a lane that has an fp64 device sti
 with `require_fp64` set. The CPU lanes this suite runs on (POCL and the Intel OpenCL CPU runtime)
 all report fp64, so this is the branch the test normally takes.
 
-On a lane with no conforming device the failure must still be a `SushiException` from
-`Runtime::create()`, and not a driver error from inside a kernel launch.
+On a lane with no conforming device the failure must still be the `Unsupported` error
+`Runtime::create()` returns, and not a driver error from inside a kernel launch.
 
 ### `AnEmptyFilterFailsWithUnsupported`
 
@@ -248,20 +248,15 @@ plain `Runtime::create()` still finds the devices of the lane.
 
 ## test_error_types.cpp
 
-The file covers the type a caller catches when the library refuses a request. It is here and not
-in a module because the refusal it uses is raised by `RuntimeContext` and caught through `Runtime`.
+The file covers what a caller reads when the library refuses a request. It is here and not in a
+module because the refusal it uses is raised by `RuntimeContext` and returned through `Runtime`.
 
-### `AFilterThatExcludesEveryDeviceThrowsUnsupported`
+### `AFilterThatExcludesEveryDeviceReturnsUnsupported`
 
-A filter that admits no device class gives `SushiException` with `ErrorCode::Unsupported`. Topology
-returns an empty list for that filter and `RuntimeContext` turns the empty list into the failure;
-`test_device_selection.cpp` checks that the message names the filter.
-
-### `AHandlerForRuntimeErrorReceivesTheSameFailure`
-
-`SushiException` derives from `std::runtime_error`, so a handler written for the base class still
-catches it. The exception is thrown inside the shared library and caught in the test program, and
-the `dynamic_cast` shows its type survives that boundary.
+A filter that admits no device class makes `Runtime::create()` return `ErrorCode::Unsupported` with
+a message, and no exception leaves the call. Topology returns an empty list for that filter and
+`RuntimeContext` turns the empty list into the failure; `test_device_selection.cpp` checks that
+the message names the filter.
 
 ## test_error_isolation.cpp
 

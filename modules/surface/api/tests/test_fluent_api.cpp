@@ -40,8 +40,8 @@ TEST(Integration_FluentAPI, TryRunSuccessPath)
 {
     constexpr std::size_t N = 64;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0;
 
@@ -64,15 +64,15 @@ TEST(Integration_FluentAPI, RunReportFieldsAfterMultiStep)
     constexpr std::size_t N     = 32;
     constexpr std::size_t STEPS = 4;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         field[i] = 0;
 
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
     // Two independent tasks per step so we can verify the multiplier.
-    auto extra = rt.state<int>(N);
+    auto extra = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         extra[i] = 0;
     g.add(extra, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
@@ -89,8 +89,8 @@ TEST(Integration_FluentAPI, RunForRunsAtLeastOneStep)
 {
     constexpr std::size_t N = 16;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         field[i] = 0;
 
@@ -110,8 +110,8 @@ TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
 {
     constexpr std::size_t N = 8;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         field[i] = 0;
 
@@ -133,8 +133,8 @@ TEST(Integration_FluentAPI, RawHandlerKernelAdd)
 {
     constexpr std::size_t N = 128;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0;
 
@@ -160,8 +160,8 @@ TEST(Integration_FluentAPI, RangeKernelAdd)
 {
     constexpr std::size_t N = 64;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = -1;
 
@@ -190,8 +190,8 @@ TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
 {
     constexpr std::size_t N = 32;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0;
 
@@ -217,8 +217,8 @@ TEST(Integration_FluentAPI, TrackedRangeKernelOrdering)
 {
     constexpr std::size_t N = 32;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0;
 
@@ -247,8 +247,8 @@ TEST(Integration_FluentAPI, TrackedRawKernelOrdering)
 {
     constexpr std::size_t N = 32;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0;
 
@@ -278,8 +278,8 @@ TEST(Integration_FluentAPI, TrackedNdRangeOrdering)
 {
     constexpr std::size_t N = 64;   // tiles by 16
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = 0;
 
@@ -309,9 +309,9 @@ TEST(Integration_FluentAPI, SubRegionDisjointWritesThenWholeRead)
 {
     constexpr std::size_t N = 64;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
-    auto out = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
+    auto out = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
     {
         buf[i] = 0;
@@ -348,9 +348,9 @@ TEST(Integration_FluentAPI, BufferAllocateUseAndReadBack)
 {
     constexpr std::size_t N = 256;
 
-    auto rt  = Runtime::create();
-    auto src = rt.buffer<float>(N);
-    auto dst = rt.buffer<float>(N);
+    auto rt  = Runtime::create().value();
+    auto src = rt.buffer<float>(N).value();
+    auto dst = rt.buffer<float>(N).value();
 
     for (std::size_t i = 0; i < N; ++i)
     {
@@ -373,8 +373,8 @@ TEST(Integration_FluentAPI, BufferAllocateUseAndReadBack)
 // Buffer is move-only: the moved-from handle must become empty.
 TEST(Integration_FluentAPI, BufferMoveLeavesSenderEmpty)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(16);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(16).value();
     EXPECT_FALSE(buf.empty());
     EXPECT_EQ(buf.size(), 16u);
 
@@ -387,11 +387,11 @@ TEST(Integration_FluentAPI, BufferMoveLeavesSenderEmpty)
 /** @brief Tests that Graph::size() tracks the number of add() calls. */
 TEST(Integration_FluentAPI, GraphSizeTracksAdds)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto g  = rt.graph();
     EXPECT_EQ(g.size(), 0u);
 
-    auto f = rt.state<int>(4);
+    auto f = rt.state<int>(4).value();
     g.add(f, [](std::size_t, const int*, int*) {});
     EXPECT_EQ(g.size(), 1u);
 
@@ -402,7 +402,7 @@ TEST(Integration_FluentAPI, GraphSizeTracksAdds)
 /** @brief Tests that unsafe_context() and advanced() reach the same RuntimeContext. */
 TEST(Integration_FluentAPI, ContextAccessorIsConsistent)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     Internal::Execution::RuntimeContext& context = rt.unsafe_context();
 
     // At least a CPU device is always present.
@@ -415,8 +415,8 @@ TEST(Integration_FluentAPI, RunZeroStepsIsNoOp)
 {
     constexpr std::size_t N = 8;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         field[i] = 42;
 

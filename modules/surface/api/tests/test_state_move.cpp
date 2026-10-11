@@ -64,7 +64,7 @@ namespace
     /** @brief Allocates a State whose current field holds index plus K_SEED and next K_CANARY. */
     State<Word> seeded_state(Runtime& rt)
     {
-        auto state = rt.state<Word>(K_WIDTH);
+        auto state = rt.state<Word>(K_WIDTH).value();
         for (std::size_t i = 0; i < K_WIDTH; ++i)
         {
             state[i] = static_cast<Word>(i) + K_SEED;
@@ -94,7 +94,7 @@ namespace
 /** @brief Tests that a rule recorded before a move construction steps the moved-to State. */
 TEST(Integration_StateMove, ARuleFollowsAStateMovedAfterAdd)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     auto graph = rt.graph();
     add_increment(graph, field);
@@ -108,7 +108,7 @@ TEST(Integration_StateMove, ARuleFollowsAStateMovedAfterAdd)
 /** @brief Tests that a rule recorded on a vector element survives the vector reallocating. */
 TEST(Integration_StateMove, ARuleFollowsAStateItsVectorReallocated)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     std::vector<State<Word>> fields;
     fields.push_back(seeded_state(rt));
     auto graph = rt.graph();
@@ -126,7 +126,7 @@ TEST(Integration_StateMove, ARuleFollowsAStateItsVectorReallocated)
 /** @brief Tests that a coupled rule follows the State it writes and the State it reads. */
 TEST(Integration_StateMove, ACoupledRuleFollowsItsMovedStates)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto out = seeded_state(rt);
     auto input = seeded_state(rt);
     auto graph = rt.graph();
@@ -151,7 +151,7 @@ TEST(Integration_StateMove, ACoupledRuleFollowsItsMovedStates)
 /** @brief Tests that a late-bound State rule follows the State through a move. */
 TEST(Integration_StateMove, ADynamicStateRuleFollowsAMovedState)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     std::size_t live = K_PREFIX;
     auto graph = rt.graph();
@@ -170,7 +170,7 @@ TEST(Integration_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
 {
     using Detail::HandleAccess;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     std::shared_ptr<Detail::StateView<Word>> view;
     {
         auto field = seeded_state(rt);
@@ -209,7 +209,7 @@ TEST(Integration_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
 /** @brief Tests that a State assigned over after add() is refused at the next run. */
 TEST(Integration_StateMove, AStateAssignedOverRefusesTheRun)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     auto graph = rt.graph();
     add_increment(graph, field);
@@ -225,7 +225,7 @@ TEST(Integration_StateMove, AStateAssignedOverRefusesTheRun)
 /** @brief Tests that a late-bound State rule replayed after one step reads the current field. */
 TEST(Integration_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     Word* const second = field.next();
     std::size_t live = K_WIDTH;

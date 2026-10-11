@@ -41,22 +41,22 @@ TEST(Integration_DeviceResident, BufferRoundTrip)
 {
     constexpr std::size_t N = 128;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device).value();
 
     EXPECT_EQ(buf.residency(), Residency::Device);
     EXPECT_FALSE(buf.is_host_accessible());
 
     std::vector<int> seed(N);
     std::iota(seed.begin(), seed.end(), 0);     // 0,1,2,...
-    buf.write_range({0, N}, seed);
+    buf.write_range({0, N}, seed).value();
 
     int* p = buf.data();
     auto g = rt.graph();
     g.add(N, Reads(buf), Writes(buf), [p](std::size_t i) { p[i] *= 2; });
     g.run();
 
-    const std::vector<int> out = buf.read_range({0, N});
+    const std::vector<int> out = buf.read_range({0, N}).value();
     ASSERT_EQ(out.size(), N);
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(out[i], static_cast<int>(i) * 2) << "at i=" << i;
@@ -67,14 +67,14 @@ TEST(Integration_DeviceResident, SelectiveReadback)
 {
     constexpr std::size_t N = 64;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device).value();
 
     std::vector<int> seed(N);
     std::iota(seed.begin(), seed.end(), 100);   // 100,101,...
-    buf.write_range({0, N}, seed);
+    buf.write_range({0, N}, seed).value();
 
-    const std::vector<int> window = buf.read_range({8, 4});
+    const std::vector<int> window = buf.read_range({8, 4}).value();
     ASSERT_EQ(window.size(), 4u);
     for (std::size_t k = 0; k < 4; ++k)
         EXPECT_EQ(window[k], static_cast<int>(108 + k));
@@ -89,20 +89,20 @@ TEST(Integration_DeviceResident, StateStepsResident)
     constexpr std::size_t N     = 96;
     constexpr std::size_t STEPS = 5;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N, DeviceIndex{0}, Residency::Device);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N, DeviceIndex{0}, Residency::Device).value();
 
     EXPECT_EQ(field.residency(), Residency::Device);
     EXPECT_FALSE(field.is_host_accessible());
 
     std::vector<int> seed(N, 0);
-    field.write_range({0, N}, seed);
+    field.write_range({0, N}, seed).value();
 
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
     g.run(STEPS);
 
-    const std::vector<int> out = field.read_range({0, N});
+    const std::vector<int> out = field.read_range({0, N}).value();
     ASSERT_EQ(out.size(), N);
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(out[i], static_cast<int>(STEPS)) << "at i=" << i;
@@ -113,8 +113,8 @@ TEST(Integration_DeviceResident, SharedDefaultUnchanged)
 {
     constexpr std::size_t N = 32;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
 
     EXPECT_EQ(buf.residency(), Residency::Shared);
     EXPECT_TRUE(buf.is_host_accessible());
@@ -122,7 +122,7 @@ TEST(Integration_DeviceResident, SharedDefaultUnchanged)
     for (std::size_t i = 0; i < N; ++i)
         buf[i] = static_cast<int>(i);           // direct host indexing still valid
 
-    const std::vector<int> out = buf.read_range({0, N});
+    const std::vector<int> out = buf.read_range({0, N}).value();
     for (std::size_t i = 0; i < N; ++i)
         EXPECT_EQ(out[i], static_cast<int>(i));
 }
@@ -132,15 +132,15 @@ TEST(Integration_DeviceResident, HostSpanIndexesSharedBuffer)
 {
     constexpr std::size_t N = 16;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
 
     auto view = buf.host();
     ASSERT_EQ(view.size(), N);
     for (std::size_t i = 0; i < N; ++i)
         view[i] = static_cast<int>(i * 2);
 
-    const std::vector<int> out = buf.read_range({0, N});
+    const std::vector<int> out = buf.read_range({0, N}).value();
     for (std::size_t i = 0; i < N; ++i)
         EXPECT_EQ(out[i], static_cast<int>(i * 2));
 }
@@ -150,8 +150,8 @@ TEST(Integration_DeviceResidentDeathTest, HostOnADeviceBufferStops)
 {
     constexpr std::size_t N = 16;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device).value();
     ASSERT_FALSE(buf.is_host_accessible());
 
     EXPECT_DEATH(static_cast<void>(buf.host()), "Buffer::host: a device-resident buffer");
@@ -165,8 +165,8 @@ TEST(Integration_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
 {
     constexpr std::size_t N = 64;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Host);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Host).value();
 
     EXPECT_EQ(buf.residency(), Residency::Host);
     EXPECT_TRUE(buf.is_host_accessible());

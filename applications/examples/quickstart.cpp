@@ -40,10 +40,10 @@ namespace
         constexpr std::size_t N     = 1024;
         constexpr std::size_t STEPS = 10000;
 
-        auto rt = Runtime::create();          // discovers hardware, starts the workers
+        auto rt = Runtime::create().value();          // discovers hardware, starts the workers
 
         // The runtime keeps two buffers and swaps them; a rule reads one, writes the other.
-        auto heat = rt.state<float>(N);
+        auto heat = rt.state<float>(N).value();
         for (std::size_t i = 0; i < N; ++i)
             heat[i] = (i == N / 2) ? 1.0f : 0.0f;   // a single hot cell in the middle
 

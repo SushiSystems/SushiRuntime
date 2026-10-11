@@ -34,6 +34,7 @@
 #include <utility>
 #include <vector>
 
+#include <limits>
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
@@ -51,7 +52,7 @@ TEST(Integration_RuntimeEntry, OneStructConfiguresAndTheViewOutlivesTheRuntime)
     RuntimeConfig config;
     config.worker_count = 2;
 
-    std::optional<Runtime> rt(Runtime::create(config));
+    std::optional<Runtime> rt(Runtime::create(config).value());
     const AdvancedControls view = rt->advanced();
 
     EXPECT_EQ(view.worker_pool().count, 2u);
@@ -68,7 +69,7 @@ TEST(Integration_RuntimeEntry, OneStructConfiguresAndTheViewOutlivesTheRuntime)
 /** @brief Tests that devices() has one entry per device, in the order DeviceIndex counts. */
 TEST(Integration_RuntimeEntry, DevicesListsEveryDeviceInOrder)
 {
-    const Runtime rt = Runtime::create();
+    const Runtime rt = Runtime::create().value();
     const AdvancedControls view = rt.advanced();
     const std::vector<Internal::Device::DeviceDescription>& devices = view.devices();
 
@@ -84,7 +85,7 @@ TEST(Integration_RuntimeEntry, DevicesListsEveryDeviceInOrder)
         EXPECT_EQ(devices[index].name, reported) << "entry " << index;
     }
 
-    auto landed = rt.buffer<int>(16);
+    auto landed = rt.buffer<int>(16).value();
     const std::optional<std::size_t> owner = context.memory().device_of(landed.data());
     ASSERT_TRUE(owner.has_value());
     EXPECT_EQ(*owner, devices.front().index);
@@ -96,11 +97,11 @@ TEST(Integration_RuntimeEntry, DefaultConfigCreates)
 {
     constexpr std::size_t COUNT = 64;
 
-    const Runtime rt = Runtime::create();
+    const Runtime rt = Runtime::create().value();
     EXPECT_FALSE(rt.advanced().is_profiling_enabled());
     EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
 
-    auto values = rt.buffer<int>(COUNT);
+    auto values = rt.buffer<int>(COUNT).value();
     int* data = values.data();
     for (std::size_t i = 0; i < COUNT; ++i)
         values[i] = 0;
@@ -123,7 +124,7 @@ TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
     config.rebalancer = true;
     config.force_scheduler = true;
 
-    const Runtime rt = Runtime::create(config);
+    const Runtime rt = Runtime::create(config).value();
     const AdvancedControls view = rt.advanced();
     const Internal::Execution::RuntimeSettings& settings = rt.unsafe_context().settings();
 
@@ -140,7 +141,7 @@ TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
 /** @brief Tests that a moved Runtime keeps the context its handles were made from. */
 TEST(Integration_RuntimeEntry, AMovedRuntimeKeepsItsContext)
 {
-    Runtime first = Runtime::create();
+    Runtime first = Runtime::create().value();
     Internal::Execution::RuntimeContext* const context = &first.unsafe_context();
 
     const Runtime second = std::move(first);
@@ -153,8 +154,8 @@ TEST(Integration_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
 {
     constexpr std::size_t K_WORDS = 256;
 
-    const Runtime runtime = Runtime::create();
-    const Buffer<std::uint32_t> values = runtime.buffer<std::uint32_t>(K_WORDS);
+    const Runtime runtime = Runtime::create().value();
+    const Buffer<std::uint32_t> values = runtime.buffer<std::uint32_t>(K_WORDS).value();
     std::uint32_t* words = values.data();
 
     sycl::queue& queue = runtime.advanced().queue(values.device_index());
@@ -162,7 +163,7 @@ TEST(Integration_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
     {
         words[i] = static_cast<std::uint32_t>(i[0]) + 1u;
     });
-    runtime.wait();
+    runtime.wait().value();
 
     std::vector<std::uint32_t> copied(K_WORDS, 0u);
     queue.memcpy(copied.data(), words, K_WORDS * sizeof(std::uint32_t)).wait();
@@ -171,21 +172,34 @@ TEST(Integration_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
         EXPECT_EQ(copied[i], static_cast<std::uint32_t>(i) + 1u) << "word " << i;
 }
 
-/** @brief Tests that the queue of a device the runtime does not have is refused. */
-TEST(Integration_RuntimeEntry, AQueueOfAnUnknownDeviceIsRefused)
+/** @brief Tests that asking for the queue of a device the runtime does not have stops. */
+TEST(Integration_RuntimeEntryDeathTest, AQueueOfAnUnknownDeviceStops)
 {
-    const Runtime runtime = Runtime::create();
+    const Runtime runtime = Runtime::create().value();
     const AdvancedControls controls = runtime.advanced();
 
-    ErrorCode refused = ErrorCode::Ok;
-    try
-    {
-        static_cast<void>(controls.queue(DeviceIndex{controls.device_count()}));
-    }
-    catch (const SushiException& failure)
-    {
-        refused = failure.error().code;
-    }
+    EXPECT_DEATH(static_cast<void>(controls.queue(DeviceIndex{controls.device_count()})),
+                 "Device index .* is out of bounds");
+}
 
-    EXPECT_EQ(refused, ErrorCode::InvalidAccess);
+/** @brief Tests that a buffer and a state no device can hold come back as AllocationFailed. */
+TEST(Integration_RuntimeEntry, ARequestNoDeviceCanSatisfyReturnsAllocationFailed)
+{
+    const Runtime runtime = Runtime::create().value();
+    // Half the address space in bytes: the count fits std::size_t and no device has the room.
+    const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
+
+    const auto buffer = runtime.buffer<std::uint8_t>(count);
+    ASSERT_FALSE(buffer.has_value());
+    EXPECT_EQ(buffer.error().code, ErrorCode::AllocationFailed);
+    EXPECT_NE(buffer.error().message.find(std::to_string(count) + " elements"),
+              std::string::npos)
+        << buffer.error().message;
+
+    const auto state = runtime.state<std::uint8_t>(count);
+    ASSERT_FALSE(state.has_value());
+    EXPECT_EQ(state.error().code, ErrorCode::AllocationFailed);
+
+    const auto small = runtime.buffer<std::uint8_t>(16);
+    EXPECT_TRUE(small.has_value()) << "a failed allocation must leave the runtime usable";
 }

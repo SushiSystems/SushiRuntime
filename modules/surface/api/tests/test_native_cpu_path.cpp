@@ -39,9 +39,9 @@ TEST(Integration_NativeCPU, HostTaskRunsAfterKernel)
 {
     constexpr std::size_t N = 64;
 
-    auto rt = Runtime::create();
-    auto a  = rt.buffer<int>(N);
-    auto b  = rt.buffer<int>(N);
+    auto rt = Runtime::create().value();
+    auto a  = rt.buffer<int>(N).value();
+    auto b  = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
     int* ap = a.data();
@@ -64,9 +64,9 @@ TEST(Integration_NativeCPU, KernelRunsAfterHostTask)
 {
     constexpr std::size_t N = 64;
 
-    auto rt = Runtime::create();
-    auto a  = rt.buffer<int>(N);
-    auto b  = rt.buffer<int>(N);
+    auto rt = Runtime::create().value();
+    auto a  = rt.buffer<int>(N).value();
+    auto b  = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
     int* ap = a.data();
@@ -89,7 +89,7 @@ TEST(Integration_NativeCPU, UntrackedHostTaskRunsEveryStep)
 {
     constexpr std::size_t STEPS = 5;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     std::atomic<int> ticks{0};
 
     auto g = rt.graph();
@@ -103,7 +103,7 @@ TEST(Integration_NativeCPU, UntrackedHostTaskRunsEveryStep)
 /** @brief Tests that a throwing host task fails the run and leaves the runtime usable. */
 TEST(Integration_NativeCPU, ThrowingHostTaskKeepsRuntimeUsable)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
 
     auto bad = rt.graph();
     bad.add_host([]() { throw std::runtime_error("boom"); });
@@ -111,7 +111,7 @@ TEST(Integration_NativeCPU, ThrowingHostTaskKeepsRuntimeUsable)
     ASSERT_FALSE(r1.has_value()) << "a throwing native task must fail the run.";
 
     constexpr std::size_t N = 16;
-    auto buf = rt.buffer<int>(N);
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
     int* p = buf.data();
 
