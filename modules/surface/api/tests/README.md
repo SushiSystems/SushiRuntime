@@ -1065,6 +1065,14 @@ sequence. These cases check the mapping between the two.
 `Recorder::rule()` scope, each reading what the one before it wrote. The graph therefore holds four
 rules and six nodes, and `last_rule()` gives the position of the scope.
 
+### `AVerbReturnsThePositionOfTheRuleItRecorded`
+
+`Recorder::kernel` records one kernel, and a rule scope then records a kernel and a host task.
+The value the first call returns is `last_rule()` at that moment; the two calls inside the scope
+return one value, which differs from the first. Each kernel states a width no other node has, so
+its node event is found by `launched_width`, and `rule_registration()` asked with the returned
+position gives the `node_index` of that event.
+
 ### `ARuleCarriesNoIndexUntilTheGraphCompiles`
 
 `size()` is four, `node_count()` is six, and every rule reports `K_NO_REGISTRATION` before the first
