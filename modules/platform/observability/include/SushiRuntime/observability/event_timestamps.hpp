@@ -53,15 +53,19 @@ namespace SushiRuntime
          */
         inline bool read_event_timestamps(const sycl::event& event, EventTimestamps& out) noexcept
         {
+            std::uint64_t start_ns = 0;
+            std::uint64_t end_ns   = 0;
             try
             {
-                out.start_ns = event.get_profiling_info<sycl::info::event_profiling::command_start>();
-                out.end_ns   = event.get_profiling_info<sycl::info::event_profiling::command_end>();
+                start_ns = event.get_profiling_info<sycl::info::event_profiling::command_start>();
+                end_ns   = event.get_profiling_info<sycl::info::event_profiling::command_end>();
             }
             catch (...)
             {
                 return false;
             }
+            out.start_ns = start_ns;
+            out.end_ns   = end_ns;
 
             try
             {
@@ -70,7 +74,7 @@ namespace SushiRuntime
             }
             catch (...)
             {
-                out.submit_ns  = out.start_ns;
+                out.submit_ns  = start_ns;
                 out.has_submit = false;
             }
             return true;

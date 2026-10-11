@@ -66,6 +66,7 @@ namespace SushiRuntime
                 , pairing_event_ns_(other.pairing_event_ns_.load(std::memory_order_relaxed))
                 , run_start_steady_ns_(other.run_start_steady_ns_)
             {
+                other.reset_to_default();
             }
 
             /** @brief See the move constructor; every atomic is transferred by value. */
@@ -83,6 +84,7 @@ namespace SushiRuntime
                 pairing_uncertainty_ns_.store(other.pairing_uncertainty_ns_.load(std::memory_order_relaxed), std::memory_order_relaxed);
                 pairing_event_ns_.store(other.pairing_event_ns_.load(std::memory_order_relaxed), std::memory_order_relaxed);
                 run_start_steady_ns_ = other.run_start_steady_ns_;
+                other.reset_to_default();
                 return *this;
             }
 
@@ -93,10 +95,11 @@ namespace SushiRuntime
              * @brief Grows the ledger for a new run and resets its per-run state.
              * @param multiplicities Count of internal nodes per registration index; its size is the
              *        row count.
+             * @throws std::bad_alloc When growing the rows or their storage fails.
              * @see modules/platform/observability/README.md
              */
             void reserve(const std::vector<std::uint32_t>& multiplicities,
-                        std::uint32_t expected_invocations) noexcept
+                        std::uint32_t expected_invocations)
             {
                 const std::size_t node_count = multiplicities.size();
                 bool must_rebuild = node_count != node_count_;
@@ -168,9 +171,9 @@ namespace SushiRuntime
             /**
              * @brief Appends every slot a node actually used, in node order, into the report.
              *
-             * A row's true demand (its cursor, uncapped) becomes next reserve()'s
-             * floor even when it exceeded this run's capacity, so an overflow
-             * self-heals on the next run instead of silently repeating (item 4).
+             * Each row's uncapped demand is stored in row_high_water_, and the next
+             * reserve() sizes that row to at least this demand. Slots past this run's
+             * capacity are not appended; debug builds assert on that overflow.
              */
             void collect(RunReport& report) noexcept
             {
@@ -234,6 +237,22 @@ namespace SushiRuntime
             }
 
         private:
+            /** @brief Returns this ledger to the state of a default-constructed one. */
+            void reset_to_default() noexcept
+            {
+                node_count_ = 0;
+                row_capacity_.clear();
+                row_offset_.clear();
+                row_high_water_.clear();
+                records_.clear();
+                cursors_.reset();
+                pairing_owner_.store(nullptr, std::memory_order_relaxed);
+                pairing_steady_ns_.store(0, std::memory_order_relaxed);
+                pairing_uncertainty_ns_.store(0, std::memory_order_relaxed);
+                pairing_event_ns_.store(0, std::memory_order_relaxed);
+                run_start_steady_ns_ = 0;
+            }
+
             std::size_t node_count_ = 0;                   /**< Rows the ledger currently indexes. */
             std::vector<std::uint32_t> row_capacity_;       /**< Slots guaranteed for each row. */
             std::vector<std::size_t> row_offset_;           /**< Each row's base offset into records_. */

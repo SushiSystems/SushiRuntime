@@ -10,4 +10,7 @@ sushiruntime_add_module(
 
 sushiruntime_add_module_tests(
     MODULE observability
-    SOURCES test_node_event_record.cpp test_transfer_counters.cpp)
+    SOURCES
+        test_node_event_record.cpp
+        test_profiling_ledger.cpp
+        test_transfer_counters.cpp)
