@@ -21,7 +21,7 @@
 
 /**
  * @file wire_messages.cpp
- * @brief Encodes and decodes the sixteen messages of protocol version 2.
+ * @brief Encodes and decodes the sixteen messages of protocol version 3.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */
@@ -34,9 +34,6 @@ namespace SushiRuntime::Distributed::Wire
     {
         /** @brief Holds the encoded size of one operation identifier. */
         constexpr std::size_t K_OP_ID_BYTES = 4;
-
-        /** @brief Holds the number of scalar parameters a task's metadata carries at most. */
-        constexpr std::size_t K_MAX_PARAMS = Internal::Graph::TaskMetadata::K_MAX_PARAMS;
 
         /** @brief Appends a handle as id, version, size: 20 bytes. */
         void put_handle(FieldWriter& writer, const BufferHandle& handle)
@@ -74,41 +71,6 @@ namespace SushiRuntime::Distributed::Wire
                 out.push_back(read_handle(reader));
         }
 
-        /** @brief Returns how many leading parameters reach the last one that is not zero. */
-        std::uint8_t used_param_count(const Internal::Graph::TaskMetadata& metadata) noexcept
-        {
-            std::size_t count = K_MAX_PARAMS;
-            while (count > 0 && metadata.params[count - 1] == 0)
-                --count;
-            return static_cast<std::uint8_t>(count);
-        }
-
-        /** @brief Appends task type, priority, affinity, then the used parameters. */
-        void put_metadata(FieldWriter& writer, const Internal::Graph::TaskMetadata& metadata)
-        {
-            writer.put_enum(metadata.task_type);
-            writer.put_i32(static_cast<std::int32_t>(metadata.priority));
-            writer.put_i32(static_cast<std::int32_t>(metadata.numa_affinity));
-
-            const std::uint8_t count = used_param_count(metadata);
-            writer.put_u8(count);
-            for (std::size_t index = 0; index < count; ++index)
-                writer.put_u64(metadata.params[index]);
-        }
-
-        /** @brief Reads the metadata fields; parameters past the sent count stay zero. */
-        void read_metadata(FieldReader& reader, Internal::Graph::TaskMetadata& metadata) noexcept
-        {
-            metadata.task_type =
-                reader.read_enum(Internal::Graph::TaskType::None, Internal::Graph::TaskType::ControlFlow);
-            metadata.priority = reader.read_i32();
-            metadata.numa_affinity = reader.read_i32();
-
-            const std::uint8_t count =
-                reader.read_u8_at_most(static_cast<std::uint8_t>(K_MAX_PARAMS));
-            for (std::size_t index = 0; index < count; ++index)
-                metadata.params[index] = reader.read_u64();
-        }
     } // namespace
 
     CodecStatus HelloMessage::encode(std::vector<std::byte>& out) const
@@ -237,10 +199,16 @@ namespace SushiRuntime::Distributed::Wire
 
     CodecStatus TaskDispatchMessage::encode(std::vector<std::byte>& out) const
     {
+        if (name.size() > K_MAX_DISPATCH_NAME_BYTES || parameter_count > parameters.size())
+            return CodecStatus::TooLong;
+
         FieldWriter writer(out);
         writer.put_u64(task_id);
-        writer.put_u32(metadata.op_id.value);
-        put_metadata(writer, metadata);
+        writer.put_u32(operation.value);
+        writer.put_string(name);
+        writer.put_u8(parameter_count);
+        for (std::size_t index = 0; index < parameter_count; ++index)
+            writer.put_u64(parameters[index]);
         put_handles(writer, inputs);
         put_handles(writer, outputs);
         return writer.status();
@@ -250,10 +218,14 @@ namespace SushiRuntime::Distributed::Wire
                                              TaskDispatchMessage& out)
     {
         FieldReader reader(payload);
-        out.metadata = Internal::Graph::TaskMetadata{};
         out.task_id = reader.read_u64();
-        out.metadata.op_id = OperationID(reader.read_u32());
-        read_metadata(reader, out.metadata);
+        out.operation = OperationID(reader.read_u32());
+        out.name.assign(reader.read_string());
+        out.parameters.fill(0);
+        out.parameter_count =
+            reader.read_u8_at_most(static_cast<std::uint8_t>(K_MAX_DISPATCH_PARAMETERS));
+        for (std::size_t index = 0; index < out.parameter_count; ++index)
+            out.parameters[index] = reader.read_u64();
         read_handles(reader, out.inputs);
         read_handles(reader, out.outputs);
         return reader.finish();

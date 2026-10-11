@@ -562,8 +562,8 @@ namespace
             /// @brief Where the mask ran.
             RunCounters runs_;
 
-            /// @brief Counts the master's lines about a peer of protocol version 3.
-            ErrorLineCounter version_errors_{"protocol v3"};
+            /// @brief Counts the master's lines about a peer of protocol version 2.
+            ErrorLineCounter version_errors_{"protocol v2"};
 
             /// @brief The log level to put back; empty when SetUp() skipped the test.
             std::optional<LogLevel> saved_level_;
@@ -739,8 +739,8 @@ TEST_F(Integration_DistributedTcpFaultsTest, VersionMismatchLoggedOncePerConnect
     constexpr std::size_t K_CONNECTIONS = 2;
     count_version_errors();
     start_master();
-    std::vector<std::byte> two_headers = hello_header(3, 0);
-    const std::vector<std::byte> second = hello_header(3, 0);
+    std::vector<std::byte> two_headers = hello_header(2, 0);
+    const std::vector<std::byte> second = hello_header(2, 0);
     two_headers.insert(two_headers.end(), second.begin(), second.end());
 
     for (std::size_t connection = 0; connection < K_CONNECTIONS; ++connection)

@@ -17,8 +17,9 @@ message; `test_buffer_registry.cpp` holds the registry.
 
 The golden test pins one dispatch. This one encodes 200 dispatches drawn from seed 20261010 with
 `append_frame`, reads the header back and decodes the payload. Every wire field must come back
-equal, and `metadata.name` must not, because the name stays off the wire. A parameter is zero one
-time in four, so the encoder's cut of trailing zero parameters is exercised with and without a tail.
+equal: the operation, the name, whose length runs from 0 to `K_MAX_DISPATCH_NAME_BYTES`, the
+parameter count, which runs from 0 to `K_MAX_DISPATCH_PARAMETERS`, and every parameter, zero past
+the count.
 
 ### `InProcessTransportDeliversBothDirections`
 
@@ -49,6 +50,9 @@ seeded damage to the decoders; under the ASan lane an out-of-bounds read fails t
 A `TASK_RESULT` that claims 1000 outputs and carries none must fail at the count, offset 9, with
 `OutOfRange`, and leave the output list empty. `ListCountBoundedByRemainingBytes` of
 `test_wire_format.cpp` pins the same rule for `PROOF` and `TASK_DISPATCH`.
+`APeerThatAnnouncesVersionTwoIsRefusedWithProtocolMismatch` of that file decodes a header whose
+version field is 2, gets `VersionMismatch` with the version read back, and expects
+check_protocol_version() to return `ErrorCode::ProtocolMismatch` naming v2 and v3.
 
 ### `SeededMutationsDecodeOrFailInsideThePayload`
 
@@ -58,7 +62,7 @@ A `TASK_RESULT` that claims 1000 outputs and carries none must fail at the count
 
 ### `SeededHeadersPassOnlyInsideTheirRanges`
 
-4000 random 12-byte headers are decoded. Three in four carry the magic and version 2 so that the
+4000 random 12-byte headers are decoded. Three in four carry the magic and version 3 so that the
 type, flag and length checks run. A header that passes must name one of the sixteen types, carry a
 payload length of at most 1 MiB, and carry the last-chunk flag only on `BUFFER_CHUNK`.
 
@@ -363,7 +367,7 @@ the worker has not heard it. The test asserts that the task still runs on the wo
 
 ## test_handshake.cpp
 
-The tests in this file need no hardware and no network. They pin the two primitives the protocol v2
+The tests in this file need no hardware and no network. They pin the two primitives the protocol v3
 handshake is built on, SHA-256 and HMAC-SHA256, to the vectors their standards publish, then the
 proofs built from them, then `SharedSecret`. The file includes the module's private headers
 `sha256.hpp`, `hmac_sha256.hpp` and `handshake.hpp` by quoted name.
@@ -410,7 +414,7 @@ must be accepted byte for byte, and a missing file must be refused with its path
 
 ## test_wire_format.cpp
 
-The file pins protocol version 2 byte for byte and needs no hardware. Every expected frame is a
+The file pins protocol version 3 byte for byte and needs no hardware. Every expected frame is a
 literal byte array typed into the test, never the output of the encoder under test, so a change to
 a field's width, order or byte order fails here until the golden bytes and
 `K_PROTOCOL_VERSION` change together.
@@ -441,7 +445,7 @@ that arrived.
 
 ### `RejectsOutOfRangeEnumAndBool`
 
-No message of version 2 carries a bool, so the bool check runs on `FieldReader::read_bool` directly.
+No message of version 3 carries a bool, so the bool check runs on `FieldReader::read_bool` directly.
 The enumeration checks replace one byte of a golden payload and expect `OutOfRange` at that byte's
 offset. The header checks cover a wrong magic, another version, an unknown type, a reserved flag,
 the last-chunk flag on a frame that is not a chunk, and a payload length one byte above 1 MiB.
@@ -957,7 +961,7 @@ built.
 
 ### `VersionPrintsTheProtocolAndExitsZero`
 
-`--version` prints `protocol v2` and the build, and returns 0.
+`--version` prints `protocol v3` and the build, and returns 0.
 
 ### `SignalStopsWithExitZero`
 
@@ -1072,7 +1076,7 @@ as a worker.
 ### `GarbageBytesClosedMasterLives`, `V1FrameRejected`, `OversizedLengthClosesPeerNotProcess`
 
 Findings DIST-15 and DIST-16. A raw socket writes 12 bytes: the text `GET / HTTP/1`, a version 1
-frame (a 32-bit length and a type byte), or a version 2 header that announces 1 MiB plus one byte.
+frame (a 32-bit length and a type byte), or a version 3 header that announces 1 MiB plus one byte.
 The master closes the connection with no reply and `peers_closed_malformed` reaches 1. A worker
 then registers, and in the first and the third test a task runs on it.
 

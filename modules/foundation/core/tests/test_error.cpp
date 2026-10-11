@@ -54,6 +54,7 @@ namespace
         EXPECT_EQ(number_of(ErrorCode::DanglingResource), 7);
         EXPECT_EQ(number_of(ErrorCode::Unsupported), 8);
         EXPECT_EQ(number_of(ErrorCode::InvalidState), 9);
+        EXPECT_EQ(number_of(ErrorCode::ProtocolMismatch), 10);
     }
 
     TEST(Unit_Error, EveryEnumeratorHasItsOwnName)
@@ -68,6 +69,7 @@ namespace
         EXPECT_STREQ(to_string(ErrorCode::DanglingResource), "DanglingResource");
         EXPECT_STREQ(to_string(ErrorCode::Unsupported), "Unsupported");
         EXPECT_STREQ(to_string(ErrorCode::InvalidState), "InvalidState");
+        EXPECT_STREQ(to_string(ErrorCode::ProtocolMismatch), "ProtocolMismatch");
     }
 
     TEST(Unit_Error, AValueOutsideTheEnumIsNamedUnknown)

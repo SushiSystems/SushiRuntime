@@ -50,7 +50,8 @@ namespace SushiRuntime
         InvalidAccess,    /**< A handle was accessed in a way its residency forbids. */
         DanglingResource, /**< A run referenced a handle whose allocation was freed. */
         Unsupported,      /**< The implementation does not offer the requested capability. */
-        InvalidState      /**< The call is not allowed in the object's current state. */
+        InvalidState,     /**< The call is not allowed in the object's current state. */
+        ProtocolMismatch  /**< A peer speaks another version of the wire protocol. */
     };
 
     /**
@@ -70,6 +71,7 @@ namespace SushiRuntime
             case ErrorCode::DanglingResource: return "DanglingResource";
             case ErrorCode::Unsupported:      return "Unsupported";
             case ErrorCode::InvalidState:     return "InvalidState";
+            case ErrorCode::ProtocolMismatch: return "ProtocolMismatch";
         }
         return "Unknown";
     }

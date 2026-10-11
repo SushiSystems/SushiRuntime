@@ -34,6 +34,7 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/task/task_types.hpp>
 
 #include "frame_sending.hpp"
 #include "wire_frame.hpp"
@@ -51,6 +52,22 @@ namespace SushiRuntime
             constexpr std::uint32_t K_MAX_CHUNK_BYTES =
                 Wire::K_MAX_FRAME_PAYLOAD -
                 static_cast<std::uint32_t>(Wire::BufferChunkMessage::K_PREFIX_BYTES);
+
+            /**
+             * @brief Returns the metadata a kernel is handed for a dispatch.
+             * @return A value whose name points into @p dispatch, so it is used before the
+             *         dispatch is destroyed.
+             */
+            Internal::Graph::TaskMetadata metadata_of(
+                const Wire::TaskDispatchMessage& dispatch) noexcept
+            {
+                Internal::Graph::TaskMetadata metadata;
+                metadata.name = dispatch.name.c_str();
+                metadata.op_id = dispatch.operation;
+                for (std::size_t index = 0; index < dispatch.parameter_count; ++index)
+                    metadata.params[index] = dispatch.parameters[index];
+                return metadata;
+            }
 
             /** @brief Returns a chunk size a frame can carry; 0 takes the default. */
             std::uint32_t usable_chunk_bytes(std::uint32_t chunk_bytes) noexcept
@@ -591,12 +608,12 @@ namespace SushiRuntime
             const Wire::TaskDispatchMessage& dispatch = job.dispatch;
             const std::uint64_t task_id = dispatch.task_id;
 
-            const KernelRegistry::Kernel* kernel = kernels_->find(dispatch.metadata.op_id);
+            const KernelRegistry::Kernel* kernel = kernels_->find(dispatch.operation);
             if (kernel == nullptr)
             {
                 SR_LOG_WARN("task {}: this worker has no kernel for operation {}; reported as "
                             "unknown operation",
-                            task_id, dispatch.metadata.op_id.value);
+                            task_id, dispatch.operation.value);
                 fail(job.from, task_id, job.generation,
                      Wire::TaskResultStatus::UnknownOperation);
                 return;
@@ -653,7 +670,7 @@ namespace SushiRuntime
                 sycl::event event = (*kernel)(
                     queue_, SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),
                     SushiRuntime::span<const BufferView>(outputs.data(), outputs.size()),
-                    dispatch.metadata);
+                    metadata_of(dispatch));
                 event.wait_and_throw();
                 ran = true;
             }
@@ -673,7 +690,7 @@ namespace SushiRuntime
                     cache_.release(handle.id);
                 SR_LOG_ERROR("task {}: the kernel of operation {} threw: {}; reported as "
                              "kernel failed",
-                             task_id, dispatch.metadata.op_id.value, failure);
+                             task_id, dispatch.operation.value, failure);
                 fail(job.from, task_id, job.generation, Wire::TaskResultStatus::KernelFailed);
                 return;
             }

@@ -21,7 +21,7 @@
 
 /**
  * @file in_process_transport.cpp
- * @brief Moves version 2 frames between endpoints of one process, through a fault policy.
+ * @brief Moves version 3 frames between endpoints of one process, through a fault policy.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */

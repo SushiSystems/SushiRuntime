@@ -21,7 +21,7 @@
 
 /**
  * @file test_wire_format.cpp
- * @brief Tests the version 2 wire format against bytes written out by hand.
+ * @brief Tests the version 3 wire format against bytes written out by hand.
  * @see modules/extension/distributed/tests/README.md
  * @author Mustafa Garip
  */
@@ -184,9 +184,7 @@ namespace
         return bytes_of({
             0x2A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x0D, 0xF0, 0xFE, 0xCA,
-            0x01,
-            0x07, 0x00, 0x00, 0x00,
-            0xFF, 0xFF, 0xFF, 0xFF,
+            0x04, 0x00, 0x61, 0x78, 0x70, 0x79,
             0x02,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x40,
             0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -339,17 +337,36 @@ namespace
     /** @brief Decodes a frame header after one of its bytes is replaced. */
     FrameStatus header_status_with_byte(std::size_t offset, unsigned value, FrameHeader& out)
     {
-        Bytes header = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x02, 0x00, 0x0E, 0x00, 0x08, 0x00,
+        Bytes header = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x0E, 0x00, 0x08, 0x00,
                                   0x00, 0x00 });
         header[offset] = static_cast<std::byte>(value);
         return decode_frame_header(view_of(header), out);
     }
 }
 
+/** @brief Tests that a peer whose header announces version 2 is refused with ProtocolMismatch. */
+TEST(Unit_WireFormat, APeerThatAnnouncesVersionTwoIsRefusedWithProtocolMismatch)
+{
+    FrameHeader header;
+    ASSERT_EQ(header_status_with_byte(4, 0x02, header), FrameStatus::VersionMismatch);
+    ASSERT_EQ(header.version, 2u);
+
+    const Result<void> refused = check_protocol_version(header.version);
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().code, ErrorCode::ProtocolMismatch);
+    EXPECT_NE(refused.error().message.find("protocol v2"), std::string::npos)
+        << refused.error().message;
+    EXPECT_NE(refused.error().message.find("this build v3"), std::string::npos)
+        << refused.error().message;
+
+    EXPECT_TRUE(check_protocol_version(K_PROTOCOL_VERSION).has_value());
+    static_assert(K_PROTOCOL_VERSION == 3, "the golden headers of this file carry version 3");
+}
+
 /** @brief Tests the 12-byte header layout, the last-chunk flag and a whole PING frame. */
 TEST(Unit_WireFormat, FrameHeaderGolden)
 {
-    const Bytes golden = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x02, 0x00, 0x07, 0x00, 0x0C, 0x0B,
+    const Bytes golden = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x07, 0x00, 0x0C, 0x0B,
                                     0x0A, 0x00 });
     Bytes encoded;
     append_frame_header(FrameHeader{ 2, MessageType::TaskDispatch, 0, 0x000A0B0C }, encoded);
@@ -357,19 +374,19 @@ TEST(Unit_WireFormat, FrameHeaderGolden)
 
     FrameHeader header;
     ASSERT_EQ(decode_frame_header(view_of(golden), header), FrameStatus::Ok);
-    EXPECT_EQ(header.version, 2u);
+    EXPECT_EQ(header.version, 3u);
     EXPECT_EQ(header.type, MessageType::TaskDispatch);
     EXPECT_EQ(header.flags, 0u);
     EXPECT_EQ(header.payload_length, 0x000A0B0Cu);
 
-    const Bytes last_chunk = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x02, 0x00, 0x0B, 0x01, 0x25,
+    const Bytes last_chunk = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x0B, 0x01, 0x25,
                                         0x00, 0x00, 0x00 });
     ASSERT_EQ(decode_frame_header(view_of(last_chunk), header), FrameStatus::Ok);
     EXPECT_EQ(header.type, MessageType::BufferChunk);
     EXPECT_EQ(header.flags, K_FRAME_FLAG_LAST_CHUNK);
     EXPECT_EQ(header.payload_length, 37u);
 
-    const Bytes ping_frame = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x02, 0x00, 0x0E, 0x00, 0x08,
+    const Bytes ping_frame = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x0E, 0x00, 0x08,
                                         0x00, 0x00, 0x00, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33,
                                         0x22, 0x11 });
     PingMessage ping;
@@ -492,12 +509,11 @@ TEST(Unit_WireFormat, GoldenBytes_TaskDispatch)
 {
     TaskDispatchMessage message;
     message.task_id = 42;
-    message.metadata.op_id = OperationID(0xCAFEF00Du);
-    message.metadata.task_type = Internal::Graph::TaskType::MathOp;
-    message.metadata.priority = 7;
-    message.metadata.numa_affinity = -1;
-    message.metadata.params[0] = 0x4004000000000000ull;
-    message.metadata.params[1] = 9;
+    message.operation = OperationID(0xCAFEF00Du);
+    message.name = "axpy";
+    message.parameter_count = 2;
+    message.parameters[0] = 0x4004000000000000ull;
+    message.parameters[1] = 9;
     message.inputs = { BufferHandle{ GlobalBufferID{ 1 }, 3, 256 },
                        BufferHandle{ GlobalBufferID{ 2 }, 1, 512 } };
     message.outputs = { BufferHandle{ GlobalBufferID{ 3 }, 1, 128 } };
@@ -505,13 +521,12 @@ TEST(Unit_WireFormat, GoldenBytes_TaskDispatch)
     const Bytes golden = golden_task_dispatch();
     const TaskDispatchMessage decoded = expect_golden(message, golden);
     EXPECT_EQ(decoded.task_id, 42u);
-    EXPECT_EQ(decoded.metadata.op_id.value, 0xCAFEF00Du);
-    EXPECT_EQ(decoded.metadata.task_type, Internal::Graph::TaskType::MathOp);
-    EXPECT_EQ(decoded.metadata.priority, 7);
-    EXPECT_EQ(decoded.metadata.numa_affinity, -1);
-    EXPECT_EQ(decoded.metadata.params[0], 0x4004000000000000ull);
-    EXPECT_EQ(decoded.metadata.params[1], 9u);
-    EXPECT_EQ(decoded.metadata.params[2], 0u);
+    EXPECT_EQ(decoded.operation.value, 0xCAFEF00Du);
+    EXPECT_EQ(decoded.name, "axpy");
+    EXPECT_EQ(decoded.parameter_count, 2u);
+    EXPECT_EQ(decoded.parameters[0], 0x4004000000000000ull);
+    EXPECT_EQ(decoded.parameters[1], 9u);
+    EXPECT_EQ(decoded.parameters[2], 0u);
     ASSERT_EQ(decoded.inputs.size(), 2u);
     EXPECT_EQ(decoded.inputs[0].id.value, 1u);
     EXPECT_EQ(decoded.inputs[0].version, 3u);
@@ -742,13 +757,13 @@ TEST(Unit_WireFormat, RejectsOutOfRangeEnumAndBool)
     EXPECT_EQ(header_status_with_byte(6, 0x11, header), FrameStatus::UnknownType);
     EXPECT_EQ(header_status_with_byte(7, 0x02, header), FrameStatus::ReservedFlags);
     EXPECT_EQ(header_status_with_byte(7, 0x01, header), FrameStatus::ReservedFlags);
-    EXPECT_EQ(header_status_with_byte(4, 0x03, header), FrameStatus::VersionMismatch);
-    EXPECT_EQ(header.version, 3u);
+    EXPECT_EQ(header_status_with_byte(4, 0x02, header), FrameStatus::VersionMismatch);
+    EXPECT_EQ(header.version, 2u);
 
-    const Bytes largest = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x02, 0x00, 0x0B, 0x00, 0x00,
+    const Bytes largest = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x0B, 0x00, 0x00,
                                      0x00, 0x10, 0x00 });
     EXPECT_EQ(decode_frame_header(view_of(largest), header), FrameStatus::Ok);
-    const Bytes too_long = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x02, 0x00, 0x0B, 0x00, 0x01,
+    const Bytes too_long = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x0B, 0x00, 0x01,
                                       0x00, 0x10, 0x00 });
     EXPECT_EQ(decode_frame_header(view_of(too_long), header), FrameStatus::PayloadTooLong);
 }
