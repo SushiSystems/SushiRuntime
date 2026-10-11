@@ -104,8 +104,6 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API TcpTransport final : public ITransport
         {
             public:
-                struct Impl;
-
                 /**
                  * @brief Creates a master endpoint; nothing is bound until start().
                  * @return Never null.
@@ -162,6 +160,8 @@ namespace SushiRuntime
                 [[nodiscard]] Endpoint local_endpoint() const;
 
             private:
+                struct Impl;
+
                 /** @brief Wraps the state a factory built. */
                 explicit TcpTransport(std::unique_ptr<Impl> impl) noexcept;
 

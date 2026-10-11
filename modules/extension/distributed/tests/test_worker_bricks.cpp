@@ -43,8 +43,11 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/i_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 
@@ -1218,4 +1221,68 @@ TEST(Unit_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
 
     link.stop();
     EXPECT_EQ(link.end(), WorkerEnd::Stopped);
+}
+
+namespace
+{
+    /** @brief Returns a kernel that submits nothing and returns a completed event. */
+    KernelRegistry::Kernel idle_kernel()
+    {
+        return [](sycl::queue&, span<const BufferView>, span<const BufferView>,
+                  const Graph::TaskMetadata&) { return sycl::event{}; };
+    }
+
+    /** @brief Returns the code of the exception a call throws, or ok when it throws none. */
+    template <typename Call>
+    Core::Errc refusal_of(Call call)
+    {
+        try
+        {
+            call();
+        }
+        catch (const Core::SushiException& error)
+        {
+            return error.error().code;
+        }
+        return Core::Errc::ok;
+    }
+} // namespace
+
+/** @brief Tests that a sealed registry keeps its kernels and refuses a new one. */
+TEST(Unit_KernelRegistryTest, SealedRegistryRefusesRegistration)
+{
+    const Graph::OpID early(21);
+    const Graph::OpID late(22);
+    const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
+    kernels->register_kernel(early, idle_kernel());
+    EXPECT_FALSE(kernels->is_sealed());
+
+    kernels->seal();
+    kernels->seal();
+
+    EXPECT_TRUE(kernels->is_sealed());
+    EXPECT_EQ(refusal_of([&] { kernels->register_kernel(late, idle_kernel()); }),
+              Core::Errc::invalid_state);
+    EXPECT_EQ(refusal_of([&] { kernels->register_kernel(early, idle_kernel()); }),
+              Core::Errc::invalid_state)
+        << "a sealed registry replaced a kernel";
+    EXPECT_TRUE(kernels->has(early));
+    EXPECT_FALSE(kernels->has(late));
+    EXPECT_EQ(kernels->known_ops().size(), 1u);
+}
+
+/** @brief Tests that a kernel that holds no callable is refused and registers nothing. */
+TEST(Unit_KernelRegistryTest, EmptyKernelIsRefused)
+{
+    const Graph::OpID operation(23);
+    const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
+
+    EXPECT_EQ(refusal_of([&] { kernels->register_kernel(operation, KernelRegistry::Kernel()); }),
+              Core::Errc::invalid_access);
+    EXPECT_FALSE(kernels->has(operation)) << "an empty kernel would be sent in PROOF";
+
+    kernels->seal();
+    EXPECT_EQ(refusal_of([&] { kernels->register_kernel(operation, KernelRegistry::Kernel()); }),
+              Core::Errc::invalid_access)
+        << "an empty kernel is named as the fault before the seal is";
 }

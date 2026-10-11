@@ -101,6 +101,13 @@ namespace SushiRuntime
                 return kernels;
             }
 
+            /** @brief Returns the registry sealed, so that no thread writes it from here on. */
+            const KernelRegistry& sealed(KernelRegistry& kernels) noexcept
+            {
+                kernels.seal();
+                return kernels;
+            }
+
             /** @brief Returns the options with a name HELLO can carry. */
             WorkerAgentOptions bounded(WorkerAgentOptions options)
             {
@@ -312,7 +319,7 @@ namespace SushiRuntime
               cache_(make_cache_allocator(context.memory()),
                      resolve_cache_budget(context, options_.cache_bytes)),
               link_(*transport_, options_.secret.bytes(),
-                    make_link_options(*require_kernels(kernels)), make_nonce),
+                    make_link_options(sealed(*require_kernels(kernels))), make_nonce),
               executor_(kernels, cache_, *transport_, context.devices().queue(K_DEVICE_INDEX),
                         DispatchExecutorOptions{options_.max_jobs, options_.pull_idle_timeout})
         {
@@ -491,11 +498,12 @@ namespace SushiRuntime
 
             if (!result.is_ok())
             {
+                // The transport did not start for this agent, so it is not this agent's to stop.
                 phase_.store(Phase::Stopped);
                 executor_.stop();
-                transport_->stop();
                 link_.stop();
-                SR_LOG_ERROR("worker agent did not start: {}; no thread is left running",
+                SR_LOG_ERROR("worker agent did not start: {}; no thread of the agent is left "
+                             "running",
                              result.message);
             }
             return result;

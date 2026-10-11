@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-11 — distributed: Added `KernelRegistry::seal()` and `is_sealed()`; a worker seals its registry, and `register_kernel()` throws after that and for an empty kernel (`kernel_registry.hpp`).
+- 2026-10-11 — distributed: Changed `Cluster::attach()` to refuse a call during a run and a timeout below `K_MINIMUM_TIMEOUT`; `detach()` during a run stops the master and leaves it installed (`cluster.cpp`).
+- 2026-10-11 — distributed: Changed a detached cluster to report no workers; made the `Impl` of `InProcessTransport` and of `TcpTransport` private (`cluster.cpp`, `in_process_transport.hpp`).
 - 2026-10-11 — api: Fixed a `State` rule reading a dangling pointer after the `State` moved, and a late-bound rule registering a stale read key after an odd step (`state.hpp`, `emit_dynamic.hpp`).
 - 2026-10-11 — api: Renamed `detail::StateView::cur` to `current` with no forwarder and added size and owner fields; removed the `State<T>*` emitter overloads (`handle_access.hpp`, `emit_state.hpp`).
 - 2026-10-11 — api: Changed `Recorder::offload` and `offload_rule` to refuse more than `K_MAX_PARAMS` parameters; fixed `replay()` renaming the previous rule's node (`recorder.hpp`).

@@ -604,6 +604,9 @@ namespace SushiRuntime
             /// @brief Set by the first stop().
             std::atomic<bool> stopped{false};
 
+            /// @brief Set while the transport runs because this coordinator's start() started it.
+            std::atomic<bool> owns_transport_run{false};
+
             /// @brief Tasks resubmitted by a handler or by stop().
             std::atomic<std::uint64_t> redispatched{0};
 
@@ -668,6 +671,7 @@ namespace SushiRuntime
                              result.message);
                 return result;
             }
+            impl.owns_transport_run.store(true, std::memory_order_release);
 
             std::string failure;
             try
@@ -685,6 +689,7 @@ namespace SushiRuntime
 
             if (!failure.empty())
             {
+                impl.owns_transport_run.store(false, std::memory_order_release);
                 impl.transport->stop();
                 result.status = TransportStatus::Failed;
                 result.message = "cannot start the cluster monitor thread: " + failure;
@@ -708,7 +713,10 @@ namespace SushiRuntime
             impl.pending.close();
             impl.directory.close();
             impl.monitor.stop();
-            impl.transport->stop();
+
+            // A transport another master started keeps running: it carries that master's peers.
+            if (impl.owns_transport_run.exchange(false, std::memory_order_acq_rel))
+                impl.transport->stop();
 
             std::vector<PendingTask> tasks;
             try

@@ -227,6 +227,7 @@ namespace SushiRuntime
                                  exit_value(WorkerExitCode::InternalError));
                     return exit_value(WorkerExitCode::InternalError);
                 }
+                kernels->seal();
 
                 if (!options.log_level.empty())
                 {

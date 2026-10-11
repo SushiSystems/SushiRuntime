@@ -720,3 +720,45 @@ TEST_F(Unit_WorkerDirectory, HelloFromARegisteredWorkerRegistersNothingTwice)
     EXPECT_EQ(workers[0].inflight, 1u) << "the repeated HELLO forgot a task that is out";
     EXPECT_EQ(directory_.identity(K_FIRST)->build_id, K_BUILD);
 }
+
+/** @brief Tests that close() leaves no worker alive, no operation supported and no way in. */
+TEST_F(Unit_WorkerDirectory, CloseRetiresEveryWorker)
+{
+    ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION, K_COMMON_OPERATION}, 4,
+                              at(milliseconds(0))),
+              HandshakeStep::Accepted);
+    ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+              HandshakeStep::Accepted);
+    ASSERT_TRUE(directory_.wait_for_workers(2, milliseconds(0)));
+
+    directory_.close();
+
+    EXPECT_EQ(directory_.alive_count(), 0u);
+    EXPECT_FALSE(directory_.supports(K_RARE_OPERATION));
+    EXPECT_FALSE(directory_.supports(K_COMMON_OPERATION));
+    EXPECT_FALSE(directory_.wait_for_workers(2, milliseconds(100)))
+        << "a closed directory reported the workers it held when it closed";
+    EXPECT_FALSE(directory_.wait_for_workers(0, milliseconds(0)))
+        << "a closed directory reached a count";
+
+    std::vector<PeerId> listed;
+    directory_.list_workers(listed);
+    EXPECT_TRUE(listed.empty());
+
+    std::vector<WorkerSnapshot> workers;
+    directory_.snapshot(at(milliseconds(1)), workers);
+    EXPECT_TRUE(workers.empty());
+
+    EXPECT_EQ(register_worker(K_THIRD, {K_COMMON_OPERATION}, 4, at(milliseconds(2))),
+              HandshakeStep::OutOfOrder)
+        << "a peer registered with a closed directory";
+    EXPECT_EQ(directory_.alive_count(), 0u);
+
+    // The transport still reports each loss, and the session it ends was a worker's.
+    const RemovedPeer removed = directory_.remove_peer(K_FIRST);
+    EXPECT_TRUE(removed.registered);
+    EXPECT_EQ(directory_.alive_count(), 0u) << "remove_peer() uncounted a worker twice";
+
+    directory_.close();
+    EXPECT_EQ(directory_.alive_count(), 0u) << "a second close() uncounted a worker twice";
+}

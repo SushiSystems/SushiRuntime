@@ -42,19 +42,11 @@ namespace SushiRuntime
             constexpr double QUEUE_PENALTY_US_PER_TASK = 1000.0;
         }
 
-        /**
-         * @brief Selects the optimal worker for offloading a task based on least-loaded heuristics.
-         * Evaluates workers considering round-trip time, data transfer cost, and queue backlog to pick the best candidate.
-         * @param node The Graph::Node to be offloaded.
-         * @param workers A span containing statistics for all available workers.
-         * @param est_bytes The estimated bytes of data to transfer for the task.
-         * @return An std::optional containing the selected worker ID, or std::nullopt if no worker is suitable.
-         */
+        /** @brief Returns the alive worker of the lowest cost, or nothing to keep the task local. */
         std::optional<int> LeastLoadedOffloadPolicy::pick_worker(const Graph::Node& /*node*/,
                                                                  SushiRuntime::span<const WorkerStats> workers,
                                                                  uint64_t est_bytes)
         {
-            // Tiny payloads: the network would only add latency. Keep local.
             if (est_bytes < min_offload_bytes_)
                 return std::nullopt;
 
@@ -68,7 +60,7 @@ namespace SushiRuntime
                 if (!w.alive)
                     continue;
                 if (w.free_mem != 0 && w.free_mem < est_bytes)
-                    continue; // not enough headroom on that worker
+                    continue;
 
                 // Cost is round trip plus transfer plus queue backlog (modules/extension/distributed/README.md).
                 const double cost = static_cast<double>(w.rtt_micros)
@@ -83,7 +75,7 @@ namespace SushiRuntime
             }
 
             if (best < 0)
-                return std::nullopt; // no eligible worker -> transparent local fallback
+                return std::nullopt;
 
             return best;
         }

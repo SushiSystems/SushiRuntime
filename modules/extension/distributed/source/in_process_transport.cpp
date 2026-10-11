@@ -52,6 +52,34 @@ namespace SushiRuntime
 {
     namespace Distributed
     {
+        /**
+         * @brief Holds what the two ends of one connection share.
+         *
+         * The worker's pump fills the worker half, then the master's accept() fills the
+         * master half under the master's mutex; the fields are constant from there on.
+         * InProcessTransport names it a friend, so it has a name outside this file.
+         */
+        struct InProcessLink
+        {
+            /** @brief The fabric's index of the worker endpoint. */
+            std::size_t worker_index = 0;
+
+            /** @brief The endpoint of each side, master first. */
+            std::array<std::weak_ptr<InProcessTransport::Impl>, 2> endpoints;
+
+            /** @brief The id each side gave the connection. */
+            std::array<PeerId, 2> ids;
+
+            /** @brief Counts the frames waiting in each side's inbox. */
+            std::array<std::atomic<std::uint32_t>, 2> backlog{};
+
+            /** @brief Set by a side whose stream waits for the other side's backlog. */
+            std::array<std::atomic<bool>, 2> is_throttled{};
+
+            /** @brief Set once a side was told the connection ended. */
+            std::array<std::atomic<bool>, 2> is_loss_sent{};
+        };
+
         namespace
         {
             /** @brief Caps the frames FaultAction::Hold may park; one above the cap is dropped. */
@@ -82,32 +110,8 @@ namespace SushiRuntime
                 return side == Side::Master ? Side::Worker : Side::Master;
             }
 
-            /**
-             * @brief Holds what the two ends of one connection share.
-             *
-             * The worker's pump fills the worker half, then the master's accept() fills the
-             * master half under the master's mutex; the fields are constant from there on.
-             */
-            struct Link
-            {
-                /** @brief The fabric's index of the worker endpoint. */
-                std::size_t worker_index = 0;
-
-                /** @brief The endpoint of each side. */
-                std::array<std::weak_ptr<InProcessTransport::Impl>, 2> endpoints;
-
-                /** @brief The id each side gave the connection. */
-                std::array<PeerId, 2> ids;
-
-                /** @brief Counts the frames waiting in each side's inbox. */
-                std::array<std::atomic<std::uint32_t>, 2> backlog{};
-
-                /** @brief Set by a side whose stream waits for the other side's backlog. */
-                std::array<std::atomic<bool>, 2> is_throttled{};
-
-                /** @brief Set once a side was told the connection ended. */
-                std::array<std::atomic<bool>, 2> is_loss_sent{};
-            };
+            /** @brief Names the link as the rest of this file writes it. */
+            using Link = InProcessLink;
 
             /** @brief Names what an endpoint's pump finds in its inbox. */
             enum class InboundKind : std::uint8_t

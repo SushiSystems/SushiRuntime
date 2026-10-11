@@ -177,6 +177,7 @@ namespace SushiRuntime
                  *
                  * On Accepted the worker is alive, its kernels count toward supports() and
                  * wait_for_workers() wakes; the caller sends WELCOME with the peer's value.
+                 * A closed directory registers nobody and answers OutOfOrder.
                  */
                 [[nodiscard]] HandshakeStep accept_proof(PeerId peer,
                                                          const Wire::ProofMessage& proof,
@@ -239,7 +240,7 @@ namespace SushiRuntime
                 /**
                  * @brief Blocks on a condition, without polling, until @p count workers are
                  *        alive, the timeout passes or close() is called.
-                 * @return True when the count was reached.
+                 * @return True when the count was reached; false once close() was called.
                  */
                 [[nodiscard]] bool wait_for_workers(std::size_t count,
                                                     std::chrono::milliseconds timeout);
@@ -247,11 +248,16 @@ namespace SushiRuntime
                 /** @brief Returns who a registered worker is, or nothing for any other peer. */
                 [[nodiscard]] std::optional<WorkerIdentity> identity(PeerId worker) const;
 
-                /** @brief Appends one snapshot per registered worker. */
+                /** @brief Appends one snapshot per alive worker. */
                 void snapshot(std::chrono::steady_clock::time_point now,
                               std::vector<WorkerSnapshot>& out) const;
 
-                /** @brief Makes pick() return nothing from here on and wakes every waiter. */
+                /**
+                 * @brief Marks every worker not alive, as a lost peer is, and wakes every waiter.
+                 *
+                 * From here on pick() returns nothing, supports() is false for every operation
+                 * and no peer registers. The sessions stay until remove_peer() forgets them.
+                 */
                 void close() noexcept;
 
             private:
