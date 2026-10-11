@@ -32,6 +32,22 @@ into a report that reads as freshly reset.
 The widths default to `K_WIDTH_UNKNOWN` and not to zero. Zero is a real dispatch width on an empty
 pass and would read as a measured value.
 
+## test_run_report_names.cpp
+
+The file covers the public spelling of the report types.
+
+### `PublicNamesAreTheReportTypes`
+
+`static_assert` lines state that `SushiRuntime::RunReport`, `NodeTiming`, `NodeEventRecord`,
+`WorkerTiming`, `ClockPairing` and `ExecutionLayer` are the types of
+`Internal::Observability`, not copies, and that `SushiRuntime::K_WIDTH_UNKNOWN` is the same
+object. A consumer that includes only `run_report.hpp` reads a report with these names.
+
+### `ANodeTimingNamesItsOperation`
+
+`NodeTiming::operation` is an `OperationID`: unnamed by default, and equal to the id it was
+given.
+
 ## test_profiling_ledger.cpp
 
 The file covers the move operations of `ProfilingLedger`. A moved-to ledger and a moved-from ledger are
