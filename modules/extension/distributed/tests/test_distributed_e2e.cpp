@@ -1686,3 +1686,232 @@ TEST(Integration_DistributedE2ETest, RegisteredTaskRunsWithAndWithoutAWorker)
     expect_elements(remote.values.data(), K_COUNT,
                     [&local](std::size_t index) { return local.values[index]; });
 }
+
+/** @brief Tests that an attach on a transport another master runs on throws and stops nothing. */
+TEST(Integration_DistributedE2ETest, AttachOnAStartedTransportLeavesTheFirstMasterServing)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    std::atomic<int> worker_runs{0};
+    RuntimeContext first_context;
+    RuntimeContext second_context;
+    InProcessFabric fabric;
+    const std::shared_ptr<InProcessTransport> transport = InProcessTransport::make_master(fabric);
+    Cluster first = Cluster::attach(first_context, transport);
+    const OffloadCoordinator* const installed = first_context.offload();
+
+    EXPECT_THROW(static_cast<void>(Cluster::attach(second_context, transport)),
+                 Core::SushiException);
+    EXPECT_EQ(second_context.offload(), nullptr);
+    EXPECT_EQ(first_context.offload(), installed);
+
+    // A worker registers only with a master whose transport still runs.
+    LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+    ASSERT_TRUE(worker.start());
+    EXPECT_TRUE(first.wait_for_workers(1, K_WAIT))
+        << "the failed attach stopped the transport of the master attached before";
+
+    worker.stop();
+    first.detach();
+}
+
+/** @brief Tests that a detached handle reports no worker, no kernel and no reached count. */
+TEST(Integration_DistributedE2ETest, DetachedClusterReportsNoWorkers)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    std::atomic<int> worker_runs{0};
+    RuntimeContext master_context;
+    InProcessFabric fabric;
+    LocalWorker first(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+    LocalWorker second(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric));
+    ASSERT_TRUE(first.start());
+    ASSERT_TRUE(second.start());
+    ASSERT_TRUE(cluster.wait_for_workers(2, K_WAIT));
+    ASSERT_TRUE(cluster.supports(K_VEC_ADD));
+    const Cluster copy = cluster;
+
+    cluster.detach();
+
+    EXPECT_FALSE(cluster.wait_for_workers(2, std::chrono::milliseconds(100)))
+        << "a detached handle reached the count of the workers it had";
+    EXPECT_EQ(cluster.alive_workers(), 0u);
+    EXPECT_FALSE(cluster.supports(K_VEC_ADD));
+
+    const ClusterStatistics statistics = copy.statistics();
+    EXPECT_EQ(statistics.alive_workers, 0u);
+    EXPECT_EQ(statistics.pending_tasks, 0u);
+    EXPECT_TRUE(statistics.workers.empty());
+
+    first.stop();
+    second.stop();
+}
+
+/**
+ * @brief Tests that attach() is refused while a run is in flight, and that detach() then stops
+ *        the master and leaves it installed until the run has returned.
+ */
+TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    constexpr std::size_t K_COUNT = 128;
+    RuntimeContext master_context;
+    sycl::queue& queue = master_context.devices().queue(0);
+    UsmFloats a(queue, K_COUNT, 0.0f);
+    UsmFloats b(queue, K_COUNT, 0.0f);
+    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    a.ramp(1.0f);
+    b.ramp(2.0f);
+
+    InProcessFabric fabric;
+    ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+                                      eager_options());
+    ASSERT_TRUE(worker.start());
+    ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+    const OffloadCoordinator* const installed = master_context.offload();
+
+    share(master_context, a);
+    share(master_context, b);
+    share(master_context, out);
+
+    TaskGraph graph(master_context.offload());
+    add_vec_add(graph, "held_during_attach", a, b, out);
+    CompiledGraph compiled = graph.compile();
+    BackgroundRun run(master_context, compiled);
+    ASSERT_TRUE(worker.wait_for_dispatches(1));
+
+    const auto second_transport =
+        std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult());
+    Core::Errc refusal = Core::Errc::ok;
+    try
+    {
+        static_cast<void>(Cluster::attach(master_context, second_transport));
+    }
+    catch (const Core::SushiException& error)
+    {
+        refusal = error.error().code;
+    }
+
+    EXPECT_EQ(refusal, Core::Errc::invalid_state);
+    EXPECT_EQ(second_transport->start_calls(), 0) << "the refusal came after a transport start";
+    EXPECT_EQ(master_context.offload(), installed);
+    EXPECT_EQ(cluster.alive_workers(), 1u) << "the refused attach stopped the installed master";
+    EXPECT_EQ(cluster.statistics().pending_tasks, 1u);
+
+    cluster.detach();
+    EXPECT_EQ(master_context.offload(), installed)
+        << "detach() removed the coordinator the run in flight reads";
+    EXPECT_EQ(cluster.alive_workers(), 0u);
+
+    ASSERT_TRUE(run.wait()) << "the run hung on a node the detached master still held";
+    expect_sum(out, a, b);
+    EXPECT_EQ(cluster.statistics().redispatched, 1u);
+
+    cluster.detach();
+    EXPECT_EQ(master_context.offload(), nullptr)
+        << "detach() after the run left the stopped master installed";
+}
+
+/** @brief Tests that a handle that was moved from still names the master it named before. */
+TEST(Integration_DistributedE2ETest, MovedFromHandleStillNamesTheMaster)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    RuntimeContext master_context;
+    InProcessFabric fabric;
+    Cluster source = Cluster::attach(master_context, InProcessTransport::make_master(fabric));
+    Cluster moved = std::move(source);
+    Cluster assigned = moved;
+    assigned = std::move(moved);
+
+    EXPECT_EQ(source.alive_workers(), 0u);
+    EXPECT_EQ(moved.offloaded(), 0u);
+    EXPECT_TRUE(assigned.wait_for_workers(0, std::chrono::milliseconds(0)));
+
+    source.detach();
+
+    EXPECT_EQ(master_context.offload(), nullptr) << "the moved-from handle names no master";
+    EXPECT_FALSE(moved.wait_for_workers(0, std::chrono::milliseconds(0)))
+        << "the handle moved to names another master than its source";
+    EXPECT_FALSE(assigned.wait_for_workers(0, std::chrono::milliseconds(0)));
+}
+
+/** @brief Tests that a liveness or handshake timeout of 0 is refused and a deadline of 0 is not. */
+TEST(Integration_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    RuntimeContext master_context;
+    const auto refusal_of = [&master_context](ClusterOptions options)
+    {
+        const auto transport =
+            std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult());
+        std::string message;
+        try
+        {
+            static_cast<void>(Cluster::attach(master_context, transport, std::move(options)));
+        }
+        catch (const Core::SushiException& error)
+        {
+            message = error.what();
+        }
+        EXPECT_EQ(transport->start_calls(), 0) << "the transport was started before the refusal";
+        return message;
+    };
+
+    ClusterOptions without_liveness;
+    without_liveness.liveness_timeout = std::chrono::milliseconds(0);
+    const std::string liveness_refusal = refusal_of(std::move(without_liveness));
+    EXPECT_NE(liveness_refusal.find("ClusterOptions::liveness_timeout is 0 ms"),
+              std::string::npos)
+        << "the exception says: " << liveness_refusal;
+
+    ClusterOptions without_handshake;
+    without_handshake.handshake_timeout = std::chrono::milliseconds(0);
+    const std::string handshake_refusal = refusal_of(std::move(without_handshake));
+    EXPECT_NE(handshake_refusal.find("ClusterOptions::handshake_timeout is 0 ms"),
+              std::string::npos)
+        << "the exception says: " << handshake_refusal;
+    EXPECT_EQ(master_context.offload(), nullptr);
+
+    ClusterOptions without_deadline;
+    without_deadline.task_deadline = std::chrono::milliseconds(0);
+    without_deadline.liveness_timeout = K_MINIMUM_TIMEOUT;
+    without_deadline.handshake_timeout = K_MINIMUM_TIMEOUT;
+    Cluster cluster = Cluster::attach(
+        master_context,
+        std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult()),
+        std::move(without_deadline));
+
+    EXPECT_THROW(cluster.liveness_timeout(std::chrono::milliseconds(0)), Core::SushiException);
+    EXPECT_NO_THROW(cluster.liveness_timeout(K_MINIMUM_TIMEOUT));
+    EXPECT_NO_THROW(cluster.task_deadline(std::chrono::milliseconds(0)));
+    cluster.detach();
+}
+
+/** @brief Tests that a worker agent seals the registry it is built with, before start(). */
+TEST(Integration_DistributedE2ETest, WorkerAgentSealsItsRegistry)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    std::atomic<int> worker_runs{0};
+    InProcessFabric fabric;
+    const sushi_ptr<KernelRegistry> kernels = vec_add_kernels(worker_runs);
+    ASSERT_FALSE(kernels->is_sealed());
+
+    LocalWorker worker(InProcessTransport::make_worker(fabric), kernels);
+
+    EXPECT_TRUE(kernels->is_sealed()) << "the agent read its operations from an open registry";
+    EXPECT_THROW(kernels->register_kernel(K_STATE_STEP, vec_add_kernel(worker_runs)),
+                 Core::SushiException);
+    EXPECT_FALSE(kernels->has(K_STATE_STEP));
+}

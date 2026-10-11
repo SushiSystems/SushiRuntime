@@ -29,13 +29,39 @@
 
 #include <utility>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/logging/logger.hpp>
+
 namespace SushiRuntime
 {
     namespace Distributed
     {
         void KernelRegistry::register_kernel(Graph::OpID id, Kernel kernel)
         {
+            if (!kernel)
+                throw Core::SushiException(Core::Error{
+                    Core::Errc::invalid_access,
+                    Core::Detail::sr_format("KernelRegistry::register_kernel: the kernel of "
+                                            "operation {} is empty; pass a callable.",
+                                            id.value)});
+
+            // Relaxed: the thread start that follows seal() publishes the flag with the map.
+            SR_THROW_IF(sealed_.load(std::memory_order_relaxed),
+                        "KernelRegistry::register_kernel: the registry is sealed, so operation "
+                        "{} is not registered; register every kernel before the worker starts.",
+                        id.value);
+
             kernels_[id.value] = std::move(kernel);
+        }
+
+        void KernelRegistry::seal() noexcept
+        {
+            sealed_.store(true, std::memory_order_relaxed);
+        }
+
+        bool KernelRegistry::is_sealed() const noexcept
+        {
+            return sealed_.load(std::memory_order_relaxed);
         }
 
         bool KernelRegistry::has(Graph::OpID id) const

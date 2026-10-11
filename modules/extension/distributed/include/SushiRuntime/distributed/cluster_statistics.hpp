@@ -38,7 +38,7 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Describes one registered worker at the moment statistics() ran.
+         * @brief Describes one alive worker at the moment statistics() ran.
          */
         struct WorkerSnapshot
         {
@@ -56,7 +56,8 @@ namespace SushiRuntime
         /**
          * @brief Holds a master's counters since attach(), two gauges and its workers.
          *
-         * The fields are read one by one, not at one instant.
+         * The fields are read one by one, not at one instant. Once the master is detached the
+         * counters keep their totals, both gauges read 0 and the worker list is empty.
          */
         struct ClusterStatistics
         {
@@ -80,7 +81,7 @@ namespace SushiRuntime
             std::uint64_t send_queue_full = 0;             /**< Sends refused by a full queue. */
             std::size_t alive_workers = 0;                 /**< Workers registered and answering. */
             std::size_t pending_tasks = 0;                 /**< Tasks out on a worker. */
-            std::vector<WorkerSnapshot> workers;           /**< One entry per registered worker. */
+            std::vector<WorkerSnapshot> workers;           /**< One entry per alive worker. */
         };
 
     } // namespace Distributed

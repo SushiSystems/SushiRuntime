@@ -36,14 +36,23 @@ Headers under `include/SushiRuntime/distributed/`. Everything is in `SushiRuntim
 private codec uses.
 
 `distributed.hpp` includes every header of the table except `in_process_transport.hpp` and
-`message_type.hpp`, and the `_op` literal, which `task/task_types.hpp` promotes into `SushiRuntime`. A worker program
-includes it alone; a master includes it beside `SushiRuntime/SushiRuntime.h`.
+`message_type.hpp`. The `_op` literal is no header of this module: it comes with
+`task/task_types.hpp`, which promotes it into `SushiRuntime`. A worker program includes
+`distributed.hpp` alone; a master includes it beside `SushiRuntime/SushiRuntime.h`.
 
 Deprecated and forwarding: the four-argument `Cluster::attach()` overloads, which attach with an
 empty secret. The tree compiles with `-Werror`, so a caller has to switch or silence the warning
 where it calls. `KernelRegistry::register_kernel()` has one form, the one that takes
 `span<const BufferView>`; the pointer form and its `RemoteKernel` alias are removed, so a generic
 lambda registers without a cast.
+
+A `WorkerAgent` seals the registry in its constructor, before it reads the operations it sends in
+`PROOF` and before the exec thread exists, and `run_worker()` seals it on entry. From then on
+`register_kernel()` throws `invalid_state`, because the exec thread reads the map without a lock
+and the master was already told which operations the worker runs. An empty `Kernel` is refused
+with `invalid_access` at any time. A `Cluster` only keeps `ClusterOptions::kernels` alive and reads
+nothing from it, so attach() does not seal it. A view a kernel receives is valid until the event
+the kernel returned completes: the exec thread holds the cache pins across that wait.
 
 ## cluster.hpp
 
@@ -62,10 +71,17 @@ to the second through Runtime::unsafe_context(); the second serves code that dri
 
 attach() refuses an empty secret when the transport's exposure() is Network. When the transport
 does not start, attach() installs nothing and throws an exception that carries the transport's
-message; a cluster attached before stays installed and keeps working.
+message; a cluster attached before stays installed and keeps working. That holds when the caller
+passed the transport the earlier cluster runs on: the transport answers `AlreadyStarted`, and a
+coordinator stops a transport only when its own `start()` call started it.
 
-attach() checks, in this order, that the transport is not null, that the secret is not empty on a
-Network transport and that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. It then builds the
+attach() checks, in this order, that no run is in flight on the runtime
+(`IExecutionEngine::run_in_progress()`), that the transport is not null, that `liveness_timeout`
+and `handshake_timeout` are at least 1 ms, that the secret is not empty on a Network transport and
+that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. Each refusal throws `invalid_state` before
+anything is built or stopped. A liveness or handshake timeout of 0 would count every peer as
+expired on the monitor's first pass; `task_deadline` is the one timing where 0 means no bound, and
+`Cluster::liveness_timeout()` refuses a value below 1 ms like attach() does. It then builds the
 new master, binds it to `RuntimeContext::offload_sink()` and calls
 DistributedCoordinator::start(). Only when that returns `Ok` does it stop and remove the
 coordinator the runtime held before, set the release observer and install the new coordinator.
@@ -74,7 +90,8 @@ start() starts the transport, then the monitor, and logs
 the message of the `TransportResult` the transport's `start()` returned: the bound `address:port`
 for TCP, so a bind to port 0 shows the port the OS chose, and `in-process` for a fabric.
 
-The handle is a view. Copies name the same master and destroying one changes nothing. attach() is
+The handle is a view. Copies name the same master and destroying one changes nothing. The class
+declares no move, so `std::move` of a handle copies it and the source stays usable. attach() is
 `[[nodiscard]]`, so a caller that wants no handle says so with a cast to void. The runtime shares
 ownership of the master, stops it when the runtime is destroyed and releases it after its engine
 has shut down. A handle that outlives its runtime still reads the stopped master's counters.
@@ -85,10 +102,22 @@ on the runtime's surface.
 ### detach
 
 detach() stops the master, clears the allocator's release observer and removes the master from the
-scheduler, in that order. Every graph compiled afterwards runs locally. The caller must make sure
-no run is in flight, because the scheduler reads the coordinator's address without a lock; the code
-cannot check that. detach() does nothing when the runtime has already released the master, which
-covers a destroyed runtime and a second attach() on the same runtime.
+scheduler, in that order. Every graph compiled afterwards runs locally. detach() does nothing when
+the runtime has already released the master, which covers a destroyed runtime and a second
+attach() on the same runtime.
+
+The scheduler reads the coordinator's address without a lock, so detach() does the last two steps
+only when `IExecutionEngine::run_in_progress()` is false. During a run in flight it stops the
+master and logs one WARN. Stopping returns every task still out on a worker to the scheduler, which
+runs it on this machine, and the stopped master declines every later node of that run. The stopped
+master stays installed until a detach() or an attach() after the run, or the runtime's
+destruction, removes it. This is how a caller gives up on a cluster that stopped answering while
+execute() waits on it.
+
+Once the master is stopped, by detach() or by the runtime, every handle reports no worker:
+`alive_workers()` is 0, `supports()` is false for every operation, `wait_for_workers()` returns
+false whatever the count, and `statistics()` has both gauges at 0 and an empty worker list. The
+counters keep their totals.
 
 ### bump_buffer and buffer_handle
 
@@ -343,9 +372,12 @@ reported an oldest held id above it.
 
 ### Stop order
 
-1. `PendingTasks::close()` and `WorkerDirectory::close()`: nothing more is dispatched.
+1. `PendingTasks::close()` and `WorkerDirectory::close()`: nothing more is dispatched. The
+   directory marks every worker not alive, the way a lost peer is marked, and registers nobody
+   from here on. A transport's `stop()` reports no loss, so this is what empties the counts.
 2. `ClusterMonitor::stop()` joins the monitor.
-3. `ITransport::stop()` joins every reader, so no handler runs.
+3. `ITransport::stop()` joins every reader, so no handler runs. A coordinator whose `start()` did
+   not start the transport skips this step: the transport then belongs to another master.
 4. `PendingTasks::drain()` and `resubmit_tasks()`: each node still out goes back to the scheduler,
    which the seam allows until `stop()` returns.
 
@@ -560,7 +592,9 @@ cause when the transport gives up. `MasterLink` logs registration and loss by pe
 6. `MasterLink::stop()` joins the heartbeat thread; a `Running` end becomes `Stopped`.
 7. One INFO line with the worker's counters. The cache is freed when the agent is destroyed.
 
-A `start()` that fails stops the three in the same order and leaves no thread. An agent that ended
+A `start()` that fails stops the executor and the link and leaves no thread of the agent. It does
+not stop the transport, which did not start for this agent and may be running for another. An
+agent that ended
 for a reason other than `stop()` still needs `stop()`.
 
 ### A loss the worker caused

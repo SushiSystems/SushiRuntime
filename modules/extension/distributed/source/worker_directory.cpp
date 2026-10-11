@@ -154,7 +154,7 @@ namespace SushiRuntime
                 const auto position = sessions_.find(peer.value);
                 if (position == sessions_.end())
                     return HandshakeStep::UnknownPeer;
-                if (position->second.phase != Phase::AwaitsProof)
+                if (closed_ || position->second.phase != Phase::AwaitsProof)
                     return HandshakeStep::OutOfOrder;
 
                 worker_nonce = position->second.worker_nonce;
@@ -171,7 +171,7 @@ namespace SushiRuntime
 
                 // The proof was checked without the mutex; it counts only for these nonces.
                 Session& session = position->second;
-                if (session.phase != Phase::AwaitsProof ||
+                if (closed_ || session.phase != Phase::AwaitsProof ||
                     session.worker_nonce.bytes != worker_nonce.bytes ||
                     session.master_nonce.bytes != master_nonce.bytes)
                     return HandshakeStep::OutOfOrder;
@@ -356,7 +356,7 @@ namespace SushiRuntime
             const std::chrono::milliseconds bounded =
                 std::min<std::chrono::milliseconds>(timeout, K_LONGEST_WAIT);
             registered_.wait_for(lock, bounded, [this, &reached] { return closed_ || reached(); });
-            return reached();
+            return !closed_ && reached();
         }
 
         std::optional<WorkerIdentity> WorkerDirectory::identity(PeerId worker) const
@@ -376,7 +376,7 @@ namespace SushiRuntime
             const std::lock_guard<std::mutex> lock(mutex_);
             for (const auto& [value, session] : sessions_)
             {
-                if (session.phase != Phase::Registered)
+                if (session.phase != Phase::Registered || !session.alive)
                     continue;
 
                 const auto silence = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -402,6 +402,8 @@ namespace SushiRuntime
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
                 closed_ = true;
+                for (auto& [value, session] : sessions_)
+                    retire(session);
             }
 
             registered_.notify_all();

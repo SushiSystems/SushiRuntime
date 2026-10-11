@@ -61,6 +61,9 @@ namespace SushiRuntime
         /** @brief Holds the data bytes one buffer chunk carries unless told otherwise: 256 KiB. */
         inline constexpr std::uint32_t K_DEFAULT_CHUNK_BYTES = 256u * 1024u;
 
+        /** @brief Holds the shortest liveness or handshake timeout a master takes: 1 ms. */
+        inline constexpr std::chrono::milliseconds K_MINIMUM_TIMEOUT{1};
+
         /**
          * @brief Holds what a master is attached with; moved into Cluster::attach().
          */
@@ -83,13 +86,21 @@ namespace SushiRuntime
             /** @brief Lives as long as the master, which reads no kernel from it; may be null. */
             sushi_ptr<KernelRegistry> kernels;
 
-            /** @brief Holds the silence after which a worker counts as lost; sent in WELCOME. */
+            /**
+             * @brief Holds the silence after which a worker counts as lost; sent in WELCOME.
+             *
+             * attach() refuses a value below K_MINIMUM_TIMEOUT.
+             */
             std::chrono::milliseconds liveness_timeout{5000};
 
-            /** @brief Bounds a kernel's run on a worker; 0 sets no bound. */
+            /** @brief Bounds a kernel's run on a worker; the one field where 0 sets no bound. */
             std::chrono::milliseconds task_deadline{30000};
 
-            /** @brief Bounds the time a new connection has to finish the handshake. */
+            /**
+             * @brief Bounds the time a new connection has to finish the handshake.
+             *
+             * attach() refuses a value below K_MINIMUM_TIMEOUT.
+             */
             std::chrono::milliseconds handshake_timeout{5000};
 
             /** @brief Holds the data bytes per buffer chunk, within the two limits above. */
@@ -99,8 +110,8 @@ namespace SushiRuntime
         /**
          * @brief Attaches a distributed master to a runtime and reads its knobs and counters.
          *
-         * Every copy of a handle names the same master. Destroying a handle leaves the master
-         * attached: the runtime releases it when destroyed, detach() sooner.
+         * Every copy of a handle names the same master, and a move copies. Destroying a handle
+         * leaves the master attached: the runtime releases it when destroyed, detach() sooner.
          * @pre attach(), detach() and the runtime's destruction are ordered by the caller.
          * @see modules/extension/distributed/README.md
          */
@@ -110,10 +121,10 @@ namespace SushiRuntime
                 /**
                  * @brief Builds a master, installs it as the runtime's offload coordinator and
                  *        starts it and the transport.
-                 * @pre No run is in flight on @p runtime; @p transport was never started.
-                 * @throws Core::SushiException When @p transport is null, the secret is empty on
-                 *         a Network transport, chunk_bytes is out of range, or the transport
-                 *         does not start; a cluster attached before stays installed.
+                 * @pre @p transport was never started.
+                 * @throws Core::SushiException When a run is in flight on @p runtime, @p transport
+                 *         is null, an option is refused or the transport does not start; a
+                 *         cluster attached before stays installed and keeps running.
                  */
                 [[nodiscard]] static Cluster attach(API::Runtime& runtime,
                                                     std::shared_ptr<ITransport> transport,
@@ -121,7 +132,6 @@ namespace SushiRuntime
 
                 /**
                  * @brief Builds a master on a bare context; the Runtime overload forwards here.
-                 * @pre No run is in flight on @p context.
                  * @param transport A master-side transport that was never started.
                  * @throws Core::SushiException As the Runtime overload.
                  */
@@ -151,29 +161,41 @@ namespace SushiRuntime
                                   legacy_options(std::move(kernels), std::move(policy)));
                 }
 
+                /** @brief Copies the handle; both name the same master. */
+                Cluster(const Cluster&) = default;
+
+                /** @brief Makes this handle name the master of another; detaches nothing. */
+                Cluster& operator=(const Cluster&) = default;
+
+                /** @brief Destroys the handle; the master stays attached. */
+                ~Cluster() = default;
+
                 /**
                  * @brief Stops the master and removes it from its runtime; does nothing once the
                  *        runtime has released it.
                  *
-                 * Tasks still out on a worker are resubmitted and finish locally.
-                 * @pre No run is in flight on the runtime.
+                 * Tasks out on a worker come back and run on this machine. During a run in
+                 * flight the stopped master stays installed and offloads nothing; a detach()
+                 * or attach() after that run, or the runtime's destruction, removes it.
                  */
                 void detach();
 
                 /**
                  * @brief Blocks until @p count workers are registered, or the timeout.
-                 * @return True when the count was reached in time; false also once detached.
+                 * @return True when the count was reached in time; false once detached.
                  */
                 [[nodiscard]] bool wait_for_workers(std::size_t count,
                                                     std::chrono::milliseconds timeout);
 
-                /** @brief Returns the number of workers registered and answering. */
+                /** @brief Returns the number of answering workers; 0 once detached. */
                 [[nodiscard]] std::size_t alive_workers() const;
 
                 /**
                  * @brief Sets how long a worker may stay silent before it is closed.
                  *
                  * Workers registered earlier keep the value their WELCOME carried.
+                 * @param timeout At least K_MINIMUM_TIMEOUT.
+                 * @throws Core::SushiException With invalid_state for a shorter value.
                  */
                 Cluster& liveness_timeout(std::chrono::milliseconds timeout);
 
@@ -200,7 +222,7 @@ namespace SushiRuntime
                 /** @brief Returns statistics().stale_writebacks without building the list. */
                 [[nodiscard]] std::uint64_t stale_writebacks() const;
 
-                /** @brief Reports whether a registered worker has a kernel for an operation. */
+                /** @brief Reports whether an alive worker has a kernel for an operation. */
                 [[nodiscard]] bool supports(Graph::OpID op) const;
 
                 /** @brief Advances the version of the buffer shared at an address, if any. */

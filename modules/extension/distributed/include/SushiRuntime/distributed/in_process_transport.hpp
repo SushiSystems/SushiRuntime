@@ -186,8 +186,6 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API InProcessTransport final : public ITransport
         {
             public:
-                struct Impl;
-
                 /**
                  * @brief Creates the master endpoint of a fabric.
                  * @pre The fabric has no master endpoint yet.
@@ -243,6 +241,11 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t worker_index() const noexcept;
 
             private:
+                friend class InProcessFabric;
+                friend struct InProcessLink;
+
+                struct Impl;
+
                 /** @brief Wraps the state a factory built. */
                 explicit InProcessTransport(std::shared_ptr<Impl> impl) noexcept;
 

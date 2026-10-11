@@ -38,7 +38,8 @@ namespace SushiRuntime
          * @brief Names the memory of one buffer on the machine that runs a kernel.
          *
          * The view owns nothing: the memory belongs to the worker's cache, or to the master's
-         * allocation when the kernel runs as a local fallback, for the length of the kernel call.
+         * allocation when the kernel runs as a local fallback. A view a kernel receives is
+         * valid until the event that kernel returns completes.
          */
         struct BufferView
         {

@@ -41,6 +41,7 @@
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 
@@ -53,6 +54,12 @@ namespace SushiRuntime
     {
         namespace
         {
+            /** @brief Reports whether a run is in flight on a context; one atomic load. */
+            [[nodiscard]] bool has_run_in_flight(Execution::RuntimeContext& context)
+            {
+                return context.get_execution_engine().run_in_progress();
+            }
+
             /**
              * @brief Stops the coordinator a context holds and removes it from the allocator
              *        and the scheduler.
@@ -69,11 +76,30 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Refuses a liveness or handshake timeout a monitor pass would already
+             *        count as expired.
+             * @param call The public call the value came through, for the message.
+             * @param option The option's name, for the message.
+             * @throws Core::SushiException When @p value is below K_MINIMUM_TIMEOUT.
+             */
+            void check_timeout(const char* call, const char* option,
+                               std::chrono::milliseconds value)
+            {
+                SR_THROW_IF(value < K_MINIMUM_TIMEOUT,
+                            "{}: {} is {} ms; the smallest value allowed is {} ms.", call, option,
+                            value.count(), K_MINIMUM_TIMEOUT.count());
+            }
+
+            /**
              * @brief Refuses options a master cannot be attached with.
              * @throws Core::SushiException Naming the option and the value that is allowed.
              */
             void check_options(const ITransport& transport, const ClusterOptions& options)
             {
+                check_timeout("Cluster::attach", "ClusterOptions::liveness_timeout",
+                              options.liveness_timeout);
+                check_timeout("Cluster::attach", "ClusterOptions::handshake_timeout",
+                              options.handshake_timeout);
                 SR_THROW_IF(options.secret.empty() &&
                                 transport.exposure() == TransportExposure::Network,
                             "Cluster::attach: the transport can be reached from other machines "
@@ -164,6 +190,10 @@ namespace SushiRuntime
         Cluster Cluster::attach(Execution::RuntimeContext& context,
                                 std::shared_ptr<ITransport> transport, ClusterOptions options)
         {
+            // The scheduler of a run in flight reads the coordinator this call would replace.
+            SR_THROW_IF(has_run_in_flight(context),
+                        "Cluster::attach: a run is in flight on the runtime; wait for it to "
+                        "return, then attach. Nothing was stopped or installed.");
             SR_THROW_IF(!transport,
                         "Cluster::attach: the transport is null; pass a master-side transport "
                         "that was never started.");
@@ -199,8 +229,21 @@ namespace SushiRuntime
         void Cluster::detach()
         {
             // A non-null context still holds this state's coordinator.
-            if (state_->context != nullptr)
-                release_installed(*state_->context);
+            Execution::RuntimeContext* const context = state_->context;
+            if (context == nullptr)
+                return;
+
+            if (!has_run_in_flight(*context))
+            {
+                release_installed(*context);
+                return;
+            }
+
+            // The scheduler of the run in flight reads the installed coordinator until it returns.
+            state_->coordinator.stop();
+            SR_LOG_WARN("Cluster::detach: a run is in flight on the runtime; the master is "
+                        "stopped and its tasks run locally, and it stays installed until "
+                        "detach() or attach() is called after the run");
         }
 
         bool Cluster::wait_for_workers(std::size_t count, std::chrono::milliseconds timeout)
@@ -215,6 +258,7 @@ namespace SushiRuntime
 
         Cluster& Cluster::liveness_timeout(std::chrono::milliseconds timeout)
         {
+            check_timeout("Cluster::liveness_timeout", "the timeout", timeout);
             state_->coordinator.set_liveness_timeout(timeout);
             return *this;
         }

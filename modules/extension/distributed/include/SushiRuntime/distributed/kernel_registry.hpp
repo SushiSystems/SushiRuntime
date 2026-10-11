@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
@@ -49,8 +50,9 @@ namespace SushiRuntime
          * @brief Maps an operation id to a kernel compiled into this binary.
          *
          * Master and worker each build their own registry, so only the id crosses the wire.
-         * Register every kernel before the registry is given to a WorkerAgent, run_worker()
-         * or a Cluster; from then on it is only read, by any thread.
+         * A WorkerAgent and run_worker() seal the registry they are given; a sealed registry
+         * is only read, by any thread.
+         * @pre Every kernel is registered before the registry is given to either.
          */
         class SUSHIRUNTIME_API KernelRegistry : public Core::RefCounted
         {
@@ -67,8 +69,19 @@ namespace SushiRuntime
                     SushiRuntime::span<const BufferView> outputs,
                     const Graph::TaskMetadata& metadata)>;
 
-                /** @brief Sets the kernel of an operation, replacing the one set before. */
+                /**
+                 * @brief Sets the kernel of an operation, replacing the one set before.
+                 * @param kernel Holds a callable; an empty one is refused.
+                 * @throws Core::SushiException With invalid_access for an empty kernel, with
+                 *         invalid_state once the registry is sealed.
+                 */
                 void register_kernel(Graph::OpID id, Kernel kernel);
+
+                /** @brief Closes the registry to register_kernel(); a second call does nothing. */
+                void seal() noexcept;
+
+                /** @brief Reports whether seal() was called. */
+                [[nodiscard]] bool is_sealed() const noexcept;
 
                 /** @brief Returns whether an operation has a kernel. */
                 [[nodiscard]] bool has(Graph::OpID id) const;
@@ -85,6 +98,9 @@ namespace SushiRuntime
             private:
                 /** @brief Holds the kernels by the value of their operation id. */
                 std::unordered_map<std::uint32_t, Kernel> kernels_;
+
+                /** @brief Set by seal(), before any other thread reads kernels_. */
+                std::atomic<bool> sealed_{false};
         };
 
     } // namespace Distributed
