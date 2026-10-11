@@ -547,7 +547,7 @@ The scheduler rows vary by 13 % to 47 % between runs of one build, the chain row
 ### Task 0.3: cost of the compiled boundary
 
 No trial was built. The engine already takes a node's work with its type erased:
-`Task::TaskWork` is `std::function<void(sycl::handler&)>` (`task_work.hpp:39`),
+`Graph::TaskWork` is `std::function<void(sycl::handler&)>` (`task_work.hpp:39`),
 `TaskGraph::add_node` takes it by value (`task_graph.hpp:102`), and a recorded node is held as a
 `std::function` in `Detail::NodeSpec::emit` (`node_spec.hpp`). The boundary of stage 6 moves the
 call of `add_node` from a header into a source file and hands it the same `TaskWork`. The work a
