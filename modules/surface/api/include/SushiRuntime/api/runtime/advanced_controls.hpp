@@ -39,6 +39,7 @@
 #include <SushiRuntime/device/device_description.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 
 #include <SushiRuntime/api/runtime/runtime_config.hpp>
@@ -105,6 +106,16 @@ namespace SushiRuntime
             [[nodiscard]] WorkerPool worker_pool() const
             {
                 return context_->execution_engine().worker_pool();
+            }
+
+            /**
+             * @brief Returns how many USM allocations of the runtime are live.
+             * @return The allocations made through this runtime and not yet released: one per
+             *         Buffer, two per State, and what its graphs and extensions hold.
+             */
+            [[nodiscard]] std::size_t live_allocation_count() const
+            {
+                return context_->memory().live_count();
             }
 
             /**
