@@ -46,7 +46,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Adds the node of a rule that reads a State's current field into its next.
@@ -135,5 +135,5 @@ namespace SushiRuntime
                 add_coupled_node(bg, registration, out_view, views, launch, fn);
             };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

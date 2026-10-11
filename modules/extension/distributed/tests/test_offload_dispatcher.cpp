@@ -47,8 +47,8 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 
 #include "buffer_registry.hpp"
@@ -92,7 +92,7 @@ namespace
     /**
      * @brief Records every send() and answers it with a status the test sets.
      */
-    class RecordingTransport final : public ITransport
+    class RecordingTransport final : public Transport
     {
         public:
             /** @brief Reports a start that needs nothing. */
@@ -152,12 +152,12 @@ namespace
     /**
      * @brief Picks the first worker it is offered and counts how often it was asked.
      */
-    class FirstWorkerPolicy final : public IOffloadPolicy
+    class FirstWorkerPolicy final : public OffloadPolicy
     {
         public:
             /** @brief Returns the first offered worker, or nothing when none was offered. */
             std::optional<int> pick_worker(const Internal::Graph::Node& /*node*/,
-                                           span<const WorkerStats> workers,
+                                           span<const WorkerLoad> workers,
                                            std::uint64_t /*est_bytes*/) override
             {
                 ++calls;

@@ -29,7 +29,7 @@
 
 #include <memory>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_provider.hpp>
 
 namespace SushiRuntime
 {
@@ -38,10 +38,10 @@ namespace SushiRuntime
         /**
          * @brief Decorator that overlays a synthetic NUMA layout on real devices.
          *
-         * Wraps an underlying ITopologyProvider, preserving real SYCL devices while reassigning
+         * Wraps an underlying TopologyProvider, preserving real SYCL devices while reassigning
          * NUMA node IDs across a configurable number of synthetic nodes in a round-robin fashion.
          */
-        class SUSHIRUNTIME_API RemappingTopologyProvider : public ITopologyProvider
+        class SUSHIRUNTIME_API RemappingTopologyProvider : public TopologyProvider
         {
             public:
                 /**
@@ -52,7 +52,7 @@ namespace SushiRuntime
                  * @param fake_node_count The target number of synthetic NUMA nodes to distribute across.
                  * @warning The inner provider must not be null.
                  */
-                RemappingTopologyProvider(std::shared_ptr<ITopologyProvider> inner, int fake_node_count);
+                RemappingTopologyProvider(std::shared_ptr<TopologyProvider> inner, int fake_node_count);
 
                 /**
                  * @brief Discovers hardware devices and assigns them to synthetic NUMA nodes.
@@ -72,7 +72,7 @@ namespace SushiRuntime
                 std::vector<int> cpu_core_to_numa() const override;
 
             private:
-                std::shared_ptr<ITopologyProvider> inner_;
+                std::shared_ptr<TopologyProvider> inner_;
                 int fake_node_count_;
         };
 

@@ -32,7 +32,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/worker_main.hpp>
@@ -59,7 +59,7 @@ namespace SushiRuntime
          * @return InternalError when the agent does not start, else the code of its end.
          */
         [[nodiscard]] SUSHIRUNTIME_API WorkerExitCode
-        serve_worker(Internal::Execution::RuntimeContext& context, std::shared_ptr<ITransport> transport,
+        serve_worker(Internal::Execution::RuntimeContext& context, std::shared_ptr<Transport> transport,
                      sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options,
                      const StopSignal& stop_signal);
 

@@ -77,7 +77,7 @@ namespace
 TEST(Unit_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
 {
     const Node node;
-    EXPECT_EQ(node.baked_width, std::size_t{Internal::Observability::WIDTH_UNKNOWN});
+    EXPECT_EQ(node.baked_width, std::size_t{Internal::Observability::K_WIDTH_UNKNOWN});
 }
 
 /** @brief Tests that a node added without a stamp reports the unknown width. */
@@ -88,7 +88,7 @@ TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 
     graph.add_node(noop_work());
 
-    EXPECT_EQ(graph.last_node_added()->baked_width, std::size_t{Internal::Observability::WIDTH_UNKNOWN});
+    EXPECT_EQ(graph.last_node_added()->baked_width, std::size_t{Internal::Observability::K_WIDTH_UNKNOWN});
 }
 
 /** @brief Tests that a width set on a node and a name given after it land on that node. */
@@ -119,7 +119,7 @@ TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
     Internal::Graph::CompiledGraph plan = graph.compile();
     ASSERT_EQ(plan.all_nodes.size(), 2u);
 
-    EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Internal::Observability::WIDTH_UNKNOWN});
+    EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Internal::Observability::K_WIDTH_UNKNOWN});
     EXPECT_EQ(find_named(plan, "second").baked_width, std::size_t{4096});
 }
 
@@ -152,11 +152,11 @@ TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
     EXPECT_EQ(widths.live, 129u);
 }
 
-/** @brief Tests that USE_BAKED falls back to the baked width. */
+/** @brief Tests that K_USE_BAKED falls back to the baked width. */
 TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
 {
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
-    bindings->count.store(Internal::Graph::LateBindings::USE_BAKED, std::memory_order_relaxed);
+    bindings->count.store(Internal::Graph::LateBindings::K_USE_BAKED, std::memory_order_relaxed);
 
     RuntimeContext ctx;
     Internal::Graph::TaskGraph graph;
@@ -173,6 +173,6 @@ TEST(Unit_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
     graph.add_node([](sycl::handler&) {}).baked_width = std::size_t{0xFFFFFFFFu} + 1;
 
     const Internal::Graph::NodeWidths widths = Internal::Graph::snapshot_widths(*graph.last_node_added());
-    EXPECT_EQ(widths.launched, Internal::Observability::WIDTH_UNKNOWN);
-    EXPECT_EQ(widths.live, Internal::Observability::WIDTH_UNKNOWN);
+    EXPECT_EQ(widths.launched, Internal::Observability::K_WIDTH_UNKNOWN);
+    EXPECT_EQ(widths.live, Internal::Observability::K_WIDTH_UNKNOWN);
 }

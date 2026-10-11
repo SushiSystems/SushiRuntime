@@ -85,12 +85,12 @@ TEST(Integration_CallableTraits, ACoupledKernelMustTakeItsInputsAsConst)
     auto boxed = [](sycl::id<1>, const Word*, Word*, const Word*) {};
     auto boxed_writing = [](sycl::id<1>, const Word*, Word*, Word*) {};
 
-    EXPECT_TRUE((detail::is_launch_kernel_v<std::size_t, decltype(reading), const Word*,
+    EXPECT_TRUE((Detail::is_launch_kernel_v<std::size_t, decltype(reading), const Word*,
                                                  Word*, const Word*>));
-    EXPECT_FALSE((detail::is_launch_kernel_v<std::size_t, decltype(writing), const Word*,
+    EXPECT_FALSE((Detail::is_launch_kernel_v<std::size_t, decltype(writing), const Word*,
                                                   Word*, const Word*>));
-    EXPECT_TRUE((detail::is_launch_kernel_v<Extent<1>, decltype(boxed), const Word*,
+    EXPECT_TRUE((Detail::is_launch_kernel_v<Extent<1>, decltype(boxed), const Word*,
                                                  Word*, const Word*>));
-    EXPECT_FALSE((detail::is_launch_kernel_v<Extent<1>, decltype(boxed_writing),
+    EXPECT_FALSE((Detail::is_launch_kernel_v<Extent<1>, decltype(boxed_writing),
                                                   const Word*, Word*, const Word*>));
 }

@@ -32,7 +32,7 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
-#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
@@ -68,7 +68,7 @@ namespace
     /**
      * @brief Serves a constant core map and counts how often it is read.
      */
-    class FixedTopologyProvider final : public ITopologyProvider
+    class FixedTopologyProvider final : public TopologyProvider
     {
         public:
             /**
@@ -121,7 +121,7 @@ namespace
     /**
      * @brief Builds a two-node model: 10 on the diagonal, K_REMOTE_COST across.
      */
-    std::shared_ptr<const INUMADistanceModel> make_two_node_model()
+    std::shared_ptr<const NUMADistanceModel> make_two_node_model()
     {
         return std::make_shared<MatrixDistanceModel>(
             std::vector<std::vector<int>>{{10, K_REMOTE_COST},

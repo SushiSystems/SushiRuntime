@@ -48,7 +48,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 
 #include "dispatch_deduplicator.hpp"
@@ -84,7 +84,7 @@ namespace
      *
      * A stream is pulled dry on the calling thread, or kept until the test releases it.
      */
-    class FakeTransport final : public ITransport
+    class FakeTransport final : public Transport
     {
         public:
             [[nodiscard]] TransportResult start(TransportEvents&) override

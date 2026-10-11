@@ -59,7 +59,7 @@ namespace SushiRuntime
          *
          * Maintains an atomic pointer to the most recent access event, aligned to hardware cache lines to prevent false sharing.
          */
-        struct alignas(SushiRuntime::CACHE_LINE_SIZE) ResourceState 
+        struct alignas(SushiRuntime::K_CACHE_LINE_SIZE) ResourceState 
         {
             /**
              * @brief Points atomically to the most recent access event in the history.
@@ -82,26 +82,26 @@ namespace SushiRuntime
                  *
                  * Spreads memory addresses over multiple independent atomic roots to minimize cross-thread interference.
                  */
-                static constexpr size_t SHARD_COUNT = 1024;
+                static constexpr size_t K_SHARD_COUNT = 1024;
                 
                 /**
                  * @brief Stores the array of independent resource access states.
                  *
                  * Provides fixed-size contiguous memory containing all individual lock-free shard tails.
                  */
-                std::array<ResourceState, SHARD_COUNT> registry;
+                std::array<ResourceState, K_SHARD_COUNT> registry;
 
                 /**
                  * @brief Maps an allocation's identity to a shard index with a SplitMix64 hash.
                  * @see modules/engine/graph/README.md
                  */
-                inline size_t get_shard_idx(SushiRuntime::Internal::Memory::ResourceID base) const
+                inline size_t shard_index(SushiRuntime::Internal::Memory::ResourceID base) const
                 {
                     uint64_t z = reinterpret_cast<uint64_t>(base);
                     z += 0x9e3779b97f4a7c15;
                     z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
                     z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
-                    return (z ^ (z >> 31)) % SHARD_COUNT;
+                    return (z ^ (z >> 31)) % K_SHARD_COUNT;
                 }
 
             public:

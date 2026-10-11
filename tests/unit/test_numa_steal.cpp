@@ -79,7 +79,7 @@ TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
 
     TaskScheduler sched = make_scheduler(*ctx); // construction only — workers are not started.
 
-    const int workers = static_cast<int>(sched.get_worker_count());
+    const int workers = static_cast<int>(sched.worker_count());
     if (workers < 2)
         GTEST_SKIP() << "Need at least 2 worker threads to exercise stealing order.";
 
@@ -118,7 +118,7 @@ TEST(Unit_NumaStealTest, FlatTopologyKeepsAllVictims)
     RuntimeContext ctx; // default Hwloc provider/model.
     TaskScheduler sched = make_scheduler(ctx);
 
-    const int workers = static_cast<int>(sched.get_worker_count());
+    const int workers = static_cast<int>(sched.worker_count());
     if (workers < 2)
         GTEST_SKIP() << "Need at least 2 worker threads.";
 

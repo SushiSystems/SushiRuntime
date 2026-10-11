@@ -41,7 +41,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Holds what an asynchronous step must remember from the moment it started.
@@ -105,7 +105,7 @@ namespace SushiRuntime
                 return Error{source.code, {}};
             }
         }
-    } // namespace detail
+    } // namespace Detail
 
     template <class Owner>
     class StepDriver;
@@ -231,7 +231,7 @@ namespace SushiRuntime
                 reuse.is_successful = false;
 
                 if (owner_ == nullptr)
-                    return make_error(detail::error_without_throwing(
+                    return make_error(Detail::error_without_throwing(
                         Errc::invalid_state,
                         "RunHandle::wait(): this handle owns no step, because it was "
                         "already waited for or moved from; start a step with run_async()."));
@@ -243,7 +243,7 @@ namespace SushiRuntime
                 record_.reset();
 
                 if (!owned)
-                    return make_error(detail::error_without_throwing(
+                    return make_error(Detail::error_without_throwing(
                         Errc::invalid_state,
                         "RunHandle::wait(): the graph was moved or destroyed while this step "
                         "was pending, which ended the step and dropped its report; wait on "
@@ -258,8 +258,8 @@ namespace SushiRuntime
         private:
             friend class StepDriver<Owner>;
 
-            RunHandle(Owner* owner, std::shared_ptr<detail::AsyncStepRecord> record,
-                      const detail::AsyncRunState& state) noexcept
+            RunHandle(Owner* owner, std::shared_ptr<Detail::AsyncStepRecord> record,
+                      const Detail::AsyncRunState& state) noexcept
                 : owner_(owner), record_(std::move(record)), state_(state)
             {
             }
@@ -289,10 +289,10 @@ namespace SushiRuntime
             Owner* owner_ = nullptr;
 
             /** @brief The graph's record of its pending step; outlives the graph. */
-            std::shared_ptr<detail::AsyncStepRecord> record_;
+            std::shared_ptr<Detail::AsyncStepRecord> record_;
 
             /** @brief What run_async() recorded when it submitted the step. */
-            detail::AsyncRunState state_{};
+            Detail::AsyncRunState state_{};
     };
 
 

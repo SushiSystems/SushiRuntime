@@ -37,7 +37,7 @@ namespace
     /** @brief Runs the 2-D diffusion over the interior and prints its total heat; returns 0. */
     int run_stencil()
     {
-        constexpr std::size_t W = 64, H = 64, STEPS = 200;
+        constexpr std::size_t W = 64, H = 64, K_STEPS = 200;
         constexpr float ALPHA = 0.2f;   // diffusion factor, stable for a 5-point stencil
 
         auto rt   = Runtime::create();
@@ -71,7 +71,7 @@ namespace
             next[c] = cur[c] + ALPHA * lap;
         });
 
-        const auto report = g.run(STEPS);
+        const auto report = g.run(K_STEPS);
 
         // The total heat of a closed diffusion is conserved; report it as a smoke check.
         double total = 0.0;
@@ -79,7 +79,7 @@ namespace
             total += temp[i];
 
         std::printf("stencil: %zux%zu, %zu steps in %.3f ms; total heat = %.3f\n",
-                    W, H, STEPS, report.total_duration_ms, total);
+                    W, H, K_STEPS, report.total_duration_ms, total);
         return 0;
     }
 } // namespace

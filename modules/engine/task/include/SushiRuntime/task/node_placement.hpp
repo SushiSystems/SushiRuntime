@@ -43,14 +43,14 @@ namespace SushiRuntime
         struct Node;
 
         /** @brief Device a node runs on when it names no owned region and states none. */
-        inline constexpr std::size_t DEFAULT_PLACEMENT = 0;
+        inline constexpr std::size_t K_DEFAULT_PLACEMENT = 0;
 
         /**
          * @brief Returns the device @p node runs on.
          * @param node A node whose regions and stated placement are final.
          * @param memory The allocator that knows which device owns each region.
          * @return The owner of the first write region, else of the first read region; when
-         *         no device owns that region, the stated placement, else DEFAULT_PLACEMENT.
+         *         no device owns that region, the stated placement, else K_DEFAULT_PLACEMENT.
          */
         SUSHIRUNTIME_API std::size_t placement_of(const Node& node,
                                                   const Internal::Memory::USMAllocator& memory);

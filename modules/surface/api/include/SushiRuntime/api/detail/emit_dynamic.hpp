@@ -47,7 +47,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Registers one four-byte slot as a read of the node that consumes it and
@@ -156,5 +156,5 @@ namespace SushiRuntime
                 registration).baked_width = capacity;
             };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

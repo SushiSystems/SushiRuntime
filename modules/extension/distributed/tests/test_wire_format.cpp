@@ -493,7 +493,7 @@ TEST(Unit_WireFormat, GoldenBytes_TaskDispatch)
     TaskDispatchMessage message;
     message.task_id = 42;
     message.metadata.op_id = Internal::Graph::OpID(0xCAFEF00Du);
-    message.metadata.task_type = Internal::Graph::TaskType::MATH_OP;
+    message.metadata.task_type = Internal::Graph::TaskType::MathOp;
     message.metadata.priority = 7;
     message.metadata.numa_affinity = -1;
     message.metadata.params[0] = 0x4004000000000000ull;
@@ -506,7 +506,7 @@ TEST(Unit_WireFormat, GoldenBytes_TaskDispatch)
     const TaskDispatchMessage decoded = expect_golden(message, golden);
     EXPECT_EQ(decoded.task_id, 42u);
     EXPECT_EQ(decoded.metadata.op_id.value, 0xCAFEF00Du);
-    EXPECT_EQ(decoded.metadata.task_type, Internal::Graph::TaskType::MATH_OP);
+    EXPECT_EQ(decoded.metadata.task_type, Internal::Graph::TaskType::MathOp);
     EXPECT_EQ(decoded.metadata.priority, 7);
     EXPECT_EQ(decoded.metadata.numa_affinity, -1);
     EXPECT_EQ(decoded.metadata.params[0], 0x4004000000000000ull);
@@ -704,10 +704,10 @@ TEST(Unit_WireFormat, RejectsOutOfRangeEnumAndBool)
 {
     const Bytes bools = bytes_of({ 0x00, 0x01, 0x02 });
     FieldReader reader(view_of(bools));
-    EXPECT_FALSE(reader.get_bool());
-    EXPECT_TRUE(reader.get_bool());
+    EXPECT_FALSE(reader.read_bool());
+    EXPECT_TRUE(reader.read_bool());
     EXPECT_TRUE(reader.ok());
-    EXPECT_FALSE(reader.get_bool());
+    EXPECT_FALSE(reader.read_bool());
     const DecodeResult bool_result = reader.finish();
     EXPECT_EQ(bool_result.status, CodecStatus::OutOfRange);
     EXPECT_EQ(bool_result.offset, 2u);

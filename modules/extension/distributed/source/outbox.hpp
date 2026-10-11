@@ -38,7 +38,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 
 namespace SushiRuntime

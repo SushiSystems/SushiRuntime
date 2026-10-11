@@ -40,7 +40,7 @@
 
 namespace
 {
-    using SushiRuntime::Internal::Execution::IExecutionEngine;
+    using SushiRuntime::Internal::Execution::ExecutionEngine;
     using SushiRuntime::Internal::Execution::RuntimeContext;
     using SushiRuntime::Internal::Graph::CompiledGraph;
     using SushiRuntime::Internal::Graph::TaskGraph;
@@ -114,7 +114,7 @@ namespace
         ASSERT_NE(input.data(), nullptr);
         ASSERT_NE(output.data(), nullptr);
 
-        IExecutionEngine& engine = context.get_execution_engine();
+        ExecutionEngine& engine = context.execution_engine();
         CompiledGraph plan = compile_increment(input.data(), output.data());
 
         for (std::uint32_t value = 0; value < K_REPLAYS; ++value)

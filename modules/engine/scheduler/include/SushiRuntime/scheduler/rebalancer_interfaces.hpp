@@ -38,28 +38,28 @@ namespace SushiRuntime
         /**
          * @brief Read-only view of live scheduler state for rebalance decisions.
          *
-         * Implemented by TaskScheduler; injected into IRebalanceStrategy so the
+         * Implemented by TaskScheduler; injected into RebalanceStrategy so the
          * strategy can inspect queue depths and completion rates without coupling
          * to the scheduler's internals.
          */
-        class ITelemetryProvider
+        class TelemetryProvider
         {
             public:
-                virtual ~ITelemetryProvider() = default;
+                virtual ~TelemetryProvider() = default;
 
                 /** @return Total number of active worker threads. */
-                virtual size_t get_worker_count() const = 0;
+                virtual size_t worker_count() const = 0;
 
                 /**
                  * @brief Pending task count for one worker.
-                 * @param worker_id Worker index in [0, get_worker_count()).
+                 * @param worker_id Worker index in [0, worker_count()).
                  * @return Number of tasks currently queued for that worker.
                  */
-                virtual size_t get_queue_size(int worker_id) const = 0;
+                virtual size_t queue_size(int worker_id) const = 0;
 
                 /**
                  * @brief Returns how many tasks one worker has completed since it started.
-                 * @param worker_id Worker index in [0, get_worker_count()).
+                 * @param worker_id Worker index in [0, worker_count()).
                  * @see modules/engine/scheduler/README.md
                  */
                 virtual size_t completed_task_count(int worker_id) const = 0;
@@ -68,13 +68,13 @@ namespace SushiRuntime
         /**
          * @brief Forcibly moves tasks between workers to balance load.
          *
-         * Implemented by TaskScheduler; injected into IRebalanceStrategy so the
+         * Implemented by TaskScheduler; injected into RebalanceStrategy so the
          * strategy can trigger migration without touching scheduler internals.
          */
-        class ITaskMigrator
+        class TaskMigrator
         {
             public:
-                virtual ~ITaskMigrator() = default;
+                virtual ~TaskMigrator() = default;
 
                 /**
                  * @brief Takes up to @p count tasks off one worker for the other workers to run.
@@ -91,16 +91,16 @@ namespace SushiRuntime
          * telemetry/migrator pair and implements its own load-detection logic.
          * Swap strategies at runtime via WorkloadCoordinator::set_strategy().
          */
-        class IRebalanceStrategy
+        class RebalanceStrategy
         {
             public:
-                virtual ~IRebalanceStrategy() = default;
+                virtual ~RebalanceStrategy() = default;
 
                 /**
                  * @brief Inspects scheduler state and issues migration commands on the
                  *        coordinator's interval.
                  */
-                virtual void evaluate_and_rebalance(const ITelemetryProvider& telemetry, ITaskMigrator& migrator) = 0;
+                virtual void evaluate_and_rebalance(const TelemetryProvider& telemetry, TaskMigrator& migrator) = 0;
         };
     }
 }

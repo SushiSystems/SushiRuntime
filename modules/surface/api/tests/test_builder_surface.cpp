@@ -48,28 +48,28 @@ namespace
     /** @brief Names the element type of every handle here; unsigned, so overflow wraps. */
     using Word = std::uint32_t;
 
-    constexpr std::size_t WIDTH = 64;
-    constexpr std::size_t PREFIX = 24;
-    constexpr std::size_t ORIGIN = 16;
-    constexpr std::size_t TILE = 8;
-    constexpr Word SEED = 5;
+    constexpr std::size_t K_WIDTH = 64;
+    constexpr std::size_t K_PREFIX = 24;
+    constexpr std::size_t K_ORIGIN = 16;
+    constexpr std::size_t K_TILE = 8;
+    constexpr Word K_SEED = 5;
 
-    /** @brief Allocates count words on a device, each holding its index plus SEED. */
-    Buffer<Word> seeded(Runtime& rt, std::size_t count = WIDTH,
+    /** @brief Allocates count words on a device, each holding its index plus K_SEED. */
+    Buffer<Word> seeded(Runtime& rt, std::size_t count = K_WIDTH,
                              DeviceIndex device = DeviceIndex{0})
     {
         auto buffer = rt.buffer<Word>(count, device);
         for (std::size_t i = 0; i < count; ++i)
-            buffer[i] = static_cast<Word>(i) + SEED;
+            buffer[i] = static_cast<Word>(i) + K_SEED;
         return buffer;
     }
 
-    /** @brief Allocates a State of count words whose current field holds index plus SEED. */
-    State<Word> seeded_state(Runtime& rt, std::size_t count = WIDTH)
+    /** @brief Allocates a State of count words whose current field holds index plus K_SEED. */
+    State<Word> seeded_state(Runtime& rt, std::size_t count = K_WIDTH)
     {
         auto state = rt.state<Word>(count);
         for (std::size_t i = 0; i < count; ++i)
-            state[i] = static_cast<Word>(i) + SEED;
+            state[i] = static_cast<Word>(i) + K_SEED;
         return state;
     }
 
@@ -104,12 +104,12 @@ TEST(Integration_BuilderSurface, CountLaunchWithCapturesPassesPointers)
     auto target = seeded(rt);
 
     auto graph = rt.graph();
-    graph.add(WIDTH, In(source), Out(target),
+    graph.add(K_WIDTH, In(source), Out(target),
               [](std::size_t i, const Word* in, Word* out) { out[i] = in[i] * 2u; });
     graph.run();
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
-        ASSERT_EQ(target[i], (static_cast<Word>(i) + SEED) * 2u) << "at i=" << i;
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        ASSERT_EQ(target[i], (static_cast<Word>(i) + K_SEED) * 2u) << "at i=" << i;
 }
 
 /** @brief Tests that an NdRange with an origin hands the shifted id to a two-index kernel. */
@@ -119,9 +119,9 @@ TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
     auto target = seeded(rt);
 
     const NdRange<1> tiles =
-        NdRange<1>(sycl::range<1>(PREFIX), sycl::range<1>(TILE)).at(sycl::id<1>(ORIGIN));
-    EXPECT_EQ(tiles.origin[0], ORIGIN);
-    EXPECT_EQ(tiles.count(), PREFIX);
+        NdRange<1>(sycl::range<1>(K_PREFIX), sycl::range<1>(K_TILE)).at(sycl::id<1>(K_ORIGIN));
+    EXPECT_EQ(tiles.origin[0], K_ORIGIN);
+    EXPECT_EQ(tiles.count(), K_PREFIX);
 
     auto graph = rt.graph();
     graph.add(tiles, InOut(target), [](sycl::nd_item<1>, sycl::id<1> index, Word* words)
@@ -130,10 +130,10 @@ TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
     });
     graph.run();
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
     {
-        const bool inside = i >= ORIGIN && i < ORIGIN + PREFIX;
-        ASSERT_EQ(target[i], inside ? 0u : static_cast<Word>(i) + SEED) << "at i=" << i;
+        const bool inside = i >= K_ORIGIN && i < K_ORIGIN + K_PREFIX;
+        ASSERT_EQ(target[i], inside ? 0u : static_cast<Word>(i) + K_SEED) << "at i=" << i;
     }
 }
 
@@ -144,14 +144,14 @@ TEST(Integration_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
     auto field = seeded_state(rt);
 
     auto graph = rt.graph();
-    graph.add(PREFIX, field, [](std::size_t i, const Word* current, Word* next)
+    graph.add(K_PREFIX, field, [](std::size_t i, const Word* current, Word* next)
     {
         next[i] = current[i] + 100u;
     });
     graph.run();
 
-    for (std::size_t i = 0; i < PREFIX; ++i)
-        ASSERT_EQ(field.current()[i], static_cast<Word>(i) + SEED + 100u) << "at i=" << i;
+    for (std::size_t i = 0; i < K_PREFIX; ++i)
+        ASSERT_EQ(field.current()[i], static_cast<Word>(i) + K_SEED + 100u) << "at i=" << i;
 }
 
 /** @brief Tests that a launch reaching past its State is refused where add() is called. */
@@ -161,16 +161,16 @@ TEST(Integration_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
     auto field = seeded_state(rt);
     auto graph = rt.graph();
 
-    const Extent<1> window{sycl::range<1>(WIDTH), sycl::id<1>(ORIGIN)};
+    const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
     const std::string refusal = refusal_of(Errc::invalid_graph, [&]
     {
         graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
     });
 
     EXPECT_NE(refusal.find("rule 0"), std::string::npos) << refusal;
-    EXPECT_NE(refusal.find("{" + std::to_string(WIDTH) + "} at origin {" +
-                           std::to_string(ORIGIN) + "}"), std::string::npos) << refusal;
-    EXPECT_NE(refusal.find("holds " + std::to_string(WIDTH)), std::string::npos) << refusal;
+    EXPECT_NE(refusal.find("{" + std::to_string(K_WIDTH) + "} at origin {" +
+                           std::to_string(K_ORIGIN) + "}"), std::string::npos) << refusal;
+    EXPECT_NE(refusal.find("holds " + std::to_string(K_WIDTH)), std::string::npos) << refusal;
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }
 
@@ -188,7 +188,7 @@ TEST(Integration_BuilderSurface, CoupledRulesReadEveryStateNamed)
               {
                   next[i] = current[i] + other[i];
               });
-    graph.add(PREFIX, Coupled(prefix, input),
+    graph.add(K_PREFIX, Coupled(prefix, input),
               [](std::size_t i, const Word* current, Word* next, const Word* other)
               {
                   next[i] = current[i] * other[i];
@@ -196,11 +196,11 @@ TEST(Integration_BuilderSurface, CoupledRulesReadEveryStateNamed)
     EXPECT_EQ(graph.size(), 2u);
     graph.run();
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
-        ASSERT_EQ(whole.current()[i], (static_cast<Word>(i) + SEED) * 2u) << "at i=" << i;
-    for (std::size_t i = 0; i < PREFIX; ++i)
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        ASSERT_EQ(whole.current()[i], (static_cast<Word>(i) + K_SEED) * 2u) << "at i=" << i;
+    for (std::size_t i = 0; i < K_PREFIX; ++i)
     {
-        const Word seed = static_cast<Word>(i) + SEED;
+        const Word seed = static_cast<Word>(i) + K_SEED;
         ASSERT_EQ(prefix.current()[i], seed * seed) << "at i=" << i;
     }
 }
@@ -210,7 +210,7 @@ TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd
 {
     auto rt = Runtime::create();
     auto output = seeded_state(rt);
-    auto input = seeded_state(rt, PREFIX);
+    auto input = seeded_state(rt, K_PREFIX);
     auto graph = rt.graph();
 
     const std::string refusal = refusal_of(Errc::invalid_graph, [&]
@@ -219,8 +219,8 @@ TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd
                   [](std::size_t, const Word*, Word*, const Word*) {});
     });
 
-    EXPECT_NE(refusal.find("the count " + std::to_string(WIDTH)), std::string::npos) << refusal;
-    EXPECT_NE(refusal.find("holds " + std::to_string(PREFIX)), std::string::npos) << refusal;
+    EXPECT_NE(refusal.find("the count " + std::to_string(K_WIDTH)), std::string::npos) << refusal;
+    EXPECT_NE(refusal.find("holds " + std::to_string(K_PREFIX)), std::string::npos) << refusal;
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }
 
@@ -230,15 +230,15 @@ TEST(Integration_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
     auto rt = Runtime::create();
     auto target = seeded(rt);
     Word* words = target.data();
-    std::size_t live = PREFIX;
+    std::size_t live = K_PREFIX;
 
     auto graph = rt.graph();
-    graph.add(sized([&live] { return live; }), WIDTH, Reads(target),
+    graph.add(sized([&live] { return live; }), K_WIDTH, Reads(target),
               Writes(target), [words](std::size_t i) { words[i] = 0u; });
     graph.run();
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
-        ASSERT_EQ(target[i], i < PREFIX ? 0u : static_cast<Word>(i) + SEED) << "at i=" << i;
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        ASSERT_EQ(target[i], i < K_PREFIX ? 0u : static_cast<Word>(i) + K_SEED) << "at i=" << i;
 }
 
 /** @brief Tests that untracked kernels placed with On() write buffers of the device named. */
@@ -246,27 +246,27 @@ TEST(Integration_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
 {
     auto rt = Runtime::create();
     const DeviceIndex last{rt.advanced().device_count() - 1};
-    auto by_handle = seeded(rt, WIDTH, last);
-    auto by_index = seeded(rt, WIDTH, last);
+    auto by_handle = seeded(rt, K_WIDTH, last);
+    auto by_index = seeded(rt, K_WIDTH, last);
     Word* handle_words = by_handle.data();
     Word* index_words = by_index.data();
 
     // The two kernels are unordered; each is the only writer of its own buffer.
     auto graph = rt.graph();
-    graph.add_untracked(WIDTH, On(by_handle),
+    graph.add_untracked(K_WIDTH, On(by_handle),
                         [handle_words](std::size_t i) { handle_words[i] += 1u; });
     graph.add_untracked(On(last), [index_words](sycl::handler& handler)
     {
-        handler.parallel_for(sycl::range<1>(WIDTH),
+        handler.parallel_for(sycl::range<1>(K_WIDTH),
                              [index_words](sycl::id<1> i) { index_words[i[0]] += 2u; });
     });
     EXPECT_EQ(graph.size(), 2u);
     graph.run();
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
     {
-        ASSERT_EQ(by_handle[i], static_cast<Word>(i) + SEED + 1u) << "at i=" << i;
-        ASSERT_EQ(by_index[i], static_cast<Word>(i) + SEED + 2u) << "at i=" << i;
+        ASSERT_EQ(by_handle[i], static_cast<Word>(i) + K_SEED + 1u) << "at i=" << i;
+        ASSERT_EQ(by_index[i], static_cast<Word>(i) + K_SEED + 2u) << "at i=" << i;
     }
 }
 
@@ -279,7 +279,7 @@ TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
 
     const std::string refusal = refusal_of(Errc::invalid_access, [&]
     {
-        graph.add_untracked(WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
+        graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
     });
     EXPECT_NE(refusal.find("DeviceIndex{" + std::to_string(count) + "}"), std::string::npos)
         << refusal;
@@ -289,7 +289,7 @@ TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
     {
         auto freed = seeded(rt);
         Word* words = freed.data();
-        graph.add_untracked(WIDTH, On(freed), [words](std::size_t i) { words[i] = 0u; });
+        graph.add_untracked(K_WIDTH, On(freed), [words](std::size_t i) { words[i] = 0u; });
     }
     const auto result = graph.try_run();
     ASSERT_FALSE(result);
@@ -309,7 +309,7 @@ TEST(Integration_BuilderSurface, ExtendRecordsOneNamedRule)
     {
         ++calls;
         for (std::size_t node = 0; node < 2; ++node)
-            recorder.kernel(WIDTH, Access(Reads(target), Writes(target)),
+            recorder.kernel(K_WIDTH, Access(Reads(target), Writes(target)),
                             [words](std::size_t i) { words[i] += 1u; });
     }).name("twice");
 
@@ -319,8 +319,8 @@ TEST(Integration_BuilderSurface, ExtendRecordsOneNamedRule)
     graph.run();
     EXPECT_EQ(calls, 1u) << "an extension is not replayed when the plan is built";
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
-        ASSERT_EQ(target[i], static_cast<Word>(i) + SEED + 2u) << "at i=" << i;
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        ASSERT_EQ(target[i], static_cast<Word>(i) + K_SEED + 2u) << "at i=" << i;
 }
 
 /** @brief Tests that each refusal names the add() call the user wrote, through the public add(). */
@@ -329,11 +329,11 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     auto rt = Runtime::create();
     auto field = seeded_state(rt);
     auto output = seeded_state(rt);
-    auto input = seeded_state(rt, PREFIX);
+    auto input = seeded_state(rt, K_PREFIX);
     auto target = seeded(rt);
     const std::size_t count = rt.advanced().device_count();
     auto graph = rt.graph();
-    const Extent<1> window{sycl::range<1>(WIDTH), sycl::id<1>(ORIGIN)};
+    const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
 
     const std::string state_refusal = refusal_of(Errc::invalid_graph, [&]
     {
@@ -360,7 +360,7 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
 
     const std::string untracked_refusal = refusal_of(Errc::invalid_access, [&]
     {
-        graph.add_untracked(WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
+        graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
     });
     EXPECT_TRUE(begins_with(untracked_refusal, "add_untracked(launch, On(...), fn): "))
         << untracked_refusal;
@@ -373,7 +373,7 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
 
     const std::string offload_refusal = refusal_of(Errc::invalid_graph, [&]
     {
-        graph.add("builder.check"_op, WIDTH, Reads(target), Writes(target),
+        graph.add("builder.check"_op, K_WIDTH, Reads(target), Writes(target),
                   [](std::size_t) {}, {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
     EXPECT_TRUE(begins_with(offload_refusal, "add(OpID, n, reads, writes, local, params): "))

@@ -61,7 +61,7 @@
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/distributed/cluster_statistics.hpp>
 #include <SushiRuntime/distributed/endpoint.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
@@ -203,12 +203,12 @@ namespace
     };
 
     /** @brief Picks the first worker offered, so every offloadable task leaves the master. */
-    class FirstWorkerPolicy final : public IOffloadPolicy
+    class FirstWorkerPolicy final : public OffloadPolicy
     {
         public:
             /** @brief Returns the first offered worker, or nothing when none was offered. */
             std::optional<int> pick_worker(const Internal::Graph::Node& /*node*/,
-                                           span<const WorkerStats> workers,
+                                           span<const WorkerLoad> workers,
                                            std::uint64_t /*est_bytes*/) override
             {
                 if (workers.empty())
@@ -501,7 +501,7 @@ namespace
                         {
                             return queue.submit([&](sycl::handler& handler)
                             {
-                                SushiRuntime::detail::enqueue_host_task(handler, [=]
+                                SushiRuntime::Detail::enqueue_host_task(handler, [=]
                                 {
                                     apply_mask(input, output, count);
                                     runs->local.fetch_add(1);
@@ -511,7 +511,7 @@ namespace
                     if (beside)
                         graph.add_native({}, {}, beside);
 
-                    context->get_execution_engine().execute(graph.compile());
+                    context->execution_engine().execute(graph.compile());
                 });
             }
 

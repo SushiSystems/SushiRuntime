@@ -41,7 +41,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /** @brief Tells whether a type is an Extent. */
         template <class Launch>
@@ -266,5 +266,5 @@ namespace SushiRuntime
                 });
             }
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

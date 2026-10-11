@@ -42,7 +42,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Reports which kind of USM an address is, in its owning context.
@@ -107,5 +107,5 @@ namespace SushiRuntime
             require_host_slot(context, DynamicAccess::base_slot(dyn).words,
                               "based_at_device");
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

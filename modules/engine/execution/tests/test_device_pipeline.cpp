@@ -127,7 +127,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
     auto compiled = graph.compile();
     EXPECT_EQ(compiled.roots.size(), 1u) << "Only the init node should be a root of the diamond.";
 
-    ctx.get_execution_engine().execute(std::move(compiled));
+    ctx.execution_engine().execute(std::move(compiled));
     ctx.devices().wait_all();
 
     bool ok = true;

@@ -60,7 +60,7 @@ namespace SushiRuntime
          */
         template <typename T>
         explicit On(const Buffer<T>& buffer) noexcept
-            : device(buffer.device_index()), life(detail::HandleAccess::liveness(buffer))
+            : device(buffer.device_index()), life(Detail::HandleAccess::liveness(buffer))
         {
 
         }
@@ -72,7 +72,7 @@ namespace SushiRuntime
          */
         template <typename T>
         explicit On(const State<T>& state) noexcept
-            : device(state.device_index()), life(detail::HandleAccess::liveness(state))
+            : device(state.device_index()), life(Detail::HandleAccess::liveness(state))
         {
 
         }

@@ -158,7 +158,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     }
 
     auto compiled = graph.compile();
-    ctx.get_execution_engine().execute(std::move(compiled));
+    ctx.execution_engine().execute(std::move(compiled));
     ctx.devices().wait_all();
 
     for (int c = 0; c < CHAINS; ++c)

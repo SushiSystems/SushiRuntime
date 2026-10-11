@@ -42,7 +42,7 @@ using namespace SushiRuntime;
 
 namespace
 {
-    constexpr std::uint32_t CANARY = 0xDEADBEEFu;
+    constexpr std::uint32_t K_CANARY = 0xDEADBEEFu;
 
     /** @brief Detects a data member named capacity that a caller can assign. */
     template <typename T, typename = void>
@@ -247,7 +247,7 @@ TEST(Integration_LateBoundVocabulary, ARecordedCopyKeepsTheHostProvider)
 {
     auto rt  = Runtime::create();
     auto out = rt.buffer<std::uint32_t>(1);
-    out[0] = CANARY;
+    out[0] = K_CANARY;
 
     std::size_t live = 11;
     auto g = rt.graph();
@@ -275,7 +275,7 @@ TEST(Integration_LateBoundVocabulary, FromDeviceReadsTheWordAtItsIndex)
     for (std::size_t i = 0; i < 4; ++i)
         slot[i] = 5;
     slot[2] = 77;
-    out[0] = CANARY;
+    out[0] = K_CANARY;
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), LateCount::from_device(100, slot, 2), out);

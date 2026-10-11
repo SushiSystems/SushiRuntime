@@ -63,10 +63,10 @@ namespace SushiRuntime
 
                 RetiredNode* retire_list = nullptr;
                 size_t retire_count = 0;
-                static constexpr size_t RETIRE_THRESHOLD = 128;
+                static constexpr size_t K_RETIRE_THRESHOLD = 128;
 
                 /** @brief Holds the retire_count at which retire() runs the next reclaim scan. */
-                size_t next_scan_at = RETIRE_THRESHOLD;
+                size_t next_scan_at = K_RETIRE_THRESHOLD;
 
                 /** @brief Tells whether a reclaim scan is running on this thread. */
                 bool is_reclaiming = false;
@@ -75,7 +75,7 @@ namespace SushiRuntime
                 size_t scan_count = 0;
 
                 /** @brief Maximum pooled RetiredNodes per thread. */
-                static constexpr size_t FREE_POOL_CAP = 512;
+                static constexpr size_t K_FREE_POOL_CAP = 512;
 
                 /** @brief Singly-linked freelist of reusable RetiredNode storage. */
                 RetiredNode* free_node_pool = nullptr;
@@ -107,7 +107,7 @@ namespace SushiRuntime
                  */
                 inline void release_node(RetiredNode* node) noexcept 
                 {
-                    if (free_node_pool_count < FREE_POOL_CAP) 
+                    if (free_node_pool_count < K_FREE_POOL_CAP) 
                     {
                         node->next = free_node_pool;
                         free_node_pool = node;
@@ -136,7 +136,7 @@ namespace SushiRuntime
                 ~EpochThreadLocalState(); 
             };
 
-            inline EpochThreadLocalState& get_tls_state() 
+            inline EpochThreadLocalState& tls_state() 
             {
                 thread_local EpochThreadLocalState state{};
                 return state;
@@ -150,32 +150,32 @@ namespace SushiRuntime
         class EpochManager
         {
         private:
-            static constexpr size_t MAX_EPOCH_THREADS = MAX_WORKER_THREADS + 32;
+            static constexpr size_t K_MAX_EPOCH_THREADS = K_MAX_WORKER_THREADS + 32;
 
             std::atomic<uint64_t> global_epoch_{1};
 
             /**
              * @brief Holds one thread's epoch on its own cache line, so stores do not false-share.
              */
-            struct alignas(CACHE_LINE_SIZE) ThreadEpochSlot
+            struct alignas(K_CACHE_LINE_SIZE) ThreadEpochSlot
             {
                 std::atomic<uint64_t> epoch{0};
                 std::atomic<bool> active{false};
             };
             
-            ThreadEpochSlot thread_slots_[MAX_EPOCH_THREADS];
+            ThreadEpochSlot thread_slots_[K_MAX_EPOCH_THREADS];
             
             std::atomic<int> thread_id_high_water_{0};
             std::atomic<Detail::RetiredNode*> global_orphan_list_{nullptr};
 
             /**
              * @brief Registers the calling thread and returns its slot id.
-             * @return Slot index in [0, MAX_EPOCH_THREADS).
+             * @return Slot index in [0, K_MAX_EPOCH_THREADS).
              * @throws SushiException With Errc::unsupported if every slot is held.
              */
             int register_thread()
             {
-                for (int i = 0; i < static_cast<int>(MAX_EPOCH_THREADS); ++i) 
+                for (int i = 0; i < static_cast<int>(K_MAX_EPOCH_THREADS); ++i) 
                 {
                     bool expected = false;
                     if (thread_slots_[i].active.compare_exchange_strong(expected, true, std::memory_order_acquire)) 
@@ -192,7 +192,7 @@ namespace SushiRuntime
                 }
                 throw SushiException(Error{
                     Errc::unsupported,
-                    "EpochManager::register_thread: all " + std::to_string(MAX_EPOCH_THREADS) +
+                    "EpochManager::register_thread: all " + std::to_string(K_MAX_EPOCH_THREADS) +
                         " epoch slots are held by live threads. A thread frees its slot when it "
                         "exits; lower the number of threads that use the runtime at once."});
             }
@@ -203,7 +203,7 @@ namespace SushiRuntime
              */
             void check_and_reclaim()
             {
-                auto& tls_state = Detail::get_tls_state();
+                auto& tls_state = Detail::tls_state();
                 tls_state.is_reclaiming = true;
                 ++tls_state.scan_count;
 
@@ -281,14 +281,14 @@ namespace SushiRuntime
                 }
 
                 tls_state.next_scan_at =
-                    tls_state.retire_count + Detail::EpochThreadLocalState::RETIRE_THRESHOLD;
+                    tls_state.retire_count + Detail::EpochThreadLocalState::K_RETIRE_THRESHOLD;
                 tls_state.is_reclaiming = false;
             }
 
         public:
             EpochManager() 
             {
-                for (size_t i = 0; i < MAX_EPOCH_THREADS; ++i) 
+                for (size_t i = 0; i < K_MAX_EPOCH_THREADS; ++i) 
                 {
                     thread_slots_[i].epoch.store(0, std::memory_order_relaxed);
                     thread_slots_[i].active.store(false, std::memory_order_relaxed);
@@ -310,7 +310,7 @@ namespace SushiRuntime
              */
             inline void enter()
             {
-                auto& tls_state = Detail::get_tls_state();
+                auto& tls_state = Detail::tls_state();
                 if (tls_state.id == -1) tls_state.id = register_thread();
 
                 // Only the outermost enter() publishes the slot.
@@ -331,7 +331,7 @@ namespace SushiRuntime
              */
             inline void exit()
             {
-                auto& tls_state = Detail::get_tls_state();
+                auto& tls_state = Detail::tls_state();
                 if (tls_state.id == -1) return;
 
                 // Only the outermost exit() clears the slot; an unmatched exit() is ignored.
@@ -351,7 +351,7 @@ namespace SushiRuntime
             void retire(T* ptr)
             {
                 if (!ptr) return;
-                auto& tls_state = Detail::get_tls_state();
+                auto& tls_state = Detail::tls_state();
                 if (tls_state.id == -1) tls_state.id = register_thread();
 
                 // A RetiredNode comes from the thread-local pool, or operator new if it is empty.
@@ -377,7 +377,7 @@ namespace SushiRuntime
              */
             void unregister_thread(int id, Detail::RetiredNode* remaining_nodes)
             {
-                if (id < 0 || id >= static_cast<int>(MAX_EPOCH_THREADS)) return;
+                if (id < 0 || id >= static_cast<int>(K_MAX_EPOCH_THREADS)) return;
 
                 thread_slots_[id].epoch.store(0, std::memory_order_release);
                 

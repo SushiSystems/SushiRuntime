@@ -47,7 +47,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Refuses more parameters than the metadata of an offloadable task holds.
@@ -145,5 +145,5 @@ namespace SushiRuntime
                     }, {}, registration).baked_width = size;
             };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

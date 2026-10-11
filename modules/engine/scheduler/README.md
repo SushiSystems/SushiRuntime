@@ -30,7 +30,7 @@ under the MSVC ABI, where it was measured.
 
 ### ActiveEventList
 
-The common case (at most INLINE_CAP outstanding events) stays in an inline buffer with no
+The common case (at most K_INLINE_CAP outstanding events) stays in an inline buffer with no
 allocation. Beyond that the list spills to a heap vector, the same inline-then-spill shape as
 SmallEventVector. Dropping an event would orphan its successors (their in_degree never reaches zero)
 and deadlock the run, so push() must always store, even if that means growing.
@@ -233,7 +233,7 @@ steals are tracked separately so the RunReport can report the balance within and
 
 The requested range is clamped into the machine's core count at construction, so first_core reports
 what is in effect and not what was asked for. A caller verifying that it reserved cores should read
-it together with get_worker_count().
+it together with worker_count().
 
 ### drain_scratch_
 
@@ -321,7 +321,7 @@ in the dispatch loop.
 
 disarm() is only safe once the run has quiesced. The wait predicate does not look at the per-worker
 deques, so disarming while a worker still holds queued tasks would park its peers and leave it to
-drain the graph alone. ExecutionEngine::complete() calls it after wait_quiescent(), which is the
+drain the graph alone. SchedulerExecutionEngine::complete() calls it after wait_quiescent(), which is the
 point where quiescence is guaranteed.
 
 ### submit_batch
@@ -336,7 +336,7 @@ re-injection path, so there is still one injector seam per shape.
 ### wait_quiescent
 
 wait_quiescent() returns once every task counted into the run has been reaped by the poller or
-handed to the offload coordinator, which means no worker still touches a graph node. ExecutionEngine::execute calls it after the sentinel
+handed to the offload coordinator, which means no worker still touches a graph node. SchedulerExecutionEngine::execute calls it after the sentinel
 signals completion and before it destroys the CompiledGraph, closing the window in which a worker
 finalizing the run's last nodes races the graph's destruction. The inflight_ section describes the
 counter it waits on.
@@ -349,8 +349,8 @@ ThermalProxyStrategy identifies the worker with the longest queue among those co
 (a thermal or load-spike signature) and calls migrate_tasks() for half the gap between that queue
 and the shortest one, at least 10 tasks. The tasks go to the global priority queue, where any worker
 takes them; the worker with the shortest queue is named in the log line only. It
-fires only when the queue imbalance exceeds IMBALANCE_THRESHOLD and the victim's completion rate is
-at or below THROTTLING_RATE.
+fires only when the queue imbalance exceeds K_IMBALANCE_THRESHOLD and the victim's completion rate is
+at or below K_THROTTLING_RATE.
 
 ## work_stealing_deque.hpp
 
@@ -375,7 +375,7 @@ pathology.
 
 The constructor default-initializes the slots, with no trailing "()". A slot is always written by
 push() before any consumer can read it: push stores the slot, then publishes through the release
-store on bottom, and steal() and pop() only read items[i] for i \< bottom. Zeroing all CAPACITY
+store on bottom, and steal() and pop() only read items[i] for i \< bottom. Zeroing all K_CAPACITY
 slots up front is therefore wasted work that faults in the whole 2 MB ring eagerly. Leaving them
 indeterminate lets the pages fault lazily as the deque actually grows.
 
@@ -402,8 +402,8 @@ anything.
 ### WorkloadCoordinator
 
 WorkloadCoordinator runs a dedicated coordinator thread that calls
-IRebalanceStrategy::evaluate_and_rebalance every 5 ms. The strategy inspects live telemetry through
-ITelemetryProvider and issues task migrations through ITaskMigrator. The strategy can be swapped at
+RebalanceStrategy::evaluate_and_rebalance every 5 ms. The strategy inspects live telemetry through
+TelemetryProvider and issues task migrations through TaskMigrator. The strategy can be swapped at
 runtime while the coordinator is running.
 
 ### strategy_mtx_
@@ -477,7 +477,7 @@ completion accumulates per-node timing under profiling and reads no timestamps o
 In `stop()` a lost wakeup is worse than a late start. The idle wait has no timeout, so a
 worker that missed the shutdown flag would never be woken again and the join would never
 return. `stop()` is idempotent, and the destructor calls it so that cleanup happens even if
-the owning `ExecutionEngine` did not call `shutdown()`.
+the owning `SchedulerExecutionEngine` did not call `shutdown()`.
 
 #### The injector and its shadow counters
 
@@ -608,7 +608,7 @@ A pure-CPU host task needs no queue and runs inline. Under profiling its timing 
 plan flag, not the context-wide setting. The dispatch step is captured before the task runs, not
 read at reap, so a later round's step cannot land on the record. The steady-clock times are
 written raw and converted onto the run's event clock at `collect()`. A host node submits no
-dispatch, so its `launched_width` and `live_width` stay `WIDTH_UNKNOWN`.
+dispatch, so its `launched_width` and `live_width` stay `K_WIDTH_UNKNOWN`.
 
 ##### Queue selection
 
@@ -622,7 +622,7 @@ the one function that names it, from the first of these that applies:
 1. The node names a region a device owns: the owner of its first write region, else of its
    first read region.
 2. The node states a placement with `Node::place_on()`: that device.
-3. Otherwise device 0, `Internal::Graph::DEFAULT_PLACEMENT`, the device a default buffer is allocated
+3. Otherwise device 0, `Internal::Graph::K_DEFAULT_PLACEMENT`, the device a default buffer is allocated
    on.
 
 A kernel that captured USM the runtime cannot see names no region, so rule 2 or 3 decides

@@ -40,7 +40,7 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 
 #include "buffer_registry.hpp"
 
@@ -67,7 +67,7 @@ namespace SushiRuntime
                  * @param options Moved in; the secret stays here for the directory to read.
                  */
                 DistributedCoordinator(BufferRegistry& registry,
-                                       std::shared_ptr<ITransport> transport,
+                                       std::shared_ptr<Transport> transport,
                                        ClusterOptions options);
 
                 /** @brief Calls stop(), then destroys the bricks. */

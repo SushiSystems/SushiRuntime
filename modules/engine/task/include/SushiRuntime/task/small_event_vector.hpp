@@ -38,18 +38,18 @@ namespace SushiRuntime
     namespace Internal::Graph
     {
         /**
-         * @brief Stores a node's SYCL event dependencies, inline up to STATIC_CAP events.
+         * @brief Stores a node's SYCL event dependencies, inline up to K_STATIC_CAP events.
          *
-         * Events past STATIC_CAP go to dynamic_data in order. Every inline slot at or past
+         * Events past K_STATIC_CAP go to dynamic_data in order. Every inline slot at or past
          * static_count holds a default-constructed event.
          */
         struct SmallEventVector
         {
-            static constexpr size_t STATIC_CAP = 8;
+            static constexpr size_t K_STATIC_CAP = 8;
 
             size_t static_count = 0;                /**< Number of events in the inline buffer. */
-            sycl::event static_data[STATIC_CAP];   /**< Inline event storage. */
-            std::vector<sycl::event> dynamic_data; /**< Overflow storage when count > STATIC_CAP. */
+            sycl::event static_data[K_STATIC_CAP];   /**< Inline event storage. */
+            std::vector<sycl::event> dynamic_data; /**< Overflow storage when count > K_STATIC_CAP. */
 
             /** @brief Constructs an empty vector. */
             SmallEventVector() = default;
@@ -65,7 +65,7 @@ namespace SushiRuntime
              * @param other Source vector; left with size() equal to zero.
              */
             SmallEventVector(SmallEventVector&& other)
-                : SmallEventVector(other, std::make_index_sequence<STATIC_CAP>{})
+                : SmallEventVector(other, std::make_index_sequence<K_STATIC_CAP>{})
             {
                 other.clear();
             }
@@ -115,7 +115,7 @@ namespace SushiRuntime
              */
             inline SmallEventVector& operator=(const std::vector<sycl::event>& vec)
             {
-                const size_t inline_count = std::min(vec.size(), STATIC_CAP);
+                const size_t inline_count = std::min(vec.size(), K_STATIC_CAP);
 
                 for (size_t i = 0; i < inline_count; ++i)
                     static_data[i] = vec[i];

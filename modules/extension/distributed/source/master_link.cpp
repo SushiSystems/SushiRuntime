@@ -193,7 +193,7 @@ namespace SushiRuntime
                              static_cast<int>(status));
         }
 
-        MasterLink::MasterLink(ITransport& transport,
+        MasterLink::MasterLink(Transport& transport,
                                SushiRuntime::span<const std::uint8_t> secret,
                                MasterLinkOptions options, NonceSource nonces)
             : transport_(transport), secret_(secret), options_(std::move(options)),

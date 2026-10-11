@@ -87,7 +87,7 @@ TEST(Unit_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
     {
         auto p = make_sushi<Tracked>(destroyed);
         ASSERT_TRUE(p);
-        EXPECT_EQ(p->get_ref_count(), 1);
+        EXPECT_EQ(p->ref_count(), 1);
         EXPECT_EQ(destroyed.load(), 0);
     }
     EXPECT_EQ(destroyed.load(), 1) << "Object must be destroyed exactly once when its sole owner drops.";
@@ -103,19 +103,19 @@ TEST(Unit_RefCountedTest, CopyBumpsMoveTransfers)
 {
     std::atomic<int> destroyed{0};
     auto a = make_sushi<Tracked>(destroyed);
-    EXPECT_EQ(a->get_ref_count(), 1);
+    EXPECT_EQ(a->ref_count(), 1);
 
     sushi_ptr<Tracked> b(std::move(a));          // move: no refcount change
     EXPECT_EQ(a.get(), nullptr);
     EXPECT_FALSE(a);
-    EXPECT_EQ(b->get_ref_count(), 1);
+    EXPECT_EQ(b->ref_count(), 1);
 
     {
         sushi_ptr<Tracked> c = b;                // copy: +1
-        EXPECT_EQ(b->get_ref_count(), 2);
+        EXPECT_EQ(b->ref_count(), 2);
         EXPECT_TRUE(c == b);
     }
-    EXPECT_EQ(b->get_ref_count(), 1) << "Copy must release its reference on scope exit.";
+    EXPECT_EQ(b->ref_count(), 1) << "Copy must release its reference on scope exit.";
     EXPECT_EQ(destroyed.load(), 0);
 }
 
@@ -132,7 +132,7 @@ TEST(Unit_RefCountedTest, LeakDetachesWithoutChangingCount)
     Tracked* raw = p.leak();
     EXPECT_EQ(p.get(), nullptr) << "leak() must empty the smart pointer.";
     ASSERT_NE(raw, nullptr);
-    EXPECT_EQ(raw->get_ref_count(), 1) << "leak() must not touch the refcount.";
+    EXPECT_EQ(raw->ref_count(), 1) << "leak() must not touch the refcount.";
     EXPECT_EQ(destroyed.load(), 0);
 
     raw->release();                              // caller-owned reference
@@ -151,7 +151,7 @@ TEST(Unit_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
         sushi_ptr<Base> base = make_sushi<Derived>(destroyed); // converting ctor
         ASSERT_TRUE(base);
         EXPECT_EQ(base->tag(), 2) << "Virtual dispatch must reach the derived override.";
-        EXPECT_EQ(base->get_ref_count(), 1);
+        EXPECT_EQ(base->ref_count(), 1);
     }
     EXPECT_EQ(destroyed.load(), 1) << "Deleting via base must run the derived destructor exactly once.";
 }
@@ -177,7 +177,7 @@ TEST(Unit_RefCountedTest, ConcurrentRefCountingIsAtomic)
             for (int i = 0; i < ITERS; ++i)
             {
                 sushi_ptr<Tracked> copy = root;  // atomic add_ref
-                if (copy->get_ref_count() < 1)   // force the read; not optimizable away
+                if (copy->ref_count() < 1)   // force the read; not optimizable away
                     std::abort();
             }                                    // atomic release
         });
@@ -186,7 +186,7 @@ TEST(Unit_RefCountedTest, ConcurrentRefCountingIsAtomic)
         w.join();
 
     EXPECT_EQ(destroyed.load(), 0) << "Object must survive while the root reference is held.";
-    EXPECT_EQ(root->get_ref_count(), 1) << "All transient copies must have released exactly once.";
+    EXPECT_EQ(root->ref_count(), 1) << "All transient copies must have released exactly once.";
 
     root.reset();
     EXPECT_EQ(destroyed.load(), 1);

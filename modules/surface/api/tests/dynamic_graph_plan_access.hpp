@@ -38,7 +38,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /** @brief Declares the test-only friend access to DynamicGraph::plan_. */
         struct DynamicGraphNodeEventsTestAccess

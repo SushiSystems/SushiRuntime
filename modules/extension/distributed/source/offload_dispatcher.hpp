@@ -34,7 +34,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 
 #include "buffer_registry.hpp"
 #include "pending_tasks.hpp"
@@ -71,7 +71,7 @@ namespace SushiRuntime
             public:
                 /** @brief Builds a dispatcher over bricks that outlive it. */
                 OffloadDispatcher(BufferRegistry& registry, WorkerDirectory& directory,
-                                  PendingTasks& pending, ITransport& transport);
+                                  PendingTasks& pending, Transport& transport);
 
                 OffloadDispatcher(const OffloadDispatcher&) = delete;
                 OffloadDispatcher& operator=(const OffloadDispatcher&) = delete;
@@ -92,7 +92,7 @@ namespace SushiRuntime
                  * @brief Dispatches a ready node; the body of OffloadCoordinator::try_offload().
                  * In order: decline at the attempt cap, else count the attempt, the last write
                  * to the node; resolve the handles; WorkerDirectory::pick(); bump the outputs;
-                 * PendingTasks::insert(); ITransport::send(). No socket call, no INFO line.
+                 * PendingTasks::insert(); Transport::send(). No socket call, no INFO line.
                  * @return False when the pool must run the node; true also when the send failed
                  *         and take() found that a reaper holds the node.
                  */
@@ -130,7 +130,7 @@ namespace SushiRuntime
                 PendingTasks& pending_;
 
                 /// @brief Carries the dispatch frame.
-                ITransport& transport_;
+                Transport& transport_;
 
                 /// @brief Dispatches queued to a worker.
                 std::atomic<std::uint64_t> offloaded_{0};

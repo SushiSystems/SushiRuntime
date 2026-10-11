@@ -43,11 +43,11 @@ namespace SushiRuntime
         std::string describe_task(const Task& task)
         {
             if (!task.is_graph_node())
-                return Detail::sr_format("task '{}'", task.get_name());
+                return Detail::sr_format("task '{}'", task.name());
 
             const auto& node = static_cast<const SushiRuntime::Internal::Graph::Node&>(task);
             return Detail::sr_format("node '{}' (registration index {})",
-                                           node.get_name(), node.registration_index);
+                                           node.name(), node.registration_index);
         }
 
         /**

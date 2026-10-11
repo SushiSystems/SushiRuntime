@@ -21,7 +21,7 @@
 
 /**
  * @file dispatch_width.hpp
- * @brief Defines WIDTH_UNKNOWN, the marker of a dispatch with no element count.
+ * @brief Defines K_WIDTH_UNKNOWN, the marker of a dispatch with no element count.
  * @author Mustafa Garip
  */
 
@@ -34,6 +34,6 @@ namespace SushiRuntime
     namespace Internal::Observability
     {
         /** @brief Marks a dispatch whose element count the runtime does not carry. */
-        inline constexpr std::uint32_t WIDTH_UNKNOWN = 0xFFFFFFFFu;
+        inline constexpr std::uint32_t K_WIDTH_UNKNOWN = 0xFFFFFFFFu;
     } // namespace Observability
 } // namespace SushiRuntime

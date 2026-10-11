@@ -36,11 +36,11 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/device/device_info.hpp>
+#include <SushiRuntime/device/device_description.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
-#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/scheduler/pin_policy.hpp>
@@ -57,7 +57,7 @@ namespace
     constexpr std::size_t K_NO_DEVICE = static_cast<std::size_t>(-1);
 
     /** @brief Describes a machine with no core map; see README.md. */
-    class SingleNodeTopology final : public SushiRuntime::Internal::Topology::ITopologyProvider
+    class SingleNodeTopology final : public SushiRuntime::Internal::Topology::TopologyProvider
     {
         public:
             std::vector<SushiRuntime::Internal::Topology::HardwareNode>
@@ -68,7 +68,7 @@ namespace
     };
 
     /** @brief Reports one NUMA node at the local distance. */
-    class SingleNodeDistance final : public SushiRuntime::Internal::Topology::INUMADistanceModel
+    class SingleNodeDistance final : public SushiRuntime::Internal::Topology::NUMADistanceModel
     {
         public:
             int distance(int, int) const override
@@ -100,7 +100,7 @@ namespace
     sushi_ptr<Node> make_recording_node(std::optional<sycl::queue>& handed)
     {
         sushi_ptr<Node> node = make_sushi<Node>();
-        node->mode = Node::ExecutionMode::HOST;
+        node->mode = Node::ExecutionMode::Host;
         node->host_work = [&handed](sycl::queue& queue, const std::vector<sycl::event>&)
         {
             handed = queue;

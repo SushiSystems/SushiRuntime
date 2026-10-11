@@ -47,7 +47,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /** @brief Grants the registration index tests a friend seam onto Graph::plan_. */
         struct RegistrationIndexTestAccess;
@@ -121,13 +121,13 @@ namespace SushiRuntime
             [[nodiscard]] const Recorder& recorder() const noexcept { return recorder_; }
 
             /** @brief Stands for "this rule has no index yet". */
-            static constexpr std::uint32_t NO_REGISTRATION =
-                ::SushiRuntime::Internal::Graph::TaskGraph::NO_REGISTRATION;
+            static constexpr std::uint32_t K_NO_REGISTRATION =
+                ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION;
 
             /**
              * @brief Returns the registration index the rule at position rule took.
              * @param rule Position in add() order, below size(); last_rule() gives the newest.
-             * @return The index every node of the rule reports under, or NO_REGISTRATION when
+             * @return The index every node of the rule reports under, or K_NO_REGISTRATION when
              *        rule is out of range or nothing compiled yet.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
@@ -144,8 +144,8 @@ namespace SushiRuntime
             friend class Runtime;
             // The driver reaches the plan, the hooks and the checks below, and nothing else.
             friend class StepDriver<Graph>;
-            friend struct detail::RegistrationIndexTestAccess;
-            friend struct detail::NodeEventRecordsTestAccess;
+            friend struct Detail::RegistrationIndexTestAccess;
+            friend struct Detail::NodeEventRecordsTestAccess;
 
             /** @brief Error text of a run started with nothing recorded. */
             static constexpr const char* K_NOTHING_TO_RUN = "Graph has no tasks to run.";
@@ -201,7 +201,7 @@ namespace SushiRuntime
             ::SushiRuntime::Internal::Graph::CompiledGraph& run_plan() noexcept { return plan_; }
 
             /** @brief Returns the per-step hooks of the recorded tasks. */
-            [[nodiscard]] const detail::StepMachinery& run_steps() const noexcept
+            [[nodiscard]] const Detail::StepMachinery& run_steps() const noexcept
             {
                 return recorder_.steps();
             }

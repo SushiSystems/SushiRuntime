@@ -73,7 +73,7 @@ TEST(Integration_TaskGraphTest, SequentialUSMDependency)
     auto compiled_graph = graph.compile();
     EXPECT_EQ(compiled_graph.roots.size(), 1) << "Graph should only have 1 root due to linear dependency.";
 
-    ctx.get_execution_engine().execute(std::move(compiled_graph));
+    ctx.execution_engine().execute(std::move(compiled_graph));
 
     std::lock_guard<std::mutex> lock(order_mutex);
     ASSERT_EQ(execution_order.size(), 3);
@@ -111,7 +111,7 @@ TEST(Integration_TaskGraphTest, IndependentRootsExecution)
 
     EXPECT_EQ(compiled_graph.roots.size(), NUM_TASKS);
 
-    ctx.get_execution_engine().execute(std::move(compiled_graph));
+    ctx.execution_engine().execute(std::move(compiled_graph));
 
     EXPECT_EQ(completed_tasks.load(), NUM_TASKS);
 }
@@ -161,7 +161,7 @@ TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
     });
 
     auto compiled = graph.compile();
-    ctx.get_execution_engine().execute(std::move(compiled));
+    ctx.execution_engine().execute(std::move(compiled));
 
     EXPECT_TRUE(fan_out_success) << "Readers executed before the initial writer completed!";
     EXPECT_EQ(current_phase.load(), 3) << "Final writer did not complete successfully.";

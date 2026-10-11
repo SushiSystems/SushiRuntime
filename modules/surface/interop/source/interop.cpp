@@ -84,7 +84,7 @@ namespace SushiRuntime
                 uuid.bytes = device.get_info<sycl::ext::intel::info::device::uuid>();
                 capabilities.device_uuid = uuid;
             }
-            capabilities.device_import = Detail::BINDLESS_IMAGES_AVAILABLE
+            capabilities.device_import = Detail::K_BINDLESS_IMAGES_AVAILABLE
                 && context.devices().is_gpu(device_index)
                 && device.has(sycl::aspect::ext_oneapi_external_memory_import)
                 && capabilities.device_uuid.has_value();
@@ -251,7 +251,7 @@ namespace SushiRuntime
         }
 
         /// @brief Unmaps and releases imported device memory.
-        class DeviceImportOwner final : public Internal::Memory::IAllocationOwner
+        class DeviceImportOwner final : public Internal::Memory::AllocationOwner
         {
             public:
                 /// @brief Binds the owner to the importing context, queue index and imported handle.

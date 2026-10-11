@@ -54,21 +54,21 @@ namespace
     /** @brief Names the element type of every handle here; unsigned, so overflow wraps. */
     using Word = std::uint32_t;
 
-    constexpr std::size_t WIDTH = 64;
-    constexpr std::size_t PREFIX = 24;
-    constexpr std::size_t STEPS = 3;
-    constexpr Word SEED = 5;
-    constexpr Word CANARY = 0xDEADBEEFu;
-    constexpr Word MARK = 1000;
+    constexpr std::size_t K_WIDTH = 64;
+    constexpr std::size_t K_PREFIX = 24;
+    constexpr std::size_t K_STEPS = 3;
+    constexpr Word K_SEED = 5;
+    constexpr Word K_CANARY = 0xDEADBEEFu;
+    constexpr Word K_MARK = 1000;
 
-    /** @brief Allocates a State whose current field holds index plus SEED and next CANARY. */
+    /** @brief Allocates a State whose current field holds index plus K_SEED and next K_CANARY. */
     State<Word> seeded_state(Runtime& rt)
     {
-        auto state = rt.state<Word>(WIDTH);
-        for (std::size_t i = 0; i < WIDTH; ++i)
+        auto state = rt.state<Word>(K_WIDTH);
+        for (std::size_t i = 0; i < K_WIDTH; ++i)
         {
-            state[i] = static_cast<Word>(i) + SEED;
-            state.next()[i] = CANARY;
+            state[i] = static_cast<Word>(i) + K_SEED;
+            state.next()[i] = K_CANARY;
         }
         return state;
     }
@@ -82,12 +82,12 @@ namespace
         });
     }
 
-    /** @brief Expects the first count words of field to hold index plus SEED plus added. */
-    void expect_advanced(const State<Word>& field, Word added, std::size_t count = WIDTH)
+    /** @brief Expects the first count words of field to hold index plus K_SEED plus added. */
+    void expect_advanced(const State<Word>& field, Word added, std::size_t count = K_WIDTH)
     {
-        ASSERT_EQ(field.size(), WIDTH);
+        ASSERT_EQ(field.size(), K_WIDTH);
         for (std::size_t i = 0; i < count; ++i)
-            ASSERT_EQ(field.current()[i], static_cast<Word>(i) + SEED + added) << "at i=" << i;
+            ASSERT_EQ(field.current()[i], static_cast<Word>(i) + K_SEED + added) << "at i=" << i;
     }
 } // namespace
 
@@ -100,9 +100,9 @@ TEST(Integration_StateMove, ARuleFollowsAStateMovedAfterAdd)
     add_increment(graph, field);
 
     State<Word> moved = std::move(field);
-    graph.run(STEPS);
+    graph.run(K_STEPS);
 
-    expect_advanced(moved, static_cast<Word>(STEPS));
+    expect_advanced(moved, static_cast<Word>(K_STEPS));
 }
 
 /** @brief Tests that a rule recorded on a vector element survives the vector reallocating. */
@@ -117,9 +117,9 @@ TEST(Integration_StateMove, ARuleFollowsAStateItsVectorReallocated)
     const auto recorded_at = reinterpret_cast<std::uintptr_t>(&fields[0]);
     while (reinterpret_cast<std::uintptr_t>(&fields[0]) == recorded_at)
         fields.push_back(seeded_state(rt));
-    graph.run(STEPS);
+    graph.run(K_STEPS);
 
-    expect_advanced(fields[0], static_cast<Word>(STEPS));
+    expect_advanced(fields[0], static_cast<Word>(K_STEPS));
     expect_advanced(fields[1], 0u);
 }
 
@@ -140,9 +140,9 @@ TEST(Integration_StateMove, ACoupledRuleFollowsItsMovedStates)
     State<Word> moved_out = std::move(out);
     graph.run(std::size_t{2});
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
     {
-        const Word seed = static_cast<Word>(i) + SEED;
+        const Word seed = static_cast<Word>(i) + K_SEED;
         ASSERT_EQ(moved_out.current()[i], 3u * seed) << "at i=" << i;
         ASSERT_EQ(moved_input.current()[i], seed) << "at i=" << i;
     }
@@ -153,25 +153,25 @@ TEST(Integration_StateMove, ADynamicStateRuleFollowsAMovedState)
 {
     auto rt = Runtime::create();
     auto field = seeded_state(rt);
-    std::size_t live = PREFIX;
+    std::size_t live = K_PREFIX;
     auto graph = rt.graph();
     graph.add(sized([&live] { return live; }), field,
               [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
     State<Word> moved = std::move(field);
-    graph.run(STEPS);
+    graph.run(K_STEPS);
 
     EXPECT_EQ(graph.compile_count(), 1u);
-    expect_advanced(moved, static_cast<Word>(STEPS), PREFIX);
+    expect_advanced(moved, static_cast<Word>(K_STEPS), K_PREFIX);
 }
 
 /** @brief Tests what a State writes into its view at an advance, a move and its destruction. */
 TEST(Integration_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
 {
-    using detail::HandleAccess;
+    using Detail::HandleAccess;
 
     auto rt = Runtime::create();
-    std::shared_ptr<detail::StateView<Word>> view;
+    std::shared_ptr<Detail::StateView<Word>> view;
     {
         auto field = seeded_state(rt);
         Word* const first = field.current();
@@ -179,7 +179,7 @@ TEST(Integration_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
         view = HandleAccess::view(field);
         EXPECT_EQ(view->current, first);
         EXPECT_EQ(view->next, second);
-        EXPECT_EQ(view->size, WIDTH);
+        EXPECT_EQ(view->size, K_WIDTH);
 
         HandleAccess::advance(field);
         EXPECT_EQ(view->current, second);
@@ -228,11 +228,11 @@ TEST(Integration_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentFi
     auto rt = Runtime::create();
     auto field = seeded_state(rt);
     Word* const second = field.next();
-    std::size_t live = WIDTH;
+    std::size_t live = K_WIDTH;
 
     auto graph = rt.graph();
-    graph.add(WIDTH, Reads{}, Writes(field),
-              [second](std::size_t i) { second[i] = MARK; });
+    graph.add(K_WIDTH, Reads{}, Writes(field),
+              [second](std::size_t i) { second[i] = K_MARK; });
     graph.add(sized([&live] { return live; }), field,
               [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
     graph.run();
@@ -252,6 +252,6 @@ TEST(Integration_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentFi
     graph.run();
 
     EXPECT_EQ(graph.compile_count(), 2u);
-    for (std::size_t i = 0; i < WIDTH; ++i)
-        ASSERT_EQ(field.current()[i], MARK + 1u) << "at i=" << i;
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        ASSERT_EQ(field.current()[i], K_MARK + 1u) << "at i=" << i;
 }

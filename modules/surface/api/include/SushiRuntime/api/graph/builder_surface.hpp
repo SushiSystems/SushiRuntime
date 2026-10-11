@@ -70,11 +70,11 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class Launch, class F,
-                      std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                      std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
             Derived& add(Launch launch, const Reads& reads, const Writes& writes, F&& kernel)
             {
-                if constexpr (detail::accepts_kernel<detail::launch_t<Launch>, F>())
-                    sink().kernel(detail::launch_of(launch), Access(reads, writes),
+                if constexpr (Detail::accepts_kernel<Detail::launch_t<Launch>, F>())
+                    sink().kernel(Detail::launch_of(launch), Access(reads, writes),
                                   std::forward<F>(kernel));
                 return self();
             }
@@ -87,13 +87,13 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class Launch, class Capture, class... Rest,
-                      std::enable_if_t<detail::is_launch_v<Launch> &&
-                                       detail::is_capture_v<Capture> &&
+                      std::enable_if_t<Detail::is_launch_v<Launch> &&
+                                       Detail::is_capture_v<Capture> &&
                                        (sizeof...(Rest) >= 1), int> = 0>
             Derived& add(Launch launch, Capture first, Rest&&... rest)
             {
                 auto arguments = std::forward_as_tuple(first, std::forward<Rest>(rest)...);
-                return add_captured(detail::launch_of(launch), arguments,
+                return add_captured(Detail::launch_of(launch), arguments,
                                     std::index_sequence_for<Rest...>{});
             }
 
@@ -107,7 +107,7 @@ namespace SushiRuntime
             template <typename T, class F>
             Derived& add(State<T>& state, F&& kernel)
             {
-                if constexpr (detail::accepts_state_rule<std::size_t, T, F>())
+                if constexpr (Detail::accepts_state_rule<std::size_t, T, F>())
                     sink().state_rule(state, std::forward<F>(kernel));
                 return self();
             }
@@ -121,11 +121,11 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class Launch, typename T, class F,
-                      std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                      std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
             Derived& add(Launch launch, State<T>& state, F&& kernel)
             {
-                if constexpr (detail::accepts_state_rule<detail::launch_t<Launch>, T, F>())
-                    sink().state_rule(state, detail::launch_of(launch),
+                if constexpr (Detail::accepts_state_rule<Detail::launch_t<Launch>, T, F>())
+                    sink().state_rule(state, Detail::launch_of(launch),
                                       std::forward<F>(kernel), K_ADD_LAUNCH_STATE);
                 return self();
             }
@@ -141,7 +141,7 @@ namespace SushiRuntime
             template <typename Out, typename... Inputs, class F>
             Derived& add(Coupled<Out, Inputs...> states, F&& kernel)
             {
-                if constexpr (detail::accepts_coupled_rule<std::size_t, F, Out, Inputs...>())
+                if constexpr (Detail::accepts_coupled_rule<std::size_t, F, Out, Inputs...>())
                     std::apply([&](State<Inputs>&... inputs)
                     {
                         sink().coupled_rule(K_ADD_COUPLED, states.out,
@@ -159,14 +159,14 @@ namespace SushiRuntime
              * @throws SushiException With invalid_graph for a launch past a State.
              */
             template <class Launch, typename Out, typename... Inputs, class F,
-                      std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                      std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
             Derived& add(Launch launch, Coupled<Out, Inputs...> states, F&& kernel)
             {
-                if constexpr (detail::accepts_coupled_rule<detail::launch_t<Launch>, F, Out,
+                if constexpr (Detail::accepts_coupled_rule<Detail::launch_t<Launch>, F, Out,
                                                            Inputs...>())
                     std::apply([&](State<Inputs>&... inputs)
                     {
-                        sink().coupled_rule(K_ADD_LAUNCH_COUPLED, detail::launch_of(launch),
+                        sink().coupled_rule(K_ADD_LAUNCH_COUPLED, Detail::launch_of(launch),
                                             states.out, std::forward<F>(kernel), inputs...);
                     }, states.inputs);
                 return self();
@@ -181,7 +181,7 @@ namespace SushiRuntime
             template <class F>
             Derived& add(const Reads& reads, const Writes& writes, F&& kernel)
             {
-                if constexpr (detail::accepts_raw_kernel<F>())
+                if constexpr (Detail::accepts_raw_kernel<F>())
                     sink().raw_kernel(Access(reads, writes), std::forward<F>(kernel));
                 return self();
             }
@@ -198,7 +198,7 @@ namespace SushiRuntime
             Derived& add(Dynamic window, std::size_t capacity, const Reads& reads,
                          const Writes& writes, F&& kernel)
             {
-                if constexpr (detail::accepts_per_element<F>())
+                if constexpr (Detail::accepts_per_element<F>())
                     sink().kernel(std::move(window), capacity, Access(reads, writes),
                                   std::forward<F>(kernel));
                 return self();
@@ -215,7 +215,7 @@ namespace SushiRuntime
             template <typename T, class F>
             Derived& add(Dynamic window, State<T>& state, F&& kernel)
             {
-                if constexpr (detail::accepts_state_rule<std::size_t, T, F>())
+                if constexpr (Detail::accepts_state_rule<std::size_t, T, F>())
                     sink().state_rule(std::move(window), state, std::forward<F>(kernel));
                 return self();
             }
@@ -231,7 +231,7 @@ namespace SushiRuntime
                          const Reads& reads, const Writes& writes, F&& local,
                          std::initializer_list<std::uint64_t> params = {})
             {
-                if constexpr (detail::accepts_per_element<F>())
+                if constexpr (Detail::accepts_per_element<F>())
                     sink().offload(op, n, Access(reads, writes), std::forward<F>(local),
                                    std::vector<std::uint64_t>(params), K_ADD_OFFLOAD);
                 return self();
@@ -247,7 +247,7 @@ namespace SushiRuntime
             Derived& add(::SushiRuntime::Internal::Graph::OpID op, State<T>& state, F&& local,
                          std::initializer_list<std::uint64_t> params = {})
             {
-                if constexpr (detail::accepts_state_rule<std::size_t, T, F>())
+                if constexpr (Detail::accepts_state_rule<std::size_t, T, F>())
                     sink().offload_rule(op, state, std::forward<F>(local),
                                         std::vector<std::uint64_t>(params),
                                         K_ADD_OFFLOAD_RULE);
@@ -262,11 +262,11 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class Launch, class F,
-                      std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                      std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
             Derived& add_untracked(Launch launch, F&& kernel)
             {
-                if constexpr (detail::accepts_kernel<detail::launch_t<Launch>, F>())
-                    sink().untracked_kernel(detail::launch_of(launch),
+                if constexpr (Detail::accepts_kernel<Detail::launch_t<Launch>, F>())
+                    sink().untracked_kernel(Detail::launch_of(launch),
                                             std::forward<F>(kernel), On(DeviceIndex{0}),
                                             K_ADD_UNTRACKED_LAUNCH);
                 return self();
@@ -281,11 +281,11 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class Launch, class F,
-                      std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                      std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
             Derived& add_untracked(Launch launch, On placement, F&& kernel)
             {
-                if constexpr (detail::accepts_kernel<detail::launch_t<Launch>, F>())
-                    sink().untracked_kernel(detail::launch_of(launch),
+                if constexpr (Detail::accepts_kernel<Detail::launch_t<Launch>, F>())
+                    sink().untracked_kernel(Detail::launch_of(launch),
                                             std::forward<F>(kernel), placement,
                                             K_ADD_UNTRACKED_LAUNCH_ON);
                 return self();
@@ -298,7 +298,7 @@ namespace SushiRuntime
             template <class F>
             Derived& add_untracked(F&& kernel)
             {
-                if constexpr (detail::accepts_raw_kernel<F>())
+                if constexpr (Detail::accepts_raw_kernel<F>())
                     sink().untracked_raw_kernel(std::forward<F>(kernel), On(DeviceIndex{0}),
                                                 K_ADD_UNTRACKED_RAW);
                 return self();
@@ -314,7 +314,7 @@ namespace SushiRuntime
             template <class F>
             Derived& add_untracked(On placement, F&& kernel)
             {
-                if constexpr (detail::accepts_raw_kernel<F>())
+                if constexpr (Detail::accepts_raw_kernel<F>())
                     sink().untracked_raw_kernel(std::forward<F>(kernel), placement,
                                                 K_ADD_UNTRACKED_RAW_ON);
                 return self();
@@ -328,7 +328,7 @@ namespace SushiRuntime
             template <class F>
             Derived& add_host(const Reads& reads, const Writes& writes, F&& task)
             {
-                if constexpr (detail::accepts_host_task<F>())
+                if constexpr (Detail::accepts_host_task<F>())
                     sink().host(Access(reads, writes), std::forward<F>(task));
                 return self();
             }
@@ -341,7 +341,7 @@ namespace SushiRuntime
             template <class F>
             Derived& add_host(F&& task)
             {
-                if constexpr (detail::accepts_host_task<F>())
+                if constexpr (Detail::accepts_host_task<F>())
                     sink().host(Access(), std::forward<F>(task));
                 return self();
             }
@@ -356,7 +356,7 @@ namespace SushiRuntime
             template <class F>
             Derived& add_emitter(F&& emitter)
             {
-                if constexpr (detail::accepts_emitter<F>())
+                if constexpr (Detail::accepts_emitter<F>())
                     sink().emitter(std::forward<F>(emitter));
                 return self();
             }
@@ -369,7 +369,7 @@ namespace SushiRuntime
             template <class F>
             Derived& extend(F&& extension)
             {
-                if constexpr (detail::accepts_extension<F>())
+                if constexpr (Detail::accepts_extension<F>())
                 {
                     Recorder& recorder = sink();
                     const Recorder::RuleScope scope = recorder.rule();
@@ -473,12 +473,12 @@ namespace SushiRuntime
                                   std::index_sequence<Is...>)
             {
                 using F = std::tuple_element_t<sizeof...(Is), Arguments>;
-                if constexpr (detail::accepts_captures<
+                if constexpr (Detail::accepts_captures<
                                   std::tuple_element_t<Is, Arguments>...>())
-                    if constexpr (detail::accepts_captured_kernel<
+                    if constexpr (Detail::accepts_captured_kernel<
                                       Launch, F, decltype(std::get<Is>(arguments).ptr)...>())
                         sink().captured_kernel(
-                            launch, detail::captured_access(std::get<Is>(arguments)...),
+                            launch, Detail::captured_access(std::get<Is>(arguments)...),
                             std::make_tuple(std::get<Is>(arguments).ptr...),
                             std::forward<F>(std::get<sizeof...(Is)>(arguments)));
                 return self();

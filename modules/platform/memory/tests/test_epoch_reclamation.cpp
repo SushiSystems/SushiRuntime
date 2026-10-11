@@ -177,7 +177,7 @@ TEST(Unit_EpochReclamationTest, ConcurrentRetireNoCrash)
 namespace
 {
     /// @brief Number of thread slots EpochManager holds; see README.md.
-    constexpr std::size_t K_EPOCH_SLOTS = SushiRuntime::MAX_WORKER_THREADS + 32;
+    constexpr std::size_t K_EPOCH_SLOTS = SushiRuntime::K_MAX_WORKER_THREADS + 32;
 
     /** @brief Parks threads after they report, until the test lets them exit. */
     class ThreadPark
@@ -265,10 +265,10 @@ TEST(Unit_EpochReclamationTest, AThreadPastTheSlotLimitIsRefusedWithTheLimit)
     late.join();
 }
 
-/** @brief Tests that a reader that blocks reclamation costs one scan per RETIRE_THRESHOLD. */
+/** @brief Tests that a reader that blocks reclamation costs one scan per K_RETIRE_THRESHOLD. */
 TEST(Unit_EpochReclamationTest, ABlockedReclaimScansOncePerThreshold)
 {
-    constexpr std::size_t THRESHOLD = Detail::EpochThreadLocalState::RETIRE_THRESHOLD;
+    constexpr std::size_t THRESHOLD = Detail::EpochThreadLocalState::K_RETIRE_THRESHOLD;
     constexpr std::size_t RETIRED = 10 * THRESHOLD;
 
     ThreadPark park;
@@ -280,10 +280,10 @@ TEST(Unit_EpochReclamationTest, ABlockedReclaimScansOncePerThreshold)
     park.wait_for_reports(1);
 
     Counter destroyed = make_counter();
-    const std::size_t scans_before = Detail::get_tls_state().scan_count;
+    const std::size_t scans_before = Detail::tls_state().scan_count;
     for (std::size_t i = 0; i < RETIRED; ++i)
         EpochManager::instance().retire(new Tracked(destroyed));
-    const std::size_t scans = Detail::get_tls_state().scan_count - scans_before;
+    const std::size_t scans = Detail::tls_state().scan_count - scans_before;
 
     // The reader entered before any of these was retired, so none of them is reclaimable.
     EXPECT_EQ(destroyed->load(), 0);
@@ -319,7 +319,7 @@ namespace
 /** @brief Tests that a destructor that retires leaves every parent and child deleted once. */
 TEST(Unit_EpochReclamationTest, ADestructorThatRetiresDeletesParentAndChildOnce)
 {
-    constexpr std::size_t THRESHOLD = Detail::EpochThreadLocalState::RETIRE_THRESHOLD;
+    constexpr std::size_t THRESHOLD = Detail::EpochThreadLocalState::K_RETIRE_THRESHOLD;
     constexpr int PARENTS = static_cast<int>(4 * THRESHOLD);
     constexpr std::size_t DRAIN_RETIRES = 32 * THRESHOLD;
 

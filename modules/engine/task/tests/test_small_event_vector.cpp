@@ -189,5 +189,5 @@ TEST(Unit_SmallEventVector, AssignmentFromItsOwnOverflowKeepsThatList)
 
     EXPECT_EQ(events.size(), overflow.size());
     EXPECT_EQ(events.to_vector(), overflow);
-    EXPECT_EQ(events.dynamic_data.size(), overflow.size() - SmallEventVector::STATIC_CAP);
+    EXPECT_EQ(events.dynamic_data.size(), overflow.size() - SmallEventVector::K_STATIC_CAP);
 }

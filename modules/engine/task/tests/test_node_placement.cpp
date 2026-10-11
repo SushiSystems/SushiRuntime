@@ -85,7 +85,7 @@ TEST(Unit_NodePlacementState, PlaceOnRejectsAnIndexItCannotHold)
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->place_on(1);
 
-    const std::size_t too_large = Node::NO_PLACEMENT;
+    const std::size_t too_large = Node::K_NO_PLACEMENT;
     std::optional<Errc> code;
     std::string message;
     try
@@ -107,8 +107,8 @@ TEST(Unit_NodePlacementState, PlaceOnRejectsAnIndexItCannotHold)
 TEST_F(Unit_NodePlacementRule, ANodeWithNoRegionRunsOnItsStatedDeviceElseOnTheDefault)
 {
     const sushi_ptr<Node> node = make_sushi<Node>();
-    EXPECT_EQ(placement_of(*node, memory_), SushiRuntime::Internal::Graph::DEFAULT_PLACEMENT);
-    EXPECT_EQ(SushiRuntime::Internal::Graph::DEFAULT_PLACEMENT, 0u);
+    EXPECT_EQ(placement_of(*node, memory_), SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT);
+    EXPECT_EQ(SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT, 0u);
 
     node->place_on(1);
     EXPECT_EQ(placement_of(*node, memory_), 1u);

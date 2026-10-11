@@ -63,8 +63,8 @@ namespace SushiRuntime
               queue_(ctx.devices().queue(graph.chain.queue_index,
                                          Internal::Device::QueueFlavour{true, graph.profiling})),
               profiling_(graph.profiling),
-              // RuntimeContext builds an ExecutionEngine and no other engine, so the cast holds.
-              run_mark_(static_cast<ExecutionEngine&>(ctx.get_execution_engine()))
+              // RuntimeContext builds an SchedulerExecutionEngine and no other engine, so the cast holds.
+              run_mark_(static_cast<SchedulerExecutionEngine&>(ctx.execution_engine()))
         {
             // The plan owns the reserved event buffer (modules/engine/execution/README.md).
             if (profiling_ && graph.chain.pending_events.capacity() < graph.chain.order.size())
@@ -72,7 +72,7 @@ namespace SushiRuntime
         }
 
         /** @brief Marks a chained run in progress on @p engine. */
-        ChainRun::RunMark::RunMark(ExecutionEngine& engine) noexcept : engine_(&engine)
+        ChainRun::RunMark::RunMark(SchedulerExecutionEngine& engine) noexcept : engine_(&engine)
         {
             engine_->begin_chained_run();
         }
@@ -167,7 +167,7 @@ namespace SushiRuntime
          */
         sycl::event ChainRun::submit_node(Internal::Graph::Node& node)
         {
-            if (node.get_execution_mode() == Internal::Scheduler::Task::ExecutionMode::HOST)
+            if (node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host)
             {
                 std::vector<sycl::event> deps;
                 deps.reserve(node.sycl_deps.size());
@@ -193,7 +193,7 @@ namespace SushiRuntime
          */
         void ChainRun::submit_node_discarding(Internal::Graph::Node& node)
         {
-            if (node.get_execution_mode() == Internal::Scheduler::Task::ExecutionMode::HOST)
+            if (node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host)
             {
                 std::vector<sycl::event> deps;
                 deps.reserve(node.sycl_deps.size());
@@ -218,7 +218,7 @@ namespace SushiRuntime
         {
             Internal::Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
             const Internal::Scheduler::Task* task = &node;
-            const bool is_kernel = node.get_execution_mode() == Internal::Scheduler::Task::ExecutionMode::KERNEL;
+            const bool is_kernel = node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Kernel;
             const bool owns_pairing = is_kernel && !pairing_claimed_ && ledger.claim_pairing_owner(task);
             if (is_kernel)
                 pairing_claimed_ = true;

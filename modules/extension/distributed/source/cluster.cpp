@@ -57,7 +57,7 @@ namespace SushiRuntime
             /** @brief Reports whether a run is in flight on a context; one atomic load. */
             [[nodiscard]] bool has_run_in_flight(Internal::Execution::RuntimeContext& context)
             {
-                return context.get_execution_engine().run_in_progress();
+                return context.execution_engine().run_in_progress();
             }
 
             /**
@@ -94,7 +94,7 @@ namespace SushiRuntime
              * @brief Refuses options a master cannot be attached with.
              * @throws SushiException Naming the option and the value that is allowed.
              */
-            void check_options(const ITransport& transport, const ClusterOptions& options)
+            void check_options(const Transport& transport, const ClusterOptions& options)
             {
                 check_timeout("Cluster::attach", "ClusterOptions::liveness_timeout",
                               options.liveness_timeout);
@@ -123,7 +123,7 @@ namespace SushiRuntime
             class Attachment;
 
             /** @brief Builds the registry, then the coordinator that reads it. */
-            State(std::shared_ptr<ITransport> transport, ClusterOptions options)
+            State(std::shared_ptr<Transport> transport, ClusterOptions options)
                 : coordinator(buffers, std::move(transport), std::move(options))
             {
 
@@ -181,14 +181,14 @@ namespace SushiRuntime
 
         }
 
-        Cluster Cluster::attach(Runtime& runtime, std::shared_ptr<ITransport> transport,
+        Cluster Cluster::attach(Runtime& runtime, std::shared_ptr<Transport> transport,
                                 ClusterOptions options)
         {
             return attach(runtime.unsafe_context(), std::move(transport), std::move(options));
         }
 
         Cluster Cluster::attach(Internal::Execution::RuntimeContext& context,
-                                std::shared_ptr<ITransport> transport, ClusterOptions options)
+                                std::shared_ptr<Transport> transport, ClusterOptions options)
         {
             // The scheduler of a run in flight reads the coordinator this call would replace.
             SR_THROW_IF(has_run_in_flight(context),

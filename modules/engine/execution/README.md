@@ -24,7 +24,7 @@ NodeEventRecord in the plan's ledger. The destructor drains the queue, so a thro
 leaves work in flight against a plan about to be destroyed.
 
 A ChainRun submits straight to a device queue and never calls the engine's submit(), so it marks
-itself on the engine: IExecutionEngine::run_in_progress() is true from the constructor until
+itself on the engine: ExecutionEngine::run_in_progress() is true from the constructor until
 finish() returns or throws, or until the destructor has drained the queue. The mark is written
 once when the run starts and once when it ends; submit_step() does not touch it.
 
@@ -40,7 +40,7 @@ valid on Windows and changes nothing on platforms where the class is not exporte
 
 ### Including execution/runtime_settings.hpp
 
-worker_pool() returns WorkerPoolInfo. runtime_settings.hpp is a leaf header (no SYCL, no runtime
+worker_pool() returns WorkerPool. runtime_settings.hpp is a leaf header (no SYCL, no runtime
 types), so including it in execution_engine.hpp does not create a cycle with runtime_context.hpp,
 which includes execution_engine.hpp.
 
@@ -59,7 +59,7 @@ commit(). commit() has no compiled in-degree baseline of its own to capture but 
 whenever it populates or repopulates all_nodes. It is safe to call only once all_nodes carries its
 final registration indices for this compose.
 
-### IExecutionEngine::execute(CompiledGraph&)
+### ExecutionEngine::execute(CompiledGraph&)
 
 execute(CompiledGraph&) does not consume the graph: the engine reads the graph's roots and sentinel
 and resets and re-arms its scheduler for the round, but does not take ownership of the nodes. This
@@ -69,7 +69,7 @@ node state between runs. The one-shot rvalue overload delegates to this one.
 It returns nothing. The run is already finished when execute() returns, so there is no event
 to chain on.
 
-### IExecutionEngine::execute(CompiledGraph&&)
+### ExecutionEngine::execute(CompiledGraph&&)
 
 execute(CompiledGraph&&) binds rvalues, as in execute(graph.compile()), and delegates to the
 in-place overload. The moved-in graph is destroyed when the call returns, so this is the right entry
@@ -81,7 +81,7 @@ The capability is reported and not assumed, so a strategy that has no meaningful
 starting and finishing a run (a dry-run engine, a replay engine, a test double) is not forced to
 fake one. It is false by default; callers must check before using submit() and complete().
 
-### IExecutionEngine::submit
+### ExecutionEngine::submit
 
 submit() is the half of execute() that hands work to the scheduler. It does everything execute()
 does up to blocking, so the work proceeds on the worker pool while the caller does something else,
@@ -89,7 +89,7 @@ such as extracting the previous step's state for a renderer. Every submit() must
 exactly one complete(); until it is, the engine rejects another run and the compiled plan must stay
 alive. The graph runs in place and is not consumed.
 
-### IExecutionEngine::complete
+### ExecutionEngine::complete
 
 complete() is the other half of execute(): it waits for the completion sentinel, drains the pool,
 releases the engine for the next run, and rethrows a task exception exactly as execute() would.
@@ -116,20 +116,20 @@ worker_pool() reports the applied count and core placement, which differ from th
 RuntimeSettings when the range did not fit the machine. The default is an empty pool, so engines
 without worker threads and test doubles need not implement it.
 
-### IExecutionEngine::reset_profiling
+### ExecutionEngine::reset_profiling
 
 The default does nothing, so engines that gather no timing and test doubles need not implement it.
 
-### ExecutionEngine::execute
+### SchedulerExecutionEngine::execute
 
-ExecutionEngine::execute() injects all root nodes into the persistent scheduler, re-arms the running
+SchedulerExecutionEngine::execute() injects all root nodes into the persistent scheduler, re-arms the running
 flag for this execution round, then blocks on the sentinel's completion promise. It does not
 recreate any threads. The graph runs in place and is not consumed.
 
-### ExecutionEngine::submit
+### SchedulerExecutionEngine::submit
 
 execute() is exactly submit() followed by complete(); the two exist separately so a caller can put
-its own work between them. The IExecutionEngine::submit section gives the pairing contract.
+its own work between them. The ExecutionEngine::submit section gives the pairing contract.
 
 ### set_rebalancer_enabled
 
@@ -138,9 +138,9 @@ work mid-run and a source of run-to-run nondeterminism. A low-jitter real-time f
 deterministic or replay run disables it; batch throughput leaves it on (the default).
 set_rebalancer_enabled() is safe to call between runs.
 
-### ExecutionEngine::reset_profiling
+### SchedulerExecutionEngine::reset_profiling
 
-ExecutionEngine::reset_profiling() zeroes every node's per-run timing in `graph` and the scheduler's
+SchedulerExecutionEngine::reset_profiling() zeroes every node's per-run timing in `graph` and the scheduler's
 per-worker time buckets, so the resulting report covers only the run about to start. The driver
 calls it only when profiling is on.
 
@@ -222,7 +222,7 @@ thread, an audio callback, asset I/O and the compositor. Taking every core means
 threads are preempted by workers. Naming a smaller count, together with first_core, is how the host
 reserves cores for itself.
 
-The count is clamped to MAX_WORKER_THREADS.
+The count is clamped to K_MAX_WORKER_THREADS.
 
 ### first_core
 
@@ -238,11 +238,11 @@ trades run-to-run reproducibility and a low jitter floor for throughput on long 
 simulation frame wants the opposite, and the runtime's primary consumer is a simulation. Throughput
 workloads turn it on explicitly.
 
-### WorkerPoolInfo
+### WorkerPool
 
-RuntimeSettings is what the caller asked for; WorkerPoolInfo is what the runtime could give. They
+RuntimeSettings is what the caller asked for; WorkerPool is what the runtime could give. They
 diverge when the requested core range does not fit the machine, or when the count exceeds
-MAX_WORKER_THREADS. A host that reserved cores should verify against WorkerPoolInfo and not
+K_MAX_WORKER_THREADS. A host that reserved cores should verify against WorkerPool and not
 against its own request, because a reservation is only worth something if it actually happened.
 
 ## Implementation
@@ -294,7 +294,7 @@ choose between overlapping more work and settling up.
 
 #### One persistent scheduler
 
-`ExecutionEngine::Impl` owns a single `TaskScheduler`, started once in the constructor and
+`SchedulerExecutionEngine::Impl` owns a single `TaskScheduler`, started once in the constructor and
 stopped exactly once in shutdown. It is not rebuilt per graph execution.
 `RuntimeContext::Impl`'s destructor orders shutdown explicitly, so the scheduler is always
 stopped before the queues it dispatches onto are torn down.
@@ -353,8 +353,8 @@ per `ChainRun`, whatever its step count. Node dispatch reads and writes nothing 
 writes are `acq_rel` and the load is `acquire`, so a thread that sees a run begin or end
 also sees what the writer did before it.
 
-`ChainRun` reaches the two private functions as a friend of `ExecutionEngine` and casts the
-context's engine to that type: `RuntimeContext` builds an `ExecutionEngine` and nothing else.
+`ChainRun` reaches the two private functions as a friend of `SchedulerExecutionEngine` and casts the
+context's engine to that type: `RuntimeContext` builds an `SchedulerExecutionEngine` and nothing else.
 `ChainRun::RunMark` holds the mark. It is the last member, so the destructor's drain runs
 before the mark is released, and a constructor that throws after it was taken releases it.
 
@@ -453,7 +453,7 @@ reported in `scheduling_overhead_ms`.
 
 #### Definitions that need the complete Node type
 
-`IExecutionEngine::execute(CompiledGraph&&)` and `CompiledGraph::capture_base_state()` are
+`ExecutionEngine::execute(CompiledGraph&&)` and `CompiledGraph::capture_base_state()` are
 defined in this file and not in the header. Constructing the local `CompiledGraph`
 instantiates its destructor, `sushi_ptr<Node>::~sushi_ptr`, and touching `Node::in_degree`
 does the same kind of thing: both need the complete `Node` type. The header only
@@ -472,7 +472,7 @@ creation and is not rebuilt to toggle it. Immutability is what makes the setting
 read from worker threads without a lock.
 
 `settings` is the first member of `Impl`, so it is stored before `probe_devices()` builds the
-queues and before the `ExecutionEngine` reads the worker-pool and rebalancer choices.
+queues and before the `SchedulerExecutionEngine` reads the worker-pool and rebalancer choices.
 
 #### Construction order
 
@@ -481,7 +481,7 @@ the `Internal::Device::DeviceQueueSet`, the `Internal::Memory::USMAllocator` (fr
 `Internal::Observability::TransferCounters`. The topology provider is asked for the core map and the
 hardware nodes during that construction and is not kept.
 
-The `ExecutionEngine` is constructed after all of them, so it receives a context
+The `SchedulerExecutionEngine` is constructed after all of them, so it receives a context
 with every queue available. The scheduler it starts lives as long as the `RuntimeContext`.
 
 #### Destruction order
@@ -491,7 +491,7 @@ The order in `~Impl` is load-bearing. `Impl::stop_work()` runs first, and
 destructor stop things in one order. It stops the installed offload coordinator while the
 pool still runs: the coordinator hands the nodes it holds back to the scheduler, and after
 that no late remote completion can touch a scheduler that is being torn down. Then it shuts
-the `ExecutionEngine` down, which joins every worker thread. A context that was shut down
+the `SchedulerExecutionEngine` down, which joins every worker thread. A context that was shut down
 explicitly calls `stop_work()` a second time from its destructor. The seam allows a second
 `OffloadCoordinator::stop()` and the engine guards its own shutdown, so `Impl` keeps no flag
 for it.

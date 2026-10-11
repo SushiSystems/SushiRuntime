@@ -34,7 +34,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /** @brief Detects whether a SYCL command group handler exposes host_task. */
         template <class Handler, class Fn, class = void>
@@ -64,5 +64,5 @@ namespace SushiRuntime
             }
         }
 
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

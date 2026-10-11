@@ -39,7 +39,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Returns how many dispatches the offload coordinator has accepted so far.
@@ -106,5 +106,5 @@ namespace SushiRuntime
             }
         }
 
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

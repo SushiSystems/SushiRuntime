@@ -55,8 +55,8 @@ namespace SushiRuntime
          */
         In(const Buffer<T>& b)
             : ptr(b.data()),
-              key(detail::HandleAccess::key(b)),
-              life(detail::HandleAccess::liveness(b))
+              key(Detail::HandleAccess::key(b)),
+              life(Detail::HandleAccess::liveness(b))
         {
 
         }
@@ -81,8 +81,8 @@ namespace SushiRuntime
          */
         Out(Buffer<T>& b)
             : ptr(b.data()),
-              key(detail::HandleAccess::key(b)),
-              life(detail::HandleAccess::liveness(b))
+              key(Detail::HandleAccess::key(b)),
+              life(Detail::HandleAccess::liveness(b))
         {
 
         }
@@ -108,8 +108,8 @@ namespace SushiRuntime
          */
         InOut(Buffer<T>& b)
             : ptr(b.data()),
-              key(detail::HandleAccess::key(b)),
-              life(detail::HandleAccess::liveness(b))
+              key(Detail::HandleAccess::key(b)),
+              life(Detail::HandleAccess::liveness(b))
         {
 
         }
@@ -120,7 +120,7 @@ namespace SushiRuntime
     template <typename T> Out(Buffer<T>&) -> Out<T>;
     template <typename T> InOut(Buffer<T>&) -> InOut<T>;
 
-    namespace detail
+    namespace Detail
     {
         /** @brief Tells the In/Out/InOut capture wrappers apart from the trailing callable. */
         template <class T> struct is_capture : std::false_type {};
@@ -129,7 +129,7 @@ namespace SushiRuntime
         template <class T> struct is_capture<InOut<T>> : std::true_type {};
         template <class T>
         inline constexpr bool is_capture_v = is_capture<std::decay_t<T>>::value;
-    } // namespace detail
+    } // namespace Detail
 
 
 

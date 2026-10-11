@@ -35,12 +35,12 @@ than 1024 of the 1536 objects are destroyed.
 ### `ThreadExitHandsOffOrphans`
 
 The producer thread retires 300 objects under guards and exits. The main thread then retires 1024 more
-objects under guards. A scan runs once per `RETIRE_THRESHOLD` (128) further retires, so those retires
+objects under guards. A scan runs once per `K_RETIRE_THRESHOLD` (128) further retires, so those retires
 run scans, and the test asserts that at least one of the producer's objects is destroyed by the end.
 
 ### `K_EPOCH_SLOTS`
 
-`EpochManager` holds `MAX_WORKER_THREADS + 32` thread slots, 288 of them. The constant
+`EpochManager` holds `K_MAX_WORKER_THREADS + 32` thread slots, 288 of them. The constant
 repeats that sum because the manager keeps its own private.
 
 ### `ThreadPark`
@@ -60,7 +60,7 @@ slots came back.
 
 ### `ABlockedReclaimScansOncePerThreshold`
 
-A reader thread enters a guard and parks. The main thread then retires 10 times `RETIRE_THRESHOLD`
+A reader thread enters a guard and parks. The main thread then retires 10 times `K_RETIRE_THRESHOLD`
 objects and counts the scans recorded in its thread-local state. The test asserts that no object is
 destroyed, that at least one scan ran, and that no more than 10 scans ran.
 
@@ -71,8 +71,8 @@ that holds the second counter.
 
 ### `ADestructorThatRetiresDeletesParentAndChildOnce`
 
-The test retires 4 times `RETIRE_THRESHOLD` parents under guards. Each parent's destructor retires one
-child. The test then retires 32 times `RETIRE_THRESHOLD` objects under guards and asserts that the
+The test retires 4 times `K_RETIRE_THRESHOLD` parents under guards. Each parent's destructor retires one
+child. The test then retires 32 times `K_RETIRE_THRESHOLD` objects under guards and asserts that the
 parent counter and the child counter each equal the number of parents.
 
 ## test_resource_region.cpp
@@ -136,7 +136,7 @@ has not returned after 200 ms, opens the observer, and asserts that the removal 
 Registry keys are opaque and nothing is dereferenced, so distinct fake addresses are enough, and the
 test needs no `Runtime`.
 
-### `EXTENT`
+### `K_EXTENT`
 
 The fake addresses sit 64 bytes apart, so a 64-byte extent covers exactly one of them and never
 reaches its neighbour.

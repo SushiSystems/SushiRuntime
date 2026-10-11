@@ -26,7 +26,7 @@ show both, or the narrow kernels look wide.
 
 ### `UseBakedFallsBackToTheBakedWidth`
 
-`USE_BAKED` means "the rest of the capacity" and is not a count, so it must not be reported as a
+`K_USE_BAKED` means "the rest of the capacity" and is not a count, so it must not be reported as a
 measured live width.
 
 ### `OversizedWidthReportsUnknownRatherThanTruncating`
@@ -79,6 +79,6 @@ check that the runtime degrades without failing on bad input.
 
 ## test_topology_abstraction.cpp
 
-The file validates the injectable topology abstraction, `ITopologyProvider` and
-`INUMADistanceModel`. It exercises multi-NUMA logic deterministically on single-node hardware, which
+The file validates the injectable topology abstraction, `TopologyProvider` and
+`NUMADistanceModel`. It exercises multi-NUMA logic deterministically on single-node hardware, which
 the real hwloc path cannot do on a machine with one socket.

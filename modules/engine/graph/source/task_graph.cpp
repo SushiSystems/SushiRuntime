@@ -70,7 +70,7 @@ namespace SushiRuntime
             std::string describe_node(const Node& node)
             {
                 return Detail::sr_format("node '{}' (registration index {})",
-                                               node.get_name(), node.registration_index);
+                                               node.name(), node.registration_index);
             }
         } // namespace
 
@@ -337,13 +337,13 @@ namespace SushiRuntime
             const bool has_host_work = static_cast<bool>(node->host_work);
 
             // KERNEL needs device work and a type other than CUSTOM_HOST (modules/engine/graph/README.md).
-            if (has_device_work && meta.task_type != TaskType::CUSTOM_HOST)
+            if (has_device_work && meta.task_type != TaskType::CustomHost)
             {
-                node->mode = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::KERNEL;
+                node->mode = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Kernel;
             }
             else
             {
-                node->mode = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST;
+                node->mode = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Host;
             }
 
             // A task with no executable work is the only defect (modules/engine/graph/README.md).
@@ -415,7 +415,7 @@ namespace SushiRuntime
             node->metadata  = meta;
             node->host_work = std::move(fallback_work);
             node->sycl_deps = dependencies;
-            node->mode      = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST;
+            node->mode      = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Host;
 
             // The snapshot orders dependencies and routes the queue (modules/engine/graph/README.md).
             const std::vector<void*> reads  = live_reads  ? *live_reads  : std::vector<void*>{};
@@ -486,7 +486,7 @@ namespace SushiRuntime
             auto node = make_sushi<Node>();
             node->native_work          = std::move(work);
             node->submits_device_work_ = false;
-            node->mode                 = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST;
+            node->mode                 = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Host;
             node->sycl_deps            = dependencies;
 
             for (const auto& r : read_access)
@@ -602,7 +602,7 @@ namespace SushiRuntime
 
                     const int32_t inl = std::min<int32_t>(
                         n->inline_successor_count.load(std::memory_order_relaxed),
-                        Node::MAX_INLINE_SUCCESSORS);
+                        Node::K_MAX_INLINE_SUCCESSORS);
                     for (int32_t i = 0; i < inl; ++i)
                         if (n->inline_successors[i]) relax_successor(n->inline_successors[i]);
 

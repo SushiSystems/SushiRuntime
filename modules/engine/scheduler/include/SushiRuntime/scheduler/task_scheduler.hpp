@@ -83,7 +83,7 @@ namespace SushiRuntime
             {
                 if (!a) return true;
                 if (!b) return false;
-                return a->get_priority() < b->get_priority();
+                return a->priority() < b->priority();
             }
         };
 
@@ -91,8 +91,8 @@ namespace SushiRuntime
          * @brief Schedules tasks on a persistent, NUMA-aware work-stealing worker pool.
          * @see modules/engine/scheduler/README.md
          */
-        class SUSHIRUNTIME_API TaskScheduler final : public ITelemetryProvider,
-                                                     public ITaskMigrator,
+        class SUSHIRUNTIME_API TaskScheduler final : public TelemetryProvider,
+                                                     public TaskMigrator,
                                                      public Internal::Graph::OffloadSink
         {
             public:
@@ -114,12 +114,12 @@ namespace SushiRuntime
                 size_t num_workers_ = 0;
 
                 /** @brief List of queues for each worker thread. */
-                std::array<sushi_ptr<Deque>, MAX_WORKER_THREADS> worker_queues;
+                std::array<sushi_ptr<Deque>, K_MAX_WORKER_THREADS> worker_queues;
                 /**
                  * @brief Holds each worker's scratch for the drain_pending_submissions batch.
                  * @see modules/engine/scheduler/README.md
                  */
-                std::array<std::vector<Task*>, MAX_WORKER_THREADS> drain_scratch_;
+                std::array<std::vector<Task*>, K_MAX_WORKER_THREADS> drain_scratch_;
                 /**
                  * @brief Implements a task FIFO that does not allocate in the steady state.
                  * @see modules/engine/scheduler/README.md
@@ -141,7 +141,7 @@ namespace SushiRuntime
                                 items_.clear();
                                 head_ = 0;
                             }
-                            else if (head_ >= COMPACT_AFTER && head_ * 2 >= items_.size())
+                            else if (head_ >= K_COMPACT_AFTER && head_ * 2 >= items_.size())
                             {
                                 // The consumed prefix is dropped by a move inside the same buffer.
                                 items_.erase(items_.begin(),
@@ -151,7 +151,7 @@ namespace SushiRuntime
                         }
 
                     private:
-                        static constexpr std::size_t COMPACT_AFTER = 1024;
+                        static constexpr std::size_t K_COMPACT_AFTER = 1024;
                         std::vector<Task*> items_;
                         std::size_t        head_ = 0;
                 };
@@ -216,16 +216,16 @@ namespace SushiRuntime
                 std::size_t first_core_ = 0;
 
                 /** @brief Worker threads. */
-                std::array<std::thread, MAX_WORKER_THREADS> workers;
+                std::array<std::thread, K_MAX_WORKER_THREADS> workers;
                 /**
                  * @brief Holds one worker's completed-task counter on its own cache line.
                  * @see modules/engine/scheduler/README.md
                  */
-                struct alignas(CACHE_LINE_SIZE) WorkerCompletedCounter
+                struct alignas(K_CACHE_LINE_SIZE) WorkerCompletedCounter
                 {
                     std::atomic<size_t> value{0};
                 };
-                WorkerCompletedCounter worker_completed_tasks[MAX_WORKER_THREADS];
+                WorkerCompletedCounter worker_completed_tasks[K_MAX_WORKER_THREADS];
 
                 /**
                  * @brief Per-worker accumulated time buckets (nanoseconds).
@@ -235,14 +235,14 @@ namespace SushiRuntime
                  * a worker accumulates only its own bucket and the engine reads them at
                  * a run boundary, with no cross-worker ordering requirement.
                  */
-                struct alignas(CACHE_LINE_SIZE) WorkerTimeBuckets
+                struct alignas(K_CACHE_LINE_SIZE) WorkerTimeBuckets
                 {
                     std::atomic<std::uint64_t> busy_ns{0};
                     std::atomic<std::uint64_t> stealing_ns{0};
                     std::atomic<std::uint64_t> polling_ns{0};
                     std::atomic<std::uint64_t> idle_ns{0};
                 };
-                WorkerTimeBuckets worker_time_[MAX_WORKER_THREADS];
+                WorkerTimeBuckets worker_time_[K_MAX_WORKER_THREADS];
 
                 /** @brief Whether the active run accumulates per-worker time buckets. */
                 std::atomic<bool> profiling_active_{false};
@@ -366,7 +366,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns the pool to its parked state after a run quiesces.
-                 * @pre The run has quiesced; ExecutionEngine::complete() calls this after
+                 * @pre The run has quiesced; SchedulerExecutionEngine::complete() calls this after
                  *        wait_quiescent().
                  * @see modules/engine/scheduler/README.md
                  */
@@ -431,12 +431,12 @@ namespace SushiRuntime
                 /** @brief Clears the cancellation flag at the start of a fresh run. */
                 void reset_cancellation() { outcome_.clear_cancellation(); }
 
-                size_t get_worker_count() const override;
-                size_t get_queue_size(int worker_id) const override;
+                size_t worker_count() const override;
+                size_t queue_size(int worker_id) const override;
                 size_t completed_task_count(int worker_id) const override;
 
                 void migrate_tasks(int from_worker_id, size_t count) override;
-                using ITaskMigrator::migrate_tasks;
+                using TaskMigrator::migrate_tasks;
 
                 /**
                  * @brief Introspection hook (tests): the distance-ordered steal
@@ -446,9 +446,9 @@ namespace SushiRuntime
                 std::vector<int> steal_victim_order(int worker_id) const;
 
                 /** @brief Count of successful steals from a node-local victim. */
-                size_t get_local_steal_count() const  { return local_steals_.load(std::memory_order_relaxed); }
+                size_t local_steal_count() const  { return local_steals_.load(std::memory_order_relaxed); }
                 /** @brief Count of successful steals that had to cross to a remote node. */
-                size_t get_remote_steal_count() const { return remote_steals_.load(std::memory_order_relaxed); }
+                size_t remote_steal_count() const { return remote_steals_.load(std::memory_order_relaxed); }
 
                 /**
                  * @brief One worker's accumulated time split, in nanoseconds.
@@ -467,10 +467,10 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns the accumulated time split for worker @p worker_id.
-                 * @param worker_id Worker index in [0, get_worker_count()).
+                 * @param worker_id Worker index in [0, worker_count()).
                  * @return The worker's time split; zeroed when out of range.
                  */
-                WorkerTimeSplit get_worker_times(int worker_id) const noexcept;
+                WorkerTimeSplit worker_times(int worker_id) const noexcept;
 
                 /**
                  * @brief Zeroes every worker's time split.

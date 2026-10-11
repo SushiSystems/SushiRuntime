@@ -70,6 +70,6 @@ TEST(Unit_TaskTypes, AParameterSlotReturnsTheValueStoredInIt)
     metadata.set_param(0, std::uint64_t{0x0123456789ABCDEFu});
     metadata.set_param(static_cast<int>(TaskMetadata::K_MAX_PARAMS) - 1, 2.5);
 
-    EXPECT_EQ(metadata.get_param<std::uint64_t>(0), 0x0123456789ABCDEFu);
-    EXPECT_DOUBLE_EQ(metadata.get_param<double>(static_cast<int>(TaskMetadata::K_MAX_PARAMS) - 1), 2.5);
+    EXPECT_EQ(metadata.param<std::uint64_t>(0), 0x0123456789ABCDEFu);
+    EXPECT_DOUBLE_EQ(metadata.param<double>(static_cast<int>(TaskMetadata::K_MAX_PARAMS) - 1), 2.5);
 }

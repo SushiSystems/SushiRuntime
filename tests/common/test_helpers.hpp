@@ -91,9 +91,9 @@ namespace SushiRuntime
             explicit AtomicCounterTask(std::atomic<size_t>& c)
                 : counter_(c) {}
 
-            const char* get_name() const noexcept override { return "AtomicCounterTask"; }
+            const char* name() const noexcept override { return "AtomicCounterTask"; }
 
-            ExecutionMode get_execution_mode() const override { return ExecutionMode::HOST; }
+            ExecutionMode execution_mode() const override { return ExecutionMode::Host; }
 
             sycl::event execute_host(sycl::queue&, const std::vector<sycl::event>&) override
             {
@@ -125,10 +125,10 @@ namespace SushiRuntime
             PriorityTrackingTask(int p, std::vector<int>& order, std::mutex& mtx)
                 : priority_(p), execution_order_(order), order_mutex_(mtx) {}
 
-            const char* get_name() const noexcept override    { return "PriorityTask"; }
+            const char* name() const noexcept override    { return "PriorityTask"; }
 
-            int get_priority() const noexcept override        { return priority_; }
-            ExecutionMode get_execution_mode() const override { return ExecutionMode::HOST; }
+            int priority() const noexcept override        { return priority_; }
+            ExecutionMode execution_mode() const override { return ExecutionMode::Host; }
 
             sycl::event execute_host(sycl::queue&, const std::vector<sycl::event>&) override
             {

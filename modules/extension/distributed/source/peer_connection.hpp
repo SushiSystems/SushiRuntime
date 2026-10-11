@@ -37,7 +37,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 
 #include "outbox.hpp"
@@ -80,7 +80,7 @@ namespace SushiRuntime
                  * @param events Outlives the connection; in TCPTransport an adapter that also
                  *        updates the peer table, so the table learns of the loss first.
                  */
-                PeerConnection(PeerID peer, Socket socket, PeerInfo info,
+                PeerConnection(PeerID peer, Socket socket, PeerDescription info,
                                const PeerConnectionOptions& options, TransportEvents& events);
 
                 /** @brief Calls stop(). */
@@ -172,7 +172,7 @@ namespace SushiRuntime
                 Socket socket_;
 
                 /// @brief What on_peer_connected() reports.
-                PeerInfo info_;
+                PeerDescription info_;
 
                 /// @brief The settings the transport gave.
                 PeerConnectionOptions options_;

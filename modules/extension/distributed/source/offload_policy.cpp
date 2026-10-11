@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* i_offload_policy.cpp                                                   */
+/* offload_policy.cpp                                                   */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,12 +20,12 @@
 /**************************************************************************/
 
 /**
- * @file i_offload_policy.cpp
+ * @file offload_policy.cpp
  * @brief Picks the worker with the lowest estimated completion cost for an offloaded task.
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
 
 #include <limits>
 
@@ -36,22 +36,22 @@ namespace SushiRuntime
         namespace
         {
             /// @brief Holds the assumed wire bandwidth in B/us (modules/extension/distributed/README.md).
-            constexpr double BYTES_PER_MICROSECOND = 1000.0;
+            constexpr double K_BYTES_PER_MICROSECOND = 1000.0;
 
             /// @brief Holds the microseconds one inflight task adds (modules/extension/distributed/README.md).
-            constexpr double QUEUE_PENALTY_US_PER_TASK = 1000.0;
+            constexpr double K_QUEUE_PENALTY_US_PER_TASK = 1000.0;
         }
 
         /** @brief Returns the alive worker of the lowest cost, or nothing to keep the task local. */
         std::optional<int> LeastLoadedOffloadPolicy::pick_worker(const Internal::Graph::Node& /*node*/,
-                                                                 SushiRuntime::span<const WorkerStats> workers,
+                                                                 SushiRuntime::span<const WorkerLoad> workers,
                                                                  uint64_t est_bytes)
         {
             if (est_bytes < min_offload_bytes_)
                 return std::nullopt;
 
             const double transfer_us =
-                static_cast<double>(est_bytes) / BYTES_PER_MICROSECOND;
+                static_cast<double>(est_bytes) / K_BYTES_PER_MICROSECOND;
 
             int    best      = -1;
             double best_cost = std::numeric_limits<double>::max();
@@ -65,7 +65,7 @@ namespace SushiRuntime
                 // Cost is round trip plus transfer plus queue backlog (modules/extension/distributed/README.md).
                 const double cost = static_cast<double>(w.rtt_micros)
                                   + transfer_us
-                                  + static_cast<double>(w.inflight) * QUEUE_PENALTY_US_PER_TASK;
+                                  + static_cast<double>(w.inflight) * K_QUEUE_PENALTY_US_PER_TASK;
 
                 if (best < 0 || cost < best_cost)
                 {

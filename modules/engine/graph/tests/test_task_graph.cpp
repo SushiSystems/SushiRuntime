@@ -147,11 +147,11 @@ TEST(Unit_TaskGraph, EveryAddReturnsTheNodeItAdded)
 
     Node& device_task = graph.add_task(metadata, reads, writes, idle_work(), idle_host_work());
     EXPECT_EQ(&device_task, graph.last_node_added());
-    EXPECT_EQ(device_task.get_execution_mode(), Node::ExecutionMode::KERNEL);
+    EXPECT_EQ(device_task.execution_mode(), Node::ExecutionMode::Kernel);
 
     Node& host_task = graph.add_task(metadata, reads, writes, idle_host_work());
     EXPECT_EQ(&host_task, graph.last_node_added());
-    EXPECT_EQ(host_task.get_execution_mode(), Node::ExecutionMode::HOST);
+    EXPECT_EQ(host_task.execution_mode(), Node::ExecutionMode::Host);
 
     const auto live_reads = std::make_shared<std::vector<void*>>(1, &source);
     const auto live_writes = std::make_shared<std::vector<void*>>(1, &target);
@@ -187,7 +187,7 @@ TEST(Unit_TaskGraph, AReturnedNodeTakesItsRegistrationAndConfiguration)
     drawn.baked_width = 128;
     drawn.place_on(1);
     EXPECT_EQ(graph.last_node_added()->baked_width, 128u);
-    EXPECT_STREQ(graph.last_node_added()->get_name(), "configured");
+    EXPECT_STREQ(graph.last_node_added()->name(), "configured");
     EXPECT_EQ(graph.last_node_added()->stated_placement(), std::optional<std::size_t>(1));
 }
 
@@ -195,9 +195,9 @@ TEST(Unit_TaskGraph, ARegistrationTheGraphNeverIssuedIsRefused)
 {
     TaskGraph graph;
 
-    // An empty graph has issued nothing, and NO_REGISTRATION is what it reports as its last.
+    // An empty graph has issued nothing, and K_NO_REGISTRATION is what it reports as its last.
     const std::optional<GraphFailure> sentinel = add_failure(
-        [&graph] { graph.add_node(idle_work(), {}, TaskGraph::NO_REGISTRATION); });
+        [&graph] { graph.add_node(idle_work(), {}, TaskGraph::K_NO_REGISTRATION); });
     ASSERT_TRUE(sentinel.has_value()) << "add_node() accepted NO_REGISTRATION";
     EXPECT_EQ(sentinel->code, Errc::invalid_graph);
     EXPECT_TRUE(contains(sentinel->message, "TaskGraph::add_node()")) << sentinel->message;

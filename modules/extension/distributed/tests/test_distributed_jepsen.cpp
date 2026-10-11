@@ -56,7 +56,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
@@ -185,7 +185,7 @@ namespace
 
                 return queue.submit([&](sycl::handler& handler)
                 {
-                    SushiRuntime::detail::enqueue_host_task(handler, [=]
+                    SushiRuntime::Detail::enqueue_host_task(handler, [=]
                     {
                         for (std::size_t index = 0; index < count; ++index)
                             out[index] = in[index] * 2.0f;
@@ -211,7 +211,7 @@ namespace
             {
                 return queue.submit([&](sycl::handler& handler)
                 {
-                    SushiRuntime::detail::enqueue_host_task(handler, [=]
+                    SushiRuntime::Detail::enqueue_host_task(handler, [=]
                     {
                         for (std::size_t index = 0; index < K_COUNT; ++index)
                             out[index] = in[index] * 2.0f;
@@ -234,7 +234,7 @@ namespace
                 finished_ = done->get_future();
                 thread_ = std::thread([&context, &graph, done]
                 {
-                    context.get_execution_engine().execute(graph);
+                    context.execution_engine().execute(graph);
                     done->set_value();
                 });
             }

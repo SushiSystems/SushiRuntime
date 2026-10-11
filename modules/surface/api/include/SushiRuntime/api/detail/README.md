@@ -315,7 +315,7 @@ late_count_source() runs once per step, when the resolver is submitted. For a de
 the address of the slot and reads nothing. For a host count it calls the provider, and for a fixed
 count it takes the capacity; a provider that returns more than the capacity throws `invalid_graph`
 there. read_live_count() runs in the kernel: it reads the slot, and a value above the capacity
-becomes zero and a DEVICE_FAULT_LATE_COUNT record.
+becomes zero and a K_DEVICE_FAULT_LATE_COUNT record.
 
 Neither validates the LateCount. Its factories checked the capacity, the residency of the slot and
 the index when the count was built (api/vocabulary/README.md), so a step compares nothing but the

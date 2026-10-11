@@ -74,7 +74,7 @@ namespace SushiRuntime
         }
 
         WorkerExitCode serve_worker(Internal::Execution::RuntimeContext& context,
-                                    std::shared_ptr<ITransport> transport,
+                                    std::shared_ptr<Transport> transport,
                                     sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options,
                                     const StopSignal& stop_signal)
         {

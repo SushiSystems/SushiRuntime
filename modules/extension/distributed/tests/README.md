@@ -29,13 +29,13 @@ flags 0 and the payload it was sent.
 
 ### Offload policy tests
 
-The policy tests call `pick_worker()` of `LeastLoadedOffloadPolicy` with synthetic `WorkerStats`
+The policy tests call `pick_worker()` of `LeastLoadedOffloadPolicy` with synthetic `WorkerLoad`
 and no cluster. They cover the byte gate, the round-trip and backlog terms of the estimate, the
 free-memory gate, and the worker that is not alive.
 
 ### `live_worker`, `pick`
 
-`live_worker` builds the `WorkerStats` of one live worker. `pick` asks a default policy to place a
+`live_worker` builds the `WorkerLoad` of one live worker. `pick` asks a default policy to place a
 task of a given size on a list of workers.
 
 ### Malformed wire input
@@ -107,7 +107,7 @@ carries the last-chunk flag can only travel in a stream.
 
 ### `StubTransport`
 
-An `ITransport` that carries nothing: `exposure()` and `start()` return what the test set, and
+An `Transport` that carries nothing: `exposure()` and `start()` return what the test set, and
 `start_calls()` counts the starts.
 
 ### `eventually`
@@ -429,7 +429,7 @@ that arrived.
 
 ### `RejectsOutOfRangeEnumAndBool`
 
-No message of version 2 carries a bool, so the bool check runs on `FieldReader::get_bool` directly.
+No message of version 2 carries a bool, so the bool check runs on `FieldReader::read_bool` directly.
 The enumeration checks replace one byte of a golden payload and expect `OutOfRange` at that byte's
 offset. The header checks cover a wrong magic, another version, an unknown type, a reserved flag,
 the last-chunk flag on a frame that is not a chunk, and a payload length one byte above 1 MiB.
@@ -696,7 +696,7 @@ counts the loss from that answer, and neither it nor a second `close()` lowers t
 
 ## test_transport_conformance.cpp
 
-The file pins the `ITransport` contract as `i_transport.hpp` writes it and needs no hardware. The
+The file pins the `Transport` contract as `transport.hpp` writes it and needs no hardware. The
 suite `Unit_TransportConformanceTest` is typed over two rigs, so each test runs once on an
 `InProcessFabric` and once over TCP on `127.0.0.1` with port 0. The tests wait on recorded events
 with a 10 s limit and never on a sleep. `Unit_OutboxTest` covers `Outbox` with no transport.

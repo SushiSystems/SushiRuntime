@@ -32,7 +32,7 @@
 
 #include <SushiRuntime/core/error.hpp>
 
-#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_provider.hpp>
 
 namespace SushiRuntime
 {
@@ -44,8 +44,8 @@ namespace SushiRuntime
          * @param distance_model Shared with the view; must not be null.
          * @throws SushiException With Errc::invalid_access if distance_model is null.
          */
-        TopologyView::TopologyView(const ITopologyProvider& provider,
-                                   std::shared_ptr<const INUMADistanceModel> distance_model)
+        TopologyView::TopologyView(const TopologyProvider& provider,
+                                   std::shared_ptr<const NUMADistanceModel> distance_model)
             : core_to_numa_(provider.cpu_core_to_numa()),
               distance_model_(std::move(distance_model))
         {

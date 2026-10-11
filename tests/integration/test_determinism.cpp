@@ -39,7 +39,7 @@ using namespace SushiRuntime;
 namespace
 {
     constexpr std::size_t N     = 40000;
-    constexpr std::size_t STEPS = 4;
+    constexpr std::size_t K_STEPS = 4;
 
     /**
      * @brief Returns one large value followed by many small ones, so a sum depends on its
@@ -57,11 +57,11 @@ namespace
         return (i % 2 == 0) ? magnitude : -magnitude;
     }
 
-    constexpr std::size_t TILE  = 256;
-    constexpr std::size_t TILES = (N + TILE - 1) / TILE;
+    constexpr std::size_t K_TILE  = 256;
+    constexpr std::size_t TILES = (N + K_TILE - 1) / K_TILE;
 
     /**
-     * @brief Records one rule of two nodes that totals N values in an order fixed by TILE.
+     * @brief Records one rule of two nodes that totals N values in an order fixed by K_TILE.
      *
      * One work-item per tile adds its values left to right into recorder scratch, then one
      * work-item adds the partials left to right into total[0].
@@ -79,8 +79,8 @@ namespace
         recorder.kernel(TILES, Access(Reads(input), Writes(partial_region)),
                         [in, partials](std::size_t t)
                         {
-                            const std::size_t begin = t * TILE;
-                            const std::size_t end = (begin + TILE < N) ? begin + TILE : N;
+                            const std::size_t begin = t * K_TILE;
+                            const std::size_t end = (begin + K_TILE < N) ? begin + K_TILE : N;
                             float sum = in[begin];
                             for (std::size_t i = begin + 1; i < end; ++i)
                                 sum = sum + in[i];
@@ -148,7 +148,7 @@ namespace
                   po[i] = pf[i] * pa[0] + ps[i] * pb[0];
               });
 
-        g.run(STEPS);
+        g.run(K_STEPS);
 
         Outcome outcome;
         outcome.output.resize(N);
@@ -287,10 +287,10 @@ TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
     const float after_one_step = total[0];
 
     total[0] = 0.0f;
-    g.run(STEPS);
+    g.run(K_STEPS);
 
     EXPECT_EQ(std::memcmp(&after_one_step, &total[0], sizeof(float)), 0)
         << "a replayed rule drifted: one step gave " << after_one_step
-        << ", " << STEPS << " steps gave " << total[0];
+        << ", " << K_STEPS << " steps gave " << total[0];
     EXPECT_EQ(g.compile_count(), 1u) << "a replay must not recompile";
 }

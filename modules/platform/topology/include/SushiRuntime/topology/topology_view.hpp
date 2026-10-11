@@ -36,8 +36,8 @@ namespace SushiRuntime
 {
     namespace Internal::Topology
     {
-        class ITopologyProvider;
-        class INUMADistanceModel;
+        class TopologyProvider;
+        class NUMADistanceModel;
 
         /**
          * @brief Holds the core-to-NUMA map and answers NUMA distance queries.
@@ -52,8 +52,8 @@ namespace SushiRuntime
                  * @param distance_model Shared with the view; must not be null.
                  * @throws SushiException With invalid_access if distance_model is null.
                  */
-                TopologyView(const ITopologyProvider& provider,
-                             std::shared_ptr<const INUMADistanceModel> distance_model);
+                TopologyView(const TopologyProvider& provider,
+                             std::shared_ptr<const NUMADistanceModel> distance_model);
 
                 /**
                  * @brief Returns the NUMA node of each logical core, indexed by OS cpu index.
@@ -73,7 +73,7 @@ namespace SushiRuntime
                 /// @brief NUMA node of each logical core, as the provider reported it.
                 std::vector<int> core_to_numa_;
                 /// @brief Distance model every numa_distance() call forwards to.
-                std::shared_ptr<const INUMADistanceModel> distance_model_;
+                std::shared_ptr<const NUMADistanceModel> distance_model_;
         };
 
     } // namespace Topology

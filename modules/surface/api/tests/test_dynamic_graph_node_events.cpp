@@ -89,7 +89,7 @@ TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRe
     ASSERT_FALSE(report.node_events.empty())
         << "a requested DynamicGraph must record device dispatches, not just stamp the flag";
 
-    const auto& plan = detail::DynamicGraphNodeEventsTestAccess::plan(world);
+    const auto& plan = Detail::DynamicGraphNodeEventsTestAccess::plan(world);
     const std::uint32_t idx_a = registration_index_of(plan, "A");
     const std::uint32_t idx_b = registration_index_of(plan, "B");
 
@@ -125,7 +125,7 @@ TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrde
 
     world.run();
 
-    const auto& plan = detail::DynamicGraphNodeEventsTestAccess::plan(world);
+    const auto& plan = Detail::DynamicGraphNodeEventsTestAccess::plan(world);
     const std::uint32_t idx_r2 = registration_index_of(plan, "R2_only");
     const std::uint32_t idx_r5_first = registration_index_of(plan, "R5_first");
     const std::uint32_t idx_r5_second = registration_index_of(plan, "R5_second");
@@ -161,7 +161,7 @@ TEST(Integration_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
                         [pb](std::size_t i) { pb[i] = static_cast<int>(i) * 2; }).name("dropped_v2");
     world.run();
 
-    const auto& plan = detail::DynamicGraphNodeEventsTestAccess::plan(world);
+    const auto& plan = Detail::DynamicGraphNodeEventsTestAccess::plan(world);
     const std::uint32_t idx_kept = registration_index_of(plan, "kept");
     const std::uint32_t idx_v2 = registration_index_of(plan, "dropped_v2");
 

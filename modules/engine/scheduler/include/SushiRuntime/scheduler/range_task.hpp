@@ -92,7 +92,7 @@ namespace SushiRuntime
                 }
 
                 /** @brief Returns the label given at construction. */
-                const char* get_name() const noexcept override { return name_; }
+                const char* name() const noexcept override { return name_; }
 
                 /** @brief Executes the task for the current valid range. */
                 void execute(sycl::handler& h) override 

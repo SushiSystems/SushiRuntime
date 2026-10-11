@@ -23,10 +23,10 @@ Headers under `include/SushiRuntime/distributed/`. Everything is in `SushiRuntim
 | `message_type.hpp` | `MessageType`, the type byte of a frame |
 | `buffer_handle.hpp` | `GlobalBufferID`, `BufferHandle` |
 | `buffer_view.hpp` | `BufferView` |
-| `i_transport.hpp` | `ITransport`, `TransportEvents`, `FrameSource`, `OutboundFrame`, `PeerID`, `PeerInfo`, `PeerLoss`, `SendStatus`, `TransportStatus`, `TransportResult`, `TransportExposure`, `TransportStatistics` |
+| `transport.hpp` | `Transport`, `TransportEvents`, `FrameSource`, `OutboundFrame`, `PeerID`, `PeerDescription`, `PeerLoss`, `SendStatus`, `TransportStatus`, `TransportResult`, `TransportExposure`, `TransportStatistics` |
 | `tcp_transport.hpp` | `TCPTransport`, `TCPMasterOptions`, `TCPWorkerOptions` |
 | `in_process_transport.hpp` | `InProcessFabric`, `InProcessTransport`, `FaultPolicy`, `FaultedFrame`, `FaultAction` |
-| `i_offload_policy.hpp` | `IOffloadPolicy`, `WorkerStats`, `LeastLoadedOffloadPolicy` |
+| `offload_policy.hpp` | `OffloadPolicy`, `WorkerLoad`, `LeastLoadedOffloadPolicy` |
 | `kernel_registry.hpp` | `KernelRegistry` and its `Kernel` form |
 | `worker_agent.hpp` | `WorkerAgent`, `WorkerAgentOptions`, `WorkerEnd`, `WorkerStatistics` |
 | `worker_main.hpp` | `run_worker()`, `WorkerOptions`, `WorkerExitCode` |
@@ -74,7 +74,7 @@ passed the transport the earlier cluster runs on: the transport answers `Already
 coordinator stops a transport only when its own `start()` call started it.
 
 attach() checks, in this order, that no run is in flight on the runtime
-(`IExecutionEngine::run_in_progress()`), that the transport is not null, that `liveness_timeout`
+(`ExecutionEngine::run_in_progress()`), that the transport is not null, that `liveness_timeout`
 and `handshake_timeout` are at least 1 ms, that the secret is not empty on a Network transport and
 that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. Each refusal throws `invalid_state` before
 anything is built or stopped. A liveness or handshake timeout of 0 would count every peer as
@@ -105,7 +105,7 @@ the runtime has already released the master, which covers a destroyed runtime an
 attach() on the same runtime.
 
 The scheduler reads the coordinator's address without a lock, so detach() does the last two steps
-only when `IExecutionEngine::run_in_progress()` is false. During a run in flight it stops the
+only when `ExecutionEngine::run_in_progress()` is false. During a run in flight it stops the
 master and logs one WARN. Stopping returns every task still out on a worker to the scheduler, which
 runs it on this machine, and the stopped master declines every later node of that run. The stopped
 master stays installed until a detach() or an attach() after the run, or the runtime's
@@ -124,7 +124,7 @@ at completion; bump_buffer() is for a write the runtime did not see, and for tes
 stale version. A buffer enters the registry through Internal::Graph::OffloadCoordinator::share(), which
 Buffer::distributed() and State::distributed() call.
 
-## i_transport.hpp
+## transport.hpp
 
 ### The transport contract
 
@@ -243,7 +243,7 @@ SHA-256 and HMAC are written in the module (`sha256.hpp`, `hmac_sha256.hpp`) and
 FIPS 180-4 and RFC 4231 vectors in `tests/test_handshake.cpp`. Nonces come from
 `std::random_device`. Frames after the handshake carry no MAC and are not encrypted.
 
-## i_offload_policy.hpp
+## offload_policy.hpp
 
 `WorkerDirectory::pick()` offers the policy the registered, alive workers that are below their
 `max_jobs` and registered the kernel of the task's operation, under the directory's mutex. It
@@ -255,7 +255,7 @@ the task's inputs total fewer bytes than `min_offload_bytes` (64 KiB unless the 
 given another value). It skips a worker whose `free_mem` is not 0 and is below the input size.
 Among the rest it picks the lowest cost, in microseconds: `rtt_micros`, plus the input bytes
 divided by 1000, plus 1000 per inflight task. The two constants are in
-`source/i_offload_policy.cpp`.
+`source/offload_policy.cpp`.
 
 ## cluster_statistics.hpp
 
@@ -289,7 +289,7 @@ liveness check closes the peer.
 Private headers under `source/`. Each class owns at most one mutex, holds it only inside its own
 members and calls no other brick, no transport and no sink while holding it, so no lock order
 exists to get wrong. The one exception is written on the class: `WorkerDirectory` calls
-`IOffloadPolicy::pick_worker()` under its mutex, and the policy must not call back.
+`OffloadPolicy::pick_worker()` under its mutex, and the policy must not call back.
 
 No brick constructs another. `DistributedCoordinator` builds the master's bricks and
 `WorkerAgent` the worker's; `PeerConnection` holds its `Outbox` as a member, since the two have one
@@ -374,7 +374,7 @@ reported an oldest held id above it.
    directory marks every worker not alive, the way a lost peer is marked, and registers nobody
    from here on. A transport's `stop()` reports no loss, so this is what empties the counts.
 2. `ClusterMonitor::stop()` joins the monitor.
-3. `ITransport::stop()` joins every reader, so no handler runs. A coordinator whose `start()` did
+3. `Transport::stop()` joins every reader, so no handler runs. A coordinator whose `start()` did
    not start the transport skips this step: the transport then belongs to another master.
 4. `PendingTasks::drain()` and `resubmit_tasks()`: each node still out goes back to the scheduler,
    which the seam allows until `stop()` returns.
@@ -479,14 +479,14 @@ The steps run in this order, and no lock is held across two of them.
 5. Registry lock: `bump()` on the outputs. The dispatch is encoded.
 6. Pending lock: `PendingTasks::insert()`. From here the dispatcher does not read or write the
    node.
-7. `ITransport::send()`. On any status but `Queued` it calls `take()`; with the task back it
+7. `Transport::send()`. On any status but `Queued` it calls `take()`; with the task back it
    lowers the worker's inflight count and returns false, without it a removal owns the node and
    the answer is true.
 
 The addresses, the handles, the `TaskDispatchMessage` and the encoded payload live in one
 thread-local scratch per pool thread, so the dispatcher's own code allocates nothing once the
 scratch has grown. `PendingTasks::insert()` allocates the entry and its copy of the output handles,
-and `ITransport::send()` copies the payload into the peer's queue.
+and `Transport::send()` copies the payload into the peer's queue.
 
 ### Local completion
 
@@ -526,7 +526,7 @@ brings it back. Both are header-only.
 ## frame_sending.hpp
 
 `send_message(transport, peer, message, scratch)` encodes a wire message into a buffer the caller
-reuses and queues it with `ITransport::send()`; the three-argument form uses a buffer of its own.
+reuses and queues it with `Transport::send()`; the three-argument form uses a buffer of its own.
 The coordinator, the monitor, `MasterLink` and `DispatchExecutor` send every control frame through
 it.
 
@@ -570,7 +570,7 @@ cause when the transport gives up. `MasterLink` logs registration and loss by pe
 | --- | --- |
 | Transport reader | every `on_` call of the agent, so the routing table and the handlers above |
 | Exec (`DispatchExecutor`) | one kernel at a time, input pulls, output pins |
-| Heartbeat (`MasterLink`) | `HEARTBEAT`, the handshake restart, the master watch, `ITransport::stop()` for a link that ended |
+| Heartbeat (`MasterLink`) | `HEARTBEAT`, the handshake restart, the master watch, `Transport::stop()` for a link that ended |
 | Transport writer | output streams; an output stream's destructor returns its cache pins here |
 | Caller | `start()`, `wait_for_end()`, `stop()`, `statistics()` |
 
@@ -585,7 +585,7 @@ cause when the transport gives up. `MasterLink` logs registration and loss by pe
    `on_peer_lost()`. A transport's `stop()` drops queued control frames, and this is what gets the
    results and the `GOODBYE` onto the wire. The loss and a transport that then gives up are
    expected here; see the next section.
-5. `ITransport::stop()`: every reader and writer is joined and every kept stream is destroyed,
+5. `Transport::stop()`: every reader and writer is joined and every kept stream is destroyed,
    which returns the last cache pins.
 6. `MasterLink::stop()` joins the heartbeat thread; a `Running` end becomes `Stopped`.
 7. One INFO line with the worker's counters. The cache is freed when the agent is destroyed.
@@ -611,10 +611,10 @@ drains, before `say_goodbye()`, is a real loss and is logged as one.
 A link ends for good as `MasterUnreachable`, `RejectedAuthentication`, `ProtocolMismatch` or
 `MasterLost`. `MasterLink` then stops the transport from its heartbeat thread, once, so the
 connector makes no further connection. The link holds the rule because `finish()` is the one place
-an end becomes final, and because an event cannot call `ITransport::stop()`, which joins the
+an end becomes final, and because an event cannot call `Transport::stop()`, which joins the
 thread the event runs on; the heartbeat thread is no transport thread. A stopped transport reports
 no loss, so the link forgets its connection itself. The agent's `stop()` still runs the whole stop
-order, and its `ITransport::stop()` is then the second call, which does nothing.
+order, and its `Transport::stop()` is then the second call, which does nothing.
 
 ### Handshake frames the link ignores
 

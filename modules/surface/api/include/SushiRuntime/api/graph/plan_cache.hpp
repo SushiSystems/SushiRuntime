@@ -129,7 +129,7 @@ namespace SushiRuntime
             {
                 ::SushiRuntime::Internal::Graph::TaskGraph bg(context.offload());
                 registrations_.assign(recorder.rule_count(),
-                                      ::SushiRuntime::Internal::Graph::TaskGraph::NO_REGISTRATION);
+                                      ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION);
                 recorder.replay(bg, [this, &bg](std::size_t rule, std::size_t)
                 {
                     const ::SushiRuntime::Internal::Graph::Node* added = bg.last_node_added();
@@ -157,12 +157,12 @@ namespace SushiRuntime
             /**
              * @brief Returns the registration index a rule took at the last build.
              * @param rule Position in recording order, one per rule.
-             * @return The index, or TaskGraph::NO_REGISTRATION for a rule no build has seen.
+             * @return The index, or TaskGraph::K_NO_REGISTRATION for a rule no build has seen.
              */
             [[nodiscard]] std::uint32_t registration_of(std::size_t rule) const noexcept
             {
                 return rule < registrations_.size()
-                    ? registrations_[rule] : ::SushiRuntime::Internal::Graph::TaskGraph::NO_REGISTRATION;
+                    ? registrations_[rule] : ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION;
             }
 
             /** @brief The compiled plan, valid while stale() is false; test seams read it. */

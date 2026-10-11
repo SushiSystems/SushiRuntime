@@ -40,13 +40,13 @@ namespace SushiRuntime
          * @brief Detects a throttled worker and asks the migrator to take tasks off its queue.
          * @see modules/engine/scheduler/README.md
          */
-        class ThermalProxyStrategy : public IRebalanceStrategy
+        class ThermalProxyStrategy : public RebalanceStrategy
         {
             private:
                 /** @brief Queue-depth imbalance (tasks) required to trigger migration. */
-                static constexpr size_t IMBALANCE_THRESHOLD = 20;
+                static constexpr size_t K_IMBALANCE_THRESHOLD = 20;
                 /** @brief Maximum completion-rate delta (tasks/interval) treated as throttled. */
-                static constexpr size_t THROTTLING_RATE = 5;
+                static constexpr size_t K_THROTTLING_RATE = 5;
 
                 std::vector<size_t> last_completed_counts_;
 
@@ -58,9 +58,9 @@ namespace SushiRuntime
                  * bottleneck's queue and the shortest one, and at least 10. The call names no
                  * destination; the worker with the shortest queue appears only in the log line.
                  */
-                void evaluate_and_rebalance(const ITelemetryProvider& telemetry, ITaskMigrator& migrator) override
+                void evaluate_and_rebalance(const TelemetryProvider& telemetry, TaskMigrator& migrator) override
                 {
-                    size_t num_workers = telemetry.get_worker_count();
+                    size_t num_workers = telemetry.worker_count();
                     if (num_workers < 2) return;
 
                     if (last_completed_counts_.size() != num_workers)
@@ -74,13 +74,13 @@ namespace SushiRuntime
 
                     for (size_t i = 0; i < num_workers; ++i)
                     {
-                        size_t q_size = telemetry.get_queue_size(i);
+                        size_t q_size = telemetry.queue_size(i);
                         size_t total_completed = telemetry.completed_task_count(i);
 
                         size_t current_rate = total_completed - last_completed_counts_[i];
                         last_completed_counts_[i] = total_completed;
 
-                        if (q_size > max_queue && current_rate <= THROTTLING_RATE && q_size > IMBALANCE_THRESHOLD)
+                        if (q_size > max_queue && current_rate <= K_THROTTLING_RATE && q_size > K_IMBALANCE_THRESHOLD)
                         {
                             max_queue = q_size;
                             bottleneck_worker = i;

@@ -21,7 +21,7 @@
 
 /**
  * @file test_run_in_progress.cpp
- * @brief Tests when IExecutionEngine::run_in_progress() reports a run and when it stops.
+ * @brief Tests when ExecutionEngine::run_in_progress() reports a run and when it stops.
  * @see modules/engine/execution/tests/README.md
  * @author Mustafa Garip
  */
@@ -47,14 +47,14 @@
 namespace
 {
     using SushiRuntime::Internal::Execution::ChainRun;
-    using SushiRuntime::Internal::Execution::IExecutionEngine;
+    using SushiRuntime::Internal::Execution::ExecutionEngine;
     using SushiRuntime::Internal::Execution::RuntimeContext;
     using SushiRuntime::Internal::Graph::CompiledGraph;
     using SushiRuntime::Internal::Graph::TaskGraph;
     using SushiRuntime::Internal::Graph::TaskMetadata;
 
     /** @brief Implements only the pure members, so every query keeps its default. */
-    class MinimalEngine final : public IExecutionEngine
+    class MinimalEngine final : public ExecutionEngine
     {
         public:
             /** @brief Runs nothing. */
@@ -152,13 +152,13 @@ TEST(Unit_RunInProgress, TheInterfaceDefaultReportsNoRun)
 TEST(Integration_RunInProgress, AFreshEngineReportsNoRun)
 {
     RuntimeContext context;
-    EXPECT_FALSE(context.get_execution_engine().run_in_progress());
+    EXPECT_FALSE(context.execution_engine().run_in_progress());
 }
 
 TEST(Integration_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
 {
     RuntimeContext context;
-    IExecutionEngine& engine = context.get_execution_engine();
+    ExecutionEngine& engine = context.execution_engine();
 
     std::atomic<bool> seen_inside{false};
     CompiledGraph plan = compile_host_task([&engine, &seen_inside]
@@ -176,7 +176,7 @@ TEST(Integration_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
 TEST(Integration_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturns)
 {
     RuntimeContext context;
-    IExecutionEngine& engine = context.get_execution_engine();
+    ExecutionEngine& engine = context.execution_engine();
     ASSERT_TRUE(engine.supports_asynchronous_run());
 
     // The task waits on the gate, so the run cannot finish before the first check.
@@ -195,7 +195,7 @@ TEST(Integration_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturn
 TEST(Integration_RunInProgress, ARunWhoseTaskThrowsLeavesNoRunInProgress)
 {
     RuntimeContext context;
-    IExecutionEngine& engine = context.get_execution_engine();
+    ExecutionEngine& engine = context.execution_engine();
 
     CompiledGraph blocking = compile_host_task([] { throw std::runtime_error("probe failure"); });
     EXPECT_THROW(engine.execute(blocking), std::runtime_error);
@@ -214,7 +214,7 @@ TEST(Integration_RunInProgress, AChainedRunIsInProgressUntilFinishReturnsOrItIsD
     constexpr std::size_t COUNT = 64;
 
     RuntimeContext context;
-    IExecutionEngine& engine = context.get_execution_engine();
+    ExecutionEngine& engine = context.execution_engine();
     const DeviceFloats floats(context, COUNT);
     ASSERT_NE(floats.data(), nullptr);
 
@@ -245,7 +245,7 @@ TEST(Integration_RunInProgress, AScheduledRunInsideAChainedRunLeavesTheChainedRu
     constexpr std::size_t COUNT = 64;
 
     RuntimeContext context;
-    IExecutionEngine& engine = context.get_execution_engine();
+    ExecutionEngine& engine = context.execution_engine();
     const DeviceFloats floats(context, COUNT);
     ASSERT_NE(floats.data(), nullptr);
 

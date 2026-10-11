@@ -39,9 +39,9 @@ using namespace SushiRuntime;
 
 namespace
 {
-    constexpr std::size_t WIDTH = 64;
-    constexpr std::size_t PLAIN_RULES = 3;
-    constexpr std::size_t RULE_NODES = 3;
+    constexpr std::size_t K_WIDTH = 64;
+    constexpr std::size_t K_PLAIN_RULES = 3;
+    constexpr std::size_t K_RULE_NODES = 3;
 
     /** @brief Holds one graph, the buffers it names and the position of the grouped rule. */
     struct Recorded
@@ -55,8 +55,8 @@ namespace
     };
 
     /**
-     * @brief Records RULE_NODES kernels in one rule scope, each reading what the last wrote.
-     * @param first,second,third Hold WIDTH words each; must outlive the recorder.
+     * @brief Records K_RULE_NODES kernels in one rule scope, each reading what the last wrote.
+     * @param first,second,third Hold K_WIDTH words each; must outlive the recorder.
      */
     void record_grouped_rule(Recorder& recorder, const Buffer<std::uint32_t>& first,
                              const Buffer<std::uint32_t>& second,
@@ -67,11 +67,11 @@ namespace
         std::uint32_t* c = third.data();
 
         auto rule = recorder.rule();
-        recorder.kernel(WIDTH, Access(Reads(first), Writes(second)),
+        recorder.kernel(K_WIDTH, Access(Reads(first), Writes(second)),
                         [a, b](std::size_t i) { b[i] = a[i] + 1u; });
-        recorder.kernel(WIDTH, Access(Reads(second), Writes(third)),
+        recorder.kernel(K_WIDTH, Access(Reads(second), Writes(third)),
                         [b, c](std::size_t i) { c[i] = b[i] * 2u; });
-        recorder.kernel(WIDTH, Access(Reads(third), Writes(first)),
+        recorder.kernel(K_WIDTH, Access(Reads(third), Writes(first)),
                         [c, a](std::size_t i) { a[i] = c[i]; });
     }
 
@@ -83,9 +83,9 @@ namespace
      */
     Recorded record(Runtime& rt)
     {
-        Recorded r{rt.graph(), rt.buffer<float>(WIDTH), rt.buffer<std::uint32_t>(WIDTH),
-                   rt.buffer<std::uint32_t>(WIDTH), rt.buffer<std::uint32_t>(WIDTH), 0};
-        for (std::size_t i = 0; i < WIDTH; ++i)
+        Recorded r{rt.graph(), rt.buffer<float>(K_WIDTH), rt.buffer<std::uint32_t>(K_WIDTH),
+                   rt.buffer<std::uint32_t>(K_WIDTH), rt.buffer<std::uint32_t>(K_WIDTH), 0};
+        for (std::size_t i = 0; i < K_WIDTH; ++i)
         {
             r.values[i] = 1.0f;
             r.first[i] = static_cast<std::uint32_t>(i % 7);
@@ -94,8 +94,8 @@ namespace
         }
 
         float* v = r.values.data();
-        for (std::size_t k = 0; k < PLAIN_RULES; ++k)
-            r.graph.add(WIDTH, Reads(r.values), Writes(r.values),
+        for (std::size_t k = 0; k < K_PLAIN_RULES; ++k)
+            r.graph.add(K_WIDTH, Reads(r.values), Writes(r.values),
                         [v](std::size_t i) { v[i] = v[i] * 1.000001f; });
 
         record_grouped_rule(r.graph.recorder(), r.first, r.second, r.third);
@@ -110,10 +110,10 @@ TEST(Integration_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
     auto rt = Runtime::create();
     Recorded r = record(rt);
 
-    ASSERT_EQ(r.graph.size(), PLAIN_RULES + 1u);
-    ASSERT_EQ(r.graph.node_count(), PLAIN_RULES + RULE_NODES);
+    ASSERT_EQ(r.graph.size(), K_PLAIN_RULES + 1u);
+    ASSERT_EQ(r.graph.node_count(), K_PLAIN_RULES + K_RULE_NODES);
     for (std::size_t rule = 0; rule < r.graph.size(); ++rule)
-        EXPECT_EQ(r.graph.rule_registration(rule), Graph::NO_REGISTRATION)
+        EXPECT_EQ(r.graph.rule_registration(rule), Graph::K_NO_REGISTRATION)
             << "rule " << rule << " reported an index before the first run";
 }
 
@@ -126,25 +126,25 @@ TEST(Integration_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
     ASSERT_TRUE(report.is_successful);
 
     std::set<std::uint32_t> plain;
-    for (std::size_t rule = 0; rule < PLAIN_RULES; ++rule)
+    for (std::size_t rule = 0; rule < K_PLAIN_RULES; ++rule)
     {
         const std::uint32_t index = r.graph.rule_registration(rule);
-        EXPECT_NE(index, Graph::NO_REGISTRATION);
+        EXPECT_NE(index, Graph::K_NO_REGISTRATION);
         plain.insert(index);
     }
-    EXPECT_EQ(plain.size(), PLAIN_RULES) << "a plain add() must take an index of its own";
+    EXPECT_EQ(plain.size(), K_PLAIN_RULES) << "a plain add() must take an index of its own";
 
-    ASSERT_EQ(r.grouped, PLAIN_RULES) << "the rule scope is the rule after the plain ones";
+    ASSERT_EQ(r.grouped, K_PLAIN_RULES) << "the rule scope is the rule after the plain ones";
     const std::uint32_t shared = r.graph.rule_registration(r.grouped);
-    EXPECT_NE(shared, Graph::NO_REGISTRATION);
+    EXPECT_NE(shared, Graph::K_NO_REGISTRATION);
     EXPECT_EQ(plain.count(shared), 0u) << "the rule must not reuse a plain add()'s index";
-    EXPECT_EQ(r.graph.rule_registration(r.graph.size()), Graph::NO_REGISTRATION)
+    EXPECT_EQ(r.graph.rule_registration(r.graph.size()), Graph::K_NO_REGISTRATION)
         << "a position past the last rule names no rule";
 
     std::size_t reported = 0;
     for (const Internal::Observability::NodeEventRecord& event : report.node_events)
         reported += event.node_index == shared ? 1u : 0u;
-    EXPECT_EQ(reported, RULE_NODES) << "every node of the rule scope must report its one index";
+    EXPECT_EQ(reported, K_RULE_NODES) << "every node of the rule scope must report its one index";
 }
 
 TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
@@ -174,7 +174,7 @@ TEST(Integration_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
     Internal::Observability::RunReport report;
     r.graph.run(STEPS, report);
     ASSERT_TRUE(report.is_successful);
-    ASSERT_EQ(report.node_events.size(), (PLAIN_RULES + RULE_NODES) * STEPS);
+    ASSERT_EQ(report.node_events.size(), (K_PLAIN_RULES + K_RULE_NODES) * STEPS);
 
     const std::uint32_t shared = r.graph.rule_registration(r.grouped);
     std::vector<std::size_t> per_invocation(STEPS, 0);
@@ -186,7 +186,7 @@ TEST(Integration_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
         ++per_invocation[event.invocation];
     }
     for (std::size_t step = 0; step < STEPS; ++step)
-        EXPECT_EQ(per_invocation[step], RULE_NODES)
+        EXPECT_EQ(per_invocation[step], K_RULE_NODES)
             << "step " << step << ": every node of the rule must report the rule's index";
     EXPECT_EQ(r.graph.compile_count(), 1u);
 }

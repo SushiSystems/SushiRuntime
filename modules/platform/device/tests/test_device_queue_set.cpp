@@ -39,7 +39,7 @@
 
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/device/device_info.hpp>
+#include <SushiRuntime/device/device_description.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 
 #include "test_helpers.hpp"
@@ -47,7 +47,7 @@
 using SushiRuntime::Errc;
 using SushiRuntime::SushiException;
 using SushiRuntime::Internal::Device::DeviceDescriptor;
-using SushiRuntime::Internal::Device::DeviceInfo;
+using SushiRuntime::Internal::Device::DeviceDescription;
 using SushiRuntime::Internal::Device::DeviceKind;
 using SushiRuntime::Internal::Device::DeviceQueueSet;
 using SushiRuntime::Internal::Device::QueueFlavour;
@@ -69,7 +69,7 @@ namespace
     /** @brief Builds the descriptor of one SYCL device on a chosen NUMA node. */
     DeviceDescriptor describe(const sycl::device& device, int numa_node)
     {
-        DeviceInfo info;
+        DeviceDescription info;
         info.name = device.get_info<sycl::info::device::name>();
         info.kind = kind_of(device);
         info.backend = device.get_backend();
@@ -128,7 +128,7 @@ TEST(Unit_DeviceQueueSet, CountAndInventoryFollowTheDescriptors)
     ASSERT_EQ(set.devices().size(), descriptors.size());
     for (std::size_t index = 0; index < descriptors.size(); ++index)
     {
-        const DeviceInfo& info = set.devices()[index];
+        const DeviceDescription& info = set.devices()[index];
         EXPECT_EQ(info.index, index);
         EXPECT_EQ(info.name, descriptors[index].info.name);
         EXPECT_EQ(info.kind, descriptors[index].info.kind);

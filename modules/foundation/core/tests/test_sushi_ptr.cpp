@@ -79,7 +79,7 @@ TEST(Unit_SushiPtrTest, RawPointerComparisonKeepsCount)
     auto stranger = make_sushi<Probe>(destroyed);
     Probe* raw = owner.get();
     const Probe* const_raw = raw;
-    const int before = owner->get_ref_count();
+    const int before = owner->ref_count();
 
     EXPECT_TRUE(owner == raw);
     EXPECT_TRUE(raw == owner);
@@ -92,7 +92,7 @@ TEST(Unit_SushiPtrTest, RawPointerComparisonKeepsCount)
     EXPECT_TRUE(owner != stranger.get());
     EXPECT_TRUE(stranger.get() != owner);
 
-    EXPECT_EQ(owner->get_ref_count(), before) << "Comparing with a raw pointer must not copy it.";
+    EXPECT_EQ(owner->ref_count(), before) << "Comparing with a raw pointer must not copy it.";
     EXPECT_EQ(destroyed, 0);
 }
 
@@ -107,13 +107,13 @@ TEST(Unit_SushiPtrTest, BaseTypeComparisonKeepsCount)
     int destroyed = 0;
     auto derived = make_sushi<DerivedProbe>(destroyed);
     sushi_ptr<Probe> base = derived;
-    const int before = derived->get_ref_count();
+    const int before = derived->ref_count();
 
     EXPECT_TRUE(base == derived);
     EXPECT_TRUE(derived == base);
     EXPECT_FALSE(base != derived);
     EXPECT_FALSE(derived != base);
-    EXPECT_EQ(derived->get_ref_count(), before) << "Comparing across types must not copy either side.";
+    EXPECT_EQ(derived->ref_count(), before) << "Comparing across types must not copy either side.";
 }
 
 /**
@@ -150,12 +150,12 @@ TEST(Unit_SushiPtrTest, SelfAssignmentKeepsObject)
 
     owner = alias;
     EXPECT_TRUE(owner);
-    EXPECT_EQ(owner->get_ref_count(), 1) << "Self-copy must net to no change in the count.";
+    EXPECT_EQ(owner->ref_count(), 1) << "Self-copy must net to no change in the count.";
     EXPECT_EQ(destroyed, 0);
 
     owner = std::move(alias);
     EXPECT_TRUE(owner) << "Self-move must keep the object.";
-    EXPECT_EQ(owner->get_ref_count(), 1);
+    EXPECT_EQ(owner->ref_count(), 1);
     EXPECT_EQ(destroyed, 0);
 }
 
@@ -174,11 +174,11 @@ TEST(Unit_SushiPtrTest, ResetReleasesOldAndTakesNew)
 
     first.reset(second.get());
     EXPECT_EQ(destroyed, 1) << "The object only first held must be destroyed.";
-    EXPECT_EQ(second_raw->get_ref_count(), 2);
+    EXPECT_EQ(second_raw->ref_count(), 2);
 
     first.reset();
     EXPECT_FALSE(first);
-    EXPECT_EQ(second_raw->get_ref_count(), 1);
+    EXPECT_EQ(second_raw->ref_count(), 1);
     EXPECT_EQ(destroyed, 1);
 }
 
@@ -196,13 +196,13 @@ TEST(Unit_SushiPtrTest, LeakRoundTripHandsReferenceBack)
     Probe* raw = owner.leak();
     EXPECT_FALSE(owner);
     ASSERT_NE(raw, nullptr);
-    EXPECT_EQ(raw->get_ref_count(), 1) << "leak() must not change the count.";
+    EXPECT_EQ(raw->ref_count(), 1) << "leak() must not change the count.";
 
     {
         sushi_ptr<Probe> reacquired(raw);
-        EXPECT_EQ(raw->get_ref_count(), 2);
+        EXPECT_EQ(raw->ref_count(), 2);
     }
-    EXPECT_EQ(raw->get_ref_count(), 1);
+    EXPECT_EQ(raw->ref_count(), 1);
     EXPECT_EQ(destroyed, 0);
 
     raw->release();

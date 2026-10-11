@@ -59,7 +59,7 @@ namespace SushiRuntime
                 if (const std::optional<std::size_t> owner = memory.owning_device(anchor))
                     return *owner;
 
-            return node.stated_placement().value_or(DEFAULT_PLACEMENT);
+            return node.stated_placement().value_or(K_DEFAULT_PLACEMENT);
         }
 
     } // namespace Graph

@@ -44,7 +44,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Builds the replay of the single task that resolves K late counts.
@@ -80,5 +80,5 @@ namespace SushiRuntime
                 }, reads, writes, {}, registration).baked_width = width;
             };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

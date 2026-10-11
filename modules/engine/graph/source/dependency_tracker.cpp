@@ -66,7 +66,7 @@ namespace SushiRuntime
         {
             SushiRuntime::Internal::Memory::EpochGuard guard;
 
-            size_t idx = get_shard_idx(region.base);
+            size_t idx = shard_index(region.base);
             auto& state = registry[idx];
 
             AccessNode* current = new AccessNode{node, is_write, region, nullptr};
@@ -129,7 +129,7 @@ namespace SushiRuntime
             {
                 // Check inline list to avoid duplicates
                 int32_t count = from->inline_successor_count.load(std::memory_order_relaxed);
-                int32_t max_idx = std::min(count, Node::MAX_INLINE_SUCCESSORS);
+                int32_t max_idx = std::min(count, Node::K_MAX_INLINE_SUCCESSORS);
                 
                 for (int32_t i = 0; i < max_idx; ++i) 
                     if (from->inline_successors[i] == to) return;

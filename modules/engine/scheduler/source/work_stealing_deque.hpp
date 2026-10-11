@@ -43,18 +43,18 @@ namespace SushiRuntime
          * @brief Implements a lock-free Chase-Lev work-stealing deque of fixed capacity.
          * @see modules/engine/scheduler/README.md
          */
-        class alignas(SushiRuntime::CACHE_LINE_SIZE) Deque : public RefCounted
+        class alignas(SushiRuntime::K_CACHE_LINE_SIZE) Deque : public RefCounted
         {
         public:
             /** @brief Fixed ring capacity. 256K is huge for DAG workloads. */
-            static constexpr int64_t CAPACITY = 262144;
-            static constexpr int64_t MASK = CAPACITY - 1;
+            static constexpr int64_t K_CAPACITY = 262144;
+            static constexpr int64_t K_MASK = K_CAPACITY - 1;
 
             /** @brief Ring buffer of atomic slots (C++17 replacement for atomic_ref). */
             std::atomic<Task*>* items;
 
-            alignas(SushiRuntime::CACHE_LINE_SIZE) std::atomic<int64_t> top;
-            alignas(SushiRuntime::CACHE_LINE_SIZE) std::atomic<int64_t> bottom;
+            alignas(SushiRuntime::K_CACHE_LINE_SIZE) std::atomic<int64_t> top;
+            alignas(SushiRuntime::K_CACHE_LINE_SIZE) std::atomic<int64_t> bottom;
 
             /**
              * @brief Owner-private surplus, used only when the ring is full.
@@ -68,7 +68,7 @@ namespace SushiRuntime
             Deque() : top(0), bottom(0)
             {
                 // Slots stay uninitialised; push() writes each one before any consumer reads it.
-                items = new std::atomic<Task*>[CAPACITY];
+                items = new std::atomic<Task*>[K_CAPACITY];
             }
 
             ~Deque() override
@@ -100,14 +100,14 @@ namespace SushiRuntime
                 int64_t b = bottom.load(std::memory_order_relaxed);
                 int64_t t = top.load(std::memory_order_acquire);
 
-                if (b - t >= CAPACITY)
+                if (b - t >= K_CAPACITY)
                 {
                     // A full ring parks the surplus in overflow_; pop() drains it back.
                     overflow_.push_back(task);
                     return;
                 }
 
-                items[b & MASK].store(task, std::memory_order_relaxed);
+                items[b & K_MASK].store(task, std::memory_order_relaxed);
 
                 // The release store on bottom publishes the slot write.
                 bottom.store(b + 1, std::memory_order_release);
@@ -133,7 +133,7 @@ namespace SushiRuntime
 
                 if (t <= b)
                 {
-                    Task* task = items[b & MASK].load(std::memory_order_relaxed);
+                    Task* task = items[b & K_MASK].load(std::memory_order_relaxed);
 
                     if (t == b)
                     {
@@ -170,7 +170,7 @@ namespace SushiRuntime
 
                 if (t < b)
                 {
-                    Task* task = items[t & MASK].load(std::memory_order_relaxed);
+                    Task* task = items[t & K_MASK].load(std::memory_order_relaxed);
 
                     if (!top.compare_exchange_strong(t,
                                                      t + 1,
@@ -200,12 +200,12 @@ namespace SushiRuntime
                 int64_t b = bottom.load(std::memory_order_relaxed);
                 int64_t t = top.load(std::memory_order_acquire);
 
-                while (!overflow_.empty() && (b - t) < CAPACITY)
+                while (!overflow_.empty() && (b - t) < K_CAPACITY)
                 {
                     Task* task = overflow_.back();
                     overflow_.pop_back();
 
-                    items[b & MASK].store(task, std::memory_order_relaxed);
+                    items[b & K_MASK].store(task, std::memory_order_relaxed);
                     // The slot is released through the bottom store, as in push().
                     bottom.store(++b, std::memory_order_release);
 

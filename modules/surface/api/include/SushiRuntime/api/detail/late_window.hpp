@@ -41,7 +41,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Holds the half-open element window a late-bound node iterates this step.
@@ -56,7 +56,7 @@ namespace SushiRuntime
         /**
          * @brief Resolves a host-sized late-bound node's base and count at dispatch.
          *
-         * Reads the step-boundary values only, with USE_BAKED meaning the rest
+         * Reads the step-boundary values only, with K_USE_BAKED meaning the rest
          * of capacity; a node with a device count or base never comes here.
          * @throws SushiException With invalid_graph for a window that does not fit.
          */
@@ -67,9 +67,9 @@ namespace SushiRuntime
             range.base = lb.base.load(std::memory_order_relaxed);
 
             const std::size_t live = lb.count.load(std::memory_order_relaxed);
-            // USE_BAKED means the rest of the capacity from the base, not the whole buffer.
+            // K_USE_BAKED means the rest of the capacity from the base, not the whole buffer.
             range.count =
-                (live == ::SushiRuntime::Internal::Graph::LateBindings::USE_BAKED)
+                (live == ::SushiRuntime::Internal::Graph::LateBindings::K_USE_BAKED)
                     ? capacity - (range.base < capacity ? range.base : capacity)
                     : live;
 
@@ -114,7 +114,7 @@ namespace SushiRuntime
             std::size_t host_count = 0;      /**< Host count when @c count_slot is null. */
             std::size_t host_base = 0;       /**< Host base when @c base_slot is null. */
             std::size_t capacity = 0;        /**< Capacity the window must fit. */
-            bool rest_of_capacity = false;   /**< Whether the host count is USE_BAKED. */
+            bool rest_of_capacity = false;   /**< Whether the host count is K_USE_BAKED. */
             std::uint32_t* fault = nullptr;  /**< The node's fault record. */
         };
 
@@ -147,7 +147,7 @@ namespace SushiRuntime
             w.host_base = lb.base.load(std::memory_order_relaxed);
             w.capacity = capacity;
             w.rest_of_capacity =
-                (w.host_count == ::SushiRuntime::Internal::Graph::LateBindings::USE_BAKED);
+                (w.host_count == ::SushiRuntime::Internal::Graph::LateBindings::K_USE_BAKED);
             w.fault = fault;
 
             // One work-item even at capacity zero, so a fault there is still recorded.
@@ -164,7 +164,7 @@ namespace SushiRuntime
                 if (base > w.capacity || count > w.capacity - base)
                 {
                     if (i[0] == 0)
-                        record_device_fault(w.fault, DEVICE_FAULT_WINDOW,
+                        record_device_fault(w.fault, K_DEVICE_FAULT_WINDOW,
                                                     base, count, w.capacity);
                     return;
                 }
@@ -172,5 +172,5 @@ namespace SushiRuntime
                     fn(base + i[0]);
             });
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

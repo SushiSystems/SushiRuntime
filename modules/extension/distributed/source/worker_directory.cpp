@@ -56,7 +56,7 @@ namespace SushiRuntime
         } // namespace
 
         WorkerDirectory::WorkerDirectory(SushiRuntime::span<const std::uint8_t> secret,
-                                         std::shared_ptr<IOffloadPolicy> policy)
+                                         std::shared_ptr<OffloadPolicy> policy)
             : secret_(secret), policy_(std::move(policy))
         {
 
@@ -249,7 +249,7 @@ namespace SushiRuntime
                     session.operations.end())
                     continue;
 
-                WorkerStats stats;
+                WorkerLoad stats;
                 stats.worker_id = static_cast<int>(value);
                 stats.alive = true;
                 stats.inflight = session.inflight;
@@ -262,13 +262,13 @@ namespace SushiRuntime
                 return std::nullopt;
 
             const std::optional<int> choice = policy_->pick_worker(
-                node, SushiRuntime::span<const WorkerStats>(candidates_.data(), candidates_.size()),
+                node, SushiRuntime::span<const WorkerLoad>(candidates_.data(), candidates_.size()),
                 estimated_bytes);
             if (!choice.has_value() || *choice < 0)
                 return std::nullopt;
 
             // A policy may answer with an id it was not offered; such a pick counts as none.
-            const auto offered = [choice](const WorkerStats& stats)
+            const auto offered = [choice](const WorkerLoad& stats)
             {
                 return stats.worker_id == *choice;
             };

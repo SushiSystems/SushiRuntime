@@ -47,12 +47,12 @@ namespace SushiRuntime::Distributed::Wire
         }
 
         /** @brief Reads a handle. */
-        BufferHandle get_handle(FieldReader& reader) noexcept
+        BufferHandle read_handle(FieldReader& reader) noexcept
         {
             BufferHandle handle;
-            handle.id.value = reader.get_u64();
-            handle.version = reader.get_u32();
-            handle.size_bytes = reader.get_u64();
+            handle.id.value = reader.read_u64();
+            handle.version = reader.read_u32();
+            handle.size_bytes = reader.read_u64();
             return handle;
         }
 
@@ -65,13 +65,13 @@ namespace SushiRuntime::Distributed::Wire
         }
 
         /** @brief Reads a list of handles; reserves once, after the count passed its check. */
-        void get_handles(FieldReader& reader, std::vector<BufferHandle>& out)
+        void read_handles(FieldReader& reader, std::vector<BufferHandle>& out)
         {
-            const std::uint32_t count = reader.get_count(K_BUFFER_HANDLE_BYTES);
+            const std::uint32_t count = reader.read_count(K_BUFFER_HANDLE_BYTES);
             out.clear();
             out.reserve(count);
             for (std::uint32_t index = 0; index < count; ++index)
-                out.push_back(get_handle(reader));
+                out.push_back(read_handle(reader));
         }
 
         /** @brief Returns how many leading parameters reach the last one that is not zero. */
@@ -97,17 +97,17 @@ namespace SushiRuntime::Distributed::Wire
         }
 
         /** @brief Reads the metadata fields; parameters past the sent count stay zero. */
-        void get_metadata(FieldReader& reader, Internal::Graph::TaskMetadata& metadata) noexcept
+        void read_metadata(FieldReader& reader, Internal::Graph::TaskMetadata& metadata) noexcept
         {
             metadata.task_type =
-                reader.get_enum(Internal::Graph::TaskType::NONE, Internal::Graph::TaskType::CONTROL_FLOW);
-            metadata.priority = reader.get_i32();
-            metadata.numa_affinity = reader.get_i32();
+                reader.read_enum(Internal::Graph::TaskType::None, Internal::Graph::TaskType::ControlFlow);
+            metadata.priority = reader.read_i32();
+            metadata.numa_affinity = reader.read_i32();
 
             const std::uint8_t count =
-                reader.get_u8_at_most(static_cast<std::uint8_t>(K_MAX_PARAMS));
+                reader.read_u8_at_most(static_cast<std::uint8_t>(K_MAX_PARAMS));
             for (std::size_t index = 0; index < count; ++index)
-                metadata.params[index] = reader.get_u64();
+                metadata.params[index] = reader.read_u64();
         }
     } // namespace
 
@@ -124,9 +124,9 @@ namespace SushiRuntime::Distributed::Wire
                                       HelloMessage& out)
     {
         FieldReader reader(payload);
-        reader.get_bytes({out.worker_nonce.data(), out.worker_nonce.size()});
-        out.build_id = reader.get_string();
-        out.node_name = reader.get_string();
+        reader.read_bytes({out.worker_nonce.data(), out.worker_nonce.size()});
+        out.build_id = reader.read_string();
+        out.node_name = reader.read_string();
         return reader.finish();
     }
 
@@ -143,9 +143,9 @@ namespace SushiRuntime::Distributed::Wire
                                           ChallengeMessage& out)
     {
         FieldReader reader(payload);
-        reader.get_bytes({out.master_nonce.data(), out.master_nonce.size()});
-        reader.get_bytes({out.master_proof.data(), out.master_proof.size()});
-        out.session_id = reader.get_u64();
+        reader.read_bytes({out.master_nonce.data(), out.master_nonce.size()});
+        reader.read_bytes({out.master_proof.data(), out.master_proof.size()});
+        out.session_id = reader.read_u64();
         return reader.finish();
     }
 
@@ -165,16 +165,16 @@ namespace SushiRuntime::Distributed::Wire
                                       ProofMessage& out)
     {
         FieldReader reader(payload);
-        reader.get_bytes({out.worker_proof.data(), out.worker_proof.size()});
+        reader.read_bytes({out.worker_proof.data(), out.worker_proof.size()});
 
-        const std::uint32_t count = reader.get_count(K_OP_ID_BYTES);
+        const std::uint32_t count = reader.read_count(K_OP_ID_BYTES);
         out.ops.clear();
         out.ops.reserve(count);
         for (std::uint32_t index = 0; index < count; ++index)
-            out.ops.push_back(Internal::Graph::OpID(reader.get_u32()));
+            out.ops.push_back(Internal::Graph::OpID(reader.read_u32()));
 
-        out.max_jobs = reader.get_u32();
-        out.cache_budget = reader.get_u64();
+        out.max_jobs = reader.read_u32();
+        out.cache_budget = reader.read_u64();
         return reader.finish();
     }
 
@@ -192,10 +192,10 @@ namespace SushiRuntime::Distributed::Wire
                                         WelcomeMessage& out)
     {
         FieldReader reader(payload);
-        out.worker_id = reader.get_u32();
-        out.liveness_timeout_ms = reader.get_u32();
-        out.ping_interval_ms = reader.get_u32();
-        out.chunk_bytes = reader.get_u32();
+        out.worker_id = reader.read_u32();
+        out.liveness_timeout_ms = reader.read_u32();
+        out.ping_interval_ms = reader.read_u32();
+        out.chunk_bytes = reader.read_u32();
         return reader.finish();
     }
 
@@ -212,9 +212,9 @@ namespace SushiRuntime::Distributed::Wire
                                        RejectMessage& out)
     {
         FieldReader reader(payload);
-        out.reason = reader.get_enum(RejectReason::Version, RejectReason::Busy);
-        out.sender_version = reader.get_u16();
-        out.text = reader.get_string();
+        out.reason = reader.read_enum(RejectReason::Version, RejectReason::Busy);
+        out.sender_version = reader.read_u16();
+        out.text = reader.read_string();
         return reader.finish();
     }
 
@@ -230,8 +230,8 @@ namespace SushiRuntime::Distributed::Wire
                                         GoodbyeMessage& out)
     {
         FieldReader reader(payload);
-        out.reason = reader.get_enum(GoodbyeReason::Shutdown, GoodbyeReason::Detach);
-        out.text = reader.get_string();
+        out.reason = reader.read_enum(GoodbyeReason::Shutdown, GoodbyeReason::Detach);
+        out.text = reader.read_string();
         return reader.finish();
     }
 
@@ -251,11 +251,11 @@ namespace SushiRuntime::Distributed::Wire
     {
         FieldReader reader(payload);
         out.metadata = Internal::Graph::TaskMetadata{};
-        out.task_id = reader.get_u64();
-        out.metadata.op_id = Internal::Graph::OpID(reader.get_u32());
-        get_metadata(reader, out.metadata);
-        get_handles(reader, out.inputs);
-        get_handles(reader, out.outputs);
+        out.task_id = reader.read_u64();
+        out.metadata.op_id = Internal::Graph::OpID(reader.read_u32());
+        read_metadata(reader, out.metadata);
+        read_handles(reader, out.inputs);
+        read_handles(reader, out.outputs);
         return reader.finish();
     }
 
@@ -270,7 +270,7 @@ namespace SushiRuntime::Distributed::Wire
                                              TaskAcceptedMessage& out)
     {
         FieldReader reader(payload);
-        out.task_id = reader.get_u64();
+        out.task_id = reader.read_u64();
         return reader.finish();
     }
 
@@ -287,10 +287,10 @@ namespace SushiRuntime::Distributed::Wire
                                            TaskResultMessage& out)
     {
         FieldReader reader(payload);
-        out.task_id = reader.get_u64();
+        out.task_id = reader.read_u64();
         out.status =
-            reader.get_enum(TaskResultStatus::Succeeded, TaskResultStatus::ShuttingDown);
-        get_handles(reader, out.outputs);
+            reader.read_enum(TaskResultStatus::Succeeded, TaskResultStatus::ShuttingDown);
+        read_handles(reader, out.outputs);
         return reader.finish();
     }
 
@@ -306,8 +306,8 @@ namespace SushiRuntime::Distributed::Wire
                                               BufferRequestMessage& out)
     {
         FieldReader reader(payload);
-        out.id.value = reader.get_u64();
-        out.version = reader.get_u32();
+        out.id.value = reader.read_u64();
+        out.version = reader.read_u32();
         return reader.finish();
     }
 
@@ -326,11 +326,11 @@ namespace SushiRuntime::Distributed::Wire
                                             BufferChunkMessage& out)
     {
         FieldReader reader(payload);
-        out.purpose = reader.get_enum(ChunkPurpose::PullReply, ChunkPurpose::TaskOutput);
-        out.task_id = reader.get_u64();
-        out.handle = get_handle(reader);
-        out.offset = reader.get_u64();
-        out.data = reader.get_rest();
+        out.purpose = reader.read_enum(ChunkPurpose::PullReply, ChunkPurpose::TaskOutput);
+        out.task_id = reader.read_u64();
+        out.handle = read_handle(reader);
+        out.offset = reader.read_u64();
+        out.data = reader.read_rest();
         return reader.finish();
     }
 
@@ -348,10 +348,10 @@ namespace SushiRuntime::Distributed::Wire
                                             BufferAbortMessage& out)
     {
         FieldReader reader(payload);
-        out.id.value = reader.get_u64();
-        out.version = reader.get_u32();
-        out.task_id = reader.get_u64();
-        out.reason = reader.get_enum(AbortReason::Stale, AbortReason::Gone);
+        out.id.value = reader.read_u64();
+        out.version = reader.read_u32();
+        out.task_id = reader.read_u64();
+        out.reason = reader.read_enum(AbortReason::Stale, AbortReason::Gone);
         return reader.finish();
     }
 
@@ -366,7 +366,7 @@ namespace SushiRuntime::Distributed::Wire
                                               BufferReleaseMessage& out)
     {
         FieldReader reader(payload);
-        out.id.value = reader.get_u64();
+        out.id.value = reader.read_u64();
         return reader.finish();
     }
 
@@ -381,7 +381,7 @@ namespace SushiRuntime::Distributed::Wire
                                      PingMessage& out)
     {
         FieldReader reader(payload);
-        out.token = reader.get_u64();
+        out.token = reader.read_u64();
         return reader.finish();
     }
 
@@ -397,8 +397,8 @@ namespace SushiRuntime::Distributed::Wire
                                      PongMessage& out)
     {
         FieldReader reader(payload);
-        out.token = reader.get_u64();
-        out.free_mem = reader.get_u64();
+        out.token = reader.read_u64();
+        out.free_mem = reader.read_u64();
         return reader.finish();
     }
 
@@ -415,9 +415,9 @@ namespace SushiRuntime::Distributed::Wire
                                           HeartbeatMessage& out)
     {
         FieldReader reader(payload);
-        out.queue_depth = reader.get_u32();
-        out.oldest_held_task_id = reader.get_u64();
-        out.cache_bytes = reader.get_u64();
+        out.queue_depth = reader.read_u32();
+        out.oldest_held_task_id = reader.read_u64();
+        out.cache_bytes = reader.read_u64();
         return reader.finish();
     }
 } // namespace SushiRuntime::Distributed::Wire

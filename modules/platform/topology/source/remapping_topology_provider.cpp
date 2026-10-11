@@ -40,7 +40,7 @@ namespace SushiRuntime
          * @param fake_node_count The number of synthetic NUMA nodes to simulate.
          * @throws SushiException With Errc::invalid_access if the inner provider is null.
          */
-        RemappingTopologyProvider::RemappingTopologyProvider(std::shared_ptr<ITopologyProvider> inner,
+        RemappingTopologyProvider::RemappingTopologyProvider(std::shared_ptr<TopologyProvider> inner,
                                                              int fake_node_count)
             : inner_(std::move(inner)), fake_node_count_(fake_node_count)
         {

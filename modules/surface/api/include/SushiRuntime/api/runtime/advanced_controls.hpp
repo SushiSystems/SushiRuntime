@@ -33,7 +33,7 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/device/device_info.hpp>
+#include <SushiRuntime/device/device_description.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
@@ -67,7 +67,7 @@ namespace SushiRuntime
              *         runtime lives.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            [[nodiscard]] const std::vector<Internal::Device::DeviceInfo>& devices() const
+            [[nodiscard]] const std::vector<Internal::Device::DeviceDescription>& devices() const
             {
                 return context_->devices().devices();
             }
@@ -81,7 +81,7 @@ namespace SushiRuntime
             /** @brief Returns whether the background thermal rebalancer is running. */
             [[nodiscard]] bool is_rebalancer_enabled() const
             {
-                return context_->get_execution_engine().rebalancer_enabled();
+                return context_->execution_engine().rebalancer_enabled();
             }
 
             /**
@@ -90,7 +90,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] WorkerPool worker_pool() const
             {
-                return context_->get_execution_engine().worker_pool();
+                return context_->execution_engine().worker_pool();
             }
 
             /**

@@ -349,7 +349,7 @@ namespace SushiRuntime
                 PeerLoss loss;
                 try
                 {
-                    events->on_peer_connected(connection->id, PeerInfo{name});
+                    events->on_peer_connected(connection->id, PeerDescription{name});
                     return;
                 }
                 catch (const std::exception& error)

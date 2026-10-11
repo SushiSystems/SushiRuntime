@@ -122,7 +122,7 @@ namespace SushiRuntime
              */
             const Runtime& set_rebalancer_enabled(bool enabled) const
             {
-                context_->get_execution_engine().set_rebalancer_enabled(enabled);
+                context_->execution_engine().set_rebalancer_enabled(enabled);
                 return *this;
             }
 

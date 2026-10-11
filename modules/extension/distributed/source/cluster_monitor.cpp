@@ -66,7 +66,7 @@ namespace SushiRuntime
 
         ClusterMonitor::ClusterMonitor(WorkerDirectory& directory, PendingTasks& pending,
                                        BufferRegistry& registry, BufferExchange& exchange,
-                                       ITransport& transport, const ClusterMonitorOptions& options)
+                                       Transport& transport, const ClusterMonitorOptions& options)
             : directory_(directory),
               pending_(pending),
               registry_(registry),

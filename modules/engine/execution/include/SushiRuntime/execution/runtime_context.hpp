@@ -38,7 +38,7 @@
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
-#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
@@ -67,8 +67,8 @@ namespace SushiRuntime
                  * @see modules/engine/execution/README.md
                  */
                 explicit RuntimeContext(const Internal::Topology::HardwareFilterConfig& config = {},
-                                        std::shared_ptr<Internal::Topology::ITopologyProvider> provider = nullptr,
-                                        std::shared_ptr<Internal::Topology::INUMADistanceModel> distance_model = nullptr,
+                                        std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
+                                        std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model = nullptr,
                                         const RuntimeSettings& settings = {});
 
                 /** @brief Stops the engine, then waits for every device queue. */
@@ -109,9 +109,9 @@ namespace SushiRuntime
                  * Separates thread orchestration from DAG construction: TaskGraph
                  * builds the plan; the engine drives it through the worker pool.
                  *
-                 * @return IExecutionEngine& Reference to the active engine.
+                 * @return ExecutionEngine& Reference to the active engine.
                  */
-                IExecutionEngine& get_execution_engine();
+                ExecutionEngine& execution_engine();
 
                 /**
                  * @brief Explicitly shuts down the execution engine and its worker pool.

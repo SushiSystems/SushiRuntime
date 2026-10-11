@@ -12,7 +12,7 @@ repository.
 | `run_report.hpp` | `RunReport` and the statistics records it carries |
 | `profiling_ledger.hpp` | `ProfilingLedger`, the per-plan store of node event records |
 | `event_timestamps.hpp` | `EventTimestamps` and the function that reads them from a SYCL event |
-| `dispatch_width.hpp` | `WIDTH_UNKNOWN`, the marker of a dispatch with no element count |
+| `dispatch_width.hpp` | `K_WIDTH_UNKNOWN`, the marker of a dispatch with no element count |
 | `transfer_counters.hpp` | `TransferCounters`, the byte counters of explicit host and device transfers |
 
 Everything is in `SushiRuntime::Internal::Observability`. `run_report.hpp` also promotes `RunReport` into

@@ -44,7 +44,7 @@ namespace SushiRuntime
 {
     class Recorder;
 
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Tells whether a launch can call a kernel with its index and then Extra.
@@ -219,5 +219,5 @@ namespace SushiRuntime
                 "last.");
             return accepted;
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

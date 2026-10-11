@@ -17,7 +17,7 @@ global operator new. That is an allocation cost in the very mechanism that exist
 allocations, and it introduces a hidden interaction with the system allocator on the hot path of any
 data structure using EBR, the dependency tracker's access history for example.
 
-The pool is bounded by FREE_POOL_CAP. When reclamation would push beyond the cap, the excess node
+The pool is bounded by K_FREE_POOL_CAP. When reclamation would push beyond the cap, the excess node
 goes to the global operator delete. This keeps memory bounded under workloads that retire faster
 than they reclaim.
 
@@ -56,8 +56,8 @@ race. A seq_cst fence orders the slot publication before any later load, as prod
 ### retire: when a scan runs
 
 retire() runs check_and_reclaim() when the thread's retire_count reaches next_scan_at, which
-starts at RETIRE_THRESHOLD and is set to the count left after each scan plus RETIRE_THRESHOLD. A
-reader that holds a guard for a long time therefore costs one scan per RETIRE_THRESHOLD retires,
+starts at K_RETIRE_THRESHOLD and is set to the count left after each scan plus K_RETIRE_THRESHOLD. A
+reader that holds a guard for a long time therefore costs one scan per K_RETIRE_THRESHOLD retires,
 where a fixed threshold would scan on every retire once the list had grown past it.
 
 ### check_and_reclaim: deleters that retire
@@ -238,7 +238,7 @@ the same base, so the overlap test reduces to base-pointer equality.
 ### overlaps
 
 overlaps() is the test the tracker uses to decide ordering: same base and intersecting half-open
-intervals. WHOLE is treated as an unbounded upper end, so the comparison never overflows on the
+intervals. K_WHOLE is treated as an unbounded upper end, so the comparison never overflows on the
 sentinel. A region with a null base is not valid() and overlaps nothing, another null-based
 region included; contains() answers false for it the same way.
 

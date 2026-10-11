@@ -36,16 +36,16 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
-#include <SushiRuntime/device/device_info.hpp>
+#include <SushiRuntime/device/device_description.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
-#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/execution/scheduler_execution_engine.hpp>
 
 namespace SushiRuntime
 {
@@ -101,7 +101,7 @@ namespace SushiRuntime
              * @throws SushiException With Errc::unsupported when no device passes.
              * @see modules/engine/execution/README.md
              */
-            Internal::Device::DeviceQueueSet probe_devices(Internal::Topology::ITopologyProvider& provider,
+            Internal::Device::DeviceQueueSet probe_devices(Internal::Topology::TopologyProvider& provider,
                                                  const Internal::Topology::HardwareFilterConfig& config,
                                                  bool profiling)
             {
@@ -140,8 +140,8 @@ namespace SushiRuntime
              */
             Impl(const RuntimeSettings& runtime_settings,
                  const Internal::Topology::HardwareFilterConfig& config,
-                 Internal::Topology::ITopologyProvider& provider,
-                 std::shared_ptr<const Internal::Topology::INUMADistanceModel> distance_model)
+                 Internal::Topology::TopologyProvider& provider,
+                 std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model)
                 : settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
                   devices(probe_devices(provider, config, settings.profiling)),
@@ -190,8 +190,8 @@ namespace SushiRuntime
              * @param distance_model Null selects HwlocDistanceModel.
              */
             static sushi_ptr<Impl> create(const Internal::Topology::HardwareFilterConfig& config,
-                                          std::shared_ptr<Internal::Topology::ITopologyProvider> provider,
-                                          std::shared_ptr<Internal::Topology::INUMADistanceModel> distance_model,
+                                          std::shared_ptr<Internal::Topology::TopologyProvider> provider,
+                                          std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model,
                                           const RuntimeSettings& runtime_settings)
             {
                 SR_LOG_INFO("Initializing compute stack...");
@@ -224,17 +224,17 @@ namespace SushiRuntime
             std::shared_ptr<Internal::Graph::OffloadCoordinator> offload;
 
             /** @brief Execution engine; built last, by RuntimeContext's constructor. */
-            std::unique_ptr<ExecutionEngine> engine;
+            std::unique_ptr<SchedulerExecutionEngine> engine;
         };
 
         RuntimeContext::RuntimeContext(const Internal::Topology::HardwareFilterConfig& config,
-                                       std::shared_ptr<Internal::Topology::ITopologyProvider> provider,
-                                       std::shared_ptr<Internal::Topology::INUMADistanceModel> distance_model,
+                                       std::shared_ptr<Internal::Topology::TopologyProvider> provider,
+                                       std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model,
                                        const RuntimeSettings& settings)
             : impl_(Impl::create(config, std::move(provider), std::move(distance_model), settings))
         {
             // The engine reads this context while it is built, so impl_ is complete first.
-            impl_->engine = std::make_unique<ExecutionEngine>(*this);
+            impl_->engine = std::make_unique<SchedulerExecutionEngine>(*this);
         }
 
         RuntimeContext::~RuntimeContext() = default;
@@ -269,7 +269,7 @@ namespace SushiRuntime
             return impl_->transfers;
         }
 
-        IExecutionEngine& RuntimeContext::get_execution_engine()
+        ExecutionEngine& RuntimeContext::execution_engine()
         {
             SR_THROW_IF(!impl_->engine,
                         "ExecutionEngine is not initialized: the context is still being built.");

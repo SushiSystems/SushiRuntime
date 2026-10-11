@@ -48,27 +48,27 @@ namespace
     /** @brief Names the element type of every handle here; unsigned, so overflow wraps. */
     using Word = std::uint32_t;
 
-    constexpr std::size_t WIDTH = 64;
-    constexpr std::size_t PREFIX = 24;
-    constexpr Word SEED = 5;
-    constexpr Word CANARY = 0xDEADBEEFu;
+    constexpr std::size_t K_WIDTH = 64;
+    constexpr std::size_t K_PREFIX = 24;
+    constexpr Word K_SEED = 5;
+    constexpr Word K_CANARY = 0xDEADBEEFu;
 
-    /** @brief Allocates a State whose current field holds index plus SEED and next CANARY. */
-    State<Word> seeded_state(Runtime& rt, std::size_t count = WIDTH)
+    /** @brief Allocates a State whose current field holds index plus K_SEED and next K_CANARY. */
+    State<Word> seeded_state(Runtime& rt, std::size_t count = K_WIDTH)
     {
         auto state = rt.state<Word>(count);
         for (std::size_t i = 0; i < count; ++i)
         {
-            state[i] = static_cast<Word>(i) + SEED;
-            state.next()[i] = CANARY;
+            state[i] = static_cast<Word>(i) + K_SEED;
+            state.next()[i] = K_CANARY;
         }
         return state;
     }
 
     /** @brief Returns the view a State owns and shares with the graphs that record it. */
-    std::shared_ptr<detail::StateView<Word>> view_of(const State<Word>& state)
+    std::shared_ptr<Detail::StateView<Word>> view_of(const State<Word>& state)
     {
-        return detail::HandleAccess::view(state);
+        return Detail::HandleAccess::view(state);
     }
 } // namespace
 
@@ -88,9 +88,9 @@ TEST(Integration_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
               });
     graph.run();
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
     {
-        const Word seed = static_cast<Word>(i) + SEED;
+        const Word seed = static_cast<Word>(i) + K_SEED;
         ASSERT_EQ(out.current()[i], seed + seed * seed) << "at i=" << i;
         ASSERT_EQ(left.current()[i], seed) << "at i=" << i;
         ASSERT_EQ(right.current()[i], seed) << "at i=" << i;
@@ -104,7 +104,7 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
     auto whole = seeded_state(rt);
     auto prefix = seeded_state(rt);
     auto input = seeded_state(rt);
-    auto loose = rt.buffer<Word>(WIDTH);
+    auto loose = rt.buffer<Word>(K_WIDTH);
     Word* words = loose.data();
 
     auto graph = rt.graph();
@@ -113,12 +113,12 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
     {
         next[i] = current[i];
     });
-    graph.add(PREFIX, Coupled(prefix, input),
+    graph.add(K_PREFIX, Coupled(prefix, input),
               [](std::size_t i, const Word* current, Word* next, const Word* other)
               {
                   next[i] = current[i] + other[i];
               });
-    graph.add_untracked(PREFIX + 1, [words](std::size_t i) { words[i] = 1u; });
+    graph.add_untracked(K_PREFIX + 1, [words](std::size_t i) { words[i] = 1u; });
 
     const auto report = graph.run();
 
@@ -127,7 +127,7 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
     for (const auto& event : report.node_events)
         widths.push_back(event.launched_width);
     std::sort(widths.begin(), widths.end());
-    EXPECT_EQ(widths, (std::vector<std::size_t>{PREFIX, PREFIX + 1, WIDTH}));
+    EXPECT_EQ(widths, (std::vector<std::size_t>{K_PREFIX, K_PREFIX + 1, K_WIDTH}));
 }
 
 /** @brief Tests the State emitter over a launch, replayed outside a recorder. */
@@ -135,8 +135,8 @@ TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 {
     auto rt = Runtime::create();
     auto field = seeded_state(rt);
-    auto emit = detail::state_launch_node(
-        view_of(field), PREFIX, [](std::size_t i, const Word* current, Word* next)
+    auto emit = Detail::state_launch_node(
+        view_of(field), K_PREFIX, [](std::size_t i, const Word* current, Word* next)
         {
             next[i] = current[i] + 1u;
         });
@@ -145,8 +145,8 @@ TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
     graph.add_emitter([emit](Internal::Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
     graph.run();
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
-        ASSERT_EQ(field.next()[i], i < PREFIX ? static_cast<Word>(i) + SEED + 1u : CANARY)
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        ASSERT_EQ(field.next()[i], i < K_PREFIX ? static_cast<Word>(i) + K_SEED + 1u : K_CANARY)
             << "at i=" << i;
 }
 
@@ -156,7 +156,7 @@ TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
     auto rt = Runtime::create();
     auto out = seeded_state(rt);
     auto input = seeded_state(rt);
-    auto emit = detail::coupled_launch_node(
+    auto emit = Detail::coupled_launch_node(
         view_of(out), std::make_tuple(view_of(input)), out.size(),
         [](std::size_t i, const Word* current, Word* next, const Word* other)
         {
@@ -167,8 +167,8 @@ TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
     graph.add_emitter([emit](Internal::Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
     graph.run();
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
-        ASSERT_EQ(out.next()[i], 3u * (static_cast<Word>(i) + SEED)) << "at i=" << i;
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        ASSERT_EQ(out.next()[i], 3u * (static_cast<Word>(i) + K_SEED)) << "at i=" << i;
 }
 
 /** @brief Tests the late-bound State emitter, replayed outside a recorder. */
@@ -177,8 +177,8 @@ TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWind
     auto rt = Runtime::create();
     auto field = seeded_state(rt);
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
-    bindings->count.store(PREFIX);
-    auto emit = detail::dynamic_state_node(
+    bindings->count.store(K_PREFIX);
+    auto emit = Detail::dynamic_state_node(
         view_of(field), field.size(), bindings, nullptr, std::vector<Internal::Memory::ResourceRegion>{},
         [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
@@ -186,7 +186,7 @@ TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWind
     graph.add_emitter([emit](Internal::Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
     graph.run();
 
-    for (std::size_t i = 0; i < WIDTH; ++i)
-        ASSERT_EQ(field.next()[i], i < PREFIX ? static_cast<Word>(i) + SEED + 1u : CANARY)
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        ASSERT_EQ(field.next()[i], i < K_PREFIX ? static_cast<Word>(i) + K_SEED + 1u : K_CANARY)
             << "at i=" << i;
 }

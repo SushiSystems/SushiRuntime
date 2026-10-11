@@ -45,8 +45,8 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 
@@ -106,8 +106,8 @@ namespace
     /** @brief Returns a dispatch whose every wire field is drawn from @p random. */
     TaskDispatchMessage random_dispatch(std::mt19937_64& random)
     {
-        const auto first_type = static_cast<std::uint64_t>(Internal::Graph::TaskType::NONE);
-        const auto last_type = static_cast<std::uint64_t>(Internal::Graph::TaskType::CONTROL_FLOW);
+        const auto first_type = static_cast<std::uint64_t>(Internal::Graph::TaskType::None);
+        const auto last_type = static_cast<std::uint64_t>(Internal::Graph::TaskType::ControlFlow);
 
         TaskDispatchMessage message;
         message.task_id = random();
@@ -288,7 +288,7 @@ namespace
     {
         public:
             /** @brief Records the peer of a connection that opened. */
-            void on_peer_connected(PeerID peer, const PeerInfo& /*info*/) override
+            void on_peer_connected(PeerID peer, const PeerDescription& /*info*/) override
             {
                 {
                     const std::lock_guard<std::mutex> lock(mutex_);
@@ -360,10 +360,10 @@ namespace
     constexpr std::uint64_t K_AMPLE_MEMORY = 1ull << 30;
 
     /** @brief Returns the statistics of a live worker as a policy sees them. */
-    WorkerStats live_worker(int id, std::uint32_t inflight, std::uint64_t free_memory,
+    WorkerLoad live_worker(int id, std::uint32_t inflight, std::uint64_t free_memory,
                             std::uint32_t round_trip_micros)
     {
-        WorkerStats worker;
+        WorkerLoad worker;
         worker.worker_id = id;
         worker.alive = true;
         worker.inflight = inflight;
@@ -373,12 +373,12 @@ namespace
     }
 
     /** @brief Asks the default policy to place a task of @p bytes on one of @p workers. */
-    std::optional<int> pick(const std::vector<WorkerStats>& workers, std::uint64_t bytes)
+    std::optional<int> pick(const std::vector<WorkerLoad>& workers, std::uint64_t bytes)
     {
         LeastLoadedOffloadPolicy policy;
         const sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
         return policy.pick_worker(
-            *node, span<const WorkerStats>(workers.data(), workers.size()), bytes);
+            *node, span<const WorkerLoad>(workers.data(), workers.size()), bytes);
     }
 } // namespace
 
@@ -470,7 +470,7 @@ TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
 /** @brief Tests that a payload below the policy's byte gate stays local. */
 TEST(Unit_DistributedTest, PolicyKeepsTinyPayloadLocal)
 {
-    const std::vector<WorkerStats> workers{live_worker(1, 0, K_AMPLE_MEMORY, 50)};
+    const std::vector<WorkerLoad> workers{live_worker(1, 0, K_AMPLE_MEMORY, 50)};
 
     EXPECT_FALSE(pick(workers, 1024).has_value());
 }
@@ -478,7 +478,7 @@ TEST(Unit_DistributedTest, PolicyKeepsTinyPayloadLocal)
 /** @brief Tests that the worker with the shorter round trip wins when load is equal. */
 TEST(Unit_DistributedTest, PolicyPicksLowerRttWorker)
 {
-    const std::vector<WorkerStats> workers{
+    const std::vector<WorkerLoad> workers{
         live_worker(1, 0, K_AMPLE_MEMORY, 50000),
         live_worker(2, 0, K_AMPLE_MEMORY, 100),
     };
@@ -491,7 +491,7 @@ TEST(Unit_DistributedTest, PolicyPicksLowerRttWorker)
 /** @brief Tests that the worker with fewer tasks in flight wins when round trips are equal. */
 TEST(Unit_DistributedTest, PolicyPrefersLessLoadedWhenEquallyNear)
 {
-    const std::vector<WorkerStats> workers{
+    const std::vector<WorkerLoad> workers{
         live_worker(1, 5, K_AMPLE_MEMORY, 200),
         live_worker(2, 1, K_AMPLE_MEMORY, 200),
     };
@@ -504,7 +504,7 @@ TEST(Unit_DistributedTest, PolicyPrefersLessLoadedWhenEquallyNear)
 /** @brief Tests that a worker with less free memory than the payload is not picked. */
 TEST(Unit_DistributedTest, PolicyRejectsInsufficientHeadroom)
 {
-    const std::vector<WorkerStats> workers{live_worker(1, 0, K_LARGE_PAYLOAD / 2, 100)};
+    const std::vector<WorkerLoad> workers{live_worker(1, 0, K_LARGE_PAYLOAD / 2, 100)};
 
     EXPECT_FALSE(pick(workers, K_LARGE_PAYLOAD).has_value());
 }
@@ -512,9 +512,9 @@ TEST(Unit_DistributedTest, PolicyRejectsInsufficientHeadroom)
 /** @brief Tests that the policy picks nobody when no worker is alive. */
 TEST(Unit_DistributedTest, PolicyFallsBackLocalWhenNoLiveWorker)
 {
-    WorkerStats dead = live_worker(1, 0, K_AMPLE_MEMORY, 100);
+    WorkerLoad dead = live_worker(1, 0, K_AMPLE_MEMORY, 100);
     dead.alive = false;
-    const std::vector<WorkerStats> workers{dead};
+    const std::vector<WorkerLoad> workers{dead};
 
     EXPECT_FALSE(pick(workers, K_LARGE_PAYLOAD).has_value());
 }
@@ -522,7 +522,7 @@ TEST(Unit_DistributedTest, PolicyFallsBackLocalWhenNoLiveWorker)
 /** @brief Tests that a free-memory figure of zero counts as unknown and keeps the worker. */
 TEST(Unit_DistributedTest, PolicyTreatsZeroFreeMemAsUnknown)
 {
-    const std::vector<WorkerStats> workers{live_worker(1, 0, 0, 100)};
+    const std::vector<WorkerLoad> workers{live_worker(1, 0, 0, 100)};
 
     const std::optional<int> picked = pick(workers, K_LARGE_PAYLOAD);
     ASSERT_TRUE(picked.has_value());

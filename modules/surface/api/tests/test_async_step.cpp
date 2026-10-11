@@ -40,12 +40,12 @@ using namespace SushiRuntime;
 
 namespace
 {
-    constexpr auto GATE_TIMEOUT = std::chrono::milliseconds(2000);
+    constexpr auto K_GATE_TIMEOUT = std::chrono::milliseconds(2000);
 
     /** @brief Blocks until the flag is set or the deadline passes and returns which happened. */
     bool wait_for_gate(const std::atomic<bool>& released)
     {
-        const auto deadline = std::chrono::steady_clock::now() + GATE_TIMEOUT;
+        const auto deadline = std::chrono::steady_clock::now() + K_GATE_TIMEOUT;
         while (!released.load(std::memory_order_acquire) &&
                std::chrono::steady_clock::now() < deadline)
             std::this_thread::yield();

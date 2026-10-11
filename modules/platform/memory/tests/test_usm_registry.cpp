@@ -46,7 +46,7 @@ namespace
     /**
      * @brief Holds the 64-byte extent that covers one fake address and never reaches its neighbour.
      */
-    constexpr std::size_t EXTENT = 64;
+    constexpr std::size_t K_EXTENT = 64;
 
     // An address inside fake(n)'s extent, for the interior-pointer cases.
     void* inside(std::uintptr_t n, std::size_t offset)
@@ -58,7 +58,7 @@ namespace
 TEST(Unit_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 {
     USMRegistry registry;
-    registry.record(fake(1), 3, EXTENT);
+    registry.record(fake(1), 3, K_EXTENT);
 
     const auto owner = registry.owner_of(fake(1));
     ASSERT_TRUE(owner.has_value());
@@ -68,7 +68,7 @@ TEST(Unit_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 TEST(Unit_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 {
     USMRegistry registry;
-    registry.record(fake(1), 0, EXTENT);
+    registry.record(fake(1), 0, K_EXTENT);
 
     EXPECT_FALSE(registry.owner_of(fake(2)).has_value());
     EXPECT_FALSE(registry.owner_of(nullptr).has_value());
@@ -77,7 +77,7 @@ TEST(Unit_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 TEST(Unit_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
 {
     USMRegistry registry;
-    registry.record(fake(1), 2, EXTENT);
+    registry.record(fake(1), 2, K_EXTENT);
 
     const auto taken = registry.take(fake(1));
     ASSERT_TRUE(taken.has_value());
@@ -92,8 +92,8 @@ TEST(Unit_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
 {
     // Recording a pointer twice keeps the last writer; see README.md.
     USMRegistry registry;
-    registry.record(fake(1), 1, EXTENT);
-    registry.record(fake(1), 4, EXTENT);
+    registry.record(fake(1), 1, K_EXTENT);
+    registry.record(fake(1), 4, K_EXTENT);
 
     const auto owner = registry.owner_of(fake(1));
     ASSERT_TRUE(owner.has_value());
@@ -105,8 +105,8 @@ TEST(Unit_UsmRegistry, SizeCountsLiveEntries)
     USMRegistry registry;
     EXPECT_EQ(registry.size(), 0u);
 
-    registry.record(fake(1), 0, EXTENT);
-    registry.record(fake(2), 0, EXTENT);
+    registry.record(fake(1), 0, K_EXTENT);
+    registry.record(fake(2), 0, K_EXTENT);
     EXPECT_EQ(registry.size(), 2u);
 
     registry.take(fake(1));
@@ -131,7 +131,7 @@ TEST(Unit_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
             for (int i = 0; i < PER_THREAD; ++i)
             {
                 void* p = fake(static_cast<std::uintptr_t>(t * PER_THREAD + i + 1));
-                registry.record(p, static_cast<std::size_t>(t), EXTENT);
+                registry.record(p, static_cast<std::size_t>(t), K_EXTENT);
                 if (auto owner = registry.take(p))
                 {
                     EXPECT_EQ(*owner, static_cast<std::size_t>(t));
@@ -151,7 +151,7 @@ TEST(Unit_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
 {
     // The caller passes an interior address the base-keyed table cannot find; see README.md.
     USMRegistry registry;
-    registry.record(fake(1), 5, EXTENT);
+    registry.record(fake(1), 5, K_EXTENT);
 
     const auto found = registry.containing_allocation(inside(1, 16));
     ASSERT_TRUE(found.has_value());
@@ -160,14 +160,14 @@ TEST(Unit_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
 
     // The base itself and the last byte are both inside; one past the end is not.
     EXPECT_TRUE(registry.containing_allocation(fake(1)).has_value());
-    EXPECT_TRUE(registry.containing_allocation(inside(1, EXTENT - 1)).has_value());
-    EXPECT_FALSE(registry.containing_allocation(inside(1, EXTENT)).has_value());
+    EXPECT_TRUE(registry.containing_allocation(inside(1, K_EXTENT - 1)).has_value());
+    EXPECT_FALSE(registry.containing_allocation(inside(1, K_EXTENT)).has_value());
 }
 
 TEST(Unit_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
 {
     USMRegistry registry;
-    registry.record(fake(1), 0, EXTENT);
+    registry.record(fake(1), 0, K_EXTENT);
 
     EXPECT_FALSE(registry.containing_allocation(fake(9)).has_value());
     EXPECT_FALSE(registry.containing_allocation(nullptr).has_value());
@@ -188,7 +188,7 @@ TEST(Unit_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
 TEST(Unit_UsmRegistry, ContainingAllocationForgetsATakenPointer)
 {
     USMRegistry registry;
-    registry.record(fake(1), 0, EXTENT);
+    registry.record(fake(1), 0, K_EXTENT);
     registry.take(fake(1));
 
     EXPECT_FALSE(registry.containing_allocation(inside(1, 8)).has_value());

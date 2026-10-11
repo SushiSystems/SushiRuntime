@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* i_transport.hpp                                                        */
+/* transport.hpp                                                          */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,8 +20,8 @@
 /**************************************************************************/
 
 /**
- * @file i_transport.hpp
- * @brief Declares ITransport, the frame-passing seam between a session and its peers.
+ * @file transport.hpp
+ * @brief Declares Transport, the frame-passing seam between a session and its peers.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */
@@ -97,7 +97,7 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Carries the outcome of ITransport::start().
+         * @brief Carries the outcome of Transport::start().
          */
         struct TransportResult
         {
@@ -145,7 +145,7 @@ namespace SushiRuntime
         /**
          * @brief Describes the other end of a connection when it opens.
          */
-        struct PeerInfo
+        struct PeerDescription
         {
             /** @brief Holds the numeric `address:port` of the peer, or the fabric's name for it. */
             std::string endpoint;
@@ -241,7 +241,7 @@ namespace SushiRuntime
                  * @brief Hears that a connection opened and may be sent to.
                  * @param peer A number this transport has not used before.
                  */
-                virtual void on_peer_connected(PeerID peer, const PeerInfo& info) = 0;
+                virtual void on_peer_connected(PeerID peer, const PeerDescription& info) = 0;
 
                 /**
                  * @brief Receives one whole frame whose header the transport has checked.
@@ -284,11 +284,11 @@ namespace SushiRuntime
          * statistics() may be called from any thread, several at once, also from an event.
          * @see modules/extension/distributed/README.md
          */
-        class SUSHIRUNTIME_API ITransport
+        class SUSHIRUNTIME_API Transport
         {
             public:
                 /** @brief Stops the transport if it still runs. */
-                virtual ~ITransport() = default;
+                virtual ~Transport() = default;
 
                 /**
                  * @brief Opens the transport and starts its threads.

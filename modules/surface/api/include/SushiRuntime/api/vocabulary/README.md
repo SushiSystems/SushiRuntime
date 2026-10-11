@@ -91,7 +91,7 @@ stored provider has one owner). A caller builds one from a when()/sized() tempor
 straight to add(), or moves a named Dynamic into the call with std::move.
 
 The controls are private. A caller sets them through the members and the free builders, and the
-recording code reads them through detail::DynamicAccess, so the way a Dynamic stores a control can
+recording code reads them through Detail::DynamicAccess, so the way a Dynamic stores a control can
 change without a caller or an emitter noticing.
 
 ### Members and free builders
@@ -215,8 +215,8 @@ the kernel that writes the count, and a graph whose slot buffer was destroyed is
 
 ### LateCountAccess
 
-detail::LateCountAccess reads the source of a LateCount for the recording code, as
-detail::DynamicAccess does for a Dynamic.
+Detail::LateCountAccess reads the source of a LateCount for the recording code, as
+Detail::DynamicAccess does for a Dynamic.
 
 ## The _op literal
 

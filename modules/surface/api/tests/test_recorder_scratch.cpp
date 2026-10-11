@@ -37,7 +37,7 @@ using namespace SushiRuntime;
 
 namespace
 {
-    constexpr std::size_t COUNT = 1000;
+    constexpr std::size_t K_COUNT = 1000;
 
     /** @brief Returns what the staged rule writes for one input value. */
     std::uint32_t staged(std::uint32_t value)
@@ -49,29 +49,29 @@ namespace
      * @brief Records one rule of two nodes that hand their values through recorder scratch.
      *
      * The first node writes in[i] + 1 into scratch and the second writes twice that into out.
-     * @param in  Holds at least COUNT values; must outlive the recorder.
-     * @param out Holds at least COUNT values; must outlive the recorder.
+     * @param in  Holds at least K_COUNT values; must outlive the recorder.
+     * @param out Holds at least K_COUNT values; must outlive the recorder.
      */
     void record_staged_rule(Recorder& recorder, const Buffer<std::uint32_t>& in,
                             const Buffer<std::uint32_t>& out)
     {
         std::uint32_t* stage =
-            recorder.scratch<std::uint32_t>(COUNT, in.device_index(), in.residency());
-        const Internal::Memory::ResourceRegion stage_region{stage, 0, COUNT * sizeof(std::uint32_t)};
+            recorder.scratch<std::uint32_t>(K_COUNT, in.device_index(), in.residency());
+        const Internal::Memory::ResourceRegion stage_region{stage, 0, K_COUNT * sizeof(std::uint32_t)};
         const std::uint32_t* source = in.data();
         std::uint32_t* target = out.data();
 
         auto rule = recorder.rule();
-        recorder.kernel(COUNT, Access(Reads(in), Writes(stage_region)),
+        recorder.kernel(K_COUNT, Access(Reads(in), Writes(stage_region)),
                         [source, stage](std::size_t i) { stage[i] = source[i] + 1u; });
-        recorder.kernel(COUNT, Access(Reads(stage_region), Writes(out)),
+        recorder.kernel(K_COUNT, Access(Reads(stage_region), Writes(out)),
                         [stage, target](std::size_t i) { target[i] = stage[i] * 2u; });
     }
 
     /** @brief Fills a buffer with a pattern that differs per seed. */
     void fill(Buffer<std::uint32_t>& buffer, std::uint32_t seed)
     {
-        for (std::size_t i = 0; i < COUNT; ++i)
+        for (std::size_t i = 0; i < K_COUNT; ++i)
             buffer[i] = static_cast<std::uint32_t>(i) * 3u + seed;
     }
 } // namespace
@@ -80,11 +80,11 @@ namespace
 TEST(Integration_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
 {
     auto rt   = Runtime::create();
-    auto in   = rt.buffer<std::uint32_t>(COUNT);
-    auto out  = rt.buffer<std::uint32_t>(COUNT);
-    auto copy = rt.buffer<std::uint32_t>(COUNT);
+    auto in   = rt.buffer<std::uint32_t>(K_COUNT);
+    auto out  = rt.buffer<std::uint32_t>(K_COUNT);
+    auto copy = rt.buffer<std::uint32_t>(K_COUNT);
     fill(in, 5);
-    for (std::size_t i = 0; i < COUNT; ++i)
+    for (std::size_t i = 0; i < K_COUNT; ++i)
     {
         out[i] = 0;
         copy[i] = 0;
@@ -94,10 +94,10 @@ TEST(Integration_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
 
     auto g = rt.graph();
     record_staged_rule(g.recorder(), in, out);
-    g.add(COUNT, Reads(out), Writes(copy), [o, c](std::size_t i) { c[i] = o[i] + 1u; });
+    g.add(K_COUNT, Reads(out), Writes(copy), [o, c](std::size_t i) { c[i] = o[i] + 1u; });
     g.run();
 
-    for (std::size_t i = 0; i < COUNT; ++i)
+    for (std::size_t i = 0; i < K_COUNT; ++i)
     {
         ASSERT_EQ(out[i], staged(in[i])) << "i = " << i;
         ASSERT_EQ(copy[i], staged(in[i]) + 1u) << "i = " << i;
@@ -108,8 +108,8 @@ TEST(Integration_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
 TEST(Integration_RecorderScratch, EachRunReadsItsInputAsItStands)
 {
     auto rt  = Runtime::create();
-    auto in  = rt.buffer<std::uint32_t>(COUNT);
-    auto out = rt.buffer<std::uint32_t>(COUNT);
+    auto in  = rt.buffer<std::uint32_t>(K_COUNT);
+    auto out = rt.buffer<std::uint32_t>(K_COUNT);
 
     auto g = rt.graph();
     record_staged_rule(g.recorder(), in, out);
@@ -118,7 +118,7 @@ TEST(Integration_RecorderScratch, EachRunReadsItsInputAsItStands)
     {
         fill(in, step * 11u);
         g.run();
-        for (std::size_t i = 0; i < COUNT; ++i)
+        for (std::size_t i = 0; i < K_COUNT; ++i)
             ASSERT_EQ(out[i], staged(in[i])) << "step " << step << ", i = " << i;
     }
     EXPECT_EQ(g.compile_count(), 1u);
@@ -128,9 +128,9 @@ TEST(Integration_RecorderScratch, EachRunReadsItsInputAsItStands)
 TEST(Integration_RecorderScratch, ScratchSurvivesARecompile)
 {
     auto rt   = Runtime::create();
-    auto in   = rt.buffer<std::uint32_t>(COUNT);
-    auto out  = rt.buffer<std::uint32_t>(COUNT);
-    auto copy = rt.buffer<std::uint32_t>(COUNT);
+    auto in   = rt.buffer<std::uint32_t>(K_COUNT);
+    auto out  = rt.buffer<std::uint32_t>(K_COUNT);
+    auto copy = rt.buffer<std::uint32_t>(K_COUNT);
     fill(in, 1);
     const std::uint32_t* o = out.data();
     std::uint32_t* c = copy.data();
@@ -138,16 +138,16 @@ TEST(Integration_RecorderScratch, ScratchSurvivesARecompile)
     auto g = rt.graph();
     record_staged_rule(g.recorder(), in, out);
     g.run();
-    for (std::size_t i = 0; i < COUNT; ++i)
+    for (std::size_t i = 0; i < K_COUNT; ++i)
         ASSERT_EQ(out[i], staged(in[i])) << "first plan, i = " << i;
 
     // A node recorded after a run makes the next run build a second plan.
-    g.add(COUNT, Reads(out), Writes(copy), [o, c](std::size_t i) { c[i] = o[i]; });
+    g.add(K_COUNT, Reads(out), Writes(copy), [o, c](std::size_t i) { c[i] = o[i]; });
     fill(in, 9);
     g.run();
 
     EXPECT_EQ(g.compile_count(), 2u);
-    for (std::size_t i = 0; i < COUNT; ++i)
+    for (std::size_t i = 0; i < K_COUNT; ++i)
     {
         ASSERT_EQ(out[i], staged(in[i])) << "second plan, i = " << i;
         ASSERT_EQ(copy[i], staged(in[i])) << "second plan, i = " << i;
@@ -158,8 +158,8 @@ TEST(Integration_RecorderScratch, ScratchSurvivesARecompile)
 TEST(Integration_RecorderScratch, ScratchIsFreedWithTheRecorder)
 {
     auto rt  = Runtime::create();
-    auto in  = rt.buffer<std::uint32_t>(COUNT);
-    auto out = rt.buffer<std::uint32_t>(COUNT);
+    auto in  = rt.buffer<std::uint32_t>(K_COUNT);
+    auto out = rt.buffer<std::uint32_t>(K_COUNT);
     const Internal::Memory::USMAllocator& memory = rt.unsafe_context().memory();
     const std::size_t baseline = memory.live_count();
 
@@ -176,9 +176,9 @@ TEST(Integration_RecorderScratch, ScratchIsFreedWithTheRecorder)
 TEST(Integration_RecorderScratch, RegionsRecordRulesWithScratch)
 {
     auto rt  = Runtime::create();
-    auto in  = rt.buffer<std::uint32_t>(COUNT);
-    auto mid = rt.buffer<std::uint32_t>(COUNT);
-    auto out = rt.buffer<std::uint32_t>(COUNT);
+    auto in  = rt.buffer<std::uint32_t>(K_COUNT);
+    auto mid = rt.buffer<std::uint32_t>(K_COUNT);
+    auto out = rt.buffer<std::uint32_t>(K_COUNT);
 
     auto world = rt.dynamic_graph();
     record_staged_rule(world.region(1).recorder(), in, mid);
@@ -191,7 +191,7 @@ TEST(Integration_RecorderScratch, RegionsRecordRulesWithScratch)
         if (round == 2)
             world.region(1).name("staged");
         world.run();
-        for (std::size_t i = 0; i < COUNT; ++i)
+        for (std::size_t i = 0; i < K_COUNT; ++i)
         {
             ASSERT_EQ(mid[i], staged(in[i])) << "round " << round << ", i = " << i;
             ASSERT_EQ(out[i], staged(staged(in[i]))) << "round " << round << ", i = " << i;

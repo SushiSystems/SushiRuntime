@@ -61,7 +61,7 @@ namespace SushiRuntime
         /**
          * @brief Node in the lock-free spillover successor list.
          *
-         * Used when a node's successor count exceeds MAX_INLINE_SUCCESSORS; additional
+         * Used when a node's successor count exceeds K_MAX_INLINE_SUCCESSORS; additional
          * successors are chained via a compare-exchange push-front into Node::successor_list.
          */
         struct SuccessorNode
@@ -89,7 +89,7 @@ namespace SushiRuntime
             std::function<void()> native_work;
 
             /** @brief The execution mode of this node. */
-            ExecutionMode mode = ExecutionMode::KERNEL;
+            ExecutionMode mode = ExecutionMode::Kernel;
 
             /**
              * @brief Whether this node submits SYCL device work (the safe default).
@@ -113,9 +113,9 @@ namespace SushiRuntime
             std::atomic<SuccessorNode*> successor_list{nullptr};
 
             /** @brief Inline buffer for successors to avoid heap allocations. */
-            static constexpr int MAX_INLINE_SUCCESSORS = 16;
+            static constexpr int K_MAX_INLINE_SUCCESSORS = 16;
             std::atomic<int32_t> inline_successor_count{0};
-            Node* inline_successors[MAX_INLINE_SUCCESSORS] = {nullptr};
+            Node* inline_successors[K_MAX_INLINE_SUCCESSORS] = {nullptr};
             
             /** @brief SYCL events this node depends on (heap-free for small amounts). */
             SmallEventVector sycl_deps;
@@ -141,13 +141,13 @@ namespace SushiRuntime
             bool locality_checked_ = false;
 
             /** @brief Stands for "no device stated" in placement_. */
-            static constexpr std::uint16_t NO_PLACEMENT = 0xFFFF;
+            static constexpr std::uint16_t K_NO_PLACEMENT = 0xFFFF;
 
             /**
-             * @brief Holds the device place_on() stated, or NO_PLACEMENT.
+             * @brief Holds the device place_on() stated, or K_NO_PLACEMENT.
              * @see modules/engine/graph/README.md
              */
-            std::uint16_t placement_ = NO_PLACEMENT;
+            std::uint16_t placement_ = K_NO_PLACEMENT;
 
             /**
              * @brief Caches the index of the device queue this node dispatches to; -1 until
@@ -171,8 +171,8 @@ namespace SushiRuntime
              */
             std::size_t plan_index = 0;
 
-            /** @brief Elements this node launches over, or Internal::Observability::WIDTH_UNKNOWN. */
-            std::size_t baked_width = Internal::Observability::WIDTH_UNKNOWN;
+            /** @brief Elements this node launches over, or Internal::Observability::K_WIDTH_UNKNOWN. */
+            std::size_t baked_width = Internal::Observability::K_WIDTH_UNKNOWN;
 
             /**
              * @brief Identifies the public add() call that registered this node; zero until
@@ -192,19 +192,19 @@ namespace SushiRuntime
 
             /**
              * @brief States the device a node that names no owned region runs on.
-             * @param device Index into the runtime's device set; must be below NO_PLACEMENT.
+             * @param device Index into the runtime's device set; must be below K_NO_PLACEMENT.
              * @pre The node has not been dispatched yet.
              * @throws SushiException With Errc::invalid_graph and the index, when
-             *         @p device is NO_PLACEMENT or above.
+             *         @p device is K_NO_PLACEMENT or above.
              * @see modules/engine/graph/README.md
              */
             void place_on(std::size_t device)
             {
-                if (device >= NO_PLACEMENT)
+                if (device >= K_NO_PLACEMENT)
                     throw SushiException(Error{
                         Errc::invalid_graph,
                         "Node::place_on(" + std::to_string(device) + "): a device index must be "
-                            "below " + std::to_string(NO_PLACEMENT) + "; pass the index of a "
+                            "below " + std::to_string(K_NO_PLACEMENT) + "; pass the index of a "
                             "device of the runtime."});
 
                 placement_ = static_cast<std::uint16_t>(device);
@@ -213,7 +213,7 @@ namespace SushiRuntime
             /** @brief Returns the device place_on() stated, or nothing when none was stated. */
             std::optional<std::size_t> stated_placement() const noexcept
             {
-                if (placement_ == NO_PLACEMENT)
+                if (placement_ == K_NO_PLACEMENT)
                     return std::nullopt;
                 return static_cast<std::size_t>(placement_);
             }
@@ -229,7 +229,7 @@ namespace SushiRuntime
             {
                 // The slot is written before the count is published.
                 int32_t idx = inline_successor_count.load(std::memory_order_relaxed);
-                if (idx < MAX_INLINE_SUCCESSORS)
+                if (idx < K_MAX_INLINE_SUCCESSORS)
                 {
                     inline_successors[idx] = target;
                     inline_successor_count.store(idx + 1, std::memory_order_release);
@@ -285,10 +285,10 @@ namespace SushiRuntime
             }
 
             /** @brief Returns metadata.name, the node's only label. */
-            const char* get_name() const noexcept override      { return metadata.name; }
+            const char* name() const noexcept override      { return metadata.name; }
 
             /** @brief Returns the execution mode for this node. */
-            ExecutionMode get_execution_mode() const override   { return mode; }
+            ExecutionMode execution_mode() const override   { return mode; }
 
             /** @brief Indicates that this task is a graph node. */
             bool is_graph_node() const noexcept override        { return true; }
@@ -320,7 +320,7 @@ namespace SushiRuntime
             {
                 const std::int32_t count =
                     inline_successor_count.load(std::memory_order_acquire);
-                const std::int32_t max_idx = std::min(count, MAX_INLINE_SUCCESSORS);
+                const std::int32_t max_idx = std::min(count, K_MAX_INLINE_SUCCESSORS);
 
                 for (std::int32_t i = 0; i < max_idx; ++i)
                     if (Node* succ = inline_successors[i])
@@ -337,7 +337,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns prioritized value from metadata. */
-            int get_priority() const noexcept override          { return metadata.priority; }
+            int priority() const noexcept override          { return metadata.priority; }
 
             /** @brief Reports whether this node submits SYCL device work. */
             bool submits_device_work() const noexcept override  { return submits_device_work_; }

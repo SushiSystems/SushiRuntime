@@ -41,6 +41,6 @@ namespace SushiRuntime
     struct NodeOptions
     {
         /** @brief Launch width stamped into the node's event records. */
-        std::size_t width = Internal::Observability::WIDTH_UNKNOWN;
+        std::size_t width = Internal::Observability::K_WIDTH_UNKNOWN;
     };
 } // namespace SushiRuntime

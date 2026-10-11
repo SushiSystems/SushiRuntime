@@ -142,7 +142,7 @@ with the window. write_range() is const: it changes the elements, not the handle
 
 The graph layer needs four things from a handle that a caller never does: the address the
 dependency tracker keys on, the liveness observer, the view of a State and the swap of its two
-fields. It reaches them through `detail::HandleAccess` (api/detail/handle_access.hpp), a friend of
+fields. It reaches them through `Detail::HandleAccess` (api/detail/handle_access.hpp), a friend of
 both handles.
 
 The key of a Buffer is the allocation's base address, which the tracker treats as the whole-buffer

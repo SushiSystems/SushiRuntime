@@ -39,21 +39,21 @@ namespace SushiRuntime
     namespace Internal::Scheduler
     {
         /**
-         * @brief Drives an IRebalanceStrategy from a background thread on a 5 ms heartbeat.
+         * @brief Drives an RebalanceStrategy from a background thread on a 5 ms heartbeat.
          * @see modules/engine/scheduler/README.md
          */
         class WorkloadCoordinator
         {
             private:
-                const ITelemetryProvider& telemetry_;
-                ITaskMigrator& migrator_;
+                const TelemetryProvider& telemetry_;
+                TaskMigrator& migrator_;
 
                 /**
                  * @brief Guards strategy_ against set_strategy() destroying it mid-call.
                  * @see modules/engine/scheduler/README.md
                  */
                 mutable std::mutex strategy_mtx_;
-                std::unique_ptr<IRebalanceStrategy> strategy_;
+                std::unique_ptr<RebalanceStrategy> strategy_;
 
                 std::atomic<bool> running_{false};
                 std::thread coordinator_thread_;
@@ -78,7 +78,7 @@ namespace SushiRuntime
                  * @param m        Migration actuator (must outlive this object).
                  * @param s        Initial rebalance strategy.
                  */
-                WorkloadCoordinator(const ITelemetryProvider& t, ITaskMigrator& m, std::unique_ptr<IRebalanceStrategy> s)
+                WorkloadCoordinator(const TelemetryProvider& t, TaskMigrator& m, std::unique_ptr<RebalanceStrategy> s)
                     : telemetry_(t), migrator_(m), strategy_(std::move(s)) {}
 
                 /** @brief Calls stop() if the coordinator thread is still running. */
@@ -111,9 +111,9 @@ namespace SushiRuntime
                  *
                  * @param new_strategy Replacement strategy (takes ownership).
                  */
-                void set_strategy(std::unique_ptr<IRebalanceStrategy> new_strategy)
+                void set_strategy(std::unique_ptr<RebalanceStrategy> new_strategy)
                 {
-                    std::unique_ptr<IRebalanceStrategy> old;
+                    std::unique_ptr<RebalanceStrategy> old;
                     {
                         std::lock_guard<std::mutex> lk(strategy_mtx_);
                         old = std::move(strategy_);

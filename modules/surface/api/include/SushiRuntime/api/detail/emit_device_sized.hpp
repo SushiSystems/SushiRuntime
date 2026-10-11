@@ -43,7 +43,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Builds the replay of a node run at capacity that reads its width on device.
@@ -91,5 +91,5 @@ namespace SushiRuntime
                 }, reads, writes, {}, registration).baked_width = width;
             };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

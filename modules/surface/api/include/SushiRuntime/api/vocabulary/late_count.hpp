@@ -44,10 +44,10 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         struct LateCountAccess;
-    } // namespace detail
+    } // namespace Detail
 
     /**
      * @brief Holds a run count resolved once per step from exactly one source.
@@ -102,7 +102,7 @@ namespace SushiRuntime
             {
                 LateCount count(capacity, "LateCount::from_device");
                 count.slot_ =
-                    detail::checked_device_slot(slot, index, "LateCount::from_device");
+                    Detail::checked_device_slot(slot, index, "LateCount::from_device");
                 return count;
             }
 
@@ -110,7 +110,7 @@ namespace SushiRuntime
             [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
 
         private:
-            friend struct detail::LateCountAccess;
+            friend struct Detail::LateCountAccess;
 
             /**
              * @brief Constructs a count with no live source, so its live value is the capacity.
@@ -134,10 +134,10 @@ namespace SushiRuntime
             std::shared_ptr<const Provider> host_;
 
             /** @brief Slot a kernel reads the count from; set only by from_device(). */
-            detail::DeviceSlot slot_;
+            Detail::DeviceSlot slot_;
     };
 
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Reads the source of a LateCount for the recording and resolving code.
@@ -170,7 +170,7 @@ namespace SushiRuntime
                 return count.slot_.life;
             }
         };
-    } // namespace detail
+    } // namespace Detail
 
 
 

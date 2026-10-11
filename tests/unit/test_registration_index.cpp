@@ -46,7 +46,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         // Test-only friend seam onto Graph::plan_ (Graph has no public accessor).
         struct RegistrationIndexTestAccess
@@ -87,8 +87,8 @@ namespace
         return *found;
     }
 
-    constexpr std::size_t WIDTH = 64;
-    constexpr std::size_t RULE_NODES = 3;
+    constexpr std::size_t K_WIDTH = 64;
+    constexpr std::size_t K_RULE_NODES = 3;
 
     /** @brief Holds the three buffers the grouped rules pass their values through. */
     struct Stages
@@ -101,9 +101,9 @@ namespace
     /** @brief Allocates the stage buffers and seeds the first with its indices. */
     Stages make_stages(Runtime& rt)
     {
-        Stages s{rt.buffer<std::uint32_t>(WIDTH), rt.buffer<std::uint32_t>(WIDTH),
-                 rt.buffer<std::uint32_t>(WIDTH)};
-        for (std::size_t i = 0; i < WIDTH; ++i)
+        Stages s{rt.buffer<std::uint32_t>(K_WIDTH), rt.buffer<std::uint32_t>(K_WIDTH),
+                 rt.buffer<std::uint32_t>(K_WIDTH)};
+        for (std::size_t i = 0; i < K_WIDTH; ++i)
         {
             s.first[i] = static_cast<std::uint32_t>(i);
             s.second[i] = 0;
@@ -113,8 +113,8 @@ namespace
     }
 
     /**
-     * @brief Records RULE_NODES kernels in one rule scope, each reading what the last wrote.
-     * @param stages Buffers of WIDTH words; must outlive the recorder.
+     * @brief Records K_RULE_NODES kernels in one rule scope, each reading what the last wrote.
+     * @param stages Buffers of K_WIDTH words; must outlive the recorder.
      */
     void record_grouped_rule(Recorder& recorder, const Stages& stages)
     {
@@ -123,18 +123,18 @@ namespace
         std::uint32_t* c = stages.third.data();
 
         auto rule = recorder.rule();
-        recorder.kernel(WIDTH, Access(Reads(stages.first), Writes(stages.second)),
+        recorder.kernel(K_WIDTH, Access(Reads(stages.first), Writes(stages.second)),
                         [a, b](std::size_t i) { b[i] = a[i] + 1u; });
-        recorder.kernel(WIDTH, Access(Reads(stages.second), Writes(stages.third)),
+        recorder.kernel(K_WIDTH, Access(Reads(stages.second), Writes(stages.third)),
                         [b, c](std::size_t i) { c[i] = b[i] * 2u; });
-        recorder.kernel(WIDTH, Access(Reads(stages.third), Writes(stages.first)),
+        recorder.kernel(K_WIDTH, Access(Reads(stages.third), Writes(stages.first)),
                         [c, a](std::size_t i) { a[i] = c[i]; });
     }
 
     /**
      * @brief Records a resolver, a device-sized kernel and a closing kernel in one rule scope.
-     * @param stages Buffers of WIDTH words; must outlive the recorder.
-     * @param count  Live width of the device-sized kernel; its capacity is at most WIDTH.
+     * @param stages Buffers of K_WIDTH words; must outlive the recorder.
+     * @param count  Live width of the device-sized kernel; its capacity is at most K_WIDTH.
      */
     void record_late_bound_rule(Recorder& recorder, const Stages& stages,
                                 const LateCount& count)
@@ -284,7 +284,7 @@ TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
  */
 TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
 {
-    using detail::RegistrationIndexTestAccess;
+    using Detail::RegistrationIndexTestAccess;
 
     auto rt = Runtime::create();
     Stages stages = make_stages(rt);
@@ -297,7 +297,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
 
     const Grouping grouping = grouping_of(RegistrationIndexTestAccess::plan(g));
 
-    ASSERT_EQ(grouping.rule_nodes, RULE_NODES);
+    ASSERT_EQ(grouping.rule_nodes, K_RULE_NODES);
     ASSERT_TRUE(grouping.rule_index.has_value());
     EXPECT_NE(grouping.before_index, *grouping.rule_index);
     EXPECT_NE(grouping.after_index, *grouping.rule_index);
@@ -308,7 +308,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
 /** @brief Tests that a rule scope's group survives a rebuild onto a fresh TaskGraph. */
 TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
 {
-    using detail::RegistrationIndexTestAccess;
+    using Detail::RegistrationIndexTestAccess;
 
     auto rt = Runtime::create();
     Stages stages = make_stages(rt);
@@ -325,7 +325,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
     const Internal::Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
     Grouping grouping = grouping_of(plan);
 
-    ASSERT_EQ(grouping.rule_nodes, RULE_NODES);
+    ASSERT_EQ(grouping.rule_nodes, K_RULE_NODES);
     ASSERT_TRUE(grouping.rule_index.has_value());
     EXPECT_NE(find_named(plan, "before").registration_index, *grouping.rule_index);
     EXPECT_NE(find_named(plan, "after").registration_index, *grouping.rule_index);
@@ -343,12 +343,12 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
  */
 TEST(Unit_RegistrationIndex, RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex)
 {
-    using detail::RegistrationIndexTestAccess;
+    using Detail::RegistrationIndexTestAccess;
 
     auto rt = Runtime::create();
     Stages stages = make_stages(rt);
 
-    const LateCount count = LateCount::from_host(WIDTH, []() { return WIDTH; });
+    const LateCount count = LateCount::from_host(K_WIDTH, []() { return K_WIDTH; });
 
     auto g = rt.graph();
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("before");
@@ -358,7 +358,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneI
 
     const Grouping grouping = grouping_of(RegistrationIndexTestAccess::plan(g));
 
-    ASSERT_EQ(grouping.rule_nodes, RULE_NODES);
+    ASSERT_EQ(grouping.rule_nodes, K_RULE_NODES);
     ASSERT_TRUE(grouping.rule_index.has_value());
     EXPECT_NE(grouping.before_index, *grouping.rule_index);
     EXPECT_NE(grouping.after_index, *grouping.rule_index);

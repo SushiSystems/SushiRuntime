@@ -31,7 +31,7 @@
 #include <cstddef>
 
 #include <SushiRuntime/scheduler/pin_policy.hpp>
-#include <SushiRuntime/scheduler/worker_pool_info.hpp>
+#include <SushiRuntime/scheduler/worker_pool.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 
 namespace SushiRuntime
@@ -43,7 +43,7 @@ namespace SushiRuntime
     using PinPolicy = Internal::Scheduler::PinPolicy;
 
     /** @brief Names the worker pool as built: count, first core and pin policy. */
-    using WorkerPool = Internal::Scheduler::WorkerPoolInfo;
+    using WorkerPool = Internal::Scheduler::WorkerPool;
 
     /**
      * @brief Holds every setting chosen once, when Runtime::create() builds a runtime.

@@ -50,7 +50,7 @@ namespace
     constexpr std::size_t K_ELEMENTS = 20;
 
     /** @brief Returns the pin of a node in a pin list, or nullptr when the node has none. */
-    const detail::Pin* pin_of(const std::vector<detail::Pin>& pins,
+    const Detail::Pin* pin_of(const std::vector<Detail::Pin>& pins,
                                    const Internal::Graph::Node& node)
     {
         for (const auto& pin : pins)
@@ -62,13 +62,13 @@ namespace
     /** @brief Returns whether one interval of a list fully contains wanted. */
     bool holds(const Intervals& intervals, const Interval& wanted)
     {
-        return detail::covered_by_any(wanted, intervals);
+        return Detail::covered_by_any(wanted, intervals);
     }
 
     /** @brief Returns the plan of a graph that requested profiling. */
     const Internal::Graph::CompiledGraph& plan_of(const DynamicGraph& world)
     {
-        return detail::DynamicGraphNodeEventsTestAccess::plan(world);
+        return Detail::DynamicGraphNodeEventsTestAccess::plan(world);
     }
 } // namespace
 
@@ -83,12 +83,12 @@ TEST(Unit_BoundaryAccess, AReadPastItsPredecessorsWriteKeepsAnEntryPin)
     Internal::Graph::Node& q = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
     const auto nodes = graph.take_nodes();
 
-    const auto access = detail::compute_boundary_access(nodes);
+    const auto access = Detail::compute_boundary_access(nodes);
     ASSERT_EQ(access.count(base), 1u);
     const auto& entry = access.at(base).entry;
 
     ASSERT_NE(pin_of(entry, p), nullptr);
-    const detail::Pin* q_pin = pin_of(entry, q);
+    const Detail::Pin* q_pin = pin_of(entry, q);
     ASSERT_NE(q_pin, nullptr) << "bytes [15,20) of q are ordered behind no earlier region";
     EXPECT_TRUE(holds(q_pin->reads, Interval(base, 15, 5)));
     EXPECT_TRUE(q_pin->writes.empty());
@@ -105,7 +105,7 @@ TEST(Unit_BoundaryAccess, AReadInsideItsPredecessorsWriteHasNoEntryPin)
     Internal::Graph::Node& q = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
     const auto nodes = graph.take_nodes();
 
-    const auto access = detail::compute_boundary_access(nodes);
+    const auto access = Detail::compute_boundary_access(nodes);
     const auto& entry = access.at(base).entry;
 
     EXPECT_NE(pin_of(entry, p), nullptr);
@@ -124,11 +124,11 @@ TEST(Unit_BoundaryAccess, AWriteBehindAReadingPredecessorKeepsItsWritePin)
     Internal::Graph::Node& q = graph.add_native({}, {Interval(base, 0, 10)}, [] {});
     const auto nodes = graph.take_nodes();
 
-    const auto access = detail::compute_boundary_access(nodes);
+    const auto access = Detail::compute_boundary_access(nodes);
     const auto& entry = access.at(base).entry;
 
     ASSERT_NE(pin_of(entry, p), nullptr);
-    const detail::Pin* q_pin = pin_of(entry, q);
+    const Detail::Pin* q_pin = pin_of(entry, q);
     ASSERT_NE(q_pin, nullptr) << "a reader does not follow the readers of earlier regions";
     EXPECT_TRUE(holds(q_pin->writes, Interval(base, 0, 10)));
 }
@@ -143,7 +143,7 @@ TEST(Unit_BoundaryAccess, OnlyAContainingSuccessorWriteShadowsAnExit)
     Internal::Graph::Node& inner = contained.add_native({}, {Interval(base, 5, 5)}, [] {});
     Internal::Graph::Node& outer = contained.add_native({}, {Interval(base, 0, 20)}, [] {});
     const auto contained_nodes = contained.take_nodes();
-    const auto shadowed = detail::compute_boundary_access(contained_nodes);
+    const auto shadowed = Detail::compute_boundary_access(contained_nodes);
     EXPECT_EQ(pin_of(shadowed.at(base).exit, inner), nullptr);
     EXPECT_NE(pin_of(shadowed.at(base).exit, outer), nullptr);
 
@@ -151,7 +151,7 @@ TEST(Unit_BoundaryAccess, OnlyAContainingSuccessorWriteShadowsAnExit)
     Internal::Graph::Node& wide = partial.add_native({}, {Interval(base, 0, 20)}, [] {});
     Internal::Graph::Node& narrow = partial.add_native({}, {Interval(base, 5, 5)}, [] {});
     const auto partial_nodes = partial.take_nodes();
-    const auto kept = detail::compute_boundary_access(partial_nodes);
+    const auto kept = Detail::compute_boundary_access(partial_nodes);
     EXPECT_NE(pin_of(kept.at(base).exit, wide), nullptr) << "bytes outside [5,10) stay live";
     EXPECT_NE(pin_of(kept.at(base).exit, narrow), nullptr);
 }

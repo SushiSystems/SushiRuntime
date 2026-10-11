@@ -375,7 +375,7 @@ def rule_constant_prefix(source: SourceFile) -> Iterator[Issue]:
         if found is None:
             continue
         name, offset = found
-        if K_UPPER_SNAKE.fullmatch(name) and not name.startswith(K_CONSTANT_PREFIX):
+        if len(name) > 1 and K_UPPER_SNAKE.fullmatch(name) and not name.startswith(K_CONSTANT_PREFIX):
             yield Issue(
                 source.path,
                 source.line_at(start + offset),

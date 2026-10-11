@@ -314,7 +314,7 @@ namespace SushiRuntime
         } // namespace
 
         OffloadDispatcher::OffloadDispatcher(BufferRegistry& registry, WorkerDirectory& directory,
-                                             PendingTasks& pending, ITransport& transport)
+                                             PendingTasks& pending, Transport& transport)
             : registry_(registry), directory_(directory), pending_(pending), transport_(transport)
         {
 

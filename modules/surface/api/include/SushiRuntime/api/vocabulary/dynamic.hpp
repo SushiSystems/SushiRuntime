@@ -42,7 +42,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /** @brief Names one word of a Residency::Host buffer a late-bound control reads. */
         struct DeviceSlot
@@ -84,7 +84,7 @@ namespace SushiRuntime
         }
 
         struct DynamicAccess;
-    } // namespace detail
+    } // namespace Detail
 
     /**
      * @brief Holds opt-in late-binding controls for a task, resolved once per step.
@@ -94,16 +94,16 @@ namespace SushiRuntime
     {
         public:
             /** @brief Bytes of inline storage each provider has. */
-            static constexpr std::size_t PROVIDER_CAPACITY = 48;
+            static constexpr std::size_t K_PROVIDER_CAPACITY = 48;
 
             /** @brief Enable predicate polled once per step; false skips the node. */
-            using WhenProvider  = Delegate<bool(), PROVIDER_CAPACITY>;
+            using WhenProvider  = Delegate<bool(), K_PROVIDER_CAPACITY>;
 
             /** @brief Size provider polled once per step; element count to iterate. */
-            using CountProvider = Delegate<std::size_t(), PROVIDER_CAPACITY>;
+            using CountProvider = Delegate<std::size_t(), K_PROVIDER_CAPACITY>;
 
             /** @brief Base provider polled once per step; first element to iterate. */
-            using BaseProvider  = Delegate<std::size_t(), PROVIDER_CAPACITY>;
+            using BaseProvider  = Delegate<std::size_t(), K_PROVIDER_CAPACITY>;
 
             /**
              * @brief Sets the enable predicate on a named Dynamic.
@@ -138,7 +138,7 @@ namespace SushiRuntime
             Dynamic& sized(CountProvider count) &
             {
                 count_ = std::move(count);
-                count_slot_ = detail::DeviceSlot{};
+                count_slot_ = Detail::DeviceSlot{};
                 return *this;
             }
 
@@ -164,7 +164,7 @@ namespace SushiRuntime
             Dynamic& sized_from_device(const Buffer<std::uint32_t>& counter,
                                        std::size_t index = 0) &
             {
-                count_slot_ = detail::checked_device_slot(counter, index, "sized_from_device");
+                count_slot_ = Detail::checked_device_slot(counter, index, "sized_from_device");
                 count_ = CountProvider{};
                 return *this;
             }
@@ -192,7 +192,7 @@ namespace SushiRuntime
             Dynamic& based_at(BaseProvider base) &
             {
                 base_ = std::move(base);
-                base_slot_ = detail::DeviceSlot{};
+                base_slot_ = Detail::DeviceSlot{};
                 return *this;
             }
 
@@ -218,7 +218,7 @@ namespace SushiRuntime
             Dynamic& based_at_device(const Buffer<std::uint32_t>& slot,
                                      std::size_t index = 0) &
             {
-                base_slot_ = detail::checked_device_slot(slot, index, "based_at_device");
+                base_slot_ = Detail::checked_device_slot(slot, index, "based_at_device");
                 base_ = BaseProvider{};
                 return *this;
             }
@@ -237,7 +237,7 @@ namespace SushiRuntime
             }
 
         private:
-            friend struct detail::DynamicAccess;
+            friend struct Detail::DynamicAccess;
 
             /** @brief Enable predicate; empty means the node is always enabled. */
             WhenProvider when_;
@@ -246,16 +246,16 @@ namespace SushiRuntime
             CountProvider count_;
 
             /** @brief Slot of a device-written live count; set only while count_ is empty. */
-            detail::DeviceSlot count_slot_;
+            Detail::DeviceSlot count_slot_;
 
             /** @brief Host base provider; empty means element zero. */
             BaseProvider base_;
 
             /** @brief Slot of a device-written live base; set only while base_ is empty. */
-            detail::DeviceSlot base_slot_;
+            Detail::DeviceSlot base_slot_;
     };
 
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Reads the controls of a Dynamic for the recording and stepping code.
@@ -293,7 +293,7 @@ namespace SushiRuntime
                 return dynamic.base_slot_;
             }
         };
-    } // namespace detail
+    } // namespace Detail
 
     /**
      * @brief Builds a Dynamic that enables its node only while @p pred is true.

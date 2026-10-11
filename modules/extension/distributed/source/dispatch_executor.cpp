@@ -322,7 +322,7 @@ namespace SushiRuntime
         }
 
         DispatchExecutor::DispatchExecutor(sushi_ptr<KernelRegistry> kernels,
-                                           WorkerBufferCache& cache, ITransport& transport,
+                                           WorkerBufferCache& cache, Transport& transport,
                                            sycl::queue& queue,
                                            const DispatchExecutorOptions& options)
             : kernels_(std::move(kernels)), cache_(cache), transport_(transport), queue_(queue),

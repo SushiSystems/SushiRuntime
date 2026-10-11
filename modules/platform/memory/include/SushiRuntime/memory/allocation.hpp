@@ -21,7 +21,7 @@
 
 /**
  * @file allocation.hpp
- * @brief Declares Allocation and IAllocationOwner.
+ * @brief Declares Allocation and AllocationOwner.
  * @author Mustafa Garip
  */
 
@@ -39,11 +39,11 @@ namespace SushiRuntime
          * @brief Releases an address that an Allocation owned.
          * @see docs/design/SYCL_VULKAN_INTEROP.md §3.1 in the SushiEngine repository.
          */
-        class IAllocationOwner
+        class AllocationOwner
         {
             public:
                 /** @brief Destroys the owner. */
-                virtual ~IAllocationOwner() = default;
+                virtual ~AllocationOwner() = default;
 
                 /**
                  * @brief Returns @p address to whatever produced it.
@@ -70,7 +70,7 @@ namespace SushiRuntime
                  * @param owner   Releases @p address exactly once.
                  */
                 Allocation(void* address, std::size_t bytes,
-                           std::unique_ptr<IAllocationOwner> owner) noexcept
+                           std::unique_ptr<AllocationOwner> owner) noexcept
                     : address_(address), bytes_(bytes), owner_(std::move(owner))
                 {
                 }
@@ -143,7 +143,7 @@ namespace SushiRuntime
             private:
                 void* address_ = nullptr;
                 std::size_t bytes_ = 0;
-                std::unique_ptr<IAllocationOwner> owner_;
+                std::unique_ptr<AllocationOwner> owner_;
         };
 
     } // namespace Memory

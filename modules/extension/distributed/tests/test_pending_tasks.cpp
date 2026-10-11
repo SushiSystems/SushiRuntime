@@ -40,7 +40,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 
 #include "pending_tasks.hpp"
 

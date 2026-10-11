@@ -62,7 +62,7 @@ namespace SushiRuntime
                  * @param numa_node_b The second NUMA node index.
                  * @return The distance value, typically 10 for local and >10 for remote access.
                  */
-                int get_distance(int numa_node_a, int numa_node_b) const;
+                int distance(int numa_node_a, int numa_node_b) const;
 
             private:
                 /** @brief Flag to indicate if hwloc is ready. */

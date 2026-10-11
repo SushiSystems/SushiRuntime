@@ -74,7 +74,7 @@ TEST(Unit_ResourceRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsInterse
     const ResourceRegion low(&first_allocation, 0, 8);
     const ResourceRegion high(&first_allocation, 8, 8);
     const ResourceRegion middle(&first_allocation, 4, 8);
-    const ResourceRegion tail(&first_allocation, 12, ResourceRegion::WHOLE);
+    const ResourceRegion tail(&first_allocation, 12, ResourceRegion::K_WHOLE);
 
     EXPECT_TRUE(whole.overlaps(whole));
     EXPECT_TRUE(whole.overlaps(low));

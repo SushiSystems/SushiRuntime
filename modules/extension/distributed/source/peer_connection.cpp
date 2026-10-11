@@ -141,7 +141,7 @@ namespace SushiRuntime
             }
 
             /** @brief Queues the REJECT that tells a peer of another version why it is closed. */
-            void queue_version_reject(Outbox& outbox, const PeerInfo& info)
+            void queue_version_reject(Outbox& outbox, const PeerDescription& info)
             {
                 const std::string text = "the receiver speaks protocol v" +
                                          std::to_string(Wire::K_PROTOCOL_VERSION) +
@@ -162,7 +162,7 @@ namespace SushiRuntime
             }
 
             /** @brief Logs an exception that escaped an event; the peer ends, not the process. */
-            void log_handler_failure(PeerID peer, const PeerInfo& info, const char* event,
+            void log_handler_failure(PeerID peer, const PeerDescription& info, const char* event,
                                      std::size_t length, const char* what)
             {
                 SR_LOG_ERROR("handler of {} ({} bytes) from {} (peer {}) threw '{}'; "
@@ -174,7 +174,7 @@ namespace SushiRuntime
              * @brief Makes on_peer_connected() and catches what escapes it.
              * @return False when the event threw; @p loss then holds HandlerFailed.
              */
-            bool announce_peer(TransportEvents& events, PeerID peer, const PeerInfo& info,
+            bool announce_peer(TransportEvents& events, PeerID peer, const PeerDescription& info,
                                PeerLoss& loss) noexcept
             {
                 try
@@ -200,7 +200,7 @@ namespace SushiRuntime
              * @brief Makes on_frame() and catches what escapes it.
              * @return False when the event threw; @p loss then holds HandlerFailed.
              */
-            bool deliver_frame(TransportEvents& events, PeerID peer, const PeerInfo& info,
+            bool deliver_frame(TransportEvents& events, PeerID peer, const PeerDescription& info,
                                const Wire::FrameHeader& header,
                                SushiRuntime::span<const std::byte> payload,
                                PeerLoss& loss) noexcept
@@ -226,7 +226,7 @@ namespace SushiRuntime
             }
 
             /** @brief Makes on_peer_lost() and logs what escapes it. */
-            void report_loss(TransportEvents& events, PeerID peer, const PeerInfo& info,
+            void report_loss(TransportEvents& events, PeerID peer, const PeerDescription& info,
                              const PeerLoss& loss) noexcept
             {
                 try
@@ -244,7 +244,7 @@ namespace SushiRuntime
             }
         } // namespace
 
-        PeerConnection::PeerConnection(PeerID peer, Socket socket, PeerInfo info,
+        PeerConnection::PeerConnection(PeerID peer, Socket socket, PeerDescription info,
                                        const PeerConnectionOptions& options,
                                        TransportEvents& events)
             : peer_(peer), socket_(std::move(socket)), info_(std::move(info)), options_(options),

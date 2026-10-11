@@ -4,7 +4,7 @@ The device inventory and the SYCL queues built on it.
 
 ## What the module owns
 
-- The inventory: one `DeviceInfo` per device (index, name, kind, backend, NUMA node, memory,
+- The inventory: one `DeviceDescription` per device (index, name, kind, backend, NUMA node, memory,
   compute units). `DeviceQueueSet::devices()` returns it.
 - Every SYCL queue of every device, in one table with four slots per device: in-order or not,
   times profiling or not.
@@ -16,7 +16,7 @@ valid until the set is destroyed.
 
 ## What it depends on
 
-`core` (`export.hpp`, `error.hpp`, `logger.hpp`, `common.hpp` for `MAX_NUMA_NODES`) and SYCL.
+`core` (`export.hpp`, `error.hpp`, `logger.hpp`, `common.hpp` for `K_MAX_NUMA_NODES`) and SYCL.
 It includes no header of `topology`, `execution`, `scheduler`, `graph`, `memory` or `api`. The
 caller turns whatever it discovered into descriptors; the module never asks the machine what
 devices exist.
@@ -27,7 +27,7 @@ The source is `modules/platform/device/source/device_queue_set.cpp`.
 
 | Header | Declares |
 | --- | --- |
-| `device/device_info.hpp` | `DeviceKind`, `DeviceInfo`, `DeviceDescriptor` |
+| `device/device_description.hpp` | `DeviceKind`, `DeviceDescription`, `DeviceDescriptor` |
 | `device/queue_flavour.hpp` | `QueueFlavour` and its comparison |
 | `device/device_queue_set.hpp` | `DeviceQueueSet` |
 
@@ -54,7 +54,7 @@ neither a CPU nor a GPU gets an in-order queue, because an FPGA or a custom acce
 support out-of-order queues. When the set is built with `profiling` true, every plain
 queue carries `enable_profiling`, so a profiled run pays no first-use latency.
 
-A descriptor whose NUMA node is negative or not below `MAX_NUMA_NODES` is placed on node
+A descriptor whose NUMA node is negative or not below `K_MAX_NUMA_NODES` is placed on node
 0, with a WARN that names the device and the value it reported. `devices()[i].numa_node` holds
 the node the device was placed on. `devices()[i].index` is always `i`, whatever the descriptor
 carried.

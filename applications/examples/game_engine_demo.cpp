@@ -38,7 +38,7 @@ using namespace SushiRuntime;
 namespace
 {
     constexpr std::size_t N     = 4096;   // entities
-    constexpr std::size_t STEPS = 600;    // frames
+    constexpr std::size_t K_STEPS = 600;    // frames
     constexpr float DT    = 0.01f;        // seconds per frame
     constexpr float G     = -9.8f;        // gravity (down)
     constexpr float REST  = 0.5f;         // floor restitution
@@ -105,7 +105,7 @@ namespace
                 if (alive[i] && px[i] > xmax) alive[i] = 0;
             }).name("cull");
 
-        const auto report = world.run(STEPS);
+        const auto report = world.run(K_STEPS);
 
         // Independent scalar reference: same four systems, same order.
         std::vector<float> rpx(N), rpy(N), rvx(N), rvy(N);
@@ -113,7 +113,7 @@ namespace
         for (std::size_t i = 0; i < N; ++i)
         { rpx[i] = 0.0f; rpy[i] = 10.0f; rvx[i] = vx_of(i); rvy[i] = 0.0f; ralive[i] = 1; }
 
-        for (std::size_t s = 0; s < STEPS; ++s)
+        for (std::size_t s = 0; s < K_STEPS; ++s)
             for (std::size_t i = 0; i < N; ++i)
             {
                 if (ralive[i]) rvy[i] += G * DT;
@@ -134,7 +134,7 @@ namespace
         }
 
         std::printf("game engine: %zu entities, %zu frames in %.2f ms (compiles = %zu)\n",
-                    N, STEPS, report.total_duration_ms, world.compile_count());
+                    N, K_STEPS, report.total_duration_ms, world.compile_count());
         std::printf("  alive = %zu, culled = %zu\n", alive_count, culled_count);
         std::printf("  result: %s\n", ok ? "CORRECT" : "WRONG");
         return ok ? 0 : 1;

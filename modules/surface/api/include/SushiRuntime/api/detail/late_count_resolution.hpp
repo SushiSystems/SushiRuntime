@@ -40,7 +40,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Appends the read and the observer of a device count's slot.
@@ -110,8 +110,8 @@ namespace SushiRuntime
             const std::size_t live = static_cast<std::size_t>(*source.slot);
             if (live <= source.capacity)
                 return live;
-            record_device_fault(fault, DEVICE_FAULT_LATE_COUNT, 0, live, source.capacity);
+            record_device_fault(fault, K_DEVICE_FAULT_LATE_COUNT, 0, live, source.capacity);
             return 0;
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime
