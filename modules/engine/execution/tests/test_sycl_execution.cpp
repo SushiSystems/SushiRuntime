@@ -97,7 +97,7 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
     };
     graph.add_task(meta_compute, {A, B}, {C}, compute_work);
 
-    auto compiled = graph.compile();
+    auto compiled = graph.compile().value();
     context.execution_engine().execute(std::move(compiled));
 
     bool passed = true;
@@ -168,7 +168,7 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
         return {};
     });
 
-    auto compiled = graph.compile();
+    auto compiled = graph.compile().value();
     context.execution_engine().execute(std::move(compiled));
 
     // SCALE * sum_{i=0}^{N-1} i = SCALE * (N-1)*N/2.

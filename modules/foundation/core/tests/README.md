@@ -68,10 +68,10 @@ a race.
 
 ## test_result.cpp
 
-The file covers the eight accessors of `Result`: `value()` and `operator*` on a const and a
-non-const `Result`, `operator->` on both, and `error()` on both. It covers `Result<void>` too. An
-accessor used on the wrong side stops the process, so those cases are death tests in the suite
-`Unit_ResultDeathTest`, which GoogleTest runs before the other suites.
+The file covers the accessors of `Result`: `value()` and `operator*` on a const, a non-const and
+an expiring `Result`, `operator->` on a const and a non-const one, and `error()` on both. It covers
+`Result<void>` too. An accessor used on the wrong side stops the process, so those cases are death
+tests in the suite `Unit_ResultDeathTest`, which GoogleTest runs before the other suites.
 
 ### `K_ERROR_OF_VALUE`, `K_VALUE_OF_ERROR`, `lost_device`
 
@@ -85,6 +85,11 @@ The test reads an `int` through `value()` and `operator*`, writes it through `va
 through a const reference. It reads a `std::string` through `operator->` on a value and on a const
 reference.
 
+### `AnExpiringResultGivesItsValueAway`, `AValueAccessorOnAnExpiringErrorStops`
+
+`value()` and `operator*` on a temporary `Result` of `std::unique_ptr<int>` move the pointer out,
+which a copy could not do. On a temporary that holds `lost_device()` both stop the process with
+the stored message.
 ### `ErrorOnErrorReturnsTheStoredError`
 
 `error()` on a `Result` that holds an error returns the stored code and message, and a write

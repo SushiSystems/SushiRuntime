@@ -97,19 +97,20 @@ namespace
         return rows;
     }
 
-    /** @brief Returns the error of the SushiException call throws, or nothing when none. */
+    /**
+     * @brief Returns the refusal a call leaves on a recorder, or nothing when it leaves none.
+     * @param recorder Cleared before the call and after the refusal is read.
+     */
     template <class Call>
-    std::optional<Error> refusal_of(Call&& call)
+    std::optional<Error> refusal_of(Recorder& recorder, Call&& call)
     {
-        try
-        {
-            call();
-        }
-        catch (const SushiException& refused)
-        {
-            return refused.error();
-        }
-        return std::nullopt;
+        recorder.clear();
+        call();
+        std::optional<Error> refused;
+        if (recorder.refusal() != nullptr)
+            refused = *recorder.refusal();
+        recorder.clear();
+        return refused;
     }
 } // namespace
 
@@ -513,7 +514,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
     };
     auto graph = rt.graph();
 
-    const auto task_refusal = refusal_of([&]
+    const auto task_refusal = refusal_of(graph.recorder(), [&]
     {
         graph.add("recorder.task"_op, K_WIDTH, Reads(values), Writes(values), local,
                   {1, 2, 3, 4, 5, 6, 7, 8, 9});
@@ -525,7 +526,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
     EXPECT_NE(task_refusal->message.find("at most 8"), std::string::npos)
         << task_refusal->message;
 
-    const auto rule_refusal = refusal_of([&]
+    const auto rule_refusal = refusal_of(graph.recorder(), [&]
     {
         graph.add("recorder.rule"_op, field, rule, {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });

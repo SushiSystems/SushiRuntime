@@ -101,7 +101,7 @@ namespace
             });
         }, reads, writes);
 
-        CompiledGraph plan = graph.compile();
+        CompiledGraph plan = graph.compile().value();
         plan.capture_base_state();
         return plan;
     }

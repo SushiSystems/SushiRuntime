@@ -205,16 +205,12 @@ TEST(Integration_NodeOptionsWidth, MoreParametersThanANodeCarriesAreRefused)
     options.parameters = parameters;
 
     auto g = rt.graph();
-    ErrorCode refused = ErrorCode::Ok;
-    try
-    {
-        g.add(WIDE, Reads(), Writes(values), [v](std::size_t i) { v[i] = 0u; }, options);
-    }
-    catch (const SushiException& e)
-    {
-        refused = e.error().code;
-    }
+    g.add(WIDE, Reads(), Writes(values), [v](std::size_t i) { v[i] = 0u; }, options);
 
-    EXPECT_EQ(refused, ErrorCode::InvalidGraph);
+    ASSERT_NE(g.refusal(), nullptr);
+    EXPECT_EQ(g.refusal()->code, ErrorCode::InvalidGraph);
+    EXPECT_NE(g.refusal()->message.find("NodeOptions::parameters, rule 0: 9 parameters"),
+              std::string::npos)
+        << g.refusal()->message;
     EXPECT_EQ(g.size(), 0u);
 }

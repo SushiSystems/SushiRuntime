@@ -187,16 +187,20 @@ namespace SushiRuntime
                 return recorder_.has_dangling_resource();
             }
 
+            /** @brief Returns the first refused recording, or null when there is none. */
+            [[nodiscard]] const Error* recording_refusal() const noexcept
+            {
+                return recorder_.refusal();
+            }
+
             /** @brief Returns whether the plan must be built before the next step. */
             [[nodiscard]] bool plan_is_stale() const noexcept { return stale(recorder_); }
 
-            /** @brief Builds the plan from the recorder. */
-            void rebuild_plan() { build(recorder_, *context_); }
+            /** @brief Builds the plan from the recorder, or returns why it has none. */
+            [[nodiscard]] Result<void> rebuild_plan() { return build(recorder_, *context_); }
 
-            /** @brief Does nothing: a built plan needs no further preparation. */
-            void prepare_run() noexcept
-            {
-            }
+            /** @brief Returns success: a built plan needs no further preparation. */
+            [[nodiscard]] Result<void> prepare_run() noexcept { return {}; }
 
             /** @brief Returns the plan a step runs. */
             ::SushiRuntime::Internal::Graph::CompiledGraph& run_plan() noexcept { return plan_; }

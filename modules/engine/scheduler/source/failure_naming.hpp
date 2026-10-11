@@ -51,6 +51,9 @@ namespace SushiRuntime
          */
         [[nodiscard]] std::string describe_task(const Task& task);
 
+        /** @brief Builds the failure of @p task from an Error it returned, keeping its code. */
+        [[nodiscard]] NamedFailure name_failure(const Task& task, const Error& cause);
+
         /** @brief Builds the failure of @p task from a SushiException, keeping its code. */
         [[nodiscard]] NamedFailure name_failure(const Task& task, const SushiException& cause);
 

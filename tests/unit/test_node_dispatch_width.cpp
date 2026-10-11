@@ -116,7 +116,7 @@ TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
     graph.add_node(noop_work()).baked_width = 4096;
     graph.name_last_node("second");
 
-    Internal::Graph::CompiledGraph plan = graph.compile();
+    Internal::Graph::CompiledGraph plan = graph.compile().value();
     ASSERT_EQ(plan.all_nodes.size(), 2u);
 
     EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Internal::Observability::K_WIDTH_UNKNOWN});

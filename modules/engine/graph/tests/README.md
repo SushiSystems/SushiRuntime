@@ -57,12 +57,12 @@ drew, which the graph also issued.
 
 The references stay valid across `compile()`: the plan's `all_nodes` holds the same two objects.
 
-### `CompileWithNoRootThrowsInvalidGraphNamingANode`
+### `CompileWithNoRootReturnsInvalidGraphNamingANode`
 
-Two nodes that wait on each other leave no root. The test expects `ErrorCode::InvalidGraph` and a
+Two nodes that wait on each other leave no root. `compile()` returns `ErrorCode::InvalidGraph` and a
 message with the node count and one of the two, named by its label and registration index.
 
-### `CompileWithACycleBehindARootThrowsInvalidGraphNamingANode`
+### `CompileWithACycleBehindARootReturnsInvalidGraphNamingANode`
 
 A third node with no dependency gives the graph a root, so only the drain check finds the cycle. The
 message must count 2 of 3 nodes and name a cycle member. Which member follows the order of

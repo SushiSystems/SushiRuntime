@@ -286,11 +286,14 @@ namespace SushiRuntime
                     return make_error(std::move(failure));
 
                 Detail::AsyncRunState state;
-                failure = guarded(ErrorCode::CompileFailed, [this, &state]()
+                failure = guarded(ErrorCode::CompileFailed, [this]()
                 {
                     require_asynchronous_engine();
-                    state.compile_ms = build_plan();
                 });
+                if (failure.code != ErrorCode::Ok)
+                    return make_error(std::move(failure));
+
+                failure = build_plan_guarded(state.compile_ms);
                 if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
@@ -582,6 +585,9 @@ namespace SushiRuntime
             Error entry_refusal() noexcept
             {
                 Owner& self = owner();
+                // A refused recording outlives the check for work: it may be the only rule.
+                if (const Error* refused = self.recording_refusal())
+                    return Detail::error_without_throwing(*refused);
                 if (!self.has_work())
                     return Detail::error_without_throwing(ErrorCode::InvalidGraph,
                                                           Owner::K_NOTHING_TO_RUN);
@@ -613,9 +619,10 @@ namespace SushiRuntime
 
             /**
              * @brief Builds the plan if it is stale and prepares the graph for its first step.
-             * @return Milliseconds the build took; zero when the plan was current.
+             * @return Milliseconds the build took, zero when the plan was current, or the
+             *         error the owner returned for a plan it could not build.
              */
-            double build_plan()
+            Result<double> build_plan()
             {
                 using clock = std::chrono::steady_clock;
                 Owner& self = owner();
@@ -623,12 +630,35 @@ namespace SushiRuntime
                 if (self.plan_is_stale())
                 {
                     const auto started = clock::now();
-                    self.rebuild_plan();
+                    Result<void> rebuilt = self.rebuild_plan();
+                    if (!rebuilt)
+                        return make_error(std::move(rebuilt.error()));
                     compile_ms = std::chrono::duration<double, std::milli>(
                         clock::now() - started).count();
                 }
-                self.prepare_run();
+                Result<void> prepared = self.prepare_run();
+                if (!prepared)
+                    return make_error(std::move(prepared.error()));
                 return compile_ms;
+            }
+
+            /**
+             * @brief Builds the plan and turns what the build throws or returns into an Error.
+             * @param compile_ms Receives what build_plan() returned; unchanged on a failure.
+             * @return An Error whose code is ok, or why the graph has no plan to run.
+             */
+            Error build_plan_guarded(double& compile_ms) noexcept
+            {
+                Error refused;
+                Error thrown = guarded(ErrorCode::CompileFailed, [this, &compile_ms, &refused]()
+                {
+                    Result<double> built = build_plan();
+                    if (built)
+                        compile_ms = *built;
+                    else
+                        refused = std::move(built.error());
+                });
+                return thrown.code != ErrorCode::Ok ? thrown : refused;
             }
 
             /**
@@ -802,10 +832,7 @@ namespace SushiRuntime
                     return make_error(std::move(failure));
 
                 double compile_ms = 0.0;
-                failure = guarded(ErrorCode::CompileFailed, [this, &compile_ms]()
-                {
-                    compile_ms = build_plan();
-                });
+                failure = build_plan_guarded(compile_ms);
                 if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
@@ -820,7 +847,7 @@ namespace SushiRuntime
 
             /**
              * @brief Runs the steps over the built plan and fills the report.
-             * @param compile_ms What build_plan() returned for this run.
+             * @param compile_ms What build_plan_guarded() stored for this run.
              * @throws Whatever a step throws; drive() maps it.
              */
             template <class KeepGoing>

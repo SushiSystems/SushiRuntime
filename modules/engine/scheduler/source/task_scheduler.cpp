@@ -659,7 +659,15 @@ namespace SushiRuntime
 
                 // A node is placed once, at its first dispatch (modules/engine/scheduler/README.md).
                 if (node && !node->locality_checked_)
-                    place_for_dispatch(*node, memory_, devices_.count());
+                {
+                    const Result<void> placed =
+                        place_for_dispatch(*node, memory_, devices_.count());
+                    if (!placed)
+                    {
+                        abort_run(name_failure(*task, placed.error()));
+                        return;
+                    }
+                }
 
                 // Every branch resolves an index and funnels through dispatch_queue().
                 sycl::queue& queue = [&]() -> sycl::queue&

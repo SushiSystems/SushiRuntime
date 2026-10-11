@@ -81,7 +81,7 @@ namespace
                            work();
                            return {};
                        });
-        return graph.compile();
+        return graph.compile().value();
     }
 
     /** @brief Owns one float array of shared USM on device 0 of a context. */
@@ -136,7 +136,7 @@ namespace
             });
         }, none, writes);
 
-        CompiledGraph plan = graph.compile();
+        CompiledGraph plan = graph.compile().value();
         plan.capture_base_state();
         plan.chain = SushiRuntime::Internal::Execution::classify_chain(plan, context);
         return plan;

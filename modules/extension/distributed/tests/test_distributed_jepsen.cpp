@@ -512,7 +512,7 @@ namespace
             master->share(output->data(), K_COUNT * sizeof(float));
             add_vec_double(graph, *input, *output);
         }
-        CompiledGraph compiled = graph.compile();
+        CompiledGraph compiled = graph.compile().value();
 
         Nemesis nemesis(fabric, seed, K_WORKERS);
         BackgroundRun run(master_context, compiled);
@@ -586,7 +586,7 @@ namespace
         master->share(output.data(), K_COUNT * sizeof(float));
         TaskGraph graph(master);
         add_vec_double(graph, *input, output);
-        CompiledGraph compiled = graph.compile();
+        CompiledGraph compiled = graph.compile().value();
 
         BackgroundRun run(master_context, compiled);
         outcome.returned = run.wait(K_RUN_LIMIT);

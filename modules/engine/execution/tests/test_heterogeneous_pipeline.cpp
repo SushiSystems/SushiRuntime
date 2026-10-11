@@ -160,7 +160,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
         }
     }
 
-    auto compiled = graph.compile();
+    auto compiled = graph.compile().value();
     context.execution_engine().execute(std::move(compiled));
     context.devices().wait_all();
 

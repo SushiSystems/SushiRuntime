@@ -51,6 +51,21 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Builds the failure of @p task from an Error it returned, keeping its code.
+         * @param task The task that failed.
+         * @param cause The error a step of its dispatch returned.
+         */
+        NamedFailure name_failure(const Task& task, const Error& cause)
+        {
+            NamedFailure failure;
+            failure.message = Detail::sr_format("{} failed: {}", describe_task(task),
+                                                      cause.message);
+            failure.error = std::make_exception_ptr(
+                SushiException(Error{cause.code, failure.message}));
+            return failure;
+        }
+
+        /**
          * @brief Builds the failure of @p task from a SushiException, keeping its code.
          * @param task The task that threw.
          * @param cause The exception it threw.

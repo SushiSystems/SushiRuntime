@@ -67,14 +67,9 @@ TEST(Integration_LaunchReach, AnExtentWhoseEndWrapsIsRefusedAtAdd)
     auto graph = rt.graph();
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_WRAPPING_ORIGIN)};
 
-    try
-    {
-        graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
-        ADD_FAILURE() << "a launch that ends past SIZE_MAX was recorded";
-    }
-    catch (const SushiException& refused)
-    {
-        EXPECT_EQ(refused.error().code, ErrorCode::InvalidGraph);
-    }
+    graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
+
+    ASSERT_NE(graph.refusal(), nullptr) << "a launch that ends past SIZE_MAX was recorded";
+    EXPECT_EQ(graph.refusal()->code, ErrorCode::InvalidGraph);
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }

@@ -129,6 +129,16 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Returns the stored value of a Result that is about to be destroyed.
+             * @pre has_value() is true.
+             */
+            [[nodiscard]] T&& value() &&
+            {
+                verify_value();
+                return std::move(*std::get_if<0>(&data_));
+            }
+
+            /**
              * @brief Returns the stored value.
              * @pre has_value() is true.
              */
@@ -146,6 +156,16 @@ namespace SushiRuntime
             {
                 verify_value();
                 return *std::get_if<0>(&data_);
+            }
+
+            /**
+             * @brief Returns the stored value of a Result that is about to be destroyed.
+             * @pre has_value() is true.
+             */
+            [[nodiscard]] T&& operator*() &&
+            {
+                verify_value();
+                return std::move(*std::get_if<0>(&data_));
             }
 
             /**

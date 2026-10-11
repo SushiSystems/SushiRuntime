@@ -21,10 +21,11 @@
 
 /**
  * @file test_result.cpp
- * @brief Tests the eight accessors of Result on a value and on an error, and Result<void>.
+ * @brief Tests the accessors of Result on a value and on an error, and Result<void>.
  * @author Mustafa Garip
  */
 
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <gtest/gtest.h>
@@ -70,6 +71,19 @@ namespace
 
         const Result<std::string>& text_view = text;
         EXPECT_EQ(text_view->size(), 5u);
+    }
+
+    TEST(Unit_Result, AnExpiringResultGivesItsValueAway)
+    {
+        const std::unique_ptr<int> taken =
+            Result<std::unique_ptr<int>>(std::make_unique<int>(7)).value();
+        ASSERT_NE(taken, nullptr);
+        EXPECT_EQ(*taken, 7);
+
+        const std::unique_ptr<int> dereferenced =
+            *Result<std::unique_ptr<int>>(std::make_unique<int>(8));
+        ASSERT_NE(dereferenced, nullptr);
+        EXPECT_EQ(*dereferenced, 8);
     }
 
     TEST(Unit_Result, ErrorOnErrorReturnsTheStoredError)
@@ -122,6 +136,14 @@ namespace
         EXPECT_DEATH(static_cast<void>(*number_view), K_VALUE_OF_ERROR);
         EXPECT_DEATH(static_cast<void>(text->size()), K_VALUE_OF_ERROR);
         EXPECT_DEATH(static_cast<void>(text_view->size()), K_VALUE_OF_ERROR);
+    }
+
+    TEST(Unit_ResultDeathTest, AValueAccessorOnAnExpiringErrorStops)
+    {
+        EXPECT_DEATH(static_cast<void>(Result<int>(make_error(lost_device())).value()),
+                     "lost the device");
+        EXPECT_DEATH(static_cast<void>(*Result<int>(make_error(lost_device()))),
+                     "lost the device");
     }
 
     TEST(Unit_ResultDeathTest, ErrorOnAValueStops)

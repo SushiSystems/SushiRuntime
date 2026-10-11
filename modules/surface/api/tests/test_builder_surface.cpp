@@ -73,20 +73,22 @@ namespace
         return state;
     }
 
-    /** @brief Returns the message of the error a builder call throws, or "" when none. */
+    /**
+     * @brief Returns the message of the refusal a call leaves on a recorder, or "" when none.
+     * @param recorder Cleared before the call and after the refusal is read.
+     */
     template <class Call>
-    std::string refusal_of(ErrorCode expected, Call&& call)
+    std::string refusal_of(Recorder& recorder, ErrorCode expected, Call&& call)
     {
-        try
-        {
-            call();
-        }
-        catch (const SushiException& refused)
-        {
-            EXPECT_EQ(refused.error().code, expected);
-            return refused.error().message;
-        }
-        return std::string();
+        recorder.clear();
+        call();
+        const Error* refused = recorder.refusal();
+        if (refused == nullptr)
+            return std::string();
+        EXPECT_EQ(refused->code, expected);
+        const std::string message = refused->message;
+        recorder.clear();
+        return message;
     }
 
     /** @brief Tells whether a refusal message begins with the text given. */
@@ -162,7 +164,7 @@ TEST(Integration_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
     auto graph = rt.graph();
 
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
-    const std::string refusal = refusal_of(ErrorCode::InvalidGraph, [&]
+    const std::string refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
         graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
     });
@@ -213,7 +215,7 @@ TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd
     auto input = seeded_state(rt, K_PREFIX);
     auto graph = rt.graph();
 
-    const std::string refusal = refusal_of(ErrorCode::InvalidGraph, [&]
+    const std::string refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
         graph.add(Coupled(output, input),
                   [](std::size_t, const Word*, Word*, const Word*) {});
@@ -277,7 +279,7 @@ TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
     const std::size_t count = rt.advanced().device_count();
     auto graph = rt.graph();
 
-    const std::string refusal = refusal_of(ErrorCode::InvalidAccess, [&]
+    const std::string refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
     {
         graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
     });
@@ -335,13 +337,13 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     auto graph = rt.graph();
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
 
-    const std::string state_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
+    const std::string state_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
         graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
     });
     EXPECT_TRUE(begins_with(state_refusal, "add(launch, state, fn), rule 0: ")) << state_refusal;
 
-    const std::string coupled_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
+    const std::string coupled_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
         graph.add(Coupled(output, input),
                   [](std::size_t, const Word*, Word*, const Word*) {});
@@ -349,7 +351,8 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     EXPECT_TRUE(begins_with(coupled_refusal, "add(Coupled(out, in0, ...), fn), rule 0: "))
         << coupled_refusal;
 
-    const std::string launch_coupled_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
+    const std::string launch_coupled_refusal =
+        refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
         graph.add(window, Coupled(output, input),
                   [](sycl::id<1>, const Word*, Word*, const Word*) {});
@@ -358,34 +361,84 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
                             "add(launch, Coupled(out, in0, ...), fn), rule 0: "))
         << launch_coupled_refusal;
 
-    const std::string untracked_refusal = refusal_of(ErrorCode::InvalidAccess, [&]
+    const std::string untracked_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
     {
         graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
     });
-    EXPECT_TRUE(begins_with(untracked_refusal, "add_untracked(launch, On(...), fn): "))
+    EXPECT_TRUE(begins_with(untracked_refusal,
+                            "add_untracked(launch, On(...), fn), rule 0: "))
         << untracked_refusal;
 
-    const std::string raw_refusal = refusal_of(ErrorCode::InvalidAccess, [&]
+    const std::string raw_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
     {
         graph.add_untracked(On(DeviceIndex{count}), [](sycl::handler&) {});
     });
-    EXPECT_TRUE(begins_with(raw_refusal, "add_untracked(On(...), fn): ")) << raw_refusal;
+    EXPECT_TRUE(begins_with(raw_refusal, "add_untracked(On(...), fn), rule 0: ")) << raw_refusal;
 
-    const std::string offload_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
+    const std::string offload_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
         graph.add("builder.check"_op, K_WIDTH, Reads(target), Writes(target),
                   [](std::size_t) {}, {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
-    EXPECT_TRUE(begins_with(offload_refusal, "add(OperationID, n, reads, writes, local, params): "))
+    EXPECT_TRUE(begins_with(offload_refusal,
+                            "add(OperationID, n, reads, writes, local, params), rule 0: "))
         << offload_refusal;
 
-    const std::string offload_rule_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
+    const std::string offload_rule_refusal =
+        refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
         graph.add("builder.check"_op, field, [](std::size_t, const Word*, Word*) {},
                   {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
-    EXPECT_TRUE(begins_with(offload_rule_refusal, "add(OperationID, state, local, params): "))
+    EXPECT_TRUE(begins_with(offload_rule_refusal,
+                            "add(OperationID, state, local, params), rule 0: "))
         << offload_rule_refusal;
 
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
+}
+
+/** @brief Tests that a refused add is kept, records nothing, and is what the next run returns. */
+TEST(Integration_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
+{
+    auto rt = Runtime::create();
+    auto field = seeded_state(rt);
+    auto target = seeded(rt);
+    Word* words = target.data();
+    const Word before = words[0];
+    const std::size_t count = rt.advanced().device_count();
+    auto graph = rt.graph();
+    const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
+
+    EXPECT_EQ(graph.refusal(), nullptr);
+    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
+    graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
+    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
+
+    const Error* refused = graph.refusal();
+    ASSERT_NE(refused, nullptr);
+    EXPECT_EQ(refused->code, ErrorCode::InvalidGraph);
+    EXPECT_TRUE(begins_with(refused->message, "add(launch, state, fn), rule 1: "))
+        << refused->message;
+    EXPECT_EQ(graph.size(), 2u) << "the valid rules are recorded, the refused one is not";
+
+    // A later refusal does not replace the first.
+    graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
+    ASSERT_NE(graph.refusal(), nullptr);
+    EXPECT_EQ(graph.refusal()->code, ErrorCode::InvalidGraph);
+
+    const auto first_run = graph.try_run();
+    ASSERT_FALSE(first_run.has_value());
+    EXPECT_EQ(first_run.error().code, ErrorCode::InvalidGraph);
+    EXPECT_EQ(first_run.error().message, graph.refusal()->message);
+    EXPECT_EQ(words[0], before) << "a run that returns a refusal runs nothing";
+
+    const auto second_run = graph.try_run();
+    ASSERT_FALSE(second_run.has_value()) << "the refusal stays until clear()";
+
+    graph.recorder().clear();
+    EXPECT_EQ(graph.refusal(), nullptr);
+    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
+    const auto valid_run = graph.try_run();
+    ASSERT_TRUE(valid_run.has_value());
+    EXPECT_EQ(words[0], before + 1u);
 }

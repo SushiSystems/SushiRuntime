@@ -218,7 +218,7 @@ TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
     graph.add_node(noop_work());
     graph.name_last_node("C");
 
-    Internal::Graph::CompiledGraph plan = graph.compile();
+    Internal::Graph::CompiledGraph plan = graph.compile().value();
 
     ASSERT_EQ(plan.all_nodes.size(), 3u);
     // Proves the premise this test depends on: compiled order is reversed.
@@ -260,7 +260,7 @@ TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
     graph.add_node(noop_work());
     graph.name_last_node("after");
 
-    Internal::Graph::CompiledGraph plan = graph.compile();
+    Internal::Graph::CompiledGraph plan = graph.compile().value();
     ASSERT_EQ(plan.all_nodes.size(), 5u);
 
     const std::uint32_t before = find_named(plan, "before").registration_index;

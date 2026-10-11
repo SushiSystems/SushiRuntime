@@ -511,7 +511,7 @@ namespace
                     if (beside)
                         graph.add_native({}, {}, beside);
 
-                    context->execution_engine().execute(graph.compile());
+                    context->execution_engine().execute(graph.compile().value());
                 });
             }
 

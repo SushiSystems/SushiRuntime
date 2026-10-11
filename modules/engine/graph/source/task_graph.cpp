@@ -518,10 +518,10 @@ namespace SushiRuntime
 
         /**
          * @brief Compiles the graph from the candidates tagged at insertion (modules/engine/graph/README.md).
-         * @return The compiled graph ready to run; empty when no node was added.
-         * @throws SushiException With ErrorCode::InvalidGraph for no root or a cycle.
+         * @return The compiled graph ready to run, empty when no node was added, or an
+         *         InvalidGraph error for no root or a cycle.
          */
-        CompiledGraph TaskGraph::compile()
+        Result<CompiledGraph> TaskGraph::compile()
         {
             CompiledGraph graph;
             
@@ -581,9 +581,9 @@ namespace SushiRuntime
                     graph.all_nodes.size(), describe_node(waiting),
                     waiting.in_degree.load(std::memory_order_relaxed));
                 SR_LOG_ERROR("{}", message);
-                // The tracker is drained before the throw (modules/engine/graph/README.md).
+                // The tracker is drained before the return (modules/engine/graph/README.md).
                 impl_->tracker.reset();
-                throw SushiException(Error{ErrorCode::InvalidGraph, message});
+                return make_error(Error{ErrorCode::InvalidGraph, message});
             }
 
             // A root set does not rule out a disjoint cycle (modules/engine/graph/README.md).
@@ -639,7 +639,7 @@ namespace SushiRuntime
                                                            : std::string("an unidentified node"));
                     SR_LOG_ERROR("{}", message);
                     impl_->tracker.reset(); // same UAF-avoidance as the no-roots path
-                    throw SushiException(Error{ErrorCode::InvalidGraph, message});
+                    return make_error(Error{ErrorCode::InvalidGraph, message});
                 }
             }
 
