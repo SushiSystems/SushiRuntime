@@ -132,8 +132,8 @@ and returns rule_count() from it. refusal() returns the stored error, or null wh
 refused. Its message opens with the call as the caller wrote it and the position the rule would
 have had, such as `add_rule(launch, state, kernel), rule 1: `.
 
-Five checks refuse a recording, each a function that returns `std::optional<Error>`:
-launch_refusal(), offload_parameters_refusal(), parameters_refusal() and
+Four checks refuse a recording, each a function that returns `std::optional<Error>`:
+launch_refusal(), parameters_refusal() and
 host_device_slots_refusal() of `api/detail/`, and the recorder's own placement_refusal(). admit()
 keeps what they return. A verb that changes the step machinery beyond its node asks them before
 it changes anything, so a refused State rule registers no advance.
@@ -215,7 +215,8 @@ fault record and cannot get one keeps that error as the recorder's refusal.
 ### steps
 
 steps_ holds the per-step lifecycle: the resync and the advance of each State view recorded, the
-late-binding refreshers and the distributed live-IO re-pointers. Each view belongs to its State. It owns the ordering invariant that runs around
+late-binding refreshers and the hooks that re-point the live fields of a rule that names an
+operation. Each view belongs to its State. It owns the ordering invariant that runs around
 each replayed step. The DynamicGraph composer uses the same type, so both drive the loop
 identically.
 
@@ -226,12 +227,14 @@ current and next
 pointers fresh each submit, following the swap, and registers the once-per-step advance, so a
 stepped field can vary its active count or sleep entirely with no recompile.
 
-### offload
+### A rule that names an operation
 
-offload() is the single funnel for both the raw-pointer and the Reads/Writes offload overloads.
-Setting op_id is what makes compile() consider the node offloadable; otherwise the local
-parallel_for runs. offload() and offload_rule() refuse more than `TaskMetadata::K_MAX_PARAMS`
-parameters with `InvalidGraph`; the refusal section says what a refused recording does.
+A node names its operation in `NodeOptions::operation`, on any verb; there is no verb of its
+own for it. state_rule(), dynamic_kernel(Dynamic, State, kernel) and coupled_rule() do one thing
+more for such a rule: live_fields_of() builds the lists of the fields the rule reads and writes,
+registers the hook that rewrites them before each step, and
+`Detail::with_live_fields()` of `api/detail/live_fields.hpp` hands them to the node at replay.
+A rule that names no operation registers nothing.
 
 ## node_options.hpp
 
@@ -239,8 +242,7 @@ parameters with `InvalidGraph`; the refusal section says what a refused recordin
 
 NodeOptions is what a caller may state about one node beyond its launch and its access. Every
 verb of the Recorder and of a builder takes one as its last argument, and a default one states
-nothing. The two offload forms are the exception: they take the operation first and the parameters
-as a braced list.
+nothing.
 
 | Field | Lands | When it is not stated |
 | --- | --- | --- |
@@ -253,9 +255,11 @@ The recorder copies `name` and `parameters` when the node is recorded, so a temp
 a local array are valid arguments. A node carries eight parameters; a longer list is refused with
 `InvalidGraph` and records nothing.
 
-A node that names an operation is one another machine may run. The chain layer does not take
-such a node, so a graph that holds one runs on the scheduler, and on a runtime with a cluster
-attached the node is a candidate for offload when a worker registered that operation.
+A node that names an operation is one another machine may run, and nothing else changes for
+it. On a runtime with a cluster attached the node is a candidate for offload when a worker
+registered a kernel for that operation and every buffer the node touches is shared. On every
+other runtime, and for every other operation, it runs exactly as an unnamed node does, on the
+chain layer or on the scheduler.
 
 NodeOptions is an aggregate, and every field has a default member initializer. `NodeOptions{width}`
 therefore states a width alone, also in a build that turns `-Wmissing-field-initializers` into an
@@ -278,11 +282,11 @@ Every call reads in one order: modifier, launch, access, callable, options.
 
 | Part | What it is | Spellings |
 | --- | --- | --- |
-| modifier | changes how the rule is run | `Dynamic`, an `OperationID` |
+| modifier | changes how the rule is run | `Dynamic` |
 | launch | how many work-items, and their index | a count, `Extent<N>`, `NdRange<N>`; the whole field when a State rule gives none |
 | access | the data, and how the kernel gets it | `Reads` and `Writes`, `In`/`Out`/`InOut`, a `State`, `Coupled`, `On` |
 | callable | the kernel | a lambda |
-| options | what the node states about itself | a `NodeOptions`; the two offload forms take `{params...}` |
+| options | what the node states about itself | a `NodeOptions` |
 
 Up to v0.3 the launch came third after Reads and Writes, second after a State, and first before
 captures. A caller had to remember which, and a new launch shape needed one overload per access.
@@ -316,7 +320,8 @@ Late binding exists for `Reads` and `Writes` (with a capacity) and for `State` o
 
 `add` has three templates: the two tracked forms above and `add(reads, writes, kernel)`, whose
 kernel takes the `sycl::handler` and is recorded by `raw_kernel`. A wrong argument to `add`
-therefore names at most three candidates in the compiler's message.
+therefore names at most three candidates in the compiler's message. An offload is not a verb:
+`NodeOptions::operation` names the operation on any of them.
 
 ### Which verb do I call
 
@@ -328,7 +333,7 @@ therefore names at most three candidates in the compiler's message.
 | reads and writes buffers, and should receive their pointers | `add(launch, In(a), Out(b), kernel)` |
 | captures its own pointers | `add(launch, Reads(a), Writes(b), kernel)` |
 | has a live size or an on/off switch that changes per step | `add_dynamic(sized(...), capacity, Reads(a), Writes(b), kernel)` or `add_dynamic(sized(...), state, kernel)` |
-| may run on another machine | `add("name"_op, n, Reads(a), Writes(b), local)` or `add("name"_op, state, local)` |
+| may run on another machine | any verb, with `NodeOptions::operation` set to `"name"_op` |
 | drives the sycl::handler itself | `add(Reads(a), Writes(b), kernel)` |
 | submits several command groups, or calls a library that takes the queue | `add_task(Reads(a), Writes(b), body)` |
 | is host C++ and submits no device work | `add_host(Reads(a), Writes(b), body)` |
@@ -433,27 +438,6 @@ skip the step's kernel. The double-buffer swap is followed as in the static form
 The State still advances (swaps current and next) on a step its when() disabled, so a skipped
 step leaves the un-written next field current. This overload suits size variation; sleeping a
 field across steps belongs to the streaming layer, not to when().
-
-### add(OperationID, n, reads, writes, local, params)
-
-This overload is the fluent counterpart to a distributed dispatch. `op` names a kernel registered
-(by the same OperationID) in this binary's KernelRegistry on every node; when the runtime is a master
-with a live worker that supports `op`, the scheduler may ship this task over the wire. Otherwise
-(a standalone build, no worker, or the policy declining) `local` runs it on this machine, so the
-same graph is correct with or without a cluster.
-
-`reads` and `writes` are Reads(...) and Writes(...). The dependency tracker orders the task by them,
-and the distributed layer resolves them to network buffer handles. `params` are scalar arguments
-carried in TaskMetadata, element counts for example.
-
-### add(OperationID, state, local, params)
-
-This overload is the distributed counterpart of add_rule(state, kernel): the State's step may ship to a
-worker or run its local fallback, with the same graph correct either way. Because a State rotates
-its allocations each step, the node tracks the step's read and write buffers through live pointer
-lists the runtime re-points before every step, so the compiled plan stays replayable while the
-offload follows the double-buffer swap. The State must be registered with State::distributed()
-first so both allocations can cross to a worker.
 
 ### add_untracked(launch, kernel)
 

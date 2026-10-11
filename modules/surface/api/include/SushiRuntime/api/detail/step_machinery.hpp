@@ -142,12 +142,12 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Records a re-point hook for a double-buffered offload node, run before
-                 *        each step.
+                 * @brief Records the hook that re-points the live fields of a State rule that
+                 *        names an operation, run before each step.
                  */
-                void add_dist_io_updater(StepHook updater)
+                void add_live_field_updater(StepHook updater)
                 {
-                    dist_io_updaters_.push_back(std::move(updater));
+                    live_field_updaters_.push_back(std::move(updater));
                 }
 
                 /**
@@ -163,13 +163,13 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Runs one step's pre-execute hooks: distributed live IO first, then
+                 * @brief Runs one step's pre-execute hooks: the live fields first, then the
                  *        late-bound controls.
                  */
                 void before_step() const
                 {
-                    for (auto& update_io : dist_io_updaters_)
-                        update_io();
+                    for (auto& update_fields : live_field_updaters_)
+                        update_fields();
                     for (auto& update_binding : binding_updaters_)
                         update_binding();
                     for (const StepMachinery* s : aggregated_)
@@ -225,10 +225,10 @@ namespace SushiRuntime
                  */
                 std::vector<StepHook> binding_updaters_;
                 /**
-                 * @brief Holds one live-IO re-point hook per double-buffered offload rule, run
+                 * @brief Holds one live-field hook per State rule that names an operation, run
                  *        before each step.
                  */
-                std::vector<StepHook> dist_io_updaters_;
+                std::vector<StepHook> live_field_updaters_;
                 /** @brief Device fault records of this machinery's late-bound nodes. */
                 std::vector<std::uint32_t*> fault_records_;
                 /**

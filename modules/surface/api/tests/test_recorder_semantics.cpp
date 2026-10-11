@@ -500,8 +500,8 @@ TEST(Integration_RecorderSemantics, ATaskOfTwoCommandGroupsIsOrderedByItsAccess)
             << "element " << i;
 }
 
-/** @brief Tests that an offload rule with nine parameters is refused and one with eight kept. */
-TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
+/** @brief Tests that a rule that names an operation is refused nine parameters and keeps eight. */
+TEST(Integration_RecorderSemantics, ANamedRuleTakesAtMostEightParameters)
 {
     auto rt = Runtime::create().value();
     auto values = zeroed(rt);
@@ -514,10 +514,18 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
     };
     auto graph = rt.graph();
 
+    const std::uint64_t nine[] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+    const std::uint64_t eight[] = {1, 2, 3, 4, 5, 6, 7, 8};
+    NodeOptions task_options;
+    task_options.operation = "recorder.task"_op;
+    NodeOptions rule_options;
+    rule_options.operation = "recorder.rule"_op;
+
+    task_options.parameters = nine;
+    rule_options.parameters = nine;
     const auto task_refusal = refusal_of(graph.recorder(), [&]
     {
-        graph.add("recorder.task"_op, K_WIDTH, Reads(values), Writes(values), local,
-                  {1, 2, 3, 4, 5, 6, 7, 8, 9});
+        graph.add(K_WIDTH, Reads(values), Writes(values), local, task_options);
     });
     ASSERT_TRUE(task_refusal);
     EXPECT_EQ(task_refusal->code, ErrorCode::InvalidGraph);
@@ -528,15 +536,16 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
 
     const auto rule_refusal = refusal_of(graph.recorder(), [&]
     {
-        graph.add("recorder.rule"_op, field, rule, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+        graph.add_rule(field, rule, rule_options);
     });
     ASSERT_TRUE(rule_refusal);
     EXPECT_EQ(rule_refusal->code, ErrorCode::InvalidGraph);
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 
-    graph.add("recorder.task"_op, K_WIDTH, Reads(values), Writes(values), local,
-              {1, 2, 3, 4, 5, 6, 7, 8});
-    graph.add("recorder.rule"_op, field, rule, {1, 2, 3, 4, 5, 6, 7, 8});
+    task_options.parameters = eight;
+    rule_options.parameters = eight;
+    graph.add(K_WIDTH, Reads(values), Writes(values), local, task_options);
+    graph.add_rule(field, rule, rule_options);
     EXPECT_EQ(graph.size(), 2u);
 }
 

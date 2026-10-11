@@ -46,7 +46,6 @@
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/task/offload_coordinator.hpp>
 
 namespace SushiRuntime
 {
@@ -72,8 +71,7 @@ namespace SushiRuntime
              */
             template <class RecorderOf>
             void commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
-                        RecorderOf&& recorder_of,
-                        ::SushiRuntime::Internal::Graph::OffloadCoordinator* offload)
+                        RecorderOf&& recorder_of)
             {
                 // A composer that was moved from holds no sentinel until it composes again.
                 if (sentinel_ == nullptr)
@@ -90,7 +88,7 @@ namespace SushiRuntime
                 {
                     const Recorder* recorder = recorder_of(k);
                     if (recorder != nullptr)
-                        built.emplace(k, build_region(*recorder, offload));
+                        built.emplace(k, build_region(*recorder));
                 }
 
                 std::set<RegionKey> retired(rebuilt);
@@ -575,10 +573,9 @@ namespace SushiRuntime
              * @return The state to install; no region held by the composer is changed.
              * @throws Whatever the replay of the recorder throws.
              */
-            [[nodiscard]] RegionState build_region(
-                const Recorder& recorder, ::SushiRuntime::Internal::Graph::OffloadCoordinator* offload)
+            [[nodiscard]] RegionState build_region(const Recorder& recorder)
             {
-                ::SushiRuntime::Internal::Graph::TaskGraph backing_graph(offload);
+                ::SushiRuntime::Internal::Graph::TaskGraph backing_graph;
                 RegionState st;
                 st.generation = recorder.generation();
                 st.rule_nodes.assign(recorder.rule_count(), nullptr);

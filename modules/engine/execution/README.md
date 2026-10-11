@@ -13,6 +13,11 @@ Any doubt leaves the plan on the scheduler. classify_chain() refuses the chain f
 an offload candidate, a device value read at dispatch, a node with no USM region, a region this
 context did not allocate, or two devices.
 
+An offload candidate is a node whose `OffloadState::offloadable` is set, which only the installed
+coordinator's prepare() does, at compile, for a node it has a worker and shared buffers for. The
+operation a node names does not decide: with no coordinator installed, or none that takes the
+operation, a named node is chained like an unnamed one.
+
 ## chain_run.hpp
 
 ### ChainRun

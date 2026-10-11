@@ -92,7 +92,7 @@ is fixed for the life of the context, so the inventory's answer is the one SYCL 
 Both the static Graph and the DynamicGraph composer drive the same compile-once, replay-many loop,
 and both need the identical four per-step hook lists run in the identical order. StepMachinery owns
 those lists, plus the State double-buffer bookkeeping that produces them. The ordering invariant is:
-re-point distributed live IO, refresh late-bound controls, execute, then advance every State. It
+re-point the live fields, refresh late-bound controls, execute, then advance every State. It
 lives in one place instead of being copied into each driver.
 
 The building side (view_for / register_advance / register_binding_updater) is used by Graph's add()
@@ -191,9 +191,9 @@ points at the caller's add() line.
 | --- | --- |
 | accepts_kernel | add(launch, reads, writes, kernel), add_untracked(launch, kernel) |
 | accepts_captured_kernel, accepts_captures | add(launch, In/Out/InOut..., kernel) |
-| accepts_state_rule | add_rule(state, kernel), add_rule(launch, state, kernel), add_dynamic(Dynamic, state, kernel), add(OperationID, state, local) |
+| accepts_state_rule | add_rule(state, kernel), add_rule(launch, state, kernel), add_dynamic(Dynamic, state, kernel) |
 | accepts_coupled_rule | add_coupled(Coupled, kernel), add_coupled(launch, Coupled, kernel) |
-| accepts_per_element | add_dynamic(Dynamic, capacity, reads, writes, kernel), add(OperationID, n, reads, writes, local) |
+| accepts_per_element | add_dynamic(Dynamic, capacity, reads, writes, kernel) |
 | accepts_raw_kernel | add(reads, writes, kernel), add_untracked(kernel), add_untracked(On, kernel) |
 | accepts_task | add_task(reads, writes, body) |
 | accepts_host_task, accepts_extension | add_host, extend |
@@ -280,8 +280,8 @@ after the emitter has run.
 | launch_node, range_node, raw_node, captured_node, task_node, host_node, device_sized_node, late_count_resolver_node | the width NodeOptions states |
 | dynamic_node | the width NodeOptions states, or the capacity |
 | add_state_node, add_coupled_node, untracked_launch_node | launch_count() of the launch |
-| untracked_range_node, offload_node | the count |
-| dynamic_state_node, offload_state_node | the State's size |
+| untracked_range_node | the count |
+| dynamic_state_node | the State's size |
 | untracked_raw_node | none |
 
 untracked_raw_node() stamps none: a raw command group submits its own work and takes no launch,
@@ -297,21 +297,26 @@ overload that takes a device work first, and a generic lambda would convert to b
 
 ### State emitters
 
-state_launch_node(view, launch, fn), coupled_launch_node(out_view, views, launch, fn),
-dynamic_state_node(view, capacity, ...) and offload_state_node(op, view, size, ...) take the
+state_launch_node(view, launch, kernel), coupled_launch_node(out_view, views, launch, kernel)
+and dynamic_state_node(view, capacity, ...) take the
 State's view and no `State<T>*`, so a rule does not depend on where the State object lives. A
 State's size does not change after it is allocated, so it is passed by value. The keys of a State
 swap at every step, so they are read at each replay, from the view: the read key is the address in
-`view->current` and the write key the address in `view->next`. offload_state_node() writes the same
-two addresses into its live read and write lists at each replay. The State keeps its view written
+`view->current` and the write key the address in `view->next`. The State keeps its view written
 (api/data/README.md), so a replay needs no resync before it.
 
-### offload_parameters_refusal
+## live_fields.hpp
 
-TaskMetadata holds K_MAX_PARAMS parameters. offload_parameters_refusal() returns an
-`InvalidGraph` error for a longer list, naming the call, the rule, the count given and the limit,
-and Recorder::offload() and offload_rule() ask it before they record. offload_metadata() copies
-every parameter it is handed and states that check as its precondition.
+### LiveFields and with_live_fields
+
+A State rule that names an operation may be run by something other than the local pool, and
+whatever runs it must know which field is current at that step. LiveFields holds two shared
+lists of addresses: the current field of every State the rule reads, the one written first, and
+the next field of the State written. with_live_fields() wraps the rule's replay callable: after
+the callable has added its node, the wrapper hands the lists to the node with
+`Node::set_live_io()`. A rule that names no operation carries null lists and its node is left
+as the callable added it. The Recorder builds the lists and registers the hook that rewrites them
+before each step, because the fields swap at every step.
 
 ### untracked_launch_node
 

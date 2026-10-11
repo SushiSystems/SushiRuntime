@@ -46,7 +46,9 @@ namespace SushiRuntime
             /**
              * @brief Reports whether one node's kind and bindings allow it on the chain.
              * @param node A compiled, non-sentinel node.
-             * @return False for native host work or an offload candidate.
+             * @return False for native host work and for a node the installed coordinator
+             *         marked as one a worker may run; the operation a node names does not
+             *         decide.
              */
             bool node_kind_is_chainable(const Internal::Graph::Node& node) noexcept
             {
@@ -55,9 +57,10 @@ namespace SushiRuntime
                                             node.submits_device_work();
                 if (!submits_device)
                     return false;
-                if (node.metadata.op_id.value != 0)
-                    return false;
-                return true;
+
+                // OffloadCoordinator::prepare() ran at compile and set the flag, or none is installed.
+                const Internal::Graph::OffloadState* offload = node.offload_state();
+                return offload == nullptr || !offload->offloadable;
             }
 
             /**

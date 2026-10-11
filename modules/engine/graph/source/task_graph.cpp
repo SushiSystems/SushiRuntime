@@ -98,7 +98,7 @@ namespace SushiRuntime
             /**
              * @brief Source of fresh registration indices, shared across add_* calls.
              *
-             * add_node()/add_task()/add_native()/add_offload_dynamic() run on the
+             * add_node()/add_task()/add_native() run on the
              * same lock-free contract as the rest of graph construction, so a plain
              * counter would race under concurrent callers; fetch_add makes each draw
              * atomic and distinct regardless of who is calling.
@@ -396,48 +396,6 @@ namespace SushiRuntime
                             std::move(fallback_work),
                             dependencies,
                             registration);
-        }
-
-        /**
-         * @brief Adds an offloadable task whose touched buffers rotate every step.
-         * @param metadata Metadata carrying the offloadable op_id.
-         * @param registration Index to stamp on this node; absent draws a fresh one.
-         * @return The node added.
-         */
-        Node& TaskGraph::add_offload_dynamic(const TaskMetadata& metadata,
-                                             std::shared_ptr<std::vector<void*>> live_reads,
-                                             std::shared_ptr<std::vector<void*>> live_writes,
-                                             HostWork fallback_work,
-                                             const std::vector<sycl::event>& dependencies,
-                                             std::optional<std::uint32_t> registration)
-        {
-            impl_->require_issued("add_offload_dynamic", registration);
-
-            auto node = make_sushi<Node>();
-            node->metadata  = metadata;
-            node->host_work = std::move(fallback_work);
-            node->sycl_deps = dependencies;
-            node->mode      = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Host;
-
-            // The snapshot orders dependencies and routes the queue (modules/engine/graph/README.md).
-            const std::vector<void*> reads  = live_reads  ? *live_reads  : std::vector<void*>{};
-            const std::vector<void*> writes = live_writes ? *live_writes : std::vector<void*>{};
-
-            // Each live pointer maps to a whole-buffer region (modules/engine/graph/README.md).
-            for (void* ptr : reads)
-                if (ptr) impl_->tracker.resolve(node.get(), ptr, false);
-            for (void* ptr : writes)
-                if (ptr) impl_->tracker.resolve(node.get(), ptr, true);
-
-            node->io_reads_.assign(reads.begin(), reads.end());
-            node->io_writes_.assign(writes.begin(), writes.end());
-
-            // The live lists resolve handles at dispatch (modules/engine/graph/README.md).
-            OffloadState& off = node->offload();
-            off.live_reads  = std::move(live_reads);
-            off.live_writes = std::move(live_writes);
-
-            return impl_->push_node_lock_free(std::move(node), registration);
         }
 
         /**

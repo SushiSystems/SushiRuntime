@@ -1009,10 +1009,10 @@ holds one rule and one node, and the run executes the second node only. `extend(
 scope open around the extension, so a `clear()` that left the scope's state as it was recorded the
 second node into a rule that no longer existed.
 
-### `AnOffloadRuleTakesAtMostEightParameters`
+### `ANamedRuleTakesAtMostEightParameters`
 
-`add(OperationID, count, Reads, Writes, local, params)` and `add(OperationID, state, local, params)` with nine
-parameters are refused with `InvalidGraph`; the first message holds `9 parameters` and `at most 8`, and
+`add(count, Reads, Writes, kernel, options)` and `add_rule(state, kernel, options)`, each with an
+operation and nine parameters in its `NodeOptions`, are refused with `InvalidGraph`; the first message holds `9 parameters` and `at most 8`, and
 neither rule is recorded. Both forms record with eight. A `static_assert` ties the literals to
 `TaskMetadata::K_MAX_PARAMS`. The graph is not run.
 
@@ -1415,7 +1415,7 @@ Each case builds a replay callable outside a recorder and hands it the State's o
 compiles that graph and executes the plan on the runtime's engine. One step runs and the State's
 next field holds the rule's result. No advance is registered, so the test reads `next()`.
 The late-bound case sets the live count on its `LateBindings` and checks that the elements past it
-keep `K_CANARY`. `offload_state_node(op, view, size, ...)` has no case here.
+keep `K_CANARY`.
 
 ## test_device_slot_liveness.cpp
 

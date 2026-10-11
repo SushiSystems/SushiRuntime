@@ -376,25 +376,6 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     });
     EXPECT_TRUE(begins_with(raw_refusal, "add_untracked(On(...), kernel), rule 0: ")) << raw_refusal;
 
-    const std::string offload_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
-    {
-        graph.add("builder.check"_op, K_WIDTH, Reads(target), Writes(target),
-                  [](std::size_t) {}, {1, 2, 3, 4, 5, 6, 7, 8, 9});
-    });
-    EXPECT_TRUE(begins_with(offload_refusal,
-                            "add(OperationID, n, reads, writes, local, params), rule 0: "))
-        << offload_refusal;
-
-    const std::string offload_rule_refusal =
-        refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
-    {
-        graph.add("builder.check"_op, field, [](std::size_t, const Word*, Word*) {},
-                  {1, 2, 3, 4, 5, 6, 7, 8, 9});
-    });
-    EXPECT_TRUE(begins_with(offload_rule_refusal,
-                            "add(OperationID, state, local, params), rule 0: "))
-        << offload_rule_refusal;
-
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }
 

@@ -175,6 +175,46 @@ TEST(Integration_ChainLayer, NonChainablePlanMatchesChainBitForBit)
     EXPECT_TRUE(same_bytes(chained.gated, native.gated));
 }
 
+/**
+ * @brief Tests that a node that names an operation runs on the chain when no cluster is
+ *        attached; see README.md.
+ */
+TEST(Integration_ChainLayer, ANamedNodeRunsOnTheChainWithNoClusterAttached)
+{
+    auto rt = Runtime::create().value();
+    auto values = rt.buffer<std::uint32_t>(N).value();
+    auto field = rt.state<std::uint32_t>(N).value();
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        values[i] = 0;
+        field[i] = 0;
+    }
+    std::uint32_t* words = values.data();
+
+    const std::uint64_t parameters[] = {N};
+    NodeOptions named;
+    named.operation = "chain_layer.named"_op;
+    named.parameters = parameters;
+
+    auto graph = rt.graph();
+    graph.add(N, Reads{}, Writes(values), [words](std::size_t i) { words[i] += 1u; }, named);
+    graph.add_rule(field,
+                   [](std::size_t i, const std::uint32_t* current, std::uint32_t* next)
+                   { next[i] = current[i] + 2u; },
+                   named);
+
+    constexpr std::size_t STEPS = 3;
+    const auto report = graph.run(STEPS);
+    ASSERT_TRUE(report.has_value()) << report.error().message;
+    EXPECT_EQ(report->layer, Internal::Observability::ExecutionLayer::Chain)
+        << "a named node kept the plan off the chain although nothing can take it";
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        ASSERT_EQ(values[i], STEPS) << "at i=" << i;
+        ASSERT_EQ(field[i], 2u * STEPS) << "at i=" << i;
+    }
+}
+
 TEST(Integration_ChainLayer, RunUntilSeesEveryStepsResult)
 {
     constexpr std::uint32_t TARGET = 9;
