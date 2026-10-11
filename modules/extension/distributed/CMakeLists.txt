@@ -43,13 +43,14 @@ sushiruntime_add_module(
         worker_main.cpp
         worker_options_parser.cpp
         worker_session.cpp
-    DEPENDS core memory task
+    DEPENDS core api
     PRIVATE_DEPENDS
         logging
+        memory
         device
+        task
         graph
         execution
-        api
         region
         log
     EXTERNAL "$<$<PLATFORM_ID:Windows>:ws2_32>")

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-12 — layering: Added `rule_public_headers`, which reports an include of an `INTERNAL` module in a header a public module installs (`check_layering.py`, `test_check_layering.py`).
+- 2026-10-12 — cmake: Breaking change: Made `sushiruntime_add_module` refuse an `INTERNAL` module under the `DEPENDS` of a module that is installed (`SushiRuntimeModule.cmake`).
+- 2026-10-12 — cmake: Renamed the global property of every include root of the build tree to `SUSHIRUNTIME_BUILD_INCLUDE_ROOTS` (`SushiRuntimeModule.cmake`, `SushiRuntimeLibrary.cmake`).
+- 2026-10-12 — distributed: Moved memory and task to `PRIVATE_DEPENDS` and api to `DEPENDS`, which is what the installed headers of the extension include (`CMakeLists.txt`).
 - 2026-10-12 — api: Breaking change: Removed `Runtime::unsafe_context()`; the library and its tests reach the context through `Detail::ContextAccess` of the internal `execution` module (`runtime.hpp`, `context_access.hpp`).
 - 2026-10-12 — api: Breaking change: Made `Buffer` hold a `Detail::MemoryBlock` and a `ContextHandle`; allocation and the window copies are compiled into the library (`buffer.hpp`, `buffer.cpp`).
 - 2026-10-12 — api: Breaking change: Compiled the members of `Runtime`, `AdvancedControls` and `Interop` that reach the context into the library (`runtime.cpp`, `interop.cpp`).
