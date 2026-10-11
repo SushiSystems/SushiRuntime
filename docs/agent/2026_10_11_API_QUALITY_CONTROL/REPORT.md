@@ -473,3 +473,49 @@ dispatch: (h) cross-cutting — opus low, 102 turns, passed
 ```
 
 Every reviewer's reply carried the four evidence items: SOLID checked as a named item, `humanizer` invoked, no source written, no scratch written.
+
+## Repairs
+
+Six waves repaired the findings between `492941c` and `bc12c24`. The orchestrator built and
+tested each hand-back; the workers built nothing.
+
+| Wave | Modules | Tests after the wave |
+| --- | --- | --- |
+| 1 | core, logging, topology, memory, observability, interop | 712 of 712 |
+| 2 and 3 | scheduler, task, graph, execution, api data and vocabulary | 757 of 757 |
+| 4 and 5 | api recorder, step driver, region composer, builder surface | 785 of 785 |
+| 6 | api graphs, distributed, examples, READMEs, register pass | 798 of 798 |
+
+Both critical findings are repaired. The findings that stay open are listed in
+[`REMAINING_WORK.md`](../../design/REMAINING_WORK.md), section "API quality control", and the
+ones a user can hit in [`KNOWN_ISSUES.md`](../../reference/KNOWN_ISSUES.md).
+
+Two workers broke an instruction. T15 ran `git stash` and `git stash pop` once; the tree came
+back unchanged. T21 wrote three files through Python in place of the edit tool.
+
+```
+dispatch: T01 span — haiku high, 33 turns, passed after chief rework
+dispatch: T02 result — haiku high, 23 turns, passed
+dispatch: T03 sushi_ptr — haiku high, 43 turns, passed
+dispatch: T04 core rest — haiku high, 66 turns, passed
+dispatch: T05 logging — haiku high, 37 turns, passed after chief rework
+dispatch: T06 topology — opus low, 38 turns, passed
+dispatch: T07 memory — opus low, 54 turns, passed
+dispatch: T08 observability — haiku medium, 38 turns, passed
+dispatch: T09 interop — opus low, 33 turns, passed
+dispatch: T10 scheduler — opus low, 67 turns, passed
+dispatch: T11 task — haiku high, 65 turns, passed
+dispatch: T12 graph, execution — opus low, 76 turns, passed
+dispatch: T13 api data — haiku high, 97 turns, passed
+dispatch: T14 vocabulary, detail — opus low, 74 turns, passed
+dispatch: T15 recorder, State view — opus low, 78 turns, passed
+dispatch: T17 step driver — opus low, 119 turns, passed
+dispatch: T18 region composer — opus low, 96 turns, passed
+dispatch: T19 builder surface — haiku high, 99 turns, failed, rung 2 (unfinished; chief closed it)
+dispatch: T20 graphs — opus low, 74 turns, passed
+dispatch: T21 distributed — opus low, 125 turns, passed
+dispatch: T22 examples — haiku medium, 46 turns, passed
+dispatch: T23 api READMEs — haiku medium, 30 turns, passed
+dispatch: closing register pass — haiku high, 161 turns, passed
+dispatch: API quality control chief — opus medium, review and six repair waves, passed
+```
