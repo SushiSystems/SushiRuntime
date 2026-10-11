@@ -52,10 +52,17 @@ namespace SushiRuntime
             /** @brief Fault kind of a LateCount whose device value exceeds its capacity. */
             constexpr std::uint32_t DEVICE_FAULT_LATE_COUNT = 2;
 
+            /** @brief Returns a size as a fault word, or UINT32_MAX when it does not fit one. */
+            constexpr std::uint32_t saturated_fault_word(std::size_t value) noexcept
+            {
+                return value > UINT32_MAX ? UINT32_MAX : static_cast<std::uint32_t>(value);
+            }
+
             /**
              * @brief Writes one fault record from device code; its node is the record's only writer.
              * @param record   DEVICE_FAULT_WORDS host-USM words; null records nothing.
              * @param kind     DEVICE_FAULT_WINDOW or DEVICE_FAULT_LATE_COUNT.
+             * @param base     Stored as UINT32_MAX when larger, as count and capacity are.
              */
             inline void record_device_fault(std::uint32_t* record, std::uint32_t kind,
                                             std::size_t base, std::size_t count,
@@ -63,9 +70,9 @@ namespace SushiRuntime
             {
                 if (record == nullptr)
                     return;
-                record[1] = static_cast<std::uint32_t>(base);
-                record[2] = static_cast<std::uint32_t>(count);
-                record[3] = static_cast<std::uint32_t>(capacity);
+                record[1] = saturated_fault_word(base);
+                record[2] = saturated_fault_word(count);
+                record[3] = saturated_fault_word(capacity);
                 record[0] = kind;
             }
 

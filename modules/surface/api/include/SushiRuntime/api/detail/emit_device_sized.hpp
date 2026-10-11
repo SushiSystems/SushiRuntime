@@ -78,11 +78,11 @@ namespace SushiRuntime
                             const std::size_t t = id[0];
                             if (live_count != nullptr && t >= static_cast<std::size_t>(*live_count))
                                 return;
-                            if constexpr (std::is_invocable_v<F, std::size_t, std::size_t,
-                                                              std::size_t>)
+                            if constexpr (std::is_invocable_v<const F&, std::size_t,
+                                                              std::size_t, std::size_t>)
                                 fn(t, static_cast<std::size_t>(live_scalar[0]),
                                    static_cast<std::size_t>(live_scalar[1]));
-                            else if constexpr (std::is_invocable_v<F, std::size_t, std::size_t>)
+                            else if constexpr (std::is_invocable_v<const F&, std::size_t, std::size_t>)
                                 fn(t, static_cast<std::size_t>(live_scalar[0]));
                             else
                             {

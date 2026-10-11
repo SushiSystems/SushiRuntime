@@ -58,10 +58,12 @@ namespace SushiRuntime
                        (::SushiRuntime::Graph::TaskGraph& bg,
                         std::optional<std::uint32_t> registration)
                 {
-                    bg.add_node([fn, launch](sycl::handler& h)
+                    auto& node = bg.add_node([fn, launch](sycl::handler& h)
                     {
                         submit_launch(h, launch, fn);
-                    }, std::vector<sycl::event>{}, registration).place_on(device);
+                    }, std::vector<sycl::event>{}, registration);
+                    node.place_on(device);
+                    node.baked_width = launch_count(launch);
                 };
             }
 
@@ -76,10 +78,12 @@ namespace SushiRuntime
                        (::SushiRuntime::Graph::TaskGraph& bg,
                         std::optional<std::uint32_t> registration)
                 {
-                    bg.add_node([fn, n](sycl::handler& h)
+                    auto& node = bg.add_node([fn, n](sycl::handler& h)
                     {
                         fn(std::size_t{0}, n, h);
-                    }, std::vector<sycl::event>{}, registration).place_on(device);
+                    }, std::vector<sycl::event>{}, registration);
+                    node.place_on(device);
+                    node.baked_width = n;
                 };
             }
 

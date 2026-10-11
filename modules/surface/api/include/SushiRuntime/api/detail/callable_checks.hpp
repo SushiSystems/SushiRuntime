@@ -138,7 +138,7 @@ namespace SushiRuntime
             constexpr bool accepts_coupled_rule() noexcept
             {
                 constexpr bool accepted =
-                    is_launch_kernel_v<Launch, F, const Out*, Out*, Inputs*...>;
+                    is_launch_kernel_v<Launch, F, const Out*, Out*, const Inputs*...>;
                 static_assert(accepted,
                     "add(Coupled(out, in0, ...), fn) and add(launch, Coupled(out, in0, ...), fn) "
                     "take fn(index, const T* current, T* next, const A* in0, ...): the two "

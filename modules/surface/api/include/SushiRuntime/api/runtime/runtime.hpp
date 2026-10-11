@@ -103,7 +103,8 @@ namespace SushiRuntime
                 /**
                  * @brief Allocates a typed buffer of @p count elements on one device.
                  * @throws Core::SushiException With Errc::invalid_access when @p device names no
-                 *         device of this runtime; the message carries the index and the count.
+                 *         device of this runtime; the message names Runtime::buffer, the index,
+                 *         the device count and advanced().devices().
                  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
                  */
                 template <typename T>
@@ -111,13 +112,14 @@ namespace SushiRuntime
                                                DeviceIndex device = DeviceIndex{0},
                                                Residency residency = Residency::Shared) const
                 {
-                    return Buffer<T>(context_, count, device, residency);
+                    return Buffer<T>("Runtime::buffer", context_, count, device, residency);
                 }
 
                 /**
                  * @brief Allocates a double-buffered field of @p count elements on one device.
                  * @throws Core::SushiException With Errc::invalid_access when @p device names no
-                 *         device of this runtime; the message carries the index and the count.
+                 *         device of this runtime; the message names Runtime::state, the index,
+                 *         the device count and advanced().devices().
                  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
                  */
                 template <typename T>
@@ -125,7 +127,7 @@ namespace SushiRuntime
                                              DeviceIndex device = DeviceIndex{0},
                                              Residency residency = Residency::Shared) const
                 {
-                    return State<T>(context_, count, device, residency);
+                    return State<T>("Runtime::state", context_, count, device, residency);
                 }
 
                 /**

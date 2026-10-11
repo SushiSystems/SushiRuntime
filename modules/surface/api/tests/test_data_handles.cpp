@@ -21,7 +21,7 @@
 
 /**
  * @file test_data_handles.cpp
- * @brief Tests the range, allocation and query contracts Buffer and State share.
+ * @brief Tests the range, allocation, residency and element contracts of Buffer and State.
  * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
@@ -29,6 +29,8 @@
 #include <cstddef>
 #include <limits>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 #include <gtest/gtest.h>
 #include <SushiRuntime/SushiRuntime.h>
@@ -103,6 +105,13 @@ namespace
         EXPECT_EQ(region.offset, handle.size() * sizeof(int));
         EXPECT_EQ(region.length, 0u);
     }
+
+    /** @brief A trivially copyable element type of two floats. */
+    struct Pair
+    {
+        float x;
+        float y;
+    };
 } // namespace
 
 /**
@@ -256,4 +265,131 @@ TEST(Integration_DataHandles, StateAndBufferAnswerTheSharedQueriesAlike)
     EXPECT_EQ(window.base, static_cast<void*>(field.current()));
     EXPECT_EQ(window.offset, 4 * sizeof(int));
     EXPECT_EQ(window.length, 8 * sizeof(int));
+}
+
+/**
+ * @brief Tests that a trivially copyable struct instantiates Buffer and State and round-trips.
+ */
+TEST(Integration_DataHandles, TriviallyCopyableStructRoundTrips)
+{
+    EXPECT_TRUE(std::is_trivially_copyable<Pair>::value);
+
+    auto rt = Runtime::create();
+    const auto buf = rt.buffer<Pair>(2);
+    const auto field = rt.state<Pair>(2);
+    const std::vector<Pair> source{{1.5f, -2.0f}, {3.25f, 4.0f}};
+    buf.write_range({0, 2}, source);
+    field.write_range({0, 2}, source);
+
+    // A round trip copies bits, so the absolute tolerance only bounds the comparison.
+    constexpr float K_TOLERANCE = 1e-6f;
+    const std::vector<Pair> from_buffer = buf.read_range({0, 2});
+    const std::vector<Pair> from_state = field.read_range({0, 2});
+    ASSERT_EQ(from_buffer.size(), source.size());
+    ASSERT_EQ(from_state.size(), source.size());
+    for (std::size_t i = 0; i < source.size(); ++i)
+    {
+        EXPECT_NEAR(from_buffer[i].x, source[i].x, K_TOLERANCE) << "at i=" << i;
+        EXPECT_NEAR(from_buffer[i].y, source[i].y, K_TOLERANCE) << "at i=" << i;
+        EXPECT_NEAR(from_state[i].x, source[i].x, K_TOLERANCE) << "at i=" << i;
+        EXPECT_NEAR(from_state[i].y, source[i].y, K_TOLERANCE) << "at i=" << i;
+    }
+}
+
+/**
+ * @brief Tests that distributed() refuses a device-resident Buffer with no cluster attached.
+ */
+TEST(Integration_DataHandles, DistributedRefusesADeviceResidentBuffer)
+{
+    auto rt = Runtime::create();
+    auto buf = rt.buffer<float>(8, DeviceIndex{0}, Residency::Device);
+
+    const Core::Error lvalue = error_of([&]() { buf.distributed(); });
+    EXPECT_EQ(lvalue.code, Core::Errc::invalid_access) << lvalue.message;
+    EXPECT_NE(lvalue.message.find("Buffer::distributed()"), std::string::npos) << lvalue.message;
+    EXPECT_NE(lvalue.message.find("Device residency"), std::string::npos) << lvalue.message;
+
+    const Core::Error rvalue = error_of([&]() {
+        (void)rt.buffer<float>(8, DeviceIndex{0}, Residency::Device).distributed();
+    });
+    EXPECT_EQ(rvalue.code, Core::Errc::invalid_access) << rvalue.message;
+    EXPECT_NE(rvalue.message.find("Buffer::distributed()"), std::string::npos) << rvalue.message;
+}
+
+/**
+ * @brief Tests that distributed() refuses a device-resident State and names State, not Buffer.
+ */
+TEST(Integration_DataHandles, DistributedRefusesADeviceResidentState)
+{
+    auto rt = Runtime::create();
+    auto field = rt.state<float>(8, DeviceIndex{0}, Residency::Device);
+
+    const Core::Error error = error_of([&]() { field.distributed(); });
+    EXPECT_EQ(error.code, Core::Errc::invalid_access) << error.message;
+    EXPECT_NE(error.message.find("State::distributed()"), std::string::npos) << error.message;
+    EXPECT_EQ(error.message.find("Buffer::"), std::string::npos) << error.message;
+}
+
+/**
+ * @brief Tests that distributed() accepts a handle the host can address and a handle that is empty.
+ */
+TEST(Integration_DataHandles, DistributedAcceptsAHostAccessibleHandle)
+{
+    auto rt = Runtime::create();
+    auto buf = rt.buffer<float>(8);
+    auto field = rt.state<float>(8);
+    auto moved_from = rt.buffer<float>(8);
+    auto taken = std::move(moved_from);
+    EXPECT_EQ(taken.size(), 8u);
+    EXPECT_EQ(moved_from.size(), 0u);
+
+    EXPECT_NO_THROW(buf.distributed());
+    EXPECT_NO_THROW(field.distributed());
+    EXPECT_NO_THROW(moved_from.distributed());
+    EXPECT_NO_THROW((void)rt.buffer<float>(8, DeviceIndex{0}, Residency::Host).distributed());
+}
+
+/**
+ * @brief Tests that operator[] and host() on a device-resident State name the State in the error.
+ */
+TEST(Integration_DataHandles, HostAccessOnADeviceStateNamesTheState)
+{
+    auto rt = Runtime::create();
+    const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
+
+    const Core::Error indexed = error_of([&]() { (void)field[0]; });
+    EXPECT_EQ(indexed.code, Core::Errc::invalid_access) << indexed.message;
+    EXPECT_NE(indexed.message.find("State::operator[]"), std::string::npos) << indexed.message;
+
+    const Core::Error bulk = error_of([&]() { (void)field.host(); });
+    EXPECT_EQ(bulk.code, Core::Errc::invalid_access) << bulk.message;
+    EXPECT_NE(bulk.message.find("State::host"), std::string::npos) << bulk.message;
+}
+
+/**
+ * @brief Tests that a device index naming no device is refused by buffer() and state(), by name.
+ */
+TEST(Integration_DataHandles, DeviceIndexThatNamesNoDeviceIsRefused)
+{
+    auto rt = Runtime::create();
+    const std::size_t count = rt.advanced().device_count();
+    const DeviceIndex past_the_end{count};
+
+    const Core::Error buffer_error =
+        error_of([&]() { auto buf = rt.buffer<float>(8, past_the_end); });
+    EXPECT_EQ(buffer_error.code, Core::Errc::invalid_access) << buffer_error.message;
+    EXPECT_NE(buffer_error.message.find("Runtime::buffer"), std::string::npos)
+        << buffer_error.message;
+    EXPECT_NE(buffer_error.message.find("device index " + std::to_string(count)),
+              std::string::npos) << buffer_error.message;
+    EXPECT_NE(buffer_error.message.find("the runtime drives " + std::to_string(count)),
+              std::string::npos) << buffer_error.message;
+    EXPECT_NE(buffer_error.message.find("advanced().devices()"), std::string::npos)
+        << buffer_error.message;
+
+    const Core::Error state_error =
+        error_of([&]() { auto field = rt.state<float>(8, past_the_end); });
+    EXPECT_EQ(state_error.code, Core::Errc::invalid_access) << state_error.message;
+    EXPECT_NE(state_error.message.find("Runtime::state"), std::string::npos)
+        << state_error.message;
 }

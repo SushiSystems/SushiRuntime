@@ -74,8 +74,10 @@ structural change is committed before the step is submitted.
 ## test_data_handles.cpp
 
 The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what
-an allocation does with a count it cannot hold, and the queries both answer. Every handle is shared
-USM on device 0, so the file needs no GPU.
+an allocation does with a count it cannot hold, the queries both answer, which device indices and
+residencies are refused, and which element types are accepted. Most handles are shared USM on
+device 0. The device-resident handles allocate on device 0 as `test_device_resident.cpp` does, so
+the file needs no cluster and no more devices than that file.
 
 ### `error_of`, `expect_window_rejected`, `expect_every_range_call_rejects`
 
@@ -127,6 +129,34 @@ message.
 
 `device_index`, `size`, `empty`, `residency` and `is_host_accessible` return the same on a State and
 on a Buffer allocated alike, and `State::region` names a window of the current field.
+
+### `TriviallyCopyableStructRoundTrips`
+
+A struct of two floats instantiates `Buffer` and `State`, and a window written with `write_range`
+reads back equal through `read_range`. The negative case, a `T` that is not trivially copyable, is
+a compile error from the `static_assert` in `Buffer`, so no test can run it.
+
+### `DistributedRefusesADeviceResidentBuffer`, `DistributedRefusesADeviceResidentState`
+
+`distributed()` on a device-resident handle throws `invalid_access` for both overloads of Buffer and
+State. The message names `Buffer::distributed()` or `State::distributed()`, and the residency. The
+tests run without a cluster, which shows the refusal does not depend on one.
+
+### `DistributedAcceptsAHostAccessibleHandle`
+
+`distributed()` does not throw on a Shared or Host handle, on a moved-from handle that owns nothing,
+or on a moved-to handle. No coordinator is attached, so the call only logs its warning.
+
+### `HostAccessOnADeviceStateNamesTheState`
+
+`operator[]` and `host()` on a device-resident State throw `invalid_access` with `State::operator[]`
+and `State::host` in the message, not `Buffer`.
+
+### `DeviceIndexThatNamesNoDeviceIsRefused`
+
+`buffer()` and `state()` with a device index equal to the device count throw `invalid_access`. The
+message names `Runtime::buffer` or `Runtime::state`, the index, the device count and
+`advanced().devices()`.
 
 ## test_device_count.cpp
 
@@ -1183,3 +1213,93 @@ run does not call it again.
 Each spelling v0.4.0 deprecates (the old argument orders, `name_last`, `no_registration`,
 `Extent::offset`) still records the same rule. The test switches the deprecation warning off for
 its own body and is deleted with the forwarders.
+
+## test_callable_traits.cpp
+
+The file covers the callable traits of `detail/callable_traits.hpp` and `is_launch_kernel_v` of
+`detail/callable_checks.hpp`. No case runs a graph: each reads a trait for a lambda declared in
+the test.
+
+### `AMutablePerElementKernelIsRejected`, `AMutableRangeKernelIsRejected`
+
+`is_per_element_v` and `is_range_kernel_v` are true for a lambda and false for the same lambda
+declared `mutable`. The emitters call both kernels as const objects, so a trait that accepted the
+`mutable` one let it past the `static_assert` and failed inside the emitter.
+
+### `AMutableRawKernelIsAccepted`
+
+`is_raw_kernel_v` is true for a `mutable` lambda: `raw_node()` stores the command group in a
+`std::function`, which calls it as a non-const object.
+
+### `ACoupledKernelMustTakeItsInputsAsConst`
+
+`accepts_coupled_rule()` holds a `static_assert`, so the test reads the trait under it.
+`is_launch_kernel_v` with a `const Word*` input is true for a kernel that declares the input
+`const Word*` and false for one that declares it `Word*`, for a count and for an `Extent<1>`.
+
+## test_state_emitters.cpp
+
+The file covers the nodes `detail/emit_state.hpp` and `detail/emit_dynamic.hpp` build for State
+and coupled rules. `seeded_state` fills the current field with the index plus `SEED` and the next
+field with `CANARY`, so an element a kernel did not write is recognisable.
+
+### `ACoupledRuleReadsItsInputsThroughConstPointers`
+
+`add(Coupled(out, left, right), fn)` with a kernel that takes both inputs as `const Word*` writes
+`current + a * b` into `out` and leaves both inputs as they were.
+
+### `StateCoupledAndUntrackedNodesReportTheirLaunchWidth`
+
+A profiled graph holds `add(state, fn)`, `add(count, Coupled, fn)` and `add_untracked(count, fn)`.
+Their node events report the State's size and the two counts as `launched_width`. The three nodes
+share no region and may finish in any order, so the widths are compared sorted.
+
+### `AStateNodeBuiltFromItsViewRunsTheRule`, `ACoupledNodeBuiltFromItsViewsRunsTheRule`, `ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow`
+
+Each case builds a replay callable from an overload that takes no `State<T>*`, hands it a view
+the test filled from the State, and replays it through `add_emitter()`. One step runs and the
+State's next field holds the rule's result. No advance is registered, so the test reads `next()`.
+The late-bound case sets the live count on its `LateBindings` and checks that the elements past it
+keep `CANARY`. `offload_state_node(op, view, size, ...)` has no case here.
+
+## test_device_slot_liveness.cpp
+
+The file covers the liveness of the buffer a `Dynamic` reads a device value from. `host_slot`
+allocates the one-word `Residency::Host` buffer.
+
+### `ADestroyedCountBufferRefusesTheRun`, `ADestroyedBaseBufferRefusesTheRun`
+
+A graph records a rule with `sized_from_device(counter)` or `based_at_device(base)` and runs once.
+The buffer is then destroyed and the next `try_run()` returns `dangling_resource`. The count case
+also checks that the recorder watches two allocations, the target and the counter.
+
+### `ADestroyedCountBufferRefusesAStateRule`
+
+The same refusal for `add(sized_from_device(counter), state, fn)`, whose observers the recorder
+gathers in a different member.
+
+## test_launch_reach.cpp
+
+The file covers `detail::launch_reach()` for a rank-1 launch whose origin plus size does not fit
+a `std::size_t`.
+
+### `ReachSaturatesAtTheLargestSize`
+
+An `Extent<1>` of 8 elements at origin 16 reaches 24. The same extent and an `NdRange<1>` at
+origin `SIZE_MAX - 3` reach `SIZE_MAX`.
+
+### `AnExtentWhoseEndWrapsIsRefusedAtAdd`
+
+`add(extent, state, fn)` with that extent over a State of 8 elements throws `invalid_graph` and
+records nothing. A wrapped sum would be 4, which is inside the State.
+
+## test_device_fault.cpp
+
+The file covers `detail::record_device_fault()` for values past a uint32. Two `static_assert`s pin
+`saturated_fault_word()` at compile time.
+
+### `AFieldPastAUint32IsStoredSaturated`
+
+A record written with a base and a capacity of `UINT32_MAX + 5` holds `UINT32_MAX` in both words
+and the count as given. `throw_if_device_fault()` then names `4294967295` as the start of the
+window and clears the record. The test is skipped where `std::size_t` is 32 bits wide.

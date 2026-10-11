@@ -59,7 +59,8 @@ namespace SushiRuntime
 
         /**
          * @brief Owns two equally sized buffers whose roles the runtime swaps after each step.
-         * @tparam T Element type; must be trivially copyable for device use.
+         * @tparam T Element type; must be trivially copyable, which its Buffer<T> members check
+         *         at compile time.
          * @see modules/surface/api/include/SushiRuntime/api/data/README.md
          */
         template <typename T>
@@ -91,7 +92,7 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t size() const noexcept { return cur_.size(); }
 
                 /**
-                 * @brief Tells whether this State still owns memory.
+                 * @brief Tells whether this State owns no memory.
                  * @return True if it owns no allocation, e.g. after being moved from.
                  */
                 [[nodiscard]] bool empty() const noexcept { return cur_.empty(); }
@@ -124,16 +125,25 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns element i of the current field for host code.
+                 * @pre i < size().
                  * @throws SushiException If the State is device-resident.
                  */
-                T& operator[](std::size_t i) const { return cur_[i]; }
+                T& operator[](std::size_t i) const
+                {
+                    cur_.require_host_accessible("State::operator[]");
+                    return cur_.data()[i];
+                }
 
                 /**
                  * @brief Returns a host-addressable span over the current field after one residency
                  *        check.
                  * @throws SushiException If the State is device-resident.
                  */
-                [[nodiscard]] span<T> host() const { return cur_.host(); }
+                [[nodiscard]] span<T> host() const
+                {
+                    cur_.require_host_accessible("State::host");
+                    return span<T>(cur_.data(), cur_.size());
+                }
 
                 /**
                  * @brief Copies a window of the current field out to a host vector and waits for
@@ -175,21 +185,29 @@ namespace SushiRuntime
                 /**
                  * @brief Shares both fields with the runtime's offload coordinator; does nothing
                  *        when none is installed or the state is empty.
-                 * @return *this from the lvalue overload, the state by value from the rvalue
-                 *        overload.
+                 * @return *this.
+                 * @throws SushiException With invalid_access when the state owns memory and is
+                 *         device-resident.
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
                 State& distributed() &
                 {
-                    cur_.distributed();
-                    next_.distributed();
+                    cur_.share_with_offload("State::distributed()");
+                    next_.share_with_offload("State::distributed()");
                     return *this;
                 }
 
+                /**
+                 * @brief Shares both fields as distributed() does, then returns the state by value.
+                 * @return The state, moved out of this object.
+                 * @throws SushiException With invalid_access when the state owns memory and is
+                 *         device-resident.
+                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+                 */
                 [[nodiscard]] State distributed() &&
                 {
-                    cur_.distributed();
-                    next_.distributed();
+                    cur_.share_with_offload("State::distributed()");
+                    next_.share_with_offload("State::distributed()");
                     return std::move(*this);
                 }
 
@@ -249,14 +267,15 @@ namespace SushiRuntime
 
                 /**
                  * @brief Allocates both fields of count elements on one device.
-                 * @throws SushiException With allocation_failed, as Buffer's allocating
-                 *         constructor does.
+                 * @param call Names the public operation in a thrown message.
+                 * @throws SushiException With invalid_access or allocation_failed, as Buffer's
+                 *         allocating constructor does.
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
-                State(std::shared_ptr<Execution::RuntimeContext> ctx, std::size_t count,
-                      DeviceIndex device_index, Residency residency)
-                    : cur_(ctx, count, device_index, residency),
-                      next_(std::move(ctx), count, device_index, residency)
+                State(const char* call, std::shared_ptr<Execution::RuntimeContext> ctx,
+                      std::size_t count, DeviceIndex device_index, Residency residency)
+                    : cur_(call, ctx, count, device_index, residency),
+                      next_(call, std::move(ctx), count, device_index, residency)
                 {
                 }
 
