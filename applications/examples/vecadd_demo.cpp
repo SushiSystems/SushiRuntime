@@ -64,7 +64,7 @@ namespace
                 c[i] = a[i] + b[i];
             });
 
-        g.run();
+        g.run().value();
 
         // Shared buffers are host-addressable once the run has completed.
         std::printf("vecadd: N = %zu\n", N);
@@ -84,13 +84,5 @@ namespace
 
 int main()
 {
-    try
-    {
-        return run_vecadd();
-    }
-    catch (const SushiException& error)
-    {
-        std::fprintf(stderr, "vecadd: %s\n", error.what());
-        return 1;
-    }
+    return run_vecadd();
 }

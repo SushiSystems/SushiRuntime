@@ -69,7 +69,7 @@ TEST(Integration_InteropHostExport, AKernelWritesWhatTheHostReads)
     runtime.graph()
         .add(257, Reads(), Writes(shared.buffer),
              [out](std::size_t i) { out[i] = static_cast<std::uint32_t>(i * 3u); })
-        .run();
+        .run().value();
     for (std::size_t i = 0; i < 257; ++i)
         ASSERT_EQ(shared.buffer[i], i * 3u);
 }

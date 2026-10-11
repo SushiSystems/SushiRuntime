@@ -96,7 +96,7 @@ TEST(Integration_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
     auto g = rt.graph();
     record_staged_rule(g.recorder(), in, out);
     g.add(K_COUNT, Reads(out), Writes(copy), [o, c](std::size_t i) { c[i] = o[i] + 1u; });
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < K_COUNT; ++i)
     {
@@ -118,7 +118,7 @@ TEST(Integration_RecorderScratch, EachRunReadsItsInputAsItStands)
     for (std::uint32_t step = 0; step < 4; ++step)
     {
         fill(in, step * 11u);
-        g.run();
+        g.run().value();
         for (std::size_t i = 0; i < K_COUNT; ++i)
             ASSERT_EQ(out[i], staged(in[i])) << "step " << step << ", i = " << i;
     }
@@ -138,14 +138,14 @@ TEST(Integration_RecorderScratch, ScratchSurvivesARecompile)
 
     auto g = rt.graph();
     record_staged_rule(g.recorder(), in, out);
-    g.run();
+    g.run().value();
     for (std::size_t i = 0; i < K_COUNT; ++i)
         ASSERT_EQ(out[i], staged(in[i])) << "first plan, i = " << i;
 
     // A node recorded after a run makes the next run build a second plan.
     g.add(K_COUNT, Reads(out), Writes(copy), [o, c](std::size_t i) { c[i] = o[i]; });
     fill(in, 9);
-    g.run();
+    g.run().value();
 
     EXPECT_EQ(g.compile_count(), 2u);
     for (std::size_t i = 0; i < K_COUNT; ++i)
@@ -191,7 +191,7 @@ TEST(Integration_RecorderScratch, RegionsRecordRulesWithScratch)
         // Renaming a rule changes the recording, so the last round replays region 1.
         if (round == 2)
             world.region(1).name("staged");
-        world.run();
+        world.run().value();
         for (std::size_t i = 0; i < K_COUNT; ++i)
         {
             ASSERT_EQ(mid[i], staged(in[i])) << "round " << round << ", i = " << i;

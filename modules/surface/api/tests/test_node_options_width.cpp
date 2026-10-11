@@ -82,7 +82,7 @@ TEST(Integration_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
                         NodeOptions{std::size_t{1}});
     }
 
-    const auto report = g.run();
+    const auto report = g.run().value();
 
     expect_widths(report, {static_cast<std::uint32_t>(WIDE), 1u});
     EXPECT_EQ(first[0], 1u);
@@ -123,7 +123,7 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
                         NodeOptions{CAPACITY});
     }
 
-    const auto report = g.run();
+    const auto report = g.run().value();
 
     expect_widths(report, {1u, static_cast<std::uint32_t>(CAPACITY)});
     for (std::size_t t = 0; t < CAPACITY; ++t)
@@ -153,7 +153,7 @@ TEST(Integration_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
                             NodeOptions{WIDE, label, "options.scale"_op, parameters});
     }
 
-    const auto report = g.run();
+    const auto report = g.run().value();
 
     ASSERT_EQ(report.node_timings.size(), 1u);
     EXPECT_EQ(report.node_timings[0].name, "scale by three");
@@ -183,7 +183,7 @@ TEST(Integration_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
     g.add(WIDE, Reads(first), Writes(second), [a, b](std::size_t i) { b[i] = a[i]; })
         .name("rule name");
 
-    const auto report = g.run();
+    const auto report = g.run().value();
 
     ASSERT_EQ(report.node_timings.size(), 2u);
     EXPECT_EQ(report.node_timings[0].name, "own name");

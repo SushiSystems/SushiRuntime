@@ -53,7 +53,7 @@ TEST(Integration_NativeCPU, HostTaskRunsAfterKernel)
     g.add_host(Reads(a), Writes(b),
                [ap, bp]() { for (std::size_t i = 0; i < N; ++i) bp[i] = ap[i] + 1; });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(b[i], static_cast<int>(i) * 2 + 1) << "at i=" << i;
@@ -78,7 +78,7 @@ TEST(Integration_NativeCPU, KernelRunsAfterHostTask)
     g.add(N, Reads(a), Writes(b),
           [ap, bp](std::size_t i) { bp[i] = ap[i] * 10; });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(b[i], (static_cast<int>(i) + 5) * 10) << "at i=" << i;
@@ -95,7 +95,7 @@ TEST(Integration_NativeCPU, UntrackedHostTaskRunsEveryStep)
     auto g = rt.graph();
     g.add_host([&ticks]() { ticks.fetch_add(1, std::memory_order_relaxed); });
 
-    g.run(STEPS);
+    g.run(STEPS).value();
 
     EXPECT_EQ(ticks.load(), static_cast<int>(STEPS));
 }
@@ -107,7 +107,7 @@ TEST(Integration_NativeCPU, ThrowingHostTaskKeepsRuntimeUsable)
 
     auto bad = rt.graph();
     bad.add_host([]() { throw std::runtime_error("boom"); });
-    auto r1 = bad.try_run();
+    auto r1 = bad.run();
     ASSERT_FALSE(r1.has_value()) << "a throwing native task must fail the run.";
 
     constexpr std::size_t N = 16;
@@ -118,7 +118,7 @@ TEST(Integration_NativeCPU, ThrowingHostTaskKeepsRuntimeUsable)
     auto good = rt.graph();
     good.add_host(Reads{}, Writes(buf),
                   [p]() { for (std::size_t i = 0; i < N; ++i) p[i] = static_cast<int>(i); });
-    auto r2 = good.try_run();
+    auto r2 = good.run();
     ASSERT_TRUE(r2.has_value()) << "the pool must stay re-armable after a failure.";
 
     for (std::size_t i = 0; i < N; ++i)

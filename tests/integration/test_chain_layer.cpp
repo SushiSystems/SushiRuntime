@@ -99,7 +99,7 @@ namespace
         Outputs out;
         for (std::size_t r = 0; r < runs; ++r)
         {
-            const auto report = g.run(steps);
+            const auto report = g.run(steps).value();
             EXPECT_TRUE(report.is_successful);
             out.layer = report.layer;
             out.tasks += report.total_tasks_executed;
@@ -188,7 +188,7 @@ TEST(Integration_ChainLayer, RunUntilSeesEveryStepsResult)
     g.add(1, Reads{}, Writes(counter), [pc](std::size_t) { pc[0] += 1u; });
 
     // The stop test reads a device result, so the chain must wait after every step.
-    const auto report = g.run_until([&counter] { return counter[0] >= TARGET; });
+    const auto report = g.run_until([&counter] { return counter[0] >= TARGET; }).value();
 
     EXPECT_EQ(report.layer, Internal::Observability::ExecutionLayer::Chain);
     EXPECT_EQ(report.total_tasks_executed, static_cast<std::size_t>(TARGET));
@@ -215,7 +215,7 @@ TEST(Integration_ChainLayer, ProfiledChainRecordsEveryDispatch)
     g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
     g.add(N, Reads(a), Writes(b), [pa, pb](std::size_t i) { pb[i] += pa[i]; });
 
-    const auto report = g.run(STEPS);
+    const auto report = g.run(STEPS).value();
 
     EXPECT_EQ(report.layer, Internal::Observability::ExecutionLayer::Chain)
         << "profiling must not move a chainable plan off layer 1";

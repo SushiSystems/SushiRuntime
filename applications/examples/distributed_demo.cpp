@@ -240,7 +240,7 @@ namespace
                   {
                       DistributedDemo::add_element(a_data, b_data, sum_data, index);
                   });
-        graph.run();
+        graph.run().value();
 
         for (std::size_t index = 0; index < count; ++index)
         {

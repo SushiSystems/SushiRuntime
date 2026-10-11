@@ -42,7 +42,7 @@ namespace
     {
         auto g = rt.graph();
         g.add_untracked(n, [p](std::size_t i) { p[i] = 42; });
-        g.run();
+        g.run().value();
     }
 }
 
@@ -58,7 +58,7 @@ TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
     {
         auto g = rt.graph();
         g.add_untracked([](sycl::handler&) { throw std::runtime_error("boom"); });
-        EXPECT_THROW(g.run(), SushiException);
+        EXPECT_FALSE(g.run().has_value());
     }
 
     // Second graph on the SAME Runtime must run cleanly — proof the pool survived.
@@ -72,7 +72,7 @@ TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
 }
 
 /**
- * @brief A throwing node is named, with its registration index, in the error try_run() returns.
+ * @brief A throwing node is named, with its registration index, in the error run() returns.
  */
 TEST(Integration_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
 {
@@ -81,7 +81,7 @@ TEST(Integration_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationInde
     g.add_host([] {}).name("healthy");
     g.add_host([] { throw std::runtime_error("boom"); }).name("faulty");
 
-    const auto result = g.try_run();
+    const auto result = g.run();
     ASSERT_FALSE(result);
 
     const std::string& message = result.error().message;
@@ -105,7 +105,7 @@ TEST(Integration_ErrorIsolation, RuntimeSurvivesRepeatedFailures)
         {
             auto bad = rt.graph();
             bad.add_untracked([](sycl::handler&) { throw std::runtime_error("boom"); });
-            EXPECT_THROW(bad.run(), SushiException) << "round " << round;
+            EXPECT_FALSE(bad.run().has_value()) << "round " << round;
         }
 
         for (std::size_t i = 0; i < N; ++i) p[i] = 0;

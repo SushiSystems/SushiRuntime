@@ -68,14 +68,14 @@ namespace
 
         // Window 1: tiles {0,1,2,3} in view.
         for (std::uint64_t k = 0; k < 4; ++k) activate(k);
-        world.run(STEPS);
+        world.run(STEPS).value();
 
         // Tiles 0 and 1 stream out, 4 and 5 in; tiles 2 and 3 are not rebuilt.
         world.drop(0);
         world.drop(1);
         activate(4);
         activate(5);
-        world.run(STEPS);
+        world.run(STEPS).value();
 
         std::printf("streaming world: %zu tiles, 2 windows of %zu steps\n", TILES, STEPS);
         std::printf("  live regions = %zu, compositions = %zu\n",
@@ -99,13 +99,5 @@ namespace
 
 int main()
 {
-    try
-    {
-        return run_streaming_world();
-    }
-    catch (const SushiException& error)
-    {
-        std::fprintf(stderr, "streaming_world: %s\n", error.what());
-        return 1;
-    }
+    return run_streaming_world();
 }

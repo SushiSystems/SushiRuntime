@@ -21,7 +21,7 @@
 
 /**
  * @file operating_path_demo.cpp
- * @brief Runs a configured runtime through try_run, a late-bound launch and a device readback.
+ * @brief Runs a configured runtime through run, a late-bound launch and a device readback.
  * @author Mustafa Garip
  * @see applications/examples/README.md
  */
@@ -98,8 +98,8 @@ namespace
                   Writes(hits), [cells](std::size_t index) { cells[index] += 1.0f; })
             .name("count_hits");
 
-        // try_run() returns the report or an Error and throws nothing.
-        const auto first = graph.try_run(K_STEPS);
+        // run() returns the report or an Error and throws nothing.
+        const auto first = graph.run(K_STEPS);
         if (!first)
         {
             print_failure("the first run", first.error());
@@ -108,7 +108,7 @@ namespace
 
         // The second run covers twice as many elements on the plan the first one compiled.
         live_count = K_CAPACITY / 2;
-        const auto second = graph.try_run(K_STEPS);
+        const auto second = graph.run(K_STEPS);
         if (!second)
         {
             print_failure("the second run", second.error());
@@ -117,7 +117,7 @@ namespace
 
         // A graph with no rule is refused, and the caller tells the refusal apart by its ErrorCode.
         auto empty = runtime.graph();
-        const auto refused = empty.try_run();
+        const auto refused = empty.run();
         if (refused || refused.error().code != ErrorCode::InvalidGraph)
         {
             std::fprintf(stderr, "operating_path_demo: an empty graph was not refused\n");
@@ -147,13 +147,5 @@ namespace
 
 int main()
 {
-    try
-    {
-        return run_demo();
-    }
-    catch (const SushiException& error)
-    {
-        print_failure("setup", error.error());
-        return 1;
-    }
+    return run_demo();
 }

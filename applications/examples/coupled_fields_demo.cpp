@@ -59,7 +59,7 @@ namespace
             un[i] = uc[i] + vc[i];
         });
 
-        sim.run(STEPS);
+        sim.run(STEPS).value();
 
         constexpr int expected_v = static_cast<int>(STEPS);
         constexpr int expected_u = static_cast<int>(STEPS * (STEPS - 1) / 2);
@@ -76,13 +76,5 @@ namespace
 
 int main()
 {
-    try
-    {
-        return run_coupled_fields();
-    }
-    catch (const SushiException& error)
-    {
-        std::fprintf(stderr, "coupled_fields: %s\n", error.what());
-        return 1;
-    }
+    return run_coupled_fields();
 }

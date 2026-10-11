@@ -180,7 +180,7 @@ namespace
         Recording record(Graph& g)
         {
             Recording r;
-            const auto report = g.run(K_STEPS);
+            const auto report = g.run(K_STEPS).value();
             EXPECT_TRUE(report.is_successful);
             r.layer = report.layer;
             r.digests.assign(history.data(), history.data() + K_STEPS);
@@ -240,7 +240,7 @@ TEST(Integration_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
     for (const std::size_t n : {std::size_t{10}, std::size_t{0}, CAPACITY, std::size_t{257}})
     {
         live = n;
-        g.run();
+        g.run().value();
         for (std::size_t t = 0; t < n; ++t)
             expected[t] = marked(expected[t], t, n, SALT);
         for (std::size_t t = 0; t <= CAPACITY; ++t)
@@ -290,7 +290,7 @@ TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksT
                     {
                         w[t] = static_cast<std::uint32_t>(t + live);
                     });
-    g.run();
+    g.run().value();
 
     for (std::size_t t = 0; t < CAPACITY; ++t)
     {
@@ -316,7 +316,7 @@ TEST(Integration_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsS
                         [t](std::size_t item) { t[item] = 0u; });
     g.add(std::size_t{1}, Reads(target), Writes(done), [t, d](std::size_t) { d[0] = t[0]; });
 
-    const auto report = g.run();
+    const auto report = g.run().value();
 
     EXPECT_TRUE(report.is_successful);
     EXPECT_EQ(target[0], K_CANARY);
@@ -388,13 +388,13 @@ TEST(Integration_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
     g.add(std::size_t{1}, Reads{}, Writes(counter),
           [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
     record_marking_rule(g.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
-    EXPECT_THROW(g.run(4), SushiException);
+    EXPECT_FALSE(g.run(4).has_value());
 
     // A later graph with a count inside the capacity runs clean on the same runtime.
     auto valid = rt.graph();
     valid.add(std::size_t{1}, Reads{}, Writes(counter), [c](std::size_t) { c[0] = 3u; });
     record_marking_rule(valid.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
-    const auto report = valid.run(2);
+    const auto report = valid.run(2).value();
     EXPECT_TRUE(report.is_successful);
     EXPECT_EQ(report.layer, Internal::Observability::ExecutionLayer::Chain);
 }

@@ -294,7 +294,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("before");
     record_grouped_rule(g.recorder(), stages);
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("after");
-    g.run();
+    g.run().value();
 
     const Grouping grouping = grouping_of(RegistrationIndexTestAccess::plan(g));
 
@@ -317,11 +317,11 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
     auto g = rt.graph();
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("before");
     record_grouped_rule(g.recorder(), stages);
-    g.run();
+    g.run().value();
 
     // An add() after the first run dirties the graph, so every spec is replayed; see README.md.
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("after");
-    g.run();
+    g.run().value();
 
     const Internal::Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
     Grouping grouping = grouping_of(plan);
@@ -355,7 +355,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneI
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("before");
     record_late_bound_rule(g.recorder(), stages, count);
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("after");
-    g.run();
+    g.run().value();
 
     const Grouping grouping = grouping_of(RegistrationIndexTestAccess::plan(g));
 

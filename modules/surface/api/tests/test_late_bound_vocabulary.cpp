@@ -140,7 +140,7 @@ namespace
         auto g = rt.graph();
         g.add(std::move(window), capacity, Reads{}, Writes(marks),
               [m](std::size_t i) { m[i] = 1; });
-        g.run();
+        g.run().value();
 
         std::size_t ran = 0;
         for (std::size_t i = 0; i < capacity; ++i)
@@ -233,11 +233,11 @@ TEST(Integration_LateBoundVocabulary, ARecordedCopyKeepsTheHostProvider)
         record_live_count_copy(g.recorder(), copy, out);
     }
 
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 11u);
 
     live = 93;
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 93u) << "the copy must poll the provider on every step";
     EXPECT_EQ(g.compile_count(), 1u);
 }
@@ -255,7 +255,7 @@ TEST(Integration_LateBoundVocabulary, FromDeviceReadsTheWordAtItsIndex)
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), LateCount::from_device(100, slot, 2), out);
-    g.run();
+    g.run().value();
 
     EXPECT_EQ(out[0], 77u);
 }
@@ -308,12 +308,12 @@ TEST(Integration_LateBoundVocabulary, MembersChainOnANamedDynamic)
 
     auto g = rt.graph();
     g.add(std::move(window), CAPACITY, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < CAPACITY; ++i)
         ASSERT_EQ(buf[i], (i >= 10 && i < 14) ? 1 : 0) << "element " << i;
 
     enabled = false;
-    g.run();
+    g.run().value();
     EXPECT_EQ(buf[10], 1) << "a disabled step must run no element";
 }

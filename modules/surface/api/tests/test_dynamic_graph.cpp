@@ -55,7 +55,7 @@ TEST(Integration_DynamicGraph, IndependentRegionsRunAndComposeOnce)
     world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
     world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 2; });
 
-    world.run(STEPS);
+    world.run(STEPS).value();
 
     EXPECT_EQ(world.region_count(), 2u);
     EXPECT_EQ(world.compose_count(), 1u) << "an unmutated multi-step run must compose once.";
@@ -89,7 +89,7 @@ TEST(Integration_DynamicGraph, CrossRegionDependencyOrders)
     world.region(11).add(N, Reads(x), Writes(y),
                          [px, py](std::size_t i) { py[i] = px[i] * 2; });
 
-    world.run();
+    world.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(y[i], static_cast<int>(2 * (i + 1))) << "at i=" << i;
@@ -116,11 +116,11 @@ TEST(Integration_DynamicGraph, DropRegionStopsItsWork)
     world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
     world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 1; });
 
-    world.run(3);                 // both advance to 3
+    world.run(3).value();                 // both advance to 3
 
     world.drop(1);
     EXPECT_FALSE(world.has_region(1));
-    world.run(2);                 // only region 0 advances
+    world.run(2).value();                 // only region 0 advances
 
     for (std::size_t i = 0; i < N; ++i)
     {
@@ -149,11 +149,11 @@ TEST(Integration_DynamicGraph, AddRegionBetweenSteps)
 
     auto world = rt.dynamic_graph();
     world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
-    world.run(2);
+    world.run(2).value();
     EXPECT_EQ(world.compose_count(), 1u);
 
     world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 1; });
-    world.run(2);
+    world.run(2).value();
     EXPECT_EQ(world.compose_count(), 2u) << "adding a region recomposes once.";
 
     for (std::size_t i = 0; i < N; ++i)
@@ -188,14 +188,14 @@ TEST(Integration_DynamicGraph, SingleRecomposePerMutation)
                             [p](std::size_t i) { p[i] += 1; });
     }
 
-    world.run(3);
+    world.run(3).value();
     EXPECT_EQ(world.compose_count(), 1u) << "building all regions once composes once.";
 
     // Mutate exactly one region; one recompose, not REGIONS recomposes.
     int* p7 = bufs[7].data();
     world.region(7).add(N, Reads{}, Writes(bufs[7]),
                         [p7](std::size_t i) { p7[i] += 10; });
-    world.run(1);
+    world.run(1).value();
     EXPECT_EQ(world.compose_count(), 2u) << "one mutation recomposes exactly once.";
 
     for (std::size_t r = 0; r < REGIONS; ++r)
@@ -223,7 +223,7 @@ TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
 
     auto world = rt.dynamic_graph();
     world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
-    world.run();
+    world.run().value();
     const std::size_t composed = world.compose_count();
 
     const Region* found = world.find_region(0);
@@ -232,7 +232,7 @@ TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
     EXPECT_EQ(world.find_region(9), nullptr) << "an absent key is not created by a lookup";
     EXPECT_FALSE(world.has_region(9));
 
-    world.run();
+    world.run().value();
     EXPECT_EQ(world.compose_count(), composed) << "a lookup is not a mutation";
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(a[i], 2) << "at i=" << i;
@@ -263,7 +263,7 @@ TEST(Integration_DynamicGraph, ThreeRegionChainThreadsValue)
     world.region(2).add(N, Reads(y), Writes(z),
                         [py, pz](std::size_t i) { pz[i] = py[i] + 1; });
 
-    world.run();
+    world.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(z[i], static_cast<int>(2 * (i + 1) + 1)) << "at i=" << i;
@@ -294,7 +294,7 @@ TEST(Integration_DynamicGraph, ReadReadSharingStaysConsistent)
     world.region(2).add(N, Reads(base), Writes(o2),
                         [pb, p2](std::size_t i) { p2[i] = pb[i] + 100; });
 
-    world.run();
+    world.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
     {
@@ -321,12 +321,12 @@ TEST(Integration_DynamicGraph, StreamInConsumerRewiresProducer)
     auto world = rt.dynamic_graph();
     world.region(0).add(N, Reads{}, Writes(x),
                         [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
-    world.run();
+    world.run().value();
     EXPECT_EQ(world.compose_count(), 1u);
 
     world.region(1).add(N, Reads(x), Writes(y),
                         [px, py](std::size_t i) { py[i] = px[i] * 3; });
-    world.run();
+    world.run().value();
     EXPECT_EQ(world.compose_count(), 2u) << "streaming a sharer in recomposes once.";
 
     for (std::size_t i = 0; i < N; ++i)
@@ -353,11 +353,11 @@ TEST(Integration_DynamicGraph, DropProducerLeavesConsumerRunnable)
                         [px](std::size_t i) { px[i] = static_cast<int>(i); });
     world.region(1).add(N, Reads(x), Writes(y),
                         [px, py](std::size_t i) { py[i] += px[i]; });
-    world.run();
+    world.run().value();
 
     world.drop(0);
     EXPECT_FALSE(world.has_region(0));
-    world.run();                 // consumer alone; must not deadlock
+    world.run().value();                 // consumer alone; must not deadlock
 
     EXPECT_EQ(world.region_count(), 1u);
     // The exact value of y is not asserted, only that the consumer kept executing; see README.md.
@@ -403,7 +403,7 @@ TEST(Integration_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
                              Writes(shared.region({0, HALF})), rendezvous);
     world.region(1).add_host(Reads{},
                              Writes(shared.region({HALF, HALF})), rendezvous);
-    world.run();
+    world.run().value();
 
     EXPECT_EQ(saw_both.load(), 2)
         << "the two regions were serialized through the allocation they share, "
@@ -450,7 +450,7 @@ TEST(Integration_DynamicGraph, OverlappingRangeRegionsStillSerialize)
                                  rendezvous();
                                  for (std::size_t i = 0; i < N; ++i) p[i] = p[i] * 2 + 1;
                              });
-    world.run();
+    world.run().value();
 
     EXPECT_EQ(saw_both.load(), 1)
         << "overlapping ranges ran concurrently: the cross-region edge was lost";
@@ -487,7 +487,7 @@ TEST(Integration_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
                             for (std::size_t i = 0; i < N; ++i) sum += p[i];
                             t[0] = sum;
                         });
-    world.run();
+    world.run().value();
 
     EXPECT_EQ(total[0], static_cast<int>(HALF) * 2 + static_cast<int>(HALF) * 3)
         << "the reader observed a half that had not been written yet";

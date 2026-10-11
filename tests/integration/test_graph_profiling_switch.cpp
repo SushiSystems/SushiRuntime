@@ -71,13 +71,13 @@ TEST(Integration_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
     // A request alone, before any run, must not build a queue.
     EXPECT_FALSE(any_profiling_queue_built(rt.unsafe_context()));
 
-    auto rep_requested = requested.run();
+    auto rep_requested = requested.run().value();
     EXPECT_FALSE(rep_requested.node_timings.empty())
         << "the requested graph must collect device timing";
     EXPECT_TRUE(any_profiling_queue_built(rt.unsafe_context()))
         << "running the requested graph must have built a profiling queue";
 
-    auto rep_plain = plain.run();
+    auto rep_plain = plain.run().value();
     EXPECT_TRUE(rep_plain.node_timings.empty())
         << "the unrequested graph must carry no profiling info of its own";
 }
@@ -93,19 +93,19 @@ TEST(Integration_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
     auto g = rt.graph();
     g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-    auto rep_off = g.run();
+    auto rep_off = g.run().value();
     EXPECT_TRUE(rep_off.node_timings.empty());
     const std::size_t compiles_after_first_run = g.compile_count();
     EXPECT_EQ(compiles_after_first_run, 1u);
 
     g.set_profiling(true);
-    auto rep_on = g.run();
+    auto rep_on = g.run().value();
     EXPECT_FALSE(rep_on.node_timings.empty());
     EXPECT_EQ(g.compile_count(), compiles_after_first_run + 1)
         << "flipping the request must recompile exactly once";
 
     // Running again with the same request recompiles zero further times.
-    auto rep_on_again = g.run();
+    auto rep_on_again = g.run().value();
     EXPECT_FALSE(rep_on_again.node_timings.empty());
     EXPECT_EQ(g.compile_count(), compiles_after_first_run + 1);
 }
@@ -126,7 +126,7 @@ TEST(Integration_GraphProfilingSwitch, NUMAFallbackBranchUsesProfilingQueue)
     g.set_profiling(true);
     g.add(N, Reads{}, Writes{}, [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-    auto rep = g.run();
+    auto rep = g.run().value();
     EXPECT_FALSE(rep.node_timings.empty())
         << "the NUMA-fallback branch must still dispatch on a profiling queue";
     EXPECT_TRUE(any_profiling_queue_built(rt.unsafe_context()))

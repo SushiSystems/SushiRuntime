@@ -103,7 +103,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
     }
 
     // Warm up: first run compiles the whole world once (not a "commit").
-    world.run(1);
+    world.run(1).value();
     ASSERT_EQ(world.compose_count(), 1u);
 
     using clock = std::chrono::steady_clock;
@@ -115,7 +115,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
     {
         AllocScope as;
         const auto t0 = clock::now();
-        world.run(1);
+        world.run(1).value();
         const auto t1 = clock::now();
         as.stop();
         best_replay_ms = std::min(best_replay_ms,
@@ -142,7 +142,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
         const auto t0 = clock::now();
         world.region(r).add(N, Reads{}, Writes(bufs[r]),
                             [p](std::size_t i) { p[i] += 1; });
-        world.run(1);
+        world.run(1).value();
         const auto t1 = clock::now();
         as.stop();
 

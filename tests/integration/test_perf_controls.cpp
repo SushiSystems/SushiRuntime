@@ -61,21 +61,21 @@ TEST(Integration_PerfControls, RebalancerToggleKeepsExecutionCorrect)
 
     // Off (the default): a run produces correct results with no background thread.
     EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
-    g.run();
+    g.run().value();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer off, at i=" << i;
 
     // Enabled after construction: still correct, and the flag reflects the change.
     rt.set_rebalancer_enabled(true);
     EXPECT_TRUE(rt.advanced().is_rebalancer_enabled());
-    g.run();
+    g.run().value();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer on, at i=" << i;
 
     // And back off again, so the transition is exercised in both directions.
     rt.set_rebalancer_enabled(false);
     EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
-    g.run();
+    g.run().value();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer off again, at i=" << i;
 }

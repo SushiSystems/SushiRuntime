@@ -99,7 +99,7 @@ TEST(Integration_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
               {
                   next[i] = current[i] + a[i] * b[i];
               });
-    graph.run();
+    graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
     {
@@ -133,7 +133,7 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
               });
     graph.add_untracked(K_PREFIX + 1, [words](std::size_t i) { words[i] = 1u; });
 
-    const auto report = graph.run();
+    const auto report = graph.run().value();
 
     // The three nodes share no region, so their events are compared sorted by width.
     std::vector<std::size_t> widths;

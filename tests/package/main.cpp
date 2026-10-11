@@ -58,7 +58,7 @@ int main()
         next[i] = cur[i] + 0.25f * (left - 2.0f * cur[i] + right);
     });
 
-    const SushiRuntime::RunReport report = graph.run(STEPS);
+    const SushiRuntime::RunReport report = graph.run(STEPS).value();
     if (!report.is_successful)
     {
         std::printf("FAIL: the run reported failure\n");

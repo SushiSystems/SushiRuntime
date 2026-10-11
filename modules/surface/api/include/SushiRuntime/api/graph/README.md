@@ -19,7 +19,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `node_options.hpp` | NodeOptions: the width, the name, the operation and the parameters of a node |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
-| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, before_each_step(), cancel(), set_profiling() and the step loop |
+| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), before_each_step(), cancel(), set_profiling() and the step loop |
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
@@ -579,22 +579,22 @@ flight that cancel() reads.
 
 Graph and DynamicGraph take every run entry from the driver, so the two cannot differ:
 
-| Throwing | Returning a value | Runs |
+| Entry | Returns | Runs |
 | --- | --- | --- |
-| `run()`, `run(reuse)` | `try_run()`, `try_run(reuse)` | One step |
-| `run(steps)`, `run(steps, reuse)` | `try_run(steps)`, `try_run(steps, reuse)` | A fixed number of steps |
-| `run_for(budget)`, `run_for(budget, reuse)` | `try_run_for(budget)`, `try_run_for(budget, reuse)` | Steps until the wall-clock budget elapses; at least one |
-| `run_until(done)`, `run_until(done, reuse)` | `try_run_until(done)`, `try_run_until(done, reuse)` | Steps until `done()` is true |
-| `run_async()` | `try_run_async()` | One step, without waiting |
+| `run()`, `run(steps)` | `Result<RunReport>` | One step, or a fixed number of steps |
+| `run(reuse)`, `run(steps, reuse)` | `Result<RunReport*>` | The same, into a report the caller owns |
+| `run_for(budget)`, `run_for(budget, reuse)` | As `run` | Steps until the wall-clock budget elapses; at least one |
+| `run_until(done)`, `run_until(done, reuse)` | As `run` | Steps until `done()` is true |
+| `run_async()` | `Result<RunHandle<Owner>>` | One step, without waiting |
 
-A try_ form is `noexcept` and returns a `Result`: the report, a pointer to the caller's report, or
-the RunHandle. The throwing form calls its try_ form and throws the Error it got as a
-`SushiException`, so both report a failure with the same code and text.
-`modules/surface/api/tests/test_run_driver.cpp` holds the list as `static_assert`s over both types.
+Every entry is `noexcept` and returns a `Result`: the report, a pointer to the caller's report, or
+the RunHandle. There is one form of each. A caller that cannot go on after a failed run writes
+`graph.run().value()`, which stops the process with the error's message.
+`modules/surface/api/tests/test_run_driver.cpp` holds the list as `static_assert`s.
 
-No try_ form throws, also when memory runs out while it builds an Error: every Error of the driver
+No entry throws, also when memory runs out while it builds an Error: every Error of the driver
 and of RunHandle is built by Detail::error_without_throwing() of `core/error.hpp`, which returns the
-code with an empty message when the text cannot be allocated. try_run_until() moves its stop test,
+code with an empty message when the text cannot be allocated. run_until() moves its stop test,
 so the stop test must be nothrow move constructible, and a `static_assert` says so.
 
 run_for(budget) stops at `now + budget`. A budget the steady clock cannot add to now, such as
@@ -603,9 +603,9 @@ ends at now, so the run is one step.
 
 ### guarded
 
-guarded() is the one place an exception becomes an Error. It runs a callable inside a catch ladder
-and builds the Error in the handler that caught, with no rethrow: on the Windows intel-llvm
-toolchain a rethrow from a helper called inside a catch block crashes the process.
+guarded() is where an exception of the plan build or of a step becomes an Error. It calls
+Detail::translate_exceptions() of `api/detail/error_translation.hpp` with `KernelFailed` for a
+device failure; `api/detail/README.md` describes the ladder.
 
 | Thrown | While the plan is built | Once a step may have started |
 | --- | --- | --- |
@@ -614,8 +614,8 @@ toolchain a rethrow from a helper called inside a catch block crashes the proces
 | Any other exception, such as one a host task throws | `CompileFailed` | `KernelFailed` |
 
 The build phase is plan_is_stale(), rebuild_plan() and prepare_run(). Everything after it is the
-step phase, and RunHandle::try_wait() settles a step through the same ladder, so a throwing host
-task is `KernelFailed` from try_run() and from try_wait() alike. The try blocks surround the whole
+step phase, and RunHandle::wait() settles a step through the same ladder, so a throwing host
+task is `KernelFailed` from run() and from wait() alike. The try blocks surround the whole
 loop, not one step.
 
 ### entry_refusal
@@ -692,7 +692,7 @@ no step, as the "RunHandle: the owner's address" section describes.
 On a DynamicGraph a pending structural change (a region added or dropped) is committed before the
 step is submitted, exactly as a synchronous run does.
 
-try_run_async() returns the handle or the Error that kept the step from starting: the refusals of
+run_async() returns the handle or the Error that kept the step from starting: the refusals of
 entry_refusal(), `Unsupported` from an engine that cannot start a run without blocking, and a build
 or submission failure mapped by guarded(). run_async() throws that Error.
 
@@ -1200,7 +1200,7 @@ The handle is move-only and owns the obligation to finish the step: its destruct
 was not called, because the compiled plan must not be destroyed while workers are still touching its
 nodes. That makes the safe usage the natural one: declare the handle after the graph and ordinary
 scoping does the rest. It also means a discarded handle discards the step's outcome, **including a
-task exception**. Call `wait()` (or `try_wait()`) whenever the result matters, which is nearly
+task exception**. Call `wait()` (or `wait()`) whenever the result matters, which is nearly
 always.
 
 Exactly one run may be in flight per runtime. While a handle is pending, every run entry of every
@@ -1223,7 +1223,7 @@ when it is broken. A graph may be destroyed while its handle is pending. Its des
 the step, advances the States and drops the report, as destroying the handle would.
 
 After either, the handle owns no step: pending() is false, ready() is true, its destructor does
-nothing, and wait() or try_wait() returns `InvalidState` with a message that says the graph was
+nothing, and wait() returns `InvalidState` with a message that says the graph was
 moved or destroyed and the report dropped. The handle costs one shared pointer more than the
 values it carries, and no allocation: the record is the graph's.
 
@@ -1243,17 +1243,13 @@ a handle that owns none is ready, whatever run the engine holds.
 ### wait()
 
 wait() completes the step's lifecycle, in which every State advances to the field it just wrote, and
-consumes the handle, so a second call throws `InvalidState` instead of waiting on a step that is no
-longer running. wait() calls try_wait() and throws the Error it got as a `SushiException`. A
-task exception therefore arrives as `KernelFailed` carrying the task's text, the same as from
-run(), and the state advance is skipped in that case, exactly as a failed synchronous run of one
-step leaves its states untouched.
+consumes the handle, so a second call returns `InvalidState` instead of waiting on a step that is no
+longer running. A task exception arrives as `KernelFailed` carrying the task's text, the same as
+from run(), and the state advance is skipped in that case, exactly as a failed synchronous run of
+one step leaves its states untouched.
 
-### try_wait
-
-try_wait() is the implementation of every wait: it resets the report, consumes the handle, checks
-that the handle still owns its step and asks the driver to settle it. It is `noexcept` and returns
-the report or the Error that ended the step.
+wait() resets the report, consumes the handle, checks that the handle still owns its step and asks
+the driver to settle it. It is `noexcept` and returns the report or the Error that ended the step.
 
 ### wait(Internal::Observability::RunReport&)
 
@@ -1264,18 +1260,18 @@ from the previous step can never survive into this one.
 
 ### wait: consuming the handle
 
-try_wait() consumes the handle before the blocking call: if a task threw, the step is still over,
+wait() consumes the handle before the blocking call: if a task threw, the step is still over,
 and a destructor that tried to wait again would block forever on a latch nobody will signal.
 
 ### wait: clearing the report
 
-try_wait() clears the report before anything else, so a step that ends in a task exception, or a
+wait() clears the report before anything else, so a step that ends in a task exception, or a
 handle that owns no step, cannot leave the previous step's numbers readable in a report the caller
 reuses. finish_async_step sets the flag back on success.
 
 ### settle
 
-settle() finishes a step nobody waited for by calling try_wait() into a report it discards. A
+settle() finishes a step nobody waited for by calling wait() into a report it discards. A
 destructor may not throw, so the outcome, including a task exception, is dropped; that is the
 documented cost of discarding a handle, and it is still far better than returning while workers
 hold pointers into the plan.

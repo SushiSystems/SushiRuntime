@@ -108,7 +108,7 @@ TEST(Integration_BuilderSurface, CountLaunchWithCapturesPassesPointers)
     auto graph = rt.graph();
     graph.add(K_WIDTH, In(source), Out(target),
               [](std::size_t i, const Word* in, Word* out) { out[i] = in[i] * 2u; });
-    graph.run();
+    graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(target[i], (static_cast<Word>(i) + K_SEED) * 2u) << "at i=" << i;
@@ -130,7 +130,7 @@ TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
     {
         words[index[0]] = 0u;
     });
-    graph.run();
+    graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
     {
@@ -150,7 +150,7 @@ TEST(Integration_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
     {
         next[i] = current[i] + 100u;
     });
-    graph.run();
+    graph.run().value();
 
     for (std::size_t i = 0; i < K_PREFIX; ++i)
         ASSERT_EQ(field.current()[i], static_cast<Word>(i) + K_SEED + 100u) << "at i=" << i;
@@ -196,7 +196,7 @@ TEST(Integration_BuilderSurface, CoupledRulesReadEveryStateNamed)
                   next[i] = current[i] * other[i];
               });
     EXPECT_EQ(graph.size(), 2u);
-    graph.run();
+    graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(whole.current()[i], (static_cast<Word>(i) + K_SEED) * 2u) << "at i=" << i;
@@ -237,7 +237,7 @@ TEST(Integration_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
     auto graph = rt.graph();
     graph.add(sized([&live] { return live; }), K_WIDTH, Reads(target),
               Writes(target), [words](std::size_t i) { words[i] = 0u; });
-    graph.run();
+    graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(target[i], i < K_PREFIX ? 0u : static_cast<Word>(i) + K_SEED) << "at i=" << i;
@@ -263,7 +263,7 @@ TEST(Integration_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
                              [index_words](sycl::id<1> i) { index_words[i[0]] += 2u; });
     });
     EXPECT_EQ(graph.size(), 2u);
-    graph.run();
+    graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
     {
@@ -293,7 +293,7 @@ TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
         Word* words = freed.data();
         graph.add_untracked(K_WIDTH, On(freed), [words](std::size_t i) { words[i] = 0u; });
     }
-    const auto result = graph.try_run();
+    const auto result = graph.run();
     ASSERT_FALSE(result);
     EXPECT_EQ(result.error().code, ErrorCode::DanglingResource);
 }
@@ -318,7 +318,7 @@ TEST(Integration_BuilderSurface, ExtendRecordsOneNamedRule)
     EXPECT_EQ(calls, 1u);
     EXPECT_EQ(graph.size(), 1u);
     EXPECT_EQ(graph.node_count(), 2u);
-    graph.run();
+    graph.run().value();
     EXPECT_EQ(calls, 1u) << "an extension is not replayed when the plan is built";
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
@@ -426,19 +426,19 @@ TEST(Integration_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
     ASSERT_NE(graph.refusal(), nullptr);
     EXPECT_EQ(graph.refusal()->code, ErrorCode::InvalidGraph);
 
-    const auto first_run = graph.try_run();
+    const auto first_run = graph.run();
     ASSERT_FALSE(first_run.has_value());
     EXPECT_EQ(first_run.error().code, ErrorCode::InvalidGraph);
     EXPECT_EQ(first_run.error().message, graph.refusal()->message);
     EXPECT_EQ(words[0], before) << "a run that returns a refusal runs nothing";
 
-    const auto second_run = graph.try_run();
+    const auto second_run = graph.run();
     ASSERT_FALSE(second_run.has_value()) << "the refusal stays until clear()";
 
     graph.recorder().clear();
     EXPECT_EQ(graph.refusal(), nullptr);
     graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
-    const auto valid_run = graph.try_run();
+    const auto valid_run = graph.run();
     ASSERT_TRUE(valid_run.has_value());
     EXPECT_EQ(words[0], before + 1u);
 }

@@ -79,43 +79,31 @@ namespace
         /** @brief Names a caller-owned report in an unevaluated operand. */
         static Report& r() noexcept;
 
-        static_assert(std::is_same_v<decltype(g().run()), Report>, "run()");
-        static_assert(std::is_same_v<decltype(g().run(N)), Report>, "run(steps)");
-        static_assert(std::is_same_v<decltype(g().run(r())), Report&>, "run(reuse)");
-        static_assert(std::is_same_v<decltype(g().run(N, r())), Report&>, "run(steps, reuse)");
-        static_assert(std::is_same_v<decltype(g().run_for(Budget{})), Report>, "run_for");
-        static_assert(std::is_same_v<decltype(g().run_for(Budget{}, r())), Report&>,
+        static_assert(std::is_same_v<decltype(g().run()), Owned>, "run()");
+        static_assert(std::is_same_v<decltype(g().run(N)), Owned>, "run(steps)");
+        static_assert(std::is_same_v<decltype(g().run(r())), Lent>, "run(reuse)");
+        static_assert(std::is_same_v<decltype(g().run(N, r())), Lent>,
+                      "run(steps, reuse)");
+        static_assert(std::is_same_v<decltype(g().run_for(Budget{})), Owned>, "run_for");
+        static_assert(std::is_same_v<decltype(g().run_for(Budget{}, r())), Lent>,
                       "run_for(budget, reuse)");
-        static_assert(std::is_same_v<decltype(g().run_until(Stop{})), Report>, "run_until");
-        static_assert(std::is_same_v<decltype(g().run_until(Stop{}, r())), Report&>,
+        static_assert(std::is_same_v<decltype(g().run_until(Stop{})), Owned>,
+                      "run_until");
+        static_assert(std::is_same_v<decltype(g().run_until(Stop{}, r())), Lent>,
                       "run_until(done, reuse)");
 
-        static_assert(std::is_same_v<decltype(g().try_run()), Owned>, "try_run()");
-        static_assert(std::is_same_v<decltype(g().try_run(N)), Owned>, "try_run(steps)");
-        static_assert(std::is_same_v<decltype(g().try_run(r())), Lent>, "try_run(reuse)");
-        static_assert(std::is_same_v<decltype(g().try_run(N, r())), Lent>,
-                      "try_run(steps, reuse)");
-        static_assert(std::is_same_v<decltype(g().try_run_for(Budget{})), Owned>, "try_run_for");
-        static_assert(std::is_same_v<decltype(g().try_run_for(Budget{}, r())), Lent>,
-                      "try_run_for(budget, reuse)");
-        static_assert(std::is_same_v<decltype(g().try_run_until(Stop{})), Owned>,
-                      "try_run_until");
-        static_assert(std::is_same_v<decltype(g().try_run_until(Stop{}, r())), Lent>,
-                      "try_run_until(done, reuse)");
+        static_assert(noexcept(g().run()) && noexcept(g().run(N)) &&
+                      noexcept(g().run(r())) && noexcept(g().run(N, r())) &&
+                      noexcept(g().run_for(Budget{})) &&
+                      noexcept(g().run_for(Budget{}, r())) &&
+                      noexcept(g().run_until(Stop{})) &&
+                      noexcept(g().run_until(Stop{}, r())),
+                      "every run entry is noexcept");
 
-        static_assert(noexcept(g().try_run()) && noexcept(g().try_run(N)) &&
-                      noexcept(g().try_run(r())) && noexcept(g().try_run(N, r())) &&
-                      noexcept(g().try_run_for(Budget{})) &&
-                      noexcept(g().try_run_for(Budget{}, r())) &&
-                      noexcept(g().try_run_until(Stop{})) &&
-                      noexcept(g().try_run_until(Stop{}, r())),
-                      "every try_ entry is noexcept");
-
-        static_assert(std::is_same_v<decltype(g().run_async()), RunHandle<G>>, "run_async");
-        static_assert(std::is_same_v<decltype(g().try_run_async()),
+        static_assert(std::is_same_v<decltype(g().run_async()),
                                      Result<RunHandle<G>, Error>>,
-                      "try_run_async");
-        static_assert(noexcept(g().try_run_async()), "try_run_async is noexcept");
+                      "run_async");
+        static_assert(noexcept(g().run_async()), "run_async is noexcept");
         static_assert(std::is_void_v<decltype(g().cancel())> && noexcept(g().cancel()),
                       "cancel is noexcept");
         static_assert(std::is_same_v<decltype(g().set_profiling(true)), G&> &&
@@ -145,66 +133,47 @@ namespace
         throw std::runtime_error(K_TASK_FAILURE);
     }
 
-    /** @brief Returns the code of the SushiException call throws, or ok when it returns. */
-    template <class Call>
-    ErrorCode code_thrown_by(Call&& call)
-    {
-        try
-        {
-            call();
-        }
-        catch (const SushiException& e)
-        {
-            return e.error().code;
-        }
-        return ErrorCode::Ok;
-    }
-
     /** @brief Expects KernelFailed from every way of running a graph whose task throws. */
     template <class G>
     void expect_kernel_failed_everywhere(G& graph)
     {
-        const auto run = graph.try_run();
+        const auto run = graph.run();
         ASSERT_FALSE(run.has_value());
         EXPECT_EQ(run.error().code, ErrorCode::KernelFailed);
         EXPECT_NE(run.error().message.find(K_TASK_FAILURE), std::string::npos);
 
         Internal::Observability::RunReport report;
-        const auto reused = graph.try_run(report);
+        const auto reused = graph.run(report);
         ASSERT_FALSE(reused.has_value());
         EXPECT_EQ(reused.error().code, ErrorCode::KernelFailed);
         EXPECT_FALSE(report.is_successful);
 
-        auto step = graph.try_run_async();
+        auto step = graph.run_async();
         ASSERT_TRUE(step.has_value()) << step.error().message;
-        const auto waited = step->try_wait();
+        const auto waited = step->wait();
         ASSERT_FALSE(waited.has_value());
         EXPECT_EQ(waited.error().code, ErrorCode::KernelFailed);
         EXPECT_NE(waited.error().message.find(K_TASK_FAILURE), std::string::npos);
-
-        EXPECT_EQ(code_thrown_by([&graph]() { graph.run(); }), ErrorCode::KernelFailed);
-        EXPECT_EQ(code_thrown_by([&graph]() { graph.run_async().wait(); }),
-                  ErrorCode::KernelFailed);
     }
 
-    /** @brief Calls each try_ entry once and expects success; twelve steps run in all. */
+    /** @brief Calls each run entry once and expects success; twelve steps run in all. */
     template <class G>
-    void expect_every_try_entry_runs(G& graph)
+    void expect_every_run_entry_runs(G& graph)
     {
         Internal::Observability::RunReport report;
         int calls = 0;
         const auto after_two_steps = [&calls]() { return ++calls > 2; };
 
-        EXPECT_TRUE(graph.try_run().has_value());
-        EXPECT_TRUE(graph.try_run(std::size_t{2}).has_value());
-        EXPECT_TRUE(graph.try_run(report).has_value());
+        EXPECT_TRUE(graph.run().has_value());
+        EXPECT_TRUE(graph.run(std::size_t{2}).has_value());
+        EXPECT_TRUE(graph.run(report).has_value());
         EXPECT_TRUE(report.is_successful);
-        EXPECT_TRUE(graph.try_run(std::size_t{2}, report).has_value());
-        EXPECT_TRUE(graph.try_run_for(std::chrono::milliseconds(0)).has_value());
-        EXPECT_TRUE(graph.try_run_for(std::chrono::milliseconds(0), report).has_value());
-        EXPECT_TRUE(graph.try_run_until(after_two_steps).has_value());
+        EXPECT_TRUE(graph.run(std::size_t{2}, report).has_value());
+        EXPECT_TRUE(graph.run_for(std::chrono::milliseconds(0)).has_value());
+        EXPECT_TRUE(graph.run_for(std::chrono::milliseconds(0), report).has_value());
+        EXPECT_TRUE(graph.run_until(after_two_steps).has_value());
         calls = 0;
-        EXPECT_TRUE(graph.try_run_until(after_two_steps, report).has_value());
+        EXPECT_TRUE(graph.run_until(after_two_steps, report).has_value());
         EXPECT_TRUE(report.is_successful);
     }
 
@@ -302,8 +271,9 @@ namespace
     bool counted_step_runs_chained(Runtime& rt)
     {
         CountedStep clean(rt, 1u);
-        const auto report = clean.graph.try_run();
-        return report.has_value() && report->layer == Internal::Observability::ExecutionLayer::Chain;
+        const auto report = clean.graph.run();
+        return report.has_value() &&
+               report->layer == Internal::Observability::ExecutionLayer::Chain;
     }
 
     /**
@@ -331,7 +301,7 @@ namespace
                 throw std::runtime_error("cancel() did not stop the run");
         });
 
-        const auto report = g.try_run_for(budget);
+        const auto report = g.run_for(budget);
 
         ASSERT_TRUE(report.has_value()) << report.error().message;
         EXPECT_TRUE(report->cancelled);
@@ -376,17 +346,17 @@ TEST(Integration_RunDriver, AThrowingBuildIsCompileFailed)
     g.add_host(Reads{}, Writes(buf),
                Testing::RefusingFill(std::make_shared<bool>(true), K_BUILD_FAILURE, p, N, 2));
 
-    const auto run = g.try_run();
+    const auto run = g.run();
     ASSERT_FALSE(run.has_value());
     EXPECT_EQ(run.error().code, ErrorCode::CompileFailed);
     EXPECT_NE(run.error().message.find(K_BUILD_FAILURE), std::string::npos);
 
-    const auto step = g.try_run_async();
+    const auto step = g.run_async();
     ASSERT_FALSE(step.has_value());
     EXPECT_EQ(step.error().code, ErrorCode::CompileFailed);
 }
 
-/** @brief Tests that both graph types run through every try_ entry. */
+/** @brief Tests that both graph types run through every run entry. */
 TEST(Integration_RunDriver, EveryTryEntryRunsOnBothGraphs)
 {
     constexpr int STEPS_OF_ALL_ENTRIES = 12;
@@ -401,12 +371,12 @@ TEST(Integration_RunDriver, EveryTryEntryRunsOnBothGraphs)
 
     auto g = rt.graph();
     g.add_host(Reads{}, Writes(static_count), [ps]() { ps[0] += 1; });
-    expect_every_try_entry_runs(g);
+    expect_every_run_entry_runs(g);
     EXPECT_EQ(static_count[0], STEPS_OF_ALL_ENTRIES);
 
     auto world = rt.dynamic_graph();
     world.region(0).add_host(Reads{}, Writes(dynamic_count), [pd]() { pd[0] += 1; });
-    expect_every_try_entry_runs(world);
+    expect_every_run_entry_runs(world);
     EXPECT_EQ(dynamic_count[0], STEPS_OF_ALL_ENTRIES);
 }
 
@@ -425,21 +395,21 @@ TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
         p[0] = 7;
     });
 
-    auto step = g.run_async();
+    auto step = g.run_async().value();
 
-    const auto refused = g.try_run();
+    const auto refused = g.run();
     ASSERT_FALSE(refused.has_value());
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidState);
 
-    const auto second = g.try_run_async();
+    const auto second = g.run_async();
     ASSERT_FALSE(second.has_value());
     EXPECT_EQ(second.error().code, ErrorCode::InvalidState);
 
     released.store(true, std::memory_order_release);
-    EXPECT_TRUE(step.try_wait().has_value());
+    EXPECT_TRUE(step.wait().has_value());
     EXPECT_EQ(buf[0], 7);
 
-    const auto twice = step.try_wait();
+    const auto twice = step.wait();
     ASSERT_FALSE(twice.has_value());
     EXPECT_EQ(twice.error().code, ErrorCode::InvalidState);
 }
@@ -469,20 +439,20 @@ TEST(Integration_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
 
     auto g = rt.graph();
     g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
-    g.set_profiling(true).run();
+    g.set_profiling(true).run().value();
     EXPECT_EQ(g.compile_count(), 1u);
-    g.set_profiling(true).run();
+    g.set_profiling(true).run().value();
     EXPECT_EQ(g.compile_count(), 1u) << "the same request compiled the Graph again";
-    g.set_profiling(false).run();
+    g.set_profiling(false).run().value();
     EXPECT_EQ(g.compile_count(), 2u) << "a changed request must rebuild the plan";
 
     auto world = rt.dynamic_graph();
     world.region(0).add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
-    world.set_profiling(true).run();
+    world.set_profiling(true).run().value();
     EXPECT_EQ(world.compose_count(), 1u);
-    world.set_profiling(true).run();
+    world.set_profiling(true).run().value();
     EXPECT_EQ(world.compose_count(), 1u) << "the same request composed the DynamicGraph again";
-    world.set_profiling(false).run();
+    world.set_profiling(false).run().value();
     EXPECT_EQ(world.compose_count(), 2u) << "a changed request must compose the plan again";
 }
 
@@ -497,18 +467,20 @@ TEST(Integration_RunDriver, AProfilingToggleOnADynamicGraphComposesOnceAndTimesI
     auto world = rt.dynamic_graph();
     world.region(0).add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
 
-    EXPECT_TRUE(world.run().node_timings.empty()) << "a graph that requested nothing was timed";
+    EXPECT_TRUE(world.run().value().node_timings.empty())
+        << "a graph that requested nothing was timed";
     EXPECT_EQ(world.compose_count(), 1u);
 
     world.set_profiling(true);
-    EXPECT_FALSE(world.run().node_timings.empty()) << "the request did not reach the plan";
+    EXPECT_FALSE(world.run().value().node_timings.empty()) << "the request did not reach the plan";
     EXPECT_EQ(world.compose_count(), 2u);
 
-    EXPECT_FALSE(world.run().node_timings.empty());
+    EXPECT_FALSE(world.run().value().node_timings.empty());
     EXPECT_EQ(world.compose_count(), 2u) << "a run with the request unchanged composed again";
 
     world.set_profiling(false);
-    EXPECT_TRUE(world.run().node_timings.empty()) << "the withdrawal did not reach the plan";
+    EXPECT_TRUE(world.run().value().node_timings.empty())
+        << "the withdrawal did not reach the plan";
     EXPECT_EQ(world.compose_count(), 3u);
 }
 
@@ -531,7 +503,7 @@ TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
         p[0] += 7;
     });
 
-    auto step = g.run_async();
+    auto step = g.run_async().value();
     released.store(true, std::memory_order_release);
 
     Graph moved = std::move(g);
@@ -539,11 +511,11 @@ TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
     EXPECT_FALSE(step.pending()) << "the move ended the step the handle was given";
     EXPECT_TRUE(step.ready());
 
-    const auto late = step.try_wait();
+    const auto late = step.wait();
     ASSERT_FALSE(late.has_value());
     EXPECT_EQ(late.error().code, ErrorCode::InvalidState);
 
-    EXPECT_TRUE(moved.try_run().has_value()) << "the destination must run";
+    EXPECT_TRUE(moved.run().has_value()) << "the destination must run";
     EXPECT_EQ(buf[0], 14);
 #endif
 }
@@ -565,14 +537,14 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
     auto g = rt.graph();
     g.add_host(Reads{}, Writes(buf), [counter]() { counter->accept(PER_STEP); });
 
-    const Internal::Observability::RunReport first = g.run();
+    const Internal::Observability::RunReport first = g.run().value();
     EXPECT_EQ(first.distributed_statistics.tasks_offloaded_to_network, PER_STEP);
     EXPECT_EQ(first.distributed_statistics.remote_nodes_involved, 1u);
 
-    const Internal::Observability::RunReport second = g.run(std::size_t{2});
+    const Internal::Observability::RunReport second = g.run(std::size_t{2}).value();
     EXPECT_EQ(second.distributed_statistics.tasks_offloaded_to_network, 2 * PER_STEP);
 
-    const Internal::Observability::RunReport third = g.run_async().wait();
+    const Internal::Observability::RunReport third = g.run_async().value().wait().value();
     EXPECT_EQ(third.distributed_statistics.tasks_offloaded_to_network, PER_STEP);
 }
 
@@ -586,7 +558,7 @@ TEST(Integration_RunDriver, AFailedChainedRunOfOneStepAdvancesNoState)
     CountedStep step(rt, K_COUNT_OVER_CAPACITY);
     const int* const before = step.field.current();
 
-    const auto failed = step.graph.try_run();
+    const auto failed = step.graph.run();
 
     ASSERT_FALSE(failed.has_value());
     EXPECT_EQ(step.field.current(), before) << "the failed step advanced the State";
@@ -605,7 +577,7 @@ TEST(Integration_RunDriver, AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast
 
     CountedStep step(rt, K_COUNT_OVER_CAPACITY);
 
-    const auto failed = step.graph.try_run(STEPS);
+    const auto failed = step.graph.run(STEPS);
 
     ASSERT_FALSE(failed.has_value());
     for (std::size_t i = 0; i < N; ++i)
@@ -649,7 +621,7 @@ TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfOnePlan)
      })
      .before_each_step([w, &observed](std::size_t) { observed.push_back(w[1]); });
 
-    g.run(K_STEPS);
+    g.run(K_STEPS).value();
 
     EXPECT_EQ(g.compile_count(), 1u);
     ASSERT_EQ(observed.size(), K_STEPS);
@@ -659,7 +631,7 @@ TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfOnePlan)
         EXPECT_EQ(observed[i], K_BASE + static_cast<std::uint32_t>(i)) << "replay " << i;
     }
 
-    g.run();
+    g.run().value();
 
     EXPECT_EQ(g.compile_count(), 1u) << "a hook must not rebuild the plan";
     EXPECT_EQ(observed.back(), K_BASE) << "a new run counts its steps from zero";
@@ -691,7 +663,7 @@ TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfADynamicGraph)
         w[1] = K_BASE + static_cast<std::uint32_t>(finished_steps);
     });
 
-    world.run(K_STEPS);
+    world.run(K_STEPS).value();
 
     EXPECT_EQ(world.compose_count(), 1u);
     for (std::size_t i = 0; i < K_STEPS; ++i)
@@ -711,11 +683,11 @@ TEST(Integration_RunDriver, AStepHookMovesWithItsGraph)
     source.before_each_step([&calls](std::size_t) { ++calls; });
 
     auto moved = std::move(source);
-    moved.run();
+    moved.run().value();
     EXPECT_EQ(calls, 1u);
 
     source.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
-    source.run();
+    source.run().value();
     EXPECT_EQ(calls, 1u) << "the source of a move must have no hook";
 }
 
@@ -733,7 +705,7 @@ TEST(Integration_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
     auto g = rt.graph();
     g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
     g.before_each_step([payload, &seen](std::size_t) { seen = payload[15]; });
-    g.run();
+    g.run().value();
 
     EXPECT_EQ(seen, 7u);
 }

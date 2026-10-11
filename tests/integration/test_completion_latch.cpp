@@ -45,7 +45,7 @@ TEST(Integration_CompletionLatch, ManyStepReplayReachesCorrectState)
     // Each step adds 1 to every cell: after STEPS steps every cell equals STEPS.
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
-    auto rep = g.run(STEPS);
+    auto rep = g.run(STEPS).value();
 
     EXPECT_TRUE(rep.is_successful);
     EXPECT_FALSE(rep.cancelled);
@@ -65,9 +65,9 @@ TEST(Integration_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     // The latch resets between the three run() calls and the sentinel still signals; see README.md.
-    g.run(10);
-    g.run(10);
-    g.run(5);
+    g.run(10).value();
+    g.run(10).value();
+    g.run(5).value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(field[i], 25) << "at i=" << i;
@@ -87,7 +87,7 @@ TEST(Integration_CompletionLatch, SingleStepRunsRepeatedlyWithoutLeak)
     // Each single-step run goes through one reset, arm and wait cycle of the latch; see README.md.
     for (int r = 0; r < 200; ++r)
     {
-        auto rep = g.run();
+        auto rep = g.run().value();
         ASSERT_TRUE(rep.is_successful) << "run " << r;
     }
     for (std::size_t i = 0; i < N; ++i)

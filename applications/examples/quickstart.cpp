@@ -58,7 +58,7 @@ namespace
         });
 
         // The graph compiles once and replays STEPS times.
-        const auto report = sim.run(STEPS);
+        const auto report = sim.run(STEPS).value();
 
         // Heat is conserved by this closed diffusion; report it as a smoke check.
         double total = 0.0;
@@ -73,13 +73,5 @@ namespace
 
 int main()
 {
-    try
-    {
-        return run_quickstart();
-    }
-    catch (const SushiException& error)
-    {
-        std::fprintf(stderr, "quickstart: %s\n", error.what());
-        return 1;
-    }
+    return run_quickstart();
 }

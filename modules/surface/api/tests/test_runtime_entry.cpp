@@ -108,7 +108,7 @@ TEST(Integration_RuntimeEntry, DefaultConfigCreates)
 
     auto graph = rt.graph();
     graph.add(COUNT, Reads(), Writes(values), [data](std::size_t i) { data[i] = 7; });
-    graph.run();
+    graph.run().value();
 
     for (std::size_t i = 0; i < COUNT; ++i)
         ASSERT_EQ(values[i], 7) << "element " << i;

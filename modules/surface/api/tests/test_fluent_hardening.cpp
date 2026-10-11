@@ -55,7 +55,7 @@ TEST(Integration_FluentHardening, Extent2DPerElementMap)
         const std::size_t y = idx[1];
         p[y * W + x] = static_cast<int>(y * W + x);
     });
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < W * H; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
@@ -84,7 +84,7 @@ TEST(Integration_FluentHardening, NdRange2DTiledKernel)
         const std::size_t y = it.get_global_id(1);
         p[y * W + x] = static_cast<int>(y * W + x);
     });
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < W * H; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
@@ -107,7 +107,7 @@ TEST(Integration_FluentHardening, State2DSteppedUpdate)
         const std::size_t y = idx[1];
         next[y * W + x] = cur[y * W + x] + static_cast<int>(y);
     });
-    g.run(S);
+    g.run(S).value();
 
     for (std::size_t y = 0; y < H; ++y)
         for (std::size_t x = 0; x < W; ++x)
@@ -143,7 +143,7 @@ TEST(Integration_FluentHardening, VariadicCoupledThreeInputs)
     {
         next[i] = cur[i] + av[i] + bv[i];
     });
-    g.run(4);
+    g.run(4).value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(u[i], 4 * (2 + 3)) << "at i=" << i;
@@ -164,7 +164,7 @@ TEST(Integration_FluentHardening, ReadsWritesWrappersOrdering)
     auto g = rt.graph();
     g.add(N, Reads{}, Writes{ buf }, [p](std::size_t i) { p[i] = static_cast<int>(i); });
     g.add(N, Reads{ buf }, Writes{ buf }, [p](std::size_t i) { p[i] = p[i] * p[i]; });
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
@@ -190,7 +190,7 @@ TEST(Integration_FluentHardening, InOutCapturedArguments)
     auto g = rt.graph();
     g.add(Extent{N}, In(src), Out(dst),
           [](sycl::id<1> i, const int* s, int* d) { d[i[0]] = s[i[0]] * 2; });
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(dst[i], static_cast<int>(i) * 2) << "at i=" << i;
@@ -215,7 +215,7 @@ TEST(Integration_FluentHardening, InteriorOnlyHaloUpdate)
     {
         p[idx[1] * W + idx[0]] += 1;
     });
-    g.run();
+    g.run().value();
 
     for (std::size_t y = 0; y < H; ++y)
         for (std::size_t x = 0; x < W; ++x)
