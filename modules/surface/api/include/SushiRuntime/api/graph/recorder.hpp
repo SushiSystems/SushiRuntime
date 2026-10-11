@@ -94,7 +94,8 @@ namespace SushiRuntime
      *
      * A move leaves the source empty on the same context, ready to record again, and
      * its generation() past every value it had. Every recording member returns the
-     * position of its node's rule.
+     * position of its node's rule. A recording it refuses records nothing, is kept for
+     * refusal() when it is the first, and returns rule_count().
      * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
      */
     class Recorder final
@@ -145,7 +146,7 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Takes over another recorder's nodes, rules, scratch and hooks.
+             * @brief Takes over another recorder's nodes, rules, scratch, hooks and refusal.
              * @param other Left empty on the same context; its generation() moves on.
              * @pre No rule scope is open on other.
              */
@@ -257,13 +258,14 @@ namespace SushiRuntime
             /**
              * @brief Records a per-element launch whose window is bound per step.
              * @param capacity Upper bound the live window must fit; also the default width.
-             * @throws SushiException With InvalidAccess for a slot outside host USM.
              */
             template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
             std::size_t kernel(Dynamic window, std::size_t capacity, Access access, F&& kernel_body,
                                NodeOptions options = {})
             {
-                Detail::require_host_device_slots(*context_, window);
+                if (!admits(options) ||
+                    !admit(Detail::host_device_slots_refusal(*context_, window, next_rule())))
+                    return rule_count();
                 auto bindings = std::make_shared<::SushiRuntime::Internal::Graph::LateBindings>();
                 Detail::adopt_device_bindings(*bindings, window, access.reads, access.lives);
                 std::uint32_t* fault = fault_record_for(window);
@@ -339,8 +341,7 @@ namespace SushiRuntime
              * @brief Records a per-element launch over [0, count) that names no region.
              * @param kernel_body        Callable invoked as kernel_body(i) for each index.
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With InvalidAccess for an unknown device.
+             * @param call      Names the call the user wrote in a refusal's message.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
@@ -349,8 +350,10 @@ namespace SushiRuntime
                                          NodeOptions options = {},
                                          const char* call = K_UNTRACKED_KERNEL)
             {
+                if (!admit(placement_refusal(call, placement)))
+                    return rule_count();
                 std::vector<Internal::Memory::LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
+                const std::size_t device = placed_device(placement, lives);
                 return record(Detail::untracked_launch_node(count, device,
                                                             std::forward<F>(kernel_body)),
                               lives, options);
@@ -360,8 +363,7 @@ namespace SushiRuntime
              * @brief Records a region-less launch that drives the handler itself.
              * @param kernel_body        Callable invoked as kernel_body(0, count, sycl::handler&).
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With InvalidAccess for an unknown device.
+             * @param call      Names the call the user wrote in a refusal's message.
              */
             template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
             std::size_t untracked_kernel(std::size_t count, F&& kernel_body,
@@ -369,8 +371,10 @@ namespace SushiRuntime
                                          NodeOptions options = {},
                                          const char* call = K_UNTRACKED_KERNEL)
             {
+                if (!admit(placement_refusal(call, placement)))
+                    return rule_count();
                 std::vector<Internal::Memory::LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
+                const std::size_t device = placed_device(placement, lives);
                 return record(Detail::untracked_range_node(count, device,
                                                            std::forward<F>(kernel_body)),
                               lives, options);
@@ -381,8 +385,7 @@ namespace SushiRuntime
              * @param kernel_body        Callable invoked as kernel_body(sycl::id<N>) with the
              *                           origin applied.
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With InvalidAccess for an unknown device.
+             * @param call      Names the call the user wrote in a refusal's message.
              */
             template <int N, class F>
             std::size_t untracked_kernel(Extent<N> extent, F&& kernel_body,
@@ -390,8 +393,10 @@ namespace SushiRuntime
                                          NodeOptions options = {},
                                          const char* call = K_UNTRACKED_KERNEL)
             {
+                if (!admit(placement_refusal(call, placement)))
+                    return rule_count();
                 std::vector<Internal::Memory::LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
+                const std::size_t device = placed_device(placement, lives);
                 return record(Detail::untracked_launch_node(extent, device,
                                                             std::forward<F>(kernel_body)),
                               lives, options);
@@ -403,8 +408,7 @@ namespace SushiRuntime
              *                  kernel_body(sycl::nd_item<N>, sycl::id<N>) for the id with the
              *                  origin.
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With InvalidAccess for an unknown device.
+             * @param call      Names the call the user wrote in a refusal's message.
              */
             template <int N, class F>
             std::size_t untracked_kernel(NdRange<N> range, F&& kernel_body,
@@ -412,8 +416,10 @@ namespace SushiRuntime
                                          NodeOptions options = {},
                                          const char* call = K_UNTRACKED_KERNEL)
             {
+                if (!admit(placement_refusal(call, placement)))
+                    return rule_count();
                 std::vector<Internal::Memory::LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
+                const std::size_t device = placed_device(placement, lives);
                 return record(Detail::untracked_launch_node(range, device,
                                                             std::forward<F>(kernel_body)),
                               lives, options);
@@ -423,8 +429,7 @@ namespace SushiRuntime
              * @brief Records a raw command group that names no region.
              * @param kernel_body        Callable invoked as kernel_body(sycl::handler&).
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With InvalidAccess for an unknown device.
+             * @param call      Names the call the user wrote in a refusal's message.
              */
             template <class F>
             std::size_t untracked_raw_kernel(
@@ -432,8 +437,10 @@ namespace SushiRuntime
                        NodeOptions options = {},
                        const char* call = "Recorder::untracked_raw_kernel(fn, placement)")
             {
+                if (!admit(placement_refusal(call, placement)))
+                    return rule_count();
                 std::vector<Internal::Memory::LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
+                const std::size_t device = placed_device(placement, lives);
                 return record(
                     Detail::untracked_raw_node(device, std::forward<F>(kernel_body)),
                     lives, options);
@@ -448,6 +455,8 @@ namespace SushiRuntime
             template <typename T, class F>
             std::size_t state_rule(State<T>& state, F&& kernel_body, NodeOptions options = {})
             {
+                if (!admits(options))
+                    return rule_count();
                 auto view = steps_.view_for(state);
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::gather_life(lives, state);
@@ -463,8 +472,7 @@ namespace SushiRuntime
              * @param state The state the rule evolves; alive at every run, free to move.
              * @param kernel_body    Callable invoked as kernel_body(index, const T* current,
              *                       T* next).
-             * @param call  Names the call the user wrote in a thrown message.
-             * @throws SushiException With InvalidGraph for a launch past the state.
+             * @param call  Names the call the user wrote in a refusal's message.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class Launch, class F,
@@ -473,8 +481,10 @@ namespace SushiRuntime
                                    NodeOptions options = {},
                                    const char* call = "Recorder::state_rule(state, launch, fn)")
             {
-                Detail::require_launch_within(launch, state.size(), call, next_rule(),
-                                              "the State");
+                if (!admits(options) ||
+                    !admit(Detail::launch_refusal(launch, state.size(), call, next_rule(),
+                                                  "the State")))
+                    return rule_count();
                 auto view = steps_.view_for(state);
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::gather_life(lives, state);
@@ -489,13 +499,14 @@ namespace SushiRuntime
              * @brief Records a State rule whose window is bound per step.
              * @param state The state the rule evolves; its size is the capacity. Alive at
              *        every run, free to move.
-             * @throws SushiException With InvalidAccess for a slot outside host USM.
              */
             template <typename T, class F>
             std::size_t state_rule(Dynamic window, State<T>& state, F&& kernel_body,
                                    NodeOptions options = {})
             {
-                Detail::require_host_device_slots(*context_, window);
+                if (!admits(options) ||
+                    !admit(Detail::host_device_slots_refusal(*context_, window, next_rule())))
+                    return rule_count();
                 auto view = steps_.view_for(state);
                 auto bindings = std::make_shared<::SushiRuntime::Internal::Graph::LateBindings>();
 
@@ -517,26 +528,27 @@ namespace SushiRuntime
 
             /**
              * @brief Records a rule that writes one State from several current fields.
-             * @param call   Names the call the user wrote in a thrown message.
+             * @param call   Names the call the user wrote in a refusal's message.
              * @param out    The field written; alive at every run, free to move.
              * @param kernel_body     Callable invoked as kernel_body(i, current, next, a, ...).
              * @param inputs The fields read, under the same rule as out.
-             * @throws SushiException With InvalidGraph for an input smaller than out.
              */
             template <typename T, class F, class... Inputs>
             std::size_t coupled_rule(const char* call, State<T>& out, F&& kernel_body,
                                      NodeOptions options,
                                      State<Inputs>&... inputs)
             {
-                (Detail::require_launch_within(out.size(), inputs.size(), call, next_rule(),
-                                               "a State read"), ...);
+                const bool inputs_fit =
+                    (admit(Detail::launch_refusal(out.size(), inputs.size(), call, next_rule(),
+                                                  "a State read")) && ...);
+                if (!admits(options) || !inputs_fit)
+                    return rule_count();
                 return record_coupled(out.size(), out, std::forward<F>(kernel_body), options,
                                       inputs...);
             }
 
             /**
              * @brief Records a coupled rule over the whole field, with node options.
-             * @throws SushiException With InvalidGraph for an input smaller than out.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class F, class... Inputs>
@@ -549,7 +561,6 @@ namespace SushiRuntime
 
             /**
              * @brief Records a coupled rule over the whole field, named as this member.
-             * @throws SushiException With InvalidGraph for an input smaller than out.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class F, class... Inputs>
@@ -561,11 +572,10 @@ namespace SushiRuntime
 
             /**
              * @brief Records a coupled rule over a count, an Extent or an NdRange.
-             * @param call   Names the call the user wrote in a thrown message.
+             * @param call   Names the call the user wrote in a refusal's message.
              * @param out    The field written; alive at every run, free to move.
              * @param kernel_body     Callable invoked as kernel_body(index, current, next, a, ...).
              * @param inputs The fields read, under the same rule as out.
-             * @throws SushiException With InvalidGraph for a launch past a State.
              */
             template <class Launch, typename T, class F, class... Inputs,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -573,17 +583,19 @@ namespace SushiRuntime
                                      F&& kernel_body,
                                      NodeOptions options, State<Inputs>&... inputs)
             {
-                Detail::require_launch_within(launch, out.size(), call, next_rule(),
-                                              "the State written");
-                (Detail::require_launch_within(launch, inputs.size(), call, next_rule(),
-                                               "a State read"), ...);
+                const bool output_fits = admit(Detail::launch_refusal(
+                    launch, out.size(), call, next_rule(), "the State written"));
+                const bool inputs_fit =
+                    (admit(Detail::launch_refusal(launch, inputs.size(), call, next_rule(),
+                                                  "a State read")) && ...);
+                if (!admits(options) || !output_fits || !inputs_fit)
+                    return rule_count();
                 return record_coupled(launch, out, std::forward<F>(kernel_body), options,
                                       inputs...);
             }
 
             /**
              * @brief Records a coupled rule over a launch, with node options.
-             * @throws SushiException With InvalidGraph for a launch past a State.
              */
             template <class Launch, typename T, class F, class... Inputs,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -597,7 +609,6 @@ namespace SushiRuntime
 
             /**
              * @brief Records a coupled rule over a launch, named as this member.
-             * @throws SushiException With InvalidGraph for a launch past a State.
              */
             template <class Launch, typename T, class F, class... Inputs,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -613,8 +624,7 @@ namespace SushiRuntime
              * @brief Records an offloadable per-element task with a local fallback.
              * @param local  Callable invoked as local(i) for i in [0, count) when run here.
              * @param params Scalar parameters sent with the kernel name.
-             * @param call   Names the call the user wrote in a thrown message.
-             * @throws SushiException With InvalidGraph for too many parameters.
+             * @param call   Names the call the user wrote in a refusal's message.
              */
             template <class F>
             std::size_t offload(::SushiRuntime::OperationID op, std::size_t count, Access access,
@@ -622,7 +632,8 @@ namespace SushiRuntime
                                 const char* call =
                                     "Recorder::offload(op, count, access, local, params)")
             {
-                Detail::require_offload_parameters(call, params.size());
+                if (!admit(Detail::offload_parameters_refusal(call, next_rule(), params.size())))
+                    return rule_count();
                 return record(Detail::offload_node(op, count, std::move(access.reads),
                                                    std::move(access.writes), std::forward<F>(local),
                                                    std::move(params)),
@@ -633,8 +644,7 @@ namespace SushiRuntime
              * @brief Records an offloadable per-step rule of a State.
              * @pre state was registered with State::distributed().
              * @param local Local fallback invoked as local(i, const T* current, T* next).
-             * @param call  Names the call the user wrote in a thrown message.
-             * @throws SushiException With InvalidGraph for too many parameters.
+             * @param call  Names the call the user wrote in a refusal's message.
              */
             template <typename T, class F>
             std::size_t offload_rule(::SushiRuntime::OperationID op, State<T>& state, F&& local,
@@ -642,7 +652,8 @@ namespace SushiRuntime
                                      const char* call =
                                          "Recorder::offload_rule(op, state, local, params)")
             {
-                Detail::require_offload_parameters(call, params.size());
+                if (!admit(Detail::offload_parameters_refusal(call, next_rule(), params.size())))
+                    return rule_count();
                 auto view = steps_.view_for(state);
                 auto live_reads = std::make_shared<std::vector<void*>>(
                     std::vector<void*>{ static_cast<void*>(view->current) });
@@ -721,7 +732,7 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Forgets every node, rule, observer, hook and scratch block recorded.
+             * @brief Forgets every node, rule, observer, hook, scratch block and refusal.
              * @pre No step that runs the recorded nodes is pending.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
@@ -735,7 +746,18 @@ namespace SushiRuntime
                 scratch_.clear();
                 observers_.clear();
                 steps_ = Detail::StepMachinery();
+                refusal_.reset();
                 ++generation_;
+            }
+
+            /**
+             * @brief Returns the first recording this recorder refused since clear().
+             * @return The error the next run returns, or null when nothing was refused.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            [[nodiscard]] const Error* refusal() const noexcept
+            {
+                return refusal_ ? &*refusal_ : nullptr;
             }
 
             /** @brief Returns how many rules are recorded. */
@@ -805,15 +827,16 @@ namespace SushiRuntime
              * @param emit    Replay callable invoked as emit(TaskGraph&, registration).
              * @param lives   Observers of the handles the node names; moved from.
              * @param options What the caller stated; its name and parameters are copied.
-             * @return The position of the rule the node belongs to.
-             * @throws SushiException With InvalidGraph for too many parameters.
+             * @return The position of the rule the node belongs to, or rule_count() when
+             *         options are refused.
              */
             template <class Emit>
             std::size_t record(Emit&& emit,
                                std::vector<Internal::Memory::LivenessObserver>& lives,
                                const NodeOptions& options = {})
             {
-                Detail::require_parameters_fit(options);
+                if (!admits(options))
+                    return rule_count();
                 Detail::NodeSpec spec(std::forward<Emit>(emit));
                 spec.stamp = Detail::NodeStamp(options, label_of(options.name));
                 if (!scope_open_ || !scope_has_node_)
@@ -871,28 +894,57 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Checks a placement and hands over the observer of the handle it names.
-             * @param call  Names the call the user wrote in the message.
-             * @param lives Gains the placement's observer when it watches an allocation.
-             * @return Index of the device the node is placed on.
-             * @throws SushiException With InvalidAccess for a device the runtime
-             *         does not have.
+             * @brief Returns the refusal of a placement on a device the runtime does not have.
+             * @param call Names the call the user wrote in the message.
+             * @return An InvalidAccess error naming the rule, or nothing.
              */
-            std::size_t placed_device(const char* call, const On& placement,
-                                      std::vector<Internal::Memory::LivenessObserver>& lives) const
+            [[nodiscard]] std::optional<Error> placement_refusal(const char* call,
+                                                                 const On& placement) const
             {
                 const std::size_t device = placement.device.value();
                 const std::size_t count = context_->devices().count();
-                if (device >= count)
-                    throw SushiException(Error{
-                        ErrorCode::InvalidAccess,
-                        std::string(call) + ": On(DeviceIndex{" + std::to_string(device) +
-                            "}) names no device, the runtime has " + std::to_string(count) +
-                            " device(s); name a device below that, or place the kernel "
-                            "with On(buffer)."});
+                if (device < count)
+                    return std::nullopt;
+                return Error{
+                    ErrorCode::InvalidAccess,
+                    std::string(call) + ", rule " + std::to_string(next_rule()) +
+                        ": On(DeviceIndex{" + std::to_string(device) +
+                        "}) names no device, the runtime has " + std::to_string(count) +
+                        " device(s); name a device below that, or place the kernel "
+                        "with On(buffer)."};
+            }
+
+            /**
+             * @brief Hands over the observer of the handle a placement names.
+             * @param lives Gains the placement's observer when it watches an allocation.
+             * @return Index of the device the node is placed on.
+             * @pre placement_refusal() returned nothing for placement.
+             */
+            std::size_t placed_device(const On& placement,
+                                      std::vector<Internal::Memory::LivenessObserver>& lives) const
+            {
                 if (!placement.life.expired())
                     lives.push_back(placement.life);
-                return device;
+                return placement.device.value();
+            }
+
+            /**
+             * @brief Keeps a refusal when it is the first, and tells whether there was none.
+             * @return True when refused is empty, so the recording may go on.
+             */
+            bool admit(std::optional<Error> refused)
+            {
+                if (!refused)
+                    return true;
+                if (!refusal_)
+                    refusal_ = std::move(*refused);
+                return false;
+            }
+
+            /** @brief Keeps the refusal of options a node cannot carry; true when they fit. */
+            bool admits(const NodeOptions& options)
+            {
+                return admit(Detail::parameters_refusal(options, next_rule()));
             }
 
             /**
@@ -922,6 +974,7 @@ namespace SushiRuntime
                 scratch_ = std::exchange(other.scratch_, {});
                 observers_ = std::exchange(other.observers_, {});
                 steps_ = std::exchange(other.steps_, Detail::StepMachinery());
+                refusal_ = std::exchange(other.refusal_, std::nullopt);
                 // A value this recorder returned before must not name other's work.
                 if (other.generation_ > generation_)
                     generation_ = other.generation_;
@@ -949,7 +1002,7 @@ namespace SushiRuntime
 
             /**
              * @brief Allocates a fault record for a Dynamic with a device slot.
-             * @param window A Dynamic that passed require_host_device_slots().
+             * @param window A Dynamic for which host_device_slots_refusal() returned nothing.
              * @return The record, or null when window has no device slot.
              */
             std::uint32_t* fault_record_for(const Dynamic& window)
@@ -988,6 +1041,9 @@ namespace SushiRuntime
 
             /** @brief The per-step hooks of the recorded nodes. */
             Detail::StepMachinery steps_;
+
+            /** @brief The first refused recording since clear(); empty when none. */
+            std::optional<Error> refusal_;
 
             /** @brief Advanced by every recorded node, rename, clear() and move. */
             std::uint64_t generation_ = 0;

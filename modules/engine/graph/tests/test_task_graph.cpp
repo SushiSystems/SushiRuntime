@@ -21,7 +21,7 @@
 
 /**
  * @file test_task_graph.cpp
- * @brief Tests what TaskGraph's add calls return or refuse and the errors compile() throws.
+ * @brief Tests what TaskGraph's add calls return or stop on and the errors compile() returns.
  * @see modules/engine/graph/tests/README.md
  * @author Mustafa Garip
  */
@@ -51,7 +51,7 @@ namespace
 {
     using SushiRuntime::ErrorCode;
     using SushiRuntime::Internal::Memory::ResourceRegion;
-    using SushiRuntime::SushiException;
+    using SushiRuntime::Error;
     using SushiRuntime::Internal::Graph::CompiledGraph;
     using SushiRuntime::Internal::Graph::HostWork;
     using SushiRuntime::Internal::Graph::Node;
@@ -78,25 +78,13 @@ namespace
         later.in_degree.fetch_add(1, std::memory_order_relaxed);
     }
 
-    /** @brief Pairs the code and the message of an error the graph threw. */
-    struct GraphFailure
+    /** @brief Compiles @p graph and returns the error it returns, or nothing for a plan. */
+    std::optional<Error> compile_failure(TaskGraph& graph)
     {
-        ErrorCode code = ErrorCode::Ok;  /**< The code of the SushiException. */
-        std::string message;   /**< Its what(). */
-    };
-
-    /** @brief Compiles @p graph and returns the SushiException it throws, or nothing. */
-    std::optional<GraphFailure> compile_failure(TaskGraph& graph)
-    {
-        try
-        {
-            const CompiledGraph compiled = graph.compile();
-        }
-        catch (const SushiException& failure)
-        {
-            return GraphFailure{failure.error().code, failure.what()};
-        }
-        return std::nullopt;
+        const SushiRuntime::Result<CompiledGraph> compiled = graph.compile();
+        if (compiled)
+            return std::nullopt;
+        return compiled.error();
     }
 
     /** @brief Tells whether @p text holds @p part. */
@@ -249,7 +237,7 @@ TEST(Unit_TaskGraph, TheCompiledPlanOwnsTheReturnedNodes)
     Node& first = graph.add_node(idle_work());
     Node& second = graph.add_node(idle_work());
 
-    const CompiledGraph compiled = graph.compile();
+    const CompiledGraph compiled = graph.compile().value();
 
     ASSERT_EQ(compiled.all_nodes.size(), 2u);
     std::size_t found = 0;
@@ -259,7 +247,7 @@ TEST(Unit_TaskGraph, TheCompiledPlanOwnsTheReturnedNodes)
     EXPECT_EQ(found, 2u);
 }
 
-TEST(Unit_TaskGraph, CompileWithNoRootThrowsInvalidGraphNamingANode)
+TEST(Unit_TaskGraph, CompileWithNoRootReturnsInvalidGraphNamingANode)
 {
     TaskGraph graph;
     Node& first = graph.add_node(idle_work());
@@ -269,7 +257,7 @@ TEST(Unit_TaskGraph, CompileWithNoRootThrowsInvalidGraphNamingANode)
     add_edge(first, second);
     add_edge(second, first);
 
-    const std::optional<GraphFailure> failure = compile_failure(graph);
+    const std::optional<Error> failure = compile_failure(graph);
 
     ASSERT_TRUE(failure.has_value()) << "compile() accepted a graph with no root";
     EXPECT_EQ(failure->code, ErrorCode::InvalidGraph);
@@ -279,7 +267,7 @@ TEST(Unit_TaskGraph, CompileWithNoRootThrowsInvalidGraphNamingANode)
         << failure->message;
 }
 
-TEST(Unit_TaskGraph, CompileWithACycleBehindARootThrowsInvalidGraphNamingANode)
+TEST(Unit_TaskGraph, CompileWithACycleBehindARootReturnsInvalidGraphNamingANode)
 {
     TaskGraph graph;
     Node& root = graph.add_node(idle_work());
@@ -291,7 +279,7 @@ TEST(Unit_TaskGraph, CompileWithACycleBehindARootThrowsInvalidGraphNamingANode)
     add_edge(first, second);
     add_edge(second, first);
 
-    const std::optional<GraphFailure> failure = compile_failure(graph);
+    const std::optional<Error> failure = compile_failure(graph);
 
     ASSERT_TRUE(failure.has_value()) << "compile() accepted a graph with a cycle";
     EXPECT_EQ(failure->code, ErrorCode::InvalidGraph);
@@ -312,7 +300,7 @@ TEST(Unit_TaskGraph, AGraphCompilesAfterAFailedCompile)
     ASSERT_TRUE(compile_failure(graph).has_value());
 
     graph.add_node(idle_work());
-    const CompiledGraph compiled = graph.compile();
+    const CompiledGraph compiled = graph.compile().value();
     EXPECT_EQ(compiled.all_nodes.size(), 1u);
     EXPECT_EQ(compiled.roots.size(), 1u);
 }

@@ -30,6 +30,8 @@
 
 #include <cstddef>
 
+#include <SushiRuntime/core/result.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Graph { struct Node; }
@@ -42,10 +44,10 @@ namespace SushiRuntime
          * @param node Its cached queue index and its checked flag are written on success.
          * @param memory Asked which device owns each region of the node.
          * @param device_count Devices the runtime holds; a placement at or past it is refused.
-         * @throws SushiException with ErrorCode::InvalidGraph; nothing is cached then.
+         * @return Nothing, or an InvalidGraph error; nothing is cached then.
          * @see modules/engine/scheduler/README.md
          */
-        void place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
+        [[nodiscard]] Result<void> place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
                                 std::size_t device_count);
 
     } // namespace Scheduler

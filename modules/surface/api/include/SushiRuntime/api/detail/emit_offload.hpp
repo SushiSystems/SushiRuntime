@@ -50,28 +50,30 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Refuses more parameters than the metadata of an offloadable task holds.
+         * @brief Returns the refusal of more parameters than an offloadable task carries.
          * @param call  Names the call the user wrote in the message.
          * @param given How many parameters the call passed.
-         * @throws SushiException With InvalidGraph for more than
+         * @return An InvalidGraph error naming the rule, or nothing for at most
          *         TaskMetadata::K_MAX_PARAMS.
          */
-        inline void require_offload_parameters(const char* call, std::size_t given)
+        [[nodiscard]] inline std::optional<Error> offload_parameters_refusal(
+            const char* call, std::size_t rule, std::size_t given)
         {
             const std::size_t limit = ::SushiRuntime::Internal::Graph::TaskMetadata::K_MAX_PARAMS;
             if (given <= limit)
-                return;
-            throw SushiException(Error{
+                return std::nullopt;
+            return Error{
                 ErrorCode::InvalidGraph,
-                std::string(call) + ": " + std::to_string(given) +
+                std::string(call) + ", rule " + std::to_string(rule) + ": " +
+                    std::to_string(given) +
                     " parameters were given and an offloadable task carries at most " +
-                    std::to_string(limit) + "; pass at most that many."});
+                    std::to_string(limit) + "; pass at most that many."};
         }
 
         /**
          * @brief Fills the metadata of an offloadable task: name, kernel and parameters.
          * @param name Persistent label; stored, not copied.
-         * @pre params passed require_offload_parameters().
+         * @pre offload_parameters_refusal() returned nothing for params.
          */
         inline ::SushiRuntime::Internal::Graph::TaskMetadata offload_metadata(
             const char* name, ::SushiRuntime::OperationID op,

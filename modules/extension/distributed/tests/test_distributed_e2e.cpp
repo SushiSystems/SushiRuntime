@@ -936,7 +936,7 @@ namespace
         TaskGraph graph(master_context.offload());
         add_registered_task(graph, *kernels, metadata, span<const BufferView>(inputs, 2),
                             span<const BufferView>(outputs, 1));
-        master_context.execution_engine().execute(graph.compile());
+        master_context.execution_engine().execute(graph.compile().value());
 
         RegisteredSum sum;
         sum.values.assign(out.data(), out.data() + out.count());
@@ -979,7 +979,7 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "vec_add", a, b, out);
-    master_context.execution_engine().execute(graph.compile());
+    master_context.execution_engine().execute(graph.compile().value());
 
     EXPECT_EQ(worker_runs.load(), 1) << "the task ran on the local fallback, not on the worker";
     EXPECT_EQ(cluster.offloaded(), 1u);
@@ -1021,7 +1021,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "fan_out_first", in, in, first_out);
     add_vec_add(graph, "fan_out_second", in, in, second_out);
-    master_context.execution_engine().execute(graph.compile());
+    master_context.execution_engine().execute(graph.compile().value());
 
     EXPECT_EQ(cluster.offloaded(), 2u);
     EXPECT_EQ(first_runs.load() + second_runs.load(), 2);
@@ -1076,7 +1076,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
         });
     add_vec_add(graph, "double_on_worker", x, x, y);
 
-    CompiledGraph compiled = graph.compile();
+    CompiledGraph compiled = graph.compile().value();
     const OffloadState* writer_state = writer.offload_state();
     ASSERT_NE(writer_state, nullptr) << "a local node that writes a shared buffer keeps a state";
     EXPECT_FALSE(writer_state->offloadable);
@@ -1126,7 +1126,7 @@ TEST(Integration_DistributedE2ETest, OffloadOverTCPLoopback)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "vec_add_tcp", a, b, out);
-    master_context.execution_engine().execute(graph.compile());
+    master_context.execution_engine().execute(graph.compile().value());
 
     EXPECT_EQ(worker_runs.load(), 1);
     expect_sum(out, a, b);
@@ -1167,7 +1167,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "vec_add_death", a, b, out);
-    CompiledGraph compiled = graph.compile();
+    CompiledGraph compiled = graph.compile().value();
     BackgroundRun run(master_context, compiled);
     ASSERT_TRUE(run.wait()) << "execute() did not return after the worker fell silent";
 
@@ -1205,7 +1205,7 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "fenced", a, b, out);
-    CompiledGraph compiled = graph.compile();
+    CompiledGraph compiled = graph.compile().value();
     BackgroundRun run(master_context, compiled);
     ASSERT_TRUE(worker.wait_for_dispatches(1));
 
@@ -1276,7 +1276,7 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "vec_add_lost_chunks", a, b, out);
-    CompiledGraph compiled = graph.compile();
+    CompiledGraph compiled = graph.compile().value();
     BackgroundRun run(master_context, compiled);
     ASSERT_TRUE(run.wait()) << "execute() did not return although the worker's pull timed out";
 
@@ -1442,7 +1442,7 @@ TEST(Integration_DistributedE2ETest, StopResubmitsPendingNodes)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "held_by_worker", a, b, out);
-    CompiledGraph compiled = graph.compile();
+    CompiledGraph compiled = graph.compile().value();
     BackgroundRun run(master_context, compiled);
     ASSERT_TRUE(worker.wait_for_dispatches(1));
     EXPECT_EQ(cluster.statistics().pending_tasks, 1u);
@@ -1486,7 +1486,7 @@ TEST(Integration_DistributedE2ETest, TryOffloadAfterStopRunsLocally)
 
     TaskGraph graph(master_context.offload());
     Internal::Graph::Node& node = add_vec_add(graph, "after_stop", a, b, out);
-    CompiledGraph compiled = graph.compile();
+    CompiledGraph compiled = graph.compile().value();
     const OffloadState* state = node.offload_state();
     ASSERT_NE(state, nullptr);
     ASSERT_TRUE(state->offloadable) << "the node must be one the scheduler offers";
@@ -1615,7 +1615,7 @@ TEST(Integration_DistributedE2ETest, AttemptCapDoesNotOutliveTheRun)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "always_fails_remotely", a, b, out);
-    CompiledGraph compiled = graph.compile();
+    CompiledGraph compiled = graph.compile().value();
     compiled.capture_base_state();
 
     // Every dispatch fails on the worker, so each run spends the cap and then runs locally.
@@ -1782,7 +1782,7 @@ TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "held_during_attach", a, b, out);
-    CompiledGraph compiled = graph.compile();
+    CompiledGraph compiled = graph.compile().value();
     BackgroundRun run(master_context, compiled);
     ASSERT_TRUE(worker.wait_for_dispatches(1));
 

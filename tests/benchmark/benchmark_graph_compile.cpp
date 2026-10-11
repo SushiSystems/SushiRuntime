@@ -78,7 +78,7 @@ namespace
             }
 
             const auto t0 = std::chrono::steady_clock::now();
-            auto compiled = graph.compile();
+            auto compiled = graph.compile().value();
             const double us = std::chrono::duration<double, std::micro>(
                 std::chrono::steady_clock::now() - t0).count();
             EXPECT_GE(compiled.roots.size(), 1u); // consume: compile must produce a DAG

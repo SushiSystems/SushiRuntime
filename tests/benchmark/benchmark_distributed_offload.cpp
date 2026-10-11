@@ -418,7 +418,7 @@ namespace
                                         span<const BufferView>(&input, 1),
                                         span<const BufferView>(&output, 1));
                 }
-                return graph.compile();
+                return graph.compile().value();
             }
 
             /** @brief Returns whether every output holds its input's pattern plus one. */
@@ -471,7 +471,7 @@ namespace
         {
             base += 1.0f;
             batch.refill(base);
-            Internal::Graph::CompiledGraph compiled = batch.compile();
+            Internal::Graph::CompiledGraph compiled = batch.compile().value();
 
             const auto begin = std::chrono::steady_clock::now();
             rig.master().execution_engine().execute(compiled);

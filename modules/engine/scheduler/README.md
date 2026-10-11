@@ -645,9 +645,10 @@ the allocator and the device count that execute_task() calls for a node it has n
 The first dispatch asks `placement_of()` once, after the co-location check, and caches the
 answer on the node as `cached_queue_index_`. Steady-state replay then routes through
 `DeviceQueueSet::queue(index)`, an indexed read, and calls neither `placement_of()` nor
-`USMAllocator::owning_device()`. A placement at or past the device count fails the run with
-`ErrorCode::InvalidGraph`, the index and the count; like a co-location failure it is not cached,
-so it recurs on a later run.
+`USMAllocator::owning_device()`. `place_for_dispatch()` returns `Result<void>`. A placement at or
+past the device count is an `ErrorCode::InvalidGraph` error with the index and the count, and
+execute_task() names the node in it and fails the run; like a co-location failure it is not
+cached, so it recurs on a later run.
 
 A task that is not a graph node has no placement. It takes
 `DeviceQueueSet::queue_or_numa_local()` for NUMA node 0, which rotates over the devices of

@@ -31,6 +31,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include <SushiRuntime/api/graph/node_options.hpp>
@@ -49,19 +50,21 @@ namespace SushiRuntime
             ::SushiRuntime::Internal::Graph::TaskMetadata::K_MAX_PARAMS;
 
         /**
-         * @brief Refuses more parameters than a node carries.
-         * @throws SushiException With InvalidGraph for more than K_MAX_NODE_PARAMETERS.
+         * @brief Returns the refusal of more parameters than a node carries.
+         * @return An InvalidGraph error naming the rule, or nothing for at most
+         *         K_MAX_NODE_PARAMETERS.
          */
-        inline void require_parameters_fit(const NodeOptions& options)
+        [[nodiscard]] inline std::optional<Error> parameters_refusal(const NodeOptions& options,
+                                                                     std::size_t rule)
         {
             const std::size_t given = options.parameters.size();
             if (given <= K_MAX_NODE_PARAMETERS)
-                return;
-            throw SushiException(Error{
+                return std::nullopt;
+            return Error{
                 ErrorCode::InvalidGraph,
-                "NodeOptions::parameters: " + std::to_string(given) +
-                    " parameters were given and a node carries at most " +
-                    std::to_string(K_MAX_NODE_PARAMETERS) + "; pass at most that many."});
+                "NodeOptions::parameters, rule " + std::to_string(rule) + ": " +
+                    std::to_string(given) + " parameters were given and a node carries at most " +
+                    std::to_string(K_MAX_NODE_PARAMETERS) + "; pass at most that many."};
         }
 
         /**
@@ -78,7 +81,7 @@ namespace SushiRuntime
              * @brief Copies the operation, the width and the parameters of options.
              * @param owned_name The recorder's own copy of options.name, or null for none;
              *        it outlives every plan built from the recorder.
-             * @pre options passed require_parameters_fit().
+             * @pre parameters_refusal() returned nothing for options.
              */
             NodeStamp(const NodeOptions& options, const char* owned_name) noexcept
                 : name(owned_name), operation(options.operation), width(options.width),

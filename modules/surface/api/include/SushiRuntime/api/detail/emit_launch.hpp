@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <type_traits>
 
@@ -187,26 +188,28 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Throws when a launch reaches past the handle its kernel indexes.
+         * @brief Returns the refusal of a launch that reaches past the handle its kernel indexes.
          * @param size   Elements the handle named by holder has.
          * @param call   The call as the caller wrote it, which opens the message.
-         * @throws SushiException With InvalidGraph, naming the rule and holder.
+         * @return An InvalidGraph error naming the rule and holder, or nothing for a launch
+         *         that fits.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch>
-        void require_launch_within(const Launch& launch, std::size_t size, const char* call,
-                                   std::size_t rule, const char* holder)
+        [[nodiscard]] std::optional<Error> launch_refusal(const Launch& launch, std::size_t size,
+                                                          const char* call, std::size_t rule,
+                                                          const char* holder)
         {
             const std::size_t reach = launch_reach(launch);
             if (reach <= size)
-                return;
+                return std::nullopt;
 
-            throw SushiException(Error{
+            return Error{
                 ErrorCode::InvalidGraph,
                 std::string(call) + ", rule " + std::to_string(rule) + ": " +
                     describe_launch(launch) + " reaches " + std::to_string(reach) +
                     " elements and " + holder + " holds " + std::to_string(size) +
-                    "; shrink the launch or allocate the handle larger."});
+                    "; shrink the launch or allocate the handle larger."};
         }
 
         /**

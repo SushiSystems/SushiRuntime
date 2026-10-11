@@ -867,7 +867,8 @@ row reports the node's name and no operation, the second the rule's name.
 
 ### `MoreParametersThanANodeCarriesAreRefused`
 
-Nine parameters are refused with `InvalidGraph`, and the graph holds no rule afterwards.
+Nine parameters are refused: `refusal()` holds an `InvalidGraph` error whose message names
+`NodeOptions::parameters`, rule 0 and the nine parameters, and the graph holds no rule afterwards.
 
 ## test_recorder_scratch.cpp
 
@@ -972,8 +973,8 @@ is refused with `DanglingResource`, on a `Graph` and on a `DynamicGraph`.
 
 ### `refusal_of`
 
-`refusal_of` runs a call and returns the `Error` of the `SushiException` it throws, or
-nothing when it throws none.
+`refusal_of` clears a recorder, runs a call and returns the `Error` the call left as the
+recorder's refusal, or nothing when it left none. It clears the recorder again before it returns.
 
 ### `ATaskOfTwoCommandGroupsIsOrderedByItsAccess`
 
@@ -1003,7 +1004,7 @@ second node into a rule that no longer existed.
 ### `AnOffloadRuleTakesAtMostEightParameters`
 
 `add(OperationID, count, Reads, Writes, local, params)` and `add(OperationID, state, local, params)` with nine
-parameters throw `InvalidGraph`; the first message holds `9 parameters` and `at most 8`, and
+parameters are refused with `InvalidGraph`; the first message holds `9 parameters` and `at most 8`, and
 neither rule is recorded. Both forms record with eight. A `static_assert` ties the literals to
 `TaskMetadata::K_MAX_PARAMS`. The graph is not run.
 
@@ -1275,7 +1276,8 @@ the same queue brings the values to a host vector. The test names no type of `In
 The file covers the add() overloads of BuilderSurface that v0.4.0 adds or reorders: launch first,
 then access, then callable. `seeded` and `seeded_state` fill a handle with its index plus `K_SEED`,
 so a kernel that ran over the wrong elements or received the wrong pointer shows as a wrong word.
-`refusal_of` returns the message of the SushiException a builder call throws.
+`refusal_of` clears a recorder, runs a builder call and returns the message of the refusal the call
+left, then clears the recorder again.
 
 ### `CountLaunchWithCapturesPassesPointers`
 
@@ -1294,8 +1296,8 @@ origin.
 
 ### `ALaunchPastItsStateIsRefusedAtAdd`
 
-An Extent whose origin plus size passes the State's size throws `InvalidGraph` from add(). The
-message names the rule, the extent with its origin and the State's size, and the rule is not
+An Extent whose origin plus size passes the State's size is refused with `InvalidGraph` by add().
+The message names the rule, the extent with its origin and the State's size, and the rule is not
 recorded.
 
 ### `CoupledRulesReadEveryStateNamed`
@@ -1305,8 +1307,8 @@ current field of the State read after the two fields of the State written.
 
 ### `ACoupledInputSmallerThanTheOutputIsRefusedAtAdd`
 
-A coupled rule over the whole field whose input State is shorter than its output throws
-`InvalidGraph` from add().
+A coupled rule over the whole field whose input State is shorter than its output is refused with
+`InvalidGraph` by add().
 
 ### `DynamicTakesItsCapacityBeforeItsAccess`
 
@@ -1320,8 +1322,8 @@ is 0 and the test proves only that the forms record and run; with two it proves 
 
 ### `PlacementIsCheckedAndItsHandleWatched`
 
-`On(DeviceIndex{device_count})` throws `InvalidAccess` naming the index and the count. A graph
-whose `On(buffer)` handle was destroyed before the run is refused with `DanglingResource`.
+`On(DeviceIndex{device_count})` is refused with `InvalidAccess`, naming the index and the count. A
+graph whose `On(buffer)` handle was destroyed before the run is refused with `DanglingResource`.
 
 ### `ExtendRecordsOneNamedRule`
 
@@ -1333,8 +1335,16 @@ run does not call it again.
 One refused call per family, through the public add(): a State rule past its State, a Coupled
 rule with a short input, a Coupled launch past its State, `add_untracked` with an `On` the runtime
 lacks (both the launch and the raw form), and an offload with nine parameters (both the task and
-the State rule). Each message begins with the spelling of the call the user wrote, and no rule is
-recorded.
+the State rule). Each message begins with the spelling of the call the user wrote and `rule 0`,
+and no rule is recorded.
+
+### `ARefusedAddIsKeptAndReturnedByTheNextRun`
+
+Three adds are made, the second with a launch past its State. `refusal()` then holds an
+`InvalidGraph` error whose message begins with `add(launch, state, fn), rule 1: `, and the graph
+holds the two valid rules. A later refused `add_untracked` does not replace it. Two runs in a row
+return that error and leave the target as it was. After `recorder().clear()` the refusal is gone,
+and a rule added then runs.
 
 ## test_callable_traits.cpp
 
@@ -1414,8 +1424,8 @@ origin `SIZE_MAX - 3` reach `SIZE_MAX`.
 
 ### `AnExtentWhoseEndWrapsIsRefusedAtAdd`
 
-`add(extent, state, kernel)` with that extent over a State of 8 elements throws `InvalidGraph` and
-records nothing. A wrapped sum would be 4, which is inside the State.
+`add(extent, state, kernel)` with that extent over a State of 8 elements is refused with
+`InvalidGraph` and records nothing. A wrapped sum would be 4, which is inside the State.
 
 ## test_device_fault.cpp
 

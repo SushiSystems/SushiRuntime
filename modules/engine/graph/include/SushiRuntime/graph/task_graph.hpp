@@ -40,6 +40,7 @@
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 
 namespace SushiRuntime 
@@ -200,11 +201,10 @@ namespace SushiRuntime
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.
                  * @pre Every node is inserted first; not thread-safe against add_node() or
                  *        add_task().
-                 * @throws SushiException With ErrorCode::InvalidGraph, naming one node that
-                 *         cannot run, when the graph has no root or holds a cycle.
+                 * @return The plan, or an InvalidGraph error that names one node of a cycle.
                  * @see modules/engine/graph/README.md
                  */
-                CompiledGraph compile();
+                [[nodiscard]] Result<CompiledGraph> compile();
 
                 /**
                  * @brief Hands off the built nodes without finalising a plan.

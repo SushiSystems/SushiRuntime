@@ -70,7 +70,7 @@ TEST(Integration_TaskGraphTest, SequentialUSMDependency)
     TaskMetadata meta3{"Writer2"};
     graph.add_task(meta3, {}, {usm_ptr}, make_order_recorder(3, execution_order, order_mutex, delay));
 
-    auto compiled_graph = graph.compile();
+    auto compiled_graph = graph.compile().value();
     EXPECT_EQ(compiled_graph.roots.size(), 1) << "Graph should only have 1 root due to linear dependency.";
 
     ctx.execution_engine().execute(std::move(compiled_graph));
@@ -107,7 +107,7 @@ TEST(Integration_TaskGraphTest, IndependentRootsExecution)
         graph.add_task(meta, {}, {}, host_task);
     }
 
-    auto compiled_graph = graph.compile();
+    auto compiled_graph = graph.compile().value();
 
     EXPECT_EQ(compiled_graph.roots.size(), NUM_TASKS);
 
@@ -160,7 +160,7 @@ TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
         return {};
     });
 
-    auto compiled = graph.compile();
+    auto compiled = graph.compile().value();
     ctx.execution_engine().execute(std::move(compiled));
 
     EXPECT_TRUE(fan_out_success) << "Readers executed before the initial writer completed!";

@@ -115,13 +115,32 @@ the plan with the new name.
 
 ### clear
 
-clear() forgets the nodes, the rules, the labels, the observers, the hooks and the scratch, and
-advances generation() instead of resetting it, so a plan built before the call is seen as stale.
-The scratch is freed at once: a plan built from the cleared nodes must not run again, which the
-owner guarantees by rebuilding whenever generation() changed.
+clear() forgets the nodes, the rules, the labels, the observers, the hooks, the scratch and the
+refusal, and advances generation() instead of resetting it, so a plan built before the call is
+seen as stale. The scratch is freed at once: a plan built from the cleared nodes must not run
+again, which the owner guarantees by rebuilding whenever generation() changed.
 
 clear() may be called with a rule scope open, which is how an extension that extend() handed the
 recorder reaches it. The scope stays open, and the next node recorded inside it starts a new rule.
+
+### refusal
+
+A recording member returns the position of a rule and a builder verb returns the builder, so
+neither has a return value that could carry a failure. A recording the recorder refuses is
+therefore kept: the recorder stores the `Error` of the first one, records nothing for that call,
+and returns rule_count() from it. refusal() returns the stored error, or null when nothing was
+refused. Its message opens with the call as the caller wrote it and the position the rule would
+have had, such as `add(launch, state, fn), rule 1: `.
+
+Five checks refuse a recording, each a function that returns `std::optional<Error>`:
+launch_refusal(), offload_parameters_refusal(), parameters_refusal() and
+host_device_slots_refusal() of `api/detail/`, and the recorder's own placement_refusal(). admit()
+keeps what they return. A verb that changes the step machinery beyond its node asks them before
+it changes anything, so a refused State rule registers no advance.
+
+The refusal stays until clear(), and a later refusal does not replace it. Every run entry of the
+owning graph returns it before anything else is checked and runs nothing; see entry_refusal. A
+caller that wants to know earlier reads refusal() after the verbs.
 
 ### record: liveness
 
@@ -209,7 +228,7 @@ stepped field can vary its active count or sleep entirely with no recompile.
 offload() is the single funnel for both the raw-pointer and the Reads/Writes offload overloads.
 Setting op_id is what makes compile() consider the node offloadable; otherwise the local
 parallel_for runs. offload() and offload_rule() refuse more than `TaskMetadata::K_MAX_PARAMS`
-parameters with `InvalidGraph` when the rule is recorded.
+parameters with `InvalidGraph`; the refusal section says what a refused recording does.
 
 ## node_options.hpp
 
@@ -247,7 +266,8 @@ BuilderSurface is the overload set of add() and its siblings, written once for G
 Region. Each overload checks its callable, calls one recording member of the builder's Recorder
 and returns the builder, so calls chain on the type the caller holds. No overload holds logic of
 its own: what a launch does is in `api/detail/emit_launch.hpp`, and what a rule records is in the
-Recorder.
+Recorder. refusal() returns the recorder's refusal: the first recording a verb of this builder had
+refused since its recorder was cleared.
 
 ### Argument order
 
@@ -353,7 +373,7 @@ a sub-box for boundary or halo handling, or a tiled launch. `kernel` receives th
 before the two pointers.
 
 The launch is compared with the State when the rule is added. A launch that reaches past the
-State throws `InvalidGraph` at the add() call, naming the rule, the launch with its origin and
+State is refused with `InvalidGraph`, naming the rule, the launch with its origin and
 the State's size; `api/detail/README.md` says what "reaches" means for each launch.
 
 ### add(Coupled, fn) and add(launch, Coupled, fn)
@@ -364,8 +384,9 @@ reaction-diffusion with several species. All reads see the previous step's data 
 update): every State advances only after all of a step's kernels have run. Each field takes
 exactly one update rule per step.
 
-The whole-field form iterates the size of the State written, and add() throws `InvalidGraph`
-when a State read is smaller than that. The launch form compares the launch with every State
+The whole-field form iterates the size of the State written, and add() refuses the rule with
+`InvalidGraph` when a State read is smaller than that. The launch form compares the launch with
+every State
 named.
 
 ### add(Dynamic, capacity, Reads, Writes, fn)
@@ -430,7 +451,7 @@ The runtime places a rule on the device that owns the first region it writes. An
 names no region, so it states its device: On(buffer) and On(state) name the device of a handle
 and watch the handle, On(DeviceIndex) names a device. Without an On the rule runs on device 0,
 where Runtime::buffer() and Runtime::state() allocate by default. An On that names a device the
-runtime does not have throws `InvalidAccess` at the call.
+runtime does not have is refused with `InvalidAccess`.
 
 ### add_task(Reads, Writes, fn)
 
@@ -597,10 +618,13 @@ loop, not one step.
 
 ### entry_refusal
 
-entry_refusal() answers before anything touches the plan. A graph with nothing recorded is
-`InvalidGraph`. A graph with a pending asynchronous step is `InvalidState`: a synchronous run
-re-arms every node's in-degree, and doing that while the workers walk the DAG would rewrite the
-scheduling state under them. A graph whose recorded handle was freed is `DanglingResource`.
+entry_refusal() answers before anything touches the plan. A graph whose recorder refused a
+recording returns that refusal first, whatever else is true of it: the refused rule may be the
+only one, and "nothing to run" would hide the reason. A DynamicGraph returns the refusal of the
+region with the lowest key that has one. A graph with nothing recorded is `InvalidGraph`. A graph
+with a pending asynchronous step is `InvalidState`: a synchronous run re-arms every node's
+in-degree, and doing that while the workers walk the DAG would rewrite the scheduling state under
+them. A graph whose recorded handle was freed is `DanglingResource`.
 
 A runtime has one engine, so at most one run is in flight on it. While the engine reports a run in
 progress, every run entry of every graph on that runtime is `InvalidState`: another graph's

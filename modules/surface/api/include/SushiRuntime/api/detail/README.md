@@ -230,13 +230,13 @@ state, fn) or add(count, In(a), fn) exist because the emitters are generic over 
 other reason. The Extent form adds the origin to each id. The NdRange form adds it only for a
 kernel that takes the id as a second parameter.
 
-### launch_reach and require_launch_within
+### launch_reach and launch_refusal
 
 A State rule or a coupled rule hands its kernel the fields of a State, so the recorder knows the
 size the kernel indexes into and compares the launch with it when the rule is recorded.
-require_launch_within() throws `InvalidGraph` naming the call, the rule, the launch with its
-origin and the size it was compared with. Up to v0.3 nothing compared them, and a launch larger
-than its State wrote past the allocation on the device.
+launch_refusal() returns an `InvalidGraph` error naming the call, the rule, the launch with its
+origin and the size it was compared with, or nothing for a launch that fits. The recorder keeps
+the error as its refusal and records nothing.
 
 launch_reach() is the bound compared. A count reaches its own value. A rank-1 Extent or NdRange
 reaches origin plus size, because its kernel indexes with the id it is handed. A higher rank
@@ -306,12 +306,12 @@ swap at every step, so they are read at each replay, from the view: the read key
 two addresses into its live read and write lists at each replay. The State keeps its view written
 (api/data/README.md), so a replay needs no resync before it.
 
-### require_offload_parameters
+### offload_parameters_refusal
 
-TaskMetadata holds K_MAX_PARAMS parameters. require_offload_parameters() throws `InvalidGraph`
-for a longer list, naming the call, the count given and the limit, and Recorder::offload() and
-offload_rule() call it before they record. offload_metadata() copies every parameter it is handed
-and states that check as its precondition.
+TaskMetadata holds K_MAX_PARAMS parameters. offload_parameters_refusal() returns an
+`InvalidGraph` error for a longer list, naming the call, the rule, the count given and the limit,
+and Recorder::offload() and offload_rule() ask it before they record. offload_metadata() copies
+every parameter it is handed and states that check as its precondition.
 
 ### untracked_launch_node
 
@@ -327,12 +327,14 @@ argument pack.
 
 ## host_slot_check.hpp
 
-### require_host_slot
+### host_slot_refusal
 
-require_host_slot() asks the slot's own address first. When that answers anything but host, it
+host_slot_refusal() asks the slot's own address first. When that answers anything but host, it
 resolves the address to the allocation containing it and asks again: a caller offsetting into a plan
 array hands over an interior pointer, which SYCL reports as unknown. It runs while add() builds a
-node, so the containment search never meets a dispatch. A null slot passes.
+node, so the containment search never meets a dispatch. A null slot passes. A slot outside host
+USM comes back as an `InvalidAccess` error that names the builder call and the rule;
+host_device_slots_refusal() asks it for the count slot and then for the base slot of a Dynamic.
 
 ## late_count_resolution.hpp
 
@@ -413,10 +415,10 @@ stated. An emitter therefore needs no parameter for a name, an operation or a pa
 a shape added later gets all three with no code of its own. The offload emitters fill the
 operation and the parameters themselves, from the arguments of their verbs.
 
-### require_parameters_fit
+### parameters_refusal
 
-require_parameters_fit() throws `InvalidGraph` for more parameters than a node carries.
-Recorder::record() calls it before it touches the recorder, so a refused node leaves no trace.
+parameters_refusal() returns an `InvalidGraph` error for more parameters than a node carries.
+Recorder::record() asks it before it touches the recorder, so a refused node leaves no trace.
 
 ## usm_scratch.hpp
 

@@ -287,6 +287,18 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Returns the first refused recording of the region with the lowest key
+             *        that has one, or null when no region has one.
+             */
+            [[nodiscard]] const Error* recording_refusal() const noexcept
+            {
+                for (const auto& kv : regions_)
+                    if (const Error* refused = recorded(*kv.second).refusal())
+                        return refused;
+                return nullptr;
+            }
+
+            /**
              * @brief Settles the regions written to since the last run and returns whether
              *        the plan must be composed before the next step.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
@@ -301,9 +313,10 @@ namespace SushiRuntime
              * @brief Composes the plan from the changed regions, clears the pending sets and
              *        frees the dropped regions.
              * @pre No step started with run_async() is pending; the run entries refuse one.
+             * @return Success; the composer reports no failure of its own.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            void rebuild_plan()
+            [[nodiscard]] Result<void> rebuild_plan()
             {
                 if (rebuild_every_region_)
                 {
@@ -321,18 +334,20 @@ namespace SushiRuntime
                 dirty_regions_.clear();
                 dropped_.clear();
                 free_retired_regions();
+                return {};
             }
 
             /**
              * @brief Gathers every live region's per-step hooks, in region-key order.
-             * @throws SushiException With InvalidGraph when the plan has no root.
+             * @return Success, or an InvalidGraph error when the plan has no root.
              */
-            void prepare_run()
+            [[nodiscard]] Result<void> prepare_run()
             {
                 if (plan_.roots.empty())
-                    throw SushiException(Error{ErrorCode::InvalidGraph,
-                                                  "DynamicGraph has no runnable tasks."});
+                    return make_error(Error{ErrorCode::InvalidGraph,
+                                            "DynamicGraph has no runnable tasks."});
                 refresh_updaters();
+                return {};
             }
 
             /** @brief Returns the plan a step runs. */

@@ -314,9 +314,9 @@ and transfers node ownership to the returned CompiledGraph. It does not submit a
 compile() is not thread-safe with respect to add_node() and add_task(). All nodes must be inserted
 before it is called.
 
-A graph with no root, or with a cycle behind a root, throws `SushiException` with
-`ErrorCode::InvalidGraph`. The message gives the node counts and names one node that cannot run, by its
-label and registration index.
+A graph with no root, or with a cycle behind a root, makes compile() return an
+`ErrorCode::InvalidGraph` error in its `Result<CompiledGraph>`. The message gives the node counts
+and names one node that cannot run, by its label and registration index.
 
 ### take_nodes
 
@@ -457,8 +457,8 @@ the nodes tagged as candidates during insertion: a candidate with in-degree zero
 and a candidate with no successor, inline or spilled, is a leaf and gets an edge to the
 sentinel.
 
-When no root is found, `compile()` drains the tracker before it throws. The `CompiledGraph`
-and every node it owns are destroyed as the exception unwinds, but the tracker's access
+When no root is found, `compile()` drains the tracker before it returns the error. The
+`CompiledGraph` and every node it owns are destroyed on that return, but the tracker's access
 entries still hold raw task pointers into those nodes. The `TaskGraph` survives a failed
 `compile()`, so a later `add_node()` would call `resolve()`, traverse the history and call
 `add_dependency()` on freed pointers: a use-after-free write. `reset()` retires the entries

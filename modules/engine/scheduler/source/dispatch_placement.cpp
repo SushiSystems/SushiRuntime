@@ -67,7 +67,7 @@ namespace SushiRuntime
             }
         } // namespace
 
-        void place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
+        Result<void> place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
                                 std::size_t device_count)
         {
             void* anchor = nullptr;
@@ -83,14 +83,14 @@ namespace SushiRuntime
 
             // A failure is not cached, so it recurs each run (modules/engine/scheduler/README.md).
             if (spans)
-                throw SushiException(Error{
+                return make_error(Error{
                     ErrorCode::InvalidGraph,
                     "its buffers span multiple device contexts; co-locate them on "
                     "one device (cross-device execution is not yet supported)."});
 
             const std::size_t placement = Internal::Graph::placement_of(node, memory);
             if (placement >= device_count)
-                throw SushiException(Error{
+                return make_error(Error{
                     ErrorCode::InvalidGraph,
                     Detail::sr_format(
                         "it is placed on device {}, but the runtime holds {} device(s); "
@@ -100,6 +100,7 @@ namespace SushiRuntime
             // The placement found here holds for every later step of the node.
             node.cached_queue_index_ = static_cast<int>(placement);
             node.locality_checked_ = true;
+            return {};
         }
 
     } // namespace Scheduler

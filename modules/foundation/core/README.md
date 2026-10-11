@@ -171,10 +171,12 @@ default-constructed as a success, holds the error in a `std::optional`, and has 
 ### Accessors
 
 `value()`, `operator*` and `operator->` return the success value, and `error()` returns the error.
-Calling one on the wrong side is a rule the caller broke, so it stops the process through
-`SR_VERIFY`. For a value accessor on an `Error` the handler prints the stored message, so a
-program that calls `value()` without a check stops with the reason on standard error. For another
-error type the handler prints "the Result holds an error".
+`value()` and `operator*` on a `Result` that is about to be destroyed return the value as an
+rvalue, so `auto plan = graph.compile().value();` moves the plan out. Calling an accessor on the
+wrong side is a rule the caller broke, so it stops the process through `SR_VERIFY`. For a value
+accessor on an `Error` the handler prints the stored message, so a program that calls `value()`
+without a check stops with the reason on standard error. For another error type the handler prints
+"the Result holds an error".
 
 ## span.hpp
 
