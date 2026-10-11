@@ -200,9 +200,9 @@ read them, usually words from scratch() that a DeviceSized launch names.
 
 A count is checked twice. resolve() rejects a device slot outside Residency::Host and a capacity
 too wide for a uint32 word before it records anything. At run, a host count above its capacity
-throws at submission, and a device count above its capacity is replaced by zero and written to a
-fault record resolve() allocated; the step driver reads that record when the step ends and fails
-the run.
+is written to the resolver's fault record at submission and the fill does not run, and a device
+count above its capacity is replaced by zero and written to the same record; the step driver
+reads that record when the step ends and returns `InvalidGraph` from the run.
 
 ### scratch
 
@@ -818,7 +818,7 @@ pointers and host-set controls, so it never needs the device to have finished (s
 only for cancellation.
 
 Under `AtEnd` a step's States advance at the start of the next iteration, and the last step's after
-finish() and check_faults() have returned. Under `EveryStep` each step waits, is checked and then
+finish() and take_fault() have returned. Under `EveryStep` each step waits, is checked and then
 advances, so the stop test reads the fields the step just wrote. "A failed run and its States"
 gives the rule a caller sees.
 
@@ -896,7 +896,7 @@ it leaves is re-stitched at the next run, so drop() may be called while a step s
 run_async() is pending. Until that next run the composed plan still holds the region's nodes, and
 those nodes and the pending step read four things the Region owns: the scratch and the fault
 records its kernels captured, the labels its nodes name by `const char*`, and the StepMachinery
-that `steps_` lists by address and that settling the step walks for check_faults() and
+that `steps_` lists by address and that settling the step walks for take_fault() and
 after_step().
 
 rebuild_plan() frees the retired regions after commit() has returned, through
@@ -927,7 +927,7 @@ with two using-declarations, as Graph does.
 refresh_updaters() clears the aggregated list in `steps_` and appends one pointer per live region,
 whether or not the region has a hook. prepare_run() calls it once per run entry, so a run entry
 costs R appends for R live regions, into storage the list keeps between runs. Each step then walks
-the R pointers three times, for before_step(), check_faults() and after_step(), and each run entry
+the R pointers three times, for before_step(), take_fault() and after_step(), and each run entry
 once more for resync(); a region with no hook costs a call that iterates empty lists. The cost has
 not been measured.
 

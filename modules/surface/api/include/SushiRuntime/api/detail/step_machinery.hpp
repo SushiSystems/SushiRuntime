@@ -29,6 +29,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -116,8 +117,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Registers a device fault record every finished step checks.
-                 * @param record K_DEVICE_FAULT_WORDS host-USM words the owning graph keeps alive.
+                 * @brief Registers a fault record every finished step checks.
+                 * @param record K_DEVICE_FAULT_WORDS words the owning graph keeps alive.
                  */
                 void register_fault_record(std::uint32_t* record)
                 {
@@ -125,15 +126,19 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Throws the first fault a finished step's kernels recorded.
+                 * @brief Returns the first fault a finished step recorded, and clears it.
+                 * @return An InvalidGraph error, or nothing when no record holds a fault.
                  * @pre Every kernel of the step has completed.
                  */
-                void check_faults() const
+                [[nodiscard]] std::optional<Error> take_fault() const
                 {
                     for (std::uint32_t* record : fault_records_)
-                        throw_if_device_fault(record);
+                        if (std::optional<Error> fault = take_device_fault(record))
+                            return fault;
                     for (const StepMachinery* s : aggregated_)
-                        s->check_faults();
+                        if (std::optional<Error> fault = s->take_fault())
+                            return fault;
+                    return std::nullopt;
                 }
 
                 /**

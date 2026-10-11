@@ -700,7 +700,7 @@ namespace SushiRuntime
                     reads_device =
                         Detail::gather_device_read(count, access.reads, lives) || reads_device;
                 Result<std::uint32_t*> fault =
-                    reads_device ? fault_record(device) : Result<std::uint32_t*>(nullptr);
+                    reads_device ? fault_record(device) : host_fault_record();
                 if (!admit(fault))
                     return rule_count();
 
@@ -1035,10 +1035,32 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Allocates a fault record for a Dynamic with a device slot.
+             * @brief Allocates a zeroed fault record only host code writes.
+             * @return K_DEVICE_FAULT_WORDS words of host memory this recorder owns, or an
+             *         AllocationFailed error.
+             */
+            Result<std::uint32_t*> host_fault_record()
+            {
+                std::uint32_t* words = nullptr;
+                Error thrown = Detail::translate_exceptions(
+                    ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [this, &words]()
+                {
+                    std::shared_ptr<std::uint32_t[]> owned(
+                        new std::uint32_t[Detail::K_DEVICE_FAULT_WORDS]());
+                    scratch_.push_back(std::shared_ptr<void>(owned, owned.get()));
+                    steps_.register_fault_record(owned.get());
+                    words = owned.get();
+                });
+                if (thrown.code != ErrorCode::Ok)
+                    return make_error(std::move(thrown));
+                return words;
+            }
+
+            /**
+             * @brief Allocates a fault record for a late-bound node.
              * @param window A Dynamic for which host_device_slots_refusal() returned nothing.
-             * @return The record, null when window has no device slot, or the error of
-             *         scratch().
+             * @return The record, in host USM of the slot's device or in host memory when
+             *         window has no device slot, or the error of the allocation.
              */
             Result<std::uint32_t*> fault_record_for(const Dynamic& window)
             {
@@ -1047,7 +1069,7 @@ namespace SushiRuntime
                 const std::uint32_t* slot = (count_words != nullptr)
                     ? count_words : Detail::DynamicAccess::base_slot(window).words;
                 if (slot == nullptr)
-                    return static_cast<std::uint32_t*>(nullptr);
+                    return host_fault_record();
                 void* address = const_cast<void*>(static_cast<const void*>(slot));
                 Internal::Memory::USMAllocator& memory = context_->memory();
                 const std::optional<void*> base = memory.containing_base(address);

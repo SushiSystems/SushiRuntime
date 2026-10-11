@@ -124,20 +124,32 @@ TEST(Integration_LateCount, ChangingHostCountKeepsOneCompile)
         << "a live count change between runs must not trigger a recompile";
 }
 
-/** @brief Tests that a host count above its capacity fails the run. */
-TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRun)
+/** @brief Tests that a host count above its capacity fails the run and a later run goes on. */
+TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRunWithInvalidGraph)
 {
     auto rt  = Runtime::create().value();
     auto out = rt.buffer<std::uint32_t>(1).value();
     out[0] = K_CANARY;
 
-    const LateCount count = LateCount::from_host(100, []() { return std::size_t{101}; });
+    std::size_t live = 101;
+    const LateCount count = LateCount::from_host(100, [&live]() { return live; });
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), count, out);
 
-    EXPECT_FALSE(g.run().has_value());
+    const auto failed = g.run();
+    ASSERT_FALSE(failed.has_value());
+    EXPECT_EQ(failed.error().code, ErrorCode::InvalidGraph);
+    EXPECT_NE(failed.error().message.find("the live count (101) exceeds the capacity"),
+              std::string::npos)
+        << failed.error().message;
     EXPECT_EQ(out[0], K_CANARY) << "a rejected count must not reach the fill";
+
+    // The process goes on: the same graph runs once the provider returns a count that fits.
+    live = 100;
+    const auto valid = g.run();
+    ASSERT_TRUE(valid.has_value()) << valid.error().message;
+    EXPECT_EQ(out[0], 100u);
 }
 
 /** @brief Tests that a Residency::Host device slot resolves to the value written there. */

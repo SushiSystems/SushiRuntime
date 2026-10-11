@@ -343,9 +343,10 @@ host_device_slots_refusal() asks it for the count slot and then for the base slo
 A resolver node reads a host count on the host and a device count in its kernel.
 late_count_source() runs once per step, when the resolver is submitted. For a device count it copies
 the address of the slot and reads nothing. For a host count it calls the provider, and for a fixed
-count it takes the capacity; a provider that returns more than the capacity throws `InvalidGraph`
-there. read_live_count() runs in the kernel: it reads the slot, and a value above the capacity
-becomes zero and a K_DEVICE_FAULT_LATE_COUNT record.
+count it takes the capacity. A provider that returns more than the capacity is a fault driven by
+run-time data: late_count_source() writes a K_DEVICE_FAULT_LATE_COUNT record and returns nothing,
+and the resolver submits an empty kernel in place of the fill. read_live_count() runs in the
+kernel: it reads the slot, and a value above the capacity becomes zero and the same record.
 
 Neither validates the LateCount. Its factories checked the capacity, the residency of the slot and
 the index when the count was built (api/vocabulary/README.md), so a step compares nothing but the
@@ -356,15 +357,27 @@ live count with the capacity.
 gather_device_read() gives a recorder what a device count adds to its resolver: the region of the
 slot's buffer as a read, which orders the resolver after the kernel that writes the count, and the
 buffer's liveness observer. It returns whether the count has a device slot, so the recorder knows
-the resolver needs a fault record.
+whether the resolver's fault record must be host USM a kernel can write.
 
 ## device_fault.hpp
 
+### The fault record
+
+A fault record is four words: the kind, the base, the count and the capacity. A node writes its
+own record when the data of a step does not fit what the node was planned for, and nothing is
+thrown at that point: the writer is a kernel on the device, or the host code that dispatches the
+node on a worker thread. Once the step has finished, StepMachinery::take_fault() reads the records
+through take_device_fault(), which clears the record and returns an `InvalidGraph` error, and the
+step driver returns that error from the run. The States do not advance for a step that faulted.
+
+Every late-bound node and every resolver has a record. One a kernel writes is host USM on the
+slot's device; one only host code writes is host memory the recorder owns.
+
 ### late_count_overflow
 
-A count over its capacity is found in two places: on the host by late_count_source(), and after the
-step by throw_if_device_fault() reading the record a kernel left. late_count_overflow() builds the
-error for both, so the two paths report one message.
+A count over its capacity is found in two places: on the host by late_count_source(), and in the
+kernel by read_live_count(). Both write the same record, and late_count_overflow() builds the
+error take_device_fault() returns for it, so the two paths report one message.
 
 ### saturated_fault_word
 
@@ -379,6 +392,9 @@ a value modulo 2^32. It is a constexpr comparison with no call, which a device k
 A LiveRange is the half-open element window a late-bound node iterates this step: where it starts
 and how many elements it covers. The two are resolved and validated together, because only their
 combination says whether the node stays inside the buffers it was compiled for.
+resolve_live_range() returns nothing for a window that does not fit and writes a
+K_DEVICE_FAULT_WINDOW record; submit_late_window() then submits an empty kernel, and the run
+returns the fault when the step ends.
 
 ### submit_live_range
 

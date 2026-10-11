@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -304,8 +305,8 @@ namespace SushiRuntime
                 {
                     async_engine().complete();
                     const Detail::StepMachinery& steps = owner().run_steps();
-                    steps.check_faults();
-                    steps.after_step();
+                    if (!steps.take_fault())
+                        steps.after_step();
                 });
                 static_cast<void>(dropped);
             }
@@ -587,20 +588,25 @@ namespace SushiRuntime
             {
                 // No step is pending from here on, whatever the wait below returns.
                 close_async_step();
-                return guarded(ErrorCode::KernelFailed, [this, &state, &report]()
+                Error faulted;
+                Error thrown = guarded(ErrorCode::KernelFailed, [this, &state, &report, &faulted]()
                 {
                     async_engine().complete();
-                    finish_async_step(state, report);
+                    Result<void> finished = finish_async_step(state, report);
+                    if (!finished)
+                        faulted = std::move(finished.error());
                 });
+                return thrown.code != ErrorCode::Ok ? thrown : faulted;
             }
 
             /**
              * @brief Closes out an asynchronous step once the engine reports it done.
              * @param report The report to fill; reset before it is written.
+             * @return Nothing, or the fault the step recorded; no State advances then.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            void finish_async_step(const Detail::AsyncRunState& state,
-                                   Internal::Observability::RunReport& report)
+            Result<void> finish_async_step(const Detail::AsyncRunState& state,
+                                           Internal::Observability::RunReport& report)
             {
                 const auto finished = std::chrono::steady_clock::now();
                 Owner& self = owner();
@@ -609,7 +615,8 @@ namespace SushiRuntime
                 const Detail::StepMachinery& steps = self.run_steps();
                 ::SushiRuntime::Internal::Graph::CompiledGraph& plan = self.run_plan();
 
-                steps.check_faults();
+                if (std::optional<Error> fault = steps.take_fault())
+                    return make_error(std::move(*fault));
                 steps.after_step();
 
                 const auto after = engine.metrics();
@@ -628,6 +635,7 @@ namespace SushiRuntime
 
                 if (plan.profiling)
                     engine.collect_profiling(plan, report);
+                return {};
             }
 
             /**
@@ -686,24 +694,32 @@ namespace SushiRuntime
                 if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
+                Error faulted;
                 failure = guarded(ErrorCode::KernelFailed, [&]()
                 {
-                    execute_steps(keep_going, report, compile_ms, expected_invocations, sync);
+                    Result<void> stepped =
+                        execute_steps(keep_going, report, compile_ms, expected_invocations, sync);
+                    if (!stepped)
+                        faulted = std::move(stepped.error());
                 });
                 if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
+                if (faulted.code != ErrorCode::Ok)
+                    return make_error(std::move(faulted));
                 return &report;
             }
 
             /**
              * @brief Runs the steps over the built plan and fills the report.
              * @param compile_ms What build_plan_guarded() stored for this run.
+             * @return Nothing, or the fault a step recorded; the report is not filled then.
              * @throws Whatever a step throws; drive() maps it.
              */
             template <class KeepGoing>
-            void execute_steps(KeepGoing& keep_going, Internal::Observability::RunReport& report,
-                               double compile_ms, std::size_t expected_invocations,
-                               StepSync sync)
+            Result<void> execute_steps(KeepGoing& keep_going,
+                                       Internal::Observability::RunReport& report,
+                                       double compile_ms, std::size_t expected_invocations,
+                                       StepSync sync)
             {
                 using clock = std::chrono::steady_clock;
 
@@ -736,9 +752,12 @@ namespace SushiRuntime
                 // A hook may write what a kernel reads, so each step ends before the next hook.
                 const StepSync hooked_sync = step_hooks_.empty() ? sync : StepSync::EveryStep;
                 const bool chained = self.runs_chained();
-                const std::size_t executed = chained
+                const Result<std::size_t> stepped = chained
                     ? run_chained(keep_going, engine, hooked_sync)
                     : run_scheduled(keep_going, engine);
+                if (!stepped)
+                    return make_error(stepped.error());
+                const std::size_t executed = *stepped;
 
                 const auto t1 = clock::now();
                 const auto after = engine.metrics();
@@ -758,17 +777,18 @@ namespace SushiRuntime
                 // Per-node and per-worker timing, only when profiling is on.
                 if (profiling)
                     engine.collect_profiling(plan, report);
+                return {};
             }
 
             /**
              * @brief Runs the steps on the work-stealing scheduler, waiting after each.
              * @param keep_going Called with the count of completed steps before each step.
              * @param engine     The context's execution engine.
-             * @return The number of steps run.
+             * @return The number of steps run, or the fault a step recorded.
              */
             template <class KeepGoing>
-            std::size_t run_scheduled(KeepGoing& keep_going,
-                                      Internal::Execution::ExecutionEngine& engine)
+            Result<std::size_t> run_scheduled(KeepGoing& keep_going,
+                                              Internal::Execution::ExecutionEngine& engine)
             {
                 Owner& self = owner();
                 ::SushiRuntime::Internal::Graph::CompiledGraph& plan = self.run_plan();
@@ -782,7 +802,8 @@ namespace SushiRuntime
 
                     self.rearm_plan();
                     engine.execute(plan);
-                    steps.check_faults();
+                    if (std::optional<Error> fault = steps.take_fault())
+                        return make_error(std::move(*fault));
 
                     // States advance after the step so the written next field becomes current.
                     steps.after_step();
@@ -795,12 +816,13 @@ namespace SushiRuntime
              * @brief Runs the steps as an in-order chain from this thread.
              * @param sync AtEnd for a fixed step count, EveryStep when the stop test may read
              *        results.
-             * @return The number of steps run.
+             * @return The number of steps run, or the fault a step recorded.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class KeepGoing>
-            std::size_t run_chained(KeepGoing& keep_going, Internal::Execution::ExecutionEngine& engine,
-                                    StepSync sync)
+            Result<std::size_t> run_chained(KeepGoing& keep_going,
+                                            Internal::Execution::ExecutionEngine& engine,
+                                            StepSync sync)
             {
                 Owner& self = owner();
                 ::SushiRuntime::Internal::Graph::CompiledGraph& plan = self.run_plan();
@@ -821,13 +843,15 @@ namespace SushiRuntime
                     if (sync == StepSync::EveryStep)
                     {
                         chain.wait();
-                        steps.check_faults();
+                        if (std::optional<Error> fault = steps.take_fault())
+                            return make_error(std::move(*fault));
                         steps.after_step();
                     }
                     ++executed;
                 }
                 chain.finish();
-                steps.check_faults();
+                if (std::optional<Error> fault = steps.take_fault())
+                    return make_error(std::move(*fault));
 
                 // Under AtEnd the last step advances the States only once it is checked.
                 if (advance_unchecked && executed != 0)
