@@ -79,9 +79,15 @@ records through the public members and needs no friendship.
 
 ### Recorder: moves
 
-The source of a move is an empty recorder on the same context: no node, no rule, no scratch, no
-observer, and generation() back at zero. It keeps the context so that it can record again. No rule
-scope may be open on either side, because a RuleScope holds the recorder's address.
+The source of a move is an empty recorder on the same context: no node, no rule, no scratch and no
+observer. It keeps the context so that it can record again. No rule scope may be open on either
+side, because a RuleScope holds the recorder's address.
+
+generation() never returns to a value the recorder had. The source's advances by one, so a plan
+built from it before the move is stale. The destination takes the source's generation when that is
+larger than its own, which holds for every move construction from a recorder that has recorded, so
+the plan that moves with a Graph stays current. Otherwise the destination's advances by one and
+its owner rebuilds once.
 
 ### RuleScope
 
@@ -106,6 +112,9 @@ clear() forgets the nodes, the rules, the labels, the observers, the hooks and t
 advances generation() instead of resetting it, so a plan built before the call is seen as stale.
 The scratch is freed at once: a plan built from the cleared nodes must not run again, which the
 owner guarantees by rebuilding whenever generation() changed.
+
+clear() may be called with a rule scope open, which is how an extension that extend() handed the
+recorder reaches it. The scope stays open, and the next node recorded inside it starts a new rule.
 
 ### record: liveness
 
@@ -132,6 +141,10 @@ rule's name. PlanCache::build() and RegionComposer::build_region() both call it,
 and a region are replayed by the same code. The visitor overload reports each node, with the
 position of its rule, once it is added; PlanCache uses it to read back the registration index of
 each rule, and the composer to remember a node of each rule.
+
+An emitter may add no node. replay() compares the backing graph's last node before and after each
+spec and, when it is the same node, names nothing and does not call the visitor. The rule keeps
+its place in rule_count() and reports `NO_REGISTRATION`, and the rule before it keeps its name.
 
 ### kernel(DeviceSized, ...)
 
@@ -171,8 +184,8 @@ composer rebuilding a region. Fault records come from the same store.
 
 ### steps
 
-steps_ holds the per-step lifecycle: the State double-buffer views, the advancers, the late-binding
-refreshers and the distributed live-IO re-pointers. It owns the ordering invariant that runs around
+steps_ holds the per-step lifecycle: the resync and the advance of each State view recorded, the
+late-binding refreshers and the distributed live-IO re-pointers. Each view belongs to its State. It owns the ordering invariant that runs around
 each replayed step. The DynamicGraph composer uses the same type, so both drive the loop
 identically.
 
@@ -186,7 +199,8 @@ stepped field can vary its active count or sleep entirely with no recompile.
 
 offload() is the single funnel for both the raw-pointer and the Reads/Writes offload overloads.
 Setting op_id is what makes compile() consider the node offloadable; otherwise the local
-parallel_for runs.
+parallel_for runs. offload() and offload_rule() refuse more than `TaskMetadata::K_MAX_PARAMS`
+parameters with `invalid_graph` when the rule is recorded.
 
 ## builder_surface.hpp
 
@@ -222,6 +236,10 @@ access:
 | `State` | yes | yes | yes | yes | yes |
 | `Coupled` | yes | yes | yes | yes | |
 | none (add_untracked) | yes | yes | yes | | |
+
+Late binding exists for `Reads` and `Writes` (with a capacity) and for `State` only. The capture
+(`In`, `Out`, `InOut`) and `Coupled` forms have no Dynamic overload. For a varying size there, use
+`Reads` and `Writes` with the pointers captured by hand; for one State, `add(Dynamic, state, fn)`.
 
 ### Which add do I call
 
@@ -344,9 +362,10 @@ with a live worker that supports `op`, the scheduler may ship this task over the
 (a standalone build, no worker, or the policy declining) `local` runs it on this machine, so the
 same graph is correct with or without a cluster.
 
-`reads` and `writes` are Reads(...) and Writes(...), or two lists of base pointers. The dependency
-tracker orders the task by them, and the distributed layer resolves them to network buffer
-handles. `params` are scalar arguments carried in TaskMetadata, element counts for example.
+`reads` and `writes` are Reads(...) and Writes(...). The dependency tracker orders the task by them,
+and the distributed layer resolves them to network buffer handles. `params` are scalar arguments
+carried in TaskMetadata, element counts for example. The form that takes two lists of base
+pointers is deprecated and forwards here.
 
 ### add(OpID, state, local, params)
 
@@ -455,6 +474,7 @@ and holds no code of its own.
 | `add(out, in0, ..., fn)` | `add(Coupled(out, in0, ...), fn)` |
 | `add(Dynamic, Reads, Writes, capacity, fn)` | `add(Dynamic, capacity, Reads, Writes, fn)` |
 | `add(vector<void*>, vector<void*>, n, fn)`, and the same after a `Dynamic` | `Reads(pointer...)` and `Writes(pointer...)`: a base pointer converts to the region of its whole buffer |
+| `add(op, n, vector<void*>, vector<void*>, local, params)` | `add(op, n, Reads(pointer...), Writes(pointer...), local, params)`: the same conversion |
 | `name_last(label)` | `name(label)` |
 
 ## plan_cache.hpp
@@ -496,8 +516,9 @@ by holding it at 1 across a multi-step run whose sizes and enable flags change e
 ### StepDriver
 
 StepDriver is the run surface and the step loop, written once for Graph and DynamicGraph. The
-owner derives from StepDriver\<Owner> and befriends it. The driver owns nothing but the marker of a
-pending asynchronous step and the number of the last step it started.
+owner derives from StepDriver\<Owner> and befriends it. The driver owns three things: the record of
+a pending asynchronous step, the number of the last step it started, and the count of its runs in
+flight that cancel() reads.
 
 ### What the owner supplies
 
@@ -531,6 +552,15 @@ the RunHandle. The throwing form calls its try_ form and throws the Error it got
 `Core::SushiException`, so both report a failure with the same code and text.
 `modules/surface/api/tests/test_run_driver.cpp` holds the list as `static_assert`s over both types.
 
+No try_ form throws, also when memory runs out while it builds an Error: every Error of the driver
+and of RunHandle is built by detail::error_without_throwing(), which returns the code with an empty
+message when the text cannot be allocated. try_run_until() moves its stop test, so the stop test
+must be nothrow move constructible, and a `static_assert` says so.
+
+run_for(budget) stops at `now + budget`. A budget the steady clock cannot add to now, such as
+`std::chrono::hours::max()`, saturates at the clock's last time point, and a budget of zero or less
+ends at now, so the run is one step.
+
 ### guarded
 
 guarded() is the one place an exception becomes an Error. It runs a callable inside a catch ladder
@@ -555,11 +585,30 @@ entry_refusal() answers before anything touches the plan. A graph with nothing r
 re-arms every node's in-degree, and doing that while the workers walk the DAG would rewrite the
 scheduling state under them. A graph whose recorded handle was freed is `dangling_resource`.
 
+A runtime has one engine, so at most one run is in flight on it. While the engine reports a run in
+progress, every run entry of every graph on that runtime is `invalid_state`: another graph's
+pending run_async() step, another graph's blocking run on another thread, or a run started from
+inside a task of a run. The caller settles the run in flight first, by letting its blocking call
+return or by waiting on its RunHandle. Without the refusal the second run would clear the first
+one's cancellation and, on the chain, submit beside it. The test is
+IExecutionEngine::run_in_progress(), one atomic load per run entry and none per step. Between two
+steps of a multi-step scheduled run the engine reports no run, so a stop test may still run another
+graph.
+
 ### run(steps)
 
 The graph is compiled on the first run (and after any mutation), then the compiled plan is replayed
 for each step: node dependency state is reset, the plan re-executed, and every State advanced to its
 next field. Compilation happens at most once per call.
+
+### A failed run and its States
+
+A step advances the States only after it has been checked, so a failed run of one step leaves every
+State untouched on both layers. A failed run of several steps has advanced the steps before the
+failing one. On the chain, run(steps) submits its steps back to back and waits once, so step k+1
+reads what step k wrote only if the States advance between the two submissions. A device fault
+recorded by any step of such a run is therefore seen at the end, and by then every step but the
+last has advanced. run_for() and run_until() wait and check after every step on both layers.
 
 ### run(Observability::RunReport&)
 
@@ -593,8 +642,9 @@ It runs one step only. The multi-step drivers (run(n), run_for, run_until) stay 
 their per-step host work has to happen between steps and there is nothing for the caller to overlap
 with in the middle of a batch. A step is one tick, which is the granularity a frame actually wants.
 
-The handle must not outlive this graph, and its destructor waits for the step instead of letting the
-plan be destroyed underneath the workers, as the RunHandle section describes.
+The handle's destructor waits for the step, and so does the graph's: whichever dies first ends the
+step, so the plan is never destroyed underneath the workers. A handle that outlives its graph owns
+no step, as the "RunHandle: the owner's address" section describes.
 
 On a DynamicGraph a pending structural change (a region added or dropped) is committed before the
 step is submitted, exactly as a synchronous run does.
@@ -615,8 +665,16 @@ different from a synchronous one.
 cancel() is safe to call concurrently with a blocking run(), run_for() or run_until() executing on
 another thread: the active step drains its remaining tasks without launching new kernels and
 returns, the driver stops before the next step, and the resulting RunReport has cancelled set. It
-does nothing when no run is active; the flag is cleared when the next run starts. Cancellation is a
-clean stop, not an error, and cancel() is `noexcept`: the engine sets one atomic flag.
+also stops this graph's pending run_async() step, whose report then has cancelled set. Cancellation
+is a clean stop, not an error, and cancel() is `noexcept`: the engine sets one atomic flag.
+
+cancel() acts only on the graph it is called on. The engine's flag belongs to the whole runtime, so
+the driver counts its own runs in flight, a blocking run from before its cancellation reset until
+it returns and an asynchronous step from submission until it is settled, and cancel() does nothing
+while the count is zero. cancel() on an idle graph therefore leaves another graph's run alone, and
+a cancel() sent before a run starts is not remembered. The count is one atomic that cancel() loads
+from any thread; a run entry adds to it once and takes it back once. A cancel() that races the end
+of its own run can still reach the engine after the next run on the runtime has started.
 
 ### set_profiling
 
@@ -640,11 +698,19 @@ refused every run for good. Leaving the marker behind without waiting would let 
 re-arm a plan the workers still walk. The driver's move runs before the plan and the recorder
 move, so the step ends on an intact graph.
 
+### end_pending_step
+
+end_pending_step() waits for a pending step, checks its faults, advances the States and drops the
+outcome. The move operations call it, and so do ~Graph() and ~DynamicGraph() as their first
+statement. Destroying a graph whose step is pending is allowed and asserts nothing: the destructor
+returns once the step has run, so the kernels' writes are in the buffers. The call sits in the
+derived destructors because ~StepDriver() runs after the plan, the recorder and the regions are
+gone.
+
 ### settle_async_step
 
-settle_async_step() is what a handle calls to wait. It first checks that the handle's step is the
-one pending here: each run_async() numbers its step, the handle carries the number, and a handle
-whose step a move already ended gets `invalid_state`. It then clears the marker before the blocking
+settle_async_step() is what a handle calls to wait, after the handle has checked that its step is
+still the one pending. It clears the record and the count of runs in flight before the blocking
 call, because the step is over however it ends and the graph must be runnable again; one throwing
 kernel must not make the graph refuse every later run. The wait and finish_async_step() run under
 guarded().
@@ -680,12 +746,22 @@ pointers and host-set controls, so it never needs the device to have finished (s
 `keep_going` is called with the count of submitted steps before each step, and `engine` is consulted
 only for cancellation.
 
-### async_step_pending_
+Under `AtEnd` a step's States advance at the start of the next iteration, and the last step's after
+finish() and check_faults() have returned. Under `EveryStep` each step waits, is checked and then
+advances, so the stop test reads the fields the step just wrote. "A failed run and its States"
+gives the rule a caller sees.
 
-async_step_pending_ is true between run_async() and the settling of its handle. It guards the plan
-against a second run re-arming nodes the workers are still walking, and entry_refusal() checks it.
-async_step_serial_ counts the steps run_async() started; settle_async_step() compares it with the
-number in the handle.
+### async_record_
+
+async_record_ is the driver's record of its pending asynchronous step: a shared
+detail::AsyncStepRecord that holds the number of the pending step, or `K_NO_STEP`. run_async()
+writes the number, and settling the handle, moving the graph or destroying it writes `K_NO_STEP`.
+async_step_pending() reads it, and it guards the plan against a second run re-arming nodes the
+workers are still walking. Every handle of the graph holds the same record, so a handle learns that
+its step is over without reading the graph. The record is allocated once per graph, by its first
+run_async(); a graph that only runs synchronously allocates none, and a frame loop that calls
+run_async() every tick allocates one. async_step_serial_ numbers the steps and skips `K_NO_STEP`
+when it wraps.
 
 ## dynamic_graph.hpp
 
@@ -696,14 +772,15 @@ grouped into regions keyed by a caller id (a spatial cell, a streaming chunk). r
 tasks with the static graph's add() surface; drop(key) removes one. Mutations are applied at a step
 boundary, never against the running DAG, so the lock-free scheduler is untouched.
 
-The composition is **incremental in the changed region and its boundary**, not the world. Each
-region compiles to a cached sub-graph whose interior (intra-region) edges are baked once and never
-touched again while the region is unchanged. Dependencies that cross a region boundary, where two
-regions share a buffer, live in a separate layer on each node (Node::region, a RegionLink) that the
-composer maintains. When a region streams in or out only its own nodes are rebuilt and only the
-boundary edges of the allocations it shares are re-derived; the interior of every other region, and
-every boundary that did not change, is left exactly as it was. Commit therefore costs O(changed
-region + affected boundary pins), independent of the size of the untouched world.
+A commit has two cost terms. Building and wiring cost O(changed regions + the boundary pins of the
+allocations they share): each region compiles to a cached sub-graph whose interior (intra-region)
+edges are baked once and stay as they are while the region is unchanged, and dependencies that cross
+a region boundary, where two regions share a buffer, live in a separate layer on each node
+(Node::region, a RegionLink) that the composer maintains. When a region streams in or out only its
+own nodes are rebuilt and only the boundary edges of the allocations it shares are derived again.
+The second term covers the whole graph: every commit renumbers the registration index of every node
+of every live region, O(total nodes) with one map allocated per region, and copies the root list,
+O(roots). A graph that requests profiling also lists every node again.
 
 Cross-region ordering follows ascending region key: for an allocation two regions share, the
 lower-keyed region is the producer. Read/read sharing stays parallel (no edge between two regions
@@ -810,8 +887,8 @@ self contained: it first un-wires the base's current edges, then walks the regio
 ascending key order, threading the live writers and the pending readers through so RAW, WAR and WAW
 are honoured and read/read stays parallel. Every hazard test compares byte intervals, so two regions
 touching disjoint slices of one allocation gain no edge at all. A base whose endpoints include a
-torn-down node is un-wired earlier, while those nodes are still alive; the undo inside rewire_base()
-then runs on an empty list and does nothing.
+torn-down node is un-wired earlier by retire_regions(), while those nodes are still alive; the undo
+inside rewire_base() then runs on an empty list and does nothing.
 
 ### rewire_base: live writers and pending reads
 
@@ -831,20 +908,53 @@ teardown_region() removes a region's contribution to the shared structures: it d
 the root set and the sentinel, and unregisters it from the bases it touched, marking each dirty. Its
 cross-region edges must already have been undone. It then frees the region's node objects.
 
+### commit: build first, change second
+
+commit() works in two phases. It first builds every dirty live region into local storage with
+build_region(), which replays the region's recorder and can throw. Up to that point the only member
+it writes is the plan index counter, so a throw from a build leaves the regions, the cross edges,
+the roots and the plan as the last commit left them, and the caller repeats the commit once the
+recording is repaired. A region built before the one that threw is built again by that commit.
+
+The second phase un-wires the allocations of the retired regions (retire_regions()), installs the
+built ones (install_region()), wires every dirty allocation again (rewire_base()) and publishes the
+plan (publish_plan()). These steps insert into sets and vectors and can throw `std::bad_alloc`
+halfway. A RecomposeGuard covers them: when one throws, invalidate_plan() empties the plan's root
+list, makes composed() return false and sets `recompose_everything_`. The next commit then builds
+every region that is still live, frees all region state, edges and roots together with the old
+sentinel (discard_every_region()), and installs and wires the whole graph from nothing.
+
+The composer finds the live regions of that rebuild among the keys it still holds and the dirty
+keys it is given, so the caller must pass the dirty and dropped keys of the commit that threw.
+DynamicGraph::rebuild_plan() clears its two sets only after commit() returns.
+
+Both the old and the new nodes of a dirty region are alive between the two phases.
+
+### commit: cost
+
+Building costs O(nodes of the dirty regions), and wiring costs O(boundary pins of the allocations
+those regions and the dropped ones touch). Two steps cover the whole graph at every commit:
+renumber_registration_indices() walks every node of every live region and allocates one map per
+region, and publish_plan() copies the root list, O(roots). When profiling is requested
+publish_plan() also lists every node again in `plan_.all_nodes`.
+
 ### commit: undo before free
 
-commit() undoes every cross-region edge on a dirty base while all endpoints are still alive, so
-freeing torn-down nodes leaves no dangling pointer in any other node's boundary list.
+retire_regions() undoes every cross-region edge on a dirty base while all endpoints are still
+alive, so freeing torn-down nodes leaves no dangling pointer in any other node's boundary list.
 
 ### commit: registration indices
 
-commit() groups registration indices by value, not by consecutive run, so one add() call's local
-index maps to exactly one global index even if its nodes are not contiguous in st.nodes.
+renumber_registration_indices() groups registration indices by value, not by consecutive run, so
+one add() call's local index maps to exactly one global index even if its nodes are not contiguous
+in st.nodes.
 
 ### RegionState: generation and rule_nodes
 
 build_region() stores the recorder generation it built from, which is_current() compares, and the
 last node of each rule, from which registration_of() reads the index that the latest commit wrote.
+It also gives each node a plan index from a counter that only rises, so the indices of a composed
+plan have gaps; nothing in the composed plan indexes a table by them.
 
 ### RegionComposer: moves
 
@@ -853,9 +963,10 @@ it finds none, so the source composes again.
 
 ### rearm
 
-rearm() re-arms every node's live in-degree from the two-layer baseline and refreshes the per-step
-State and late-binding updaters. It costs O(total) per step, which is inherent to replaying the
-whole plan.
+rearm() re-arms the live in-degree of every node, and of the sentinel, from the two-layer baseline:
+the intra in-degree plus the boundary in-degree. It walks every node of every live region, O(total
+nodes) per step. The per-step State and late-binding updaters are not its work; the step driver
+runs them from the StepMachinery that DynamicGraph::refresh_updaters() gathers.
 
 ## boundary_access.hpp
 
@@ -889,13 +1000,31 @@ then rewritten by that writer, and any later access to `r` is transitively order
 ### compute_boundary_access
 
 compute_boundary_access() returns a region's per-base boundary summary. For each allocation the
-region touches it classifies the region's accessor nodes into entry pins (no intra predecessor
-touching an overlapping range of the base) and exit pins (whatever an intra successor's write does
-not fully cover), keeping each pin's exact byte intervals.
+region touches it gives every accessor node an entry pin and an exit pin, each holding the intervals
+of the node that the rules below keep. A node whose intervals are all dropped has no pin. Both rules
+look at direct intra neighbours only and count an interval as covered only when one interval of a
+neighbour fully contains it; an interval is never split.
 
-Both classifications test overlap and not base equality, and both err toward keeping a pin. A node
-wrongly excluded from entry would lose an incoming edge, and one wrongly treated as shadowed would
-lose an outgoing edge. Either is a data race, while an extra pin only costs an edge.
+Entry (entry_pin()). A read of the node is dropped when a direct intra predecessor reads or writes
+an interval of the base that contains it. A write of the node is dropped only when a direct intra
+predecessor writes an interval that contains it. The predecessor then carries the cross-region edges
+the node needs: its containing access is pinned itself, or is covered in turn by one of its own
+predecessors, and the node runs after all of them. A predecessor that only reads does not cover a
+write, because a write must also follow the readers of earlier regions and a reader has no edge
+from them. With `p` writing `b[0,10)` and `q` reading `b[5,20)` in one region, `q` keeps a read pin
+for `[5,20)`, so a writer of `b[15,20)` in an earlier region gains an edge to `q`.
+
+Exit (exit_pin()). A read or a write of the node is dropped when a direct intra successor writes an
+interval that contains it. A later region that overlaps the dropped interval overlaps the
+successor's write too and is ordered behind the successor, which already runs after the node.
+
+Both rules keep a pin when in doubt: an indirect predecessor, or two neighbours that cover an
+interval only between them, leave the pin in place. That adds an edge at most. A pin dropped in
+error would remove an edge and leave two tasks racing on the same bytes.
+
+For one base the function costs O(E) to list the neighbours, with E the intra edges that leave the
+base's accessor nodes, and then compares every interval of a node with every interval of each direct
+neighbour. It reads the nodes of one region and nothing else.
 
 ## region.hpp
 
@@ -935,8 +1064,8 @@ recorder(), so a function written over a Recorder records onto either.
 A synchronous run reads its "before" counters and its start time as locals, because the whole run
 happens inside one function. An asynchronous run does not: the step is submitted in one call and
 settled in another, so the same values have to travel in the handle. Every member of AsyncRunState
-is a plain value, so the handle owns no resources and stays cheap to move. `serial` is the number
-the driver gave the step, by which the driver recognises the handle when it waits.
+is a plain value. `serial` is the number the driver gave the step; the handle compares it with the
+number in the graph's AsyncStepRecord to learn whether its step is still pending.
 
 ### RunHandle
 
@@ -959,8 +1088,8 @@ scoping does the rest. It also means a discarded handle discards the step's outc
 task exception**. Call `wait()` (or `try_wait()`) whenever the result matters, which is nearly
 always.
 
-Exactly one step may be in flight per runtime; starting another while a handle is pending is
-rejected rather than silently interleaved.
+Exactly one run may be in flight per runtime. While a handle is pending, every run entry of every
+graph on the runtime is refused with `invalid_state`, as the entry_refusal section describes.
 
 ### operator=(RunHandle&&)
 
@@ -969,16 +1098,32 @@ it. The moved-from handle owns nothing afterwards.
 
 ### RunHandle: the owner's address
 
-The handle keeps the address of the graph that started the step, so that graph must neither be
-destroyed nor moved while the handle is pending. Graph and DynamicGraph state it as a precondition
-of their move operations, and the "StepDriver: moves" section says what a move does when it is
-broken.
+The handle keeps the address of the graph that started the step and a share of that graph's
+AsyncStepRecord. It reads the graph only while the record names the handle's own step as pending,
+and the graph clears the record before it moves or dies, so a handle never reads a dead graph.
+
+A graph must not be moved while its handle is pending: Graph and DynamicGraph state it as a
+precondition of their move operations, and the "StepDriver: moves" section says what a move does
+when it is broken. A graph may be destroyed while its handle is pending. Its destructor waits for
+the step, advances the States and drops the report, as destroying the handle would.
+
+After either, the handle owns no step: pending() is false, ready() is true, its destructor does
+nothing, and wait() or try_wait() returns `invalid_state` with a message that says the graph was
+moved or destroyed and the report dropped. The handle costs one shared pointer more than the
+values it carries, and no allocation: the record is the graph's.
+
+### pending
+
+pending() is true while the handle's step is the one pending on its graph. It turns false when the
+step is waited for, when the handle is moved from, and when the graph ends the step by being moved
+or destroyed.
 
 ### ready
 
 ready() answers "has the graph finished", so a frame loop can keep overlapping work instead of
 blocking early. It is not a substitute for wait(): the pool still has bookkeeping to drain and the
-step's state advance has not happened yet.
+step's state advance has not happened yet. It asks the engine only while the handle owns its step;
+a handle that owns none is ready, whatever run the engine holds.
 
 ### wait()
 
@@ -986,14 +1131,14 @@ wait() completes the step's lifecycle, in which every State advances to the fiel
 consumes the handle, so a second call throws `invalid_state` instead of waiting on a step that is no
 longer running. wait() calls try_wait() and throws the Error it got as a `Core::SushiException`. A
 task exception therefore arrives as `kernel_failed` carrying the task's text, the same as from
-run(), and the state advance is skipped in that case, exactly as a failed synchronous run leaves
-its states untouched.
+run(), and the state advance is skipped in that case, exactly as a failed synchronous run of one
+step leaves its states untouched.
 
 ### try_wait
 
-try_wait() is the implementation of every wait: it resets the report, consumes the handle and asks
-the driver to settle the step. It is `noexcept` and returns the report or the Error that ended the
-step.
+try_wait() is the implementation of every wait: it resets the report, consumes the handle, checks
+that the handle still owns its step and asks the driver to settle it. It is `noexcept` and returns
+the report or the Error that ended the step.
 
 ### wait(Observability::RunReport&)
 

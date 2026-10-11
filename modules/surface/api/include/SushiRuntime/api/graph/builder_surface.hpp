@@ -50,7 +50,6 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
-#include <SushiRuntime/task/task_types.hpp>
 
 namespace SushiRuntime
 {
@@ -102,7 +101,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds the per-step update rule of a State over its whole field.
-                 * @param state The state this rule evolves; must outlive the graph.
+                 * @param state The state this rule evolves; alive when the graph runs and
+                 *        free to move after add().
                  * @param kernel Callable invoked as kernel(i, const T* current, T* next).
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
@@ -117,7 +117,7 @@ namespace SushiRuntime
                 /**
                  * @brief Adds the per-step update rule of a State over a launch.
                  * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
-                 * @param state The state this rule evolves; must outlive the graph.
+                 * @param state Alive when the graph runs; free to move after add().
                  * @param kernel Callable invoked as kernel(index, const T* current, T* next).
                  * @throws Core::SushiException With invalid_graph for a launch past the state.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
@@ -128,13 +128,14 @@ namespace SushiRuntime
                 {
                     if constexpr (detail::accepts_state_rule<detail::launch_t<Launch>, T, F>())
                         sink().state_rule(state, detail::launch_of(launch),
-                                          std::forward<F>(kernel));
+                                          std::forward<F>(kernel), K_ADD_LAUNCH_STATE);
                     return self();
                 }
 
                 /**
                  * @brief Adds a rule that writes one State from several, over its whole field.
-                 * @param states Coupled(out, in0, ...); every State must outlive the graph.
+                 * @param states Coupled(out, in0, ...); every State is alive when the graph
+                 *        runs and free to move after add().
                  * @param kernel Callable invoked as kernel(i, current, next, in0, ...).
                  * @throws Core::SushiException With invalid_graph for an input smaller than out.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
@@ -145,7 +146,8 @@ namespace SushiRuntime
                     if constexpr (detail::accepts_coupled_rule<std::size_t, F, Out, Inputs...>())
                         std::apply([&](State<Inputs>&... inputs)
                         {
-                            sink().coupled_rule(states.out, std::forward<F>(kernel), inputs...);
+                            sink().coupled_rule(K_ADD_COUPLED, states.out,
+                                                std::forward<F>(kernel), inputs...);
                         }, states.inputs);
                     return self();
                 }
@@ -153,7 +155,8 @@ namespace SushiRuntime
                 /**
                  * @brief Adds a rule that writes one State from several, over a launch.
                  * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
-                 * @param states Coupled(out, in0, ...); every State must outlive the graph.
+                 * @param states Coupled(out, in0, ...); every State is alive when the graph
+                 *        runs and free to move after add().
                  * @param kernel Callable invoked as kernel(index, current, next, in0, ...).
                  * @throws Core::SushiException With invalid_graph for a launch past a State.
                  */
@@ -165,8 +168,8 @@ namespace SushiRuntime
                                                                Inputs...>())
                         std::apply([&](State<Inputs>&... inputs)
                         {
-                            sink().coupled_rule(detail::launch_of(launch), states.out,
-                                                std::forward<F>(kernel), inputs...);
+                            sink().coupled_rule(K_ADD_LAUNCH_COUPLED, detail::launch_of(launch),
+                                                states.out, std::forward<F>(kernel), inputs...);
                         }, states.inputs);
                     return self();
                 }
@@ -186,7 +189,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a late-bound per-element task whose window varies per step.
+                 * @brief Adds a late-bound per-element task whose window varies per step;
+                 *        late binding exists for these two forms only.
                  * @param capacity Upper bound the live window must fit.
                  * @param kernel Callable invoked as kernel(i) for each live index.
                  * @throws Core::SushiException With invalid_access for a slot outside host USM.
@@ -203,7 +207,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a late-bound per-step update rule for a State.
+                 * @brief Adds a late-bound per-step update rule for a State; late binding
+                 *        exists for these two forms only.
                  * @param state The state this rule evolves; its size is the capacity.
                  * @param kernel Callable invoked as kernel(i, const T* current, T* next).
                  * @throws Core::SushiException With invalid_access for a slot outside host USM.
@@ -230,23 +235,7 @@ namespace SushiRuntime
                 {
                     if constexpr (detail::accepts_per_element<F>())
                         sink().offload(op, n, Access(reads, writes), std::forward<F>(local),
-                                       std::vector<std::uint64_t>(params));
-                    return self();
-                }
-
-                /**
-                 * @brief Adds an offloadable task that names its data by raw base pointer.
-                 * @param local Local fallback invoked as local(i) for i in [0, n).
-                 */
-                template <class F>
-                Derived& add(::SushiRuntime::Graph::OpID op, std::size_t n,
-                             const std::vector<void*>& reads, const std::vector<void*>& writes,
-                             F&& local, std::initializer_list<std::uint64_t> params = {})
-                {
-                    if constexpr (detail::accepts_per_element<F>())
-                        sink().offload(op, n, whole_buffers(reads, writes),
-                                       std::forward<F>(local),
-                                       std::vector<std::uint64_t>(params));
+                                       std::vector<std::uint64_t>(params), K_ADD_OFFLOAD);
                     return self();
                 }
 
@@ -262,7 +251,8 @@ namespace SushiRuntime
                 {
                     if constexpr (detail::accepts_state_rule<std::size_t, T, F>())
                         sink().offload_rule(op, state, std::forward<F>(local),
-                                            std::vector<std::uint64_t>(params));
+                                            std::vector<std::uint64_t>(params),
+                                            K_ADD_OFFLOAD_RULE);
                     return self();
                 }
 
@@ -279,7 +269,8 @@ namespace SushiRuntime
                 {
                     if constexpr (detail::accepts_kernel<detail::launch_t<Launch>, F>())
                         sink().untracked_kernel(detail::launch_of(launch),
-                                                std::forward<F>(kernel));
+                                                std::forward<F>(kernel), On(DeviceIndex{0}),
+                                                K_ADD_UNTRACKED_LAUNCH);
                     return self();
                 }
 
@@ -297,7 +288,8 @@ namespace SushiRuntime
                 {
                     if constexpr (detail::accepts_kernel<detail::launch_t<Launch>, F>())
                         sink().untracked_kernel(detail::launch_of(launch),
-                                                std::forward<F>(kernel), placement);
+                                                std::forward<F>(kernel), placement,
+                                                K_ADD_UNTRACKED_LAUNCH_ON);
                     return self();
                 }
 
@@ -309,7 +301,8 @@ namespace SushiRuntime
                 Derived& add_untracked(F&& kernel)
                 {
                     if constexpr (detail::accepts_raw_kernel<F>())
-                        sink().untracked_raw_kernel(std::forward<F>(kernel));
+                        sink().untracked_raw_kernel(std::forward<F>(kernel), On(DeviceIndex{0}),
+                                                    K_ADD_UNTRACKED_RAW);
                     return self();
                 }
 
@@ -324,7 +317,8 @@ namespace SushiRuntime
                 Derived& add_untracked(On placement, F&& kernel)
                 {
                     if constexpr (detail::accepts_raw_kernel<F>())
-                        sink().untracked_raw_kernel(std::forward<F>(kernel), placement);
+                        sink().untracked_raw_kernel(std::forward<F>(kernel), placement,
+                                                    K_ADD_UNTRACKED_RAW_ON);
                     return self();
                 }
 
@@ -468,7 +462,7 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Adds a per-element task ordered by the raw base pointers it names.
+                 * @brief Forwards to add(n, Reads(...), Writes(...), fn), naming each pointer.
                  * @param kernel Callable invoked as kernel(i) for each i in [0, n).
                  */
                 template <class F>
@@ -477,14 +471,12 @@ namespace SushiRuntime
                 Derived& add(const std::vector<void*>& reads, const std::vector<void*>& writes,
                              std::size_t n, F&& kernel)
                 {
-                    if constexpr (detail::accepts_kernel<std::size_t, F>())
-                        sink().kernel(n, whole_buffers(reads, writes), std::forward<F>(kernel));
-                    return self();
+                    return add(n, whole_buffers<Reads>(reads), whole_buffers<Writes>(writes),
+                               std::forward<F>(kernel));
                 }
 
                 /**
-                 * @brief Adds a late-bound per-element task that names its data by raw base
-                 *        pointer.
+                 * @brief Forwards to add(Dynamic, capacity, Reads(...), Writes(...), fn).
                  * @param capacity Upper bound the live window must fit.
                  */
                 template <class F>
@@ -493,10 +485,22 @@ namespace SushiRuntime
                 Derived& add(Dynamic window, const std::vector<void*>& reads,
                              const std::vector<void*>& writes, std::size_t capacity, F&& kernel)
                 {
-                    if constexpr (detail::accepts_per_element<F>())
-                        sink().kernel(std::move(window), capacity, whole_buffers(reads, writes),
-                                      std::forward<F>(kernel));
-                    return self();
+                    return add(std::move(window), capacity, whole_buffers<Reads>(reads),
+                               whole_buffers<Writes>(writes), std::forward<F>(kernel));
+                }
+
+                /**
+                 * @brief Forwards to add(op, n, Reads(...), Writes(...), local, params).
+                 * @param local Local fallback invoked as local(i) for i in [0, n).
+                 */
+                template <class F>
+                [[deprecated("use add(op, n, Reads(...), Writes(...), fn, params)")]]
+                Derived& add(::SushiRuntime::Graph::OpID op, std::size_t n,
+                             const std::vector<void*>& reads, const std::vector<void*>& writes,
+                             F&& local, std::initializer_list<std::uint64_t> params = {})
+                {
+                    return add(op, n, whole_buffers<Reads>(reads), whole_buffers<Writes>(writes),
+                               std::forward<F>(local), params);
                 }
 
                 /** @brief Forwards to name(label). */
@@ -525,6 +529,29 @@ namespace SushiRuntime
                 ~BuilderSurface() = default;
 
             private:
+                /// @brief Names add(launch, state, fn) in the messages of its refusals.
+                static constexpr const char* K_ADD_LAUNCH_STATE = "add(launch, state, fn)";
+                /// @brief Names add(Coupled(out, in0, ...), fn) in the messages of its refusals.
+                static constexpr const char* K_ADD_COUPLED = "add(Coupled(out, in0, ...), fn)";
+                /// @brief Names add(launch, Coupled(out, in0, ...), fn) in its refusals.
+                static constexpr const char* K_ADD_LAUNCH_COUPLED =
+                    "add(launch, Coupled(out, in0, ...), fn)";
+                /// @brief Names add_untracked(launch, fn) in the messages of its refusals.
+                static constexpr const char* K_ADD_UNTRACKED_LAUNCH = "add_untracked(launch, fn)";
+                /// @brief Names add_untracked(launch, On(...), fn) in its refusals.
+                static constexpr const char* K_ADD_UNTRACKED_LAUNCH_ON =
+                    "add_untracked(launch, On(...), fn)";
+                /// @brief Names add_untracked(fn) in the messages of its refusals.
+                static constexpr const char* K_ADD_UNTRACKED_RAW = "add_untracked(fn)";
+                /// @brief Names add_untracked(On(...), fn) in the messages of its refusals.
+                static constexpr const char* K_ADD_UNTRACKED_RAW_ON = "add_untracked(On(...), fn)";
+                /// @brief Names add(OpID, n, reads, writes, local, params) in its refusals.
+                static constexpr const char* K_ADD_OFFLOAD =
+                    "add(OpID, n, reads, writes, local, params)";
+                /// @brief Names add(OpID, state, local, params) in the messages of its refusals.
+                static constexpr const char* K_ADD_OFFLOAD_RULE =
+                    "add(OpID, state, local, params)";
+
                 /** @brief Returns the builder this surface belongs to. */
                 Derived& self() noexcept { return static_cast<Derived&>(*this); }
 
@@ -537,13 +564,16 @@ namespace SushiRuntime
                     return static_cast<const Derived&>(*this).recorder();
                 }
 
-                /** @brief Names each bare base pointer as the region of its whole buffer. */
-                static Access whole_buffers(const std::vector<void*>& reads,
-                                            const std::vector<void*>& writes)
+                /**
+                 * @brief Names each bare base pointer as the region of its whole buffer.
+                 * @tparam Dependency Reads or Writes; it takes one region per pointer, in order.
+                 */
+                template <class Dependency>
+                static Dependency whole_buffers(const std::vector<void*>& pointers)
                 {
-                    using Regions = std::vector<Memory::ResourceRegion>;
-                    return Access(Regions(reads.begin(), reads.end()),
-                                  Regions(writes.begin(), writes.end()));
+                    Dependency named;
+                    named.keys.assign(pointers.begin(), pointers.end());
+                    return named;
                 }
 
                 /**
@@ -569,8 +599,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Forwards the old coupled order once the callable is split from the
-                 *        read States.
+                 * @brief Splits the (out, in0, ..., fn) arguments and forwards them as
+                 *        Coupled(out, in0, ...), fn.
                  * @tparam Arguments A std::tuple of references: sizeof...(Is) States, then the
                  *         callable.
                  */

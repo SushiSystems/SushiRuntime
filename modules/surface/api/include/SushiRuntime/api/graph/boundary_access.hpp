@@ -33,7 +33,6 @@
 #include <cstdint>
 #include <map>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -68,9 +67,19 @@ namespace SushiRuntime
              */
             struct BaseAccess
             {
-                std::vector<Pin> entry;  // no intra predecessor overlapping this base
-                std::vector<Pin> exit;   // accesses not shadowed by an intra successor's write
+                std::vector<Pin> entry; /**< Intervals no direct intra predecessor covers. */
+                std::vector<Pin> exit;  /**< Intervals no direct intra successor's write covers. */
             };
+
+            /** @brief Holds the byte intervals one node reads and writes on one allocation. */
+            struct NodeAccess
+            {
+                std::vector<Memory::ResourceRegion> reads;
+                std::vector<Memory::ResourceRegion> writes;
+            };
+
+            /** @brief Lists the accesses of a node's direct intra neighbours on one allocation. */
+            using NeighbourAccesses = std::vector<const NodeAccess*>;
 
             /**
              * @brief Calls fn(succ) for each intra successor of a node; commit-time only,
@@ -88,7 +97,7 @@ namespace SushiRuntime
                     if (s->target) fn(s->target);
             }
 
-            // True when any interval in @p a intersects any interval in @p b.
+            /** @brief Returns whether an interval in a intersects an interval in b. */
             inline bool overlaps_any(const std::vector<Memory::ResourceRegion>& a,
                                      const std::vector<Memory::ResourceRegion>& b)
             {
@@ -109,6 +118,64 @@ namespace SushiRuntime
                 return false;
             }
 
+            /** @brief Returns whether a write of one neighbour fully contains r. */
+            inline bool covered_by_write(const Memory::ResourceRegion& r,
+                                         const NeighbourAccesses& neighbours)
+            {
+                for (const NodeAccess* neighbour : neighbours)
+                    if (covered_by_any(r, neighbour->writes))
+                        return true;
+                return false;
+            }
+
+            /** @brief Returns whether a read or a write of one neighbour fully contains r. */
+            inline bool covered_by_access(const Memory::ResourceRegion& r,
+                                          const NeighbourAccesses& neighbours)
+            {
+                for (const NodeAccess* neighbour : neighbours)
+                    if (covered_by_any(r, neighbour->reads) || covered_by_any(r, neighbour->writes))
+                        return true;
+                return false;
+            }
+
+            /**
+             * @brief Returns the intervals of a node that its direct intra predecessors do not
+             *        order behind earlier regions.
+             * @param predecessors Accesses of the node's direct intra predecessors on the base.
+             * @return A pin with no interval when every access of the node is covered.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            inline Pin entry_pin(GraphNode* node, const NodeAccess& own,
+                                 const NeighbourAccesses& predecessors)
+            {
+                Pin pin;
+                pin.node = node;
+                for (const auto& r : own.reads)
+                    if (!covered_by_access(r, predecessors)) pin.reads.push_back(r);
+                for (const auto& w : own.writes)
+                    if (!covered_by_write(w, predecessors)) pin.writes.push_back(w);
+                return pin;
+            }
+
+            /**
+             * @brief Returns the intervals of a node that no direct intra successor's write
+             *        fully contains.
+             * @param successors Accesses of the node's direct intra successors on the base.
+             * @return A pin with no interval when every access of the node is shadowed.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            inline Pin exit_pin(GraphNode* node, const NodeAccess& own,
+                                const NeighbourAccesses& successors)
+            {
+                Pin pin;
+                pin.node = node;
+                for (const auto& r : own.reads)
+                    if (!covered_by_write(r, successors)) pin.reads.push_back(r);
+                for (const auto& w : own.writes)
+                    if (!covered_by_write(w, successors)) pin.writes.push_back(w);
+                return pin;
+            }
+
             /**
              * @brief Returns a region's per-base boundary summary: entry and exit pins by
              *        byte interval.
@@ -117,14 +184,7 @@ namespace SushiRuntime
             inline std::map<Memory::ResourceId, BaseAccess> compute_boundary_access(
                 const std::vector<sushi_ptr<GraphNode>>& nodes)
             {
-                std::map<Memory::ResourceId, BaseAccess> access;
-                struct Acc
-                {
-                    std::vector<Memory::ResourceRegion> reads;
-                    std::vector<Memory::ResourceRegion> writes;
-                };
-                std::map<Memory::ResourceId, std::unordered_map<GraphNode*, Acc>> per_base;
-
+                std::map<Memory::ResourceId, std::unordered_map<GraphNode*, NodeAccess>> per_base;
                 for (const auto& np : nodes)
                 {
                     GraphNode* n = np.get();
@@ -134,65 +194,47 @@ namespace SushiRuntime
                         if (w.base) per_base[w.base][n].writes.push_back(w);
                 }
 
-                for (auto& bm : per_base)
+                std::map<Memory::ResourceId, BaseAccess> access;
+                const NeighbourAccesses none;
+                for (const auto& base_and_accessors : per_base)
                 {
-                    const Memory::ResourceId b = bm.first;
-                    auto& m = bm.second;   // node -> Acc for this base
+                    const auto& accessors = base_and_accessors.second;
 
-                    // Both maps are keyed by node and filled per base b.
-                    std::unordered_set<GraphNode*> has_overlapping_pred;
-                    std::unordered_map<GraphNode*, std::vector<Memory::ResourceRegion>> shadowing;
-
-                    for (auto& nm : m)
+                    // An entry of accessors keeps its address: the map is not changed below.
+                    std::unordered_map<GraphNode*, NeighbourAccesses> predecessors;
+                    std::unordered_map<GraphNode*, NeighbourAccesses> successors;
+                    for (const auto& accessor : accessors)
                     {
-                        GraphNode* n = nm.first;
-                        const Acc& n_acc = nm.second;
+                        GraphNode* n = accessor.first;
+                        const NodeAccess* n_access = &accessor.second;
                         for_each_intra_successor(n, [&](GraphNode* s)
                         {
-                            auto f = m.find(s);
-                            if (f == m.end()) return;   // successor does not touch b
-                            const Acc& s_acc = f->second;
-
-                            if (overlaps_any(n_acc.reads,  s_acc.reads)  ||
-                                overlaps_any(n_acc.reads,  s_acc.writes) ||
-                                overlaps_any(n_acc.writes, s_acc.reads)  ||
-                                overlaps_any(n_acc.writes, s_acc.writes))
-                                has_overlapping_pred.insert(s);
-
-                            if (!s_acc.writes.empty())
-                            {
-                                auto& v = shadowing[n];
-                                v.insert(v.end(), s_acc.writes.begin(), s_acc.writes.end());
-                            }
+                            const auto found = accessors.find(s);
+                            if (found == accessors.end())
+                                return;
+                            predecessors[s].push_back(n_access);
+                            successors[n].push_back(&found->second);
                         });
                     }
 
-                    const std::vector<Memory::ResourceRegion> nothing_shadows;
-
-                    BaseAccess ba;
-                    for (auto& nm : m)
+                    BaseAccess summary;
+                    for (const auto& accessor : accessors)
                     {
-                        GraphNode* n = nm.first;
-                        const Acc& acc = nm.second;
+                        GraphNode* n = accessor.first;
+                        const auto before = predecessors.find(n);
+                        const auto after = successors.find(n);
 
-                        if (has_overlapping_pred.find(n) == has_overlapping_pred.end())
-                            ba.entry.push_back(Pin{ n, acc.reads, acc.writes });
+                        Pin entry = entry_pin(n, accessor.second,
+                                              before == predecessors.end() ? none : before->second);
+                        if (!entry.reads.empty() || !entry.writes.empty())
+                            summary.entry.push_back(std::move(entry));
 
-                        auto sit = shadowing.find(n);
-                        const std::vector<Memory::ResourceRegion>& covers =
-                            (sit == shadowing.end()) ? nothing_shadows : sit->second;
-
-                        Pin ex;
-                        ex.node = n;
-                        for (const auto& w : acc.writes)
-                            if (!covered_by_any(w, covers)) ex.writes.push_back(w);
-                        for (const auto& r : acc.reads)
-                            if (!covered_by_any(r, covers)) ex.reads.push_back(r);
-
-                        if (!ex.writes.empty() || !ex.reads.empty())
-                            ba.exit.push_back(std::move(ex));
+                        Pin exit = exit_pin(n, accessor.second,
+                                            after == successors.end() ? none : after->second);
+                        if (!exit.reads.empty() || !exit.writes.empty())
+                            summary.exit.push_back(std::move(exit));
                     }
-                    access.emplace(b, std::move(ba));
+                    access.emplace(base_and_accessors.first, std::move(summary));
                 }
                 return access;
             }

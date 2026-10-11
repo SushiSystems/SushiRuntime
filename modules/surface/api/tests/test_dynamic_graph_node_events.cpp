@@ -28,30 +28,12 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/SushiRuntime.h>
 
-namespace SushiRuntime
-{
-    namespace API
-    {
-        namespace detail
-        {
-            /** @brief Declares the test-only friend access to DynamicGraph::plan_. */
-            struct DynamicGraphNodeEventsTestAccess
-            {
-                static const SushiRuntime::Graph::CompiledGraph&
-                plan(const DynamicGraph& g) noexcept
-                {
-                    return g.plan_;
-                }
-            };
-        }
-    }
-}
+#include "dynamic_graph_plan_access.hpp"
 
 using namespace SushiRuntime;
 
@@ -60,16 +42,7 @@ namespace
     /** @brief Returns the registration index of the one compiled node with the given name. */
     std::uint32_t registration_index_of(const Graph::CompiledGraph& plan, const char* name)
     {
-        const Graph::Node* found = nullptr;
-        for (const auto& n : plan.all_nodes)
-        {
-            if (std::string(n->metadata.name) == name)
-            {
-                EXPECT_EQ(found, nullptr) << "Node name '" << name << "' is not unique.";
-                found = n.get();
-            }
-        }
-        EXPECT_NE(found, nullptr) << "No compiled node named '" << name << "'.";
+        const Graph::Node* found = Testing::find_plan_node(plan, name);
         return found ? found->registration_index : 0u;
     }
 } // namespace

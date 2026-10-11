@@ -26,12 +26,14 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -45,6 +47,8 @@ static_assert(!std::is_copy_constructible<API::Region>::value, "a Region must no
 static_assert(std::is_nothrow_move_constructible<API::Graph>::value, "a Graph must move");
 static_assert(std::is_nothrow_move_constructible<API::DynamicGraph>::value,
               "a DynamicGraph must move");
+static_assert(Graph::TaskMetadata::K_MAX_PARAMS == 8,
+              "AnOffloadRuleTakesAtMostEightParameters spells the limit as eight literals");
 
 namespace
 {
@@ -91,6 +95,21 @@ namespace
         for (const Observability::NodeTiming& row : report.node_timings)
             rows += row.name == name ? 1u : 0u;
         return rows;
+    }
+
+    /** @brief Returns the error of the SushiException call throws, or nothing when none. */
+    template <class Call>
+    std::optional<Core::Error> refusal_of(Call&& call)
+    {
+        try
+        {
+            call();
+        }
+        catch (const Core::SushiException& refused)
+        {
+            return refused.error();
+        }
+        return std::nullopt;
     }
 } // namespace
 
@@ -382,3 +401,119 @@ TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
     EXPECT_EQ(refused.error().code, Errc::dangling_resource);
 }
 
+/** @brief Tests that a recorder moved from and recorded on again repeats no generation. */
+TEST(Integration_RecorderSemantics, AMovedFromRecorderNeverRepeatsAGeneration)
+{
+    auto rt = Runtime::create();
+    auto values = zeroed(rt);
+    auto graph = rt.graph();
+    add_increment(graph, values, 1u);
+    graph.run();
+    ASSERT_EQ(values[0], 1u);
+
+    API::Recorder& source = graph.recorder();
+    std::vector<std::uint64_t> seen{source.generation()};
+    API::Recorder taken = std::move(source);
+    EXPECT_EQ(taken.generation(), seen[0]) << "the work moved keeps the generation it had";
+    EXPECT_EQ(std::count(seen.begin(), seen.end(), source.generation()), 0);
+    seen.push_back(source.generation());
+
+    add_increment(graph, values, 10u);
+    EXPECT_EQ(std::count(seen.begin(), seen.end(), source.generation()), 0)
+        << "a generation the plan was built at must not name the new rule";
+    graph.run();
+    EXPECT_EQ(values[0], 11u) << "the plan of the rule moved out must not run again";
+
+    auto other = rt.graph();
+    add_increment(other, values, 100u);
+    const std::uint64_t before = taken.generation();
+    ASSERT_LE(other.recorder().generation(), before);
+    taken = std::move(other.recorder());
+    EXPECT_GT(taken.generation(), before) << "a move assignment must not step back";
+    EXPECT_EQ(taken.node_count(), 1u);
+}
+
+/** @brief Tests that clear() inside an extension leaves a recorder that records one rule. */
+TEST(Integration_RecorderSemantics, AClearInsideAnExtensionStartsANewRule)
+{
+    auto rt = Runtime::create();
+    auto graph = rt.graph();
+    std::size_t first = 0;
+    std::size_t second = 0;
+    graph.extend([&](API::Recorder& recorder)
+    {
+        recorder.host(API::Access(), [&first] { ++first; });
+        recorder.clear();
+        recorder.host(API::Access(), [&second] { ++second; });
+    });
+
+    EXPECT_EQ(graph.size(), 1u);
+    EXPECT_EQ(graph.node_count(), 1u);
+    graph.run();
+
+    EXPECT_EQ(first, 0u) << "the node cleared must not run";
+    EXPECT_EQ(second, 1u);
+}
+
+/** @brief Tests that an offload rule with nine parameters is refused and one with eight kept. */
+TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
+{
+    auto rt = Runtime::create();
+    auto values = zeroed(rt);
+    auto field = rt.state<std::uint32_t>(WIDTH);
+    std::uint32_t* words = values.data();
+    const auto local = [words](std::size_t i) { words[i] += 1u; };
+    const auto rule = [](std::size_t i, const std::uint32_t* current, std::uint32_t* next)
+    {
+        next[i] = current[i];
+    };
+    auto graph = rt.graph();
+
+    const auto task_refusal = refusal_of([&]
+    {
+        graph.add("recorder.task"_op, WIDTH, Reads(values), Writes(values), local,
+                  {1, 2, 3, 4, 5, 6, 7, 8, 9});
+    });
+    ASSERT_TRUE(task_refusal);
+    EXPECT_EQ(task_refusal->code, Core::Errc::invalid_graph);
+    EXPECT_NE(task_refusal->message.find("9 parameters"), std::string::npos)
+        << task_refusal->message;
+    EXPECT_NE(task_refusal->message.find("at most 8"), std::string::npos)
+        << task_refusal->message;
+
+    const auto rule_refusal = refusal_of([&]
+    {
+        graph.add("recorder.rule"_op, field, rule, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+    });
+    ASSERT_TRUE(rule_refusal);
+    EXPECT_EQ(rule_refusal->code, Core::Errc::invalid_graph);
+    EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
+
+    graph.add("recorder.task"_op, WIDTH, Reads(values), Writes(values), local,
+              {1, 2, 3, 4, 5, 6, 7, 8});
+    graph.add("recorder.rule"_op, field, rule, {1, 2, 3, 4, 5, 6, 7, 8});
+    EXPECT_EQ(graph.size(), 2u);
+}
+
+/** @brief Tests that an emitter that adds no node leaves the rule before it its name. */
+TEST(Integration_RecorderSemantics, AnEmitterThatAddsNothingLeavesTheRuleBeforeItAlone)
+{
+    auto rt = Runtime::create();
+    auto values = zeroed(rt);
+    auto graph = rt.graph();
+    add_increment(graph, values, 1u);
+    graph.name("integrate");
+    graph.add_emitter([](Graph::TaskGraph&) {}).name("optional");
+    graph.set_profiling(true);
+
+    Observability::RunReport report;
+    graph.run(1, report);
+
+    EXPECT_EQ(graph.size(), 2u);
+    EXPECT_EQ(rows_named(report, "integrate"), 1u) << "the first rule must keep its name";
+    EXPECT_EQ(rows_named(report, "optional"), 0u);
+    EXPECT_NE(graph.rule_registration(0), API::Graph::NO_REGISTRATION);
+    EXPECT_EQ(graph.rule_registration(1), API::Graph::NO_REGISTRATION)
+        << "a rule that added no node has no registration";
+    EXPECT_EQ(values[0], 1u);
+}

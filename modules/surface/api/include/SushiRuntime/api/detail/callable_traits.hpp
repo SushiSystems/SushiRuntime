@@ -36,7 +36,6 @@
 
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -88,12 +87,11 @@ namespace SushiRuntime
             template <class Views, std::size_t... Is>
             inline auto views_current(const Views& views, std::index_sequence<Is...>)
             {
-                return std::make_tuple(read_only(std::get<Is>(views)->cur)...);
+                return std::make_tuple(read_only(std::get<Is>(views)->current)...);
             }
 
             /**
              * @brief Gathers the current field of each view as a read region, in order.
-             * @pre Each view names the fields its State holds when the call is made.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             template <class Views, std::size_t... Is>
@@ -101,19 +99,7 @@ namespace SushiRuntime
                 const Views& views, std::index_sequence<Is...>)
             {
                 return std::vector<Memory::ResourceRegion>{
-                    Memory::ResourceRegion(static_cast<void*>(std::get<Is>(views)->cur))... };
-            }
-
-            /**
-             * @brief Gathers the read keys of a tuple of State pointers, in order.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            template <class StatesTuple, std::size_t... Is>
-            inline std::vector<Memory::ResourceRegion> read_keys_of(const StatesTuple& states,
-                                                                    std::index_sequence<Is...>)
-            {
-                return std::vector<Memory::ResourceRegion>{
-                    HandleAccess::read_key(*std::get<Is>(states))... };
+                    Memory::ResourceRegion(static_cast<void*>(std::get<Is>(views)->current))... };
             }
         } // namespace detail
 

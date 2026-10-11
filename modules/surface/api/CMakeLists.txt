@@ -24,6 +24,7 @@ sushiruntime_add_module_tests(
     MODULE api
     SOURCES
         test_async_step.cpp
+        test_boundary_access.cpp
         test_builder_surface.cpp
         test_callable_traits.cpp
         test_data_handles.cpp
@@ -45,9 +46,11 @@ sushiruntime_add_module_tests(
         test_node_options_width.cpp
         test_recorder_scratch.cpp
         test_recorder_semantics.cpp
+        test_region_commit.cpp
         test_region_emitter.cpp
         test_rule_registration.cpp
         test_run_driver.cpp
         test_run_report_reuse.cpp
         test_runtime_entry.cpp
-        test_state_emitters.cpp)
+        test_state_emitters.cpp
+        test_state_move.cpp)

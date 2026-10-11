@@ -43,17 +43,22 @@ namespace SushiRuntime
 {
     namespace API
     {
+        template <typename T>
+        class State;
+
         namespace detail
         {
             /**
-             * @brief Holds the current and next pointers a stepped kernel reads afresh each step.
+             * @brief Holds what a recorded rule reads of a State: its two fields and their size.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             template <typename T>
             struct StateView
             {
-                T* cur = nullptr;   /**< Current-state base pointer for this step. */
-                T* next = nullptr;  /**< Next-state base pointer for this step. */
+                T* current = nullptr;       /**< Base of the field a step reads. */
+                T* next = nullptr;          /**< Base of the field a step writes. */
+                std::size_t size = 0;       /**< Elements in each field. */
+                State<T>* owner = nullptr;  /**< The State that writes this view, or null. */
             };
         } // namespace detail
 
@@ -74,10 +79,49 @@ namespace SushiRuntime
                 State() = default;
 
                 /**
+                 * @brief Takes other's fields and the view graphs recorded, leaving other empty.
+                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+                 */
+                State(State&& other) noexcept
+                    : current_(std::move(other.current_)),
+                      next_(std::move(other.next_)),
+                      view_(std::move(other.view_))
+                {
+                    adopt_view();
+                }
+
+                /**
+                 * @brief Frees this state's fields, then takes other's fields and view.
+                 * @param other State to take from; left empty.
+                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+                 */
+                State& operator=(State&& other) noexcept
+                {
+                    if (this != &other)
+                    {
+                        retire_view();
+                        current_ = std::move(other.current_);
+                        next_ = std::move(other.next_);
+                        view_ = std::move(other.view_);
+                        adopt_view();
+                    }
+                    return *this;
+                }
+
+                State(const State&) = delete;
+                State& operator=(const State&) = delete;
+
+                /** @brief Frees both fields and empties the view graphs recorded. */
+                ~State()
+                {
+                    retire_view();
+                }
+
+                /**
                  * @brief Exposes the field a step kernel reads from.
                  * @return Pointer to the first element of the current field.
                  */
-                [[nodiscard]] T* current() const noexcept { return cur_.data(); }
+                [[nodiscard]] T* current() const noexcept { return current_.data(); }
 
                 /**
                  * @brief Exposes the field a step kernel writes into.
@@ -89,13 +133,13 @@ namespace SushiRuntime
                  * @brief Reports the capacity of the pair.
                  * @return Number of elements in each field; both are the same size.
                  */
-                [[nodiscard]] std::size_t size() const noexcept { return cur_.size(); }
+                [[nodiscard]] std::size_t size() const noexcept { return current_.size(); }
 
                 /**
                  * @brief Tells whether this State owns no memory.
                  * @return True if it owns no allocation, e.g. after being moved from.
                  */
-                [[nodiscard]] bool empty() const noexcept { return cur_.empty(); }
+                [[nodiscard]] bool empty() const noexcept { return current_.empty(); }
 
                 /**
                  * @brief Reports which device queue both fields are pinned to.
@@ -103,7 +147,7 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] DeviceIndex device_index() const noexcept
                 {
-                    return cur_.device_index();
+                    return current_.device_index();
                 }
 
                 /**
@@ -111,7 +155,7 @@ namespace SushiRuntime
                  * @return Residency::Shared for managed USM, Residency::Device for
                  *         device-resident memory, Residency::Host for pinned host USM.
                  */
-                [[nodiscard]] Residency residency() const noexcept { return cur_.residency(); }
+                [[nodiscard]] Residency residency() const noexcept { return current_.residency(); }
 
                 /**
                  * @brief Tells whether the host may index the current field directly.
@@ -120,7 +164,7 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] bool is_host_accessible() const noexcept
                 {
-                    return cur_.is_host_accessible();
+                    return current_.is_host_accessible();
                 }
 
                 /**
@@ -130,8 +174,8 @@ namespace SushiRuntime
                  */
                 T& operator[](std::size_t i) const
                 {
-                    cur_.require_host_accessible("State::operator[]");
-                    return cur_.data()[i];
+                    current_.require_host_accessible("State::operator[]");
+                    return current_.data()[i];
                 }
 
                 /**
@@ -141,8 +185,8 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] span<T> host() const
                 {
-                    cur_.require_host_accessible("State::host");
-                    return span<T>(cur_.data(), cur_.size());
+                    current_.require_host_accessible("State::host");
+                    return span<T>(current_.data(), current_.size());
                 }
 
                 /**
@@ -154,7 +198,7 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] std::vector<T> read_range(ElementRange range) const
                 {
-                    return cur_.read_window("State::read_range", range);
+                    return current_.read_window("State::read_range", range);
                 }
 
                 /**
@@ -167,7 +211,7 @@ namespace SushiRuntime
                  */
                 void write_range(ElementRange range, span<const T> source) const
                 {
-                    cur_.write_window("State::write_range", range, source);
+                    current_.write_window("State::write_range", range, source);
                 }
 
                 /**
@@ -179,7 +223,7 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] BufferRegion region(ElementRange range) const
                 {
-                    return cur_.region_of("State::region", range);
+                    return current_.region_of("State::region", range);
                 }
 
                 /**
@@ -192,7 +236,7 @@ namespace SushiRuntime
                  */
                 State& distributed() &
                 {
-                    cur_.share_with_offload("State::distributed()");
+                    current_.share_with_offload("State::distributed()");
                     next_.share_with_offload("State::distributed()");
                     return *this;
                 }
@@ -206,7 +250,7 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] State distributed() &&
                 {
-                    cur_.share_with_offload("State::distributed()");
+                    current_.share_with_offload("State::distributed()");
                     next_.share_with_offload("State::distributed()");
                     return std::move(*this);
                 }
@@ -227,7 +271,7 @@ namespace SushiRuntime
                 [[deprecated("use write_range(ElementRange, span<const T>)")]]
                 void write_range(ElementRange range, const T* src) const
                 {
-                    cur_.write_window("State::write_range", range,
+                    current_.write_window("State::write_range", range,
                                       span<const T>(src, range.count));
                 }
 
@@ -274,13 +318,48 @@ namespace SushiRuntime
                  */
                 State(const char* call, std::shared_ptr<Execution::RuntimeContext> ctx,
                       std::size_t count, DeviceIndex device_index, Residency residency)
-                    : cur_(call, ctx, count, device_index, residency),
-                      next_(call, std::move(ctx), count, device_index, residency)
+                    : current_(call, ctx, count, device_index, residency),
+                      next_(call, std::move(ctx), count, device_index, residency),
+                      view_(std::make_shared<detail::StateView<T>>())
                 {
+                    publish_view();
                 }
 
-                Buffer<T> cur_;
+                /**
+                 * @brief Writes both field pointers, the size and this address into the view.
+                 * @pre view_ is not null.
+                 */
+                void publish_view() noexcept
+                {
+                    view_->current = current_.data();
+                    view_->next = next_.data();
+                    view_->size = current_.size();
+                    view_->owner = this;
+                }
+
+                /** @brief Names this object as the owner of the view it holds, if any. */
+                void adopt_view() noexcept
+                {
+                    if (view_)
+                        view_->owner = this;
+                }
+
+                /** @brief Empties the view it holds, if any, and lets go of it. */
+                void retire_view() noexcept
+                {
+                    if (view_)
+                        *view_ = detail::StateView<T>();
+                    view_.reset();
+                }
+
+                /** @brief The field a step reads. */
+                Buffer<T> current_;
+
+                /** @brief The field a step writes. */
                 Buffer<T> next_;
+
+                /** @brief Shared with every graph that recorded this State; null when empty. */
+                std::shared_ptr<detail::StateView<T>> view_;
         };
 
     } // namespace API

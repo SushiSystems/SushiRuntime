@@ -106,6 +106,17 @@ namespace SushiRuntime
                 DynamicGraph& operator=(const DynamicGraph&) = delete;
 
                 /**
+                 * @brief Waits for a step started with run_async() and still pending, then frees
+                 *        the regions and the plan.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                ~DynamicGraph()
+                {
+                    // The plan and the regions are alive here and gone in a base destructor.
+                    end_pending_step();
+                }
+
+                /**
                  * @brief Returns the region for key, creating it if absent.
                  * @return A reference to the region, valid until the region is dropped.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md

@@ -29,7 +29,6 @@
 #pragma once
 
 #include <memory>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -65,46 +64,31 @@ namespace SushiRuntime
                         sizeof(std::shared_ptr<::SushiRuntime::Graph::LateBindings>)>;
 
                     /**
-                     * @brief Returns the shared view for a State, creating it and its resync on
-                     *        first use.
+                     * @brief Returns the view a State owns and registers its resync on first use.
                      * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
                      */
                     template <typename T>
-                    std::shared_ptr<StateView<T>> view_for(State<T>& s)
+                    std::shared_ptr<StateView<T>> view_for(const State<T>& state)
                     {
-                        const void* key = &s;
-                        auto it = state_views_.find(key);
-                        if (it != state_views_.end())
-                            return std::static_pointer_cast<StateView<T>>(it->second);
-
-                        auto view = std::make_shared<StateView<T>>();
-                        state_views_.emplace(key, view);
-                        State<T>* sp = &s;
-                        view_resyncs_.push_back([sp, view]()
-                        {
-                            view->cur = sp->current();
-                            view->next = sp->next();
-                        });
+                        std::shared_ptr<StateView<T>> view = HandleAccess::view(state);
+                        if (resynced_views_.insert(view.get()).second)
+                            view_resyncs_.push_back([view]() { HandleAccess::resync(*view); });
                         return view;
                     }
 
                     /**
-                     * @brief Registers the once-per-step advance for a written State, at most once
-                     *        per State.
+                     * @brief Registers the once-per-step advance of a written State, at most once
+                     *        per view.
                      * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
                      */
                     template <typename T>
-                    void register_advance(State<T>& s, std::shared_ptr<StateView<T>> view)
+                    void register_advance(std::shared_ptr<StateView<T>> view)
                     {
-                        const void* key = &s;
-                        if (!advanced_states_.insert(key).second)
+                        if (!advanced_views_.insert(view.get()).second)
                             return;
-                        State<T>* sp = &s;
-                        step_advancers_.push_back([sp, view]()
+                        step_advancers_.push_back([view = std::move(view)]()
                         {
-                            HandleAccess::advance(*sp);
-                            view->cur = sp->current();
-                            view->next = sp->next();
+                            HandleAccess::advance(*view);
                         });
                     }
 
@@ -164,7 +148,7 @@ namespace SushiRuntime
                     }
 
                     /**
-                     * @brief Points every State view at its current and next buffers before a run's
+                     * @brief Rewrites every State view from the State that owns it, before a run's
                      *        first step.
                      */
                     void resync() const
@@ -222,14 +206,11 @@ namespace SushiRuntime
                     }
 
                 private:
-                    /**
-                     * @brief Holds one type-erased StateView per State, shared by every kernel that
-                     *        touches it.
-                     */
-                    std::unordered_map<const void*, std::shared_ptr<void>> state_views_;
-                    // States that already have an advancer (one writer per State).
-                    std::unordered_set<const void*> advanced_states_;
-                    // Points each view at its state's current/next; run before each run.
+                    /** @brief The views that already have a resync; the hooks keep them alive. */
+                    std::unordered_set<const void*> resynced_views_;
+                    /** @brief The views that already have an advancer: one writer per State. */
+                    std::unordered_set<const void*> advanced_views_;
+                    /** @brief Holds one resync per recorded State view, run before each run. */
                     std::vector<StepHook> view_resyncs_;
                     /**
                      * @brief Holds one advancer per State update rule, run once per step boundary.

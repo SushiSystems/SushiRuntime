@@ -51,6 +51,26 @@ namespace
             std::this_thread::yield();
         return released.load(std::memory_order_acquire);
     }
+
+    /** @brief Expects the handle of a step its graph already ended to own nothing. */
+    template <class G>
+    void expect_step_ended_by_its_graph(API::RunHandle<G>& step)
+    {
+        EXPECT_FALSE(step.pending()) << "the graph ended the step, so the handle owns none";
+        EXPECT_TRUE(step.ready());
+
+        const auto late = step.try_wait();
+        ASSERT_FALSE(late.has_value());
+        EXPECT_EQ(late.error().code, Core::Errc::invalid_state);
+    }
+
+    /** @brief Expects a run entry's Result to carry invalid_state. */
+    template <class Outcome>
+    void expect_refused_as_invalid_state(const Outcome& outcome)
+    {
+        ASSERT_FALSE(outcome.has_value());
+        EXPECT_EQ(outcome.error().code, Core::Errc::invalid_state);
+    }
 }
 
 /** @brief Tests that run_async() returns before the step finishes. */
@@ -323,4 +343,144 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(c[i], 5) << "at i=" << i;
     EXPECT_EQ(world.compose_count(), 2u) << "one composition per mutation, not per step";
+}
+
+/** @brief Tests that another graph's run entries are refused while a step is pending. */
+TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
+{
+    auto rt    = Runtime::create();
+    auto first = rt.buffer<int>(4);
+    auto other = rt.buffer<int>(4);
+    first[0] = 0;
+    other[0] = 0;
+    int* pf = first.data();
+    int* po = other.data();
+
+    std::atomic<bool> released{false};
+
+    auto g1 = rt.graph();
+    g1.add_host(API::Reads{}, API::Writes(first), [&released, pf]()
+    {
+        wait_for_gate(released);
+        pf[0] = 7;
+    });
+    auto g2 = rt.graph();
+    g2.add_host(API::Reads{}, API::Writes(other), [po]() { po[0] += 1; });
+
+    auto step = g1.run_async();
+
+    try
+    {
+        g2.run();
+        ADD_FAILURE() << "run() on another graph started while a step was pending";
+    }
+    catch (const SushiException& refusal)
+    {
+        EXPECT_EQ(refusal.error().code, Core::Errc::invalid_state);
+    }
+    ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.try_run()));
+    ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.try_run_async()));
+    EXPECT_EQ(other[0], 0) << "a refused run ran its task";
+
+    released.store(true, std::memory_order_release);
+    const Observability::RunReport report = step.wait();
+    EXPECT_TRUE(report.is_successful);
+    EXPECT_EQ(first[0], 7);
+
+    EXPECT_TRUE(g2.try_run().has_value()) << "the runtime is free once the step is settled";
+    EXPECT_EQ(other[0], 1);
+}
+
+/** @brief Tests that cancel() stops the pending step of its own graph and of no other. */
+TEST(Integration_AsyncStep, CancelReachesOnlyTheGraphItIsCalledOn)
+{
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(4);
+    auto idle_buf = rt.buffer<int>(4);
+    int* p = buf.data();
+    int* pi = idle_buf.data();
+
+    std::atomic<bool> released{false};
+
+    auto g = rt.graph();
+    g.add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+    {
+        wait_for_gate(released);
+        p[0] = 1;
+    });
+    auto idle = rt.graph();
+    idle.add_host(API::Reads{}, API::Writes(idle_buf), [pi]() { pi[0] = 1; });
+
+    auto spared = g.run_async();
+    idle.cancel();
+    released.store(true, std::memory_order_release);
+    EXPECT_FALSE(spared.wait().cancelled) << "cancel() on an idle graph stopped another's step";
+
+    released.store(false, std::memory_order_release);
+    auto stopped = g.run_async();
+    g.cancel();
+    released.store(true, std::memory_order_release);
+    EXPECT_TRUE(stopped.wait().cancelled) << "cancel() did not reach its own pending step";
+
+    g.cancel();
+    EXPECT_FALSE(g.run().cancelled) << "cancel() with no run in flight marked the next run";
+}
+
+/** @brief Tests that a Graph destroyed with a step pending waits for it and ends it. */
+TEST(Integration_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
+{
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(4);
+    buf[0] = 0;
+    int* p = buf.data();
+
+    std::atomic<bool> released{false};
+    API::RunHandle<API::Graph> step;
+
+    {
+        auto g = rt.graph();
+        g.add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+        {
+            wait_for_gate(released);
+            p[0] = 9;
+        });
+        step = g.run_async();
+        EXPECT_TRUE(step.pending());
+        released.store(true, std::memory_order_release);
+    }
+
+    EXPECT_EQ(buf[0], 9) << "the graph's destructor returned before the step had run";
+    ASSERT_NO_FATAL_FAILURE(expect_step_ended_by_its_graph(step));
+
+    auto next = rt.graph();
+    next.add_host(API::Reads{}, API::Writes(buf), [p]() { p[0] += 1; });
+    EXPECT_TRUE(next.try_run().has_value()) << "the destroyed graph left the runtime busy";
+    EXPECT_EQ(buf[0], 10);
+}
+
+/** @brief Tests that a DynamicGraph destroyed with a step pending waits for it and ends it. */
+TEST(Integration_AsyncStep, ADynamicGraphDestroyedWithAPendingStepEndsTheStep)
+{
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(4);
+    buf[0] = 0;
+    int* p = buf.data();
+
+    std::atomic<bool> released{false};
+    API::RunHandle<API::DynamicGraph> step;
+
+    {
+        auto world = rt.dynamic_graph();
+        world.region(0).add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+        {
+            wait_for_gate(released);
+            p[0] = 9;
+        });
+        step = world.run_async();
+        EXPECT_TRUE(step.pending());
+        released.store(true, std::memory_order_release);
+    }
+
+    EXPECT_EQ(buf[0], 9) << "the graph's destructor returned before the step had run";
+    ASSERT_NO_FATAL_FAILURE(expect_step_ended_by_its_graph(step));
 }

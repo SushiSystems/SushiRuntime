@@ -38,7 +38,6 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/data/state.hpp>
-#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/detail/late_window.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
@@ -127,36 +126,9 @@ namespace SushiRuntime
 
             /**
              * @brief Builds the replay of a State rule with a late-bound window.
-             * @param state The state the rule evolves; its size is the capacity, read per replay.
-             */
-            template <typename T, class F>
-            auto dynamic_state_node(std::shared_ptr<StateView<T>> view, State<T>* state,
-                                    std::shared_ptr<::SushiRuntime::Graph::LateBindings> lb,
-                                    std::uint32_t* fault,
-                                    std::vector<Memory::ResourceRegion> reads, F&& fn)
-            {
-                return [fn = std::forward<F>(fn), view, state, lb, fault, reads = std::move(reads)]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
-                {
-                    const std::size_t capacity = state->size();
-                    bg.add_node([fn, view, lb, capacity, fault](sycl::handler& h)
-                    {
-                        const T* cur = view->cur;
-                        T* next = view->next;
-                        submit_late_window(h, *lb, capacity, fault,
-                                           [fn, cur, next](std::size_t i) { fn(i, cur, next); });
-                    }, reads, { HandleAccess::write_key(*state) }, lb, {},
-                    registration).baked_width = capacity;
-                };
-            }
-
-            /**
-             * @brief Builds the replay of a late-bound State rule that holds no pointer to the
-             *        State.
+             * @param view       The State's own view; its keys are read at every replay.
              * @param capacity   The State's size, which bounds the live window.
              * @param slot_reads The regions read besides the State's current field.
-             * @pre view names the fields the State holds whenever the replay runs.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             template <typename T, class F>
@@ -171,14 +143,17 @@ namespace SushiRuntime
                         std::optional<std::uint32_t> registration)
                 {
                     std::vector<Memory::ResourceRegion> reads{
-                        Memory::ResourceRegion(static_cast<void*>(view->cur)) };
+                        Memory::ResourceRegion(static_cast<void*>(view->current)) };
                     reads.insert(reads.end(), slot_reads.begin(), slot_reads.end());
                     bg.add_node([fn, view, lb, capacity, fault](sycl::handler& h)
                     {
-                        const T* cur = view->cur;
+                        const T* current = view->current;
                         T* next = view->next;
                         submit_late_window(h, *lb, capacity, fault,
-                                           [fn, cur, next](std::size_t i) { fn(i, cur, next); });
+                                           [fn, current, next](std::size_t i)
+                                           {
+                                               fn(i, current, next);
+                                           });
                     }, reads, { Memory::ResourceRegion(static_cast<void*>(view->next)) }, lb, {},
                     registration).baked_width = capacity;
                 };

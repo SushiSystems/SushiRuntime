@@ -65,12 +65,12 @@ namespace SushiRuntime
                 using RegionKey = std::uint64_t;
 
                 /**
-                 * @brief Re-stitches the plan from the changed regions and their shared boundaries
-                 *        only.
-                 * @param dirty       Regions whose recording changed; rebuilt when still live.
-                 * @param dropped     Regions removed since the last commit.
-                 * @param recorder_of Called as recorder_of(key); returns the live region's
-                 *        const Recorder*, or null when the region is gone.
+                 * @brief Rebuilds the changed regions, re-wires them and renumbers every node.
+                 * A build that throws changes nothing; after a later throw the next commit
+                 * rebuilds every live region.
+                 * @param recorder_of Called as recorder_of(key); null when the region is gone.
+                 * @pre A commit that threw is repeated with the dirty and dropped keys it had.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 template <class RecorderOf>
                 void commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
@@ -81,76 +81,49 @@ namespace SushiRuntime
                     if (sentinel_ == nullptr)
                         sentinel_ = make_sushi<Node>();
 
-                    // teardown lists regions to tear down; dirty_bases the bases to re-wire.
-                    std::set<RegionKey> teardown(dirty.begin(), dirty.end());
-                    teardown.insert(dropped.begin(), dropped.end());
+                    const bool everything = recompose_everything_;
+                    std::set<RegionKey> rebuilt(dirty.begin(), dirty.end());
+                    if (everything)
+                        for (const auto& kv : states_)
+                            rebuilt.insert(kv.first);
 
-                    std::set<Base> dirty_bases;
-                    for (RegionKey k : teardown)
-                    {
-                        auto sit = states_.find(k);
-                        if (sit != states_.end())
-                            for (auto& ba : sit->second.access)
-                                dirty_bases.insert(ba.first);
-                    }
-
-                    // A dirty base's cross edges are undone while every endpoint is alive.
-                    for (Base b : dirty_bases)
-                    {
-                        auto eit = base_edges_.find(b);
-                        if (eit == base_edges_.end()) continue;
-                        for (auto& e : eit->second)
-                            remove_cross_edge(e.from, e.to);
-                        eit->second.clear();
-                    }
-
-                    // Tear down old state (drops + rebuilt regions).
-                    for (RegionKey k : teardown)
-                        teardown_region(k);
-
-                    // Rebuilt regions mark their bases dirty and seed roots and sentinel.
-                    for (RegionKey k : dirty)
+                    std::map<RegionKey, RegionState> built;
+                    for (RegionKey k : rebuilt)
                     {
                         const Recorder* recorder = recorder_of(k);
-                        if (recorder == nullptr) continue;  // dropped, not re-created
-                        build_region(k, *recorder, offload);
-                        RegionState& st = states_.at(k);
-                        for (auto& ba : st.access)
-                        {
-                            base_regions_[ba.first].insert(k);
-                            dirty_bases.insert(ba.first);
-                        }
-                        for (Node* r : st.intra_roots)
-                            roots_.insert(r);   // fresh nodes carry no boundary in-degree yet
-                        for (auto& np : st.nodes)
-                            if (np->region.intra_leaf) link_sentinel(np.get());
+                        if (recorder != nullptr)
+                            built.emplace(k, build_region(*recorder, offload));
                     }
 
-                    // Re-derive the boundary edges of every dirty allocation.
+                    std::set<RegionKey> retired(rebuilt);
+                    retired.insert(dropped.begin(), dropped.end());
+                    std::set<Base> dirty_bases = bases_of(retired);
+                    sushi_ptr<Node> fresh_sentinel;
+                    if (everything)
+                        fresh_sentinel = make_sushi<Node>();
+
+                    // Nothing above changed a member a region's ordering depends on.
+                    RecomposeGuard guard(*this);
+                    if (everything)
+                        discard_every_region(std::move(fresh_sentinel));
+                    else
+                        retire_regions(retired, dirty_bases);
+
+                    for (auto& kv : built)
+                        install_region(kv.first, std::move(kv.second), dirty_bases);
                     for (Base b : dirty_bases)
                         rewire_base(b);
+                    publish_plan(profiling);
 
-                    // Only the profiler reads all_nodes, so it is gathered only when profiling.
-                    plan_.roots.assign(roots_.begin(), roots_.end());
-                    plan_.sentinel = sentinel_;
-                    plan_.profiling = profiling;
-                    plan_.all_nodes.clear();
-                    if (profiling)
-                        for (auto& kv : states_)
-                            for (auto& np : kv.second.nodes)
-                                plan_.all_nodes.push_back(np);
-
-                    renumber_registration_indices();
-                    if (profiling)
-                        plan_.capture_profiling_state();
-
+                    guard.dismiss();
+                    recompose_everything_ = false;
                     committed_once_ = true;
                     ++compiles_;
                 }
 
                 /**
-                 * @brief Re-arms every node's live in-degree and refreshes the per-step updaters,
-                 *        O(total).
+                 * @brief Re-arms the live in-degree of every node and of the sentinel, in
+                 *        O(total nodes).
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 void rearm()
@@ -164,7 +137,10 @@ namespace SushiRuntime
                 /** @brief Returns how many times the plan has been composed. */
                 std::size_t compose_count() const noexcept { return compiles_; }
 
-                /** @brief Returns whether the plan has been composed at least once. */
+                /**
+                 * @brief Returns whether a composed plan stands.
+                 * @return False before the first commit and after a commit that threw midway.
+                 */
                 bool composed() const noexcept { return committed_once_; }
 
                 /**
@@ -261,6 +237,39 @@ namespace SushiRuntime
                 struct BoundaryEdge { Node* from; Node* to; };
 
                 /**
+                 * @brief Marks a composer for a rebuild of every region unless dismissed.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                class RecomposeGuard final
+                {
+                    public:
+                        /** @brief Watches composer until dismiss() or destruction. */
+                        explicit RecomposeGuard(RegionComposer& composer) noexcept
+                            : composer_(&composer)
+                        {
+                        }
+
+                        /** @brief Invalidates the plan of a composer that was not dismissed. */
+                        ~RecomposeGuard()
+                        {
+                            if (composer_ != nullptr)
+                                composer_->invalidate_plan();
+                        }
+
+                        RecomposeGuard(const RecomposeGuard&) = delete;
+                        RecomposeGuard& operator=(const RecomposeGuard&) = delete;
+                        RecomposeGuard(RecomposeGuard&&) = delete;
+                        RecomposeGuard& operator=(RecomposeGuard&&) = delete;
+
+                        /** @brief Leaves the composer as it is. */
+                        void dismiss() noexcept { composer_ = nullptr; }
+
+                    private:
+                        /** @brief Composer to invalidate, or null once dismissed. */
+                        RegionComposer* composer_;
+                };
+
+                /**
                  * @brief Moves other's regions, plan and counters here and leaves other with none.
                  * @param other Composer to empty; commit() gives it a sentinel when it composes.
                  */
@@ -275,6 +284,111 @@ namespace SushiRuntime
                     compiles_ = std::exchange(other.compiles_, 0);
                     plan_index_counter_ = std::exchange(other.plan_index_counter_, 0);
                     committed_once_ = std::exchange(other.committed_once_, false);
+                    recompose_everything_ = std::exchange(other.recompose_everything_, false);
+                }
+
+                /**
+                 * @brief Makes the next commit rebuild every live region and leaves no plan to run.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                void invalidate_plan() noexcept
+                {
+                    recompose_everything_ = true;
+                    committed_once_ = false;
+                    // A root may name a node a half-done commit freed.
+                    plan_.roots.clear();
+                }
+
+                /** @brief Returns the allocations the built regions among keys touch. */
+                [[nodiscard]] std::set<Base> bases_of(const std::set<RegionKey>& keys) const
+                {
+                    std::set<Base> bases;
+                    for (RegionKey k : keys)
+                    {
+                        const auto found = states_.find(k);
+                        if (found == states_.end())
+                            continue;
+                        for (const auto& ba : found->second.access)
+                            bases.insert(ba.first);
+                    }
+                    return bases;
+                }
+
+                /**
+                 * @brief Un-wires the allocations of the retired regions and tears those
+                 *        regions down.
+                 * @param bases Every allocation a retired region touches.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                void retire_regions(const std::set<RegionKey>& retired, const std::set<Base>& bases)
+                {
+                    // A base's cross edges are undone while every endpoint is alive.
+                    for (Base b : bases)
+                    {
+                        auto eit = base_edges_.find(b);
+                        if (eit == base_edges_.end())
+                            continue;
+                        for (auto& e : eit->second)
+                            remove_cross_edge(e.from, e.to);
+                        eit->second.clear();
+                    }
+                    for (RegionKey k : retired)
+                        teardown_region(k);
+                }
+
+                /**
+                 * @brief Frees every region, edge and root and takes a fresh sentinel.
+                 * @param sentinel Sentinel no node links to yet.
+                 */
+                void discard_every_region(sushi_ptr<Node> sentinel) noexcept
+                {
+                    states_.clear();
+                    base_regions_.clear();
+                    base_edges_.clear();
+                    roots_.clear();
+                    sentinel_ = std::move(sentinel);
+                }
+
+                /**
+                 * @brief Takes a built region into the composer: its bases, roots and leaves.
+                 * @param dirty_bases Gains every allocation the region touches.
+                 * @pre No state is held for k.
+                 */
+                void install_region(RegionKey k, RegionState&& built, std::set<Base>& dirty_bases)
+                {
+                    RegionState& st = states_[k];
+                    st = std::move(built);
+                    for (auto& ba : st.access)
+                    {
+                        base_regions_[ba.first].insert(k);
+                        dirty_bases.insert(ba.first);
+                    }
+                    // A fresh node carries no boundary in-degree yet.
+                    for (Node* r : st.intra_roots)
+                        roots_.insert(r);
+                    for (auto& np : st.nodes)
+                        if (np->region.intra_leaf) link_sentinel(np.get());
+                }
+
+                /**
+                 * @brief Writes the roots, the sentinel and the registration indices into the plan.
+                 * @param profiling Whether the plan also lists every node for the profiler.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                void publish_plan(bool profiling)
+                {
+                    plan_.roots.assign(roots_.begin(), roots_.end());
+                    plan_.sentinel = sentinel_;
+                    plan_.profiling = profiling;
+                    plan_.all_nodes.clear();
+                    if (profiling)
+                        for (auto& kv : states_)
+                            for (auto& np : kv.second.nodes)
+                                plan_.all_nodes.push_back(np);
+
+                    renumber_registration_indices();
+                    if (profiling)
+                        plan_.capture_profiling_state();
                 }
 
                 /**
@@ -426,11 +540,12 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Builds or rebuilds one region's cached sub-graph from its recorder,
-                 *        in O(region).
+                 * @brief Builds one region's sub-graph from its recorder, in O(region).
+                 * @return The state to install; no region held by the composer is changed.
+                 * @throws Whatever the replay of the recorder throws.
                  */
-                void build_region(RegionKey k, const Recorder& recorder,
-                                  ::SushiRuntime::Graph::OffloadCoordinator* offload)
+                [[nodiscard]] RegionState build_region(
+                    const Recorder& recorder, ::SushiRuntime::Graph::OffloadCoordinator* offload)
                 {
                     ::SushiRuntime::Graph::TaskGraph bg(offload);
                     RegionState st;
@@ -459,7 +574,7 @@ namespace SushiRuntime
                     }
 
                     st.access = detail::compute_boundary_access(st.nodes);
-                    states_[k] = std::move(st);
+                    return st;
                 }
 
                 /**
@@ -538,6 +653,9 @@ namespace SushiRuntime
                 std::size_t compiles_ = 0;
                 std::size_t plan_index_counter_ = 0;
                 bool committed_once_ = false;
+
+                /** @brief Set by a commit that threw after it changed a region. */
+                bool recompose_everything_ = false;
         };
 
     } // namespace API
