@@ -96,6 +96,23 @@ drop_inflight(), and its successors are already counted by add_inflight inside t
 The in-flight count therefore never dips to zero in the middle of a graph; it reaches zero only once
 the terminal sentinel is reaped.
 
+### poll_events: an event that throws
+
+get_info and wait() can throw. An entry whose query or wait throws is turned, in that pass, into
+what skipped_event() of task_scheduler.cpp builds for a task whose work threw: ready, with no event,
+not executed. It then takes the four steps above like any other entry. Profiling writes nothing for
+an entry with no event, the offload coordinator is not told, the successors are released and the
+in-flight count drops, so the run reaches its sentinel. Each such entry is logged at error level
+with its task's name. The first exception of the pass is kept and rethrown after the backoff update;
+dispatch_loop() records it in the RunOutcome. Left in the list, the entry would be queried again on
+every poll, and an event that throws each time would keep wait_quiescent() from returning.
+
+The try scope covers the status query and the wait of one entry. A pass in which nothing throws
+runs the same statements as before and adds no allocation, lock or atomic.
+
+A successor released by a failed entry is in the worker's deque before dispatch_loop() records the
+failure, so a thief can dispatch it in that interval.
+
 ### accumulate_profiling
 
 poll_events() calls accumulate_profiling() before trigger_successors() and drop_inflight(). The zero
@@ -195,6 +212,11 @@ A RangeTask represents work for [start, end) and can donate the lower half to a 
 split(). The start index is atomic so a split and an execute racing on the same task are both safe:
 each sees a consistent range. The graph layer uses it to expose large parallel_for ranges as
 steal-friendly units.
+
+A range splits when the upper half, the one the owner keeps, holds at least 1024 elements, which a
+range of 2047 or more does. is_splittable() and split() both ask the private can_split(), so a true
+is_splittable() is followed by a chunk unless a concurrent split wins the exchange. The constructor
+throws Core::SushiException for start > end; start == end is an empty range that runs nothing.
 
 ## task_scheduler.hpp
 
@@ -331,8 +353,8 @@ re-injection path, so there is still one injector seam per shape.
 
 ### wait_quiescent
 
-wait_quiescent() returns once every task submitted for the run has been reaped by the poller, which
-means no worker still touches a graph node. ExecutionEngine::execute calls it after the sentinel
+wait_quiescent() returns once every task counted into the run has been reaped by the poller or
+handed to the offload coordinator, which means no worker still touches a graph node. ExecutionEngine::execute calls it after the sentinel
 signals completion and before it destroys the CompiledGraph, closing the window in which a worker
 finalizing the run's last nodes races the graph's destruction. The inflight_ section describes the
 counter it waits on.
@@ -341,8 +363,10 @@ counter it waits on.
 
 ### ThermalProxyStrategy
 
-ThermalProxyStrategy identifies the worker whose queue is growing fastest but completing fewest
-tasks (a thermal or load-spike signature) and moves half of its backlog to the idlest worker. It
+ThermalProxyStrategy identifies the worker with the longest queue among those completing few tasks
+(a thermal or load-spike signature) and calls migrate_tasks() for half the gap between that queue
+and the shortest one, at least 10 tasks. The tasks go to the global priority queue, where any worker
+takes them; the worker with the shortest queue is named in the log line only. It
 fires only when the queue imbalance exceeds IMBALANCE_THRESHOLD and the victim's completion rate is
 at or below THROTTLING_RATE.
 

@@ -36,6 +36,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/task/task.hpp>
 
 namespace SushiRuntime
@@ -58,14 +59,37 @@ namespace SushiRuntime
                 /** @brief Label this range and every range split from it reports under. */
                 const char* name_;
 
+                /** @brief Fewest elements split() leaves with the owner. */
+                static constexpr size_t K_SPLIT_GRAIN = 1024;
+
+                /**
+                 * @brief Tells whether [start, end) can donate its lower half.
+                 * @return True when the upper half, the larger of the two, holds at least
+                 *         K_SPLIT_GRAIN elements.
+                 */
+                static bool can_split(size_t start, size_t end) noexcept
+                {
+                    if (start >= end)
+                        return false;
+
+                    const size_t mid = start + (end - start) / 2;
+                    return mid > start && (end - mid) >= K_SPLIT_GRAIN;
+                }
+
             public:
                 /**
-                 * @brief Creates a new range task.
+                 * @brief Creates a new range task over [start, end).
+                 * @pre start <= end; a reversed range throws Core::SushiException.
                  * @param name Persistent label, stored not copied.
                  */
                 template <typename Func>
                 RangeTask(size_t start, size_t end, Func func, const char* name = "range_task")
-                    : start_(start), end_(end), kernel_func_(std::move(func)), name_(name) {}
+                    : start_(start), end_(end), kernel_func_(std::move(func)), name_(name)
+                {
+                    SR_THROW_IF(start > end,
+                                "RangeTask '{}' was given the reversed range [{}, {}).",
+                                name, start, end);
+                }
 
                 /** @brief Returns the label given at construction. */
                 const char* get_name() const noexcept override { return name_; }
@@ -82,26 +106,26 @@ namespace SushiRuntime
                  * 
                  * Uses atomic compare-exchange to hand over part of the work.
                  * 
-                 * @return optional sushi_ptr to the new range task.
+                 * @return The lower half as a new range task; nullopt when the range cannot
+                 *         split or a concurrent split won the exchange.
                  */
-                std::optional<sushi_ptr<Task>> split() override 
+                std::optional<sushi_ptr<Task>> split() override
                 {
                     size_t s = start_.load(std::memory_order_acquire);
-                    size_t mid = s + (end_ - s) / 2;
+                    if (!can_split(s, end_))
+                        return std::nullopt;
 
-                    // prevent splitting if the range is too small
-                    if (mid <= s || (end_ - mid) < 1024) return std::nullopt;
-
+                    const size_t mid = s + (end_ - s) / 2;
                     if (start_.compare_exchange_strong(s, mid, std::memory_order_acq_rel)) 
                         return make_sushi<RangeTask>(s, mid, kernel_func_, name_);
                     
                     return std::nullopt;
                 }
 
-                /** @brief Returns true if the range is large enough to split. */
-                bool is_splittable() const override 
+                /** @brief Tells whether split() would hand off the lower half of the current range. */
+                bool is_splittable() const override
                 {
-                    return (end_ - start_.load()) > 1024;
+                    return can_split(start_.load(std::memory_order_acquire), end_);
                 }
         };
 

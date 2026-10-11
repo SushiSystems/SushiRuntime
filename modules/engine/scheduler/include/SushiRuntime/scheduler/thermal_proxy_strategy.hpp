@@ -37,7 +37,7 @@ namespace SushiRuntime
     namespace Scheduler
     {
         /**
-         * @brief Detects throttled workers and moves half of their backlog to the idlest worker.
+         * @brief Detects a throttled worker and asks the migrator to take tasks off its queue.
          * @see modules/engine/scheduler/README.md
          */
         class ThermalProxyStrategy : public IRebalanceStrategy
@@ -52,8 +52,11 @@ namespace SushiRuntime
 
             public:
                 /**
-                 * @brief Scans all workers for a throttled bottleneck and migrates tasks to the
-                 *        idlest one.
+                 * @brief Scans all workers for a throttled bottleneck and takes tasks off its queue.
+                 *
+                 * Calls migrate_tasks(bottleneck, count), where count is half the gap between the
+                 * bottleneck's queue and the shortest one, and at least 10. The call names no
+                 * destination; the worker with the shortest queue appears only in the log line.
                  */
                 void evaluate_and_rebalance(const ITelemetryProvider& telemetry, ITaskMigrator& migrator) override
                 {

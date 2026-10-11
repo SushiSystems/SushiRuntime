@@ -54,7 +54,7 @@
 
 namespace SushiRuntime
 {
-    /** @brief Forward declaration to allow friend access without full include. */
+    /** @brief Declares the graph types this header names only by pointer or reference. */
     namespace Graph
     {
         class TaskGraph;
@@ -72,11 +72,10 @@ namespace SushiRuntime
         class Task;
 
         /**
-         * @brief Min-heap comparator for the global priority queue.
+         * @brief Orders the global priority queue so its top is the highest-priority task.
          *
-         * Returns true when @p a should yield to @p b, i.e. when a's priority is
-         * lower. Null pointers sort to the bottom (lowest priority) to handle any
-         * sentinel entries without a null-check in the dispatch loop.
+         * Returns true when @p a has a lower priority than @p b, which std::priority_queue
+         * reads as "a comes out after b". A null pointer compares below every task.
          */
         struct TaskPriorityCompare
         {
@@ -392,7 +391,8 @@ namespace SushiRuntime
                 void submit_batch(const std::vector<SushiRuntime::Graph::Node*>& roots);
 
                 /**
-                 * @brief Blocks until every task submitted for the current run has been reaped.
+                 * @brief Blocks until every task counted into the current run has retired: reaped
+                 *        by the poller, or handed to the offload coordinator.
                  * @see modules/engine/scheduler/README.md
                  */
                 void wait_quiescent();

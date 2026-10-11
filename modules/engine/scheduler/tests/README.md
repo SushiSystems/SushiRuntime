@@ -106,10 +106,30 @@ node, the index and the device count, and the node's work does not run.
 
 ## test_range_task.cpp
 
-The file covers `RangeTask::split`, the primitive for divisible workloads: the grain threshold, that
+The file covers `RangeTask`, the primitive for divisible workloads: the grain threshold, that
 `split()` yields a distinct sub-task while work remains, that repeated splitting shrinks the owner
-and terminates, and that `split()` returns `nullopt` below the grain. All tests are deterministic
-and run on the host.
+and terminates, that `split()` returns `nullopt` below the grain, and that the constructor refuses a
+reversed range. All tests are deterministic. `SplitPartsCoverTheRangeExactlyOnce` submits to the
+default SYCL device; the others construct no queue.
+
+### `IsSplittableAgreesWithSplitAroundTheThreshold`
+
+A range splits when the upper half, which the owner keeps, holds at least 1024 elements, so the
+first size that splits is 2047. The test asks `is_splittable()` and `split()` about sizes 1024,
+1025, 2046, 2047 and 2048, once from index 0 and once from index 4096, and the two must agree on
+each.
+
+### `SplitPartsCoverTheRangeExactlyOnce`
+
+The range [37, 10044) is split as far as `split()` allows, chunks included. `execute()` takes a
+`sycl::handler`, so each part runs inside a `queue.submit()`; the kernel records the range it is
+given and submits an empty `single_task`. The recorded ranges, sorted, must run from 37 to 10044
+with each one starting where the last ended.
+
+### `ConstructorRejectsAReversedRange`
+
+`RangeTask(8, 4, ...)` throws `Core::SushiException`. An empty range, `start == end`, is accepted
+and does not split.
 
 ### `SplitHandsOffDistinctChunksUntilExhausted`
 

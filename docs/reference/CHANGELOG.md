@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-11 — scheduler: Fixed a run never quiescing when an event's status query throws; removed the `using namespace` of `Core` from `event_polling.hpp`, which leaked into every includer (`event_polling.hpp`).
+- 2026-10-11 — scheduler: Changed `RangeTask` to throw for a range whose start is past its end (`range_task.hpp`).
 - 2026-10-11 — interop: Added `ExternalHandleKind::Unspecified` as the default kind, which `import_device` refuses; the `Interop` constructor became private and its methods nodiscard (`external_memory.hpp`, `interop.hpp`).
 - 2026-10-11 — observability: Removed `noexcept` from `ProfilingLedger::reserve`, which allocates; a moved-from ledger is empty and `read_event_timestamps` leaves its output unchanged on failure (`profiling_ledger.hpp`).
 - 2026-10-11 — memory: Changed `UsmAllocator::release` to log an error and free nothing for an address it has no record of (`usm_allocator.cpp`).
