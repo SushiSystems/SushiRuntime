@@ -61,3 +61,14 @@ the vector without a sleep or a lock: all three records are there, in the order 
 `SR_THROW_IF` throws `Core::SushiException` with `Errc::invalid_state`, `what()` is the formatted
 message, and the message is logged once at `Error`. A handler for `std::runtime_error` still
 catches it. On a false condition the format arguments are not evaluated.
+
+### `ThrowIfMemberHolder`
+
+`ThrowIfMemberHolder` has a member function that calls `SR_THROW_IF` with its member `msg_` as the
+format argument. `msg_` is "inner".
+
+### `ThrowIfFormatsACallerMemberNamedMsg`
+
+The test calls the member function through `SR_THROW_IF`. It asserts that the thrown `SushiException`
+carries `Errc::invalid_state` with the text "value: inner", and that the logger writes one record
+that contains the same text.
