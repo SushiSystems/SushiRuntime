@@ -1,7 +1,8 @@
 # API refinement: plan
 
-**Status:** Started on 2026-10-11 on the owner's word. Stage 0 is done; `REPORT.md` holds the
-baseline under "Refinement baseline".
+**Status:** Started on 2026-10-11 on the owner's word. Stages 0 to 3 are committed on
+`feature/api_refinement`; stage 4 is in work. Stage 1 was built and tested (801 tests); nothing
+after it has been built. `REPORT.md` holds the baseline under "Refinement baseline".
 
 `SPEC.md` of this folder holds the decisions and the measurements. `REPORT.md` holds the first
 pass, whose repair plan stood in this file until this rewrite; its open items are in
@@ -9,8 +10,9 @@ pass, whose repair plan stood in this file until this rewrite; its open items ar
 
 ## Rules
 
-- Inline: one session owns every build, every diff read and every commit. On 2026-10-11 the owner
-  allowed mechanical source edits to be dispatched to `haiku` at `high`, one worker at a time.
+- One session owns every build and every diff read. On 2026-10-11 the owner allowed source edits
+  to be dispatched: mechanical ones to `haiku` at `high`, the ones that need a design to `opus`
+  at `low`, one worker per repository at a time. A stage worker commits its own tasks.
 - One task, one acceptance criterion. On 2026-10-11, after stage 1, the owner stopped the build
   per task: stages 2 to 5 are checked with `clang -fsyntax-only` over every entry of
   `compile_commands.json`, and the first build and test run after stage 1 is the one of stage 7,
