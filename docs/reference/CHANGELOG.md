@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — execution: Added `IExecutionEngine::run_in_progress()`; an engine compiled against the old interface needs a rebuild (`i_execution_engine.hpp`, `execution_engine.cpp`).
 - 2026-10-11 — graph: Changed the `TaskGraph` add calls to throw `invalid_graph` for a registration index the graph did not issue (`task_graph.cpp`).
 - 2026-10-11 — task: Fixed `SmallEventVector` keeping live events past its count after an assignment or a move, and added `clear()` (`small_event_vector.hpp`).
 - 2026-10-11 — task: Changed `OpID::hash_str` to read bytes as unsigned; the id of a name with a byte above 127 changes (`task_types.hpp`).

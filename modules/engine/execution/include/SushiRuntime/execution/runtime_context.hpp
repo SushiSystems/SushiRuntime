@@ -126,9 +126,9 @@ namespace SushiRuntime
                 void shutdown();
 
                 /**
-                 * @brief Installs the coordinator that may run this context's graph nodes
-                 *        elsewhere, and shares its ownership.
-                 * @pre No run is in flight.
+                 * @brief Installs the coordinator that may run this context's nodes and co-owns it.
+                 * @pre No run is in flight, and every TaskGraph built with the coordinator being
+                 *      replaced has been compiled, emptied by take_nodes() or destroyed.
                  * @param offload Null removes the installed one. The context releases its share
                  *        when another is installed and, in its destructor, after the engine.
                  * @see modules/engine/execution/README.md
