@@ -293,7 +293,8 @@ queue is built and timing is collected. If the fallback still landed on the plai
 poller's timestamp read on that event would throw, because the plain queue is not built with
 `enable_profiling`. A regression therefore fails loudly and does not merely lose timing.
 
-One branch is left: `get_queue_for_ptr` for an anchor the USM registry does not recognise. A test
+One branch is left: the NUMA fallback of `devices().queue_or_numa_local()`, taken when
+`memory().owning_device()` does not recognise an anchor. A test
 cannot force it safely. Reaching it needs a device kernel that dereferences a pointer the runtime
 never allocated, which is an illegal access on a real GPU backend.
 
@@ -420,7 +421,7 @@ of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS.md`. Without a name every node re
 "unnamed_task" whichever `add()` produced it, and a profile of a real graph is a list of identical
 labels.
 
-The name is set with `name_last()` and not with a trailing argument. Two of the `add()` shapes take
+The name is set with `name()` and not with a trailing argument. Two of the `add()` shapes take
 a trailing parameter pack whose last element is the callable, so a defaulted trailing name cannot be
 expressed for them. One spelling that works for every shape is better than a trailing argument on
 most shapes and an exception for the rest.

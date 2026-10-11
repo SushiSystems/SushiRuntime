@@ -40,9 +40,7 @@ private codec uses.
 `task/task_types.hpp`, which promotes it into `SushiRuntime`. A worker program includes
 `distributed.hpp` alone; a master includes it beside `SushiRuntime/SushiRuntime.h`.
 
-Deprecated and forwarding: the four-argument `Cluster::attach()` overloads, which attach with an
-empty secret. The tree compiles with `-Werror`, so a caller has to switch or silence the warning
-where it calls. `KernelRegistry::register_kernel()` has one form, the one that takes
+`KernelRegistry::register_kernel()` has one form, the one that takes
 `span<const BufferView>`; the pointer form and its `RemoteKernel` alias are removed, so a generic
 lambda registers without a cast.
 

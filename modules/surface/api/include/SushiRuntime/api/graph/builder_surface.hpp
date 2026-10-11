@@ -420,106 +420,6 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] std::size_t last_rule() const noexcept { return size() - 1; }
 
-                /** @brief Forwards to add(launch, reads, writes, kernel). */
-                template <class Launch, class F,
-                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
-                [[deprecated("use add(launch, reads, writes, fn)")]]
-                Derived& add(const Reads& reads, const Writes& writes, Launch launch, F&& kernel)
-                {
-                    return add(launch, reads, writes, std::forward<F>(kernel));
-                }
-
-                /** @brief Forwards to add(launch, state, kernel). */
-                template <typename T, int N, class F>
-                [[deprecated("use add(launch, state, fn)")]]
-                Derived& add(State<T>& state, Extent<N> launch, F&& kernel)
-                {
-                    return add(launch, state, std::forward<F>(kernel));
-                }
-
-                /**
-                 * @brief Forwards to add(Coupled(out, in0, ...), kernel).
-                 * @param rest Further read States, then the callable last.
-                 */
-                template <typename T, typename A, class... Rest,
-                          std::enable_if_t<(sizeof...(Rest) >= 1), int> = 0>
-                [[deprecated("use add(Coupled(out, in0, ...), fn)")]]
-                Derived& add(State<T>& out, State<A>& in0, Rest&&... rest)
-                {
-                    auto arguments = std::forward_as_tuple(std::forward<Rest>(rest)...);
-                    return add_coupled(out, in0, arguments,
-                                       std::make_index_sequence<sizeof...(Rest) - 1>{});
-                }
-
-                /** @brief Forwards to add(window, capacity, reads, writes, kernel). */
-                template <class F>
-                [[deprecated("use add(Dynamic, capacity, reads, writes, fn)")]]
-                Derived& add(Dynamic window, const Reads& reads, const Writes& writes,
-                             std::size_t capacity, F&& kernel)
-                {
-                    return add(std::move(window), capacity, reads, writes,
-                               std::forward<F>(kernel));
-                }
-
-                /**
-                 * @brief Forwards to add(n, Reads(...), Writes(...), fn), naming each pointer.
-                 * @param kernel Callable invoked as kernel(i) for each i in [0, n).
-                 */
-                template <class F>
-                [[deprecated("use add(n, Reads(...), Writes(...), fn); a raw pointer converts to "
-                             "a region")]]
-                Derived& add(const std::vector<void*>& reads, const std::vector<void*>& writes,
-                             std::size_t n, F&& kernel)
-                {
-                    return add(n, whole_buffers<Reads>(reads), whole_buffers<Writes>(writes),
-                               std::forward<F>(kernel));
-                }
-
-                /**
-                 * @brief Forwards to add(Dynamic, capacity, Reads(...), Writes(...), fn).
-                 * @param capacity Upper bound the live window must fit.
-                 */
-                template <class F>
-                [[deprecated("use add(Dynamic, capacity, Reads(...), Writes(...), fn); a raw "
-                             "pointer converts to a region")]]
-                Derived& add(Dynamic window, const std::vector<void*>& reads,
-                             const std::vector<void*>& writes, std::size_t capacity, F&& kernel)
-                {
-                    return add(std::move(window), capacity, whole_buffers<Reads>(reads),
-                               whole_buffers<Writes>(writes), std::forward<F>(kernel));
-                }
-
-                /**
-                 * @brief Forwards to add(op, n, Reads(...), Writes(...), local, params).
-                 * @param local Local fallback invoked as local(i) for i in [0, n).
-                 */
-                template <class F>
-                [[deprecated("use add(op, n, Reads(...), Writes(...), fn, params)")]]
-                Derived& add(::SushiRuntime::Graph::OpID op, std::size_t n,
-                             const std::vector<void*>& reads, const std::vector<void*>& writes,
-                             F&& local, std::initializer_list<std::uint64_t> params = {})
-                {
-                    return add(op, n, whole_buffers<Reads>(reads), whole_buffers<Writes>(writes),
-                               std::forward<F>(local), params);
-                }
-
-                /** @brief Forwards to name(label). */
-                [[deprecated("use name")]]
-                Derived& name_last(std::string_view label)
-                {
-                    return name(label);
-                }
-
-                /**
-                 * @brief Forwards to name(label).
-                 * @param label Copied; null counts as an empty label.
-                 */
-                [[deprecated("use name")]]
-                Derived& name_last(const char* label)
-                {
-                    return name(label);
-                }
-
             protected:
                 BuilderSurface() = default;
                 BuilderSurface(const BuilderSurface&) = default;
@@ -565,18 +465,6 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Names each bare base pointer as the region of its whole buffer.
-                 * @tparam Dependency Reads or Writes; it takes one region per pointer, in order.
-                 */
-                template <class Dependency>
-                static Dependency whole_buffers(const std::vector<void*>& pointers)
-                {
-                    Dependency named;
-                    named.keys.assign(pointers.begin(), pointers.end());
-                    return named;
-                }
-
-                /**
                  * @brief Records the capture overload once the callable is split from the
                  *        captures.
                  * @tparam Arguments A std::tuple of references: sizeof...(Is) captures, then the
@@ -598,20 +486,6 @@ namespace SushiRuntime
                     return self();
                 }
 
-                /**
-                 * @brief Splits the (out, in0, ..., fn) arguments and forwards them as
-                 *        Coupled(out, in0, ...), fn.
-                 * @tparam Arguments A std::tuple of references: sizeof...(Is) States, then the
-                 *         callable.
-                 */
-                template <typename T, typename A, class Arguments, std::size_t... Is>
-                Derived& add_coupled(State<T>& out, State<A>& in0, Arguments& arguments,
-                                     std::index_sequence<Is...>)
-                {
-                    using F = std::tuple_element_t<sizeof...(Is), Arguments>;
-                    return add(Coupled(out, in0, std::get<Is>(arguments)...),
-                               std::forward<F>(std::get<sizeof...(Is)>(arguments)));
-                }
         };
 
     } // namespace API

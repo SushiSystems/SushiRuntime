@@ -138,9 +138,6 @@ host cannot index. It is synchronous in the same way and follows the Range calls
 is a span, so a vector or an array is passed as it is and the call can compare the source's length
 with the window. write_range() is const: it changes the elements, not the handle.
 
-The overload that takes a `const T*` is deprecated and forwards to the span overload with
-`range.count` elements at the pointer.
-
 ### Tracking state
 
 The graph layer needs four things from a handle that a caller never does: the address the
@@ -154,11 +151,6 @@ or when another buffer is move-assigned over it, because the assignment releases
 construction hands the token to the new handle, so the observer stays valid across a move. That lets
 a run detect a buffer freed before it ran and fail cleanly instead of dispatching against released
 memory. A handle that owns no allocation has an empty observer.
-
-The members dependency_key(), liveness(), State::read_key(), State::write_key() and State::advance()
-forward to HandleAccess and stay for the 0.4 releases. All five carry `[[deprecated]]`. No code in
-this repository calls these members. The headers under api/graph and api/detail call the static
-functions of HandleAccess, which are not deprecated.
 
 ### region
 
@@ -267,5 +259,4 @@ for a buffer, under the same Range calls rule.
 ### State::write_range
 
 write_range() is how to initialise a device-resident State that the host cannot index. It mirrors
-Buffer::write_range, with the same rule, the same span source and the same deprecated pointer
-overload.
+Buffer::write_range, with the same rule and the same span source.

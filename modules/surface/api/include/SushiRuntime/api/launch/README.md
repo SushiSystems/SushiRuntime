@@ -31,14 +31,6 @@ written without a hand-rolled handler.
 A 1-D Extent converts from a plain element count. A plain count is still the shorter spelling for
 1-D work: a 1-D Extent is needed only for an origin.
 
-### origin and offset
-
-The first index was called `offset` up to v0.3. v0.4.0 names it `origin`, the word at() already
-used, and keeps `offset` as a deprecated name for the same value. A data member cannot forward to
-another, so the two names are the members of one anonymous union: they are one object, and a
-write through either is read through both. The union holds two members of one type, so the type
-stays trivially copyable and a kernel can still capture an Extent.
-
 ## nd_range.hpp
 
 ### NdRange

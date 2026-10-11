@@ -113,14 +113,6 @@ namespace SushiRuntime
                     return context_->transfers().device_to_host();
                 }
 
-                /** @brief Forwards to is_profiling_enabled(). */
-                [[deprecated("use is_profiling_enabled()")]]
-                bool profiling_enabled() const noexcept { return is_profiling_enabled(); }
-
-                /** @brief Forwards to is_rebalancer_enabled(). */
-                [[deprecated("use is_rebalancer_enabled()")]]
-                bool rebalancer_enabled() const { return is_rebalancer_enabled(); }
-
             private:
                 friend class Runtime;
 

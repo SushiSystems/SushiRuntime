@@ -72,19 +72,6 @@ namespace SushiRuntime
                         config.devices, nullptr, nullptr, settings_of(config)));
                 }
 
-                /**
-                 * @brief Forwards to create(RuntimeConfig) with @p devices as its device filter.
-                 * @param devices Replaces config.devices.
-                 * @throws Core::SushiException As create(RuntimeConfig) does.
-                 */
-                [[deprecated("use create(RuntimeConfig) and set RuntimeConfig::devices")]]
-                static Runtime create(const DeviceFilter& devices, const RuntimeConfig& config)
-                {
-                    RuntimeConfig merged = config;
-                    merged.devices = devices;
-                    return create(merged);
-                }
-
                 Runtime(Runtime&&) noexcept = default;
                 Runtime& operator=(Runtime&&) noexcept = default;
                 Runtime(const Runtime&) = delete;
@@ -138,14 +125,6 @@ namespace SushiRuntime
                 const Runtime& set_rebalancer_enabled(bool enabled) const
                 {
                     context_->get_execution_engine().set_rebalancer_enabled(enabled);
-                    return *this;
-                }
-
-                /** @brief Forwards to set_rebalancer_enabled(). */
-                [[deprecated("use set_rebalancer_enabled()")]]
-                Runtime& rebalancer(bool enabled)
-                {
-                    set_rebalancer_enabled(enabled);
                     return *this;
                 }
 

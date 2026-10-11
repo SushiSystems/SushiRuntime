@@ -34,7 +34,6 @@
 #include <utility>
 
 #include <SushiRuntime/api/detail/step_machinery.hpp>
-#include <SushiRuntime/api/graph/backing_graph.hpp>
 #include <SushiRuntime/api/graph/builder_surface.hpp>
 #include <SushiRuntime/api/graph/plan_cache.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
@@ -126,10 +125,6 @@ namespace SushiRuntime
                 /** @brief Stands for "this rule has no index yet". */
                 static constexpr std::uint32_t NO_REGISTRATION =
                     ::SushiRuntime::Graph::TaskGraph::NO_REGISTRATION;
-
-                /** @brief Names the same value as NO_REGISTRATION. */
-                [[deprecated("use NO_REGISTRATION")]]
-                static constexpr std::uint32_t no_registration = NO_REGISTRATION;
 
                 /**
                  * @brief Returns the registration index the rule at position rule took.
