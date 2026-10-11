@@ -81,10 +81,11 @@ namespace SushiRuntime
                 /**
                  * @brief Forgets an address and frees it against the queue of its device.
                  * @param address Null is ignored. An adopted address is forgotten and not freed.
-                 *        An address with no record is freed against device 0, with one WARN.
+                 *        An address with no record is not freed, and one ERROR names it. A free
+                 *        that throws is logged as one ERROR and the memory stays allocated.
                  * @see modules/platform/memory/README.md
                  */
-                void release(void* address);
+                void release(void* address) noexcept;
 
                 /**
                  * @brief Records memory allocated elsewhere as belonging to a device.
@@ -124,9 +125,11 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t live_count() const;
 
                 /**
-                 * @brief Installs the observer release() tells, replacing the one before it.
-                 * @param observer Null removes it. It must stay alive until it is removed and
-                 *        every release() that began before the removal has returned.
+                 * @brief Installs the observer release() tells and waits out the calls in flight.
+                 * @param observer Null removes it. It must stay alive until a later call that
+                 *        replaces or removes it has returned.
+                 * @pre The caller is not inside on_release() of an observer of this allocator.
+                 * @see modules/platform/memory/README.md
                  */
                 void set_release_observer(UsmReleaseObserver* observer) noexcept;
 
@@ -136,6 +139,12 @@ namespace SushiRuntime
                  * @throws Core::SushiException With Errc::invalid_access when the index names none.
                  */
                 [[nodiscard]] const sycl::queue& queue_at(std::size_t device_index) const;
+
+                /**
+                 * @brief Forgets an address and frees it when a record names its device.
+                 * @param address Not null.
+                 */
+                void release_recorded(void* address);
 
                 /** @brief One queue per device, fixed at construction. */
                 std::vector<sycl::queue> queues_;
@@ -148,6 +157,9 @@ namespace SushiRuntime
 
                 /** @brief The observer release() tells, or null. */
                 std::atomic<UsmReleaseObserver*> release_observer_{nullptr};
+
+                /** @brief Counts the release() calls between their observer load and its return. */
+                std::atomic<std::size_t> observer_calls_in_flight_{0};
         };
 
     } // namespace Memory

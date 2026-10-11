@@ -63,7 +63,16 @@ namespace SushiRuntime
 
                 RetiredNode* retire_list = nullptr;
                 size_t retire_count = 0;
-                static constexpr size_t RETIRE_THRESHOLD = 128; 
+                static constexpr size_t RETIRE_THRESHOLD = 128;
+
+                /** @brief Holds the retire_count at which retire() runs the next reclaim scan. */
+                size_t next_scan_at = RETIRE_THRESHOLD;
+
+                /** @brief Tells whether a reclaim scan is running on this thread. */
+                bool is_reclaiming = false;
+
+                /** @brief Counts the reclaim scans this thread has run. */
+                size_t scan_count = 0;
 
                 /** @brief Maximum pooled RetiredNodes per thread. */
                 static constexpr size_t FREE_POOL_CAP = 512;
@@ -195,7 +204,9 @@ namespace SushiRuntime
             void check_and_reclaim()
             {
                 auto& tls_state = Detail::get_tls_state();
-                
+                tls_state.is_reclaiming = true;
+                ++tls_state.scan_count;
+
                 Detail::RetiredNode* orphans = global_orphan_list_.exchange(nullptr, std::memory_order_acquire);
                 if (orphans) 
                 {
@@ -207,6 +218,8 @@ namespace SushiRuntime
                     tls_state.retire_count += orphan_count;
                 }
 
+                // The fence orders the caller's unlink before the slot loads below.
+                std::atomic_thread_fence(std::memory_order_seq_cst);
                 uint64_t current = global_epoch_.load(std::memory_order_acquire);
                 uint64_t min_active = current;
                 int active_threads = thread_id_high_water_.load(std::memory_order_relaxed);
@@ -227,28 +240,49 @@ namespace SushiRuntime
                     global_epoch_.compare_exchange_strong(expected, current + 1, std::memory_order_release);
                 }
 
-                Detail::RetiredNode* prev = nullptr;
-                Detail::RetiredNode* curr = tls_state.retire_list;
-                
-                while (curr) 
+                // The list is detached and uncounted here, so a deleter that retires sees an empty one.
+                Detail::RetiredNode* pending = tls_state.retire_list;
+                tls_state.retire_list = nullptr;
+                tls_state.retire_count = 0;
+
+                Detail::RetiredNode* kept_head = nullptr;
+                Detail::RetiredNode* kept_tail = nullptr;
+                size_t kept_count = 0;
+
+                while (pending)
                 {
-                    if (curr->epoch < min_active) 
+                    Detail::RetiredNode* const node = pending;
+                    pending = node->next;
+
+                    if (node->epoch < min_active)
                     {
-                        curr->deleter(curr->ptr); 
-                        Detail::RetiredNode* to_delete = curr;
-                        curr = curr->next;
-                        if (prev) prev->next = curr;
-                        else tls_state.retire_list = curr;
+                        void (*const deleter)(void*) = node->deleter;
+                        void* const payload = node->ptr;
                         // The RetiredNode storage returns to the thread-local pool.
-                        tls_state.release_node(to_delete);
-                        tls_state.retire_count--;
-                    } 
-                    else 
+                        tls_state.release_node(node);
+                        deleter(payload);
+                    }
+                    else
                     {
-                        prev = curr;
-                        curr = curr->next;
+                        node->next = kept_head;
+                        kept_head = node;
+                        if (!kept_tail)
+                            kept_tail = node;
+                        ++kept_count;
                     }
                 }
+
+                if (kept_head)
+                {
+                    // retire_list holds only what the deleters above retired.
+                    kept_tail->next = tls_state.retire_list;
+                    tls_state.retire_list = kept_head;
+                    tls_state.retire_count += kept_count;
+                }
+
+                tls_state.next_scan_at =
+                    tls_state.retire_count + Detail::EpochThreadLocalState::RETIRE_THRESHOLD;
+                tls_state.is_reclaiming = false;
             }
 
         public:
@@ -307,8 +341,14 @@ namespace SushiRuntime
                 thread_slots_[tls_state.id].epoch.store(0, std::memory_order_release);
             }
 
+            /**
+             * @brief Queues an object for deletion once no thread inside a guard can reach it.
+             * @param ptr Null is ignored. A later retire() deletes it with delete, on this thread
+             *        or on the thread that adopts this thread's list.
+             * @pre The caller has already unlinked the object from every shared structure.
+             */
             template<typename T>
-            void retire(T* ptr) 
+            void retire(T* ptr)
             {
                 if (!ptr) return;
                 auto& tls_state = Detail::get_tls_state();
@@ -324,7 +364,8 @@ namespace SushiRuntime
                 tls_state.retire_list = node;
                 tls_state.retire_count++;
 
-                if (tls_state.retire_count >= Detail::EpochThreadLocalState::RETIRE_THRESHOLD) 
+                // A retire() made by a deleter of a running scan appends and does not scan.
+                if (tls_state.retire_count >= tls_state.next_scan_at && !tls_state.is_reclaiming)
                     check_and_reclaim();
             }
 

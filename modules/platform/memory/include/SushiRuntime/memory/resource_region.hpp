@@ -82,12 +82,12 @@ namespace SushiRuntime
 
             /**
              * @brief Reports whether two regions of the same allocation intersect.
-             * @return True if the regions share a base and any byte.
+             * @return True if both regions are valid and share a base and any byte.
              * @see modules/platform/memory/README.md
              */
             constexpr bool overlaps(const ResourceRegion& o) const noexcept
             {
-                if (base != o.base)
+                if (base != o.base || !valid())
                     return false;
 
                 const bool a_whole = (length == WHOLE);
@@ -102,11 +102,12 @@ namespace SushiRuntime
 
             /**
              * @brief Reports whether this region fully covers another.
+             * @return True if both regions are valid and every byte of r lies in this one.
              * @see modules/platform/memory/README.md
              */
             constexpr bool contains(const ResourceRegion& r) const noexcept
             {
-                if (base != r.base)   return false;
+                if (base != r.base || !valid()) return false;
                 if (offset > r.offset) return false;
                 if (length == WHOLE)   return true;          // [offset, +inf)
                 if (r.length == WHOLE) return false;         // finite cannot cover infinite

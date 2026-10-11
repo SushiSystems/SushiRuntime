@@ -33,6 +33,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/common.hpp>
@@ -262,4 +263,83 @@ TEST(Unit_EpochReclamationTest, AThreadPastTheSlotLimitIsRefusedWithTheLimit)
 
     std::thread late([] { EXPECT_NO_THROW({ EpochGuard guard; }); });
     late.join();
+}
+
+/** @brief Tests that a reader that blocks reclamation costs one scan per RETIRE_THRESHOLD. */
+TEST(Unit_EpochReclamationTest, ABlockedReclaimScansOncePerThreshold)
+{
+    constexpr std::size_t THRESHOLD = Detail::EpochThreadLocalState::RETIRE_THRESHOLD;
+    constexpr std::size_t RETIRED = 10 * THRESHOLD;
+
+    ThreadPark park;
+    std::thread reader([&park]
+    {
+        EpochGuard guard;
+        park.report_and_wait();
+    });
+    park.wait_for_reports(1);
+
+    Counter destroyed = make_counter();
+    const std::size_t scans_before = Detail::get_tls_state().scan_count;
+    for (std::size_t i = 0; i < RETIRED; ++i)
+        EpochManager::instance().retire(new Tracked(destroyed));
+    const std::size_t scans = Detail::get_tls_state().scan_count - scans_before;
+
+    // The reader entered before any of these was retired, so none of them is reclaimable.
+    EXPECT_EQ(destroyed->load(), 0);
+    EXPECT_GE(scans, 1u);
+    EXPECT_LE(scans, RETIRED / THRESHOLD);
+
+    park.release();
+    reader.join();
+}
+
+namespace
+{
+    /** @brief Holds a payload whose destructor retires a Tracked child. */
+    struct RetiringParent
+    {
+        Counter destroyed;       /**< Bumped when this parent is destroyed. */
+        Counter child_destroyed; /**< Handed to the child this parent retires. */
+
+        RetiringParent(Counter parent, Counter child)
+            : destroyed(std::move(parent)), child_destroyed(std::move(child))
+        {
+
+        }
+
+        ~RetiringParent()
+        {
+            destroyed->fetch_add(1, std::memory_order_relaxed);
+            EpochManager::instance().retire(new Tracked(child_destroyed));
+        }
+    };
+}
+
+/** @brief Tests that a destructor that retires leaves every parent and child deleted once. */
+TEST(Unit_EpochReclamationTest, ADestructorThatRetiresDeletesParentAndChildOnce)
+{
+    constexpr std::size_t THRESHOLD = Detail::EpochThreadLocalState::RETIRE_THRESHOLD;
+    constexpr int PARENTS = static_cast<int>(4 * THRESHOLD);
+    constexpr std::size_t DRAIN_RETIRES = 32 * THRESHOLD;
+
+    Counter parents_destroyed = make_counter();
+    Counter children_destroyed = make_counter();
+    for (int i = 0; i < PARENTS; ++i)
+    {
+        EpochGuard guard;
+        EpochManager::instance().retire(
+            new RetiringParent(parents_destroyed, children_destroyed));
+    }
+
+    // Each scan advances the epoch once; 32 of them outlast the parents and their children.
+    Counter drain_sink = make_counter();
+    for (std::size_t i = 0; i < DRAIN_RETIRES; ++i)
+    {
+        EpochGuard guard;
+        EpochManager::instance().retire(new Tracked(drain_sink));
+    }
+
+    EXPECT_EQ(parents_destroyed->load(), PARENTS);
+    EXPECT_EQ(children_destroyed->load(), PARENTS);
 }

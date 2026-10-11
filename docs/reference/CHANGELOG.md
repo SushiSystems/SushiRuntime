@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-11 — memory: Changed `UsmAllocator::release` to log an error and free nothing for an address it has no record of (`usm_allocator.cpp`).
+- 2026-10-11 — memory: Fixed `set_release_observer` returning while an `on_release` call still ran, and a retire rescanning the whole list on every call (`usm_allocator.cpp`, `epoch_reclamation.hpp`).
 - 2026-10-11 — topology: Fixed `pin_current_thread_to_core` shifting by an unchecked core index; it moved out of line and `affinity.hpp` no longer includes `<windows.h>` (`affinity.cpp`).
 - 2026-10-11 — topology: Fixed NUMA resolution asking hwloc for a NUMA ancestor, which hwloc 2 never returns; it reads the nodeset (`numa_lookup.cpp`, `hw_discovery.cpp`).
 - 2026-10-11 — logging: Fixed a log call blocking on the sink after shutdown, and `SR_THROW_IF` naming the logger header as the place of every exception (`logger.cpp`, `logger.hpp`).

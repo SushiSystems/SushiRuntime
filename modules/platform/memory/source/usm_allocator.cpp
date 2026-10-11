@@ -28,7 +28,10 @@
 
 #include <SushiRuntime/memory/usm_allocator.hpp>
 
+#include <cstdio>
+#include <exception>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include <SushiRuntime/core/error.hpp>
@@ -80,6 +83,21 @@ namespace SushiRuntime
                 }
                 return nullptr;
             }
+
+            /** @brief Logs one ERROR for a release that threw; falls back to stderr. */
+            void report_failed_release(void* address, const char* reason) noexcept
+            {
+                try
+                {
+                    SR_LOG_ERROR("release of USM address {} threw '{}': the address may still be "
+                                 "allocated and is no longer tracked.", address, reason);
+                }
+                catch (...)
+                {
+                    std::fputs("SushiRuntime: a USM release threw and its record could not be "
+                               "logged.\n", stderr);
+                }
+            }
         } // namespace
 
         UsmAllocator::UsmAllocator(std::vector<sycl::queue> device_queues)
@@ -103,15 +121,34 @@ namespace SushiRuntime
             return address;
         }
 
-        void UsmAllocator::release(void* address)
+        void UsmAllocator::release(void* address) noexcept
         {
             if (!address)
                 return;
 
+            // Counted before the load: zero read after a store means no call holds the old one.
+            observer_calls_in_flight_.fetch_add(1, std::memory_order_seq_cst);
             if (UsmReleaseObserver* const observer =
-                    release_observer_.load(std::memory_order_acquire))
+                    release_observer_.load(std::memory_order_seq_cst))
                 observer->on_release(address);
+            observer_calls_in_flight_.fetch_sub(1, std::memory_order_seq_cst);
 
+            try
+            {
+                release_recorded(address);
+            }
+            catch (const std::exception& error)
+            {
+                report_failed_release(address, error.what());
+            }
+            catch (...)
+            {
+                report_failed_release(address, "an exception that is not a std::exception");
+            }
+        }
+
+        void UsmAllocator::release_recorded(void* address)
+        {
             const std::optional<std::size_t> device = registry_.take(address);
             if (adopted_.take(address).has_value())
                 return;
@@ -129,9 +166,8 @@ namespace SushiRuntime
                 return;
             }
 
-            SR_LOG_WARN("release of USM address {} with no record (foreign pointer or second "
-                        "release): freeing it against device 0.", address);
-            sycl::free(address, queues_[0]);
+            SR_LOG_ERROR("release of USM address {} with no record (second release or foreign "
+                         "pointer): nothing was freed.", address);
         }
 
         void UsmAllocator::adopt(void* address, std::size_t device_index,
@@ -206,7 +242,10 @@ namespace SushiRuntime
 
         void UsmAllocator::set_release_observer(UsmReleaseObserver* observer) noexcept
         {
-            release_observer_.store(observer, std::memory_order_release);
+            release_observer_.store(observer, std::memory_order_seq_cst);
+            // Stored before the count is read: a release() counted later loads the new observer.
+            while (observer_calls_in_flight_.load(std::memory_order_seq_cst) != 0)
+                std::this_thread::yield();
         }
 
         const sycl::queue& UsmAllocator::queue_at(std::size_t device_index) const

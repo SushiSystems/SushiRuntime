@@ -26,18 +26,26 @@
  */
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -98,6 +106,90 @@ namespace
             /** @brief Addresses reported so far, in call order. */
             std::vector<void*> released;
     };
+
+    /** @brief Blocks every on_release() call until the test opens it. */
+    class BlockingObserver final : public UsmReleaseObserver
+    {
+        public:
+            /** @brief Reports that the call began, then waits for open(). */
+            void on_release(void*) noexcept override
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                entered_ = true;
+                changed_.notify_all();
+                changed_.wait(lock, [this] { return opened_; });
+            }
+
+            /** @brief Blocks until one on_release() call is waiting. */
+            void wait_until_entered()
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                changed_.wait(lock, [this] { return entered_; });
+            }
+
+            /** @brief Lets every waiting on_release() call return. */
+            void open()
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                opened_ = true;
+                changed_.notify_all();
+            }
+
+        private:
+            /// @brief Guards the two flags below.
+            std::mutex mutex_;
+            /// @brief Signals a change of either flag.
+            std::condition_variable changed_;
+            /// @brief Whether an on_release() call has begun.
+            bool entered_ = false;
+            /// @brief Whether waiting calls may return.
+            bool opened_ = false;
+    };
+
+    /** @brief Collects the ERROR lines the logger writes while it is alive. */
+    class ErrorLineCapture final
+    {
+        public:
+            /** @brief Makes the logger synchronous and routes its records here. */
+            ErrorLineCapture() : saved_level_(SushiRuntime::Core::log_level())
+            {
+                SushiRuntime::Core::set_log_synchronous(true);
+                SushiRuntime::Core::set_log_level(SushiRuntime::Core::LogLevel::Warn);
+                SushiRuntime::Core::set_log_sink(
+                    [this](SushiRuntime::Core::LogLevel level, std::string_view line)
+                    {
+                        if (level == SushiRuntime::Core::LogLevel::Error)
+                            lines.emplace_back(line);
+                    });
+            }
+
+            /** @brief Restores the default sink and the level the process had. */
+            ~ErrorLineCapture()
+            {
+                SushiRuntime::Core::set_log_sink(nullptr);
+                SushiRuntime::Core::set_log_level(saved_level_);
+            }
+
+            ErrorLineCapture(const ErrorLineCapture&) = delete;
+            ErrorLineCapture& operator=(const ErrorLineCapture&) = delete;
+            ErrorLineCapture(ErrorLineCapture&&) = delete;
+            ErrorLineCapture& operator=(ErrorLineCapture&&) = delete;
+
+            /** @brief ERROR lines seen so far, in order. */
+            std::vector<std::string> lines;
+
+        private:
+            /// @brief The level the process had before the capture.
+            SushiRuntime::Core::LogLevel saved_level_;
+    };
+
+    /** @brief Returns an address as the logger prints it. */
+    std::string printed(void* address)
+    {
+        std::ostringstream stream;
+        stream << address;
+        return stream.str();
+    }
 
     /** @brief Builds one queue per SYCL device and an allocator over them. */
     class Unit_UsmAllocator : public ::testing::Test
@@ -318,7 +410,7 @@ TEST_F(Unit_UsmAllocator, ReleaseOfAnAdoptedAddressDropsTheRecordAndDoesNotFreeI
     EXPECT_EQ(external[0], 0);
 }
 
-TEST_F(Unit_UsmAllocator, ReleaseOfAnAddressWithNoRecordFreesItAgainstDeviceZero)
+TEST_F(Unit_UsmAllocator, ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothing)
 {
     const std::optional<UsmKind> kind = kind_supported_by(0);
     if (!kind.has_value())
@@ -326,12 +418,45 @@ TEST_F(Unit_UsmAllocator, ReleaseOfAnAddressWithNoRecordFreesItAgainstDeviceZero
 
     void* const address = allocator_->allocate(UsmRequest{*kind, K_BYTES, 0, 0});
     ASSERT_NE(address, nullptr);
-    allocator_->forget(address);
     const std::size_t baseline = allocator_->live_count();
 
-    // Device 0 allocated it, so the free against device 0 is the correct one.
+    const ErrorLineCapture capture;
     allocator_->release(address);
+    EXPECT_TRUE(capture.lines.empty());
+    EXPECT_EQ(allocator_->live_count(), baseline - 1);
+
+    allocator_->release(address);
+    EXPECT_EQ(allocator_->live_count(), baseline - 1);
+    EXPECT_FALSE(allocator_->device_of(address).has_value());
+    ASSERT_EQ(capture.lines.size(), 1u);
+    EXPECT_NE(capture.lines[0].find(printed(address)), std::string::npos) << capture.lines[0];
+    EXPECT_NE(capture.lines[0].find("no record"), std::string::npos) << capture.lines[0];
+}
+
+TEST_F(Unit_UsmAllocator, ReleaseOfForeignUsmLeavesItAllocated)
+{
+    const std::optional<std::size_t> device = device_supporting(UsmKind::Shared);
+    if (!device.has_value())
+        GTEST_SKIP() << "No SYCL device supports shared USM.";
+
+    // Allocated behind the allocator's back, so it holds no record of the address.
+    auto* const bytes =
+        static_cast<unsigned char*>(sycl::malloc_shared(K_BYTES, queues_[*device]));
+    ASSERT_NE(bytes, nullptr);
+    std::memset(bytes, K_PATTERN, K_BYTES);
+    const std::size_t baseline = allocator_->live_count();
+
+    {
+        const ErrorLineCapture capture;
+        allocator_->release(bytes);
+        EXPECT_EQ(capture.lines.size(), 1u);
+    }
     EXPECT_EQ(allocator_->live_count(), baseline);
+
+    for (std::size_t i = 0; i < K_BYTES; ++i)
+        ASSERT_EQ(bytes[i], K_PATTERN) << "byte " << i;
+    // A release() that had freed the block would make this the second free of it.
+    sycl::free(bytes, queues_[*device]);
 }
 
 namespace
@@ -410,4 +535,34 @@ TEST_F(Unit_UsmAllocator, TheReleaseObserverHearsEachReleasedAddressExactlyOnce)
     allocator_->set_release_observer(nullptr);
     allocator_->release(second);
     EXPECT_EQ(observer.released.size(), 2u);
+}
+
+TEST_F(Unit_UsmAllocator, SetReleaseObserverWaitsForAnObserverCallInFlight)
+{
+    constexpr std::chrono::milliseconds WATCH{200};
+
+    BlockingObserver observer;
+    allocator_->set_release_observer(&observer);
+    int external = 0;
+    allocator_->adopt(&external, 0, sizeof(external));
+
+    std::thread releaser([this, &external] { allocator_->release(&external); });
+    observer.wait_until_entered();
+
+    std::atomic<bool> removal_returned{false};
+    std::thread remover(
+        [this, &removal_returned]
+        {
+            allocator_->set_release_observer(nullptr);
+            removal_returned.store(true);
+        });
+
+    // The call is still blocked, so a correct removal has not returned however long this is.
+    std::this_thread::sleep_for(WATCH);
+    EXPECT_FALSE(removal_returned.load());
+
+    observer.open();
+    remover.join();
+    releaser.join();
+    EXPECT_TRUE(removal_returned.load());
 }

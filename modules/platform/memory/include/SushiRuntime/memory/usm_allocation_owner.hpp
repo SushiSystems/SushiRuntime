@@ -55,7 +55,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Releases @p address through the bound allocator.
-                 * @param address The allocation to release.
+                 * @param address The allocation to release; UsmAllocator::release() throws nothing.
                  */
                 void release(void* address) noexcept override
                 {
