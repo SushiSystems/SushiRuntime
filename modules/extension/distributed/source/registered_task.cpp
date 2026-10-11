@@ -21,13 +21,14 @@
 
 /**
  * @file registered_task.cpp
- * @brief Implements add_registered_task(), a graph task whose local work is a registered kernel.
+ * @brief Implements record_registered_task(), a task whose local work is a registered kernel.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */
 
 #include <SushiRuntime/distributed/registered_task.hpp>
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -36,12 +37,9 @@
 
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/task/task_work.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/task/task_types.hpp>
-
-#include "task_description.hpp"
+#include <SushiRuntime/api/graph/access.hpp>
+#include <SushiRuntime/api/graph/node_options.hpp>
+#include <SushiRuntime/api/graph/recorder.hpp>
 
 namespace SushiRuntime
 {
@@ -59,36 +57,63 @@ namespace SushiRuntime
                     regions.emplace_back(view.data);
                 return regions;
             }
-        } // namespace
 
-        Internal::Graph::Node& add_registered_task(Internal::Graph::TaskGraph& graph, const KernelRegistry& kernels,
-                                         const Internal::Graph::TaskMetadata& metadata,
-                                         SushiRuntime::span<const BufferView> inputs,
-                                         SushiRuntime::span<const BufferView> outputs)
-        {
-            const KernelRegistry::Kernel* kernel = kernels.find(metadata.op_id);
-            SR_VERIFY(kernel != nullptr,
-                      ("add_registered_task: no kernel is registered for operation " +
-                       std::to_string(metadata.op_id.value) + " (task '" +
-                       (metadata.name != nullptr ? metadata.name : "unnamed_task") +
-                       "'); call KernelRegistry::register_kernel() for it first.")
-                          .c_str());
+            /**
+             * @brief Keeps what a registered kernel is handed, with nothing borrowed from the
+             *        caller of record_registered_task().
+             */
+            struct RegisteredCall
+            {
+                KernelRegistry::Kernel kernel;         /**< The kernel, copied from the registry. */
+                std::string name;                      /**< The node's label. */
+                OperationID operation;                 /**< The operation the kernel serves. */
+                std::size_t width = 0;                 /**< The width the caller stated. */
+                std::vector<std::uint64_t> parameters; /**< The scalars the caller gave. */
+                std::vector<BufferView> inputs;        /**< The buffers read, in order. */
+                std::vector<BufferView> outputs;       /**< The buffers written, in order. */
 
-            Internal::Graph::HostWork local_work =
-                [kernel = *kernel, metadata,
-                 inputs = std::vector<BufferView>(inputs.begin(), inputs.end()),
-                 outputs = std::vector<BufferView>(outputs.begin(), outputs.end())](
-                    sycl::queue& queue, const std::vector<sycl::event>&) -> sycl::event
+                /** @brief Runs the kernel on the queue the scheduler hands the node. */
+                sycl::event operator()(sycl::queue& queue, const std::vector<sycl::event>&) const
                 {
+                    NodeOptions described;
+                    described.width = width;
+                    described.name = name;
+                    described.operation = operation;
+                    described.parameters =
+                        SushiRuntime::span<const std::uint64_t>(parameters.data(), parameters.size());
                     return kernel(
                         queue,
                         SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),
                         SushiRuntime::span<const BufferView>(outputs.data(), outputs.size()),
-                        describe_task(metadata));
-                };
+                        described);
+                }
+            };
+        } // namespace
 
-            return graph.add_task(metadata, regions_of(inputs), regions_of(outputs),
-                                  std::move(local_work));
+        std::size_t record_registered_task(Recorder& recorder, const KernelRegistry& kernels,
+                                           const NodeOptions& options,
+                                           SushiRuntime::span<const BufferView> inputs,
+                                           SushiRuntime::span<const BufferView> outputs)
+        {
+            const KernelRegistry::Kernel* kernel = kernels.find(options.operation);
+            SR_VERIFY(kernel != nullptr,
+                      ("record_registered_task: no kernel is registered for operation " +
+                       std::to_string(options.operation.value) + " (task '" +
+                       std::string(options.name) +
+                       "'); call KernelRegistry::register_kernel() for it first.")
+                          .c_str());
+
+            RegisteredCall call;
+            call.kernel = *kernel;
+            call.name = std::string(options.name);
+            call.operation = options.operation;
+            call.width = options.width;
+            call.parameters.assign(options.parameters.begin(), options.parameters.end());
+            call.inputs.assign(inputs.begin(), inputs.end());
+            call.outputs.assign(outputs.begin(), outputs.end());
+
+            return recorder.task(Access(regions_of(inputs), regions_of(outputs)), std::move(call),
+                                 options);
         }
 
     } // namespace Distributed

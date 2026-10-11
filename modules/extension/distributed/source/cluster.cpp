@@ -216,13 +216,7 @@ namespace SushiRuntime
         Result<Cluster> Cluster::attach(Runtime& runtime, std::shared_ptr<Transport> transport,
                                         ClusterOptions options)
         {
-            return attach(runtime.unsafe_context(), std::move(transport), std::move(options));
-        }
-
-        Result<Cluster> Cluster::attach(Internal::Execution::RuntimeContext& context,
-                                        std::shared_ptr<Transport> transport,
-                                        ClusterOptions options)
-        {
+            Internal::Execution::RuntimeContext& context = runtime.unsafe_context();
             SR_VERIFY(transport != nullptr,
                       "Cluster::attach: the transport is null; pass a master-side transport "
                       "that was never started.");

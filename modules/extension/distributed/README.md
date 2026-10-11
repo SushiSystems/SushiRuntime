@@ -30,7 +30,7 @@ Headers under `include/SushiRuntime/distributed/`. Everything is in `SushiRuntim
 | `kernel_registry.hpp` | `KernelRegistry` and its `Kernel` form |
 | `worker_agent.hpp` | `WorkerAgent`, `WorkerAgentOptions`, `WorkerEnd`, `WorkerStatistics` |
 | `worker_main.hpp` | `run_worker()`, `WorkerOptions`, `WorkerExitCode` |
-| `registered_task.hpp` | `add_registered_task()` |
+| `registered_task.hpp` | `record_registered_task()` |
 
 `MessageType`, `GlobalBufferID` and `BufferHandle` are also reachable as `Wire::` names, which the
 private codec uses.
@@ -44,16 +44,27 @@ private codec uses.
 `span<const BufferView>`; the pointer form and its `RemoteKernel` alias are removed, so a generic
 lambda registers without a cast. The last parameter of a kernel is a `const NodeOptions&`: the
 name, the operation and the parameters of the task, valid during the call. A worker fills it from
-the dispatch it received, and add_registered_task() from the node's metadata, through
-describe_task() of `source/task_description.hpp`, which sends the parameters up to the last one
-that is not zero. `OffloadPolicy::pick_worker()` is handed the same description of the task it
-places.
+the dispatch it received. The master fills it from the node's metadata through describe_task()
+of `source/task_description.hpp`, which sends the parameters up to the last one that is not
+zero, and `OffloadPolicy::pick_worker()` is handed the same description of the task it places.
 
-The public headers include only headers of `api`, `core` and this module. Three signatures
-still name an engine type, by forward declaration: `Cluster::attach(RuntimeContext&, ...)`,
-`WorkerAgent(RuntimeContext&, ...)` and
-`add_registered_task(TaskGraph&, ..., const TaskMetadata&, ...)`. The tests of this module, the
-offload benchmark and `worker_main.cpp` drive a bare context and a bare `TaskGraph` through them.
+`record_registered_task(recorder, kernels, options, inputs, outputs)` records a task whose body
+is the kernel registered for `options.operation`. A caller reaches the recorder through
+`Graph::extend()` or `Region::extend()`, and the call returns the position of the rule, like
+every recording member of `Recorder`. The node keeps its own copy of the kernel, the name, the
+parameters and the two view lists, and hands the kernel the options as the caller gave them.
+
+```cpp
+graph.extend([&](SushiRuntime::Recorder& recorder)
+{
+    SushiRuntime::Distributed::record_registered_task(recorder, *kernels, options, inputs, outputs);
+});
+```
+
+The public headers include only headers of `api`, `core` and this module, and no signature in
+them names an engine type: `Cluster::attach()` and `WorkerAgent` take a `Runtime&`, and
+`record_registered_task()` a `Recorder&` and a `NodeOptions`. The tests of this module, the
+offload benchmark and `worker_main.cpp` build a `Runtime` and run a `Graph`.
 
 A `WorkerAgent` seals the registry in its constructor, before it reads the operations it sends in
 `PROOF` and before the exec thread exists, and `run_worker()` seals it on entry. From then on
@@ -74,8 +85,8 @@ knobs and counters. Until attach() runs, the runtime is a
 single machine: no header of `api` or `execution` names a transport or a share, and a buffer is
 shared through the handle attach() returns.
 
-One overload takes an Runtime and the other an Internal::Execution::RuntimeContext. The first forwards
-to the second through Runtime::unsafe_context(); the second serves code that drives a bare context.
+attach() takes a Runtime. It reaches the context through Runtime::unsafe_context() in
+`cluster.cpp`, so the header names no engine type.
 
 attach() refuses an empty secret when the transport's exposure() is Network. When the transport
 does not start, attach() installs nothing and returns `InvalidState` with the transport's
@@ -673,10 +684,10 @@ gets there is closed by the master's handshake timeout and rejected on its next 
 
 `run_worker(argc, argv, kernels)` parses the command line and calls
 `run_worker(options, kernels)`, which is the whole worker process: it sets the log level, reads the
-secret file, installs `StopSignal`, builds a `RuntimeContext` and a TCP worker transport, and hands
+secret file, installs `StopSignal`, builds a `Runtime` and a TCP worker transport, and hands
 them to `serve_worker()`. An application's `main()` registers its kernels and returns the call.
 
-`serve_worker()` (`source/worker_session.hpp`) takes the context, any worker transport, the
+`serve_worker()` (`source/worker_session.hpp`) takes the runtime, any worker transport, the
 registry, the agent's options and the stop signal. It builds the `WorkerAgent`, calls
 `wait_for_end()` every 100 ms until the stop flag is set or the agent ends, stops the agent and
 returns the exit code `exit_code_of()` maps the end to. A test drives it with an in-process

@@ -88,7 +88,7 @@ Float buffers hold whole numbers below 2^24, which float addition keeps exact, s
 ### `USMFloats`, `LocalWorker`, `BackgroundRun`
 
 `USMFloats` owns one shared USM allocation and frees it. `LocalWorker` owns a worker's
-`RuntimeContext` and its `WorkerAgent`. `BackgroundRun` calls `execute()` on its own thread; a
+`Runtime` and its `WorkerAgent`. `BackgroundRun` calls `Graph::run()` on its own thread; a
 test waits for it at most `K_WAIT` (10 s), so a run that never returns fails that test and the
 suite goes on. A run that did not return is detached, not joined.
 
@@ -130,9 +130,8 @@ timing. The TCP test binds `TCPMasterOptions` defaults (127.0.0.1, port 0) and r
 ### `AutoVersionBumpAcrossLocalWriteThenOffloadedRead`
 
 A local task with no operation writes a shared buffer and an offloaded task reads it. The
-buffer's version must rise, and the worker must compute from the values the local task wrote. The
-local writer carries an `OffloadState` with `offloadable == false`: it holds the handles the
-master bumps when the node completes.
+buffer's version must rise, and the worker must compute from the values the local task wrote.
+The worker's kernel runs once, so the writer ran on the master.
 
 ### `WorkerDeathFallsBackToLocal`
 
@@ -174,7 +173,7 @@ installed coordinator. The run must return with the local result, `redispatched`
 
 ### `TryOffloadAfterStopRunsLocally`
 
-The graph is compiled while a real worker is registered, so its node is offloadable. The
+`compile()` builds the plan while a real worker is registered, so its node is offloadable. The
 coordinator is stopped before the run. The worker's kernel must not run, `offloaded` stays 0,
 `declined` rises and the result is the local one.
 
@@ -193,8 +192,7 @@ null. A second `attach` on the same context must then succeed.
 
 ### `AttemptCapDoesNotOutliveTheRun`
 
-A `Fail` worker fails every dispatch. One compiled graph runs twice, with `rearm()` before each
-run. In each run the worker must receive `K_MAXIMUM_OFFLOAD_ATTEMPTS` dispatches before the task
+A `Fail` worker fails every dispatch. One graph is compiled once and runs twice. In each run the worker must receive `K_MAXIMUM_OFFLOAD_ATTEMPTS` dispatches before the task
 runs locally, so the second run proves the cap of the first did not pin the node. `declined`
 rises by one per run and `redispatched` by the cap.
 
@@ -205,7 +203,7 @@ before `start()` is called. With a 32-byte secret the same transport attaches.
 
 ### `RegisteredTaskRunsWithAndWithoutAWorker`, `run_registered_sum`
 
-`add_registered_task` adds the vector-add with no lambda. Run with no cluster, the master's own
+`record_registered_task`, called through `Graph::extend()`, records the vector-add with no lambda. Run with no cluster, the master's own
 registry runs the kernel once. Run with a worker, the worker's registry runs it once and the
 master's not at all. Both outputs must be equal.
 
@@ -1049,8 +1047,8 @@ local run of the first node still raises the version of the buffer it wrote.
 ## test_distributed_tcp_faults.cpp
 
 The file runs a master and a worker in one process over TCP on `127.0.0.1` and breaks the link
-between them. The master is a `Cluster` on a `RuntimeContext` and binds port 0; the test reads the
-port back after `attach`. The worker is a `WorkerAgent` on a second context with one kernel, which
+between them. The master is a `Cluster` on a `Runtime` and binds port 0; the test reads the
+port back after `attach`. The worker is a `WorkerAgent` on a second runtime with one kernel, which
 writes each input byte combined with 0x5a to the output. Every test needs a SYCL device and is
 reported as skipped without one. Every wait is on a condition and bounded at 60 s: a socket read,
 `wait_for_workers`, `wait_for_end`, a future, or `eventually`, which reads a statistics counter

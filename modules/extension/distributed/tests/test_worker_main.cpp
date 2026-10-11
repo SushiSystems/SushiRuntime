@@ -45,7 +45,7 @@
 
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/distributed/endpoint.hpp>
 #include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
@@ -61,7 +61,6 @@
 #include "wire_messages.hpp"
 #include "worker_options_parser.hpp"
 #include "worker_session.hpp"
-#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -347,7 +346,7 @@ namespace
                       [this, transport = InProcessTransport::make_worker(
                                  fabric, link_options(connect_timeout))]
                       {
-                          return serve_worker(context_, transport, make_sushi<KernelRegistry>(),
+                          return serve_worker(runtime_, transport, make_sushi<KernelRegistry>(),
                                               agent_options(), stop_signal_);
                       }))
             {
@@ -402,11 +401,7 @@ namespace
             StopSignal stop_signal_;
 
             /// @brief The runtime the agent's kernels would run on.
-            const std::shared_ptr<Internal::Execution::RuntimeContext> context_owner_ =
-                SushiRuntime::Test::make_context();
-
-            /// @brief The context context_owner_ holds.
-            Internal::Execution::RuntimeContext& context_ = *context_owner_;
+            Runtime runtime_ = Runtime::create().value();
 
             /// @brief The exit code of the serving thread; declared last, so it ends first.
             std::future<WorkerExitCode> exit_code_;

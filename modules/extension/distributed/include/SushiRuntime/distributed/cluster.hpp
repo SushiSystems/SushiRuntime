@@ -51,7 +51,6 @@
 namespace SushiRuntime
 {
     class Runtime;
-    namespace Internal::Execution { class RuntimeContext; }
 
     namespace Distributed
     {
@@ -132,16 +131,6 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] static Result<Cluster>
                 attach(Runtime& runtime, std::shared_ptr<Transport> transport,
-                       ClusterOptions options = ClusterOptions());
-
-                /**
-                 * @brief Builds a master on a bare context; the Runtime overload forwards here.
-                 * @param transport A master-side transport that was never started.
-                 * @return What the Runtime overload returns.
-                 */
-                [[nodiscard]] static Result<Cluster>
-                attach(Internal::Execution::RuntimeContext& context,
-                       std::shared_ptr<Transport> transport,
                        ClusterOptions options = ClusterOptions());
 
                 /** @brief Copies the handle; both name the same master. */

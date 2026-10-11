@@ -643,17 +643,8 @@ namespace SushiRuntime
 
         WorkerAgent::WorkerAgent(Runtime& runtime, std::shared_ptr<Transport> transport,
                                  sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
-            : WorkerAgent(runtime.unsafe_context(), std::move(transport), std::move(kernels),
-                          std::move(options))
-        {
-
-        }
-
-        WorkerAgent::WorkerAgent(Internal::Execution::RuntimeContext& context,
-                                 std::shared_ptr<Transport> transport,
-                                 sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
-            : impl_(std::make_unique<Impl>(context, std::move(transport), std::move(kernels),
-                                           std::move(options)))
+            : impl_(std::make_unique<Impl>(runtime.unsafe_context(), std::move(transport),
+                                           std::move(kernels), std::move(options)))
         {
 
         }

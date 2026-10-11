@@ -53,13 +53,13 @@ namespace SushiRuntime
         /**
          * @brief Serves the master behind @p transport until the stop flag is set or the
          *        agent ends; the agent is stopped when this returns.
-         * @param context The runtime the kernels run on; it outlives the call.
+         * @param runtime The runtime the kernels run on; it outlives the call.
          * @param transport A worker transport that was not started.
          * @param stop_signal The flag the loop reads every 100 ms.
          * @return InternalError when the agent does not start, else the code of its end.
          */
         [[nodiscard]] SUSHIRUNTIME_API WorkerExitCode
-        serve_worker(Internal::Execution::RuntimeContext& context, std::shared_ptr<Transport> transport,
+        serve_worker(Runtime& runtime, std::shared_ptr<Transport> transport,
                      sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options,
                      const StopSignal& stop_signal);
 
