@@ -21,6 +21,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     report          foundation
     region          foundation
     log             foundation
+    machine         foundation
     logging         foundation
     sycl            foundation
     topology        platform

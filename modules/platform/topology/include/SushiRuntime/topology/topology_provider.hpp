@@ -53,7 +53,7 @@ namespace SushiRuntime
                  *         Unsupported when the devices could not be listed.
                  */
                 [[nodiscard]] virtual Result<std::vector<HardwareNode>>
-                enumerate(const HardwareFilterConfig& config = {}) = 0;
+                enumerate(const DeviceFilter& config = {}) = 0;
 
                 /**
                  * @brief Maps each logical CPU (OS cpu index) to its NUMA node; empty by default.

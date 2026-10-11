@@ -21,6 +21,7 @@ sushiruntime_add_module(
         scheduler
         graph
         report
+        machine
     PRIVATE_DEPENDS logging sycl task)
 
 sushiruntime_add_module_tests(

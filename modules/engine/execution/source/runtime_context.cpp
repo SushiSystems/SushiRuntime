@@ -38,7 +38,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
-#include <SushiRuntime/device/device_description.hpp>
+#include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
@@ -68,19 +68,19 @@ namespace SushiRuntime
 
                 // The node's own flag names a GPU, so devices().is_gpu() answers as discovery did.
                 if (node.is_gpu)
-                    descriptor.info.kind = Internal::Device::DeviceKind::Gpu;
+                    descriptor.info.kind = DeviceKind::Gpu;
                 else if (node.sycl_dev.is_cpu())
-                    descriptor.info.kind = Internal::Device::DeviceKind::Cpu;
+                    descriptor.info.kind = DeviceKind::Cpu;
                 else if (node.sycl_dev.is_accelerator())
-                    descriptor.info.kind = Internal::Device::DeviceKind::Accelerator;
+                    descriptor.info.kind = DeviceKind::Accelerator;
                 else
-                    descriptor.info.kind = Internal::Device::DeviceKind::Other;
+                    descriptor.info.kind = DeviceKind::Other;
 
                 return descriptor;
             }
 
             /** @brief Builds the error of a filter that no SYCL device passed. */
-            Error no_device_error(const Internal::Topology::HardwareFilterConfig& config)
+            Error no_device_error(const DeviceFilter& config)
             {
                 std::string detail = "No SYCL device satisfied the hardware filter. Active filter: ";
                 detail += "cpu=";
@@ -106,7 +106,7 @@ namespace SushiRuntime
              */
             Result<std::vector<Internal::Device::DeviceDescriptor>>
             probe_devices(Internal::Topology::TopologyProvider& provider,
-                          const Internal::Topology::HardwareFilterConfig& config)
+                          const DeviceFilter& config)
             {
                 Result<std::vector<Internal::Topology::HardwareNode>> nodes =
                     provider.enumerate(config);
@@ -212,7 +212,7 @@ namespace SushiRuntime
         };
 
         Result<std::shared_ptr<RuntimeContext>>
-        RuntimeContext::create(const Internal::Topology::HardwareFilterConfig& config,
+        RuntimeContext::create(const DeviceFilter& config,
                                std::shared_ptr<Internal::Topology::TopologyProvider> provider,
                                std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model,
                                const RuntimeSettings& settings)

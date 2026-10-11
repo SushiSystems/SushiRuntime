@@ -129,7 +129,7 @@ namespace SushiRuntime
                 if (requested != 0)
                     return requested;
 
-                const std::vector<Internal::Device::DeviceDescription>& devices = context.devices().devices();
+                const std::vector<DeviceDescription>& devices = context.devices().devices();
                 const std::uint64_t half = devices.size() > K_DEVICE_INDEX
                                                ? devices[K_DEVICE_INDEX].memory_bytes / 2
                                                : 0;

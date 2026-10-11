@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* worker_pool.hpp                                                   */
+/* device_descriptor.hpp                                                  */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,32 +20,28 @@
 /**************************************************************************/
 
 /**
- * @file worker_pool.hpp
- * @brief Declares WorkerPool, the worker pool as the scheduler built it.
+ * @file device_descriptor.hpp
+ * @brief Declares DeviceDescriptor, a SYCL device with its inventory record.
  * @author Mustafa Garip
- * @see modules/engine/scheduler/README.md
  */
 
 #pragma once
 
-#include <cstddef>
+#include <sycl/sycl.hpp>
 
-#include <SushiRuntime/scheduler/pin_policy.hpp>
+#include <SushiRuntime/machine/device_description.hpp>
 
 namespace SushiRuntime
 {
-    namespace Internal::Scheduler
+    namespace Internal::Device
     {
         /**
-         * @brief Reports the worker pool as built, which may differ from the request.
-         * @see modules/engine/execution/README.md
+         * @brief Pairs a SYCL device with its inventory record.
          */
-        struct WorkerPool
+        struct DeviceDescriptor
         {
-            std::size_t count      = 0;   /**< Worker threads running. */
-            std::size_t first_core = 0;   /**< First bound core; meaningless when floating. */
-            PinPolicy   pinning    = PinPolicy::Pin;  /**< Whether workers are bound at all. */
+            sycl::device device; /**< The SYCL device a queue is built on. */
+            DeviceDescription info;     /**< What the inventory reports about it. */
         };
-
-    } // namespace Scheduler
+    } // namespace Internal::Device
 } // namespace SushiRuntime

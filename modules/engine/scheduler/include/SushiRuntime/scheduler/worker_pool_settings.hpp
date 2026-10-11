@@ -30,7 +30,7 @@
 
 #include <cstddef>
 
-#include <SushiRuntime/scheduler/pin_policy.hpp>
+#include <SushiRuntime/machine/pin_policy.hpp>
 
 namespace SushiRuntime
 {

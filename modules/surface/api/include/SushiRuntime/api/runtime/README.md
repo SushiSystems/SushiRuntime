@@ -27,8 +27,8 @@ rebalancer and the forced scheduler path. A runtime inside a game shares the mac
 thread, an audio callback and asset I/O, so every default is chosen for a tenant and not for an
 owner.
 
-The struct belongs to the api module. The layers below keep their own types,
-`Internal::Topology::HardwareFilterConfig` and `Internal::Execution::RuntimeSettings`, and may not depend on this one;
+The struct belongs to the api module. The engine keeps its own type,
+`Internal::Execution::RuntimeSettings`, and may not depend on this one;
 `Runtime::settings_of()` is the single place that maps one to the other. A field added to
 `RuntimeSettings` reaches the public surface only when it is added here and in that function.
 `modules/engine/execution/README.md` documents what each setting does to the engine.
@@ -37,8 +37,8 @@ Logging is process state and has no field here; `set_log_level()` and `set_log_s
 
 ### DeviceFilter, PinPolicy, WorkerPool
 
-The three aliases let a caller spell the whole entry path in one namespace. Each names the type of a
-lower module, so a value passes to that module without a conversion.
+The three types are defined by the `machine` module, in `SushiRuntime`. The engine reads and fills
+the same types, so a value passes to it without a conversion.
 
 ## advanced_controls.hpp
 

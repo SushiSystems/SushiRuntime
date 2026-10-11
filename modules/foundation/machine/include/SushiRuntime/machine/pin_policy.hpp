@@ -23,24 +23,20 @@
  * @file pin_policy.hpp
  * @brief Declares PinPolicy, the choice between bound and floating workers.
  * @author Mustafa Garip
- * @see modules/engine/scheduler/README.md
+ * @see modules/foundation/machine/README.md
  */
 
 #pragma once
 
 namespace SushiRuntime
 {
-    namespace Internal::Scheduler
+    /**
+     * @brief Selects whether workers are bound to specific cores or left to the OS.
+     * @see modules/foundation/machine/README.md
+     */
+    enum class PinPolicy
     {
-        /**
-         * @brief Selects whether workers are bound to specific cores or left to the OS.
-         * @see modules/engine/execution/README.md
-         */
-        enum class PinPolicy
-        {
-            Pin,   /**< Bind worker i to core (first_core + i). */
-            Float  /**< Leave placement to the OS scheduler. */
-        };
-
-    } // namespace Scheduler
+        Pin,   /**< Bind worker i to core (first_core + i). */
+        Float  /**< Leave placement to the OS scheduler. */
+    };
 } // namespace SushiRuntime

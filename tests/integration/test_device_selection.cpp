@@ -50,7 +50,7 @@ namespace
 /** @brief Tests that every device the require_fp64 filter admits reports fp64. */
 TEST(Integration_DeviceSelection, RequireFp64AdmitsOnlyFp64Devices)
 {
-    Internal::Topology::HardwareFilterConfig config;
+    DeviceFilter config;
     config.require_fp64 = true;
 
     Internal::Topology::HardwareDiscovery discovery;

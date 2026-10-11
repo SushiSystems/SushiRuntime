@@ -90,7 +90,7 @@ namespace SushiRuntime
             };
 
             /** @brief Spells a filter as "cpu=yes, gpu=no, accelerator=no, require_fp64=no". */
-            std::string describe(const HardwareFilterConfig& config)
+            std::string describe(const DeviceFilter& config)
             {
                 std::string text = "cpu=";
                 text += config.include_cpu ? "yes" : "no";
@@ -125,7 +125,7 @@ namespace SushiRuntime
             }
 
             /** @brief Builds the error of a SYCL enumeration that threw. */
-            Error enumeration_error(const HardwareFilterConfig& config, const char* sycl_text)
+            Error enumeration_error(const DeviceFilter& config, const char* sycl_text)
             {
                 return Error{
                     ErrorCode::Unsupported,
@@ -142,7 +142,7 @@ namespace SushiRuntime
          * @return The discovered hardware nodes, or Unsupported when SYCL could not list them.
          */
         Result<std::vector<HardwareNode>>
-        HardwareDiscovery::probe_all_devices(const HardwareFilterConfig& config)
+        HardwareDiscovery::probe_all_devices(const DeviceFilter& config)
         {
             SR_LOG_DEBUG("Starting expanded hardware probe...");
             std::vector<HardwareNode> discovered_nodes;
@@ -162,7 +162,7 @@ namespace SushiRuntime
          * @return Nothing, or Unsupported when SYCL could not list its devices.
          */
         Result<void> HardwareDiscovery::discover_sycl_devices(std::vector<HardwareNode>& nodes,
-                                                              const HardwareFilterConfig& config)
+                                                              const DeviceFilter& config)
         {
             const LoadedHWLOCTopology loaded_topology;
             const hwloc_topology_t topology = loaded_topology.get();

@@ -71,7 +71,7 @@ TEST(Integration_RuntimeEntry, DevicesListsEveryDeviceInOrder)
 {
     const Runtime rt = Runtime::create().value();
     const AdvancedControls view = rt.advanced();
-    const std::vector<Internal::Device::DeviceDescription>& devices = view.devices();
+    const std::vector<DeviceDescription>& devices = view.devices();
 
     ASSERT_EQ(devices.size(), view.device_count());
     ASSERT_FALSE(devices.empty());

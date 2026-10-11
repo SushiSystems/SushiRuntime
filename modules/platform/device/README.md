@@ -27,7 +27,7 @@ The source is `modules/platform/device/source/device_queue_set.cpp`.
 
 | Header | Declares |
 | --- | --- |
-| `device/device_description.hpp` | `DeviceKind`, `DeviceDescription`, `DeviceDescriptor` |
+| `device/device_descriptor.hpp` | `DeviceDescriptor`, a SYCL device with its `DeviceDescription` |
 | `device/queue_flavour.hpp` | `QueueFlavour` and its comparison |
 | `device/device_queue_set.hpp` | `DeviceQueueSet` |
 

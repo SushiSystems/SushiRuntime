@@ -62,7 +62,7 @@ namespace SushiRuntime
                  * @return The list of hardware nodes with overridden NUMA assignments.
                  */
                 [[nodiscard]] Result<std::vector<HardwareNode>>
-                enumerate(const HardwareFilterConfig& config = {}) override;
+                enumerate(const DeviceFilter& config = {}) override;
 
                 /**
                  * @brief Maps CPU cores to synthetic NUMA nodes.
