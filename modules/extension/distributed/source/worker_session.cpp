@@ -73,12 +73,11 @@ namespace SushiRuntime
             return WorkerExitCode::InternalError;
         }
 
-        WorkerExitCode serve_worker(Internal::Execution::RuntimeContext& context,
-                                    std::shared_ptr<Transport> transport,
+        WorkerExitCode serve_worker(Runtime& runtime, std::shared_ptr<Transport> transport,
                                     sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options,
                                     const StopSignal& stop_signal)
         {
-            WorkerAgent agent(context, std::move(transport), std::move(kernels),
+            WorkerAgent agent(runtime, std::move(transport), std::move(kernels),
                               std::move(options));
 
             const TransportResult started = agent.start();

@@ -52,7 +52,7 @@
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
@@ -63,7 +63,6 @@
 #include <SushiRuntime/distributed/worker_agent.hpp>
 
 #include "test_helpers.hpp"
-#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -197,17 +196,17 @@ namespace
         return kernels;
     }
 
-    /** @brief Adds an op-tagged task out = in * 2 whose local fallback computes the same. */
-    void add_vec_double(TaskGraph& graph, const USMFloats& input, const USMFloats& output)
+    /** @brief Adds an op-tagged task out = in * 2 whose local body computes the same. */
+    void add_vec_double(Graph& graph, const USMFloats& input, const USMFloats& output)
     {
-        TaskMetadata metadata{};
-        metadata.name = "double";
-        metadata.op_id = K_VEC_DOUBLE;
+        NodeOptions options;
+        options.name = "double";
+        options.operation = K_VEC_DOUBLE;
 
         float* in = input.data();
         float* out = output.data();
         graph.add_task(
-            metadata, {in}, {out},
+            Reads(BufferRegion(in)), Writes(BufferRegion(out)),
             [in, out](sycl::queue& queue, const std::vector<sycl::event>&) -> sycl::event
             {
                 return queue.submit([&](sycl::handler& handler)
@@ -218,24 +217,24 @@ namespace
                             out[index] = in[index] * 2.0f;
                     });
                 });
-            });
+            }, options);
     }
 
     /**
-     * @brief Runs a compiled graph on its own thread, so a run that never returns is
+     * @brief Runs a graph once on its own thread, so a run that never returns is
      *        reported and not waited for.
      */
     class BackgroundRun final
     {
         public:
-            /** @brief Starts the run; @p context and @p graph outlive this object. */
-            BackgroundRun(RuntimeContext& context, CompiledGraph& graph)
+            /** @brief Starts the run; @p graph outlives this object. */
+            explicit BackgroundRun(Graph& graph)
             {
                 auto done = std::make_shared<std::promise<void>>();
                 finished_ = done->get_future();
-                thread_ = std::thread([&context, &graph, done]
+                thread_ = std::thread([&graph, done]
                 {
-                    context.execution_engine().execute(graph).value();
+                    graph.run().value();
                     done->set_value();
                 });
             }
@@ -277,7 +276,7 @@ namespace
     };
 
     /**
-     * @brief Runs one real worker: its own context and the agent that serves a fabric.
+     * @brief Runs one real worker: its own runtime and the agent that serves a fabric.
      */
     class LocalWorker final
     {
@@ -285,7 +284,7 @@ namespace
             /** @brief Builds the worker on the next worker endpoint of @p fabric. */
             LocalWorker(InProcessFabric& fabric, std::atomic<int>& runs,
                         WorkerAgentOptions options)
-                : agent_(context_, InProcessTransport::make_worker(fabric),
+                : agent_(runtime_, InProcessTransport::make_worker(fabric),
                          vec_double_kernels(runs), std::move(options))
             {
 
@@ -305,11 +304,7 @@ namespace
 
         private:
             /// @brief The worker's own runtime; declared first, destroyed last.
-            const std::shared_ptr<RuntimeContext> context_owner_ =
-                SushiRuntime::Test::make_context();
-
-            /// @brief The context context_owner_ holds.
-            RuntimeContext& context_ = *context_owner_;
+            Runtime runtime_ = Runtime::create().value();
 
             /// @brief The agent under test.
             WorkerAgent agent_;
@@ -492,8 +487,8 @@ namespace
         constexpr std::size_t K_TASKS = 4;
 
         std::atomic<int> worker_runs{0};
-        const auto master_context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& master_context = *master_context_owner;
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = master_runtime.unsafe_context();
         sycl::queue& queue = master_context.devices().queue(0);
         const std::unique_ptr<USMFloats> input = make_input(queue);
         std::vector<std::unique_ptr<USMFloats>> outputs;
@@ -503,7 +498,7 @@ namespace
         InProcessFabric fabric;
         LocalWorker first(fabric, worker_runs, impatient_worker());
         LocalWorker second(fabric, worker_runs, impatient_worker());
-        Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
                                           impatient_master()).value();
 
         // The cluster assembles before any fault is injected; see README.md.
@@ -512,16 +507,17 @@ namespace
 
         OffloadCoordinator* master = master_context.offload();
         cluster.share(input->data(), K_COUNT * sizeof(float));
-        TaskGraph graph(master);
+        auto graph = master_runtime.graph();
         for (const std::unique_ptr<USMFloats>& output : outputs)
         {
             cluster.share(output->data(), K_COUNT * sizeof(float));
             add_vec_double(graph, *input, *output);
         }
-        CompiledGraph compiled = graph.compile().value();
+        // The plan is built before the first fault, while both workers are known.
+        graph.compile().value();
 
         Nemesis nemesis(fabric, seed, K_WORKERS);
-        BackgroundRun run(master_context, compiled);
+        BackgroundRun run(graph);
         const bool returned = run.wait(K_RUN_LIMIT);
         nemesis.heal();
 
@@ -569,8 +565,8 @@ namespace
         std::atomic<int> worker_runs{0};
         const auto dropped = std::make_shared<std::atomic<int>>(0);
 
-        const auto master_context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& master_context = *master_context_owner;
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = master_runtime.unsafe_context();
         sycl::queue& queue = master_context.devices().queue(0);
         const std::unique_ptr<USMFloats> input = make_input(queue);
         USMFloats output(queue, K_UNWRITTEN);
@@ -579,7 +575,7 @@ namespace
         fabric.set_fault_policy(drop_first_of(lost_types, dropped));
 
         LocalWorker worker(fabric, worker_runs, impatient_worker());
-        Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
                                           impatient_master()).value();
         outcome.assembled = worker.start() && cluster.wait_for_workers(1, K_WAIT);
         if (!outcome.assembled)
@@ -591,11 +587,11 @@ namespace
         OffloadCoordinator* master = master_context.offload();
         cluster.share(input->data(), K_COUNT * sizeof(float));
         cluster.share(output.data(), K_COUNT * sizeof(float));
-        TaskGraph graph(master);
+        auto graph = master_runtime.graph();
         add_vec_double(graph, *input, output);
-        CompiledGraph compiled = graph.compile().value();
+        graph.compile().value();
 
-        BackgroundRun run(master_context, compiled);
+        BackgroundRun run(graph);
         outcome.returned = run.wait(K_RUN_LIMIT);
         if (!outcome.returned)
             master->stop();

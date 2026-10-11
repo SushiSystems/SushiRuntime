@@ -21,12 +21,14 @@
 
 /**
  * @file registered_task.hpp
- * @brief Declares add_registered_task(), which adds a task that runs a registered kernel.
+ * @brief Declares record_registered_task(), which records a task that runs a registered kernel.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */
 
 #pragma once
+
+#include <cstddef>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
@@ -35,26 +37,25 @@
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph
-    {
-        struct Node;
-        struct TaskMetadata;
-        class TaskGraph;
-    } // namespace Graph
+    class Recorder;
+    struct NodeOptions;
 
     namespace Distributed
     {
         /**
-         * @brief Adds a task that runs the kernel registered for metadata.op_id on this machine.
+         * @brief Records a task that runs the kernel registered for options.operation on this
+         *        machine.
          *
          * A worker with the same operation may run it instead once a Cluster is attached and
-         * every buffer is shared. The kernel is copied into the node, which the graph owns.
+         * every buffer is shared. The kernel and the options are copied into the node.
+         * @param recorder What Graph::extend() or Region::extend() hands its extension.
          * @param inputs The buffers read, in the kernel's order; the memory outlives the run.
-         * @pre kernels holds a kernel for metadata.op_id.
+         * @return The position of the rule recorded, or rule_count() when options are refused.
+         * @pre kernels holds a kernel for options.operation.
          */
-        SUSHIRUNTIME_API Internal::Graph::Node& add_registered_task(
-            Internal::Graph::TaskGraph& graph, const KernelRegistry& kernels,
-            const Internal::Graph::TaskMetadata& metadata, SushiRuntime::span<const BufferView> inputs,
+        SUSHIRUNTIME_API std::size_t record_registered_task(
+            Recorder& recorder, const KernelRegistry& kernels, const NodeOptions& options,
+            SushiRuntime::span<const BufferView> inputs,
             SushiRuntime::span<const BufferView> outputs);
 
     } // namespace Distributed

@@ -42,11 +42,10 @@
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/distributed/offload_policy.hpp>
@@ -59,12 +58,10 @@
 
 #include "measurement.hpp"
 #include "test_helpers.hpp"
-#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 using namespace SushiRuntime::Literals;
-using SushiRuntime::Internal::Execution::RuntimeContext;
 using SushiRuntime::Test::MeasurementLabel;
 using SushiRuntime::Test::RunStatistics;
 
@@ -153,7 +150,7 @@ namespace
         public:
             /** @brief Builds the worker's runtime and starts the agent on @p transport. */
             LocalWorker(std::shared_ptr<Transport> transport, sushi_ptr<KernelRegistry> kernels)
-                : agent_(context_, std::move(transport), std::move(kernels))
+                : agent_(runtime_, std::move(transport), std::move(kernels))
             {
                 started_ = agent_.start();
             }
@@ -183,11 +180,7 @@ namespace
 
         private:
             /// @brief The runtime whose device 0 runs the kernels and holds the cache.
-            const std::shared_ptr<RuntimeContext> context_owner_ =
-                SushiRuntime::Test::make_context();
-
-            /// @brief The context context_owner_ holds.
-            RuntimeContext& context_ = *context_owner_;
+            Runtime runtime_ = Runtime::create().value();
 
             /// @brief The agent; declared after the runtime it uses.
             WorkerAgent agent_;
@@ -241,7 +234,7 @@ namespace
             }
 
             /** @brief Returns the master's runtime. */
-            [[nodiscard]] RuntimeContext& master() noexcept
+            [[nodiscard]] Runtime& master() noexcept
             {
                 return master_;
             }
@@ -279,11 +272,7 @@ namespace
             }
 
             /// @brief The master's runtime; declared first, so it is destroyed last.
-            const std::shared_ptr<RuntimeContext> master_owner_ =
-                SushiRuntime::Test::make_context();
-
-            /// @brief The context master_owner_ holds.
-            RuntimeContext& master_ = *master_owner_;
+            Runtime master_ = Runtime::create().value();
 
             /// @brief The kernels of the master and of every worker.
             sushi_ptr<KernelRegistry> kernels_;
@@ -301,15 +290,15 @@ namespace
         public:
             /**
              * @brief Allocates @p count floats on device 0 and shares them with the master.
-             * @pre @p cluster is attached to @p context, which outlives the buffer.
+             * @pre @p cluster is attached to @p runtime, which outlives the buffer.
              */
-            SharedFloats(RuntimeContext& context, Cluster& cluster, std::size_t count)
-                : context_(&context), count_(count)
+            SharedFloats(Runtime& runtime, Cluster& cluster, std::size_t count)
+                : memory_(&runtime.unsafe_context().memory()), count_(count)
             {
                 Internal::Memory::USMRequest request;
                 request.kind = Internal::Memory::USMKind::Shared;
                 request.bytes = bytes();
-                data_ = static_cast<float*>(context.memory().allocate(request));
+                data_ = static_cast<float*>(memory_->allocate(request));
                 cluster.share(data_, bytes());
             }
 
@@ -317,7 +306,7 @@ namespace
             ~SharedFloats()
             {
                 if (data_ != nullptr)
-                    context_->memory().release(data_);
+                    memory_->release(data_);
             }
 
             SharedFloats(const SharedFloats&) = delete;
@@ -325,7 +314,7 @@ namespace
 
             /** @brief Takes the memory of @p other and leaves it empty. */
             SharedFloats(SharedFloats&& other) noexcept
-                : context_(other.context_), count_(other.count_),
+                : memory_(other.memory_), count_(other.count_),
                   data_(std::exchange(other.data_, nullptr))
             {
 
@@ -358,8 +347,8 @@ namespace
             }
 
         private:
-            /// @brief The runtime whose allocator owns the memory.
-            RuntimeContext* context_;
+            /// @brief The allocator of the master's runtime, which owns the memory.
+            Internal::Memory::USMAllocator* memory_;
 
             /// @brief The number of floats.
             std::size_t count_;
@@ -412,22 +401,26 @@ namespace
             }
 
             /** @brief Builds and compiles a graph of one registered task per buffer pair. */
-            [[nodiscard]] Internal::Graph::CompiledGraph compile() const
+            [[nodiscard]] Graph compile() const
             {
-                Internal::Graph::TaskGraph graph(rig_.master().offload());
-                Internal::Graph::TaskMetadata metadata;
-                metadata.name = "benchmark_increment";
-                metadata.op_id = K_INCREMENT;
+                NodeOptions options;
+                options.name = "benchmark_increment";
+                options.operation = K_INCREMENT;
 
+                Graph graph = rig_.master().graph();
                 for (std::size_t task = 0; task < inputs_.size(); ++task)
                 {
                     const BufferView input = inputs_[task].view();
                     const BufferView output = outputs_[task].view();
-                    add_registered_task(graph, rig_.kernels(), metadata,
-                                        span<const BufferView>(&input, 1),
-                                        span<const BufferView>(&output, 1));
+                    graph.extend([&](Recorder& recorder)
+                    {
+                        record_registered_task(recorder, rig_.kernels(), options,
+                                               span<const BufferView>(&input, 1),
+                                               span<const BufferView>(&output, 1));
+                    });
                 }
-                return graph.compile().value();
+                graph.compile().value();
+                return graph;
             }
 
             /** @brief Returns whether every output holds its input's pattern plus one. */
@@ -467,7 +460,7 @@ namespace
     };
 
     /**
-     * @brief Runs a batch once untimed, then times execute() over the default number of runs.
+     * @brief Runs a batch once untimed, then times run() over the default number of runs.
      *
      * The refill, the graph build and the check of the outputs stay outside the timed region.
      */
@@ -480,10 +473,10 @@ namespace
         {
             base += 1.0f;
             batch.refill(base);
-            Internal::Graph::CompiledGraph compiled = batch.compile();
+            Graph compiled = batch.compile();
 
             const auto begin = std::chrono::steady_clock::now();
-            rig.master().execution_engine().execute(compiled).value();
+            compiled.run().value();
             const auto end = std::chrono::steady_clock::now();
 
             measurement.is_correct = measurement.is_correct && batch.holds_results(base);

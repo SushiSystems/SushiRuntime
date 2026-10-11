@@ -55,7 +55,7 @@
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/task_types.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
@@ -73,7 +73,6 @@
 #include "test_helpers.hpp"
 #include "wire_frame.hpp"
 #include "wire_messages.hpp"
-#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -350,13 +349,13 @@ namespace
     /**
      * @brief Runs a master, a worker and a fault proxy in one process, over loopback TCP.
      *
-     * The master is a Cluster on a RuntimeContext; the worker is a WorkerAgent on a second
-     * context with one kernel. Each test is skipped on a machine with no SYCL device.
+     * The master is a Cluster on a Runtime; the worker is a WorkerAgent on a second
+     * runtime with one kernel. Each test is skipped on a machine with no SYCL device.
      */
     class Integration_DistributedTcpFaultsTest : public ::testing::Test
     {
         protected:
-            /** @brief Builds the master's context and makes log calls reach a sink at once. */
+            /** @brief Builds the master's runtime and makes log calls reach a sink at once. */
             void SetUp() override
             {
                 if (!SushiRuntime::Test::has_any_sycl_device())
@@ -365,7 +364,7 @@ namespace
                 saved_level_ = log_level();
                 set_log_synchronous(true);
                 set_log_level(LogLevel::Warn);
-                master_context_ = SushiRuntime::Test::make_context();
+                master_runtime_.emplace(Runtime::create().value());
             }
 
             /** @brief Stops the worker, the master and the proxy, then frees the buffers. */
@@ -394,7 +393,7 @@ namespace
                 options.policy = std::make_shared<FirstWorkerPolicy>();
                 master_transport_ = TCPTransport::make_master(transport);
                 cluster_.emplace(
-                    Cluster::attach(*master_context_, master_transport_, std::move(options)).value());
+                    Cluster::attach(*master_runtime_, master_transport_, std::move(options)).value());
             }
 
             /** @brief Returns the port the master bound; valid after start_master(). */
@@ -418,8 +417,8 @@ namespace
                               WorkerAgentOptions options = WorkerAgentOptions(),
                               const TCPWorkerOptions& transport = quick_reconnect())
             {
-                if (!worker_context_)
-                    worker_context_ = SushiRuntime::Test::make_context();
+                if (!worker_runtime_)
+                    worker_runtime_.emplace(Runtime::create().value());
 
                 RunCounters* const runs = &runs_;
                 sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
@@ -436,7 +435,7 @@ namespace
                     });
 
                 options.name = "tcp-faults-worker";
-                agent_ = std::make_unique<WorkerAgent>(*worker_context_,
+                agent_ = std::make_unique<WorkerAgent>(*worker_runtime_,
                                                        TCPTransport::make_worker(target, transport),
                                                        kernels, std::move(options));
                 const TransportResult started = agent_->start();
@@ -481,22 +480,23 @@ namespace
              */
             void launch(const MaskTask& task, std::function<void()> beside = nullptr)
             {
-                Internal::Execution::RuntimeContext* const context = master_context_.get();
+                Runtime* const runtime = &*master_runtime_;
                 RunCounters* const runs = &runs_;
                 run_ = std::async(std::launch::async,
-                                  [context, runs, task, beside = std::move(beside)]
+                                  [runtime, runs, task, beside = std::move(beside)]
                 {
                     const std::byte* const input = task.input->data();
                     std::byte* const output = task.output->data();
                     const std::size_t count = task.output->size();
 
-                    Internal::Graph::TaskMetadata metadata;
-                    metadata.name = "tcp_faults_mask";
-                    metadata.op_id = K_MASK_OPERATION;
+                    NodeOptions options;
+                    options.name = "tcp_faults_mask";
+                    options.operation = K_MASK_OPERATION;
 
-                    Internal::Graph::TaskGraph graph(context->offload());
+                    auto graph = runtime->graph();
                     graph.add_task(
-                        metadata, {task.input->data()}, {task.output->data()},
+                        Reads(BufferRegion(task.input->data())),
+                        Writes(BufferRegion(task.output->data())),
                         [runs, input, output, count](
                             sycl::queue& queue,
                             const std::vector<sycl::event>& /*dependencies*/) -> sycl::event
@@ -509,11 +509,11 @@ namespace
                                     runs->local.fetch_add(1);
                                 });
                             });
-                        });
+                        }, options);
                     if (beside)
-                        graph.add_native({}, {}, beside);
+                        graph.add_host(beside);
 
-                    context->execution_engine().execute(graph.compile().value()).value();
+                    graph.run().value();
                 });
             }
 
@@ -554,10 +554,10 @@ namespace
             }
 
             /// @brief The master's runtime; declared first, so it is destroyed last.
-            std::shared_ptr<Internal::Execution::RuntimeContext> master_context_;
+            std::optional<Runtime> master_runtime_;
 
             /// @brief The worker's runtime; built by the first start_worker().
-            std::shared_ptr<Internal::Execution::RuntimeContext> worker_context_;
+            std::optional<Runtime> worker_runtime_;
 
             /// @brief Where the mask ran.
             RunCounters runs_;
@@ -591,7 +591,7 @@ namespace
             SharedBytes& add_buffer(std::size_t size)
             {
                 buffers_.push_back(
-                    std::make_unique<SharedBytes>(master_context_->memory(), size));
+                    std::make_unique<SharedBytes>(master_runtime_->unsafe_context().memory(), size));
                 SharedBytes& buffer = *buffers_.back();
                 cluster_->share(buffer.data(), buffer.size());
                 return buffer;

@@ -39,7 +39,7 @@
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/logging/log_level.hpp>
 #include <SushiRuntime/logging/logger.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
@@ -161,8 +161,7 @@ namespace SushiRuntime
                                                sushi_ptr<KernelRegistry> kernels)
             {
                 const StopSignal stop_signal;
-                const Result<std::shared_ptr<Internal::Execution::RuntimeContext>> created =
-                    Internal::Execution::RuntimeContext::create();
+                Result<Runtime> created = Runtime::create();
                 if (!created)
                 {
                     SR_LOG_ERROR("worker has no runtime: {}; exiting with code {}",
@@ -170,13 +169,12 @@ namespace SushiRuntime
                                  exit_value(WorkerExitCode::InternalError));
                     return WorkerExitCode::InternalError;
                 }
-                Internal::Execution::RuntimeContext& context = **created;
 
                 SR_LOG_INFO("worker joining master {}, protocol v{}, authentication {}",
                             options.master.to_string(), Wire::K_PROTOCOL_VERSION,
                             secret.empty() ? "off" : "on");
 
-                return serve_worker(context,
+                return serve_worker(*created,
                                     TCPTransport::make_worker(options.master,
                                                               make_transport_options(options)),
                                     std::move(kernels),
