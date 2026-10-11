@@ -29,5 +29,6 @@ sushiruntime_add_module_tests(
         test_device_pipeline.cpp
         test_heterogeneous_pipeline.cpp
         test_profiling_queue.cpp
+        test_replay_host_write.cpp
         test_run_in_progress.cpp
         test_sycl_execution.cpp)

@@ -78,9 +78,10 @@ namespace SushiRuntime
             /**
              * @brief Restores every node's per-run state to its compiled baseline.
              *
-             * Resets in_degree (nodes + sentinel) from the snapshot capture_base_state()
-             * took, so the cached plan is ready to run again. Safe to call only after
-             * capture_base_state().
+             * Between two executions the caller may write Shared or Host USM that no node
+             * of the plan writes; the next execution reads those bytes.
+             * @pre capture_base_state() has been called.
+             * @see modules/engine/graph/README.md
              */
             void rearm() noexcept;
 

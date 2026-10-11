@@ -88,6 +88,14 @@ one.
 A kernel dispatched on the profiling queue correctly dereferences a USM allocation made through the
 context of the plain queue. The shared context is usable, not only reported.
 
+## test_replay_host_write.cpp
+
+The file pins the rule `CompiledGraph::rearm` states: a replayed plan reads what the host wrote
+between two executions. One kernel reads a word and writes it plus one. The plan is compiled
+once and replayed eight times; before each replay the host writes the word, and the output must
+follow. One case holds the word in Shared USM and one in Host USM, each on every device queue of
+the context.
+
 ## test_run_in_progress.cpp
 
 The file covers `IExecutionEngine::run_in_progress()`: false on an engine that ran nothing, true
