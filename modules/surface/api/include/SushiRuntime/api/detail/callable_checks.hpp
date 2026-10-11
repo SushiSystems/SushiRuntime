@@ -38,7 +38,6 @@
 #include <SushiRuntime/api/launch/extent.hpp>
 #include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
 
 namespace SushiRuntime
 {
@@ -200,19 +199,6 @@ namespace SushiRuntime
             static_assert(accepted,
                 "before_each_step(fn) takes a hook invoked as fn(std::size_t finished_steps) "
                 "on the thread that runs the graph, before each step.");
-            return accepted;
-        }
-
-        /** @brief Checks an emitter, which adds its own nodes to the engine's graph. */
-        template <class F>
-        constexpr bool accepts_emitter() noexcept
-        {
-            constexpr bool accepted =
-                std::is_invocable_v<F, ::SushiRuntime::Internal::Graph::TaskGraph&>;
-            static_assert(accepted,
-                "add_emitter(fn) takes an emitter invoked as "
-                "fn(SushiRuntime::Internal::Graph::TaskGraph&), which adds its own nodes to the "
-                "graph it is handed.");
             return accepted;
         }
 

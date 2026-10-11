@@ -1015,78 +1015,45 @@ parameters throw `invalid_graph`; the first message holds `9 parameters` and `at
 neither rule is recorded. Both forms record with eight. A `static_assert` ties the literals to
 `TaskMetadata::K_MAX_PARAMS`. The graph is not run.
 
-### `AnEmitterThatAddsNothingLeavesTheRuleBeforeItAlone`
+### `AnExtensionThatRecordsNothingAddsNoRule`
 
-A rule named `integrate` is followed by an emitter that adds no node and is named `optional`. The
-profiled report holds one row named `integrate` and none named `optional`, the first rule has a
-registration and the second reports `K_NO_REGISTRATION`.
+A rule named `integrate` is followed by an extension that records nothing. The graph still holds
+one rule and one node, the recorder's generation is the one it had before the call, and the
+profiled run reports the node under `integrate`.
 
 ## test_region_emitter.cpp
 
-The file covers `add_emitter()`, the recording form that hands the caller the backing TaskGraph.
-The emitters record device kernels, the way a library above the runtime does, and each kernel waits
-on the dependency events it is handed.
+The file covers `extend()` as a library above the runtime uses it: the extension receives the
+Recorder and records device tasks with `Recorder::task`.
 
 ### `record_device_task`
 
-`record_device_task` records one `add_task` node whose work is a `parallel_for` on the queue it is
-given. The tasks are device kernels, not host tasks, because a host access to a
-`Residency::Shared` buffer while a kernel runs on the same GPU faults on Windows with CUDA; see
-`docs/reference/KNOWN_ISSUES.md`.
+`record_device_task` records one `Recorder::task` node whose body is a `parallel_for` on the queue
+it is given, named and given its width through NodeOptions. The tasks are device kernels, not host
+tasks, because a host access to a `Residency::Shared` buffer while a kernel runs on the same GPU
+faults on Windows with CUDA; see `docs/reference/KNOWN_ISSUES.md`.
 
-### `EmittedNodesOrderAgainstANeighbourRegion`
+### `ExtensionTasksOrderAgainstANeighbourRegion`
 
-One emitter records two kernels on a buffer, a fill and a tripling, and a higher-keyed region reads
-that buffer through an ordinary `add()`. The consumer sees the tripled values, so the two emitted
-nodes ran in their recorded order and the boundary edge ordered the consumer behind them.
+One extension records two tasks on a buffer, a fill and a tripling, and a higher-keyed region reads
+that buffer through an ordinary `add()`. The consumer sees the tripled values, so the two tasks ran
+in their recorded order and the boundary edge ordered the consumer behind them.
 
-### `AnEmitterIsOneRule`
+### `AnExtensionIsOneRule`
 
-An emitter that records two nodes reports a region size of one and a graph size of one: `size()`
-counts an emitter once, however many nodes it adds.
+An extension that records two tasks reports a region size of one, a node count of two and a graph
+size of one: `size()` counts an extension once, however many nodes it records.
 
-### `AnEmitterReplaysOnlyWhenItsRegionIsRebuilt`
+### `AnExtensionRunsOnceWhenItIsCalled`
 
-The emitter counts its own calls. Three replayed steps call it once, rebuilding the neighbouring
-region leaves the count at one, and dropping and recording its own region again raises it to two.
+The extension counts its own calls. The count is one when `extend()` returns and stays one over
+three replayed steps and over a rebuild of the neighbouring region. Dropping its own region and
+extending it again raises the count to two.
 
-### `AStaticGraphTakesAnEmitter`
+### `AStaticGraphTakesAnExtension`
 
-A static `Graph` records an emitter beside an ordinary `add()` that reads the emitter's buffer.
+A static `Graph` records an extension beside an ordinary `add()` that reads the extension's buffer.
 Four steps advance both, so the form is not specific to regions and survives a chained replay.
-
-## test_rule_registration.cpp
-
-`Graph::rule_registration` is the only way a caller can read the node events of a `RunReport`. The
-events number nodes by registration index, and the rule order a caller thinks in is a different
-sequence. These cases check the mapping between the two.
-
-`record` adds three plain kernels and then `record_grouped_rule`, three kernels inside one
-`Recorder::rule()` scope, each reading what the one before it wrote. The graph therefore holds four
-rules and six nodes, and `last_rule()` gives the position of the scope.
-
-### `AVerbReturnsThePositionOfTheRuleItRecorded`
-
-`Recorder::kernel` records one kernel, and a rule scope then records a kernel and a host task.
-The value the first call returns is `last_rule()` at that moment; the two calls inside the scope
-return one value, which differs from the first. Each kernel states a width no other node has, so
-its node event is found by `launched_width`, and `rule_registration()` asked with the returned
-position gives the `node_index` of that event.
-
-### `ARuleCarriesNoIndexUntilTheGraphCompiles`
-
-`size()` is four, `node_count()` is six, and every rule reports `K_NO_REGISTRATION` before the first
-run.
-
-### `ARuleScopeTakesOneIndexOfItsOwn`
-
-Each plain `add()` takes an index of its own. The scope takes one more, which no plain kernel has,
-and exactly three node events carry it. A position past the last rule reports `K_NO_REGISTRATION`.
-
-### `ARulesNodesReportOneIndexOnEveryStep`
-
-Over `run(4)` the report holds one event per node per step, and on every step exactly three events
-carry the index of the rule.
 
 ## test_run_driver.cpp
 
@@ -1117,8 +1084,10 @@ synchronous and the asynchronous path. `try_run()` used to report `compile_faile
 
 ### `AThrowingBuildIsCompileFailed`
 
-An emitter runs when the plan is built. One that throws must yield `compile_failed` from `try_run()`
-and from `try_run_async()`, which shows that the code follows the phase and not the exception type.
+No code of the caller runs when the plan is built except the copy of each recorded callable into
+its node. The second task is a `Testing::RefusingFill` whose copy throws, so the build throws. It
+must yield `compile_failed` from `try_run()` and from `try_run_async()`, which shows that the code
+follows the phase and not the exception type.
 
 ### `EveryTryEntryRunsOnBothGraphs`
 
@@ -1418,9 +1387,10 @@ share no region and may finish in any order, so the widths are compared sorted.
 
 ### `AStateNodeBuiltFromItsViewRunsTheRule`, `ACoupledNodeBuiltFromItsViewsRunsTheRule`, `ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow`
 
-Each case builds a replay callable outside a recorder, hands it the State's own view from
-`HandleAccess::view()`, and replays it through `add_emitter()`. One step runs and the State's next
-field holds the rule's result. No advance is registered, so the test reads `next()`.
+Each case builds a replay callable outside a recorder and hands it the State's own view from
+`HandleAccess::view()`. `run_once` replays the callable onto an engine TaskGraph of its own,
+compiles that graph and executes the plan on the runtime's engine. One step runs and the State's
+next field holds the rule's result. No advance is registered, so the test reads `next()`.
 The late-bound case sets the live count on its `LateBindings` and checks that the elements past it
 keep `K_CANARY`. `offload_state_node(op, view, size, ...)` has no case here.
 
@@ -1522,6 +1492,15 @@ renames the rule, which rebuilds the plan, runs a second step and expects `K_MAR
 The in-degree is the deterministic check; the values depend on the order only when the scheduler
 runs the two unordered nodes the other way round.
 
+## refusing_fill.hpp
+
+### `RefusingFill`
+
+`Testing::RefusingFill` is a host task that fills a range, and whose copy constructor throws a
+`std::runtime_error` while a flag the test holds is set. Recording moves the task, and every
+build of a plan copies it into the node, so the flag decides whether a build throws.
+`test_run_driver.cpp` and `test_region_commit.cpp` include the header by its relative path.
+
 ## dynamic_graph_plan_access.hpp
 
 The header is the seam the tests use to read the composed plan of a `DynamicGraph`, which has no
@@ -1598,10 +1577,11 @@ named `c` and a boundary in-degree of one on `c`.
 ### `AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegions`
 
 Regions 0, 1 and 2 share one buffer: `a` writes it, `b` and `c` read it. After one run region 1 is
-dropped and region 3 is added with an emitter that throws on its first replay and writes a buffer
-of its own afterwards. The run returns `compile_failed`, `compose_count()` has not moved and the
-edge `a -> c` is still in the plan. The emitter then stops throwing, the next run succeeds and
-composes once, the edge `a -> c` is there, and `c` holds what `a` wrote in the second step.
+dropped and region 3 is added with a `Testing::RefusingFill`, a host task whose copy throws while
+its flag is set and which writes a buffer of its own. The run returns `compile_failed`,
+`compose_count()` has not moved and the edge `a -> c` is still in the plan. The flag is then
+cleared, the next run succeeds and composes once, the edge `a -> c` is there, and `c` holds what
+`a` wrote in the second step.
 
 A second mid-commit failure, an allocation that fails after the first region is un-wired, has no
 test: the composer offers no seam that makes `std::set::insert` throw.

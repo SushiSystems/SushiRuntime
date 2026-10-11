@@ -49,6 +49,8 @@
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 
+#include "refusing_fill.hpp"
+
 using namespace SushiRuntime;
 
 namespace
@@ -371,7 +373,8 @@ TEST(Integration_RunDriver, AThrowingBuildIsCompileFailed)
 
     auto g = rt.graph();
     g.add_host(Reads{}, Writes(buf), [p]() { p[0] = 1; });
-    g.add_emitter([](Internal::Graph::TaskGraph&) { throw std::runtime_error(K_BUILD_FAILURE); });
+    g.add_host(Reads{}, Writes(buf),
+               Testing::RefusingFill(std::make_shared<bool>(true), K_BUILD_FAILURE, p, N, 2));
 
     const auto run = g.try_run();
     ASSERT_FALSE(run.has_value());

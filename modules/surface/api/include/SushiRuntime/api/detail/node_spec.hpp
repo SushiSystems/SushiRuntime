@@ -52,7 +52,7 @@ namespace SushiRuntime
 
             /**
              * @brief Wraps a callable invoked as emit(TaskGraph&, registration) per replay.
-             * @param f The replay callable; it adds the node and stamps the registration given.
+             * @param f The replay callable; it adds one node and stamps the registration given.
              */
             template <class F,
                       std::enable_if_t<!std::is_same<std::decay_t<F>, NodeSpec>::value,
@@ -70,9 +70,6 @@ namespace SushiRuntime
 
             /** @brief Position of this node's rule in the recorder's rule order. */
             std::uint32_t rule = K_NO_RULE;
-
-            /** @brief Whether replay stamps the rule's index; false if emit stamps its own. */
-            bool takes_rule_registration = true;
         };
     } // namespace Detail
 } // namespace SushiRuntime

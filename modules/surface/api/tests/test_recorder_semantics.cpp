@@ -539,25 +539,25 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
     EXPECT_EQ(graph.size(), 2u);
 }
 
-/** @brief Tests that an emitter that adds no node leaves the rule before it its name. */
-TEST(Integration_RecorderSemantics, AnEmitterThatAddsNothingLeavesTheRuleBeforeItAlone)
+/** @brief Tests that an extension that records nothing adds no rule and no node. */
+TEST(Integration_RecorderSemantics, AnExtensionThatRecordsNothingAddsNoRule)
 {
     auto rt = Runtime::create();
     auto values = zeroed(rt);
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
     graph.name("integrate");
-    graph.add_emitter([](Internal::Graph::TaskGraph&) {}).name("optional");
+    const std::uint64_t recorded = graph.recorder().generation();
+    graph.extend([](Recorder&) {});
     graph.set_profiling(true);
 
     Internal::Observability::RunReport report;
     graph.run(1, report);
 
-    EXPECT_EQ(graph.size(), 2u);
+    EXPECT_EQ(graph.size(), 1u);
+    EXPECT_EQ(graph.node_count(), 1u);
+    EXPECT_EQ(graph.recorder().generation(), recorded) << "nothing recorded, nothing to rebuild";
     EXPECT_EQ(rows_named(report, "integrate"), 1u) << "the first rule must keep its name";
-    EXPECT_EQ(rows_named(report, "optional"), 0u);
     EXPECT_NE(graph.rule_registration(0), Graph::K_NO_REGISTRATION);
-    EXPECT_EQ(graph.rule_registration(1), Graph::K_NO_REGISTRATION)
-        << "a rule that added no node has no registration";
     EXPECT_EQ(values[0], 1u);
 }
