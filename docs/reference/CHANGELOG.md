@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — observability: Removed `noexcept` from `ProfilingLedger::reserve`, which allocates; a moved-from ledger is empty and `read_event_timestamps` leaves its output unchanged on failure (`profiling_ledger.hpp`).
 - 2026-10-11 — memory: Changed `UsmAllocator::release` to log an error and free nothing for an address it has no record of (`usm_allocator.cpp`).
 - 2026-10-11 — memory: Fixed `set_release_observer` returning while an `on_release` call still ran, and a retire rescanning the whole list on every call (`usm_allocator.cpp`, `epoch_reclamation.hpp`).
 - 2026-10-11 — topology: Fixed `pin_current_thread_to_core` shifting by an unchecked core index; it moved out of line and `affinity.hpp` no longer includes `<windows.h>` (`affinity.cpp`).

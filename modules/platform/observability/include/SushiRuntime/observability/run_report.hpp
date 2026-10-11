@@ -45,7 +45,7 @@ namespace SushiRuntime
          */
         struct NumaNodeStatistics
         {
-            int numa_id = -1;                       /**< NUMA node this row describes. */
+            int numa_id = -1;                       /**< NUMA node this row describes. Always -1 in v1: one row covers the run. */
 
             std::size_t cpu_tasks_executed = 0;     /**< Tasks run on CPU devices on this node. */
             std::size_t gpu_tasks_executed = 0;     /**< Tasks run on GPU devices attached to this node. */
@@ -163,21 +163,21 @@ namespace SushiRuntime
             // B. Timing / bottleneck analysis
             double total_duration_ms = 0.0;             /**< Wall-clock time of the whole run. */
             double graph_analysis_duration_ms = 0.0;    /**< Dependency analysis + compile time. */
-            double scheduling_overhead_ms = 0.0;        /**< Time workers spent polling for completions. */
+            double scheduling_overhead_ms = 0.0;        /**< Summed worker time polling for completions; 0 unless the run profiles. */
             double network_latency_wait_ms = 0.0;       /**< Idle time awaiting remote results. Reserved: always 0 in v1. */
 
             // C. NUMA topology breakdown
-            std::vector<NumaNodeStatistics> numa_statistics;      /**< Per-node breakdown (one entry per active node). */
+            std::vector<NumaNodeStatistics> numa_statistics;      /**< Exactly one entry in v1, with the run's totals; every task counts under device 0's class. */
 
             // D. Distributed breakdown
             DistributedStatistics distributed_statistics;         /**< Offload and network figures; zero with no cluster. */
 
-            // E. PCIe / SYCL host-device transfers (reserved)
+            // E. PCIe / SYCL host-device transfers
             std::size_t host_to_device_bytes = 0;       /**< Bytes moved by explicit write_range calls during the run. */
             std::size_t device_to_host_bytes = 0;       /**< Bytes moved by explicit read_range calls during the run. */
 
             // F. Diagnostics
-            std::vector<std::string> warnings;          /**< Non-fatal notes raised during the run. */
+            std::vector<std::string> warnings;          /**< Non-fatal notes raised during the run. Reserved: always empty in v1. */
 
             // G. Profiling breakdown (populated only when the runtime has profiling on)
             std::vector<NodeTiming>   node_timings;     /**< Per-node device/host timing; empty when profiling is off. */
