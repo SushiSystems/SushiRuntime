@@ -33,7 +33,7 @@ sushiruntime_add_module(
         task
         graph
         execution
-        interop_engine)
+        memory_exchange)
 
 sushiruntime_add_module_tests(
     MODULE api

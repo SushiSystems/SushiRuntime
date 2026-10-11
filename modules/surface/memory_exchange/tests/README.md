@@ -1,8 +1,8 @@
-# interop_engine tests
+# memory_exchange tests
 
-The tests of the `interop_engine` module, built into one program, `sr_interop_engine_tests`, which
-`modules/surface/interop_engine/CMakeLists.txt` declares. `sr test` runs it with the rest;
-`sr run sr_interop_engine_tests -- --gtest_filter='<pattern>'` runs it alone.
+The tests of the `memory_exchange` module, built into one program, `sr_memory_exchange_tests`, which
+`modules/surface/memory_exchange/CMakeLists.txt` declares. `sr test` runs it with the rest;
+`sr run sr_memory_exchange_tests -- --gtest_filter='<pattern>'` runs it alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 

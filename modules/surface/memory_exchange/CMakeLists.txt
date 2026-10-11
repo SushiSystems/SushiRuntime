@@ -5,12 +5,12 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME interop_engine TIER surface INTERNAL
+    NAME memory_exchange TIER surface INTERNAL
     SYCL
-    SOURCES interop_engine.cpp
+    SOURCES memory_exchange.cpp
     DEPENDS core memory interop
     PRIVATE_DEPENDS logging device execution)
 
 sushiruntime_add_module_tests(
-    MODULE interop_engine
+    MODULE memory_exchange
     SOURCES test_interop_import.cpp)

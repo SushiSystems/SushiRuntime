@@ -38,7 +38,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
-#include <SushiRuntime/interop_engine/interop_engine.hpp>
+#include <SushiRuntime/memory_exchange/memory_exchange.hpp>
 #include <SushiRuntime/memory/allocation.hpp>
 
 #include "memory_block.hpp"

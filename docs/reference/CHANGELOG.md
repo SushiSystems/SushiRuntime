@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — memory_exchange: Named the internal module that exports host memory and imports device memory `memory_exchange`; its header is `memory_exchange/memory_exchange.hpp`.
 - 2026-10-12 — layering: Added `rule_public_headers`, which reports an include of an `INTERNAL` module in a header a public module installs (`check_layering.py`, `test_check_layering.py`).
 - 2026-10-12 — cmake: Breaking change: Made `sushiruntime_add_module` refuse an `INTERNAL` module under the `DEPENDS` of a module that is installed (`SushiRuntimeModule.cmake`).
 - 2026-10-12 — cmake: Renamed the global property of every include root of the build tree to `SUSHIRUNTIME_BUILD_INCLUDE_ROOTS` (`SushiRuntimeModule.cmake`, `SushiRuntimeLibrary.cmake`).
@@ -21,7 +22,7 @@
 - 2026-10-12 — machine: Breaking change: Renamed `HardwareFilterConfig` to `DeviceFilter` and moved it out of `topology/hw_discovery.hpp` (`machine/device_filter.hpp`).
 - 2026-10-12 — machine: Breaking change: Moved `PinPolicy`, `WorkerPool`, `DeviceDescription` and `DeviceKind` to the new public module `machine`, declared in `SushiRuntime`; `DeviceDescriptor` moved to `device/device_descriptor.hpp`.
 - 2026-10-12 — log: Breaking change: Moved `LogLevel`, `LogSink` and their four calls to the new public module `log`; `K_LOG_LEVEL_CEILING` and the macro gate moved to `logging/log_gate.hpp` (`log/log_level.hpp`, `log/log_sink.hpp`).
-- 2026-10-12 — interop: Breaking change: Moved the three functions that take the engine context to the new internal module `interop_engine`; `interop` keeps the descriptors and is header-only (`interop_engine.hpp`, `interop_engine.cpp`).
+- 2026-10-12 — interop: Breaking change: Moved the three functions that take the engine context to the new internal module `memory_exchange`; `interop` keeps the descriptors and is header-only (`memory_exchange.hpp`, `memory_exchange.cpp`).
 - 2026-10-12 — region: Breaking change: Renamed `ResourceRegion` to `BufferRegion` and moved it with `ResourceID` to the new public module `region`, declared in `SushiRuntime` (`region/buffer_region.hpp`).
 - 2026-10-12 — report: Breaking change: Moved the run report types to the new public module `report`, declared in `SushiRuntime`; `Internal::Observability` no longer names them (`report/run_report.hpp`, `report/dispatch_width.hpp`).
 - 2026-10-12 — logging: Moved the declaration of `set_log_synchronous` to `log_sink.hpp`, so `<SushiRuntime/api/runtime/logging.hpp>` declares it with the other logging controls (`log_sink.hpp`, `logger.hpp`).

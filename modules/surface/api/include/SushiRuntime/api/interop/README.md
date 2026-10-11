@@ -6,7 +6,7 @@ The sections below record why the code is the way it is. Each one is named after
 symbol or passage it explains, and that header's file block cites this page.
 
 The vocabulary the facade speaks (ExternalMemoryDescriptor, InteropCapabilities, DeviceUUID) is in
-the `interop` module, and the exported functions it forwards to are in `interop_engine`. Neither
+the `interop` module, and the exported functions it forwards to are in `memory_exchange`. Neither
 knows Buffer. This folder depends on them, never the reverse.
 
 ## interop.hpp

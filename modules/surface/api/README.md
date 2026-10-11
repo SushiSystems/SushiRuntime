@@ -21,7 +21,7 @@ symbol or passage it explains, and that header's file block cites this page.
 
 The module depends on `core`, `report`, `region`, `log`, `machine` and `interop`, the other
 public modules, through its headers. Its sources depend on `memory`, `device`, `observability`,
-`task`, `graph`, `execution` and `interop_engine`.
+`task`, `graph`, `execution` and `memory_exchange`.
 
 ## The compiled boundary
 
