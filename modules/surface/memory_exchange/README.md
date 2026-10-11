@@ -1,10 +1,9 @@
-# interop_engine
+# memory_exchange
 
 The non-template entry points behind the `Interop` facade: they query a device, export host
 memory and import device memory against the engine's `RuntimeContext`. The module is internal:
-its header is in `include/SushiRuntime/interop_engine/` for `api` to include, and it is not
+its header is in `include/SushiRuntime/memory_exchange/` for `api` to include, and it is not
 installed.
-The module is internal: its headers are for the other modules of the library and are not installed.
 
 It depends on `core`, `memory` and `interop` in its header, and on `logging`, `device` and
 `execution` in its source.
@@ -13,9 +12,9 @@ It depends on `core`, `memory` and `interop` in its header, and on `logging`, `d
 
 | Header | Holds |
 | --- | --- |
-| `interop_engine.hpp` | `Detail::query_capabilities`, `Detail::export_host_memory` and `Detail::import_device_memory` |
+| `memory_exchange.hpp` | `Detail::query_capabilities`, `Detail::export_host_memory` and `Detail::import_device_memory` |
 
-## interop_engine.cpp
+## memory_exchange.cpp
 
 ### export_host_memory
 
@@ -55,4 +54,4 @@ from a destructor and from `AllocationOwner::release`, which is `noexcept`.
 
 ## Tests
 
-`tests/test_interop_import.cpp` builds `sr_interop_engine_tests`.
+`tests/test_interop_import.cpp` builds `sr_memory_exchange_tests`.

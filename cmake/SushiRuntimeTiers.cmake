@@ -33,7 +33,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     graph           engine
     execution       engine
     interop         surface
-    interop_engine  surface
+    memory_exchange  surface
     api             surface
     distributed     extension)
 
@@ -48,9 +48,9 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     execution       task
     execution       scheduler
     execution       graph
-    interop_engine  interop
+    memory_exchange  interop
     api             interop
-    api             interop_engine)
+    api             memory_exchange)
 
 # Module, then the option that switches it on. A module not listed is always built.
 set(SUSHIRUNTIME_OPTIONAL_MODULES

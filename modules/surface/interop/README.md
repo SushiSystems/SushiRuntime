@@ -15,7 +15,7 @@ It depends on the C++ standard library and on no other module of the repository.
 | `interop_capabilities.hpp` | `InteropCapabilities` |
 
 Every name is declared in `SushiRuntime`. The `Interop` facade of `api` takes and returns these
-types; `interop_engine` holds the functions that act on them.
+types; `memory_exchange` holds the functions that act on them.
 
 ## external_memory.hpp
 
