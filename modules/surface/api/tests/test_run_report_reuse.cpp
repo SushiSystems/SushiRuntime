@@ -61,9 +61,9 @@ TEST(Integration_RunReportReuse, ReuseReportsWhatTheValueFormReports)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    const Internal::Observability::RunReport allocated = g.run(std::size_t{3}).value();
+    const RunReport allocated = g.run(std::size_t{3}).value();
 
-    Internal::Observability::RunReport reused;
+    RunReport reused;
     g.run(std::size_t{3}, reused).value();
 
     EXPECT_TRUE(reused.is_successful);
@@ -84,7 +84,7 @@ TEST(Integration_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     g.run(report).value();
 
     ASSERT_FALSE(report.numa_statistics.empty());
@@ -111,7 +111,7 @@ TEST(Integration_RunReportReuse, EachRunOverwritesTheLastOne)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     g.run(std::size_t{5}, report).value();
     const std::size_t five_steps = report.total_tasks_executed;
     ASSERT_GT(five_steps, 0u);
@@ -130,7 +130,7 @@ TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     g.run(report).value();
     ASSERT_TRUE(report.is_successful);
     ASSERT_GT(report.total_tasks_executed, 0u);
@@ -154,7 +154,7 @@ TEST(Integration_RunReportReuse, TryRunReturnsTheCallersReport)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     auto result = g.run(report);
 
     ASSERT_TRUE(result);
@@ -170,7 +170,7 @@ TEST(Integration_RunReportReuse, AsyncWaitFillsTheCallersReport)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     for (int tick = 0; tick < 4; ++tick)
     {
         auto step = g.run_async().value();
@@ -198,7 +198,7 @@ TEST(Integration_RunReportReuse, DynamicGraphRunsIntoACallersReport)
     world.region(0).add(N, Reads{}, Writes(a),
                         [pa](std::size_t i) { pa[i] += 1; });
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     world.run(report).value();
     ASSERT_FALSE(report.numa_statistics.empty());
     const void* rows_after_first = report.numa_statistics.data();

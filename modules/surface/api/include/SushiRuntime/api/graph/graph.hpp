@@ -45,7 +45,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
-#include <SushiRuntime/observability/run_report.hpp>
+#include <SushiRuntime/report/run_report.hpp>
 
 namespace SushiRuntime
 {

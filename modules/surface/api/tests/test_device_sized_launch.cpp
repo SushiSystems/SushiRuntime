@@ -105,7 +105,7 @@ namespace
     {
         std::vector<std::uint32_t> digests;                           /**< One word per step. */
         /** @brief Layer the run took. */
-        Internal::Observability::ExecutionLayer layer = Internal::Observability::ExecutionLayer::Scheduler;
+        ExecutionLayer layer = ExecutionLayer::Scheduler;
     };
 
     /**
@@ -204,9 +204,9 @@ namespace
         const Recording chained = workload(chained_rt);
         const Recording scheduled = workload(scheduled_rt);
 
-        EXPECT_EQ(chained.layer, Internal::Observability::ExecutionLayer::Chain)
+        EXPECT_EQ(chained.layer, ExecutionLayer::Chain)
             << "a plan of device-sized launches and kernels must take the chain";
-        EXPECT_EQ(scheduled.layer, Internal::Observability::ExecutionLayer::Scheduler);
+        EXPECT_EQ(scheduled.layer, ExecutionLayer::Scheduler);
         ASSERT_EQ(chained.digests.size(), scheduled.digests.size());
         EXPECT_EQ(std::memcmp(chained.digests.data(), scheduled.digests.data(),
                               chained.digests.size() * sizeof(std::uint32_t)), 0);
@@ -396,5 +396,5 @@ TEST(Integration_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
     record_marking_rule(valid.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
     const auto report = valid.run(2).value();
     EXPECT_TRUE(report.is_successful);
-    EXPECT_EQ(report.layer, Internal::Observability::ExecutionLayer::Chain);
+    EXPECT_EQ(report.layer, ExecutionLayer::Chain);
 }

@@ -31,7 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <SushiRuntime/observability/dispatch_width.hpp>
+#include <SushiRuntime/report/dispatch_width.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node.hpp>
 
@@ -45,9 +45,9 @@ namespace SushiRuntime
             std::uint32_t narrow_width(std::size_t value) noexcept
             {
                 constexpr std::size_t max_u32 =
-                    static_cast<std::size_t>(Internal::Observability::K_WIDTH_UNKNOWN);
+                    static_cast<std::size_t>(K_WIDTH_UNKNOWN);
                 return value <= max_u32 ? static_cast<std::uint32_t>(value)
-                                        : Internal::Observability::K_WIDTH_UNKNOWN;
+                                        : K_WIDTH_UNKNOWN;
             }
         } // namespace
 

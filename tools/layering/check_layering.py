@@ -22,6 +22,7 @@ from common.checker import Checker, Issue, run  # noqa: E402
 
 K_TIER_ORDER: tuple[str, ...] = ("foundation", "platform", "engine", "surface", "extension")
 K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset({
+    ("report", "core"),
     ("logging", "core"),
     ("scheduler", "task"),
     ("graph", "task"),

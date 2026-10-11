@@ -69,7 +69,7 @@ namespace
     template <class G>
     struct RunEntries
     {
-        using Report = Internal::Observability::RunReport;
+        using Report = RunReport;
         using Owned = Result<Report, Error>;
         using Lent = Result<Report*, Error>;
         using Budget = std::chrono::milliseconds;
@@ -144,7 +144,7 @@ namespace
         EXPECT_EQ(run.error().code, ErrorCode::KernelFailed);
         EXPECT_NE(run.error().message.find(K_TASK_FAILURE), std::string::npos);
 
-        Internal::Observability::RunReport report;
+        RunReport report;
         const auto reused = graph.run(report);
         ASSERT_FALSE(reused.has_value());
         EXPECT_EQ(reused.error().code, ErrorCode::KernelFailed);
@@ -162,7 +162,7 @@ namespace
     template <class G>
     void expect_every_run_entry_runs(G& graph)
     {
-        Internal::Observability::RunReport report;
+        RunReport report;
         int calls = 0;
         const auto after_two_steps = [&calls]() { return ++calls > 2; };
 
@@ -316,7 +316,7 @@ namespace
         CountedStep clean(rt, 1u);
         const auto report = clean.graph.run();
         return report.has_value() &&
-               report->layer == Internal::Observability::ExecutionLayer::Chain;
+               report->layer == ExecutionLayer::Chain;
     }
 
     /**
@@ -572,7 +572,7 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
 
     auto local = rt.graph();
     local.add_host(Reads{}, Writes(buf), [&local_runs]() { local_runs.fetch_add(1); });
-    const Internal::Observability::RunReport without = local.run().value();
+    const RunReport without = local.run().value();
     EXPECT_EQ(without.distributed_statistics.tasks_offloaded_to_network, 0u);
     ASSERT_EQ(local_runs.load(), 1);
 
@@ -582,13 +582,13 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
     auto g = rt.graph();
     g.add_host(Reads{}, Writes(buf), [&local_runs]() { local_runs.fetch_add(1); });
 
-    const Internal::Observability::RunReport first = g.run().value();
+    const RunReport first = g.run().value();
     EXPECT_EQ(first.distributed_statistics.tasks_offloaded_to_network, 1u);
 
-    const Internal::Observability::RunReport second = g.run(std::size_t{2}).value();
+    const RunReport second = g.run(std::size_t{2}).value();
     EXPECT_EQ(second.distributed_statistics.tasks_offloaded_to_network, 2u);
 
-    const Internal::Observability::RunReport third = g.run_async().value().wait().value();
+    const RunReport third = g.run_async().value().wait().value();
     EXPECT_EQ(third.distributed_statistics.tasks_offloaded_to_network, 1u);
 
     EXPECT_EQ(local_runs.load(), 1) << "a node the coordinator took must not run here";

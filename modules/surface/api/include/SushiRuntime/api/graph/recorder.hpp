@@ -83,7 +83,7 @@
 #include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
-#include <SushiRuntime/observability/dispatch_width.hpp>
+#include <SushiRuntime/report/dispatch_width.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 
@@ -275,7 +275,7 @@ namespace SushiRuntime
                 if (!admit(fault))
                     return rule_count();
                 const std::size_t width =
-                    options.width == Internal::Observability::K_WIDTH_UNKNOWN ? capacity : options.width;
+                    options.width == K_WIDTH_UNKNOWN ? capacity : options.width;
 
                 const std::size_t rule = record(
                     Detail::dynamic_node(

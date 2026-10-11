@@ -211,8 +211,8 @@ TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
     const std::uint32_t idx_kernel = registration_index_of(plan, "kernel");
 
     // Only a host record has submit_ns equal to start_ns; see README.md.
-    const Internal::Observability::NodeEventRecord* kernel_record = nullptr;
-    const Internal::Observability::NodeEventRecord* host_record = nullptr;
+    const NodeEventRecord* kernel_record = nullptr;
+    const NodeEventRecord* host_record = nullptr;
     for (const auto& rec : report.node_events)
     {
         if (rec.node_index == idx_kernel) kernel_record = &rec;

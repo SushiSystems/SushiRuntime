@@ -89,10 +89,10 @@ namespace
     }
 
     /** @brief Counts the node timing rows of report that carry name. */
-    std::size_t rows_named(const Internal::Observability::RunReport& report, const std::string& name)
+    std::size_t rows_named(const RunReport& report, const std::string& name)
     {
         std::size_t rows = 0;
-        for (const Internal::Observability::NodeTiming& row : report.node_timings)
+        for (const NodeTiming& row : report.node_timings)
             rows += row.name == name ? 1u : 0u;
         return rows;
     }
@@ -199,7 +199,7 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     EXPECT_EQ(graph.node_count(), K_RULE_NODES);
     EXPECT_EQ(graph.last_rule(), 0u);
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     graph.run(1, report).value();
 
     // The nodes of a rule share one registration, and the report holds one row per registration.
@@ -226,7 +226,7 @@ TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     EXPECT_EQ(world.node_count(), 1u + K_RULE_NODES);
     EXPECT_EQ(world.rule_registration(K_CELL + 1, 0), DynamicGraph::K_NO_REGISTRATION);
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     world.run(1, report).value();
 
     EXPECT_EQ(rows_named(report, "pipeline"), 1u);
@@ -253,7 +253,7 @@ TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
     graph.name(std::string("integrate_") + std::to_string(K_CELL));
     graph.set_profiling(true);
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     graph.run(1, report).value();
 
     ASSERT_EQ(report.node_timings.size(), 2u);
@@ -270,13 +270,13 @@ TEST(Integration_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
     graph.set_profiling(true);
-    Internal::Observability::RunReport unnamed;
+    RunReport unnamed;
     graph.run(1, unnamed).value();
     ASSERT_EQ(unnamed.node_timings.size(), 1u);
 
     const char* absent = nullptr;
     graph.name("named").name(absent);
-    Internal::Observability::RunReport report;
+    RunReport report;
     graph.run(1, report).value();
 
     ASSERT_EQ(report.node_timings.size(), 1u);
@@ -561,7 +561,7 @@ TEST(Integration_RecorderSemantics, AnExtensionThatRecordsNothingAddsNoRule)
     graph.extend([](Recorder&) {});
     graph.set_profiling(true);
 
-    Internal::Observability::RunReport report;
+    RunReport report;
     graph.run(1, report).value();
 
     EXPECT_EQ(graph.size(), 1u);

@@ -33,7 +33,7 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/observability/run_report.hpp>
+#include <SushiRuntime/report/run_report.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -76,7 +76,7 @@ namespace
 TEST(Unit_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
 {
     const Node node;
-    EXPECT_EQ(node.baked_width, std::size_t{Internal::Observability::K_WIDTH_UNKNOWN});
+    EXPECT_EQ(node.baked_width, std::size_t{K_WIDTH_UNKNOWN});
 }
 
 /** @brief Tests that a node added without a stamp reports the unknown width. */
@@ -86,7 +86,7 @@ TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 
     graph.add_node(noop_work());
 
-    EXPECT_EQ(graph.last_node_added()->baked_width, std::size_t{Internal::Observability::K_WIDTH_UNKNOWN});
+    EXPECT_EQ(graph.last_node_added()->baked_width, std::size_t{K_WIDTH_UNKNOWN});
 }
 
 /** @brief Tests that a width set on a node and a name given after it land on that node. */
@@ -115,7 +115,7 @@ TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
     Internal::Graph::CompiledGraph plan = graph.compile().value();
     ASSERT_EQ(plan.all_nodes.size(), 2u);
 
-    EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Internal::Observability::K_WIDTH_UNKNOWN});
+    EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{K_WIDTH_UNKNOWN});
     EXPECT_EQ(find_named(plan, "second").baked_width, std::size_t{4096});
 }
 
@@ -165,6 +165,6 @@ TEST(Unit_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
     graph.add_node([](sycl::handler&) {}).baked_width = std::size_t{0xFFFFFFFFu} + 1;
 
     const Internal::Graph::NodeWidths widths = Internal::Graph::snapshot_widths(*graph.last_node_added());
-    EXPECT_EQ(widths.launched, Internal::Observability::K_WIDTH_UNKNOWN);
-    EXPECT_EQ(widths.live, Internal::Observability::K_WIDTH_UNKNOWN);
+    EXPECT_EQ(widths.launched, K_WIDTH_UNKNOWN);
+    EXPECT_EQ(widths.live, K_WIDTH_UNKNOWN);
 }

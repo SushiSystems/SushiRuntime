@@ -651,7 +651,7 @@ namespace SushiRuntime
                             const std::uint32_t slot = ledger->claim_slot(node->registration_index);
                             if (slot != Internal::Observability::ProfilingLedger::npos)
                             {
-                                Internal::Observability::NodeEventRecord rec{};
+                                NodeEventRecord rec{};
                                 rec.node_index = node->registration_index;
                                 rec.invocation = step;
                                 // A host node submits no dispatch: launched_width and live_width stay K_WIDTH_UNKNOWN.

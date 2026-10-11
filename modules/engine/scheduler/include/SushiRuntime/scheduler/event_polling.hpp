@@ -429,7 +429,7 @@ namespace SushiRuntime
                                 const std::uint32_t slot = ledger->claim_slot(node->registration_index);
                                 if (slot != Internal::Observability::ProfilingLedger::npos)
                                 {
-                                    Internal::Observability::NodeEventRecord rec{};
+                                    NodeEventRecord rec{};
                                     rec.node_index = node->registration_index;
                                     rec.invocation = pe.step;
                                     rec.launched_width = pe.widths.launched;

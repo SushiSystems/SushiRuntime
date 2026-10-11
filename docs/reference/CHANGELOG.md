@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — report: Breaking change: Moved the run report types to the new public module `report`, declared in `SushiRuntime`; `Internal::Observability` no longer names them (`report/run_report.hpp`, `report/dispatch_width.hpp`).
 - 2026-10-12 — logging: Moved the declaration of `set_log_synchronous` to `log_sink.hpp`, so `<SushiRuntime/api/runtime/logging.hpp>` declares it with the other logging controls (`log_sink.hpp`, `logger.hpp`).
 - 2026-10-12 — api: Added `AdvancedControls::live_allocation_count()`, the number of USM allocations of the runtime not yet released (`advanced_controls.hpp`).
 - 2026-10-12 — api: Added an alignment in bytes as the last argument of `Runtime::buffer` and `Runtime::state`; 0 keeps the device default and a value that is not a power of two stops the process (`runtime.hpp`, `buffer.hpp`).

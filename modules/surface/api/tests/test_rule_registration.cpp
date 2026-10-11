@@ -125,7 +125,7 @@ TEST(Integration_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
 {
     auto rt = Runtime::create().value();
     Recorded r = record(rt);
-    Internal::Observability::RunReport report;
+    RunReport report;
     r.graph.run(1, report).value();
     ASSERT_TRUE(report.is_successful);
 
@@ -146,7 +146,7 @@ TEST(Integration_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
         << "a position past the last rule names no rule";
 
     std::size_t reported = 0;
-    for (const Internal::Observability::NodeEventRecord& event : report.node_events)
+    for (const NodeEventRecord& event : report.node_events)
         reported += event.node_index == shared ? 1u : 0u;
     EXPECT_EQ(reported, K_RULE_NODES) << "every node of the rule scope must report its one index";
 }
@@ -155,7 +155,7 @@ TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
 {
     auto rt = Runtime::create().value();
     Recorded r = record(rt);
-    Internal::Observability::RunReport report;
+    RunReport report;
     r.graph.run(1, report).value();
     ASSERT_TRUE(report.is_successful);
     ASSERT_FALSE(report.node_events.empty()) << "profiling was requested, so events must exist";
@@ -164,7 +164,7 @@ TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
     for (std::size_t rule = 0; rule < r.graph.size(); ++rule)
         recorded.insert(r.graph.rule_registration(rule));
 
-    for (const Internal::Observability::NodeEventRecord& event : report.node_events)
+    for (const NodeEventRecord& event : report.node_events)
         EXPECT_EQ(recorded.count(event.node_index), 1u)
             << "node event " << event.node_index << " matches no rule the caller recorded";
 }
@@ -175,14 +175,14 @@ TEST(Integration_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
 
     auto rt = Runtime::create().value();
     Recorded r = record(rt);
-    Internal::Observability::RunReport report;
+    RunReport report;
     r.graph.run(STEPS, report).value();
     ASSERT_TRUE(report.is_successful);
     ASSERT_EQ(report.node_events.size(), (K_PLAIN_RULES + K_RULE_NODES) * STEPS);
 
     const std::uint32_t shared = r.graph.rule_registration(r.grouped);
     std::vector<std::size_t> per_invocation(STEPS, 0);
-    for (const Internal::Observability::NodeEventRecord& event : report.node_events)
+    for (const NodeEventRecord& event : report.node_events)
     {
         if (event.node_index != shared)
             continue;
@@ -240,7 +240,7 @@ TEST(Integration_RuleRegistration, AVerbReturnsThePositionOfTheRuleItRecorded)
 
     std::uint32_t scale_index = Graph::K_NO_REGISTRATION;
     std::uint32_t copy_index = Graph::K_NO_REGISTRATION;
-    for (const Internal::Observability::NodeEventRecord& event : report.node_events)
+    for (const NodeEventRecord& event : report.node_events)
     {
         if (event.launched_width == K_SCALE_MARK)
             scale_index = event.node_index;

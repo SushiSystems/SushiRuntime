@@ -36,7 +36,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/observability/run_report.hpp>
+#include <SushiRuntime/report/run_report.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
@@ -160,7 +160,7 @@ namespace SushiRuntime
              * @see modules/engine/execution/README.md
              */
             void collect_profiling(CompiledGraph& graph,
-                                   Internal::Observability::RunReport& report) const override;
+                                   RunReport& report) const override;
 
             /**
              * @brief Reports whether a scheduled or a chained run is in progress on this engine.

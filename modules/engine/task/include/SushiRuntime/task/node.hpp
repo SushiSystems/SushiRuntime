@@ -38,7 +38,7 @@
 #include <string>
 #include <vector>
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/observability/dispatch_width.hpp>
+#include <SushiRuntime/report/dispatch_width.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
@@ -172,8 +172,8 @@ namespace SushiRuntime
              */
             std::size_t plan_index = 0;
 
-            /** @brief Elements this node launches over, or Internal::Observability::K_WIDTH_UNKNOWN. */
-            std::size_t baked_width = Internal::Observability::K_WIDTH_UNKNOWN;
+            /** @brief Elements this node launches over, or K_WIDTH_UNKNOWN. */
+            std::size_t baked_width = K_WIDTH_UNKNOWN;
 
             /**
              * @brief Identifies the public add() call that registered this node; zero until

@@ -50,7 +50,7 @@ namespace
     {
         RunStatistics wall_ns_per_node_step;     /**< Timed by this test around Graph::run(). */
         RunStatistics reported_ns_per_node_step; /**< Derived from RunReport::total_duration_ms. */
-        Internal::Observability::ExecutionLayer layer;              /**< Layer the plan ran on. */
+        ExecutionLayer layer;              /**< Layer the plan ran on. */
     };
 
     /**
@@ -82,7 +82,7 @@ namespace
         }
 
         // The first run compiles the plan; every timed run below is a replay.
-        Internal::Observability::ExecutionLayer layer = g.run(std::size_t{1}).value().layer;
+        ExecutionLayer layer = g.run(std::size_t{1}).value().layer;
 
         const double node_steps = double(steps) * double(length);
         std::vector<double> reported_samples;
@@ -140,7 +140,7 @@ TEST(Performance_ChainDispatch, PerNodeCostVsChainLength)
         for (const bool force_scheduler : { true, false })
         {
             const ChainMeasurement m = measure_chain(c.length, c.steps, force_scheduler);
-            const bool on_chain = m.layer == Internal::Observability::ExecutionLayer::Chain;
+            const bool on_chain = m.layer == ExecutionLayer::Chain;
             const double ms_per_step =
                 m.wall_ns_per_node_step.median * double(c.length) / 1e6;
             std::printf("  %8zu | %9s | %12.5f | %14.1f | %14.1f\n",

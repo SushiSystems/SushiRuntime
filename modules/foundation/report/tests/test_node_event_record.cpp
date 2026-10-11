@@ -22,7 +22,7 @@
 /**
  * @file test_node_event_record.cpp
  * @brief Tests NodeEventRecord's layout and what RunReport::reset() keeps and zeroes.
- * @see modules/platform/observability/tests/README.md
+ * @see modules/foundation/report/tests/README.md
  * @author Mustafa Garip
  */
 
@@ -31,27 +31,27 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/observability/run_report.hpp>
+#include <SushiRuntime/report/run_report.hpp>
 
 using namespace SushiRuntime;
 
 /** @brief Tests that NodeEventRecord is 40 bytes and trivially copyable. */
 TEST(Unit_NodeEventRecord, LayoutIsFortyBytesAndTriviallyCopyable)
 {
-    static_assert(sizeof(Internal::Observability::NodeEventRecord) == 40u,
+    static_assert(sizeof(NodeEventRecord) == 40u,
                   "NodeEventRecord must stay 40 bytes");
-    static_assert(std::is_trivially_copyable<Internal::Observability::NodeEventRecord>::value,
+    static_assert(std::is_trivially_copyable<NodeEventRecord>::value,
                   "NodeEventRecord must stay trivially copyable");
-    EXPECT_EQ(sizeof(Internal::Observability::NodeEventRecord), 40u);
-    EXPECT_TRUE(std::is_trivially_copyable<Internal::Observability::NodeEventRecord>::value);
+    EXPECT_EQ(sizeof(NodeEventRecord), 40u);
+    EXPECT_TRUE(std::is_trivially_copyable<NodeEventRecord>::value);
 }
 
 /** @brief Tests that reset() keeps the capacity of node_events. */
 TEST(Unit_NodeEventRecord, ResetKeepsNodeEventsCapacity)
 {
-    Internal::Observability::RunReport report;
-    report.node_events.push_back(Internal::Observability::NodeEventRecord{1, 0, Internal::Observability::K_WIDTH_UNKNOWN, Internal::Observability::K_WIDTH_UNKNOWN, 10, 20, 30});
-    report.node_events.push_back(Internal::Observability::NodeEventRecord{2, 0, Internal::Observability::K_WIDTH_UNKNOWN, Internal::Observability::K_WIDTH_UNKNOWN, 40, 50, 60});
+    RunReport report;
+    report.node_events.push_back(NodeEventRecord{1, 0, K_WIDTH_UNKNOWN, K_WIDTH_UNKNOWN, 10, 20, 30});
+    report.node_events.push_back(NodeEventRecord{2, 0, K_WIDTH_UNKNOWN, K_WIDTH_UNKNOWN, 40, 50, 60});
     const std::size_t capacity_before = report.node_events.capacity();
 
     report.reset();
@@ -63,8 +63,8 @@ TEST(Unit_NodeEventRecord, ResetKeepsNodeEventsCapacity)
 /** @brief Tests that reset() zeroes the clock pairing. */
 TEST(Unit_NodeEventRecord, ResetZeroesClockPairing)
 {
-    Internal::Observability::RunReport report;
-    report.clock = Internal::Observability::ClockPairing{100, 200, 5};
+    RunReport report;
+    report.clock = ClockPairing{100, 200, 5};
 
     report.reset();
 
@@ -76,8 +76,8 @@ TEST(Unit_NodeEventRecord, ResetZeroesClockPairing)
 /** @brief Tests that the widths default to K_WIDTH_UNKNOWN. */
 TEST(Unit_NodeEventRecord, WidthsDefaultToUnknown)
 {
-    const Internal::Observability::NodeEventRecord rec{};
-    EXPECT_EQ(Internal::Observability::K_WIDTH_UNKNOWN, 0xFFFFFFFFu);
-    EXPECT_EQ(rec.launched_width, Internal::Observability::K_WIDTH_UNKNOWN);
-    EXPECT_EQ(rec.live_width, Internal::Observability::K_WIDTH_UNKNOWN);
+    const NodeEventRecord rec{};
+    EXPECT_EQ(K_WIDTH_UNKNOWN, 0xFFFFFFFFu);
+    EXPECT_EQ(rec.launched_width, K_WIDTH_UNKNOWN);
+    EXPECT_EQ(rec.live_width, K_WIDTH_UNKNOWN);
 }

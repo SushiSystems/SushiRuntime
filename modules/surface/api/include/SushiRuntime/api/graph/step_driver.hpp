@@ -53,7 +53,7 @@
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
-#include <SushiRuntime/observability/run_report.hpp>
+#include <SushiRuntime/report/run_report.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 
 namespace SushiRuntime
@@ -74,7 +74,7 @@ namespace SushiRuntime
              *         step has advanced no State.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            [[nodiscard]] Result<Internal::Observability::RunReport, Error> run() noexcept
+            [[nodiscard]] Result<RunReport, Error> run() noexcept
             {
                 return run(std::size_t{1});
             }
@@ -87,7 +87,7 @@ namespace SushiRuntime
              *         last advanced.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            [[nodiscard]] Result<Internal::Observability::RunReport, Error>
+            [[nodiscard]] Result<RunReport, Error>
             run(std::size_t steps) noexcept
             {
                 return drive(for_steps(steps), steps, StepSync::AtEnd);
@@ -98,8 +98,8 @@ namespace SushiRuntime
              * @param reuse The report to overwrite; its previous contents are lost.
              * @return A pointer to reuse, or the Error that ended the run.
              */
-            [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
-            run(Internal::Observability::RunReport& reuse) noexcept
+            [[nodiscard]] Result<RunReport*, Error>
+            run(RunReport& reuse) noexcept
             {
                 return run(std::size_t{1}, reuse);
             }
@@ -109,8 +109,8 @@ namespace SushiRuntime
              * @param reuse The report to overwrite; its previous contents are lost.
              * @return A pointer to reuse, or the Error that ended the run.
              */
-            [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
-            run(std::size_t steps, Internal::Observability::RunReport& reuse) noexcept
+            [[nodiscard]] Result<RunReport*, Error>
+            run(std::size_t steps, RunReport& reuse) noexcept
             {
                 return drive(for_steps(steps), reuse, steps, StepSync::AtEnd);
             }
@@ -121,7 +121,7 @@ namespace SushiRuntime
              * @return The RunReport, or the Error that ended the run.
              */
             template <class Rep, class Period>
-            [[nodiscard]] Result<Internal::Observability::RunReport, Error>
+            [[nodiscard]] Result<RunReport, Error>
             run_for(std::chrono::duration<Rep, Period> budget) noexcept
             {
                 return drive(within(budget), 1, StepSync::EveryStep);
@@ -135,9 +135,9 @@ namespace SushiRuntime
              * @return A pointer to reuse, or the Error that ended the run.
              */
             template <class Rep, class Period>
-            [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
+            [[nodiscard]] Result<RunReport*, Error>
             run_for(std::chrono::duration<Rep, Period> budget,
-                        Internal::Observability::RunReport& reuse) noexcept
+                        RunReport& reuse) noexcept
             {
                 return drive(within(budget), reuse, 1, StepSync::EveryStep);
             }
@@ -150,7 +150,7 @@ namespace SushiRuntime
              * @return The RunReport, or the Error that ended the run.
              */
             template <class Predicate>
-            [[nodiscard]] Result<Internal::Observability::RunReport, Error>
+            [[nodiscard]] Result<RunReport, Error>
             run_until(Predicate done) noexcept
             {
                 require_nothrow_move<Predicate>();
@@ -166,8 +166,8 @@ namespace SushiRuntime
              * @return A pointer to reuse, or the Error that ended the run.
              */
             template <class Predicate>
-            [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
-            run_until(Predicate done, Internal::Observability::RunReport& reuse) noexcept
+            [[nodiscard]] Result<RunReport*, Error>
+            run_until(Predicate done, RunReport& reuse) noexcept
             {
                 require_nothrow_move<Predicate>();
                 return drive(until(std::move(done)), reuse, 1, StepSync::EveryStep);
@@ -613,7 +613,7 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             Error settle_async_step(const Detail::AsyncRunState& state,
-                                          Internal::Observability::RunReport& report) noexcept
+                                          RunReport& report) noexcept
             {
                 // No step is pending from here on, whatever the wait below returns.
                 close_async_step();
@@ -636,7 +636,7 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             Result<void> finish_async_step(const Detail::AsyncRunState& state,
-                                           Internal::Observability::RunReport& report)
+                                           RunReport& report)
             {
                 const auto finished = std::chrono::steady_clock::now();
                 Owner& self = owner();
@@ -687,11 +687,11 @@ namespace SushiRuntime
              * @return The report, or the Error that ended the run.
              */
             template <class KeepGoing>
-            Result<Internal::Observability::RunReport, Error>
+            Result<RunReport, Error>
             drive(KeepGoing keep_going, std::size_t expected_invocations,
                   StepSync sync) noexcept
             {
-                Internal::Observability::RunReport report;
+                RunReport report;
                 auto driven = drive(std::move(keep_going), report, expected_invocations, sync);
                 if (!driven)
                     return make_error(std::move(driven.error()));
@@ -707,8 +707,8 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class KeepGoing>
-            Result<Internal::Observability::RunReport*, Error>
-            drive(KeepGoing keep_going, Internal::Observability::RunReport& report,
+            Result<RunReport*, Error>
+            drive(KeepGoing keep_going, RunReport& report,
                   std::size_t expected_invocations, StepSync sync) noexcept
             {
                 // Every return below leaves report reset and marked unsuccessful.
@@ -747,7 +747,7 @@ namespace SushiRuntime
              */
             template <class KeepGoing>
             Result<void> execute_steps(KeepGoing& keep_going,
-                                       Internal::Observability::RunReport& report,
+                                       RunReport& report,
                                        double compile_ms, std::size_t expected_invocations,
                                        StepSync sync)
             {
@@ -796,8 +796,8 @@ namespace SushiRuntime
                     report, context, before, after, total_tasks, compile_ms,
                     std::chrono::duration<double, std::milli>(t1 - t0).count());
                 report.cancelled = engine.is_cancelled();
-                report.layer = chained ? Internal::Observability::ExecutionLayer::Chain
-                                       : Internal::Observability::ExecutionLayer::Scheduler;
+                report.layer = chained ? ExecutionLayer::Chain
+                                       : ExecutionLayer::Scheduler;
 
                 // Only explicit transfers are counted; implicit USM migration is not.
                 report.device_to_host_bytes = transfers.device_to_host() - d2h_before;
