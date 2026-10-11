@@ -19,7 +19,7 @@ sushiruntime_add_module(
         environment.cpp
         handshake.cpp
         hmac_sha256.cpp
-        i_offload_policy.cpp
+        offload_policy.cpp
         in_process_transport.cpp
         kernel_registry.cpp
         master_link.cpp

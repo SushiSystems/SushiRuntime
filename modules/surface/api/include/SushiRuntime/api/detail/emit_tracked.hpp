@@ -42,7 +42,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Builds the replay of a launch ordered by the regions it names.
@@ -98,5 +98,5 @@ namespace SushiRuntime
                 bg.add_node(fn, reads, writes, {}, registration).baked_width = width;
             };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

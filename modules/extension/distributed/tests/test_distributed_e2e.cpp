@@ -60,8 +60,8 @@
 #include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/registered_task.hpp>
@@ -233,7 +233,7 @@ namespace
 
             return queue.submit([&](sycl::handler& handler)
             {
-                SushiRuntime::detail::enqueue_host_task(handler, [=]
+                SushiRuntime::Detail::enqueue_host_task(handler, [=]
                 {
                     for (std::size_t index = 0; index < count; ++index)
                         sum[index] = left[index] + right[index];
@@ -273,7 +273,7 @@ namespace
 
                 return queue.submit([&](sycl::handler& handler)
                 {
-                    SushiRuntime::detail::enqueue_host_task(handler, [=]
+                    SushiRuntime::Detail::enqueue_host_task(handler, [=]
                     {
                         for (std::size_t index = 0; index < count; ++index)
                             next[index] = current[index] + static_cast<int>(index % 7);
@@ -320,7 +320,7 @@ namespace
             {
                 return queue.submit([&](sycl::handler& handler)
                 {
-                    SushiRuntime::detail::enqueue_host_task(handler, [=]
+                    SushiRuntime::Detail::enqueue_host_task(handler, [=]
                     {
                         for (std::size_t index = 0; index < count; ++index)
                             sum[index] = left[index] + right[index];
@@ -343,7 +343,7 @@ namespace
                 finished_ = done->get_future();
                 thread_ = std::thread([&context, &graph, done]
                 {
-                    context.get_execution_engine().execute(graph);
+                    context.execution_engine().execute(graph);
                     done->set_value();
                 });
             }
@@ -391,7 +391,7 @@ namespace
     {
         public:
             /** @brief Builds the worker; nothing runs until start(). */
-            LocalWorker(std::shared_ptr<ITransport> transport, sushi_ptr<KernelRegistry> kernels,
+            LocalWorker(std::shared_ptr<Transport> transport, sushi_ptr<KernelRegistry> kernels,
                         WorkerAgentOptions options = WorkerAgentOptions())
                 : agent_(context_, std::move(transport), std::move(kernels), std::move(options))
             {
@@ -601,7 +601,7 @@ namespace
             }
 
             /** @brief Opens the handshake on a new connection. */
-            void on_peer_connected(PeerID peer, const PeerInfo& /*info*/) override
+            void on_peer_connected(PeerID peer, const PeerDescription& /*info*/) override
             {
                 {
                     const std::lock_guard<std::mutex> lock(mutex_);
@@ -771,7 +771,7 @@ namespace
     /**
      * @brief Answers start() with a fixed result and reports a fixed exposure; carries no frame.
      */
-    class StubTransport final : public ITransport
+    class StubTransport final : public Transport
     {
         public:
             /** @brief Sets what exposure() and start() return. */
@@ -936,7 +936,7 @@ namespace
         TaskGraph graph(master_context.offload());
         add_registered_task(graph, *kernels, metadata, span<const BufferView>(inputs, 2),
                             span<const BufferView>(outputs, 1));
-        master_context.get_execution_engine().execute(graph.compile());
+        master_context.execution_engine().execute(graph.compile());
 
         RegisteredSum sum;
         sum.values.assign(out.data(), out.data() + out.count());
@@ -979,7 +979,7 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "vec_add", a, b, out);
-    master_context.get_execution_engine().execute(graph.compile());
+    master_context.execution_engine().execute(graph.compile());
 
     EXPECT_EQ(worker_runs.load(), 1) << "the task ran on the local fallback, not on the worker";
     EXPECT_EQ(cluster.offloaded(), 1u);
@@ -1021,7 +1021,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "fan_out_first", in, in, first_out);
     add_vec_add(graph, "fan_out_second", in, in, second_out);
-    master_context.get_execution_engine().execute(graph.compile());
+    master_context.execution_engine().execute(graph.compile());
 
     EXPECT_EQ(cluster.offloaded(), 2u);
     EXPECT_EQ(first_runs.load() + second_runs.load(), 2);
@@ -1067,7 +1067,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
         {
             return local_queue.submit([&](sycl::handler& handler)
             {
-                SushiRuntime::detail::enqueue_host_task(handler, [=]
+                SushiRuntime::Detail::enqueue_host_task(handler, [=]
                 {
                     for (std::size_t index = 0; index < K_COUNT; ++index)
                         values[index] = static_cast<float>(index + 1);
@@ -1081,7 +1081,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     ASSERT_NE(writer_state, nullptr) << "a local node that writes a shared buffer keeps a state";
     EXPECT_FALSE(writer_state->offloadable);
 
-    master_context.get_execution_engine().execute(compiled);
+    master_context.execution_engine().execute(compiled);
 
     const std::optional<BufferHandle> after = cluster.buffer_handle(x.data());
     ASSERT_TRUE(after.has_value());
@@ -1126,7 +1126,7 @@ TEST(Integration_DistributedE2ETest, OffloadOverTCPLoopback)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "vec_add_tcp", a, b, out);
-    master_context.get_execution_engine().execute(graph.compile());
+    master_context.execution_engine().execute(graph.compile());
 
     EXPECT_EQ(worker_runs.load(), 1);
     expect_sum(out, a, b);

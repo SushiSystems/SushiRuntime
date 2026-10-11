@@ -50,8 +50,8 @@ TEST(Unit_NodeEventRecord, LayoutIsFortyBytesAndTriviallyCopyable)
 TEST(Unit_NodeEventRecord, ResetKeepsNodeEventsCapacity)
 {
     Internal::Observability::RunReport report;
-    report.node_events.push_back(Internal::Observability::NodeEventRecord{1, 0, Internal::Observability::WIDTH_UNKNOWN, Internal::Observability::WIDTH_UNKNOWN, 10, 20, 30});
-    report.node_events.push_back(Internal::Observability::NodeEventRecord{2, 0, Internal::Observability::WIDTH_UNKNOWN, Internal::Observability::WIDTH_UNKNOWN, 40, 50, 60});
+    report.node_events.push_back(Internal::Observability::NodeEventRecord{1, 0, Internal::Observability::K_WIDTH_UNKNOWN, Internal::Observability::K_WIDTH_UNKNOWN, 10, 20, 30});
+    report.node_events.push_back(Internal::Observability::NodeEventRecord{2, 0, Internal::Observability::K_WIDTH_UNKNOWN, Internal::Observability::K_WIDTH_UNKNOWN, 40, 50, 60});
     const std::size_t capacity_before = report.node_events.capacity();
 
     report.reset();
@@ -73,11 +73,11 @@ TEST(Unit_NodeEventRecord, ResetZeroesClockPairing)
     EXPECT_EQ(report.clock.uncertainty_ns, 0u);
 }
 
-/** @brief Tests that the widths default to WIDTH_UNKNOWN. */
+/** @brief Tests that the widths default to K_WIDTH_UNKNOWN. */
 TEST(Unit_NodeEventRecord, WidthsDefaultToUnknown)
 {
     const Internal::Observability::NodeEventRecord rec{};
-    EXPECT_EQ(Internal::Observability::WIDTH_UNKNOWN, 0xFFFFFFFFu);
-    EXPECT_EQ(rec.launched_width, Internal::Observability::WIDTH_UNKNOWN);
-    EXPECT_EQ(rec.live_width, Internal::Observability::WIDTH_UNKNOWN);
+    EXPECT_EQ(Internal::Observability::K_WIDTH_UNKNOWN, 0xFFFFFFFFu);
+    EXPECT_EQ(rec.launched_width, Internal::Observability::K_WIDTH_UNKNOWN);
+    EXPECT_EQ(rec.live_width, Internal::Observability::K_WIDTH_UNKNOWN);
 }

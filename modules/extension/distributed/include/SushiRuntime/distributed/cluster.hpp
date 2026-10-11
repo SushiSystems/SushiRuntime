@@ -40,8 +40,8 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
 
@@ -81,7 +81,7 @@ namespace SushiRuntime
              *
              * That default keeps a task whose inputs total under 64 KiB on this machine.
              */
-            std::shared_ptr<IOffloadPolicy> policy;
+            std::shared_ptr<OffloadPolicy> policy;
 
             /** @brief Lives as long as the master, which reads no kernel from it; may be null. */
             sushi_ptr<KernelRegistry> kernels;
@@ -127,7 +127,7 @@ namespace SushiRuntime
                  *         cluster attached before stays installed and keeps running.
                  */
                 [[nodiscard]] static Cluster attach(Runtime& runtime,
-                                                    std::shared_ptr<ITransport> transport,
+                                                    std::shared_ptr<Transport> transport,
                                                     ClusterOptions options = ClusterOptions());
 
                 /**
@@ -136,7 +136,7 @@ namespace SushiRuntime
                  * @throws SushiException As the Runtime overload.
                  */
                 [[nodiscard]] static Cluster attach(Internal::Execution::RuntimeContext& context,
-                                                    std::shared_ptr<ITransport> transport,
+                                                    std::shared_ptr<Transport> transport,
                                                     ClusterOptions options = ClusterOptions());
 
                 /** @brief Copies the handle; both name the same master. */

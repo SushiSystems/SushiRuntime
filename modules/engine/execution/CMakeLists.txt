@@ -10,7 +10,7 @@ sushiruntime_add_module(
     SOURCES
         chain_plan.cpp
         chain_run.cpp
-        execution_engine.cpp
+        scheduler_execution_engine.cpp
         runtime_context.cpp
     DEPENDS
         core

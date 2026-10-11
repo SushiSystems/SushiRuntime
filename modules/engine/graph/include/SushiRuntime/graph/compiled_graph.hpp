@@ -46,7 +46,7 @@ namespace SushiRuntime
          *
          * TaskGraph::compile() produces this struct. It contains the topologically
          * resolved root nodes and the sentinel node that signals graph completion.
-         * The ExecutionEngine consumes it; TaskGraph only produces it.
+         * The SchedulerExecutionEngine consumes it; TaskGraph only produces it.
          */
         struct SUSHIRUNTIME_API CompiledGraph
         {

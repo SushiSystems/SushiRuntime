@@ -41,13 +41,13 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Narrows @p value to uint32_t, or WIDTH_UNKNOWN when it does not fit. */
+            /** @brief Narrows @p value to uint32_t, or K_WIDTH_UNKNOWN when it does not fit. */
             std::uint32_t narrow_width(std::size_t value) noexcept
             {
                 constexpr std::size_t max_u32 =
-                    static_cast<std::size_t>(Internal::Observability::WIDTH_UNKNOWN);
+                    static_cast<std::size_t>(Internal::Observability::K_WIDTH_UNKNOWN);
                 return value <= max_u32 ? static_cast<std::uint32_t>(value)
-                                        : Internal::Observability::WIDTH_UNKNOWN;
+                                        : Internal::Observability::K_WIDTH_UNKNOWN;
             }
         } // namespace
 
@@ -55,7 +55,7 @@ namespace SushiRuntime
          * @brief Reads @p node's widths as they stand at submit.
          *
          * The baked width stands for both until the bindings hold a live count
-         * other than USE_BAKED, which then narrows the live side only. Either
+         * other than K_USE_BAKED, which then narrows the live side only. Either
          * width that overflows uint32_t is reported unknown rather than truncated.
          */
         NodeWidths snapshot_widths(const Node& node) noexcept
@@ -67,7 +67,7 @@ namespace SushiRuntime
             if (node.bindings_)
             {
                 const std::size_t count = node.bindings_->count.load(std::memory_order_relaxed);
-                if (count != LateBindings::USE_BAKED)
+                if (count != LateBindings::K_USE_BAKED)
                     widths.live = narrow_width(count);
             }
             return widths;

@@ -72,7 +72,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the current reference count. */
-            [[nodiscard]] std::int32_t get_ref_count() const noexcept
+            [[nodiscard]] std::int32_t ref_count() const noexcept
             {
                 return ref_count_.load(std::memory_order_relaxed);
             }

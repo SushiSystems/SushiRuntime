@@ -49,8 +49,8 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/registered_task.hpp>
@@ -113,13 +113,13 @@ namespace
         const char* name = "";
 
         /** @brief Holds the master end, not started. */
-        std::shared_ptr<ITransport> master;
+        std::shared_ptr<Transport> master;
 
         /**
          * @brief Makes one worker end that reaches the master.
          * @pre The master end has started, so its address is known.
          */
-        std::function<std::shared_ptr<ITransport>()> make_worker;
+        std::function<std::shared_ptr<Transport>()> make_worker;
     };
 
     /** @brief Returns the two ends of an in-process fabric. */
@@ -151,7 +151,7 @@ namespace
     {
         public:
             /** @brief Builds the worker's runtime and starts the agent on @p transport. */
-            LocalWorker(std::shared_ptr<ITransport> transport, sushi_ptr<KernelRegistry> kernels)
+            LocalWorker(std::shared_ptr<Transport> transport, sushi_ptr<KernelRegistry> kernels)
                 : agent_(context_, std::move(transport), std::move(kernels))
             {
                 started_ = agent_.start();
@@ -474,7 +474,7 @@ namespace
             Internal::Graph::CompiledGraph compiled = batch.compile();
 
             const auto begin = std::chrono::steady_clock::now();
-            rig.master().get_execution_engine().execute(compiled);
+            rig.master().execution_engine().execute(compiled);
             const auto end = std::chrono::steady_clock::now();
 
             measurement.is_correct = measurement.is_correct && batch.holds_results(base);

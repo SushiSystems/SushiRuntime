@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* worker_pool_info.hpp                                                   */
+/* worker_pool.hpp                                                   */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,8 +20,8 @@
 /**************************************************************************/
 
 /**
- * @file worker_pool_info.hpp
- * @brief Declares WorkerPoolInfo, the worker pool as the scheduler built it.
+ * @file worker_pool.hpp
+ * @brief Declares WorkerPool, the worker pool as the scheduler built it.
  * @author Mustafa Garip
  * @see modules/engine/scheduler/README.md
  */
@@ -40,7 +40,7 @@ namespace SushiRuntime
          * @brief Reports the worker pool as built, which may differ from the request.
          * @see modules/engine/execution/README.md
          */
-        struct WorkerPoolInfo
+        struct WorkerPool
         {
             std::size_t count      = 0;   /**< Worker threads running. */
             std::size_t first_core = 0;   /**< First bound core; meaningless when floating. */

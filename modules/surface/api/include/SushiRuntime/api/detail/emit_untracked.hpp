@@ -41,7 +41,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Builds the replay of a launch that names no region and runs on one device.
@@ -99,5 +99,5 @@ namespace SushiRuntime
                 bg.add_node(fn, std::vector<sycl::event>{}, registration).place_on(device);
             };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

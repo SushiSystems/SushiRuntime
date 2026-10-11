@@ -38,7 +38,7 @@ using namespace SushiRuntime;
 
 namespace
 {
-    constexpr std::uint32_t CANARY = 0xDEADBEEFu;
+    constexpr std::uint32_t K_CANARY = 0xDEADBEEFu;
 
     /**
      * @brief Records the resolver of one late count; its fill copies the live value to out[0].
@@ -68,7 +68,7 @@ TEST(Integration_LateCount, FixedResolvesToItsCount)
 {
     auto rt  = Runtime::create();
     auto out = rt.buffer<std::uint32_t>(1);
-    out[0] = CANARY;
+    out[0] = K_CANARY;
 
     const LateCount count = LateCount::fixed(42);
 
@@ -84,7 +84,7 @@ TEST(Integration_LateCount, HostProviderBelowCapacity)
 {
     auto rt  = Runtime::create();
     auto out = rt.buffer<std::uint32_t>(1);
-    out[0] = CANARY;
+    out[0] = K_CANARY;
 
     const LateCount count =
         LateCount::from_host(1000000, []() { return std::size_t{700000}; });
@@ -101,7 +101,7 @@ TEST(Integration_LateCount, ChangingHostCountKeepsOneCompile)
 {
     auto rt  = Runtime::create();
     auto out = rt.buffer<std::uint32_t>(1);
-    out[0] = CANARY;
+    out[0] = K_CANARY;
 
     std::size_t live = 1000;
     const LateCount count = LateCount::from_host(700000, [&live]() { return live; });
@@ -129,7 +129,7 @@ TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRun)
 {
     auto rt  = Runtime::create();
     auto out = rt.buffer<std::uint32_t>(1);
-    out[0] = CANARY;
+    out[0] = K_CANARY;
 
     const LateCount count = LateCount::from_host(100, []() { return std::size_t{101}; });
 
@@ -137,7 +137,7 @@ TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRun)
     record_live_count_copy(g.recorder(), count, out);
 
     EXPECT_THROW(g.run(), SushiException);
-    EXPECT_EQ(out[0], CANARY) << "a rejected count must not reach the fill";
+    EXPECT_EQ(out[0], K_CANARY) << "a rejected count must not reach the fill";
 }
 
 /** @brief Tests that a Residency::Host device slot resolves to the value written there. */
@@ -147,7 +147,7 @@ TEST(Integration_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
     auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
     auto out     = rt.buffer<std::uint32_t>(1);
     counter[0] = 700000;
-    out[0] = CANARY;
+    out[0] = K_CANARY;
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), device_count(counter, 1000000), out);
@@ -167,7 +167,7 @@ TEST(Integration_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
         auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
         auto out     = rt.buffer<std::uint32_t>(1);
         counter[0] = 101;
-        out[0] = CANARY;
+        out[0] = K_CANARY;
 
         auto g = rt.graph();
         record_live_count_copy(g.recorder(), device_count(counter, 100), out);
@@ -210,7 +210,7 @@ TEST(Integration_LateCount, ResolverSeesTheCountItsPredecessorJustWrote)
     auto source  = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
     auto out     = rt.buffer<std::uint32_t>(1);
     counter[0] = 0;
-    out[0] = CANARY;
+    out[0] = K_CANARY;
 
     // A device kernel cannot reach this frame, so its next count is in a buffer; see README.md.
     const std::uint32_t* source_ptr = source.data();

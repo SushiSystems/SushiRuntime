@@ -168,7 +168,7 @@ TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
         EXPECT_NO_THROW({
             auto ev = q.submit([](sycl::handler& h)
             {
-                SushiRuntime::detail::enqueue_host_task(h, [] {});
+                SushiRuntime::Detail::enqueue_host_task(h, [] {});
             });
             ev.wait();
         }) << "CUDA-backed SYCL queue threw during host_task submission.";

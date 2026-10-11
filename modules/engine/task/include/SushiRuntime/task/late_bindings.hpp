@@ -43,13 +43,13 @@ namespace SushiRuntime
         struct LateBindings
         {
             /** @brief count sentinel: iterate the capacity baked at compile time. */
-            static constexpr std::size_t USE_BAKED = ~std::size_t{0};
+            static constexpr std::size_t K_USE_BAKED = ~std::size_t{0};
 
             /** @brief When false the node is instant-complete: no kernel, successors fire at once. */
             std::atomic<bool> enabled{true};
 
-            /** @brief Live iteration size for this step, or USE_BAKED for the full baked range. */
-            std::atomic<std::size_t> count{USE_BAKED};
+            /** @brief Live iteration size for this step, or K_USE_BAKED for the full baked range. */
+            std::atomic<std::size_t> count{K_USE_BAKED};
 
             /**
              * @brief Points at the host-readable location a predecessor writes the live count to.

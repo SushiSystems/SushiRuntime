@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* device_info.hpp                                                        */
+/* device_description.hpp                                                        */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,8 +20,8 @@
 /**************************************************************************/
 
 /**
- * @file device_info.hpp
- * @brief Declares DeviceKind, DeviceInfo and DeviceDescriptor, the inventory record of a device.
+ * @file device_description.hpp
+ * @brief Declares DeviceKind, DeviceDescription and DeviceDescriptor, the inventory record of a device.
  * @author Mustafa Garip
  * @see modules/platform/device/README.md
  */
@@ -51,7 +51,7 @@ namespace SushiRuntime
         /**
          * @brief Describes one device of the inventory.
          */
-        struct DeviceInfo
+        struct DeviceDescription
         {
             std::size_t index = 0;                         /**< Position in the device set. */
             std::string name;                              /**< Name the device reports. */
@@ -68,7 +68,7 @@ namespace SushiRuntime
         struct DeviceDescriptor
         {
             sycl::device device; /**< The SYCL device a queue is built on. */
-            DeviceInfo info;     /**< What the inventory reports about it. */
+            DeviceDescription info;     /**< What the inventory reports about it. */
         };
     } // namespace Device
 } // namespace SushiRuntime

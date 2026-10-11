@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_provider.hpp>
 
 namespace SushiRuntime
 {
@@ -41,7 +41,7 @@ namespace SushiRuntime
          * @brief Models NUMA distances from an explicit in-memory matrix, for tests.
          * @see modules/platform/topology/README.md
          */
-        class MatrixDistanceModel : public INUMADistanceModel
+        class MatrixDistanceModel : public NUMADistanceModel
         {
             public:
                 /**

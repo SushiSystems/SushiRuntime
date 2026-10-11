@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* execution_engine.cpp                                                   */
+/* scheduler_execution_engine.cpp                                         */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,7 +20,7 @@
 /**************************************************************************/
 
 /**
- * @file execution_engine.cpp
+ * @file scheduler_execution_engine.cpp
  * @brief Runs compiled graphs on a persistent scheduler and reports their profiling.
  * @author Mustafa Garip
  */
@@ -38,13 +38,13 @@
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
-#include <SushiRuntime/scheduler/worker_pool_info.hpp>
+#include <SushiRuntime/scheduler/worker_pool.hpp>
 #include <SushiRuntime/scheduler/workload_coordinator.hpp>
 #include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
-#include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/execution/scheduler_execution_engine.hpp>
 
 namespace SushiRuntime
 {
@@ -156,7 +156,7 @@ namespace SushiRuntime
         /**
          * @brief Owns the scheduler, completion gate and rebalancer (modules/engine/execution/README.md).
          */
-        struct ExecutionEngine::Impl : public RefCounted
+        struct SchedulerExecutionEngine::Impl : public RefCounted
         {
             /** @brief Persistent scheduler that survives multiple graph executions. */
             SushiRuntime::Internal::Scheduler::TaskScheduler scheduler;
@@ -232,20 +232,20 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Constructs an ExecutionEngine.
+         * @brief Constructs an SchedulerExecutionEngine.
          *
          * @param ctx The runtime context the engine is bound to.
          */
-        ExecutionEngine::ExecutionEngine(RuntimeContext& ctx)
+        SchedulerExecutionEngine::SchedulerExecutionEngine(RuntimeContext& ctx)
             : impl_(make_sushi<Impl>(ctx))
         {}
 
         /**
-         * @brief Destroys the ExecutionEngine.
+         * @brief Destroys the SchedulerExecutionEngine.
          *
          * Ensures that the engine is shut down before destruction.
          */
-        ExecutionEngine::~ExecutionEngine()
+        SchedulerExecutionEngine::~SchedulerExecutionEngine()
         {
             // Pimpl destructor will call do_shutdown() if not already done.
         }
@@ -255,7 +255,7 @@ namespace SushiRuntime
          *
          * Stops the task scheduler and the workload rebalancer gracefully.
          */
-        void ExecutionEngine::shutdown()
+        void SchedulerExecutionEngine::shutdown()
         {
             impl_->do_shutdown();
         }
@@ -267,7 +267,7 @@ namespace SushiRuntime
          * executing while the sentinel still fires, so the blocked execute()
          * returns promptly.
          */
-        void ExecutionEngine::cancel() noexcept
+        void SchedulerExecutionEngine::cancel() noexcept
         {
             impl_->scheduler.request_cancellation();
         }
@@ -276,7 +276,7 @@ namespace SushiRuntime
          * @brief Reports whether the active run has been cancelled.
          * @return True once cancel() was called and before reset_cancellation().
          */
-        bool ExecutionEngine::is_cancelled() const
+        bool SchedulerExecutionEngine::is_cancelled() const
         {
             return impl_->scheduler.run_cancelled();
         }
@@ -284,7 +284,7 @@ namespace SushiRuntime
         /**
          * @brief Clears the cancellation flag so the next run starts clean.
          */
-        void ExecutionEngine::reset_cancellation()
+        void SchedulerExecutionEngine::reset_cancellation()
         {
             impl_->scheduler.reset_cancellation();
         }
@@ -296,7 +296,7 @@ namespace SushiRuntime
          * The flag records intent for rebalancer_enabled() without reaching into the
          * coordinator's internal state.
          */
-        void ExecutionEngine::set_rebalancer_enabled(bool enabled)
+        void SchedulerExecutionEngine::set_rebalancer_enabled(bool enabled)
         {
             if (!impl_->rebalancer) return;
             impl_->rebalancer_on.store(enabled, std::memory_order_relaxed);
@@ -307,7 +307,7 @@ namespace SushiRuntime
         /**
          * @brief Reports whether the background rebalancer is currently running.
          */
-        bool ExecutionEngine::rebalancer_enabled() const
+        bool SchedulerExecutionEngine::rebalancer_enabled() const
         {
             return impl_->rebalancer && impl_->rebalancer_on.load(std::memory_order_relaxed);
         }
@@ -315,10 +315,10 @@ namespace SushiRuntime
         /**
          * @brief Reports the worker pool the scheduler built, after clamping.
          */
-        WorkerPoolInfo ExecutionEngine::worker_pool() const
+        WorkerPool SchedulerExecutionEngine::worker_pool() const
         {
-            Internal::Scheduler::WorkerPoolInfo info;
-            info.count      = impl_->scheduler.get_worker_count();
+            Internal::Scheduler::WorkerPool info;
+            info.count      = impl_->scheduler.worker_count();
             info.first_core = impl_->scheduler.first_core();
             info.pinning    = impl_->scheduler.pinning();
             return info;
@@ -327,7 +327,7 @@ namespace SushiRuntime
         /**
          * @brief Zeroes node and per-worker profiling accumulators before a run.
          */
-        void ExecutionEngine::reset_profiling(CompiledGraph& graph, std::size_t expected_invocations)
+        void SchedulerExecutionEngine::reset_profiling(CompiledGraph& graph, std::size_t expected_invocations)
         {
             impl_->scheduler.reset_worker_times();
             // Once per run, before any step's arm_for_execution() draws from it.
@@ -344,7 +344,7 @@ namespace SushiRuntime
         /**
          * @brief Reads the accumulators into a report's profiling breakdown.
          */
-        void ExecutionEngine::collect_profiling(CompiledGraph& graph,
+        void SchedulerExecutionEngine::collect_profiling(CompiledGraph& graph,
                                                 Internal::Observability::RunReport& report) const
         {
             // One capture path (F4): node_timings below is aggregated from these same records.
@@ -397,10 +397,10 @@ namespace SushiRuntime
             }
 
             double polling_ms_total = 0.0;
-            const std::size_t workers = impl_->scheduler.get_worker_count();
+            const std::size_t workers = impl_->scheduler.worker_count();
             for (std::size_t i = 0; i < workers; ++i)
             {
-                const auto s = impl_->scheduler.get_worker_times(static_cast<int>(i));
+                const auto s = impl_->scheduler.worker_times(static_cast<int>(i));
                 Internal::Observability::WorkerTiming w;
                 w.worker_id   = static_cast<int>(i);
                 w.busy_ms     = s.busy_ns / 1.0e6;
@@ -422,24 +422,24 @@ namespace SushiRuntime
          *
          * @return ExecutionMetrics A structure containing the execution statistics.
          */
-        ExecutionMetrics ExecutionEngine::metrics() const
+        ExecutionMetrics SchedulerExecutionEngine::metrics() const
         {
             ExecutionMetrics m;
-            m.local_steals  = impl_->scheduler.get_local_steal_count();
-            m.remote_steals = impl_->scheduler.get_remote_steal_count();
-            const size_t workers = impl_->scheduler.get_worker_count();
+            m.local_steals  = impl_->scheduler.local_steal_count();
+            m.remote_steals = impl_->scheduler.remote_steal_count();
+            const size_t workers = impl_->scheduler.worker_count();
             for (size_t i = 0; i < workers; ++i)
                 m.tasks_completed += impl_->scheduler.completed_task_count(static_cast<int>(i));
             return m;
         }
 
         /** @brief Forwards to the scheduler's set_offload_coordinator(). */
-        void ExecutionEngine::install_offload(Internal::Graph::OffloadCoordinator* offload)
+        void SchedulerExecutionEngine::install_offload(Internal::Graph::OffloadCoordinator* offload)
         {
             impl_->scheduler.set_offload_coordinator(offload);
         }
 
-        Internal::Graph::OffloadSink& ExecutionEngine::offload_sink() noexcept
+        Internal::Graph::OffloadSink& SchedulerExecutionEngine::offload_sink() noexcept
         {
             return impl_->scheduler;
         }
@@ -447,7 +447,7 @@ namespace SushiRuntime
         /**
          * @brief Runs a compiled graph on the persistent worker pool and waits.
          */
-        void ExecutionEngine::execute(CompiledGraph& graph)
+        void SchedulerExecutionEngine::execute(CompiledGraph& graph)
         {
             // execute() is submit() then complete(), nothing more (modules/engine/execution/README.md).
             submit(graph);
@@ -458,7 +458,7 @@ namespace SushiRuntime
          * @brief Starts a run on the worker pool without waiting for it (modules/engine/execution/README.md).
          * @pre No other run is in progress on this engine.
          */
-        void ExecutionEngine::submit(CompiledGraph& graph)
+        void SchedulerExecutionEngine::submit(CompiledGraph& graph)
         {
             SR_THROW_IF(impl_->is_shutdown.load(std::memory_order_acquire), "Execute called after shutdown.");
             SR_THROW_IF(graph.roots.empty(), "Received a compiled graph with no root nodes.");
@@ -480,7 +480,7 @@ namespace SushiRuntime
             {
                 graph.sentinel->metadata.name = "graph_completion_sentinel";
                 graph.sentinel->is_sentinel   = true;
-                graph.sentinel->mode          = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST;
+                graph.sentinel->mode          = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Host;
 
                 auto* latch     = &impl_->completion;
                 auto* sched_ptr = &impl_->scheduler;
@@ -531,7 +531,7 @@ namespace SushiRuntime
          * a task throwing, and refusing every later run would turn one bad kernel
          * into a dead runtime.
          */
-        void ExecutionEngine::complete()
+        void SchedulerExecutionEngine::complete()
         {
             const ScheduledRunRelease release_guard(impl_->run_marker);
 
@@ -560,7 +560,7 @@ namespace SushiRuntime
          * waits for. Use it to decide whether to keep overlapping work, never as a
          * substitute for complete().
          */
-        bool ExecutionEngine::run_finished()
+        bool SchedulerExecutionEngine::run_finished()
         {
             return impl_->completion.poll();
         }
@@ -568,20 +568,20 @@ namespace SushiRuntime
         /**
          * @brief Reports whether a scheduled or a chained run is in progress on this engine.
          */
-        bool ExecutionEngine::run_in_progress() const noexcept
+        bool SchedulerExecutionEngine::run_in_progress() const noexcept
         {
             // acq_rel writes, acquire load: whoever reads the marker sees what its writer did before.
             return impl_->run_marker.load(std::memory_order_acquire) != 0;
         }
 
         /** @brief Marks one chained run in progress. */
-        void ExecutionEngine::begin_chained_run() noexcept
+        void SchedulerExecutionEngine::begin_chained_run() noexcept
         {
             impl_->run_marker.fetch_add(K_CHAINED_RUN, std::memory_order_acq_rel);
         }
 
         /** @brief Clears the mark one begin_chained_run() set. */
-        void ExecutionEngine::end_chained_run() noexcept
+        void SchedulerExecutionEngine::end_chained_run() noexcept
         {
             impl_->run_marker.fetch_sub(K_CHAINED_RUN, std::memory_order_acq_rel);
         }
@@ -590,7 +590,7 @@ namespace SushiRuntime
          * @brief Executes a compiled graph, taking ownership of it (modules/engine/execution/README.md).
          * @param graph The compiled graph to execute via move semantics.
          */
-        void IExecutionEngine::execute(CompiledGraph&& graph)
+        void ExecutionEngine::execute(CompiledGraph&& graph)
         {
             Internal::Graph::CompiledGraph local = std::move(graph);
             execute(local);

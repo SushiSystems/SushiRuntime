@@ -106,7 +106,7 @@ namespace SushiRuntime
         return "unknown";
     }
 
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Logs, the first time it is called, that distributed() found no offload
@@ -229,7 +229,7 @@ namespace SushiRuntime
                 ", count " + std::to_string(range.count) + ") does not fit a handle of size " +
                 std::to_string(size) + "; keep offset + count within size()."});
         }
-    } // namespace detail
+    } // namespace Detail
 
     /**
      * @brief Owns a typed block of unified shared memory that the runtime tracks by owning
@@ -441,7 +441,7 @@ namespace SushiRuntime
             friend class Interop;
             template <typename>
             friend class State;
-            friend struct detail::HandleAccess;
+            friend struct Detail::HandleAccess;
 
             /**
              * @brief Allocates count elements of USM pinned to one device.
@@ -459,19 +459,19 @@ namespace SushiRuntime
                   residency_(residency),
                   liveness_(Internal::Memory::make_liveness())
             {
-                detail::require_device(call, device_index, ctx_->devices().count());
+                Detail::require_device(call, device_index, ctx_->devices().count());
                 const std::size_t bytes =
-                    detail::checked_byte_count("Buffer allocation", count, sizeof(T));
+                    Detail::checked_byte_count("Buffer allocation", count, sizeof(T));
                 auto owner =
                     std::make_unique<Internal::Memory::USMAllocationOwner>(ctx_->shared_memory());
                 void* address =
-                    detail::malloc_residency_on(*ctx_, bytes, device_index, residency);
+                    Detail::malloc_residency_on(*ctx_, bytes, device_index, residency);
                 // A null address would give the handle a null key, which skips tracking.
                 if (count > 0 && address == nullptr)
                     throw SushiException(Error{
                         Errc::allocation_failed,
                         "Buffer allocation: the device returned no memory for " +
-                        detail::describe_request(count, sizeof(T), device_index, residency) +
+                        Detail::describe_request(count, sizeof(T), device_index, residency) +
                         "."});
                 allocation_ = Internal::Memory::Allocation(address, bytes, std::move(owner));
             }
@@ -495,13 +495,13 @@ namespace SushiRuntime
                   liveness_(Internal::Memory::make_liveness())
             {
                 const std::size_t bytes =
-                    detail::checked_byte_count("Buffer adoption", count, sizeof(T));
+                    Detail::checked_byte_count("Buffer adoption", count, sizeof(T));
                 if (allocation_.bytes() < bytes)
                     throw SushiException(Error{
                         Errc::allocation_failed,
                         "Buffer adoption: an allocation of " +
                         std::to_string(allocation_.bytes()) + " bytes cannot hold " +
-                        detail::describe_request(count, sizeof(T), device_index, residency) +
+                        Detail::describe_request(count, sizeof(T), device_index, residency) +
                         "."});
             }
 
@@ -512,13 +512,13 @@ namespace SushiRuntime
              */
             std::vector<T> read_window(const char* call, ElementRange range) const
             {
-                detail::require_window(call, range, size_);
+                Detail::require_window(call, range, size_);
                 std::vector<T> out(range.count);
                 if (range.count == 0)
                     return out;
                 // A non-zero size_ implies a context and a non-null address.
                 T* first = data();
-                sycl::queue& queue = detail::owning_queue(*ctx_, static_cast<void*>(first));
+                sycl::queue& queue = Detail::owning_queue(*ctx_, static_cast<void*>(first));
                 queue.memcpy(out.data(), first + range.offset, range.count * sizeof(T)).wait();
                 ctx_->transfers().add_device_to_host(range.count * sizeof(T));
                 return out;
@@ -532,7 +532,7 @@ namespace SushiRuntime
              */
             void write_window(const char* call, ElementRange range, span<const T> source) const
             {
-                detail::require_window(call, range, size_);
+                Detail::require_window(call, range, size_);
                 if (range.count == 0)
                     return;
                 if (source.data() == nullptr)
@@ -548,7 +548,7 @@ namespace SushiRuntime
                         std::to_string(range.count) + "; pass at least that many."});
                 // A non-zero size_ implies a context and a non-null address.
                 T* first = data();
-                sycl::queue& queue = detail::owning_queue(*ctx_, static_cast<void*>(first));
+                sycl::queue& queue = Detail::owning_queue(*ctx_, static_cast<void*>(first));
                 queue.memcpy(first + range.offset, source.data(), range.count * sizeof(T))
                     .wait();
                 ctx_->transfers().add_host_to_device(range.count * sizeof(T));
@@ -561,7 +561,7 @@ namespace SushiRuntime
              */
             BufferRegion region_of(const char* call, ElementRange range) const
             {
-                detail::require_window(call, range, size_);
+                Detail::require_window(call, range, size_);
                 return BufferRegion{static_cast<void*>(data()),
                                     range.offset * sizeof(T),
                                     range.count * sizeof(T)};
@@ -581,7 +581,7 @@ namespace SushiRuntime
                 if (auto* offload = ctx_->offload())
                     offload->share(data(), size_ * sizeof(T));
                 else
-                    detail::warn_distributed_without_coordinator();
+                    Detail::warn_distributed_without_coordinator();
             }
 
             /**

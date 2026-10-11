@@ -41,14 +41,14 @@ namespace
      *
      * Supplies preconfigured per-worker queue depths and cumulative completion rates to simulate various system states.
      */
-    class FakeTelemetry : public ITelemetryProvider
+    class FakeTelemetry : public TelemetryProvider
     {
     public:
         std::vector<size_t> queue;       // current queue depth per worker
         std::vector<size_t> completed;   // cumulative completed tasks per worker
 
-        size_t get_worker_count() const override         { return queue.size(); }
-        size_t get_queue_size(int w) const override       { return queue[static_cast<size_t>(w)]; }
+        size_t worker_count() const override         { return queue.size(); }
+        size_t queue_size(int w) const override       { return queue[static_cast<size_t>(w)]; }
         size_t completed_task_count(int w) const override  { return completed[static_cast<size_t>(w)]; }
     };
 
@@ -57,7 +57,7 @@ namespace
      *
      * Captures the source and task count of the most recent migration to verify rebalancer decisions.
      */
-    class RecordingMigrator : public ITaskMigrator
+    class RecordingMigrator : public TaskMigrator
     {
     public:
         std::atomic<int> calls{0};

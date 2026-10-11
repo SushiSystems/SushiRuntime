@@ -42,7 +42,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /** @brief Names the engine node a boundary pin refers to. */
         using GraphNode = ::SushiRuntime::Internal::Graph::Node;
@@ -88,7 +88,7 @@ namespace SushiRuntime
         inline void for_each_intra_successor(GraphNode* n, Fn&& fn)
         {
             const int32_t count = n->inline_successor_count.load(std::memory_order_relaxed);
-            const int32_t max_idx = std::min<int32_t>(count, GraphNode::MAX_INLINE_SUCCESSORS);
+            const int32_t max_idx = std::min<int32_t>(count, GraphNode::K_MAX_INLINE_SUCCESSORS);
             for (int32_t i = 0; i < max_idx; ++i)
                 if (n->inline_successors[i]) fn(n->inline_successors[i]);
             for (auto* s = n->successor_list.load(std::memory_order_relaxed); s; s = s->next)
@@ -236,5 +236,5 @@ namespace SushiRuntime
             }
             return access;
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

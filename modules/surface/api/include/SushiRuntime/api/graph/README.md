@@ -52,7 +52,7 @@ Recorder::rule() scope records. size() counts rules, node_count() counts the nod
 and rule_registration(rule) takes a position below size(); last_rule() is the position of the rule
 just added. RunReport numbers a node event by registration index, and every node of a rule carries
 the rule's index, so rule_registration() maps a record back to the call that recorded it. The
-indices are drawn when the graph compiles, so every rule reports `NO_REGISTRATION` until the first
+indices are drawn when the graph compiles, so every rule reports `K_NO_REGISTRATION` until the first
 run, and a recompile may renumber them.
 
 DynamicGraph::rule_registration(key, rule) answers the same for a rule of one region. A commit
@@ -143,7 +143,7 @@ each rule, and the composer to remember a node of each rule.
 
 An emitter may add no node. replay() compares the backing graph's last node before and after each
 spec and, when it is the same node, names nothing and does not call the visitor. The rule keeps
-its place in rule_count() and reports `NO_REGISTRATION`, and the rule before it keeps its name.
+its place in rule_count() and reports `K_NO_REGISTRATION`, and the rule before it keeps its name.
 
 ### kernel(DeviceSized, ...)
 
@@ -534,7 +534,7 @@ the RunHandle. The throwing form calls its try_ form and throws the Error it got
 `modules/surface/api/tests/test_run_driver.cpp` holds the list as `static_assert`s over both types.
 
 No try_ form throws, also when memory runs out while it builds an Error: every Error of the driver
-and of RunHandle is built by detail::error_without_throwing(), which returns the code with an empty
+and of RunHandle is built by Detail::error_without_throwing(), which returns the code with an empty
 message when the text cannot be allocated. try_run_until() moves its stop test, so the stop test
 must be nothrow move constructible, and a `static_assert` says so.
 
@@ -572,7 +572,7 @@ pending run_async() step, another graph's blocking run on another thread, or a r
 inside a task of a run. The caller settles the run in flight first, by letting its blocking call
 return or by waiting on its RunHandle. Without the refusal the second run would clear the first
 one's cancellation and, on the chain, submit beside it. The test is
-IExecutionEngine::run_in_progress(), one atomic load per run entry and none per step. Between two
+ExecutionEngine::run_in_progress(), one atomic load per run entry and none per step. Between two
 steps of a multi-step scheduled run the engine reports no run, so a stop test may still run another
 graph.
 
@@ -735,7 +735,7 @@ gives the rule a caller sees.
 ### async_record_
 
 async_record_ is the driver's record of its pending asynchronous step: a shared
-detail::AsyncStepRecord that holds the number of the pending step, or `K_NO_STEP`. run_async()
+Detail::AsyncStepRecord that holds the number of the pending step, or `K_NO_STEP`. run_async()
 writes the number, and settling the handle, moving the graph or destroying it writes `K_NO_STEP`.
 async_step_pending() reads it, and it guards the plan against a second run re-arming nodes the
 workers are still walking. Every handle of the graph holds the same record, so a handle learns that
@@ -844,7 +844,7 @@ not been measured.
 ### DynamicGraph::steps_
 
 steps_ is the per-step lifecycle aggregated from every live region before each run. It is the same
-detail::StepMachinery the static Graph uses, so both drivers run the per-step hooks in the same
+Detail::StepMachinery the static Graph uses, so both drivers run the per-step hooks in the same
 order.
 
 ### regions_

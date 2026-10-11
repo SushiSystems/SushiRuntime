@@ -49,7 +49,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /** @brief Grants a test a friend seam onto DynamicGraph::plan_/states_. */
         struct DynamicGraphNodeEventsTestAccess;
@@ -201,13 +201,13 @@ namespace SushiRuntime
             }
 
             /** @brief Stands for "this rule has no index yet". */
-            static constexpr std::uint32_t NO_REGISTRATION =
-                ::SushiRuntime::Internal::Graph::TaskGraph::NO_REGISTRATION;
+            static constexpr std::uint32_t K_NO_REGISTRATION =
+                ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION;
 
             /**
              * @brief Returns the registration index a rule of a region carries in the plan.
              * @param rule Position in the region's add() order, below its size().
-             * @return The index every node of the rule reports under, or NO_REGISTRATION for
+             * @return The index every node of the rule reports under, or K_NO_REGISTRATION for
              *         an absent region, a rule out of range or a region not yet composed.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
@@ -232,7 +232,7 @@ namespace SushiRuntime
             friend class Runtime;
             // The driver reaches the plan, the hooks and the checks below, and nothing else.
             friend class StepDriver<DynamicGraph>;
-            friend struct detail::DynamicGraphNodeEventsTestAccess;
+            friend struct Detail::DynamicGraphNodeEventsTestAccess;
 
             /** @brief Error text of a run started with no region. */
             static constexpr const char* K_NOTHING_TO_RUN =
@@ -339,7 +339,7 @@ namespace SushiRuntime
             ::SushiRuntime::Internal::Graph::CompiledGraph& run_plan() noexcept { return plan_; }
 
             /** @brief Returns the per-step hooks aggregated from the live regions. */
-            [[nodiscard]] const detail::StepMachinery& run_steps() const noexcept
+            [[nodiscard]] const Detail::StepMachinery& run_steps() const noexcept
             {
                 return steps_;
             }
@@ -379,7 +379,7 @@ namespace SushiRuntime
             void take(DynamicGraph& other) noexcept
             {
                 // The hooks list is replaced before the regions it names are freed.
-                steps_ = std::exchange(other.steps_, detail::StepMachinery());
+                steps_ = std::exchange(other.steps_, Detail::StepMachinery());
                 retired_ = std::exchange(other.retired_, {});
                 regions_ = std::exchange(other.regions_, {});
                 changes_ = std::exchange(other.changes_, {});
@@ -436,7 +436,7 @@ namespace SushiRuntime
             std::set<RegionKey> dropped_;
 
             /** @brief Aggregates every live region's per-step lifecycle before each run. */
-            detail::StepMachinery steps_;
+            Detail::StepMachinery steps_;
 
             /** @brief Set by a change of the profiling request, cleared by the next build. */
             bool rebuild_every_region_ = false;

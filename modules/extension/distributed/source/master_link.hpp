@@ -44,7 +44,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/task/task_types.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 
 #include "handshake.hpp"
@@ -112,7 +112,7 @@ namespace SushiRuntime
                  * @param secret The cluster's key, possibly empty; the bytes outlive the link.
                  * @param nonces Called once per handshake; a test passes a fixed source.
                  */
-                MasterLink(ITransport& transport, SushiRuntime::span<const std::uint8_t> secret,
+                MasterLink(Transport& transport, SushiRuntime::span<const std::uint8_t> secret,
                            MasterLinkOptions options, NonceSource nonces);
 
                 /** @brief Calls stop(). */
@@ -253,7 +253,7 @@ namespace SushiRuntime
                 std::condition_variable changed_;
 
                 /// @brief Carries the link's frames and closes a silent master.
-                ITransport& transport_;
+                Transport& transport_;
 
                 /// @brief The cluster's key, borrowed.
                 SushiRuntime::span<const std::uint8_t> secret_;
@@ -273,7 +273,7 @@ namespace SushiRuntime
                 /**
                  * @brief Set once the link's thread has stopped the transport of an ended link.
                  *
-                 * An event cannot call ITransport::stop(), so the thread does it when finish()
+                 * An event cannot call Transport::stop(), so the thread does it when finish()
                  * wakes it; a transport that is stopped connects no more.
                  */
                 bool transport_stopped_ = false;

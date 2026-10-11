@@ -49,7 +49,7 @@ namespace
     /** @brief Returns the plan of a graph that requested profiling. */
     const Internal::Graph::CompiledGraph& plan_of(const DynamicGraph& world)
     {
-        return detail::DynamicGraphNodeEventsTestAccess::plan(world);
+        return Detail::DynamicGraphNodeEventsTestAccess::plan(world);
     }
 
     /** @brief Copies K_ELEMENTS elements from one buffer to another. */

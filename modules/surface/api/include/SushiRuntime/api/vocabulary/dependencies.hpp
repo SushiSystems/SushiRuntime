@@ -39,7 +39,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         // A State reads through its current buffer and writes through its next buffer.
         template <typename T>
@@ -89,7 +89,7 @@ namespace SushiRuntime
             if (!o.expired())
                 out.push_back(std::move(o));
         }
-    } // namespace detail
+    } // namespace Detail
 
     /**
      * @brief Names the data a task reads, as a list of dependency keys.
@@ -108,9 +108,9 @@ namespace SushiRuntime
          *           contributes one region, in the order given.
          */
         template <class... Handles>
-        explicit Reads(const Handles&... hs) : keys{ detail::read_key_of(hs)... }
+        explicit Reads(const Handles&... hs) : keys{ Detail::read_key_of(hs)... }
         {
-            (detail::gather_life(lives, hs), ...);
+            (Detail::gather_life(lives, hs), ...);
         }
     };
 
@@ -130,9 +130,9 @@ namespace SushiRuntime
          *           contributes its next field.
          */
         template <class... Handles>
-        explicit Writes(const Handles&... hs) : keys{ detail::write_key_of(hs)... }
+        explicit Writes(const Handles&... hs) : keys{ Detail::write_key_of(hs)... }
         {
-            (detail::gather_life(lives, hs), ...);
+            (Detail::gather_life(lives, hs), ...);
         }
     };
 

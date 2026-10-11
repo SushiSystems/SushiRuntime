@@ -59,4 +59,4 @@ successful import closes a descriptor the driver already owns.
 Releasing an import is three steps: forget the address, unmap it, release the SYCL import object.
 Each step runs in its own `try`, so a failed unmap still releases. A step that throws is logged
 once at ERROR with its name and the device index, and nothing is rethrown, because the steps run
-from a destructor and from `IAllocationOwner::release`, which is `noexcept`.
+from a destructor and from `AllocationOwner::release`, which is `noexcept`.

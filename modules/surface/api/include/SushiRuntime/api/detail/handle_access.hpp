@@ -41,7 +41,7 @@ namespace SushiRuntime
     template <typename T>
     class State;
 
-    namespace detail
+    namespace Detail
     {
         template <typename T>
         struct StateView;
@@ -148,5 +148,5 @@ namespace SushiRuntime
                     view.owner->publish_view();
             }
         };
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

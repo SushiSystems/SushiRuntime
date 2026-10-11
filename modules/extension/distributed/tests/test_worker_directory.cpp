@@ -45,8 +45,8 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 
 #include "handshake.hpp"
@@ -176,11 +176,11 @@ namespace
     }
 
     /** @brief Picks the first worker it is offered and records every call. */
-    class RecordingPolicy final : public IOffloadPolicy
+    class RecordingPolicy final : public OffloadPolicy
     {
         public:
             /** @brief Records the offer, then returns @ref answer or the first worker. */
-            std::optional<int> pick_worker(const Internal::Graph::Node&, span<const WorkerStats> workers,
+            std::optional<int> pick_worker(const Internal::Graph::Node&, span<const WorkerLoad> workers,
                                            std::uint64_t) override
             {
                 ++calls;
@@ -196,7 +196,7 @@ namespace
             [[nodiscard]] std::vector<int> offered_ids() const
             {
                 std::vector<int> ids;
-                for (const WorkerStats& worker : offered)
+                for (const WorkerLoad& worker : offered)
                     ids.push_back(worker.worker_id);
                 return ids;
             }
@@ -205,7 +205,7 @@ namespace
             int calls = 0;
 
             /** @brief Holds the workers of the last call. */
-            std::vector<WorkerStats> offered;
+            std::vector<WorkerLoad> offered;
 
             /** @brief Holds the id to answer with in place of the first worker. */
             std::optional<int> answer;

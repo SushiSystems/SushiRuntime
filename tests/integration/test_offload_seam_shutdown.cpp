@@ -88,7 +88,7 @@ namespace
                     return;
 
                 probe_ = make_sushi<Node>();
-                probe_->mode = Node::ExecutionMode::HOST;
+                probe_->mode = Node::ExecutionMode::Host;
                 probe_->submits_device_work_ = false;
                 probe_->native_work = [this] { mark_probe_ran(); };
 

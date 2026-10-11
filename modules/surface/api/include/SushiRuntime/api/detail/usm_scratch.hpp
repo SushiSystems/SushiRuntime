@@ -39,7 +39,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Allocates USM scratch that returns to its context when the last owner lets go.
@@ -64,5 +64,5 @@ namespace SushiRuntime
             return std::shared_ptr<T>(static_cast<T*>(raw),
                                       [ctx](T* p) { ctx->memory().release(p); });
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

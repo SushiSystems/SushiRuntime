@@ -36,7 +36,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 
 namespace SushiRuntime
@@ -176,14 +176,14 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Attaches one endpoint to an InProcessFabric and keeps the ITransport contract.
+         * @brief Attaches one endpoint to an InProcessFabric and keeps the Transport contract.
          *
          * Each endpoint runs one pump thread, which delivers its inbound frames and makes its
          * events. A worker endpoint connects once it and the master endpoint are both started,
          * and each connection is a new PeerID on both sides.
          * @see modules/extension/distributed/README.md
          */
-        class SUSHIRUNTIME_API InProcessTransport final : public ITransport
+        class SUSHIRUNTIME_API InProcessTransport final : public Transport
         {
             public:
                 /**

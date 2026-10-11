@@ -32,7 +32,7 @@
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/execution/scheduler_execution_engine.hpp>
 
 namespace SushiRuntime
 {
@@ -57,7 +57,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Drains the queue unless finish() already did, swallowing errors, and ends
-                 *        the run for IExecutionEngine::run_in_progress().
+                 *        the run for ExecutionEngine::run_in_progress().
                  */
                 ~ChainRun();
 
@@ -76,7 +76,7 @@ namespace SushiRuntime
                 /**
                  * @brief Waits once for the whole run, then writes its event records into the ledger.
                  *
-                 * The run is over for IExecutionEngine::run_in_progress() when this returns or
+                 * The run is over for ExecutionEngine::run_in_progress() when this returns or
                  * throws.
                  */
                 void finish();
@@ -87,7 +87,7 @@ namespace SushiRuntime
                 {
                     public:
                         /** @brief Marks a chained run in progress on @p engine. */
-                        explicit RunMark(ExecutionEngine& engine) noexcept;
+                        explicit RunMark(SchedulerExecutionEngine& engine) noexcept;
 
                         /** @brief Clears the mark unless release() already did. */
                         ~RunMark();
@@ -102,7 +102,7 @@ namespace SushiRuntime
 
                     private:
                         /** @brief The marked engine; null once released. */
-                        ExecutionEngine* engine_;
+                        SchedulerExecutionEngine* engine_;
                 };
 
                 /**

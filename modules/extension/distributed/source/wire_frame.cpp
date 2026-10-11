@@ -64,10 +64,10 @@ namespace SushiRuntime::Distributed::Wire
 
         FieldReader reader(bytes.subspan(K_FRAME_MAGIC.size(),
                                          K_FRAME_HEADER_BYTES - K_FRAME_MAGIC.size()));
-        const std::uint16_t version = reader.get_u16();
-        const std::uint8_t type = reader.get_u8();
-        const std::uint8_t flags = reader.get_u8();
-        const std::uint32_t payload_length = reader.get_u32();
+        const std::uint16_t version = reader.read_u16();
+        const std::uint8_t type = reader.read_u8();
+        const std::uint8_t flags = reader.read_u8();
+        const std::uint32_t payload_length = reader.read_u32();
 
         if (version != K_PROTOCOL_VERSION)
         {

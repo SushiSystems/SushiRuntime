@@ -21,7 +21,7 @@
 
 /**
  * @file tcp_transport.hpp
- * @brief Declares TCPTransport, the ITransport that carries frames over TCP.
+ * @brief Declares TCPTransport, the Transport that carries frames over TCP.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */
@@ -34,7 +34,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/distributed/endpoint.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 
 namespace SushiRuntime
 {
@@ -101,7 +101,7 @@ namespace SushiRuntime
          * makes that peer's events, and a writer thread.
          * @see modules/extension/distributed/README.md
          */
-        class SUSHIRUNTIME_API TCPTransport final : public ITransport
+        class SUSHIRUNTIME_API TCPTransport final : public Transport
         {
             public:
                 /**
@@ -127,7 +127,7 @@ namespace SushiRuntime
                 TCPTransport(TCPTransport&&) = delete;
                 TCPTransport& operator=(TCPTransport&&) = delete;
 
-                /** @brief Binds and listens, or starts the connector; see ITransport::start(). */
+                /** @brief Binds and listens, or starts the connector; see Transport::start(). */
                 [[nodiscard]] TransportResult start(TransportEvents& events) override;
 
                 /** @brief Closes the listener and every connection and joins every thread. */

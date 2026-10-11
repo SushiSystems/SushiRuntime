@@ -42,15 +42,15 @@ using namespace SushiRuntime;
 
 namespace
 {
-    constexpr std::size_t STEPS = 48;
-    constexpr std::uint32_t CANARY = 0xDEADBEEFu;
-    constexpr std::uint32_t MIX = 16777619u;
+    constexpr std::size_t K_STEPS = 48;
+    constexpr std::uint32_t K_CANARY = 0xDEADBEEFu;
+    constexpr std::uint32_t K_MIX = 16777619u;
 
     /** @brief Returns what the marking kernel leaves in a word that held previous. */
     std::uint32_t marked(std::uint32_t previous, std::size_t item, std::size_t width,
                          std::size_t salt)
     {
-        return (previous ^ static_cast<std::uint32_t>(item + width)) * MIX +
+        return (previous ^ static_cast<std::uint32_t>(item + width)) * K_MIX +
                static_cast<std::uint32_t>(salt);
     }
 
@@ -83,7 +83,7 @@ namespace
                         [words](std::size_t t, std::size_t live_width, std::size_t live_salt)
                         {
                             words[t] = (words[t] ^ static_cast<std::uint32_t>(t + live_width)) *
-                                       MIX + static_cast<std::uint32_t>(live_salt);
+                                       K_MIX + static_cast<std::uint32_t>(live_salt);
                         },
                         NodeOptions{width.capacity()});
     }
@@ -133,14 +133,14 @@ namespace
             : counter(rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host)),
               step(rt.buffer<std::uint32_t>(1)),
               schedule(rt.buffer<std::uint32_t>(schedule_for(capacity).size())),
-              history(rt.buffer<std::uint32_t>(STEPS))
+              history(rt.buffer<std::uint32_t>(K_STEPS))
         {
             const std::vector<std::uint32_t> s = schedule_for(capacity);
             for (std::size_t i = 0; i < s.size(); ++i)
                 schedule[i] = s[i];
             counter[0] = 0;
             step[0] = 0;
-            for (std::size_t i = 0; i < STEPS; ++i)
+            for (std::size_t i = 0; i < K_STEPS; ++i)
                 history[i] = 0;
         }
 
@@ -171,19 +171,19 @@ namespace
                   {
                       std::uint32_t acc = 2166136261u;
                       for (std::size_t i = 0; i < words; ++i)
-                          acc = (acc ^ src[i]) * MIX;
+                          acc = (acc ^ src[i]) * K_MIX;
                       h[st[0] - 1u] = acc;
                   });
         }
 
-        /** @brief Runs the graph for STEPS steps and copies the digests out. */
+        /** @brief Runs the graph for K_STEPS steps and copies the digests out. */
         Recording record(Graph& g)
         {
             Recording r;
-            const auto report = g.run(STEPS);
+            const auto report = g.run(K_STEPS);
             EXPECT_TRUE(report.is_successful);
             r.layer = report.layer;
-            r.digests.assign(history.data(), history.data() + STEPS);
+            r.digests.assign(history.data(), history.data() + K_STEPS);
             return r;
         }
     };
@@ -214,7 +214,7 @@ namespace
         std::size_t changes = 0;
         for (std::size_t i = 1; i < chained.digests.size(); ++i)
             changes += (chained.digests[i] != chained.digests[i - 1]) ? 1u : 0u;
-        EXPECT_GT(changes, STEPS / 4) << "the live count must change the results step to step";
+        EXPECT_GT(changes, K_STEPS / 4) << "the live count must change the results step to step";
     }
 } // namespace
 
@@ -226,9 +226,9 @@ TEST(Integration_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
 
     auto rt    = Runtime::create();
     auto marks = rt.buffer<std::uint32_t>(CAPACITY + 1);
-    std::vector<std::uint32_t> expected(CAPACITY + 1, CANARY);
+    std::vector<std::uint32_t> expected(CAPACITY + 1, K_CANARY);
     for (std::size_t i = 0; i <= CAPACITY; ++i)
-        marks[i] = CANARY;
+        marks[i] = K_CANARY;
 
     std::size_t live = 0;
     const LateCount width = LateCount::from_host(CAPACITY, [&live]() { return live; });
@@ -261,8 +261,8 @@ TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksT
     auto worded = rt.buffer<std::uint32_t>(CAPACITY);
     for (std::size_t i = 0; i < CAPACITY; ++i)
     {
-        plain[i] = CANARY;
-        worded[i] = CANARY;
+        plain[i] = K_CANARY;
+        worded[i] = K_CANARY;
     }
 
     const LateCount count = LateCount::from_host(CAPACITY, []() { return LIVE; });
@@ -305,7 +305,7 @@ TEST(Integration_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsS
     auto rt     = Runtime::create();
     auto target = rt.buffer<std::uint32_t>(1);
     auto done   = rt.buffer<std::uint32_t>(1);
-    target[0] = CANARY;
+    target[0] = K_CANARY;
     done[0] = 0;
     std::uint32_t* t = target.data();
     std::uint32_t* d = done.data();
@@ -319,8 +319,8 @@ TEST(Integration_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsS
     const auto report = g.run();
 
     EXPECT_TRUE(report.is_successful);
-    EXPECT_EQ(target[0], CANARY);
-    EXPECT_EQ(done[0], CANARY) << "the successor must run after the empty launch";
+    EXPECT_EQ(target[0], K_CANARY);
+    EXPECT_EQ(done[0], K_CANARY) << "the successor must run after the empty launch";
 }
 
 /**

@@ -47,7 +47,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/distributed/endpoint.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
@@ -159,7 +159,7 @@ namespace
              * @brief Starts a master endpoint and answers its workers.
              * @param transport Not null and not started.
              */
-            FakeMaster(MasterScript script, std::shared_ptr<ITransport> transport)
+            FakeMaster(MasterScript script, std::shared_ptr<Transport> transport)
                 : script_(script), transport_(std::move(transport))
             {
                 started_ = transport_->start(*this);
@@ -197,7 +197,7 @@ namespace
             }
 
             /** @brief Does nothing; the script starts at HELLO. */
-            void on_peer_connected(PeerID, const PeerInfo&) override
+            void on_peer_connected(PeerID, const PeerDescription&) override
             {
 
             }
@@ -306,7 +306,7 @@ namespace
             MasterScript script_;
 
             /// @brief The master endpoint.
-            std::shared_ptr<ITransport> transport_;
+            std::shared_ptr<Transport> transport_;
 
             /// @brief How the transport started.
             TransportResult started_;

@@ -11,7 +11,7 @@ The unit of work the scheduler dispatches and the graph node built on it.
 | --- | --- | --- |
 | `core` | `core/export.hpp`, `core/sushi_ptr.hpp`, `core/ref_counted.hpp`, `core/error.hpp` | Export macro, intrusive pointer, reference count, the error `Node::place_on()` throws |
 | `memory` | `memory/resource_region.hpp`, `memory/usm_allocator.hpp` | The USM regions a node reads and writes; which device owns a region |
-| `observability` | `observability/dispatch_width.hpp` | `Internal::Observability::WIDTH_UNKNOWN` |
+| `observability` | `observability/dispatch_width.hpp` | `Internal::Observability::K_WIDTH_UNKNOWN` |
 | `sycl` | `sycl/sycl.hpp` | `sycl::event`, `sycl::handler`, `sycl::queue` |
 
 No header here changes shape with a build flag. A node carries one `Internal::Graph::OffloadState`
@@ -36,7 +36,7 @@ and what a coordinator needs beyond the seam's fields it stores behind
 | `offload_sink.hpp` | `Internal::Graph::OffloadSink`, through which a coordinator returns nodes to the scheduler |
 | `offload_coordinator.hpp` | `Internal::Graph::OffloadStatistics`, `Internal::Graph::OffloadCoordinator`, the seam an offload layer implements |
 | `node_widths.hpp` | `Internal::Graph::NodeWidths`, `Internal::Graph::snapshot_widths` (defined in `modules/engine/task/source/node_widths.cpp`) |
-| `node_placement.hpp` | `Internal::Graph::DEFAULT_PLACEMENT`, `Internal::Graph::placement_of` (defined in `modules/engine/task/source/node_placement.cpp`), the device a node runs on |
+| `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of` (defined in `modules/engine/task/source/node_placement.cpp`), the device a node runs on |
 
 The notes on why each symbol is the way it is are in `modules/engine/graph/README.md` and
 `modules/engine/scheduler/README.md`; each header's file block cites the page that holds its

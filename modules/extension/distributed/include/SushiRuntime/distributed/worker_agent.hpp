@@ -36,7 +36,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
 
@@ -118,7 +118,7 @@ namespace SushiRuntime
                  * @param transport A worker-side transport that was never started; not null.
                  * @param kernels Not null; read from the exec thread.
                  */
-                WorkerAgent(Runtime& runtime, std::shared_ptr<ITransport> transport,
+                WorkerAgent(Runtime& runtime, std::shared_ptr<Transport> transport,
                             sushi_ptr<KernelRegistry> kernels,
                             WorkerAgentOptions options = WorkerAgentOptions());
 
@@ -129,7 +129,7 @@ namespace SushiRuntime
                  * @param kernels Not null; read from the exec thread.
                  */
                 WorkerAgent(Internal::Execution::RuntimeContext& context,
-                            std::shared_ptr<ITransport> transport,
+                            std::shared_ptr<Transport> transport,
                             sushi_ptr<KernelRegistry> kernels,
                             WorkerAgentOptions options = WorkerAgentOptions());
 

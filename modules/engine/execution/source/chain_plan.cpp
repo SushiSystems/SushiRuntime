@@ -51,7 +51,7 @@ namespace SushiRuntime
             bool node_kind_is_chainable(const Internal::Graph::Node& node) noexcept
             {
                 using Mode = Internal::Scheduler::Task::ExecutionMode;
-                const bool submits_device = node.get_execution_mode() == Mode::KERNEL ||
+                const bool submits_device = node.execution_mode() == Mode::Kernel ||
                                             node.submits_device_work();
                 if (!submits_device)
                     return false;

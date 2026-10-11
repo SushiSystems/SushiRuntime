@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* i_offload_policy.hpp                                                   */
+/* offload_policy.hpp                                                     */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,8 +20,8 @@
 /**************************************************************************/
 
 /**
- * @file i_offload_policy.hpp
- * @brief Declares IOffloadPolicy, WorkerStats and the least-loaded offload policy.
+ * @file offload_policy.hpp
+ * @brief Declares OffloadPolicy, WorkerLoad and the least-loaded offload policy.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */
@@ -43,7 +43,7 @@ namespace SushiRuntime
         /**
          * @brief Holds what a policy may know about one worker when it picks.
          */
-        struct WorkerStats
+        struct WorkerLoad
         {
             int           worker_id  = -1;    /**< The worker's id: the value of its PeerID. */
             bool          alive      = false; /**< Registered and heard from within liveness. */
@@ -59,11 +59,11 @@ namespace SushiRuntime
          * so two calls never overlap. It returns quickly and calls nothing of the Cluster,
          * the coordinator or the transport; a call back deadlocks.
          */
-        class SUSHIRUNTIME_API IOffloadPolicy
+        class SUSHIRUNTIME_API OffloadPolicy
         {
             public:
                 /** @brief Destroys the policy through the pointer the cluster owns. */
-                virtual ~IOffloadPolicy() = default;
+                virtual ~OffloadPolicy() = default;
 
                 /**
                  * @brief Picks a worker for a task.
@@ -73,7 +73,7 @@ namespace SushiRuntime
                  * @return The worker_id of one entry of @p workers, or nothing to run locally.
                  */
                 virtual std::optional<int> pick_worker(
-                    const Internal::Graph::Node& node, SushiRuntime::span<const WorkerStats> workers,
+                    const Internal::Graph::Node& node, SushiRuntime::span<const WorkerLoad> workers,
                     std::uint64_t est_bytes) = 0;
         };
 
@@ -83,7 +83,7 @@ namespace SushiRuntime
          * The estimate adds the round trip, the transfer time and the worker's backlog; a
          * task below the byte threshold stays local.
          */
-        class SUSHIRUNTIME_API LeastLoadedOffloadPolicy final : public IOffloadPolicy
+        class SUSHIRUNTIME_API LeastLoadedOffloadPolicy final : public OffloadPolicy
         {
             public:
                 /**
@@ -98,7 +98,7 @@ namespace SushiRuntime
 
                 /** @brief Picks the live worker with the lowest estimate, or none. */
                 std::optional<int> pick_worker(const Internal::Graph::Node& node,
-                                               SushiRuntime::span<const WorkerStats> workers,
+                                               SushiRuntime::span<const WorkerLoad> workers,
                                                std::uint64_t est_bytes) override;
 
             private:

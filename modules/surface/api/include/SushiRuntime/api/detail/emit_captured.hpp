@@ -45,7 +45,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Gathers the regions and the observers of In, Out and InOut captures.
@@ -94,5 +94,5 @@ namespace SushiRuntime
                 }, reads, writes, {}, registration).baked_width = width;
             };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

@@ -42,7 +42,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Owns the per-step hook lists a replayed plan runs around each step, in one
@@ -117,7 +117,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Registers a device fault record every finished step checks.
-                 * @param record DEVICE_FAULT_WORDS host-USM words the owning graph keeps alive.
+                 * @param record K_DEVICE_FAULT_WORDS host-USM words the owning graph keeps alive.
                  */
                 void register_fault_record(std::uint32_t* record)
                 {
@@ -231,5 +231,5 @@ namespace SushiRuntime
                  */
                 std::vector<const StepMachinery*> aggregated_;
         };
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

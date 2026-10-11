@@ -98,7 +98,7 @@ namespace SushiRuntime
             if (machine_cores == 0) machine_cores = 1;
 
             size_t threads = pool.worker_count != 0 ? pool.worker_count : machine_cores;
-            if (threads > MAX_WORKER_THREADS) threads = MAX_WORKER_THREADS;
+            if (threads > K_MAX_WORKER_THREADS) threads = K_MAX_WORKER_THREADS;
             if (threads == 0) threads = 1;
 
             num_workers_ = threads;
@@ -364,7 +364,7 @@ namespace SushiRuntime
             auto& my_queue = worker_queues[thread_id];
             
             // A half-full local deque pulls nothing from the injector (modules/engine/scheduler/README.md).
-            if (my_queue->size() >= Deque::CAPACITY / 2)
+            if (my_queue->size() >= Deque::K_CAPACITY / 2)
                 return;
 
             // An empty injector skips the mutex; a stale read is safe (modules/engine/scheduler/README.md).
@@ -588,7 +588,7 @@ namespace SushiRuntime
             }
 
             // Completions are keyed by worker id, not EBR slot id (modules/engine/scheduler/README.md).
-            if (worker_id >= 0 && static_cast<size_t>(worker_id) < MAX_WORKER_THREADS)
+            if (worker_id >= 0 && static_cast<size_t>(worker_id) < K_MAX_WORKER_THREADS)
                 worker_completed_tasks[worker_id].value.fetch_add(1, std::memory_order_relaxed);
 
             const auto abort_run = [this, task, &events](const NamedFailure& failure)
@@ -605,7 +605,7 @@ namespace SushiRuntime
 
             try 
             {
-                SR_LOG_DEBUG("Executing task: {}", task->get_name());
+                SR_LOG_DEBUG("Executing task: {}", task->name());
                 
                 SushiRuntime::Internal::Graph::Node* node = nullptr;
 
@@ -614,7 +614,7 @@ namespace SushiRuntime
                     node = static_cast<SushiRuntime::Internal::Graph::Node*>(task);
 
                 // A pure-CPU host task needs no queue and runs inline (see design spec §0).
-                if (node && node->get_execution_mode() == Task::ExecutionMode::HOST &&
+                if (node && node->execution_mode() == Task::ExecutionMode::Host &&
                     !node->submits_device_work())
                 {
                     // Timing follows this run's plan flag, not the context-wide setting.
@@ -641,7 +641,7 @@ namespace SushiRuntime
                                 Internal::Observability::NodeEventRecord rec{};
                                 rec.node_index = node->registration_index;
                                 rec.invocation = step;
-                                // A host node submits no dispatch: launched_width and live_width stay WIDTH_UNKNOWN.
+                                // A host node submits no dispatch: launched_width and live_width stay K_WIDTH_UNKNOWN.
                                 rec.submit_ns  = h0_ns;
                                 rec.start_ns   = h0_ns;
                                 rec.end_ns     = h1_ns;
@@ -680,7 +680,7 @@ namespace SushiRuntime
                 }();
 
                 sycl::event e;
-                if (task->get_execution_mode() == Task::ExecutionMode::HOST)
+                if (task->execution_mode() == Task::ExecutionMode::Host)
                 {
                     // execute_host() needs a vector; this path allocates (modules/engine/scheduler/README.md).
                     std::vector<sycl::event> deps;
@@ -766,7 +766,7 @@ namespace SushiRuntime
          * @brief Returns the accumulated time split for a worker.
          */
         TaskScheduler::WorkerTimeSplit
-        TaskScheduler::get_worker_times(int worker_id) const noexcept
+        TaskScheduler::worker_times(int worker_id) const noexcept
         {
             WorkerTimeSplit s;
             if (worker_id < 0 || static_cast<size_t>(worker_id) >= num_workers_)
@@ -784,7 +784,7 @@ namespace SushiRuntime
          */
         void TaskScheduler::reset_worker_times() noexcept
         {
-            for (size_t i = 0; i < MAX_WORKER_THREADS; ++i)
+            for (size_t i = 0; i < K_MAX_WORKER_THREADS; ++i)
             {
                 worker_time_[i].busy_ns.store(0, std::memory_order_relaxed);
                 worker_time_[i].stealing_ns.store(0, std::memory_order_relaxed);
@@ -864,7 +864,7 @@ namespace SushiRuntime
             // External submissions use the injector, not a worker deque (modules/engine/scheduler/README.md).
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);
-                if (task->get_priority() > 0)
+                if (task->priority() > 0)
                 {
                     priority_submissions.push(task);
                     priority_count_.store(priority_submissions.size(), std::memory_order_relaxed);
@@ -896,7 +896,7 @@ namespace SushiRuntime
                     if (!node) continue;
                     Task* task = node; // Node derives from Task
                     task->add_ref();
-                    if (task->get_priority() > 0)
+                    if (task->priority() > 0)
                     {
                         priority_submissions.push(task);
                         ++priority_added;
@@ -932,7 +932,7 @@ namespace SushiRuntime
          * @brief Gets the number of worker threads.
          * @return The number of workers.
          */
-        size_t TaskScheduler::get_worker_count() const 
+        size_t TaskScheduler::worker_count() const 
         {
             return num_workers_;
         }
@@ -942,7 +942,7 @@ namespace SushiRuntime
          * @param worker_id The ID of the worker.
          * @return The number of tasks in the worker's queue.
          */
-        size_t TaskScheduler::get_queue_size(int worker_id) const 
+        size_t TaskScheduler::queue_size(int worker_id) const 
         {
             if (worker_id < 0 || worker_id >= static_cast<int>(num_workers_)) return 0;
             if (worker_queues[worker_id]) return worker_queues[worker_id]->size();

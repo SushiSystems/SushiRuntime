@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* i_topology_provider.hpp                                                */
+/* topology_provider.hpp                                                  */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,8 +20,8 @@
 /**************************************************************************/
 
 /**
- * @file i_topology_provider.hpp
- * @brief Declares ITopologyProvider and INUMADistanceModel.
+ * @file topology_provider.hpp
+ * @brief Declares TopologyProvider and NUMADistanceModel.
  * @author Mustafa Garip
  * @see modules/platform/topology/README.md
  */
@@ -40,10 +40,10 @@ namespace SushiRuntime
          * @brief Declares the interface over hardware discovery and NUMA mapping.
          * @see modules/platform/topology/README.md
          */
-        class SUSHIRUNTIME_API ITopologyProvider
+        class SUSHIRUNTIME_API TopologyProvider
         {
             public:
-                virtual ~ITopologyProvider() = default;
+                virtual ~TopologyProvider() = default;
 
                 /**
                  * @brief Discovers compute devices and assigns their NUMA ids.
@@ -65,10 +65,10 @@ namespace SushiRuntime
          * Kept separate from device discovery so it can be independently replaced.
          * Most topology-aware scheduling logic needs only distances, not device lists.
          */
-        class SUSHIRUNTIME_API INUMADistanceModel
+        class SUSHIRUNTIME_API NUMADistanceModel
         {
             public:
-                virtual ~INUMADistanceModel() = default;
+                virtual ~NUMADistanceModel() = default;
 
                 /**
                  * @brief Latency cost between two NUMA nodes.

@@ -36,7 +36,7 @@
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/device/device_info.hpp>
+#include <SushiRuntime/device/device_description.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 
 namespace SushiRuntime
@@ -72,7 +72,7 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t count() const noexcept;
 
                 /** @brief Returns the inventory; entry i describes device i. */
-                [[nodiscard]] const std::vector<DeviceInfo>& devices() const noexcept;
+                [[nodiscard]] const std::vector<DeviceDescription>& devices() const noexcept;
 
                 /**
                  * @brief Returns whether a device is a GPU.
@@ -183,7 +183,7 @@ namespace SushiRuntime
                 void for_each_built_queue(Visitor&& visit);
 
                 /// @brief Inventory; entry i describes device i.
-                std::vector<DeviceInfo> infos_;
+                std::vector<DeviceDescription> infos_;
 
                 /// @brief Per device, the offset of its plain queue among the device's slots.
                 std::vector<std::uint8_t> plain_offsets_;

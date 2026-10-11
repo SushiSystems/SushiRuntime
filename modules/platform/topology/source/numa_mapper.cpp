@@ -174,7 +174,7 @@ namespace SushiRuntime
          * @param numa_node_b Second NUMA node ID.
          * @return int The cost (10 for local, 21 for remote).
          */
-        int NUMAMapper::get_distance(int numa_node_a, int numa_node_b) const 
+        int NUMAMapper::distance(int numa_node_a, int numa_node_b) const 
         {
             if (numa_node_a == numa_node_b) return 10; // Local node cost is always 10 (ACPI Standard)
             

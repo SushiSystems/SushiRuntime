@@ -44,11 +44,11 @@ namespace
      * Used by the workload coordinator to mock telemetry data without
      * needing actual runtime worker threads.
      */
-    class FakeTelemetry : public ITelemetryProvider
+    class FakeTelemetry : public TelemetryProvider
     {
     public:
-        size_t get_worker_count() const override       { return 1; }
-        size_t get_queue_size(int) const override       { return 0; }
+        size_t worker_count() const override       { return 1; }
+        size_t queue_size(int) const override       { return 0; }
         size_t completed_task_count(int) const override  { return 0; }
     };
 
@@ -58,7 +58,7 @@ namespace
      * Used to verify that the workload coordinator issues migration commands
      * exactly as requested by the strategy.
      */
-    class FakeMigrator : public ITaskMigrator
+    class FakeMigrator : public TaskMigrator
     {
     public:
         std::atomic<int> calls{0};
@@ -71,7 +71,7 @@ namespace
      * Tracks how many times the heartbeat loop invokes evaluate_and_rebalance
      * and forces migration commands for assertions.
      */
-    class CountingStrategy : public IRebalanceStrategy
+    class CountingStrategy : public RebalanceStrategy
     {
     public:
         std::atomic<int>* evaluations;
@@ -80,7 +80,7 @@ namespace
         CountingStrategy(std::atomic<int>* counter, bool migrate)
             : evaluations(counter), request_migration(migrate) {}
 
-        void evaluate_and_rebalance(const ITelemetryProvider&, ITaskMigrator& migrator) override
+        void evaluate_and_rebalance(const TelemetryProvider&, TaskMigrator& migrator) override
         {
             evaluations->fetch_add(1, std::memory_order_relaxed);
             if (request_migration)

@@ -52,15 +52,15 @@ static_assert(Internal::Graph::TaskMetadata::K_MAX_PARAMS == 8,
 
 namespace
 {
-    constexpr std::size_t WIDTH = 32;
-    constexpr std::size_t RULE_NODES = 3;
-    constexpr std::uint64_t CELL = 7;
+    constexpr std::size_t K_WIDTH = 32;
+    constexpr std::size_t K_RULE_NODES = 3;
+    constexpr std::uint64_t K_CELL = 7;
 
-    /** @brief Allocates WIDTH words and zeroes them. */
+    /** @brief Allocates K_WIDTH words and zeroes them. */
     Buffer<std::uint32_t> zeroed(Runtime& rt)
     {
-        auto buffer = rt.buffer<std::uint32_t>(WIDTH);
-        for (std::size_t i = 0; i < WIDTH; ++i)
+        auto buffer = rt.buffer<std::uint32_t>(K_WIDTH);
+        for (std::size_t i = 0; i < K_WIDTH; ++i)
             buffer[i] = 0;
         return buffer;
     }
@@ -71,20 +71,20 @@ namespace
                        std::uint32_t step)
     {
         std::uint32_t* words = target.data();
-        builder.add(WIDTH, Reads(target), Writes(target),
+        builder.add(K_WIDTH, Reads(target), Writes(target),
                     [words, step](std::size_t i) { words[i] += step; });
     }
 
     /**
-     * @brief Records RULE_NODES kernels in one rule scope, each adding one to target.
-     * @param target Holds WIDTH words; must outlive the recorder.
+     * @brief Records K_RULE_NODES kernels in one rule scope, each adding one to target.
+     * @param target Holds K_WIDTH words; must outlive the recorder.
      */
     void record_three_node_rule(Recorder& recorder, const Buffer<std::uint32_t>& target)
     {
         std::uint32_t* words = target.data();
         auto rule = recorder.rule();
-        for (std::size_t node = 0; node < RULE_NODES; ++node)
-            recorder.kernel(WIDTH, Access(Reads(target), Writes(target)),
+        for (std::size_t node = 0; node < K_RULE_NODES; ++node)
+            recorder.kernel(K_WIDTH, Access(Reads(target), Writes(target)),
                             [words](std::size_t i) { words[i] += 1u; });
     }
 
@@ -118,13 +118,13 @@ TEST(Integration_RecorderSemantics, ReadingARegionBetweenRunsDoesNotRecompose)
     auto rt = Runtime::create();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
-    add_increment(world.region(CELL), values, 1u);
+    add_increment(world.region(K_CELL), values, 1u);
 
     world.run();
     ASSERT_EQ(world.compose_count(), 1u);
 
-    EXPECT_EQ(world.region(CELL).size(), 1u);
-    EXPECT_EQ(world.region(CELL).node_count(), 1u);
+    EXPECT_EQ(world.region(K_CELL).size(), 1u);
+    EXPECT_EQ(world.region(K_CELL).node_count(), 1u);
     world.run();
 
     EXPECT_EQ(world.compose_count(), 1u) << "reading a region must not rebuild it";
@@ -136,7 +136,7 @@ TEST(Integration_RecorderSemantics, ARecordingThroughAHeldRegionRecomposes)
     auto rt = Runtime::create();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
-    Region& cell = world.region(CELL);
+    Region& cell = world.region(K_CELL);
     add_increment(cell, values, 1u);
     world.run();
     ASSERT_EQ(world.compose_count(), 1u);
@@ -153,7 +153,7 @@ TEST(Integration_RecorderSemantics, ClearingARegionReplacesItsWork)
     auto rt = Runtime::create();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
-    Region& cell = world.region(CELL);
+    Region& cell = world.region(K_CELL);
     add_increment(cell, values, 1u);
     world.run();
 
@@ -173,11 +173,11 @@ TEST(Integration_RecorderSemantics, ADropBetweenRunsRecomposes)
     auto kept = zeroed(rt);
     auto gone = zeroed(rt);
     auto world = rt.dynamic_graph();
-    add_increment(world.region(CELL), kept, 1u);
-    add_increment(world.region(CELL + 1), gone, 1u);
+    add_increment(world.region(K_CELL), kept, 1u);
+    add_increment(world.region(K_CELL + 1), gone, 1u);
     world.run();
 
-    world.drop(CELL + 1);
+    world.drop(K_CELL + 1);
     world.run();
 
     EXPECT_EQ(world.compose_count(), 2u);
@@ -195,7 +195,7 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     graph.set_profiling(true);
 
     EXPECT_EQ(graph.size(), 1u);
-    EXPECT_EQ(graph.node_count(), RULE_NODES);
+    EXPECT_EQ(graph.node_count(), K_RULE_NODES);
     EXPECT_EQ(graph.last_rule(), 0u);
 
     Internal::Observability::RunReport report;
@@ -204,10 +204,10 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     // The nodes of a rule share one registration, and the report holds one row per registration.
     ASSERT_EQ(report.node_timings.size(), 1u);
     EXPECT_EQ(rows_named(report, "pipeline"), 1u) << "the rule's row must carry the rule's name";
-    EXPECT_NE(graph.rule_registration(0), Graph::NO_REGISTRATION);
-    EXPECT_EQ(graph.rule_registration(1), Graph::NO_REGISTRATION)
+    EXPECT_NE(graph.rule_registration(0), Graph::K_NO_REGISTRATION);
+    EXPECT_EQ(graph.rule_registration(1), Graph::K_NO_REGISTRATION)
         << "the graph holds one rule, so position 1 names none";
-    EXPECT_EQ(values[0], static_cast<std::uint32_t>(RULE_NODES));
+    EXPECT_EQ(values[0], static_cast<std::uint32_t>(K_RULE_NODES));
 }
 
 TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
@@ -217,23 +217,23 @@ TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     auto second = zeroed(rt);
     auto world = rt.dynamic_graph();
     world.set_profiling(true);
-    add_increment(world.region(CELL), first, 1u);
-    record_three_node_rule(world.region(CELL + 1).recorder(), second);
-    world.region(CELL + 1).name("pipeline");
+    add_increment(world.region(K_CELL), first, 1u);
+    record_three_node_rule(world.region(K_CELL + 1).recorder(), second);
+    world.region(K_CELL + 1).name("pipeline");
 
     EXPECT_EQ(world.size(), 2u);
-    EXPECT_EQ(world.node_count(), 1u + RULE_NODES);
-    EXPECT_EQ(world.rule_registration(CELL + 1, 0), DynamicGraph::NO_REGISTRATION);
+    EXPECT_EQ(world.node_count(), 1u + K_RULE_NODES);
+    EXPECT_EQ(world.rule_registration(K_CELL + 1, 0), DynamicGraph::K_NO_REGISTRATION);
 
     Internal::Observability::RunReport report;
     world.run(1, report);
 
     EXPECT_EQ(rows_named(report, "pipeline"), 1u);
-    EXPECT_EQ(world.rule_registration(CELL, 0), 0u);
-    EXPECT_EQ(world.rule_registration(CELL + 1, 0), 1u)
+    EXPECT_EQ(world.rule_registration(K_CELL, 0), 0u);
+    EXPECT_EQ(world.rule_registration(K_CELL + 1, 0), 1u)
         << "the three nodes of the second region's rule share the index after the first";
-    EXPECT_EQ(world.rule_registration(CELL + 1, 1), DynamicGraph::NO_REGISTRATION);
-    EXPECT_EQ(world.rule_registration(CELL + 2, 0), DynamicGraph::NO_REGISTRATION);
+    EXPECT_EQ(world.rule_registration(K_CELL + 1, 1), DynamicGraph::K_NO_REGISTRATION);
+    EXPECT_EQ(world.rule_registration(K_CELL + 2, 0), DynamicGraph::K_NO_REGISTRATION);
 }
 
 TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
@@ -249,7 +249,7 @@ TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
     }
     add_increment(graph, values, 1u);
     graph.name(std::string("a label that is ") + "replaced by the next call");
-    graph.name(std::string("integrate_") + std::to_string(CELL));
+    graph.name(std::string("integrate_") + std::to_string(K_CELL));
     graph.set_profiling(true);
 
     Internal::Observability::RunReport report;
@@ -296,7 +296,7 @@ TEST(Integration_RecorderSemantics, MovedFromGraphIsEmpty)
     EXPECT_EQ(graph.size(), 0u);
     EXPECT_EQ(graph.node_count(), 0u);
     EXPECT_EQ(graph.compile_count(), 0u);
-    EXPECT_EQ(graph.rule_registration(0), Graph::NO_REGISTRATION);
+    EXPECT_EQ(graph.rule_registration(0), Graph::K_NO_REGISTRATION);
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
     EXPECT_EQ(refused.error().code, Errc::invalid_graph);
@@ -317,7 +317,7 @@ TEST(Integration_RecorderSemantics, MovedFromDynamicGraphHasNoRegions)
     auto rt = Runtime::create();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
-    add_increment(world.region(CELL), values, 1u);
+    add_increment(world.region(K_CELL), values, 1u);
     world.run();
 
     DynamicGraph taken = std::move(world);
@@ -332,12 +332,12 @@ TEST(Integration_RecorderSemantics, MovedFromDynamicGraphHasNoRegions)
     EXPECT_EQ(taken.compose_count(), 1u) << "the composed plan moves with the graph";
     EXPECT_EQ(values[0], 2u);
 
-    add_increment(taken.region(CELL), values, 10u);
+    add_increment(taken.region(K_CELL), values, 10u);
     taken.run();
     EXPECT_EQ(taken.compose_count(), 2u) << "a region still reports to the graph that owns it";
     EXPECT_EQ(values[0], 13u);
 
-    add_increment(world.region(CELL), values, 100u);
+    add_increment(world.region(K_CELL), values, 100u);
     world.run();
     EXPECT_EQ(values[0], 113u) << "a moved-from graph takes regions and runs again";
 }
@@ -389,9 +389,9 @@ TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
     auto kept = zeroed(rt);
     std::optional<Buffer<std::uint32_t>> gone(zeroed(rt));
     auto world = rt.dynamic_graph();
-    add_increment(world.region(CELL), kept, 1u);
-    add_increment(world.region(CELL + 1), *gone, 1u);
-    add_increment(world.region(CELL + 1), *gone, 1u);
+    add_increment(world.region(K_CELL), kept, 1u);
+    add_increment(world.region(K_CELL + 1), *gone, 1u);
+    add_increment(world.region(K_CELL + 1), *gone, 1u);
     ASSERT_TRUE(world.try_run(std::size_t{1}));
 
     gone.reset();
@@ -460,7 +460,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
 {
     auto rt = Runtime::create();
     auto values = zeroed(rt);
-    auto field = rt.state<std::uint32_t>(WIDTH);
+    auto field = rt.state<std::uint32_t>(K_WIDTH);
     std::uint32_t* words = values.data();
     const auto local = [words](std::size_t i) { words[i] += 1u; };
     const auto rule = [](std::size_t i, const std::uint32_t* current, std::uint32_t* next)
@@ -471,7 +471,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
 
     const auto task_refusal = refusal_of([&]
     {
-        graph.add("recorder.task"_op, WIDTH, Reads(values), Writes(values), local,
+        graph.add("recorder.task"_op, K_WIDTH, Reads(values), Writes(values), local,
                   {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
     ASSERT_TRUE(task_refusal);
@@ -489,7 +489,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
     EXPECT_EQ(rule_refusal->code, Errc::invalid_graph);
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 
-    graph.add("recorder.task"_op, WIDTH, Reads(values), Writes(values), local,
+    graph.add("recorder.task"_op, K_WIDTH, Reads(values), Writes(values), local,
               {1, 2, 3, 4, 5, 6, 7, 8});
     graph.add("recorder.rule"_op, field, rule, {1, 2, 3, 4, 5, 6, 7, 8});
     EXPECT_EQ(graph.size(), 2u);
@@ -512,8 +512,8 @@ TEST(Integration_RecorderSemantics, AnEmitterThatAddsNothingLeavesTheRuleBeforeI
     EXPECT_EQ(graph.size(), 2u);
     EXPECT_EQ(rows_named(report, "integrate"), 1u) << "the first rule must keep its name";
     EXPECT_EQ(rows_named(report, "optional"), 0u);
-    EXPECT_NE(graph.rule_registration(0), Graph::NO_REGISTRATION);
-    EXPECT_EQ(graph.rule_registration(1), Graph::NO_REGISTRATION)
+    EXPECT_NE(graph.rule_registration(0), Graph::K_NO_REGISTRATION);
+    EXPECT_EQ(graph.rule_registration(1), Graph::K_NO_REGISTRATION)
         << "a rule that added no node has no registration";
     EXPECT_EQ(values[0], 1u);
 }

@@ -77,14 +77,14 @@ namespace
             {
             }
 
-            const char* get_name() const noexcept override
+            const char* name() const noexcept override
             {
                 return "CountingTask";
             }
 
-            ExecutionMode get_execution_mode() const override
+            ExecutionMode execution_mode() const override
             {
-                return ExecutionMode::HOST;
+                return ExecutionMode::Host;
             }
 
             sycl::event execute_host(sycl::queue&, const std::vector<sycl::event>&) override
@@ -161,7 +161,7 @@ TEST(Performance_SchedulerDispatchBench, DispatchOverheadVsInlineBaseline)
             return 0.0;
 
         TaskScheduler sched = make_scheduler(ctx);
-        workers = sched.get_worker_count();
+        workers = sched.worker_count();
         counter.store(0, std::memory_order_relaxed);
         drained.reset();
 

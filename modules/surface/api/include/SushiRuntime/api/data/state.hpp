@@ -44,7 +44,7 @@ namespace SushiRuntime
     template <typename T>
     class State;
 
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Holds what a recorded rule reads of a State: its two fields and their size.
@@ -58,7 +58,7 @@ namespace SushiRuntime
             std::size_t size = 0;       /**< Elements in each field. */
             State<T>* owner = nullptr;  /**< The State that writes this view, or null. */
         };
-    } // namespace detail
+    } // namespace Detail
 
     /**
      * @brief Owns two equally sized buffers whose roles the runtime swaps after each step.
@@ -255,7 +255,7 @@ namespace SushiRuntime
 
         private:
             friend class Runtime;
-            friend struct detail::HandleAccess;
+            friend struct Detail::HandleAccess;
 
             /**
              * @brief Allocates both fields of count elements on one device.
@@ -268,7 +268,7 @@ namespace SushiRuntime
                   std::size_t count, DeviceIndex device_index, Residency residency)
                 : current_(call, ctx, count, device_index, residency),
                   next_(call, std::move(ctx), count, device_index, residency),
-                  view_(std::make_shared<detail::StateView<T>>())
+                  view_(std::make_shared<Detail::StateView<T>>())
             {
                 publish_view();
             }
@@ -296,7 +296,7 @@ namespace SushiRuntime
             void retire_view() noexcept
             {
                 if (view_)
-                    *view_ = detail::StateView<T>();
+                    *view_ = Detail::StateView<T>();
                 view_.reset();
             }
 
@@ -307,7 +307,7 @@ namespace SushiRuntime
             Buffer<T> next_;
 
             /** @brief Shared with every graph that recorded this State; null when empty. */
-            std::shared_ptr<detail::StateView<T>> view_;
+            std::shared_ptr<Detail::StateView<T>> view_;
     };
 
 

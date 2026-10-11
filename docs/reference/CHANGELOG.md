@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — api: Breaking change: Removed the `I` and `get_` prefixes, renamed `detail` to `Detail`, gave 50 constants the `K_` prefix and made every enumerator PascalCase; `ExecutionEngine` is the interface and `SchedulerExecutionEngine` its implementation.
 - 2026-10-11 — api: Breaking change: Moved the engine and platform namespaces under `SushiRuntime::Internal::` and dissolved `API::`, `Core::` and the `Interop` namespace into `SushiRuntime::`.
 - 2026-10-11 — api: Breaking change: Removed the deprecated members of `Buffer`, `State`, `BuilderSurface`, `Dynamic`, `Runtime`, `AdvancedControls`, `Extent::offset`, `BackingGraph` and two `Cluster::attach` overloads.
 - 2026-10-11 — build: Breaking change: Removed the `Core::` aliases of the memory and observability types, the old `LogLevel` spellings, `LogType`, `ACTIVE_LOG_LEVEL` and the 15 forwarding headers of moved include paths.

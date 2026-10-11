@@ -79,7 +79,7 @@ namespace SushiRuntime
             {
                 if (n->is_sentinel) continue;
                 ++profiling_multiplicities[n->registration_index];
-                if (n->get_execution_mode() == SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST &&
+                if (n->execution_mode() == SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Host &&
                     !n->submits_device_work())
                     profiling_host_native[n->registration_index] = true;
             }

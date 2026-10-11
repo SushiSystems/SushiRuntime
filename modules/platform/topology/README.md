@@ -28,9 +28,9 @@ driver-shaped error that names neither the device nor the reason. Setting requir
 failure to discovery, where the offending device is simply not selected and the choice is logged. It
 is off by default: a single-precision workload has no reason to lose a device over it.
 
-## i_topology_provider.hpp
+## topology_provider.hpp
 
-### ITopologyProvider
+### TopologyProvider
 
 RuntimeContext depends on this interface instead of the concrete hwloc and SYCL machinery, which
 makes topology substitutable at construction time. HwlocTopologyProvider does real bare-metal
@@ -85,8 +85,8 @@ The view has no mutating member. Any thread may read it without a lock, provided
 is itself safe to read concurrently; both models in this module are, because they only read state
 set in their constructors.
 
-The header forward-declares ITopologyProvider and INUMADistanceModel. A reader of the view therefore
-does not include `i_topology_provider.hpp`, and through it the device discovery types.
+The header forward-declares TopologyProvider and NUMADistanceModel. A reader of the view therefore
+does not include `topology_provider.hpp`, and through it the device discovery types.
 
 ## Implementation
 

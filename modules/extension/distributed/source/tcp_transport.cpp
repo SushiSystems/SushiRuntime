@@ -132,7 +132,7 @@ namespace SushiRuntime
                      * @brief Gives a connected socket the next id and starts its two threads.
                      * @return False once shut() was called; the socket is then closed.
                      */
-                    bool open(Socket socket, PeerInfo info)
+                    bool open(Socket socket, PeerDescription info)
                     {
                         const PeerID peer{next_peer_.fetch_add(1)};
                         std::shared_ptr<PeerConnection> connection =
@@ -268,7 +268,7 @@ namespace SushiRuntime
                     }
 
                     /** @brief Relays the event. */
-                    void on_peer_connected(PeerID peer, const PeerInfo& info) override
+                    void on_peer_connected(PeerID peer, const PeerDescription& info) override
                     {
                         receiver_->on_peer_connected(peer, info);
                     }
@@ -534,7 +534,7 @@ namespace SushiRuntime
                         continue;
                     }
                     SR_LOG_DEBUG("{} accepted a connection from {}", local, name);
-                    if (!table.open(std::move(accepted), PeerInfo{name}))
+                    if (!table.open(std::move(accepted), PeerDescription{name}))
                         return;
                 }
             }
@@ -587,7 +587,7 @@ namespace SushiRuntime
                         const std::string name = peer_name(socket, target);
                         SR_LOG_DEBUG("connected to master {} ({}) at attempt {}", target, name,
                                      attempt);
-                        if (!table.open(std::move(socket), PeerInfo{name}) ||
+                        if (!table.open(std::move(socket), PeerDescription{name}) ||
                             table.wait_until_no_peer())
                             return;
                         table.join_lost();

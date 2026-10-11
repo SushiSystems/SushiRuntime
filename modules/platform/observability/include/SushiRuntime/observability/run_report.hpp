@@ -115,8 +115,8 @@ namespace SushiRuntime
         {
             std::uint32_t node_index     = 0;              /**< Registration index of the node in its graph. */
             std::uint32_t invocation     = 0;              /**< Zero-based dispatch count of the node within the run. */
-            std::uint32_t launched_width = WIDTH_UNKNOWN;  /**< Elements the dispatch launched over. */
-            std::uint32_t live_width     = WIDTH_UNKNOWN;  /**< Elements that did work, when known. */
+            std::uint32_t launched_width = K_WIDTH_UNKNOWN;  /**< Elements the dispatch launched over. */
+            std::uint32_t live_width     = K_WIDTH_UNKNOWN;  /**< Elements that did work, when known. */
             std::uint64_t submit_ns      = 0;              /**< SYCL command_submit, or the paired host clock for a host node. */
             std::uint64_t start_ns       = 0;              /**< SYCL command_start, or the paired host clock. */
             std::uint64_t end_ns         = 0;              /**< SYCL command_end, or the paired host clock. */

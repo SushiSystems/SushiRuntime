@@ -33,8 +33,8 @@
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/distributed/cluster_statistics.hpp>
 #include <SushiRuntime/distributed/endpoint.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/registered_task.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>

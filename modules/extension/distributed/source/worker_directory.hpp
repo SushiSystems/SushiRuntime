@@ -45,8 +45,8 @@
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 
 #include "handshake.hpp"
@@ -121,7 +121,7 @@ namespace SushiRuntime
          *
          * A worker's id is the value of its PeerID. The directory owns one mutex, held only
          * inside its members; the single call it makes while holding it is
-         * IOffloadPolicy::pick_worker(). It calls no other brick, no transport and no sink.
+         * OffloadPolicy::pick_worker(). It calls no other brick, no transport and no sink.
          * alive_count() reads an atomic. Any thread may call any member.
          */
         class SUSHIRUNTIME_API WorkerDirectory final
@@ -133,7 +133,7 @@ namespace SushiRuntime
                  * @param policy Not null; called under the directory's mutex.
                  */
                 WorkerDirectory(SushiRuntime::span<const std::uint8_t> secret,
-                                std::shared_ptr<IOffloadPolicy> policy);
+                                std::shared_ptr<OffloadPolicy> policy);
 
                 /** @brief Destroys the directory. */
                 ~WorkerDirectory();
@@ -330,7 +330,7 @@ namespace SushiRuntime
                 /** @brief Marks a worker not alive and uncounts it; called under the mutex. */
                 void retire(Session& session) noexcept;
 
-                /// @brief Guards the sessions; held across IOffloadPolicy::pick_worker() only.
+                /// @brief Guards the sessions; held across OffloadPolicy::pick_worker() only.
                 mutable std::mutex mutex_;
 
                 /// @brief Wakes wait_for_workers() on a registration and on close().
@@ -340,7 +340,7 @@ namespace SushiRuntime
                 SushiRuntime::span<const std::uint8_t> secret_;
 
                 /// @brief Chooses the worker in pick().
-                std::shared_ptr<IOffloadPolicy> policy_;
+                std::shared_ptr<OffloadPolicy> policy_;
 
                 /// @brief The number of alive workers, for alive_count().
                 std::atomic<std::size_t> alive_count_{0};
@@ -355,7 +355,7 @@ namespace SushiRuntime
                 std::unordered_map<std::uint32_t, std::size_t> workers_per_operation_;
 
                 /// @brief The workers offered to the policy; reused by every pick().
-                std::vector<WorkerStats> candidates_;
+                std::vector<WorkerLoad> candidates_;
         };
 
     } // namespace Distributed

@@ -41,8 +41,8 @@ namespace
     /** @brief Names the element type of every handle here. */
     using Word = std::uint32_t;
 
-    constexpr std::size_t WIDTH = 64;
-    constexpr Word LIVE = 24;
+    constexpr std::size_t K_WIDTH = 64;
+    constexpr Word K_LIVE = 24;
 
     /** @brief Allocates a one-word Residency::Host buffer that holds value. */
     Buffer<Word> host_slot(Runtime& rt, Word value)
@@ -57,12 +57,12 @@ namespace
 TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
 {
     auto rt = Runtime::create();
-    auto target = rt.buffer<Word>(WIDTH);
-    std::optional<Buffer<Word>> counter(host_slot(rt, LIVE));
+    auto target = rt.buffer<Word>(K_WIDTH);
+    std::optional<Buffer<Word>> counter(host_slot(rt, K_LIVE));
     Word* words = target.data();
 
     auto graph = rt.graph();
-    graph.add(sized_from_device(*counter, 0), WIDTH, Reads(), Writes(target),
+    graph.add(sized_from_device(*counter, 0), K_WIDTH, Reads(), Writes(target),
               [words](std::size_t i) { words[i] = 1u; });
     EXPECT_EQ(graph.recorder().watched_allocation_count(), 2u)
         << "the target and the counter are both watched";
@@ -80,12 +80,12 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
 TEST(Integration_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
 {
     auto rt = Runtime::create();
-    auto target = rt.buffer<Word>(WIDTH);
+    auto target = rt.buffer<Word>(K_WIDTH);
     std::optional<Buffer<Word>> base(host_slot(rt, 0u));
     Word* words = target.data();
 
     auto graph = rt.graph();
-    graph.add(based_at_device(*base), WIDTH, Reads(), Writes(target),
+    graph.add(based_at_device(*base), K_WIDTH, Reads(), Writes(target),
               [words](std::size_t i) { words[i] = 1u; });
     ASSERT_TRUE(graph.try_run());
 
@@ -100,8 +100,8 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
 TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesAStateRule)
 {
     auto rt = Runtime::create();
-    auto field = rt.state<Word>(WIDTH);
-    std::optional<Buffer<Word>> counter(host_slot(rt, LIVE));
+    auto field = rt.state<Word>(K_WIDTH);
+    std::optional<Buffer<Word>> counter(host_slot(rt, K_LIVE));
 
     auto graph = rt.graph();
     graph.add(sized_from_device(*counter), field,

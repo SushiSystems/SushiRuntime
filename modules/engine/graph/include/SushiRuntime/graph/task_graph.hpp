@@ -58,7 +58,7 @@ namespace SushiRuntime
         {
             public:
                 /** @brief Stands for "no node carries an index yet". */
-                static constexpr std::uint32_t NO_REGISTRATION = static_cast<std::uint32_t>(-1);
+                static constexpr std::uint32_t K_NO_REGISTRATION = static_cast<std::uint32_t>(-1);
 
                 /**
                  * @brief Creates an empty task graph.

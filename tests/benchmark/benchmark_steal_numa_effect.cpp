@@ -132,8 +132,8 @@ namespace
             EXPECT_EQ(executed.load(), TOTAL); // consume
 
             if (ms < best.ms)
-                best = Result{ ms, sched.get_local_steal_count(),
-                                   sched.get_remote_steal_count() };
+                best = Result{ ms, sched.local_steal_count(),
+                                   sched.remote_steal_count() };
         }
         return best;
     }
@@ -148,7 +148,7 @@ namespace
 TEST(Performance_StealNumaEffectBench, NUMAAwareVsBlindThroughput)
 {
     RuntimeContext blind_ctx; // real (flat on single-socket) topology
-    const int workers = static_cast<int>(make_scheduler(blind_ctx).get_worker_count());
+    const int workers = static_cast<int>(make_scheduler(blind_ctx).worker_count());
     if (workers < 2)
         GTEST_SKIP() << "Need >= 2 worker threads to exercise stealing.";
 

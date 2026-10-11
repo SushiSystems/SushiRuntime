@@ -68,7 +68,7 @@ namespace SushiRuntime
         std::is_invocable_v<const std::decay_t<F>&, std::size_t, std::size_t,
                             sycl::handler&>;
 
-    namespace detail
+    namespace Detail
     {
         /** @brief Returns a field pointer as the read-only pointer a kernel input receives. */
         template <typename T>
@@ -99,5 +99,5 @@ namespace SushiRuntime
             return std::vector<Internal::Memory::ResourceRegion>{
                 Internal::Memory::ResourceRegion(static_cast<void*>(std::get<Is>(views)->current))... };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

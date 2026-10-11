@@ -41,7 +41,7 @@ namespace SushiRuntime
          * @brief Releases an address through the allocator that allocated it.
          * @see docs/design/SYCL_VULKAN_INTEROP.md §3.1 in the SushiEngine repository.
          */
-        class USMAllocationOwner final : public IAllocationOwner
+        class USMAllocationOwner final : public AllocationOwner
         {
             public:
                 /**

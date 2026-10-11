@@ -86,7 +86,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the transport, or refuses a null one. */
-            std::shared_ptr<ITransport> require_transport(std::shared_ptr<ITransport> transport)
+            std::shared_ptr<Transport> require_transport(std::shared_ptr<Transport> transport)
             {
                 if (!transport)
                     refuse("WorkerAgent needs a transport; a null one was passed");
@@ -128,7 +128,7 @@ namespace SushiRuntime
                 if (requested != 0)
                     return requested;
 
-                const std::vector<Internal::Device::DeviceInfo>& devices = context.devices().devices();
+                const std::vector<Internal::Device::DeviceDescription>& devices = context.devices().devices();
                 const std::uint64_t half = devices.size() > K_DEVICE_INDEX
                                                ? devices[K_DEVICE_INDEX].memory_bytes / 2
                                                : 0;
@@ -199,7 +199,7 @@ namespace SushiRuntime
         {
             public:
                 /** @brief Builds the bricks and the routing table; no thread runs yet. */
-                Impl(Internal::Execution::RuntimeContext& context, std::shared_ptr<ITransport> transport,
+                Impl(Internal::Execution::RuntimeContext& context, std::shared_ptr<Transport> transport,
                      sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options);
 
                 /** @brief Starts the exec thread, the heartbeat thread and the transport. */
@@ -215,7 +215,7 @@ namespace SushiRuntime
                 [[nodiscard]] WorkerStatistics statistics() const noexcept;
 
                 /** @brief Records the connection and opens the handshake on it. */
-                void on_peer_connected(PeerID peer, const PeerInfo& info) override;
+                void on_peer_connected(PeerID peer, const PeerDescription& info) override;
 
                 /** @brief Refreshes the master watch, then routes the frame to its brick. */
                 void on_frame(PeerID peer, MessageType type, std::uint8_t flags,
@@ -275,7 +275,7 @@ namespace SushiRuntime
                 Internal::Execution::RuntimeContext& context_;
 
                 /// @brief Carries every frame; the agent is its only receiver.
-                std::shared_ptr<ITransport> transport_;
+                std::shared_ptr<Transport> transport_;
 
                 /// @brief The settings; owns the secret the link borrows.
                 WorkerAgentOptions options_;
@@ -312,7 +312,7 @@ namespace SushiRuntime
         };
 
         WorkerAgent::Impl::Impl(Internal::Execution::RuntimeContext& context,
-                                std::shared_ptr<ITransport> transport,
+                                std::shared_ptr<Transport> transport,
                                 sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : context_(context), transport_(require_transport(std::move(transport))),
               options_(bounded(std::move(options))),
@@ -589,7 +589,7 @@ namespace SushiRuntime
             return counters;
         }
 
-        void WorkerAgent::Impl::on_peer_connected(PeerID peer, const PeerInfo& info)
+        void WorkerAgent::Impl::on_peer_connected(PeerID peer, const PeerDescription& info)
         {
             if (phase_.load() == Phase::Stopped)
             {
@@ -640,7 +640,7 @@ namespace SushiRuntime
             apply(change);
         }
 
-        WorkerAgent::WorkerAgent(Runtime& runtime, std::shared_ptr<ITransport> transport,
+        WorkerAgent::WorkerAgent(Runtime& runtime, std::shared_ptr<Transport> transport,
                                  sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : WorkerAgent(runtime.unsafe_context(), std::move(transport), std::move(kernels),
                           std::move(options))
@@ -649,7 +649,7 @@ namespace SushiRuntime
         }
 
         WorkerAgent::WorkerAgent(Internal::Execution::RuntimeContext& context,
-                                 std::shared_ptr<ITransport> transport,
+                                 std::shared_ptr<Transport> transport,
                                  sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : impl_(std::make_unique<Impl>(context, std::move(transport), std::move(kernels),
                                            std::move(options)))

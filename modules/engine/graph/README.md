@@ -12,7 +12,7 @@ not installed.
 
 ### get_shard_idx
 
-get_shard_idx() shards on the owning allocation (its base), not the sub-region, so every access to
+shard_index() shards on the owning allocation (its base), not the sub-region, so every access to
 one allocation lands in the same chain and can be compared by interval overlap. It applies a fast
 SplitMix64 bitwise hash to distribute allocations uniformly.
 
@@ -103,7 +103,7 @@ A node that a coordinator may run elsewhere carries a Internal::Graph::OffloadSt
 Node inherits from Task so the scheduler can dispatch it without knowing the DAG layer. Dependency
 management is lock-free: in_degree is decremented with acq_rel by EventPolling as predecessors
 complete; when it reaches zero the node is pushed to the ready queue. Successors are stored inline
-(up to MAX_INLINE_SUCCESSORS) and overflow into a lock-free linked list.
+(up to K_MAX_INLINE_SUCCESSORS) and overflow into a lock-free linked list.
 
 ### Node::region
 
@@ -117,7 +117,7 @@ interior. The static graph leaves it at its defaults and never reads it.
 
 The sentinel delivers run completion (and, on a failed run, the error) through its host_work, so it
 must run even after a task exception flips the scheduler into drain-without-executing mode. Skipping
-it would leave the completion promise unset and hang execute(). ExecutionEngine sets the flag when
+it would leave the completion promise unset and hang execute(). SchedulerExecutionEngine sets the flag when
 it wires the sentinel.
 
 ### io_reads_ and io_writes_
@@ -143,7 +143,7 @@ state the device, and a node that states none runs on device 0. A node that name
 owns runs on that owner whatever it states. `modules/engine/scheduler/README.md`, under "Queue
 selection", holds the rule, and `Internal::Graph::placement_of()` applies it.
 
-placement_ is a 16-bit field with NO_PLACEMENT for "none stated". It sits in the padding between
+placement_ is a 16-bit field with K_NO_PLACEMENT for "none stated". It sits in the padding between
 locality_checked_ and cached_queue_index_, so sizeof(Node) does not grow. place_on() throws
 `Errc::invalid_graph` for an index the field cannot hold; whether the index names a device of the
 runtime is checked at the node's first dispatch, where the device count is known.
@@ -264,7 +264,7 @@ an earlier node drew. Indices are issued densely from zero, so the test is "belo
 so far". Any other index throws `SushiException` with `Errc::invalid_graph`, and the message
 names the call, the index and the count. CompiledGraph::capture_profiling_state() sizes two vectors
 to the largest index plus one, so an index nobody issued could ask for 2^32 elements or collide with
-one the graph issues later. NO_REGISTRATION, the value that stands for "no node carries an index
+one the graph issues later. K_NO_REGISTRATION, the value that stands for "no node carries an index
 yet", is the first case. An issued index may be passed any number of times.
 
 ### add_task(meta, read_access, write_access, device_work, fallback_work, ...)

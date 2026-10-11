@@ -155,14 +155,14 @@ namespace SushiRuntime
             /**
              * @brief Returns the registration index a rule of a region carries in the plan.
              * @param rule Position in the region's recording order, one per rule.
-             * @return The index, or TaskGraph::NO_REGISTRATION before the region is built.
+             * @return The index, or TaskGraph::K_NO_REGISTRATION before the region is built.
              */
             [[nodiscard]] std::uint32_t registration_of(RegionKey key, std::size_t rule) const
             {
                 const auto found = states_.find(key);
                 if (found == states_.end() || rule >= found->second.rule_nodes.size() ||
                     found->second.rule_nodes[rule] == nullptr)
-                    return ::SushiRuntime::Internal::Graph::TaskGraph::NO_REGISTRATION;
+                    return ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION;
                 return found->second.rule_nodes[rule]->registration_index;
             }
 
@@ -231,8 +231,8 @@ namespace SushiRuntime
         private:
             using Node = ::SushiRuntime::Internal::Graph::Node;
             using Base = ::SushiRuntime::Internal::Memory::ResourceID;  // allocation identity (void*)
-            using Pin = detail::Pin;
-            using BaseAccess = detail::BaseAccess;
+            using Pin = Detail::Pin;
+            using BaseAccess = Detail::BaseAccess;
 
             /**
              * @brief Holds a boundary pin reduced to one hazard's intervals, used by
@@ -499,7 +499,7 @@ namespace SushiRuntime
                     regions.erase(std::remove_if(regions.begin(), regions.end(),
                         [&covers](const Internal::Memory::ResourceRegion& r)
                         {
-                            return detail::covered_by_any(r, covers);
+                            return Detail::covered_by_any(r, covers);
                         }), regions.end());
 
                     if (regions.empty()) it = pins.erase(it);
@@ -542,13 +542,13 @@ namespace SushiRuntime
                     {
                         // One edge per producer and consumer pair covers both RAW and WAW.
                         for (const BoundaryPin& w : live_writers)
-                            if (detail::overlaps_any(w.regions, in.reads) ||
-                                detail::overlaps_any(w.regions, in.writes))
+                            if (Detail::overlaps_any(w.regions, in.reads) ||
+                                Detail::overlaps_any(w.regions, in.writes))
                                 add_cross_edge(w.node, in.node, b);
 
                         if (!in.writes.empty())
                             for (const BoundaryPin& r : pending_reads)
-                                if (detail::overlaps_any(r.regions, in.writes))
+                                if (Detail::overlaps_any(r.regions, in.writes))
                                     add_cross_edge(r.node, in.node, b);   // WAR
                     }
 
@@ -604,7 +604,7 @@ namespace SushiRuntime
                         st.intra_roots.push_back(n);
                 }
 
-                st.access = detail::compute_boundary_access(st.nodes);
+                st.access = Detail::compute_boundary_access(st.nodes);
                 return st;
             }
 

@@ -21,7 +21,7 @@
 
 /**
  * @file test_transport_conformance.cpp
- * @brief Tests the ITransport contract on both transports, and Outbox alone.
+ * @brief Tests the Transport contract on both transports, and Outbox alone.
  * @see modules/extension/distributed/tests/README.md
  * @author Mustafa Garip
  */
@@ -40,7 +40,7 @@
 #include <vector>
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 
@@ -118,7 +118,7 @@ namespace
             }
 
             /** @brief Records the connection. */
-            void on_peer_connected(PeerID peer, const PeerInfo&) override
+            void on_peer_connected(PeerID peer, const PeerDescription&) override
             {
                 Event event;
                 event.kind = EventKind::Connected;
@@ -256,13 +256,13 @@ namespace
             }
 
             /** @brief Creates the master endpoint. */
-            std::shared_ptr<ITransport> make_master()
+            std::shared_ptr<Transport> make_master()
             {
                 return InProcessTransport::make_master(fabric_);
             }
 
             /** @brief Creates a worker endpoint. */
-            std::shared_ptr<ITransport> make_worker(bool reconnect)
+            std::shared_ptr<Transport> make_worker(bool reconnect)
             {
                 InProcessWorkerOptions options;
                 options.reconnect = reconnect;
@@ -285,7 +285,7 @@ namespace
             }
 
             /** @brief Creates the master endpoint on 127.0.0.1, port 0. */
-            std::shared_ptr<ITransport> make_master()
+            std::shared_ptr<Transport> make_master()
             {
                 master_ = TCPTransport::make_master();
                 return master_;
@@ -295,7 +295,7 @@ namespace
              * @brief Creates a worker endpoint for the port the master bound.
              * @pre The master made by make_master() was started.
              */
-            std::shared_ptr<ITransport> make_worker(bool reconnect)
+            std::shared_ptr<Transport> make_worker(bool reconnect)
             {
                 TCPWorkerOptions options;
                 options.reconnect = reconnect;
@@ -485,10 +485,10 @@ class Unit_TransportConformanceTest : public ::testing::Test
         EventRecorder worker_events_;
 
         /// @brief The master endpoint.
-        std::shared_ptr<ITransport> master_;
+        std::shared_ptr<Transport> master_;
 
         /// @brief The worker endpoint.
-        std::shared_ptr<ITransport> worker_;
+        std::shared_ptr<Transport> worker_;
 
         /// @brief The id the master uses for the worker.
         PeerID worker_peer_;

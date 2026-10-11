@@ -143,7 +143,7 @@ TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNUMA)
     {
         EXPECT_NO_THROW({
             sycl::queue& q = ctx.devices().queue_or_numa_local(std::nullopt, numa);
-            auto ev = q.submit([](sycl::handler& h) { SushiRuntime::detail::enqueue_host_task(h, [] {}); });
+            auto ev = q.submit([](sycl::handler& h) { SushiRuntime::Detail::enqueue_host_task(h, [] {}); });
             ev.wait();
         }) << "Synthetic NUMA node " << numa << " produced no working queue.";
     }

@@ -27,7 +27,7 @@ into the test executable, never by code compiled into the DLL. The command-group
 `SushiRuntime/api/graph/graph.hpp`, so their object code lands in whichever translation unit
 includes that header. SYCL's own `StoreLambda()` allocates the stored kernel object on the heap on
 every submission (`llvm-sycl/include/sycl/handler.hpp`, `MHostKernel.reset(new
-detail::HostKernel<...>(...))`). The scheduler runs that submission from a worker thread, so the
+Detail::HostKernel<...>(...))`). The scheduler runs that submission from a worker thread, so the
 thread-local flag of the counter never sees it. The chain runs it synchronously from the calling
 thread (`modules/engine/execution/source/chain_run.cpp`, `ChainRun::submit_node()`), so the counter does see it. The
 chain could never allocate nothing per tick once SYCL's kernel storage is inline. The rule the test

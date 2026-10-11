@@ -32,7 +32,7 @@
 #include <vector>
 
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 
 #include "wire_codec.hpp"
 
@@ -44,10 +44,10 @@ namespace SushiRuntime
          * @brief Encodes a message into a buffer the caller reuses and queues it for a peer.
          * @tparam Message A wire message: it names its type as K_TYPE and has encode().
          * @param scratch Cleared first; its capacity is kept, so a warm buffer allocates nothing.
-         * @return TooLong when the message does not encode, else what ITransport::send() said.
+         * @return TooLong when the message does not encode, else what Transport::send() said.
          */
         template <typename Message>
-        [[nodiscard]] SendStatus send_message(ITransport& transport, PeerID peer,
+        [[nodiscard]] SendStatus send_message(Transport& transport, PeerID peer,
                                               const Message& message,
                                               std::vector<std::byte>& scratch)
         {
@@ -63,10 +63,10 @@ namespace SushiRuntime
         /**
          * @brief Encodes a message into a buffer of its own and queues it for a peer.
          * @tparam Message A wire message: it names its type as K_TYPE and has encode().
-         * @return TooLong when the message does not encode, else what ITransport::send() said.
+         * @return TooLong when the message does not encode, else what Transport::send() said.
          */
         template <typename Message>
-        [[nodiscard]] SendStatus send_message(ITransport& transport, PeerID peer,
+        [[nodiscard]] SendStatus send_message(Transport& transport, PeerID peer,
                                               const Message& message)
         {
             std::vector<std::byte> payload;

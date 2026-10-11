@@ -215,17 +215,17 @@ namespace SushiRuntime::Distributed::Wire
             }
 
             /** @brief Reads one byte. */
-            [[nodiscard]] std::uint8_t get_u8() noexcept
+            [[nodiscard]] std::uint8_t read_u8() noexcept
             {
                 const std::byte* bytes = take(1);
                 return bytes == nullptr ? std::uint8_t{0} : static_cast<std::uint8_t>(bytes[0]);
             }
 
             /** @brief Reads one byte; a value above maximum fails with OutOfRange and reads 0. */
-            [[nodiscard]] std::uint8_t get_u8_at_most(std::uint8_t maximum) noexcept
+            [[nodiscard]] std::uint8_t read_u8_at_most(std::uint8_t maximum) noexcept
             {
                 const std::size_t start = position_;
-                const std::uint8_t value = get_u8();
+                const std::uint8_t value = read_u8();
                 if (value > maximum)
                 {
                     fail(CodecStatus::OutOfRange, start);
@@ -235,37 +235,37 @@ namespace SushiRuntime::Distributed::Wire
             }
 
             /** @brief Reads a 16-bit unsigned integer. */
-            [[nodiscard]] std::uint16_t get_u16() noexcept
+            [[nodiscard]] std::uint16_t read_u16() noexcept
             {
-                return get_little_endian<std::uint16_t>();
+                return read_little_endian<std::uint16_t>();
             }
 
             /** @brief Reads a 32-bit unsigned integer. */
-            [[nodiscard]] std::uint32_t get_u32() noexcept
+            [[nodiscard]] std::uint32_t read_u32() noexcept
             {
-                return get_little_endian<std::uint32_t>();
+                return read_little_endian<std::uint32_t>();
             }
 
             /** @brief Reads a 64-bit unsigned integer. */
-            [[nodiscard]] std::uint64_t get_u64() noexcept
+            [[nodiscard]] std::uint64_t read_u64() noexcept
             {
-                return get_little_endian<std::uint64_t>();
+                return read_little_endian<std::uint64_t>();
             }
 
             /** @brief Reads a 32-bit signed integer in two's complement. */
-            [[nodiscard]] std::int32_t get_i32() noexcept
+            [[nodiscard]] std::int32_t read_i32() noexcept
             {
-                const std::uint32_t bits = get_little_endian<std::uint32_t>();
+                const std::uint32_t bits = read_little_endian<std::uint32_t>();
                 std::int32_t value = 0;
                 std::memcpy(&value, &bits, sizeof(value));
                 return value;
             }
 
             /** @brief Reads a bool; a byte other than 0 or 1 fails with OutOfRange. */
-            [[nodiscard]] bool get_bool() noexcept
+            [[nodiscard]] bool read_bool() noexcept
             {
                 const std::size_t start = position_;
-                const std::uint8_t value = get_u8();
+                const std::uint8_t value = read_u8();
                 if (value > 1)
                 {
                     fail(CodecStatus::OutOfRange, start);
@@ -280,11 +280,11 @@ namespace SushiRuntime::Distributed::Wire
              * @return The enumerator, or first after a failure.
              */
             template <typename Enum>
-            [[nodiscard]] Enum get_enum(Enum first, Enum last) noexcept
+            [[nodiscard]] Enum read_enum(Enum first, Enum last) noexcept
             {
                 static_assert(sizeof(Enum) == 1, "a wire enumeration is one byte");
                 const std::size_t start = position_;
-                const std::uint8_t value = get_u8();
+                const std::uint8_t value = read_u8();
                 if (!ok())
                     return first;
                 if (value < static_cast<std::uint8_t>(first)
@@ -297,7 +297,7 @@ namespace SushiRuntime::Distributed::Wire
             }
 
             /** @brief Copies the next out.size() bytes into out; out is left alone on failure. */
-            void get_bytes(SushiRuntime::span<std::byte> out) noexcept
+            void read_bytes(SushiRuntime::span<std::byte> out) noexcept
             {
                 const std::byte* bytes = take(out.size());
                 if (bytes != nullptr && !out.empty())
@@ -308,10 +308,10 @@ namespace SushiRuntime::Distributed::Wire
              * @brief Reads a string; a length above 255 fails with OutOfRange.
              * @return A view into the payload, empty after a failure.
              */
-            [[nodiscard]] std::string_view get_string() noexcept
+            [[nodiscard]] std::string_view read_string() noexcept
             {
                 const std::size_t start = position_;
-                const std::uint16_t length = get_u16();
+                const std::uint16_t length = read_u16();
                 if (length > K_MAX_STRING_BYTES)
                 {
                     fail(CodecStatus::OutOfRange, start);
@@ -328,10 +328,10 @@ namespace SushiRuntime::Distributed::Wire
              * @param element_bytes Smallest encoded size of one element; must be positive.
              * @return The count, or 0 when the payload cannot hold that many elements.
              */
-            [[nodiscard]] std::uint32_t get_count(std::size_t element_bytes) noexcept
+            [[nodiscard]] std::uint32_t read_count(std::size_t element_bytes) noexcept
             {
                 const std::size_t start = position_;
-                const std::uint32_t count = get_u32();
+                const std::uint32_t count = read_u32();
                 if (count > remaining() / element_bytes)
                 {
                     fail(CodecStatus::OutOfRange, start);
@@ -341,7 +341,7 @@ namespace SushiRuntime::Distributed::Wire
             }
 
             /** @brief Returns a view of every byte not yet read and consumes them. */
-            [[nodiscard]] SushiRuntime::span<const std::byte> get_rest() noexcept
+            [[nodiscard]] SushiRuntime::span<const std::byte> read_rest() noexcept
             {
                 const std::size_t count = remaining();
                 const std::byte* bytes = take(count);
@@ -401,7 +401,7 @@ namespace SushiRuntime::Distributed::Wire
 
             /** @brief Reads an unsigned integer, least significant byte first. */
             template <typename Unsigned>
-            [[nodiscard]] Unsigned get_little_endian() noexcept
+            [[nodiscard]] Unsigned read_little_endian() noexcept
             {
                 const std::byte* bytes = take(sizeof(Unsigned));
                 if (bytes == nullptr)

@@ -39,7 +39,7 @@ through the reference are what the "last node" accessors then read back.
 
 ### `ARegistrationTheGraphNeverIssuedIsRefused`
 
-`add_node()` on an empty graph is given `NO_REGISTRATION`, then, after one `reserve_registration()`,
+`add_node()` on an empty graph is given `K_NO_REGISTRATION`, then, after one `reserve_registration()`,
 the index one past it. Both throw `Errc::invalid_graph`. The first message must name the call, the
 index, the count issued and `reserve_registration()`. No node was added by either call.
 

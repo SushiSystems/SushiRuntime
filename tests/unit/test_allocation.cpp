@@ -37,14 +37,14 @@
 using SushiRuntime::Buffer;
 using SushiRuntime::DeviceIndex;
 using SushiRuntime::Residency;
-using SushiRuntime::detail::HandleAccess;
+using SushiRuntime::Detail::HandleAccess;
 using SushiRuntime::Internal::Memory::Allocation;
-using SushiRuntime::Internal::Memory::IAllocationOwner;
+using SushiRuntime::Internal::Memory::AllocationOwner;
 
 namespace
 {
     /** @brief Counts the releases it receives and remembers the last address. */
-    class CountingOwner final : public IAllocationOwner
+    class CountingOwner final : public AllocationOwner
     {
         public:
             /** @brief Binds the owner to the counters it reports into. */

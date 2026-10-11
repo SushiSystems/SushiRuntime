@@ -84,14 +84,14 @@ namespace
             {
             }
 
-            const char* get_name() const noexcept override
+            const char* name() const noexcept override
             {
                 return "CountingTask";
             }
 
-            ExecutionMode get_execution_mode() const override
+            ExecutionMode execution_mode() const override
             {
-                return ExecutionMode::HOST;
+                return ExecutionMode::Host;
             }
 
             sycl::event execute_host(sycl::queue&, const std::vector<sycl::event>&) override
@@ -137,7 +137,7 @@ TEST(Performance_WideFanout, ManySmallStepDrainLatency)
             SushiRuntime::make_sushi<CountingTask>(counter, K_TASKS_PER_STEP, drained));
 
     TaskScheduler sched = make_scheduler(ctx);
-    const std::size_t workers = sched.get_worker_count();
+    const std::size_t workers = sched.worker_count();
 
     sched.start();
     sched.arm_for_execution(); // workers stay armed across all steps

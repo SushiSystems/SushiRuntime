@@ -13,7 +13,7 @@ The twelve public headers under `include/SushiRuntime/core/`:
 | --- | --- |
 | `assert.hpp` | `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, `AssertionFailure`, `AssertionHandler`, `set_assertion_handler()` and `fail_assertion()` |
 | `bit.hpp` | `popcount_u64` and `countr_zero_u64`, two 64-bit bit queries for the C++17 baseline |
-| `common.hpp` | The `Backend` enumeration and the size constants `CACHE_LINE_SIZE`, `MAX_SUPPORTED_XPU`, `MAX_NUMA_NODES`, `MAX_WORKER_THREADS` and `DEFAULT_ALIGNMENT` |
+| `common.hpp` | The `Backend` enumeration and the size constants `K_CACHE_LINE_SIZE`, `K_MAX_SUPPORTED_XPU`, `K_MAX_NUMA_NODES`, `K_MAX_WORKER_THREADS` and `K_DEFAULT_ALIGNMENT` |
 | `delegate.hpp` | `Delegate`, a move-only callable stored inline, with no heap allocation |
 | `error.hpp` | `Errc`, its `to_string` overload, `Error` and `SushiException` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
@@ -66,10 +66,10 @@ enumerator is unused.
 
 ### Size constants
 
-`CACHE_LINE_SIZE` is the alignment of per-worker and per-thread state in the dependency tracker,
-the task scheduler, its work-stealing deque and epoch reclamation. `MAX_WORKER_THREADS` bounds the
-scheduler's worker arrays, and `MAX_NUMA_NODES` bounds the per-node cursors in
-`device_queue_set.cpp`. `MAX_SUPPORTED_XPU` and `DEFAULT_ALIGNMENT` have no reader in the
+`K_CACHE_LINE_SIZE` is the alignment of per-worker and per-thread state in the dependency tracker,
+the task scheduler, its work-stealing deque and epoch reclamation. `K_MAX_WORKER_THREADS` bounds the
+scheduler's worker arrays, and `K_MAX_NUMA_NODES` bounds the per-node cursors in
+`device_queue_set.cpp`. `K_MAX_SUPPORTED_XPU` and `K_DEFAULT_ALIGNMENT` have no reader in the
 repository.
 
 ## delegate.hpp

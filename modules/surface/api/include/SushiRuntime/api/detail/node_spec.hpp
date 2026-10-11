@@ -38,7 +38,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /**
          * @brief Holds one recorded node: its replay callable and the rule it belongs to.
@@ -70,5 +70,5 @@ namespace SushiRuntime
             /** @brief Whether replay stamps the rule's index; false if emit stamps its own. */
             bool takes_rule_registration = true;
         };
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

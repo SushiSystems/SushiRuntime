@@ -45,7 +45,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 
@@ -96,7 +96,7 @@ namespace SushiRuntime
                  * @param queue The queue kernels submit to; outlives the executor.
                  */
                 DispatchExecutor(sushi_ptr<KernelRegistry> kernels, WorkerBufferCache& cache,
-                                 ITransport& transport, sycl::queue& queue,
+                                 Transport& transport, sycl::queue& queue,
                                  const DispatchExecutorOptions& options);
 
                 /** @brief Calls stop(). */
@@ -238,7 +238,7 @@ namespace SushiRuntime
                 WorkerBufferCache& cache_;
 
                 /// @brief Carries requests, output streams and results.
-                ITransport& transport_;
+                Transport& transport_;
 
                 /// @brief The queue kernels submit to.
                 sycl::queue& queue_;

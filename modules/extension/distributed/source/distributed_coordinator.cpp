@@ -43,7 +43,7 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
-#include <SushiRuntime/distributed/i_offload_policy.hpp>
+#include <SushiRuntime/distributed/offload_policy.hpp>
 #include <SushiRuntime/distributed/message_type.hpp>
 
 #include "buffer_exchange.hpp"
@@ -123,8 +123,8 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the given policy, or LeastLoadedOffloadPolicy when it is null. */
-            std::shared_ptr<IOffloadPolicy> policy_or_default(
-                std::shared_ptr<IOffloadPolicy> policy)
+            std::shared_ptr<OffloadPolicy> policy_or_default(
+                std::shared_ptr<OffloadPolicy> policy)
             {
                 if (policy)
                     return policy;
@@ -135,7 +135,7 @@ namespace SushiRuntime
              * @brief Returns the transport after checking it is there.
              * @throws SushiException When @p transport is null.
              */
-            std::shared_ptr<ITransport> require_transport(std::shared_ptr<ITransport> transport)
+            std::shared_ptr<Transport> require_transport(std::shared_ptr<Transport> transport)
             {
                 SR_THROW_IF(!transport,
                             "DistributedCoordinator needs a master-side transport; got null.");
@@ -186,7 +186,7 @@ namespace SushiRuntime
             };
 
             /** @brief Builds the bricks in the order they are declared and sets the handlers. */
-            Impl(BufferRegistry& shared_buffers, std::shared_ptr<ITransport> master_transport,
+            Impl(BufferRegistry& shared_buffers, std::shared_ptr<Transport> master_transport,
                  ClusterOptions cluster_options)
                 : options(std::move(cluster_options)),
                   registry(shared_buffers),
@@ -242,7 +242,7 @@ namespace SushiRuntime
             }
 
             /** @brief Adds a connection that owes HELLO to the directory. */
-            void on_peer_connected(PeerID peer, const PeerInfo& info) override
+            void on_peer_connected(PeerID peer, const PeerDescription& info) override
             {
                 directory.add_peer(peer, info.endpoint, std::chrono::steady_clock::now());
                 SR_LOG_DEBUG("peer {} connected from {}; it owes HELLO", peer.value,
@@ -572,7 +572,7 @@ namespace SushiRuntime
             BufferRegistry& registry;
 
             /// @brief Carries every frame; this object is its only event receiver.
-            std::shared_ptr<ITransport> transport;
+            std::shared_ptr<Transport> transport;
 
             /// @brief Sessions, handshake state and the load of each worker.
             WorkerDirectory directory;
@@ -630,7 +630,7 @@ namespace SushiRuntime
         };
 
         DistributedCoordinator::DistributedCoordinator(BufferRegistry& registry,
-                                                       std::shared_ptr<ITransport> transport,
+                                                       std::shared_ptr<Transport> transport,
                                                        ClusterOptions options)
             : impl_(std::make_unique<Impl>(registry, std::move(transport), std::move(options)))
         {

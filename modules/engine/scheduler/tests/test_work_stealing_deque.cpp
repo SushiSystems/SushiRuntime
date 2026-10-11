@@ -45,18 +45,18 @@ namespace
 }
 
 /**
- * @brief Pushing past CAPACITY parks the surplus in overflow, never dropping it.
+ * @brief Pushing past K_CAPACITY parks the surplus in overflow, never dropping it.
  */
 TEST(Unit_WorkStealingDeque, PushBeyondCapacityParksOverflow)
 {
     Deque dq;
     const std::uintptr_t extra = 5000;
-    const std::uintptr_t total = static_cast<std::uintptr_t>(Deque::CAPACITY) + extra;
+    const std::uintptr_t total = static_cast<std::uintptr_t>(Deque::K_CAPACITY) + extra;
 
     for (std::uintptr_t i = 1; i <= total; ++i)
         dq.push(tag(i));
 
-    EXPECT_EQ(dq.size(), static_cast<size_t>(Deque::CAPACITY));
+    EXPECT_EQ(dq.size(), static_cast<size_t>(Deque::K_CAPACITY));
     EXPECT_EQ(dq.overflow_size(), extra);
 }
 
@@ -69,7 +69,7 @@ TEST(Unit_WorkStealingDeque, PushBeyondCapacityParksOverflow)
 TEST(Unit_WorkStealingDeque, PopDrainsOverflowExactlyOnce)
 {
     Deque dq;
-    const std::uintptr_t total = static_cast<std::uintptr_t>(Deque::CAPACITY) + 5000;
+    const std::uintptr_t total = static_cast<std::uintptr_t>(Deque::K_CAPACITY) + 5000;
 
     for (std::uintptr_t i = 1; i <= total; ++i)
         dq.push(tag(i));
@@ -96,7 +96,7 @@ TEST(Unit_WorkStealingDeque, PopDrainsOverflowExactlyOnce)
 TEST(Unit_WorkStealingDeque, NoLossUnderConcurrentSteal)
 {
     Deque dq;
-    const std::uintptr_t total = static_cast<std::uintptr_t>(Deque::CAPACITY) + 5000;
+    const std::uintptr_t total = static_cast<std::uintptr_t>(Deque::K_CAPACITY) + 5000;
     constexpr int NUM_STEALERS = 3;
 
     std::atomic<std::uintptr_t> retrieved{0};

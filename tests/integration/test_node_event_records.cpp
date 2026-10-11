@@ -39,7 +39,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /** @brief Declares the test-only friend access to Graph::plan_. */
         struct NodeEventRecordsTestAccess
@@ -159,7 +159,7 @@ TEST(Integration_NodeEventRecords, NodeIndexIsRegistrationOrder)
 
     auto report = g.run();
 
-    const auto& plan = detail::NodeEventRecordsTestAccess::plan(g);
+    const auto& plan = Detail::NodeEventRecordsTestAccess::plan(g);
     const std::uint32_t idx_a = registration_index_of(plan, "A");
     const std::uint32_t idx_b = registration_index_of(plan, "B");
     const std::uint32_t idx_c = registration_index_of(plan, "C");
@@ -207,7 +207,7 @@ TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
     auto report = g.run();
     ASSERT_FALSE(report.node_events.empty());
 
-    const auto& plan = detail::NodeEventRecordsTestAccess::plan(g);
+    const auto& plan = Detail::NodeEventRecordsTestAccess::plan(g);
     const std::uint32_t idx_kernel = registration_index_of(plan, "kernel");
 
     // Only a host record has submit_ns equal to start_ns; see README.md.

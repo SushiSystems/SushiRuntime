@@ -39,7 +39,7 @@
 
 namespace SushiRuntime
 {
-    namespace detail
+    namespace Detail
     {
         /** @brief Builds the replay of a nullary host task ordered by the regions it names. */
         template <class F>
@@ -54,5 +54,5 @@ namespace SushiRuntime
                 bg.add_native(reads, writes, fn, {}, registration).baked_width = width;
             };
         }
-    } // namespace detail
+    } // namespace Detail
 } // namespace SushiRuntime

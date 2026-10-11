@@ -46,7 +46,7 @@ namespace SushiRuntime
         class SR_TYPE_API Task : public RefCounted
         {
         public:
-            enum class ExecutionMode { KERNEL, HOST };
+            enum class ExecutionMode { Kernel, Host };
 
             /** @brief Default constructor. */
             Task() = default;
@@ -56,13 +56,13 @@ namespace SushiRuntime
              * @return A string that outlives the task; "unnamed_task" unless a derived type
              *         holds a label of its own.
              */
-            virtual const char* get_name() const noexcept { return "unnamed_task"; }
+            virtual const char* name() const noexcept { return "unnamed_task"; }
 
             /**
              * @brief Returns the execution mode of this task.
-             * @return ExecutionMode::KERNEL by default.
+             * @return ExecutionMode::Kernel by default.
              */
-            virtual ExecutionMode get_execution_mode() const { return ExecutionMode::KERNEL; }
+            virtual ExecutionMode execution_mode() const { return ExecutionMode::Kernel; }
 
             /**
              * @brief Indicates whether the task is a graph node managed by the DAG layer.
@@ -126,7 +126,7 @@ namespace SushiRuntime
              * @brief Returns the priority of the task. Higher value = higher priority.
              * @return int 0 by default.
              */
-            virtual int get_priority() const noexcept { return 0; }
+            virtual int priority() const noexcept { return 0; }
             
             virtual ~Task() = default;
         };

@@ -37,7 +37,7 @@ With `A[i] = i` the invariant is `D[i] = 2*A[i] + (A[i] + 1) = 3i + 1`.
 ## test_heterogeneous_pipeline.cpp
 
 The file combines the work-stealing scheduler, mixed host and device tasks, and concurrent device
-execution through the full path from `TaskGraph` through `ExecutionEngine` to `TaskScheduler`. Many
+execution through the full path from `TaskGraph` through `SchedulerExecutionEngine` to `TaskScheduler`. Many
 independent chains of a host task, a device kernel and a host task run at once.
 
 Shared USM is bound to a context: a buffer allocated on the queue of one device is not valid on the
@@ -98,7 +98,7 @@ the context.
 
 ## test_run_in_progress.cpp
 
-The file covers `IExecutionEngine::run_in_progress()`: false on an engine that ran nothing, true
+The file covers `ExecutionEngine::run_in_progress()`: false on an engine that ran nothing, true
 while a run is in flight, false once the run has been collected, whether it succeeded or threw.
 No test reads a clock. Where a run must still be in flight at the check, its host task waits on a
 `std::promise` the test fulfils afterwards.

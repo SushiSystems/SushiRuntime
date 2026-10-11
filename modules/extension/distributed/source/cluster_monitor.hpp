@@ -39,7 +39,7 @@
 #include <vector>
 
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/distributed/i_transport.hpp>
+#include <SushiRuntime/distributed/transport.hpp>
 
 #include "buffer_exchange.hpp"
 #include "buffer_registry.hpp"
@@ -95,7 +95,7 @@ namespace SushiRuntime
                 /** @brief Builds a monitor over bricks that outlive it; no thread runs yet. */
                 ClusterMonitor(WorkerDirectory& directory, PendingTasks& pending,
                                BufferRegistry& registry, BufferExchange& exchange,
-                               ITransport& transport, const ClusterMonitorOptions& options);
+                               Transport& transport, const ClusterMonitorOptions& options);
 
                 /** @brief Calls stop(). */
                 ~ClusterMonitor();
@@ -115,7 +115,7 @@ namespace SushiRuntime
                  * @brief Wakes the thread and joins it; a second call does nothing.
                  *
                  * The coordinator calls it after PendingTasks::close() and before
-                 * ITransport::stop().
+                 * Transport::stop().
                  */
                 void stop() noexcept;
 
@@ -170,7 +170,7 @@ namespace SushiRuntime
                 BufferExchange& exchange_;
 
                 /// @brief Carries the pings and closes peers.
-                ITransport& transport_;
+                Transport& transport_;
 
                 /// @brief The timings; liveness and deadline are mirrored in the atomics.
                 ClusterMonitorOptions options_;

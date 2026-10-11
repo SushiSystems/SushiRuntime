@@ -29,7 +29,7 @@ into a report that reads as freshly reset.
 
 ### `WidthsDefaultToUnknown`
 
-The widths default to `WIDTH_UNKNOWN` and not to zero. Zero is a real dispatch width on an empty
+The widths default to `K_WIDTH_UNKNOWN` and not to zero. Zero is a real dispatch width on an empty
 pass and would read as a measured value.
 
 ## test_profiling_ledger.cpp

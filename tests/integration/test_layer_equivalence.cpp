@@ -48,7 +48,7 @@ namespace
 
     constexpr std::size_t TILE_N = 512;
     constexpr std::size_t HOST_N = 256;
-    constexpr std::size_t STEPS  = 5;
+    constexpr std::size_t K_STEPS  = 5;
     constexpr std::size_t RUNS   = 3;
 
     constexpr std::size_t GRID_ROWS = 12;
@@ -243,7 +243,7 @@ namespace
     struct Segment
     {
         bool mix_live;    /**< Whether the mix kernel is part of the work. */
-        std::size_t runs; /**< Number of drive() calls, each of STEPS steps. */
+        std::size_t runs; /**< Number of drive() calls, each of K_STEPS steps. */
     };
 
     /** @brief Describes a whole tile run. */
@@ -266,7 +266,7 @@ namespace
             record_field(g, tiles);
 
         for (std::size_t r = 0; r < segment.runs; ++r)
-            drive(g, how, STEPS, shot);
+            drive(g, how, K_STEPS, shot);
     }
 
     /** @brief Runs a script with one static graph per segment and copies the results out. */
@@ -305,7 +305,7 @@ namespace
                 world.drop(KEY_MIX);
 
             for (std::size_t r = 0; r < segment.runs; ++r)
-                drive(world, how, STEPS, shot);
+                drive(world, how, K_STEPS, shot);
         }
 
         take_tiles(shot, tiles);
@@ -402,7 +402,7 @@ namespace
 
         Snapshot shot;
         for (std::size_t r = 0; r < RUNS; ++r)
-            drive(g, Drive::Blocking, STEPS, shot);
+            drive(g, Drive::Blocking, K_STEPS, shot);
 
         take(shot, "a", Image(pa, pa + HOST_N));
         take(shot, "b", Image(pb, pb + HOST_N));
@@ -546,7 +546,7 @@ namespace
               });
 
         Snapshot shot;
-        drive(g, Drive::Blocking, STEPS, shot);
+        drive(g, Drive::Blocking, K_STEPS, shot);
 
         take(shot, "Extent(range, origin)", Image(origin_out, origin_out + GRID_N));
         take(shot, "Extent{sizes}.at(origin)", Image(rebase_out, rebase_out + GRID_N));
@@ -559,7 +559,7 @@ namespace
     /** @brief Returns what run_tracked_launches() must produce, computed on the host. */
     Snapshot tracked_launch_reference()
     {
-        const Image grid = reference_grid(STEPS);
+        const Image grid = reference_grid(K_STEPS);
         Snapshot shot;
         take(shot, "Extent(range, origin)", grid);
         take(shot, "Extent{sizes}.at(origin)", grid);
@@ -593,7 +593,7 @@ namespace
         });
 
         Snapshot shot;
-        drive(g, Drive::Blocking, STEPS, shot);
+        drive(g, Drive::Blocking, K_STEPS, shot);
 
         take(shot, "untracked Extent", Image(extent_out, extent_out + GRID_N));
         take(shot, "untracked NdRange", Image(tiles_out, tiles_out + GRID_N));
@@ -629,7 +629,7 @@ namespace
         });
 
         Snapshot shot;
-        drive(g, Drive::Blocking, STEPS, shot);
+        drive(g, Drive::Blocking, K_STEPS, shot);
 
         take(shot, "untracked Extent", Image(extent_out, extent_out + GRID_N));
         take(shot, "untracked NdRange", Image(tiles_out, tiles_out + GRID_N));
@@ -639,7 +639,7 @@ namespace
     /** @brief Returns what run_untracked_launches() must produce, computed on the host. */
     Snapshot untracked_launch_reference()
     {
-        const Image grid = reference_grid(STEPS);
+        const Image grid = reference_grid(K_STEPS);
         Snapshot shot;
         take(shot, "untracked Extent", grid);
         take(shot, "untracked NdRange", grid);

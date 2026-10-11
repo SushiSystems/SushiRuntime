@@ -44,11 +44,11 @@ namespace SushiRuntime
          */
         enum class TaskType : uint8_t 
         {
-            NONE = 0,        /**< Empty or unitialized task. */
-            MATH_OP,         /**< A mathematical operation (e.g. BLAS, AI Layer, Solver). */
-            MEMORY_COPY,     /**< A data movement operation (Host2Device, Device2Device). */
-            CUSTOM_HOST,     /**< General C++ arbitrary host logic. */
-            CONTROL_FLOW     /**< Conditional or looping node for graph control. */
+            None = 0,        /**< Empty or unitialized task. */
+            MathOp,         /**< A mathematical operation (e.g. BLAS, AI Layer, Solver). */
+            MemoryCopy,     /**< A data movement operation (Host2Device, Device2Device). */
+            CustomHost,     /**< General C++ arbitrary host logic. */
+            ControlFlow     /**< Conditional or looping node for graph control. */
         };
 
         /**
@@ -112,7 +112,7 @@ namespace SushiRuntime
         struct TaskMetadata 
         {
             const char* name = "unnamed_task"; /**< Profiler identifier. */
-            TaskType task_type = TaskType::NONE;
+            TaskType task_type = TaskType::None;
             OpID op_id = OpID(0);
             
             /**
@@ -170,7 +170,7 @@ namespace SushiRuntime
              * @pre 0 <= index < K_MAX_PARAMS; a release build returns T{} for an index outside it.
              */
             template<typename T>
-            T get_param(int index) const
+            T param(int index) const
             {
                 static_assert(std::is_trivially_copyable_v<T>, "Parameter must be trivially copyable.");
                 static_assert(sizeof(T) <= sizeof(uint64_t), "Parameter must fit in 64 bits.");

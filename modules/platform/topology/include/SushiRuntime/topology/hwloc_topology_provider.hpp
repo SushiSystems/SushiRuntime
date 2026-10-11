@@ -30,7 +30,7 @@
 #include <map>
 #include <vector>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/topology/i_topology_provider.hpp>
+#include <SushiRuntime/topology/topology_provider.hpp>
 
 namespace SushiRuntime
 {
@@ -41,7 +41,7 @@ namespace SushiRuntime
          *
          * Delegates to HardwareDiscovery for device enumeration and NUMAMapper for NUMA assignment.
          */
-        class SUSHIRUNTIME_API HwlocTopologyProvider : public ITopologyProvider
+        class SUSHIRUNTIME_API HwlocTopologyProvider : public TopologyProvider
         {
             public:
                 /** @brief Default constructor. */
@@ -73,7 +73,7 @@ namespace SushiRuntime
          * count. Falls back to the ACPI convention (10 local, 21 remote) when the firmware
          * exposes no SLIT table.
          */
-        class SUSHIRUNTIME_API HwlocDistanceModel : public INUMADistanceModel
+        class SUSHIRUNTIME_API HwlocDistanceModel : public NUMADistanceModel
         {
             public:
                 /** @brief Default constructor. */

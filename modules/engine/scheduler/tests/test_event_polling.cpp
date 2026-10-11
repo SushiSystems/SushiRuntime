@@ -49,7 +49,7 @@ namespace
 TEST(Unit_EventPolling, PushNeverDropsBeyondInlineCapacity)
 {
     EventPolling::ActiveEventList list;
-    constexpr std::uintptr_t N = 100000; // far beyond INLINE_CAP (256)
+    constexpr std::uintptr_t N = 100000; // far beyond K_INLINE_CAP (256)
 
     for (std::uintptr_t i = 1; i <= N; ++i)
         list.push({sycl::event{}, tag(i), true});
@@ -99,7 +99,7 @@ TEST(Unit_EventPolling, RemoveAtDrainsEveryEventExactlyOnce)
 TEST(Unit_EventPolling, RemoveAcrossInlineSpillBoundary)
 {
     EventPolling::ActiveEventList list;
-    const std::uintptr_t N = EventPolling::ActiveEventList::INLINE_CAP + 1;
+    const std::uintptr_t N = EventPolling::ActiveEventList::K_INLINE_CAP + 1;
 
     for (std::uintptr_t i = 1; i <= N; ++i)
         list.push({sycl::event{}, tag(i), true});

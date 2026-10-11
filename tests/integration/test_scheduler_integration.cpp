@@ -131,7 +131,7 @@ TEST(Integration_SchedulerIntegration, PriorityBypass)
 
     ASSERT_EQ(order.size(), 51u);
 
-    int window = static_cast<int>(scheduler.get_worker_count()) * 2;
+    int window = static_cast<int>(scheduler.worker_count()) * 2;
     if (window > 51)
         window = 51;
 

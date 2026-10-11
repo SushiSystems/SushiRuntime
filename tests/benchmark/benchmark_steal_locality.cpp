@@ -113,8 +113,8 @@ TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
 
     sched.stop();
 
-    const size_t local      = sched.get_local_steal_count();
-    const size_t remote     = sched.get_remote_steal_count();
+    const size_t local      = sched.local_steal_count();
+    const size_t remote     = sched.remote_steal_count();
     const size_t steals     = local + remote;
     const double local_frac = steals ? double(local) / double(steals) : 1.0;
     const double thr        = ms > 0 ? (double(TOTAL) / (ms / 1000.0)) : 0.0;

@@ -34,9 +34,9 @@ namespace SushiRuntime
     namespace Detail
     {
 #if defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
-        inline constexpr bool BINDLESS_IMAGES_AVAILABLE = true;
+        inline constexpr bool K_BINDLESS_IMAGES_AVAILABLE = true;
 #else
-        inline constexpr bool BINDLESS_IMAGES_AVAILABLE = false;
+        inline constexpr bool K_BINDLESS_IMAGES_AVAILABLE = false;
 #endif
 
     } // namespace Detail

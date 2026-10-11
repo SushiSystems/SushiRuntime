@@ -283,7 +283,7 @@ namespace SushiRuntime
                 if (failure.code != Errc::ok)
                     return make_error(std::move(failure));
 
-                detail::AsyncRunState state;
+                Detail::AsyncRunState state;
                 failure = guarded(Errc::compile_failed, [this, &state]()
                 {
                     require_asynchronous_engine();
@@ -312,7 +312,7 @@ namespace SushiRuntime
             void cancel() noexcept
             {
                 if (runs_in_flight_.load(std::memory_order_acquire) != 0)
-                    owner().run_context().get_execution_engine().cancel();
+                    owner().run_context().execution_engine().cancel();
             }
 
             /**
@@ -383,7 +383,7 @@ namespace SushiRuntime
                 const Error dropped = guarded(Errc::kernel_failed, [this]()
                 {
                     async_engine().complete();
-                    const detail::StepMachinery& steps = owner().run_steps();
+                    const Detail::StepMachinery& steps = owner().run_steps();
                     steps.check_faults();
                     steps.after_step();
                 });
@@ -438,9 +438,9 @@ namespace SushiRuntime
             const Owner& owner() const noexcept { return static_cast<const Owner&>(*this); }
 
             /** @brief Returns the engine the graph's steps run on. */
-            Internal::Execution::IExecutionEngine& async_engine()
+            Internal::Execution::ExecutionEngine& async_engine()
             {
-                return owner().run_context().get_execution_engine();
+                return owner().run_context().execution_engine();
             }
 
             /** @brief Returns the test that continues a run for a fixed number of steps. */
@@ -535,19 +535,19 @@ namespace SushiRuntime
                 }
                 catch (const SushiException& e)
                 {
-                    return detail::error_without_throwing(e.error());
+                    return Detail::error_without_throwing(e.error());
                 }
                 catch (const sycl::exception& e)
                 {
-                    return detail::error_without_throwing(Errc::kernel_failed, e.what());
+                    return Detail::error_without_throwing(Errc::kernel_failed, e.what());
                 }
                 catch (const std::exception& e)
                 {
-                    return detail::error_without_throwing(fallback, e.what());
+                    return Detail::error_without_throwing(fallback, e.what());
                 }
                 catch (...)
                 {
-                    return detail::error_without_throwing(fallback,
+                    return Detail::error_without_throwing(fallback,
                         "An object that does not derive from std::exception was thrown.");
                 }
             }
@@ -563,21 +563,21 @@ namespace SushiRuntime
             {
                 Owner& self = owner();
                 if (!self.has_work())
-                    return detail::error_without_throwing(Errc::invalid_graph,
+                    return Detail::error_without_throwing(Errc::invalid_graph,
                                                           Owner::K_NOTHING_TO_RUN);
                 if (async_step_pending())
-                    return detail::error_without_throwing(Errc::invalid_state,
+                    return Detail::error_without_throwing(Errc::invalid_state,
                         "run(), run_async() and their try_ forms are refused while a step "
                         "started with run_async() is pending on this graph; call wait() or "
                         "try_wait() on its RunHandle first.");
-                if (self.run_context().get_execution_engine().run_in_progress())
-                    return detail::error_without_throwing(Errc::invalid_state,
+                if (self.run_context().execution_engine().run_in_progress())
+                    return Detail::error_without_throwing(Errc::invalid_state,
                         "run(), run_async() and their try_ forms are refused while another "
                         "graph's run is in flight on this runtime, and from inside a task of "
                         "a run; settle that run first: let its blocking call return, or call "
                         "wait() or try_wait() on its RunHandle.");
                 if (self.has_dangling_resource())
-                    return detail::error_without_throwing(Errc::dangling_resource,
+                    return Detail::error_without_throwing(Errc::dangling_resource,
                                                           Owner::K_DANGLING_RESOURCE);
                 return Error{};
             }
@@ -616,16 +616,16 @@ namespace SushiRuntime
              * @param state Receives what the settling call needs; compile_ms is kept.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            void submit_async_step(detail::AsyncRunState& state)
+            void submit_async_step(Detail::AsyncRunState& state)
             {
                 Owner& self = owner();
                 Internal::Execution::RuntimeContext& context = self.run_context();
-                auto& engine = context.get_execution_engine();
+                auto& engine = context.execution_engine();
                 ::SushiRuntime::Internal::Graph::CompiledGraph& plan = self.run_plan();
-                const detail::StepMachinery& steps = self.run_steps();
+                const Detail::StepMachinery& steps = self.run_steps();
 
                 if (async_record_ == nullptr)
-                    async_record_ = std::make_shared<detail::AsyncStepRecord>();
+                    async_record_ = std::make_shared<Detail::AsyncStepRecord>();
 
                 // The run counts as in flight before its cancellation is reset.
                 InFlightMark in_flight(runs_in_flight_);
@@ -638,7 +638,7 @@ namespace SushiRuntime
                 const Internal::Observability::TransferCounters& transfers = context.transfers();
                 state.device_to_host_before = transfers.device_to_host();
                 state.host_to_device_before = transfers.host_to_device();
-                state.offloaded_before = detail::offloaded_dispatches(context);
+                state.offloaded_before = Detail::offloaded_dispatches(context);
                 state.task_count = self.node_count();
 
                 steps.before_step();
@@ -647,7 +647,7 @@ namespace SushiRuntime
                 engine.submit(plan);
 
                 in_flight.keep();
-                if (++async_step_serial_ == detail::AsyncStepRecord::K_NO_STEP)
+                if (++async_step_serial_ == Detail::AsyncStepRecord::K_NO_STEP)
                     ++async_step_serial_;
                 state.serial = async_step_serial_;
                 async_record_->pending_serial = state.serial;
@@ -657,7 +657,7 @@ namespace SushiRuntime
             bool async_step_pending() const noexcept
             {
                 return async_record_ != nullptr &&
-                       async_record_->pending_serial != detail::AsyncStepRecord::K_NO_STEP;
+                       async_record_->pending_serial != Detail::AsyncStepRecord::K_NO_STEP;
             }
 
             /**
@@ -667,7 +667,7 @@ namespace SushiRuntime
              */
             void close_async_step() noexcept
             {
-                async_record_->pending_serial = detail::AsyncStepRecord::K_NO_STEP;
+                async_record_->pending_serial = Detail::AsyncStepRecord::K_NO_STEP;
                 runs_in_flight_.fetch_sub(1, std::memory_order_acq_rel);
             }
 
@@ -681,7 +681,7 @@ namespace SushiRuntime
              * @return An Error whose code is ok, or what ended the step.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            Error settle_async_step(const detail::AsyncRunState& state,
+            Error settle_async_step(const Detail::AsyncRunState& state,
                                           Internal::Observability::RunReport& report) noexcept
             {
                 // No step is pending from here on, whatever the wait below returns.
@@ -698,21 +698,21 @@ namespace SushiRuntime
              * @param report The report to fill; reset before it is written.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            void finish_async_step(const detail::AsyncRunState& state,
+            void finish_async_step(const Detail::AsyncRunState& state,
                                    Internal::Observability::RunReport& report)
             {
                 const auto finished = std::chrono::steady_clock::now();
                 Owner& self = owner();
                 Internal::Execution::RuntimeContext& context = self.run_context();
-                auto& engine = context.get_execution_engine();
-                const detail::StepMachinery& steps = self.run_steps();
+                auto& engine = context.execution_engine();
+                const Detail::StepMachinery& steps = self.run_steps();
                 ::SushiRuntime::Internal::Graph::CompiledGraph& plan = self.run_plan();
 
                 steps.check_faults();
                 steps.after_step();
 
                 const auto after = engine.metrics();
-                detail::fill_run_report(
+                Detail::fill_run_report(
                     report, context, state.before, after, state.offloaded_before,
                     state.task_count, state.compile_ms,
                     std::chrono::duration<double, std::milli>(
@@ -811,13 +811,13 @@ namespace SushiRuntime
 
                 Owner& self = owner();
                 ::SushiRuntime::Internal::Graph::CompiledGraph& plan = self.run_plan();
-                const detail::StepMachinery& steps = self.run_steps();
+                const Detail::StepMachinery& steps = self.run_steps();
 
                 // State views point at their current and next buffers before the first step.
                 steps.resync();
 
                 Internal::Execution::RuntimeContext& context = self.run_context();
-                auto& engine = context.get_execution_engine();
+                auto& engine = context.execution_engine();
 
                 // The run counts as in flight before its cancellation is reset.
                 const InFlightMark in_flight(runs_in_flight_);
@@ -832,7 +832,7 @@ namespace SushiRuntime
                 const Internal::Observability::TransferCounters& transfers = context.transfers();
                 const std::size_t d2h_before = transfers.device_to_host();
                 const std::size_t h2d_before = transfers.host_to_device();
-                const std::uint64_t offloaded_before = detail::offloaded_dispatches(context);
+                const std::uint64_t offloaded_before = Detail::offloaded_dispatches(context);
                 const auto t0 = clock::now();
 
                 const bool chained = self.runs_chained();
@@ -844,7 +844,7 @@ namespace SushiRuntime
                 const auto after = engine.metrics();
 
                 const std::size_t total_tasks = self.node_count() * executed;
-                detail::fill_run_report(
+                Detail::fill_run_report(
                     report, context, before, after, offloaded_before, total_tasks,
                     compile_ms, std::chrono::duration<double, std::milli>(t1 - t0).count());
                 report.cancelled = engine.is_cancelled();
@@ -868,11 +868,11 @@ namespace SushiRuntime
              */
             template <class KeepGoing>
             std::size_t run_scheduled(KeepGoing& keep_going,
-                                      Internal::Execution::IExecutionEngine& engine)
+                                      Internal::Execution::ExecutionEngine& engine)
             {
                 Owner& self = owner();
                 ::SushiRuntime::Internal::Graph::CompiledGraph& plan = self.run_plan();
-                const detail::StepMachinery& steps = self.run_steps();
+                const Detail::StepMachinery& steps = self.run_steps();
                 std::size_t executed = 0;
                 while (keep_going(executed) && !engine.is_cancelled())
                 {
@@ -898,12 +898,12 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class KeepGoing>
-            std::size_t run_chained(KeepGoing& keep_going, Internal::Execution::IExecutionEngine& engine,
+            std::size_t run_chained(KeepGoing& keep_going, Internal::Execution::ExecutionEngine& engine,
                                     StepSync sync)
             {
                 Owner& self = owner();
                 ::SushiRuntime::Internal::Graph::CompiledGraph& plan = self.run_plan();
-                const detail::StepMachinery& steps = self.run_steps();
+                const Detail::StepMachinery& steps = self.run_steps();
                 Internal::Execution::ChainRun chain(self.run_context(), plan);
                 const bool advance_unchecked = sync == StepSync::AtEnd;
                 std::size_t executed = 0;
@@ -938,10 +938,10 @@ namespace SushiRuntime
              *        first run_async().
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            std::shared_ptr<detail::AsyncStepRecord> async_record_;
+            std::shared_ptr<Detail::AsyncStepRecord> async_record_;
 
             /** @brief Numbers the steps run_async() started here; a handle keeps its own. */
-            std::uint32_t async_step_serial_ = detail::AsyncStepRecord::K_NO_STEP;
+            std::uint32_t async_step_serial_ = Detail::AsyncStepRecord::K_NO_STEP;
 
             /** @brief Counts this graph's blocking runs and pending step; cancel() reads it. */
             std::atomic<std::uint32_t> runs_in_flight_{0};

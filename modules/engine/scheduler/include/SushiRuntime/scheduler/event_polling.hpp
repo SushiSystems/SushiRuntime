@@ -95,11 +95,11 @@ namespace SushiRuntime
                 struct ActiveEventList
                 {
                     /** @brief Inline capacity before any heap allocation is needed. */
-                    static constexpr size_t INLINE_CAP = 256;
+                    static constexpr size_t K_INLINE_CAP = 256;
 
-                    PolledEvent inline_events[INLINE_CAP];   /**< Inline fast-path storage. */
-                    size_t inline_count = 0;                 /**< Entries held inline (≤ INLINE_CAP). */
-                    std::vector<PolledEvent> spill;          /**< Overflow storage, used only past INLINE_CAP. */
+                    PolledEvent inline_events[K_INLINE_CAP];   /**< Inline fast-path storage. */
+                    size_t inline_count = 0;                 /**< Entries held inline (≤ K_INLINE_CAP). */
+                    std::vector<PolledEvent> spill;          /**< Overflow storage, used only past K_INLINE_CAP. */
 
                     // Backoff and stall state belong to the one worker that owns this list.
                     /** @brief Counter for adaptive backoff strategy. */
@@ -135,7 +135,7 @@ namespace SushiRuntime
                      */
                     void push(const PolledEvent& pe)
                     {
-                        if (inline_count < INLINE_CAP)
+                        if (inline_count < K_INLINE_CAP)
                             inline_events[inline_count++] = pe;
                         else
                             spill.push_back(pe);
@@ -234,9 +234,9 @@ namespace SushiRuntime
                 /** @brief The armed round's event ledger, or null when it does not profile. */
                 std::atomic<Internal::Observability::ProfilingLedger*> ledger_{nullptr};
                 /** @brief Maximum value for the backoff counter. */
-                static constexpr size_t MAX_BACKOFF = 64;
+                static constexpr size_t K_MAX_BACKOFF = 64;
                 /** @brief No-progress polls before forcing a blocking wait. */
-                static constexpr size_t STALL_DRIVE_THRESHOLD = 32;
+                static constexpr size_t K_STALL_DRIVE_THRESHOLD = 32;
 
             public:
                 /**
@@ -290,7 +290,7 @@ namespace SushiRuntime
                         {
                             SR_LOG_ERROR("Polling the event of task '{}' threw; the task is reaped "
                                          "as not executed and its successors are released.",
-                                         entry.task ? entry.task->get_name() : "<none>");
+                                         entry.task ? entry.task->name() : "<none>");
 
                             if (!first_failure)
                                 first_failure = std::current_exception();
@@ -336,10 +336,10 @@ namespace SushiRuntime
                     }
                     else
                     {
-                        backoff_counter = std::min(backoff_counter + 2, MAX_BACKOFF);
+                        backoff_counter = std::min(backoff_counter + 2, K_MAX_BACKOFF);
 
-                        // After STALL_DRIVE_THRESHOLD idle polls the oldest event is waited on.
-                        if (++stall_polls_ >= STALL_DRIVE_THRESHOLD && !active_events.is_empty())
+                        // After K_STALL_DRIVE_THRESHOLD idle polls the oldest event is waited on.
+                        if (++stall_polls_ >= K_STALL_DRIVE_THRESHOLD && !active_events.is_empty())
                         {
                             auto& oldest = active_events[0];
                             if (oldest.has_event)

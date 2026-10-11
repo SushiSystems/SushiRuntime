@@ -48,11 +48,11 @@ namespace SushiRuntime
         struct ResourceRegion
         {
             /** @brief Sentinel length meaning "to the end of the allocation". */
-            static constexpr std::size_t WHOLE = ~std::size_t{0};
+            static constexpr std::size_t K_WHOLE = ~std::size_t{0};
 
             ResourceID  base   = nullptr; /**< Owning allocation; the identity key. */
             std::size_t offset = 0;       /**< Byte offset of the interval start. */
-            std::size_t length = WHOLE;   /**< Byte length, or WHOLE for the rest. */
+            std::size_t length = K_WHOLE;   /**< Byte length, or K_WHOLE for the rest. */
 
             /** @brief Constructs an empty region that overlaps nothing. */
             constexpr ResourceRegion() noexcept = default;
@@ -69,7 +69,7 @@ namespace SushiRuntime
              * @brief Constructs a sub-region of one allocation.
              * @param b   Base pointer of the owning allocation.
              * @param off Byte offset of the interval start within @p b.
-             * @param len Byte length of the interval; WHOLE means to the end.
+             * @param len Byte length of the interval; K_WHOLE means to the end.
              */
             constexpr ResourceRegion(ResourceID b, std::size_t off, std::size_t len) noexcept
                 : base(b), offset(off), length(len) {}
@@ -87,10 +87,10 @@ namespace SushiRuntime
                 if (base != o.base || !valid())
                     return false;
 
-                const bool a_whole = (length == WHOLE);
-                const bool b_whole = (o.length == WHOLE);
+                const bool a_whole = (length == K_WHOLE);
+                const bool b_whole = (o.length == K_WHOLE);
 
-                // [a0, a1) and [b0, b1) intersect iff a0 < b1 && b0 < a1; a WHOLE end is unbounded.
+                // [a0, a1) and [b0, b1) intersect iff a0 < b1 && b0 < a1; a K_WHOLE end is unbounded.
                 if (a_whole && b_whole) return true;
                 if (a_whole)            return offset < o.offset + o.length;
                 if (b_whole)            return o.offset < offset + length;
@@ -106,8 +106,8 @@ namespace SushiRuntime
             {
                 if (base != r.base || !valid()) return false;
                 if (offset > r.offset) return false;
-                if (length == WHOLE)   return true;          // [offset, +inf)
-                if (r.length == WHOLE) return false;         // finite cannot cover infinite
+                if (length == K_WHOLE)   return true;          // [offset, +inf)
+                if (r.length == K_WHOLE) return false;         // finite cannot cover infinite
                 return r.offset + r.length <= offset + length;
             }
         };

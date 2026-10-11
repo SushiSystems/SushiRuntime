@@ -993,7 +993,7 @@ neither rule is recorded. Both forms record with eight. A `static_assert` ties t
 
 A rule named `integrate` is followed by an emitter that adds no node and is named `optional`. The
 profiled report holds one row named `integrate` and none named `optional`, the first rule has a
-registration and the second reports `NO_REGISTRATION`.
+registration and the second reports `K_NO_REGISTRATION`.
 
 ## test_region_emitter.cpp
 
@@ -1041,13 +1041,13 @@ rules and six nodes, and `last_rule()` gives the position of the scope.
 
 ### `ARuleCarriesNoIndexUntilTheGraphCompiles`
 
-`size()` is four, `node_count()` is six, and every rule reports `NO_REGISTRATION` before the first
+`size()` is four, `node_count()` is six, and every rule reports `K_NO_REGISTRATION` before the first
 run.
 
 ### `ARuleScopeTakesOneIndexOfItsOwn`
 
 Each plain `add()` takes an index of its own. The scope takes one more, which no plain kernel has,
-and exactly three node events carry it. A position past the last rule reports `NO_REGISTRATION`.
+and exactly three node events carry it. A position past the last rule reports `K_NO_REGISTRATION`.
 
 ### `ARulesNodesReportOneIndexOnEveryStep`
 
@@ -1249,7 +1249,7 @@ A move hands the context over and does not build a second one.
 ## test_builder_surface.cpp
 
 The file covers the add() overloads of BuilderSurface that v0.4.0 adds or reorders: launch first,
-then access, then callable. `seeded` and `seeded_state` fill a handle with its index plus `SEED`,
+then access, then callable. `seeded` and `seeded_state` fill a handle with its index plus `K_SEED`,
 so a kernel that ran over the wrong elements or received the wrong pointer shows as a wrong word.
 `refusal_of` returns the message of the SushiException a builder call throws.
 
@@ -1339,8 +1339,8 @@ emitter. A captureless `mutable` lambda is not covered here: it converts to a fu
 ## test_state_emitters.cpp
 
 The file covers the nodes `detail/emit_state.hpp` and `detail/emit_dynamic.hpp` build for State
-and coupled rules. `seeded_state` fills the current field with the index plus `SEED` and the next
-field with `CANARY`, so an element a kernel did not write is recognisable.
+and coupled rules. `seeded_state` fills the current field with the index plus `K_SEED` and the next
+field with `K_CANARY`, so an element a kernel did not write is recognisable.
 
 ### `ACoupledRuleReadsItsInputsThroughConstPointers`
 
@@ -1359,7 +1359,7 @@ Each case builds a replay callable outside a recorder, hands it the State's own 
 `HandleAccess::view()`, and replays it through `add_emitter()`. One step runs and the State's next
 field holds the rule's result. No advance is registered, so the test reads `next()`.
 The late-bound case sets the live count on its `LateBindings` and checks that the elements past it
-keep `CANARY`. `offload_state_node(op, view, size, ...)` has no case here.
+keep `K_CANARY`. `offload_state_node(op, view, size, ...)` has no case here.
 
 ## test_device_slot_liveness.cpp
 
@@ -1379,7 +1379,7 @@ gathers in a different member.
 
 ## test_launch_reach.cpp
 
-The file covers `detail::launch_reach()` for a rank-1 launch whose origin plus size does not fit
+The file covers `Detail::launch_reach()` for a rank-1 launch whose origin plus size does not fit
 a `std::size_t`.
 
 ### `ReachSaturatesAtTheLargestSize`
@@ -1394,7 +1394,7 @@ records nothing. A wrapped sum would be 4, which is inside the State.
 
 ## test_device_fault.cpp
 
-The file covers `detail::record_device_fault()` for values past a uint32. Two `static_assert`s pin
+The file covers `Detail::record_device_fault()` for values past a uint32. Two `static_assert`s pin
 `saturated_fault_word()` at compile time.
 
 ### `AFieldPastAUint32IsStoredSaturated`
@@ -1406,8 +1406,8 @@ window and clears the record. The test is skipped where `std::size_t` is 32 bits
 ## test_state_move.cpp
 
 The file covers a State that moves after `add()` recorded a rule on it, and the view a State shares
-with the graphs that record it. `seeded_state` fills the current field with the index plus `SEED`
-and the next field with `CANARY`, `add_increment` records `next = current + 1` over the whole
+with the graphs that record it. `seeded_state` fills the current field with the index plus `K_SEED`
+and the next field with `K_CANARY`, `add_increment` records `next = current + 1` over the whole
 field, and `expect_advanced` compares the current field with the seed plus a number of steps.
 Three `static_assert` lines state that a State moves without throwing and does not copy.
 
@@ -1451,11 +1451,11 @@ A late-bound State rule used to take its read key when it was recorded and its w
 replay. After one step the two fields have swapped, so a plan rebuilt then registered the rule as a
 reader and a writer of the same field and not as a reader of the current one.
 
-The graph holds a kernel that writes `MARK` into the State's second field, named with
+The graph holds a kernel that writes `K_MARK` into the State's second field, named with
 `Writes(state)`, and then the late-bound rule `next = current + 1`. After one step the second field
 is current. The test replays the recorder onto a `TaskGraph` of its own and reads the in-degree of
 the rule's node, which must be one: the rule waits on the writer of the field it reads. It then
-renames the rule, which rebuilds the plan, runs a second step and expects `MARK + 1` everywhere.
+renames the rule, which rebuilds the plan, runs a second step and expects `K_MARK + 1` everywhere.
 The in-degree is the deterministic check; the values depend on the order only when the scheduler
 runs the two unordered nodes the other way round.
 
