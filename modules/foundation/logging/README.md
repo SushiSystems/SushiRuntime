@@ -2,13 +2,15 @@
 
 The module holds the runtime's logger. One logger exists per process: its level, its sink and its
 thread live in `source/logger.cpp` inside the shared library, so a program and the library it loads
-log through the same state.
+log through the same state. The module is internal: its headers are for the other modules of the
+library, and they are not installed.
 
-It depends on the C++ standard library and on `core` (`export.hpp`, `error.hpp`, `delegate.hpp`).
+It depends on the C++ standard library, on `core` (`export.hpp`, `error.hpp`) and on `log`, whose
+four functions `source/logger.cpp` defines.
 
 ## Public entry points
 
-`logger.hpp`, which includes the other two headers:
+`logger.hpp`, which includes `log_gate.hpp` and the two headers of `log`:
 
 | Name | What it does |
 | --- | --- |
@@ -17,21 +19,14 @@ It depends on the C++ standard library and on `core` (`export.hpp`, `error.hpp`,
 | `SR_LOGGER_SET_SYNC_MODE(mode)` | Forwards to `set_log_synchronous` |
 | `log_write(level, line)` | Hands a finished line to the sink, whatever the level |
 
-`log_level.hpp`:
+`log_gate.hpp`:
 
 | Name | What it does |
 | --- | --- |
-| `LogLevel` | `Off`, `Error`, `Warn`, `Info`, `Debug` |
-| `set_log_level(level)`, `log_level()` | Set and read the level of the process |
 | `K_LOG_LEVEL_CEILING` | The highest level a translation unit compiles calls for |
+| `Detail::active_log_level`, `Detail::is_log_enabled` | What a macro reads before it formats a record |
 
-`log_sink.hpp`:
-
-| Name | What it does |
-| --- | --- |
-| `LogSink` | The callable that receives each record |
-| `set_log_sink(sink)` | Replaces the sink of the process |
-| `set_log_synchronous(bool)` | Chooses which thread delivers a record to the sink |
+`LogLevel`, `LogSink` and the calls that set them are declared by the `log` module.
 
 Everything in `Detail` belongs to the macros.
 

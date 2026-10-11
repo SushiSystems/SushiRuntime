@@ -21,7 +21,8 @@ sushiruntime_add_module(
         interop
         report
         region
-        interop_engine)
+        interop_engine
+        log)
 
 sushiruntime_add_module_tests(
     MODULE api

@@ -28,8 +28,8 @@
 
 #pragma once
 
-#include <SushiRuntime/logging/log_level.hpp>
-#include <SushiRuntime/logging/log_sink.hpp>
+#include <SushiRuntime/log/log_level.hpp>
+#include <SushiRuntime/log/log_sink.hpp>
 
 namespace SushiRuntime
 {

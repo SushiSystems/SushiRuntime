@@ -175,7 +175,7 @@ below the public surface and promote nothing themselves.
 
 ### Promoted logging names
 
-logging.hpp declares nothing. It includes `logging/log_level.hpp` and `logging/log_sink.hpp`, which
+logging.hpp declares nothing. It includes `log/log_level.hpp` and `log/log_sink.hpp`, which
 declare `LogLevel`, `set_log_level`, `log_level`, `LogSink`, `set_log_sink` and
 `set_log_synchronous` in `SushiRuntime`. Those are the controls a program above the runtime
 calls; the `SR_LOG_*` macros and `log_write` stay in `logging/logger.hpp`, which the surface does

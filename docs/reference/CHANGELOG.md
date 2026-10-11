@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — log: Breaking change: Moved `LogLevel`, `LogSink` and their four calls to the new public module `log`; `K_LOG_LEVEL_CEILING` and the macro gate moved to `logging/log_gate.hpp` (`log/log_level.hpp`, `log/log_sink.hpp`).
 - 2026-10-12 — interop: Breaking change: Moved the three functions that take the engine context to the new internal module `interop_engine`; `interop` keeps the descriptors and is header-only (`interop_engine.hpp`, `interop_engine.cpp`).
 - 2026-10-12 — region: Breaking change: Renamed `ResourceRegion` to `BufferRegion` and moved it with `ResourceID` to the new public module `region`, declared in `SushiRuntime` (`region/buffer_region.hpp`).
 - 2026-10-12 — report: Breaking change: Moved the run report types to the new public module `report`, declared in `SushiRuntime`; `Internal::Observability` no longer names them (`report/run_report.hpp`, `report/dispatch_width.hpp`).

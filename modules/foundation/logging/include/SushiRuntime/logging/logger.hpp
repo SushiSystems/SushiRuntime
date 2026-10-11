@@ -38,8 +38,10 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
 
-#include <SushiRuntime/logging/log_level.hpp>
-#include <SushiRuntime/logging/log_sink.hpp>
+#include <SushiRuntime/log/log_level.hpp>
+#include <SushiRuntime/log/log_sink.hpp>
+
+#include <SushiRuntime/logging/log_gate.hpp>
 
 namespace SushiRuntime
 {

@@ -51,6 +51,7 @@ sushiruntime_add_module(
         execution
         api
         region
+        log
     EXTERNAL "$<$<PLATFORM_ID:Windows>:ws2_32>")
 
 sushiruntime_add_module_tests(
