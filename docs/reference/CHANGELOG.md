@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — observability: Breaking change: Made `NodeTiming::operation` an `OperationID` and added the public names `NodeTiming`, `NodeEventRecord`, `ExecutionLayer`, `WorkerTiming`, `ClockPairing` and `K_WIDTH_UNKNOWN` (`run_report.hpp`, `dispatch_width.hpp`).
 - 2026-10-12 — distributed: Breaking change: Removed the `RuntimeContext&` forms of `Cluster::attach` and `WorkerAgent` and replaced `add_registered_task` with `record_registered_task(Recorder&, ...)`, used through `extend` (`cluster.hpp`, `worker_agent.hpp`, `registered_task.hpp`).
 - 2026-10-12 — scheduler: Breaking change: Removed `OffloadCoordinator::statistics`, `OffloadStatistics` and `RunReport`'s `remote_nodes_involved`; the offload gate counts accepted offers into `ExecutionMetrics::tasks_offloaded` (`offload_gate.hpp`, `run_report.hpp`).
 - 2026-10-12 — execution: Breaking change: Removed the coordinator parameter of `TaskGraph`; `ExecutionEngine::prepare` marks a compiled plan for offload and `PlanCache::build` calls it (`task_graph.hpp`, `execution_engine.hpp`, `offload_gate.hpp`).

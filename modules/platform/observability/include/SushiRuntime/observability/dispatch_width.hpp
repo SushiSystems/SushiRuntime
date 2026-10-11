@@ -36,4 +36,6 @@ namespace SushiRuntime
         /** @brief Marks a dispatch whose element count the runtime does not carry. */
         inline constexpr std::uint32_t K_WIDTH_UNKNOWN = 0xFFFFFFFFu;
     } // namespace Observability
+
+    using Internal::Observability::K_WIDTH_UNKNOWN;
 } // namespace SushiRuntime

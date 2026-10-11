@@ -157,7 +157,7 @@ TEST(Integration_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
 
     ASSERT_EQ(report.node_timings.size(), 1u);
     EXPECT_EQ(report.node_timings[0].name, "scale by three");
-    EXPECT_EQ(report.node_timings[0].operation, "options.scale"_op.value);
+    EXPECT_TRUE(report.node_timings[0].operation == "options.scale"_op);
     expect_widths(report, {static_cast<std::uint32_t>(WIDE)});
     EXPECT_EQ(values[WIDE - 1], static_cast<std::uint32_t>(WIDE - 1) * 3u);
 }
@@ -187,7 +187,7 @@ TEST(Integration_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
 
     ASSERT_EQ(report.node_timings.size(), 2u);
     EXPECT_EQ(report.node_timings[0].name, "own name");
-    EXPECT_EQ(report.node_timings[0].operation, 0u);
+    EXPECT_FALSE(report.node_timings[0].operation.is_named());
     EXPECT_EQ(report.node_timings[1].name, "rule name");
 }
 

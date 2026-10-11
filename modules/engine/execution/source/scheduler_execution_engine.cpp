@@ -402,7 +402,7 @@ namespace SushiRuntime
                         continue;
                     t.plan_index = n->plan_index;
                     t.name = n->metadata.name;
-                    t.operation = n->metadata.op_id.value;
+                    t.operation = n->metadata.op_id;
                     break;
                 }
                 t.invocations = static_cast<std::size_t>(agg[idx].invocations);
