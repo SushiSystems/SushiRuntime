@@ -33,9 +33,11 @@
 #include <memory>
 #include <utility>
 
+#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/graph/builder_surface.hpp>
 #include <SushiRuntime/api/graph/plan_cache.hpp>
+#include <SushiRuntime/api/graph/plan_view.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/graph/step_driver.hpp>
@@ -134,6 +136,28 @@ namespace SushiRuntime
             [[nodiscard]] std::uint32_t rule_registration(std::size_t rule) const noexcept
             {
                 return registration_of(rule);
+            }
+
+            /**
+             * @brief Returns a copy of what the plan orders, building the plan when none is
+             *        current.
+             * @return One entry per recorded node in recording order, or the Error compile()
+             *         returns.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            [[nodiscard]] Result<PlanView> plan() noexcept
+            {
+                Result<void> compiled = compile();
+                if (!compiled)
+                    return make_error(std::move(compiled.error()));
+
+                PlanView copied;
+                Error failure = Detail::translate_exceptions(
+                    ErrorCode::CompileFailed, ErrorCode::CompileFailed,
+                    [this, &copied]() { copied = describe_plan(); });
+                if (failure.code != ErrorCode::Ok)
+                    return make_error(std::move(failure));
+                return copied;
             }
 
             using PlanCache::compile_count;

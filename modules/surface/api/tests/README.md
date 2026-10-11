@@ -863,7 +863,8 @@ Nine parameters are refused: `refusal()` holds an `InvalidGraph` error whose mes
 
 ## test_plan_view.cpp
 
-The file covers `compile()`, which builds a plan and runs nothing. `zeroed` allocates a buffer of `K_WIDTH` zeroes, so a
+The file covers `compile()`, which builds a plan and runs nothing, and `Graph::plan()`, which
+returns a copy of what the plan orders. `zeroed` allocates a buffer of `K_WIDTH` zeroes, so a
 kernel that ran is visible in the first word.
 
 ### `CompileThenRunCompilesOnce`
@@ -874,13 +875,25 @@ kernel that ran is visible in the first word.
 ### `CompileReturnsTheRecordersRefusal`, `CompileOfAnEmptyGraphIsRefused`
 
 `compile()` answers as `run()` does before its first step. A graph whose recorder refused a rule
-returns that refusal from `compile()` and builds nothing. A graph with nothing
+returns that refusal from `compile()` and from `plan()` and builds nothing. A graph with nothing
 recorded is `InvalidGraph`.
 
 ### `ADynamicGraphCompiledThenRunComposesOnce`
 
 A DynamicGraph takes `compile()` from the same driver: `compose_count()` is one after it and still
 one after the run.
+
+### `AChainOfThreeKernelsReportsItsPredecessorsAndRegions`
+
+Three kernels write `first`, then `second` from `first`, then `third` from `second`. The view has
+three nodes in recording order with predecessor counts 0, 1 and 1, and each node's `reads` and
+`writes` hold the base address of the buffers it named. The second node was given a name and an
+operation, and its entry carries both. `plan()` ran nothing, and the run after it does not
+compile again.
+
+### `AViewOutlivesItsGraph`
+
+The view is read after the graph that returned it is destroyed.
 
 ## test_recorder_scratch.cpp
 

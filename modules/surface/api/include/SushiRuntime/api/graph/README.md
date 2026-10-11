@@ -19,6 +19,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `node_options.hpp` | NodeOptions: the width, the name, the operation and the parameters of a node |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
+| `plan_view.hpp` | PlanView and PlanNode: the copy of a plan that Graph::plan() returns |
 | `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel(), set_profiling() and the step loop |
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
@@ -58,6 +59,38 @@ recorded it. The indices are drawn when the graph compiles, so every rule report
 
 DynamicGraph::rule_registration(key, rule) answers the same for a rule of one region. A commit
 renumbers every region, so the answer is read from the node at the time of the call.
+
+### plan
+
+plan() returns a PlanView: one PlanNode per recorded node, in recording order. It calls compile()
+first, so it builds the plan when none is current and returns compile()'s Error when there is
+none to build. A run after it uses the plan it built.
+
+```cpp
+auto plan = graph.plan();
+if (!plan)
+    return report(plan.error());
+for (const SushiRuntime::PlanNode& node : plan->nodes)
+    std::printf("%s waits on %zu
+", node.name.c_str(), node.predecessor_count);
+```
+
+| Field | Holds |
+| --- | --- |
+| `rule` | Position of the rule that recorded the node, the value rule_registration() takes |
+| `name` | The label of the node's row in a RunReport |
+| `operation` | The OperationID the node's NodeOptions named; a default id when it named none |
+| `predecessor_count` | How many nodes of the plan must finish before this one starts |
+| `reads`, `writes` | The `BufferRegion`s the node named, in the order it named them |
+
+The view is a copy. It holds no pointer into the plan, so it stays readable after the graph
+recompiles or is destroyed, and it shows the plan as it was when plan() returned. A State rule
+reads the field that is current when the plan is built, so its regions change with a rebuild
+after an odd number of steps. A test reads the order of a graph from here and needs no engine
+header.
+
+DynamicGraph has no plan(): its plan is stitched from regions, and a node there also waits on
+nodes of other regions.
 
 ### Friends
 
@@ -534,6 +567,13 @@ build() builds a fresh backing graph by replaying the recorder, compiles it, and
 The compiled plan snapshots its own replay baseline (in-degrees) so the fluent layer never touches
 Node's scheduler-internal state. compile() drains its builder, so a fresh TaskGraph is built
 whenever the topology changes.
+
+### describe_plan
+
+describe_plan() fills a PlanView from the cached plan. The plan lists its nodes in its own order,
+so build() keeps the nodes in recording order, each with the position of its rule, in
+`recorded_`. The predecessor count is the in-degree the plan snapshot at build, which a run does
+not change.
 
 ### rearm
 
