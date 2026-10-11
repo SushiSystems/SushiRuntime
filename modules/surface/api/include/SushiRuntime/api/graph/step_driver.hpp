@@ -239,6 +239,25 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Builds the plan if none is current and runs nothing.
+             * @return Nothing, or the Error run() would return before its first step: the
+             *         recorder's refusal, a refused entry, or why the plan could not be built.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            [[nodiscard]] Result<void> compile() noexcept
+            {
+                Error failure = entry_refusal();
+                if (failure.code != ErrorCode::Ok)
+                    return make_error(std::move(failure));
+
+                double compile_ms = 0.0;
+                failure = build_plan_guarded(compile_ms);
+                if (failure.code != ErrorCode::Ok)
+                    return make_error(std::move(failure));
+                return {};
+            }
+
+            /**
              * @brief Requests or withdraws per-node device timing for this graph.
              * @return The graph, so that calls chain.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md

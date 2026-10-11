@@ -44,6 +44,7 @@ sushiruntime_add_module_tests(
         test_late_count.cpp
         test_native_cpu_path.cpp
         test_node_options_width.cpp
+        test_plan_view.cpp
         test_recorder_scratch.cpp
         test_recorder_semantics.cpp
         test_region_commit.cpp

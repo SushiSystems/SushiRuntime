@@ -19,7 +19,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `node_options.hpp` | NodeOptions: the width, the name, the operation and the parameters of a node |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
-| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), before_each_step(), cancel(), set_profiling() and the step loop |
+| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel(), set_profiling() and the step loop |
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
@@ -642,6 +642,15 @@ one's cancellation and, on the chain, submit beside it. The test is
 ExecutionEngine::run_in_progress(), one atomic load per run entry and none per step. Between two
 steps of a multi-step scheduled run the engine reports no run, so a stop test may still run another
 graph.
+
+### compile
+
+compile() does what a run does before its first step and stops there: it asks entry_refusal(),
+then builds the plan if it is stale. It returns the recorder's refusal, `InvalidGraph` for a
+graph with nothing recorded, `InvalidState` while a run is in flight, `DanglingResource`, or the
+failure of the build. A plan that is current is left alone, so compile() followed by run()
+builds once, and compile_count() or compose_count() counts that one build. Graph and DynamicGraph
+both take it from the driver.
 
 ### run(steps)
 

@@ -861,6 +861,27 @@ row reports the node's name and no operation, the second the rule's name.
 Nine parameters are refused: `refusal()` holds an `InvalidGraph` error whose message names
 `NodeOptions::parameters`, rule 0 and the nine parameters, and the graph holds no rule afterwards.
 
+## test_plan_view.cpp
+
+The file covers `compile()`, which builds a plan and runs nothing. `zeroed` allocates a buffer of `K_WIDTH` zeroes, so a
+kernel that ran is visible in the first word.
+
+### `CompileThenRunCompilesOnce`
+
+`compile()` leaves `compile_count()` at one and the buffer at zero. A second `compile()` and the
+`run()` after it build nothing more.
+
+### `CompileReturnsTheRecordersRefusal`, `CompileOfAnEmptyGraphIsRefused`
+
+`compile()` answers as `run()` does before its first step. A graph whose recorder refused a rule
+returns that refusal from `compile()` and builds nothing. A graph with nothing
+recorded is `InvalidGraph`.
+
+### `ADynamicGraphCompiledThenRunComposesOnce`
+
+A DynamicGraph takes `compile()` from the same driver: `compose_count()` is one after it and still
+one after the run.
+
 ## test_recorder_scratch.cpp
 
 The file covers `Recorder::scratch()`. Every case records `record_staged_rule`: a rule of two nodes
