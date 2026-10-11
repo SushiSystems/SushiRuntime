@@ -37,9 +37,7 @@ namespace SushiRuntime
         /**
          * @brief Identity of the allocation a resource region belongs to.
          *
-         * A raw base pointer today; a type alias so a future integer global id
-         * (the distributed layer's buffer id) is a one-line change rather than a
-         * churn across every dependency-tracking call site.
+         * A raw base pointer.
          */
         using ResourceId = void*;
 
@@ -62,8 +60,7 @@ namespace SushiRuntime
             /**
              * @brief Wraps a base pointer as the whole-buffer region.
              *
-             * Non-explicit on purpose: it is the adaptor that lets pointer-keyed
-             * call sites feed the region-based tracker unchanged.
+             * Implicit: a base pointer converts to the whole-buffer region.
              * @param p Base pointer of the allocation; null yields an empty region.
              */
             constexpr ResourceRegion(ResourceId p) noexcept : base(p) {}
@@ -119,10 +116,10 @@ namespace SushiRuntime
 
     namespace Core
     {
-        /** @brief Names Memory::ResourceId by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Memory::ResourceId. */
         using ResourceId [[deprecated("use Memory::ResourceId")]] = Memory::ResourceId;
 
-        /** @brief Names Memory::ResourceRegion by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Memory::ResourceRegion. */
         using ResourceRegion [[deprecated("use Memory::ResourceRegion")]] = Memory::ResourceRegion;
 
     } // namespace Core

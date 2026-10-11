@@ -129,9 +129,8 @@ namespace SushiRuntime
                     /**
                      * @brief Records an in-flight event. Never fails.
                      *
-                     * Fills the inline buffer first, then spills to the heap. There
-                     * is deliberately no full/overflow path: a dropped event deadlocks
-                     * the run (see the struct note).
+                     * Fills the inline buffer first, then spills to the heap. It has no
+                     * full or overflow path and never drops an event.
                      * @param pe The event/task pair to track.
                      */
                     void push(const PolledEvent& pe)
@@ -145,9 +144,8 @@ namespace SushiRuntime
                     /**
                      * @brief Removes entry @p index in O(1) by moving the tail into it.
                      *
-                     * Mirrors the original swap-with-last, but the "last" entry may
-                     * live in either the inline buffer or the spill vector, so the
-                     * tail is dropped from whichever currently holds it.
+                     * The tail is the last spill entry when the spill vector is not empty,
+                     * and the last inline entry otherwise.
                      * @param index Logical index to remove; out-of-range is a no-op.
                      */
                     void remove_at(size_t index)

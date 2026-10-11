@@ -23,7 +23,7 @@
  * @file sycl_compat.hpp
  * @brief Declares helpers that hide host-task differences between SYCL toolchains.
  * @author Mustafa Garip
- * @see modules/foundation/core/README.md
+ * @see modules/foundation/sycl/README.md
  */
 
 #pragma once

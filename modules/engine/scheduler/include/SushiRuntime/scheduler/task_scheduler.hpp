@@ -179,9 +179,9 @@ namespace SushiRuntime
                 std::atomic<bool> running{false};
                 /** @brief Signals that the pool should drain and shut down. */
                 std::atomic<bool> shutdown_requested{false};
-                /** @brief Guards start() so worker threads are spawned exactly once;
-                 *  a second call would overwrite live std::thread handles (terminate)
-                 *  and break the Chase-Lev single-owner-per-deque invariant. */
+                /**
+                 * @brief Set when start() spawns the workers; a later start() returns at once.
+                 */
                 std::atomic<bool> threads_started_{false};
                 /** @brief Failure and cancellation of the active run. */
                 RunOutcome outcome_;

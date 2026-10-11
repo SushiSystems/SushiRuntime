@@ -43,9 +43,7 @@ namespace SushiRuntime
         /**
          * @brief Holds one profiled submission until ChainRun::finish() can read its event.
          *
-         * Lives on ChainPlan rather than on a ChainRun so the buffer survives past
-         * the one-run-per-tick ChainRun object: capacity is reserved once and
-         * reused by every later run instead of being reallocated every tick.
+         * Stored in ChainPlan::pending_events, not in the ChainRun that fills it.
          */
         struct PendingEvent
         {
@@ -70,10 +68,9 @@ namespace SushiRuntime
             std::vector<Graph::Node*> order;      /**< Every node except the sentinel, in a topological order. */
 
             /**
-             * @brief Profiled submissions awaiting finish(), reused run after run.
+             * @brief Profiled submissions awaiting finish(), which clears the list.
              *
-             * Owned here instead of by ChainRun so a plan run every tick through a
-             * fresh ChainRun does not pay a fresh heap allocation for it each time.
+             * The list keeps its capacity across runs.
              */
             std::vector<PendingEvent> pending_events;
         };

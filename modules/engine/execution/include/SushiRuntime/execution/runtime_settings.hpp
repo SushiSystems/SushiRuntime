@@ -53,10 +53,8 @@ namespace SushiRuntime
             /**
              * @brief Build queues with profiling so RunReport carries device timing.
              *
-             * Construction-time because SYCL queues are created once and not
-             * rebuilt to toggle profiling. Off by default: the queues and the
-             * dispatch hot path are then exactly as without this struct, reading
-             * no timestamps.
+             * Fixed at construction, because the SYCL queues are built once.
+             * Off by default; with it off, no timestamps are read.
              */
             bool profiling = false;
 

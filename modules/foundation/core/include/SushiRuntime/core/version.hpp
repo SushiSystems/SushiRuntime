@@ -23,7 +23,7 @@
  * @file version.hpp
  * @brief Declares the library's version macros, runtime_version() and the version check.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/README.md
+ * @see modules/foundation/core/README.md
  */
 
 #pragma once
@@ -72,7 +72,7 @@ namespace SushiRuntime
 
     /**
      * @brief Returns the version the loaded library was built from.
-     * @see modules/surface/api/include/SushiRuntime/README.md
+     * @see modules/foundation/core/README.md
      */
     [[nodiscard]] SUSHIRUNTIME_API Version runtime_version() noexcept;
 
@@ -84,7 +84,7 @@ namespace SushiRuntime
 
     /**
      * @brief Returns whether the loaded library matches these headers, by major and minor.
-     * @see modules/surface/api/include/SushiRuntime/README.md
+     * @see modules/foundation/core/README.md
      */
     [[nodiscard]] inline bool version_matches() noexcept
     {
@@ -127,7 +127,7 @@ namespace SushiRuntime
     /**
      * @brief Throws unless the loaded library matches these headers, by major and minor.
      * @throws Core::SushiException With Errc::unsupported, naming both versions.
-     * @see modules/surface/api/include/SushiRuntime/README.md
+     * @see modules/foundation/core/README.md
      */
     inline void require_matching_version()
     {

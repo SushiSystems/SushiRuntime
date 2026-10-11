@@ -56,8 +56,8 @@ namespace SushiRuntime
             /** @brief Sentinel node injected at the end of the graph. */
             sushi_ptr<SushiRuntime::Graph::Node> sentinel;
 
-            /** * @brief Owns all nodes to keep them alive during execution.
-             * This prevents Use-After-Free bugs since internal dependencies rely on raw pointers.
+            /**
+             * @brief Owns every node; the dependencies between nodes are raw pointers into it.
              */
             std::vector<sushi_ptr<SushiRuntime::Graph::Node>> all_nodes;
 
@@ -96,7 +96,7 @@ namespace SushiRuntime
             Observability::ProfilingLedger profiling_ledger;
 
             /**
-             * @brief Per-registration-index count of internal nodes sharing it (F5).
+             * @brief Per-registration-index count of internal nodes sharing it.
              *
              * Computed once in capture_base_state(); sized to max(registration_index)+1
              * and indexed by registration_index. Sizes profiling_ledger's rows.

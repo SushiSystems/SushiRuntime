@@ -212,7 +212,7 @@ namespace SushiRuntime
                 hwloc_topology_destroy(topology);
             }
             
-            // Industrial standard remote NUMA latency (Remote Hop) if hardware doesn't provide SLIT table
+            // ACPI default remote distance (local is 10), used when no SLIT table is provided.
             return 21; 
         }
         

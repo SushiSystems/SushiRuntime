@@ -15,12 +15,8 @@ repository.
 | `dispatch_width.hpp` | `WIDTH_UNKNOWN`, the marker of a dispatch with no element count |
 | `transfer_counters.hpp` | `TransferCounters`, the byte counters of explicit host and device transfers |
 
-The first four were `core/` headers in v0.3; their old include paths forward here until
-v0.5.0 (`cmake/SushiRuntimeMovedHeaders.cmake`).
-
-Everything is in `SushiRuntime::Observability`. What the first four headers declare was in `Core`
-in v0.3, and each of them keeps the `Core::` spelling as a deprecated forwarder. `run_report.hpp`
-also promotes `RunReport` into `SushiRuntime`.
+Everything is in `SushiRuntime::Observability`. Each of the first four headers keeps its `Core::`
+spelling as a deprecated forwarder. `run_report.hpp` also promotes `RunReport` into `SushiRuntime`.
 
 ## event_timestamps.hpp
 
@@ -34,16 +30,15 @@ degrades to submit_ns == start_ns.
 ### ProfilingLedger
 
 A ProfilingLedger is owned by CompiledGraph and reused across runs. Each row is sized to its own
-node's expected dispatch count times how many internal nodes share its registration_index (F5).
+node's expected dispatch count times how many internal nodes share its registration_index.
 reserve() grows it outside the poller, before a run's dispatch loop starts, so claim_slot() and
-write() never allocate. The ledger also carries the run's clock pairing claim (design
-2026-09-15-g1-node-event-records-design.md §C).
+write() never allocate. The ledger also carries the run's clock pairing claim.
 
 ### reserve
 
 reserve() sizes row i to expected_invocations * multiplicities[i], or to the row's own last observed
-demand if that was larger. An overflowing row therefore grows on the very next call (item 4), and a
-shared registration_index (F5) gets a row big enough for every node behind it.
+demand if that was larger. An overflowing row therefore grows on the very next call, and a shared
+registration_index gets a row big enough for every node behind it.
 
 ## run_report.hpp
 

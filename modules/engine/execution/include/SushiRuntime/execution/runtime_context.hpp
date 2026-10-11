@@ -57,7 +57,7 @@ namespace SushiRuntime
          *        the execution engine that runs on them.
          *
          * Constructed once per process and shared (via shared_ptr) between the fluent
-         * API layer and all graphs it produces. Uses Pimpl to keep the ABI stable.
+         * API layer and all graphs it produces. Implemented with Pimpl.
          */
         class SUSHIRUNTIME_API RuntimeContext
         {
