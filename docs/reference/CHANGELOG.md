@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — api: Added `before_each_step(hook)` to `Graph` and `DynamicGraph`; a graph that has a hook waits for each chained step before the next (`step_driver.hpp`, `before_step_hooks.hpp`).
 - 2026-10-11 — api: Breaking change: Changed every recording member of `Recorder` to return the position of the rule it recorded, the value `rule_registration()` takes (`recorder.hpp`).
 - 2026-10-11 — api: Added `Recorder::task` and `add_task`, which record a body that receives the queue and returns the event that ends its work (`recorder.hpp`, `builder_surface.hpp`, `emit_task.hpp`).
 - 2026-10-11 — api: Breaking change: Renamed `OpID` to `OperationID` and gave `NodeOptions` a name, an operation and parameters, which every verb takes (`operation_id.hpp`, `node_options.hpp`).

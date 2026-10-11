@@ -40,6 +40,8 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/before_step_hooks.hpp>
+#include <SushiRuntime/api/detail/callable_checks.hpp>
 #include <SushiRuntime/api/detail/run_report_builder.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
@@ -303,6 +305,21 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Adds a hook this graph calls on the running thread before each step.
+             * @param hook Callable invoked as hook(std::size_t finished_steps) with the
+             *        steps the run in progress replayed before this one.
+             * @return The graph, so that calls chain.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            template <class Hook>
+            Owner& before_each_step(Hook&& hook)
+            {
+                if constexpr (Detail::accepts_step_hook<Hook>())
+                    step_hooks_.add(std::forward<Hook>(hook));
+                return owner();
+            }
+
+            /**
              * @brief Asks this graph's run in flight to stop, from any thread.
              *
              * It does nothing when this graph has no run in flight, so it never stops a run
@@ -340,18 +357,20 @@ namespace SushiRuntime
             StepDriver() = default;
 
             /**
-             * @brief Ends a step still pending on other; the marker of a step never moves.
+             * @brief Ends a step still pending on other and takes its step hooks; the
+             *        marker of a step never moves.
              * @pre No step started with run_async() on other is pending.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             StepDriver(StepDriver&& other) noexcept
             {
                 other.end_step_before_move();
+                step_hooks_ = std::move(other.step_hooks_);
             }
 
             /**
-             * @brief Ends a step still pending on either side; the marker of a step never
-             *        moves.
+             * @brief Ends a step still pending on either side and takes other's step
+             *        hooks; the marker of a step never moves.
              * @pre No step started with run_async() on either graph is pending.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
@@ -361,6 +380,7 @@ namespace SushiRuntime
                 {
                     end_step_before_move();
                     other.end_step_before_move();
+                    step_hooks_ = std::move(other.step_hooks_);
                 }
                 return *this;
             }
@@ -641,6 +661,7 @@ namespace SushiRuntime
                 state.offloaded_before = Detail::offloaded_dispatches(context);
                 state.task_count = self.node_count();
 
+                step_hooks_.run(0);
                 steps.before_step();
                 self.rearm_plan();
                 state.started = std::chrono::steady_clock::now();
@@ -835,9 +856,11 @@ namespace SushiRuntime
                 const std::uint64_t offloaded_before = Detail::offloaded_dispatches(context);
                 const auto t0 = clock::now();
 
+                // A hook may write what a kernel reads, so each step ends before the next hook.
+                const StepSync hooked_sync = step_hooks_.empty() ? sync : StepSync::EveryStep;
                 const bool chained = self.runs_chained();
                 const std::size_t executed = chained
-                    ? run_chained(keep_going, engine, sync)
+                    ? run_chained(keep_going, engine, hooked_sync)
                     : run_scheduled(keep_going, engine);
 
                 const auto t1 = clock::now();
@@ -876,7 +899,8 @@ namespace SushiRuntime
                 std::size_t executed = 0;
                 while (keep_going(executed) && !engine.is_cancelled())
                 {
-                    // Live IO and late-bound controls are refreshed before the plan replays.
+                    // The caller's hooks run first, so a late-bound control reads what they set.
+                    step_hooks_.run(executed);
                     steps.before_step();
 
                     self.rearm_plan();
@@ -913,6 +937,7 @@ namespace SushiRuntime
                     if (advance_unchecked && executed != 0)
                         steps.after_step();
 
+                    step_hooks_.run(executed);
                     steps.before_step();
                     self.rearm_plan();
                     chain.submit_step(static_cast<std::uint32_t>(executed));
@@ -945,5 +970,8 @@ namespace SushiRuntime
 
             /** @brief Counts this graph's blocking runs and pending step; cancel() reads it. */
             std::atomic<std::uint32_t> runs_in_flight_{0};
+
+            /** @brief The hooks before_each_step() added, in the order they were added. */
+            Detail::BeforeStepHooks step_hooks_;
     };
 } // namespace SushiRuntime

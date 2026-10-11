@@ -26,6 +26,7 @@
  * @author Mustafa Garip
  */
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -36,6 +37,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -613,4 +615,122 @@ TEST(Integration_RunDriver, ABudgetPastTheClocksRangeRunsUntilCancelled)
 {
     expect_run_for_lasts_until_cancelled(std::chrono::hours::max());
     expect_run_for_lasts_until_cancelled(std::chrono::nanoseconds::max());
+}
+
+/** @brief Tests that step hooks feed eight replays of one Graph plan, in the order added. */
+TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfOnePlan)
+{
+    constexpr std::size_t K_STEPS = 8;
+    constexpr std::uint32_t K_BASE = 100;
+
+    auto rt   = Runtime::create();
+    auto word = rt.buffer<std::uint32_t>(2);
+    auto seen = rt.buffer<std::uint32_t>(K_STEPS);
+    for (std::size_t i = 0; i < K_STEPS; ++i)
+        seen[i] = 0;
+    std::uint32_t* w = word.data();
+    std::uint32_t* s = seen.data();
+
+    auto g = rt.graph();
+    g.add(K_STEPS, Reads(word), Writes(seen), [w, s](std::size_t i)
+    {
+        if (i == w[0])
+            s[i] = w[1];
+    });
+
+    std::vector<std::uint32_t> observed;
+    g.before_each_step([w](std::size_t finished_steps)
+     {
+         w[0] = static_cast<std::uint32_t>(finished_steps);
+         w[1] = K_BASE + static_cast<std::uint32_t>(finished_steps);
+     })
+     .before_each_step([w, &observed](std::size_t) { observed.push_back(w[1]); });
+
+    g.run(K_STEPS);
+
+    EXPECT_EQ(g.compile_count(), 1u);
+    ASSERT_EQ(observed.size(), K_STEPS);
+    for (std::size_t i = 0; i < K_STEPS; ++i)
+    {
+        EXPECT_EQ(seen[i], K_BASE + static_cast<std::uint32_t>(i)) << "replay " << i;
+        EXPECT_EQ(observed[i], K_BASE + static_cast<std::uint32_t>(i)) << "replay " << i;
+    }
+
+    g.run();
+
+    EXPECT_EQ(g.compile_count(), 1u) << "a hook must not rebuild the plan";
+    EXPECT_EQ(observed.back(), K_BASE) << "a new run counts its steps from zero";
+}
+
+/** @brief Tests that a step hook feeds eight replays of one DynamicGraph plan. */
+TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfADynamicGraph)
+{
+    constexpr std::size_t K_STEPS = 8;
+    constexpr std::uint32_t K_BASE = 100;
+
+    auto rt   = Runtime::create();
+    auto word = rt.buffer<std::uint32_t>(2);
+    auto seen = rt.buffer<std::uint32_t>(K_STEPS);
+    for (std::size_t i = 0; i < K_STEPS; ++i)
+        seen[i] = 0;
+    std::uint32_t* w = word.data();
+    std::uint32_t* s = seen.data();
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add(K_STEPS, Reads(word), Writes(seen), [w, s](std::size_t i)
+    {
+        if (i == w[0])
+            s[i] = w[1];
+    });
+    world.before_each_step([w](std::size_t finished_steps)
+    {
+        w[0] = static_cast<std::uint32_t>(finished_steps);
+        w[1] = K_BASE + static_cast<std::uint32_t>(finished_steps);
+    });
+
+    world.run(K_STEPS);
+
+    EXPECT_EQ(world.compose_count(), 1u);
+    for (std::size_t i = 0; i < K_STEPS; ++i)
+        EXPECT_EQ(seen[i], K_BASE + static_cast<std::uint32_t>(i)) << "replay " << i;
+}
+
+/** @brief Tests that a moved graph keeps its step hooks and its source has none. */
+TEST(Integration_RunDriver, AStepHookMovesWithItsGraph)
+{
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    int* p = buf.data();
+
+    std::size_t calls = 0;
+    auto source = rt.graph();
+    source.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
+    source.before_each_step([&calls](std::size_t) { ++calls; });
+
+    auto moved = std::move(source);
+    moved.run();
+    EXPECT_EQ(calls, 1u);
+
+    source.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
+    source.run();
+    EXPECT_EQ(calls, 1u) << "the source of a move must have no hook";
+}
+
+/** @brief Tests that a hook too large for the inline storage is held and called. */
+TEST(Integration_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
+{
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    int* p = buf.data();
+
+    std::array<std::uint64_t, 16> payload{};
+    payload[15] = 7;
+    std::uint64_t seen = 0;
+
+    auto g = rt.graph();
+    g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
+    g.before_each_step([payload, &seen](std::size_t) { seen = payload[15]; });
+    g.run();
+
+    EXPECT_EQ(seen, 7u);
 }

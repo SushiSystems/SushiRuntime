@@ -1190,6 +1190,25 @@ must say cancelled after exactly three steps. A deadline computed as `now + budg
 these budgets and landed in the past, which ended the run after one step. The task throws after a
 thousand steps, so a `cancel()` that reached nothing fails the test and does not hang it.
 
+### `AStepHookFeedsEveryReplayOfOnePlan`, `AStepHookFeedsEveryReplayOfADynamicGraph`
+
+A hook writes the count of finished steps and that count plus 100 into two host words. One kernel
+over eight elements reads both and writes the second word into the element the first one names.
+After `run(8)` element `i` holds `100 + i`, which needs the hook of step `i` to have run after
+the kernel of step `i - 1` read its words, and the graph compiled or composed once. On a `Graph` a
+second hook records the word the first one wrote, which fixes the order the two run in, and a
+further `run()` shows the count starting at zero again with no recompile.
+
+### `AStepHookMovesWithItsGraph`
+
+A graph with one hook is moved. The destination calls the hook when it runs; the source records a
+task of its own, runs, and calls nothing.
+
+### `AStepHookLargerThanTheInlineStorageRuns`
+
+The hook captures 128 bytes by value, which is more than the 64 a hook is stored in without an
+allocation, and reads the last of them back when it is called.
+
 ## test_run_report_reuse.cpp
 
 The file covers the overloads that take a caller-owned `RunReport`: `run(RunReport&)`,
