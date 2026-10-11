@@ -256,6 +256,84 @@ namespace
             /// @brief Dispatches the test said a worker accepted.
             std::atomic<std::uint64_t> offloaded_{0};
     };
+
+    constexpr std::size_t K_COUNT_CAPACITY = 8;
+    constexpr std::uint32_t K_COUNT_OVER_CAPACITY = 9;
+    constexpr int K_FIELD_START = 5;
+
+    /**
+     * @brief Holds a graph whose step increments a State and sizes a launch from a device count.
+     *
+     * A count above K_COUNT_CAPACITY makes every step record a device fault.
+     */
+    struct CountedStep
+    {
+        /** @brief Records the step on @p rt; a kernel writes @p count before the sized launch. */
+        CountedStep(Runtime& rt, std::uint32_t count)
+            : field(rt.state<int>(N)),
+              counter(rt.buffer<std::uint32_t>(1, API::DeviceIndex{0}, API::Residency::Host)),
+              marks(rt.buffer<std::uint32_t>(K_COUNT_CAPACITY)),
+              graph(rt.graph())
+        {
+            for (std::size_t i = 0; i < N; ++i)
+                field.current()[i] = K_FIELD_START;
+            std::uint32_t* c = counter.data();
+            std::uint32_t* m = marks.data();
+
+            graph.add(field,
+                      [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+            graph.add(std::size_t{1}, API::Reads{}, API::Writes(counter),
+                      [c, count](std::size_t) { c[0] = count; });
+            graph.add(API::sized_from_device(counter), K_COUNT_CAPACITY, API::Reads{},
+                      API::Writes(marks), [m](std::size_t i) { m[i] = 1u; });
+        }
+
+        API::State<int> field;              /**< Incremented once per step. */
+        API::Buffer<std::uint32_t> counter; /**< The device count of the sized launch. */
+        API::Buffer<std::uint32_t> marks;   /**< Written by the sized launch. */
+        API::Graph graph;                   /**< The recorded step. */
+    };
+
+    /** @brief Returns whether a counted step with a count inside its capacity takes the chain. */
+    bool counted_step_runs_chained(Runtime& rt)
+    {
+        CountedStep clean(rt, 1u);
+        const auto report = clean.graph.try_run();
+        return report.has_value() && report->layer == Observability::ExecutionLayer::Chain;
+    }
+
+    /**
+     * @brief Expects run_for(budget) to run until its host task cancels it at the third step.
+     * @param budget A budget no steady_clock time point can hold once added to now().
+     */
+    template <class Budget>
+    void expect_run_for_lasts_until_cancelled(Budget budget)
+    {
+        constexpr int STEPS_BEFORE_CANCEL = 3;
+        constexpr int STEP_LIMIT = 1000;
+
+        auto rt  = Runtime::create();
+        auto buf = rt.buffer<int>(N);
+        std::atomic<int> steps{0};
+
+        auto g = rt.graph();
+        API::Graph* const self = &g;
+        g.add_host(API::Reads{}, API::Writes(buf), [&steps, self]()
+        {
+            const int step = steps.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (step == STEPS_BEFORE_CANCEL)
+                self->cancel();
+            if (step > STEP_LIMIT)
+                throw std::runtime_error("cancel() did not stop the run");
+        });
+
+        const auto report = g.try_run_for(budget);
+
+        ASSERT_TRUE(report.has_value()) << report.error().message;
+        EXPECT_TRUE(report->cancelled);
+        EXPECT_EQ(steps.load(), STEPS_BEFORE_CANCEL)
+            << "a deadline that overflowed ends the run after its first step";
+    }
 } // namespace
 
 /** @brief Tests that a Graph reports a throwing host task as kernel_failed from every entry. */
@@ -401,6 +479,8 @@ TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 
     API::Graph moved = std::move(g);
     EXPECT_EQ(buf[0], 7) << "the move waits for the pending step";
+    EXPECT_FALSE(step.pending()) << "the move ended the step the handle was given";
+    EXPECT_TRUE(step.ready());
 
     const auto late = step.try_wait();
     ASSERT_FALSE(late.has_value());
@@ -437,4 +517,48 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
 
     const Observability::RunReport third = g.run_async().wait();
     EXPECT_EQ(third.distributed_statistics.tasks_offloaded_to_network, PER_STEP);
+}
+
+/** @brief Tests that a failed chained run of one step advances no State. */
+TEST(Integration_RunDriver, AFailedChainedRunOfOneStepAdvancesNoState)
+{
+    auto rt = Runtime::create();
+    if (!counted_step_runs_chained(rt))
+        GTEST_SKIP() << "the counted step does not take the chain on this runtime";
+
+    CountedStep step(rt, K_COUNT_OVER_CAPACITY);
+    const int* const before = step.field.current();
+
+    const auto failed = step.graph.try_run();
+
+    ASSERT_FALSE(failed.has_value());
+    EXPECT_EQ(step.field.current(), before) << "the failed step advanced the State";
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(step.field.current()[i], K_FIELD_START) << "at i=" << i;
+}
+
+/** @brief Tests that a failed chained run of three steps advances the two before the last. */
+TEST(Integration_RunDriver, AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast)
+{
+    constexpr std::size_t STEPS = 3;
+
+    auto rt = Runtime::create();
+    if (!counted_step_runs_chained(rt))
+        GTEST_SKIP() << "the counted step does not take the chain on this runtime";
+
+    CountedStep step(rt, K_COUNT_OVER_CAPACITY);
+
+    const auto failed = step.graph.try_run(STEPS);
+
+    ASSERT_FALSE(failed.has_value());
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(step.field.current()[i], K_FIELD_START + static_cast<int>(STEPS) - 1)
+            << "at i=" << i;
+}
+
+/** @brief Tests that a budget the clock cannot hold runs until cancelled, not for one step. */
+TEST(Integration_RunDriver, ABudgetPastTheClocksRangeRunsUntilCancelled)
+{
+    expect_run_for_lasts_until_cancelled(std::chrono::hours::max());
+    expect_run_for_lasts_until_cancelled(std::chrono::nanoseconds::max());
 }

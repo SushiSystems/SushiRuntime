@@ -54,8 +54,9 @@ namespace SushiRuntime
 
             /**
              * @brief Names the States of one coupled rule.
-             * @param written The State written; it must outlive the graph.
-             * @param read    The further States read; each must outlive the graph.
+             * @param written The State written; alive at every run, free to move after add().
+             * @param read    The further States read; each alive at every run, free to move
+             *                after add().
              */
             explicit Coupled(State<Out>& written, State<Inputs>&... read) noexcept
                 : out(written), inputs(read...)

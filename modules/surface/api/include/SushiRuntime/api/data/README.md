@@ -91,12 +91,21 @@ The liveness token moves with the allocation, by design: replay and factory patt
 rt.state<T>(n)`, returning a handle, moving one into place before recording it) rely on the token
 following the value. The moved-from Buffer is left empty.
 
-A fluent graph records a handle by its object address: State kernels capture `&state` and
-dereference it each step. Once a Buffer or State has been passed to `Graph::add(...)` it must not be
-moved, nor stored in a container that may reallocate (push_back into a `std::vector<State>` after
-recording an element, for example). The graph would keep pointing at the old address while the
-object lives at the new one, and because the token travels with the value the liveness guard cannot
-detect it. Recorded handles stay fixed for the graph's life.
+A graph records no handle by its object address, so a Buffer or a State may be moved after
+`Graph::add(...)` recorded it, into a new variable or by a `std::vector` that reallocates. What each
+form of add() keeps is listed here.
+
+| Named in add() as | The graph keeps | After a move |
+| --- | --- | --- |
+| a Buffer in `Reads`, `Writes`, `In`, `Out` or `InOut` | the allocation's address and the observer, by value | the node runs as recorded |
+| a Buffer or a State in `On` | the device index and the observer, by value | the node runs as recorded |
+| a Buffer in `sized_from_device` or `based_at_device` | the slot's address and the observer, by value | the node runs as recorded |
+| a State in `Reads` or `Writes` | the address of one field as it stood at add(), and the observer | the node runs as recorded; the State::region section says which field that address is after a step |
+| a State as the rule's own State, or in `Coupled` | the State's StateView, shared | the rule steps the moved-to State |
+
+Two things still end a recording. A handle destroyed or move-assigned over releases its token, and
+the next run is refused with `dangling_resource`. A State must not be moved while a step that names
+it is running or pending: the step advances the State through the view's `owner` when it ends.
 
 ### operator[]
 
@@ -134,9 +143,10 @@ The overload that takes a `const T*` is deprecated and forwards to the span over
 
 ### Tracking state
 
-The graph layer needs three things from a handle that a caller never does: the address the
-dependency tracker keys on, the liveness observer, and the swap of a State's two fields. It reaches
-them through `detail::HandleAccess` (api/detail/handle_access.hpp), a friend of both handles.
+The graph layer needs four things from a handle that a caller never does: the address the
+dependency tracker keys on, the liveness observer, the view of a State and the swap of its two
+fields. It reaches them through `detail::HandleAccess` (api/detail/handle_access.hpp), a friend of
+both handles.
 
 The key of a Buffer is the allocation's base address, which the tracker treats as the whole-buffer
 region. The observer stays valid while the buffer lives. It expires when the buffer is destroyed,
@@ -180,10 +190,31 @@ followed without breaking the version-by-pointer coherence model.
 
 ### StateView
 
-A State kernel captures a shared_ptr to one of these instead of raw pointers. Because the kernel's
-host-side body runs once per step (at submit time), it reads cur/next fresh every step. The runtime
-updates these two fields when it swaps the State between steps, so one compiled node follows the
-double-buffer without being recompiled.
+A StateView is what a graph holds of a State: the base pointers of the current and the next
+field, the element count, and the address of the State that owns the view. A State that owns memory
+creates one view when it is allocated and shares it, through a shared_ptr, with every graph that
+records the State. A rule's replay reads the two pointers as its read key and its write key, and a
+kernel's host-side body reads them at each submit, so one compiled node follows the double buffer
+without being recompiled.
+
+The State writes the view and nothing else does. It writes it when it is allocated, when its fields
+are swapped after a step, when a run resyncs, and when the State is moved, assigned over or
+destroyed. A move hands the view to the moved-to State and changes only `owner`: the allocations do
+not move, so the pointers a graph reads stay valid. A State that is destroyed or assigned over
+leaves its old view with null pointers, a size of zero and no owner, so a graph that still holds it
+reads an empty view; the liveness observer is what refuses the run.
+
+The State's own accessors do not read the view. operator[], host(), current(), next(), size() and
+the range calls read the two Buffer members directly, so the view adds no indirection to an element
+access. It is written at most once per step.
+
+### State(State&&)
+
+A State is move-only and declares its moves, because its view names the State's address. The
+moved-to State takes both fields, the liveness tokens and the view. The moved-from State owns no
+memory and holds no view; it may be assigned to or destroyed. An empty State has no view of its
+own, and HandleAccess::view() returns a new empty one for it, so a rule recorded on an empty State
+runs over nothing, and still does after the State is assigned to.
 
 ### State
 
@@ -206,7 +237,9 @@ Runtime::state() is its caller.
 ### Tracking state of a State
 
 A task that reads a State depends on the current field and a task that writes it depends on the
-next field, so HandleAccess::read_key() and write_key() return those two addresses. A graph that
+next field, so HandleAccess::read_key() and write_key() return those two addresses. A rule recorded
+on the State reads the same two addresses from the State's view at every replay, so a plan rebuilt
+after an odd number of steps is ordered against the fields as they stand then. A graph that
 records a State holds the current field's observer to detect a State freed before a run; that token
 stands for the State because both fields are freed together with it. An empty State has an empty
 observer.

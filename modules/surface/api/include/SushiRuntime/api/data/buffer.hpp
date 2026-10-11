@@ -268,8 +268,8 @@ namespace SushiRuntime
                 /**
                  * @brief Takes ownership of other's allocation and liveness token, leaving other
                  *        empty.
-                 * @warning Do not move a handle after Graph::add() recorded it; the graph keeps its
-                 *        old address.
+                 * @warning A Buffer a graph recorded may be moved; destroying it or move-assigning
+                 *        over it refuses the next run with dangling_resource.
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
                 Buffer(Buffer&& other) noexcept

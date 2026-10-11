@@ -31,6 +31,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 
 #include <SushiRuntime/core/error.hpp>
@@ -59,6 +60,53 @@ namespace SushiRuntime
                 std::size_t task_count = 0;                /**< Tasks this step dispatched. */
                 std::uint32_t serial = 0;                  /**< Number the driver gave the step. */
             };
+
+            /**
+             * @brief Names the asynchronous step pending on one graph, for the handles it gave.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            struct AsyncStepRecord
+            {
+                /** @brief Stands for "no step is pending"; no step is ever given this number. */
+                static constexpr std::uint32_t K_NO_STEP = 0;
+
+                std::uint32_t pending_serial = K_NO_STEP;  /**< Number of the pending step. */
+            };
+
+            /**
+             * @brief Builds an Error without throwing.
+             * @param message Text of the Error; null-terminated.
+             * @return The Error, with an empty message when the text could not be allocated.
+             */
+            [[nodiscard]] inline Core::Error error_without_throwing(Core::Errc code,
+                                                                    const char* message) noexcept
+            {
+                try
+                {
+                    return Core::Error{code, message};
+                }
+                catch (...)
+                {
+                    return Core::Error{code, {}};
+                }
+            }
+
+            /**
+             * @brief Copies an Error without throwing.
+             * @return The copy, with an empty message when the text could not be allocated.
+             */
+            [[nodiscard]] inline Core::Error error_without_throwing(
+                const Core::Error& source) noexcept
+            {
+                try
+                {
+                    return source;
+                }
+                catch (...)
+                {
+                    return Core::Error{source.code, {}};
+                }
+            }
         } // namespace detail
 
         template <class Owner>
@@ -68,7 +116,7 @@ namespace SushiRuntime
          * @brief Owns a step that was started but not yet waited for, and finishes it on
          *        destruction.
          * @tparam Owner The graph type that produced this handle: Graph or DynamicGraph.
-         * @pre The graph that produced a pending handle is neither destroyed nor moved.
+         * @pre The graph that produced a pending handle is not moved.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         template <class Owner>
@@ -83,7 +131,7 @@ namespace SushiRuntime
                  * @param other Handle to take the step from; owns nothing afterwards.
                  */
                 RunHandle(RunHandle&& other) noexcept
-                    : owner_(other.owner_), state_(other.state_)
+                    : owner_(other.owner_), record_(std::move(other.record_)), state_(other.state_)
                 {
                     other.owner_ = nullptr;
                 }
@@ -98,6 +146,7 @@ namespace SushiRuntime
                     {
                         settle();
                         owner_ = other.owner_;
+                        record_ = std::move(other.record_);
                         state_ = other.state_;
                         other.owner_ = nullptr;
                     }
@@ -112,9 +161,10 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns whether this handle still owns a step that must be waited for.
-                 * @return True until wait() or try_wait() consumes it, or it is moved from.
+                 * @return True until wait() or try_wait() consumes it, it is moved from, or its
+                 *         graph ends the step by being moved or destroyed.
                  */
-                [[nodiscard]] bool pending() const noexcept { return owner_ != nullptr; }
+                [[nodiscard]] bool pending() const noexcept { return owns_step(); }
 
                 /**
                  * @brief Returns whether waiting would return immediately.
@@ -123,7 +173,7 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] bool ready() const
                 {
-                    return owner_ == nullptr || owner_->async_step_finished();
+                    return !owns_step() || owner_->async_step_finished();
                 }
 
                 /**
@@ -178,18 +228,28 @@ namespace SushiRuntime
                 [[nodiscard]] Core::Result<Observability::RunReport*, Core::Error>
                 try_wait(Observability::RunReport& reuse) noexcept
                 {
-                    // Cleared before anything else, so a failed step shows no old numbers.
+                    // Every return below leaves reuse reset and marked unsuccessful.
                     reuse.reset();
                     reuse.is_successful = false;
 
                     if (owner_ == nullptr)
-                        return Core::make_error(Core::Error{Core::Errc::invalid_state,
+                        return Core::make_error(detail::error_without_throwing(
+                            Core::Errc::invalid_state,
                             "RunHandle::wait(): this handle owns no step, because it was "
-                            "already waited for or moved from; start a step with run_async()."});
+                            "already waited for or moved from; start a step with run_async()."));
 
-                    // The handle is consumed before the blocking call, even when the step fails.
+                    // owner_ is null from here on, so no later call waits on this step again.
+                    const bool owned = owns_step();
                     Owner* owner = owner_;
                     owner_ = nullptr;
+                    record_.reset();
+
+                    if (!owned)
+                        return Core::make_error(detail::error_without_throwing(
+                            Core::Errc::invalid_state,
+                            "RunHandle::wait(): the graph was moved or destroyed while this step "
+                            "was pending, which ended the step and dropped its report; wait on "
+                            "the handle first."));
 
                     Core::Error failure = owner->settle_async_step(state_, reuse);
                     if (failure.code != Core::Errc::ok)
@@ -198,12 +258,21 @@ namespace SushiRuntime
                 }
 
             private:
-                // The driver of the owner starts the step this handle settles.
                 friend class StepDriver<Owner>;
 
-                RunHandle(Owner* owner, const detail::AsyncRunState& state) noexcept
-                    : owner_(owner), state_(state)
+                RunHandle(Owner* owner, std::shared_ptr<detail::AsyncStepRecord> record,
+                          const detail::AsyncRunState& state) noexcept
+                    : owner_(owner), record_(std::move(record)), state_(state)
                 {
+                }
+
+                /**
+                 * @brief Returns whether the step this handle was given is still pending.
+                 * @return True only while the graph at owner_ is alive and has not ended the step.
+                 */
+                [[nodiscard]] bool owns_step() const noexcept
+                {
+                    return record_ != nullptr && record_->pending_serial == state_.serial;
                 }
 
                 /**
@@ -218,8 +287,11 @@ namespace SushiRuntime
                     static_cast<void>(try_wait(dropped));
                 }
 
-                /** @brief The graph whose step this handle settles; null when it owns none. */
+                /** @brief The graph that started the step; dereferenced only while owns_step(). */
                 Owner* owner_ = nullptr;
+
+                /** @brief The graph's record of its pending step; outlives the graph. */
+                std::shared_ptr<detail::AsyncStepRecord> record_;
 
                 /** @brief What run_async() recorded when it submitted the step. */
                 detail::AsyncRunState state_{};

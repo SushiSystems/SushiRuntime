@@ -21,7 +21,7 @@
 
 /**
  * @file test_state_emitters.cpp
- * @brief Tests the nodes of State and coupled rules: const inputs, launch width, view-only forms.
+ * @brief Tests the nodes of State and coupled rules: const inputs, launch width, each emitter.
  * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
@@ -39,6 +39,7 @@
 #include <SushiRuntime/SushiRuntime.h>
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
 #include <SushiRuntime/api/detail/emit_state.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
 
 using namespace SushiRuntime;
 
@@ -64,13 +65,10 @@ namespace
         return state;
     }
 
-    /** @brief Returns a view that names the fields a State holds now. */
+    /** @brief Returns the view a State owns and shares with the graphs that record it. */
     std::shared_ptr<API::detail::StateView<Word>> view_of(const API::State<Word>& state)
     {
-        auto view = std::make_shared<API::detail::StateView<Word>>();
-        view->cur = state.current();
-        view->next = state.next();
-        return view;
+        return API::detail::HandleAccess::view(state);
     }
 } // namespace
 
@@ -132,7 +130,7 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
     EXPECT_EQ(widths, (std::vector<std::size_t>{PREFIX, PREFIX + 1, WIDTH}));
 }
 
-/** @brief Tests the State emitter that takes the view and a launch and no State pointer. */
+/** @brief Tests the State emitter over a launch, replayed outside a recorder. */
 TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 {
     auto rt = Runtime::create();
@@ -152,7 +150,7 @@ TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
             << "at i=" << i;
 }
 
-/** @brief Tests the coupled emitter that takes views and a launch and no State pointer. */
+/** @brief Tests the coupled emitter over a launch, replayed outside a recorder. */
 TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
 {
     auto rt = Runtime::create();
@@ -173,7 +171,7 @@ TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
         ASSERT_EQ(out.next()[i], 3u * (static_cast<Word>(i) + SEED)) << "at i=" << i;
 }
 
-/** @brief Tests the late-bound State emitter that takes the capacity and no State pointer. */
+/** @brief Tests the late-bound State emitter, replayed outside a recorder. */
 TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
 {
     auto rt = Runtime::create();

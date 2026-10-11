@@ -12,13 +12,15 @@ symbol or passage it explains, and that header's file block cites this page.
 
 callable_traits.hpp names three callable shapes as C++17 traits over std::is_invocable_v: a
 per-element kernel, a range kernel and a raw kernel. They have two users. The Recorder chooses
-between its two count launches, kernel() and untracked_kernel(), by the first two.
+between a per-element node and a range node by the first two: untracked_kernel() by overload, and
+kernel(count, ...) inside one overload, after accepts_kernel() has asserted the callable.
 callable_checks.hpp reads all three in accepts_per_element(), accepts_kernel() and
 accepts_raw_kernel(). add() selects its overload by the launch and the access.
 
 is_per_element_v and is_range_kernel_v test a `const std::decay_t<F>&`, as is_launch_kernel_v
-does, because the emitters call those kernels as const objects. A `mutable` lambda is therefore
-false for both and stops at the static_assert of its family. is_raw_kernel_v tests F itself:
+does, because the emitters call those kernels as const objects. A `mutable` lambda that captures
+state is therefore false for both and stops at the static_assert of its family. A captureless one
+converts to a function pointer and stays callable as const. is_raw_kernel_v tests F itself:
 raw_node() stores the command group in a std::function, which calls it as a non-const object, so
 a `mutable` raw kernel runs.
 
@@ -30,27 +32,30 @@ dereferencing in views_current(), and not in the kernel, lets the device lambda 
 and still follow the swap. read_only() makes the conversion to `const T*`, so the kernel of a
 coupled rule cannot write a State its node registered as a read.
 
-### read_keys_of
-
-read_keys_of() gathers the read keys of a tuple of State pointers, in order. It is called at compile
-time so the dependency tracker labels every coupled input consistently with the canonical
-single-State overload.
-
 ### read_keys_of_views
 
-read_keys_of_views() gathers the same keys from a tuple of views: the key of a State's current
-field is the address `view->cur` holds. The emitters that hold no State pointer call it.
+read_keys_of_views() gathers the read keys of a tuple of views, in order: the key of a State's
+current field is the address `view->current` holds. add_coupled_node() calls it at every replay, so
+the dependency tracker labels a coupled input with the key the single-State rule gives that field.
 
 ## handle_access.hpp
 
 ### HandleAccess
 
 HandleAccess is the one place the graph layer reads a data handle's tracking state: the dependency
-key of a Buffer, the read and write keys of a State, the liveness observer of either, and the swap
-that makes a State's written field current. Buffer and State name it a friend, so none of the five
-has to be a public member, and a change to how a handle keeps its key or its token is made in this
+key of a Buffer, the read and write keys of a State, the liveness observer of either, the view a
+State shares with its graphs, and the swap that makes a State's written field current. Buffer and
+State name it a friend, so none of these has to be a public member, and a change to how a handle
+keeps its key or its token is made in this
 header and in the handle, with no recording code to follow. Its member templates are defined against
 forward declarations of Buffer and State, so the handles' own headers include it.
+
+view() returns the StateView a State owns (api/data/README.md), and a new empty view for a State
+that owns no memory, so a caller never holds a null pointer. advance(State&) swaps the two fields
+and writes the swap into the view; it is the only place a State is swapped. advance(StateView&) and
+resync(StateView&) are what a step hook calls: each reaches the State through `view.owner`, which
+the State keeps pointed at itself across a move, and does nothing once the State is gone. A hook
+therefore holds the view and never a `State<T>*`.
 
 construct() calls a private constructor of either handle. Runtime and Interop do not need it, since
 they are friends of the handles; it serves code that builds a handle without a runtime, which today
@@ -103,14 +108,16 @@ capacity automatically instead of tripping Delegate's static_assert in every tra
 
 ### view_for
 
-view_for() returns the shared view for a State, creating it and registering its resync on first use.
-Every kernel touching a State captures the same view, so one advancer keeps all references current.
+view_for() returns the view the State owns, through HandleAccess::view(), and registers that view's
+resync the first time this machinery sees it. It creates no view for a State that owns memory.
+Every kernel touching a State captures the same view, so one advance keeps all references current.
 Correct coupled (multi-field) updates rest on that.
 
 ### register_advance
 
-register_advance() registers the once-per-step advance for a written State. It deduplicates, so a
-State advances exactly once per step (one update rule per field).
+register_advance() registers the once-per-step advance for a written State. The hook captures the
+view and calls HandleAccess::advance() on it. It deduplicates by view, which a move does not change,
+so a State advances exactly once per step (one update rule per field).
 
 ### register_binding_updater
 
@@ -122,8 +129,8 @@ defaults (always enabled, full range) already hold, so an unused tag costs nothi
 ### reset_updaters
 
 reset_updaters() clears this machinery's aggregation of other machineries. A composer calls it and
-then re-aggregates the live regions before a run. A region's own hooks, and the State bookkeeping
-that owns the views, are untouched, since the region still owns them.
+then re-aggregates the live regions before a run. A region's own hooks are untouched, since the
+region still owns them.
 
 ### aggregate_from
 
@@ -240,8 +247,8 @@ added without touching the recording state.
 
 The emitters are generic over the launch: launch_node, untracked_launch_node, captured_node,
 state_launch_node and coupled_launch_node each take a count, an Extent or an NdRange and call
-submit_launch(). state_node and coupled_node are the whole-field forms; they read the State's
-size at each replay and share add_state_node() and add_coupled_node() with the launch forms.
+submit_launch(). A rule over the whole field has no emitter of its own: the Recorder passes the
+State's size as the count.
 
 ### Launch width
 
@@ -260,18 +267,23 @@ Node::baked_width, which a profiled run reports as the node's launched width.
 untracked_raw_node() stamps none: a raw command group submits its own work and takes no launch,
 and add_untracked() has no NodeOptions to state a width through.
 
-### Emitters that hold no State pointer
+### State emitters
 
 state_launch_node(view, launch, fn), coupled_launch_node(out_view, views, launch, fn),
-dynamic_state_node(view, capacity, ...) and offload_state_node(op, view, size, ...) are overloads
-that take no `State<T>*`. A State's size does not change after it is allocated, so it is passed by
-value; the whole-field form of a rule is the launch form with the State's size as its count. The
-keys of a State swap at every step, so they are read at each replay, from the view: the read key
-is the address in `view->cur` and the write key the address in `view->next`.
+dynamic_state_node(view, capacity, ...) and offload_state_node(op, view, size, ...) take the
+State's view and no `State<T>*`, so a rule does not depend on where the State object lives. A
+State's size does not change after it is allocated, so it is passed by value. The keys of a State
+swap at every step, so they are read at each replay, from the view: the read key is the address in
+`view->current` and the write key the address in `view->next`. offload_state_node() writes the same
+two addresses into its live read and write lists at each replay. The State keeps its view written
+(api/data/README.md), so a replay needs no resync before it.
 
-Their precondition is that the view names the State's fields whenever the replay runs.
-StepMachinery::view_for() creates a view with null fields and the step driver calls resync()
-after it builds the plan, so the Recorder still calls the overloads that take the State pointer.
+### require_offload_parameters
+
+TaskMetadata holds K_MAX_PARAMS parameters. require_offload_parameters() throws `invalid_graph`
+for a longer list, naming the call, the count given and the limit, and Recorder::offload() and
+offload_rule() call it before they record. offload_metadata() copies every parameter it is handed
+and states that check as its precondition.
 
 ### untracked_launch_node
 

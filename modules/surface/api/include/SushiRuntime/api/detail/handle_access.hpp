@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <memory>
 #include <utility>
 
 #include <SushiRuntime/memory/resource_liveness.hpp>
@@ -44,6 +45,9 @@ namespace SushiRuntime
 
         namespace detail
         {
+            template <typename T>
+            struct StateView;
+
             /**
              * @brief Reads and steps the tracking state of a Buffer or a State for the graph
              *        layer.
@@ -76,7 +80,7 @@ namespace SushiRuntime
                 template <typename T>
                 static void* read_key(const State<T>& state) noexcept
                 {
-                    return key(state.cur_);
+                    return key(state.current_);
                 }
 
                 /** @brief Returns the key of the field a task writing the State depends on. */
@@ -101,15 +105,49 @@ namespace SushiRuntime
                 template <typename T>
                 static Memory::LivenessObserver liveness(const State<T>& state) noexcept
                 {
-                    return liveness(state.cur_);
+                    return liveness(state.current_);
                 }
 
-                /** @brief Swaps the State's two fields, so the one just written becomes current. */
+                /**
+                 * @brief Returns the view a State shares with the graphs that record it.
+                 * @return The State's own view, or a new empty one for a State that owns no memory.
+                 * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+                 */
+                template <typename T>
+                static std::shared_ptr<StateView<T>> view(const State<T>& state)
+                {
+                    if (state.view_)
+                        return state.view_;
+                    return std::make_shared<StateView<T>>();
+                }
+
+                /**
+                 * @brief Swaps the State's two fields, so the one just written becomes current,
+                 *        and writes the swap into its view.
+                 */
                 template <typename T>
                 static void advance(State<T>& state) noexcept
                 {
                     using std::swap;
-                    swap(state.cur_, state.next_);
+                    swap(state.current_, state.next_);
+                    if (state.view_)
+                        state.publish_view();
+                }
+
+                /** @brief Advances the State that owns a view; does nothing once it is gone. */
+                template <typename T>
+                static void advance(StateView<T>& view) noexcept
+                {
+                    if (view.owner != nullptr)
+                        advance(*view.owner);
+                }
+
+                /** @brief Rewrites a view from the State that owns it; does nothing once gone. */
+                template <typename T>
+                static void resync(StateView<T>& view) noexcept
+                {
+                    if (view.owner != nullptr)
+                        view.owner->publish_view();
                 }
             };
         } // namespace detail

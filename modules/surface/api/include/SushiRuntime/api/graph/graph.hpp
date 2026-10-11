@@ -105,6 +105,17 @@ namespace SushiRuntime
                 Graph(const Graph&) = delete;
                 Graph& operator=(const Graph&) = delete;
 
+                /**
+                 * @brief Waits for a step started with run_async() and still pending, then frees
+                 *        the rules and the plan.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                ~Graph()
+                {
+                    // The plan and the recorder are alive here and gone in a base destructor.
+                    end_pending_step();
+                }
+
                 /** @brief Returns the recorder this graph's rules are recorded on. */
                 [[nodiscard]] Recorder& recorder() noexcept { return recorder_; }
 

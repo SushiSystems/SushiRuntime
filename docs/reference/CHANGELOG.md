@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 2026-10-11 — api: Fixed a `State` rule reading a dangling pointer after the `State` moved, and a late-bound rule registering a stale read key after an odd step (`state.hpp`, `emit_dynamic.hpp`).
+- 2026-10-11 — api: Renamed `detail::StateView::cur` to `current` with no forwarder and added size and owner fields; removed the `State<T>*` emitter overloads (`handle_access.hpp`, `emit_state.hpp`).
+- 2026-10-11 — api: Changed `Recorder::offload` and `offload_rule` to refuse more than `K_MAX_PARAMS` parameters; fixed `replay()` renaming the previous rule's node (`recorder.hpp`).
+- 2026-10-11 — api: Fixed a missing cross-region edge when a predecessor covered part of a node's interval; `RegionComposer::commit` keeps its regions when a build throws (`boundary_access.hpp`, `region_composer.hpp`).
+- 2026-10-11 — api: Changed the run entries to return `invalid_state` while another run is in flight on the same runtime, and `cancel()` to do nothing on an idle graph (`step_driver.hpp`).
+- 2026-10-11 — api: Fixed a `RunHandle` outliving its graph: the destructor of `Graph` and of `DynamicGraph` ends a pending step; a chained run leaves a State unadvanced when its last step fails (`run_handle.hpp`, `step_driver.hpp`).
+- 2026-10-11 — api: Changed `try_run_until()` to require a nothrow-move-constructible stop test; deprecated `add(OpID, n, std::vector<void*>, ...)` for the Reads and Writes form (`step_driver.hpp`, `builder_surface.hpp`).
 - 2026-10-11 — api: Changed `add(Coupled(...), fn)` to hand each State it reads as `const T*`; a kernel that declared a mutable input pointer no longer compiles (`callable_checks.hpp`).
 - 2026-10-11 — api: Changed `distributed()` to refuse a device-resident `Buffer` or `State`, and an element type that is not trivially copyable (`buffer.hpp`, `state.hpp`).
 - 2026-10-11 — api: Fixed a graph that recorded `sized_from_device` or `based_at_device` reading a freed slot; it refuses with `dangling_resource` (`dynamic.hpp`, `late_count.hpp`).

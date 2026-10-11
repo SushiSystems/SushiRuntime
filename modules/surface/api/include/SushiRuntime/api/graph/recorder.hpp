@@ -44,6 +44,7 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
+#include <SushiRuntime/api/detail/callable_checks.hpp>
 #include <SushiRuntime/api/detail/callable_traits.hpp>
 #include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/api/detail/emit_captured.hpp>
@@ -88,7 +89,8 @@ namespace SushiRuntime
         /**
          * @brief Owns the nodes recorded for one graph or region and replays them.
          *
-         * A move leaves the source empty on the same context, ready to record again.
+         * A move leaves the source empty on the same context, ready to record again, and
+         * its generation() past every value it had.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         class Recorder final
@@ -140,7 +142,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Takes over another recorder's nodes, rules, scratch and hooks.
-                 * @param other Left empty on the same context, with its counters at zero.
+                 * @param other Left empty on the same context; its generation() moves on.
                  * @pre No rule scope is open on other.
                  */
                 Recorder(Recorder&& other) noexcept
@@ -150,7 +152,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Replaces this recorder's contents with another's.
-                 * @param other Left empty on the same context, with its counters at zero.
+                 * @param other Left empty on the same context; its generation() moves on.
                  * @pre No rule scope is open on either recorder.
                  */
                 Recorder& operator=(Recorder&& other) noexcept
@@ -178,27 +180,26 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Records a per-element launch over [0, count), ordered by its access.
-                 * @param fn Callable invoked as fn(i) for each index.
+                 * @brief Records a launch over [0, count), ordered by its access.
+                 * @param fn Callable invoked as fn(i) for each index, or as
+                 *        fn(0, count, sycl::handler&) to drive the handler itself.
                  */
-                template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
+                template <class F>
                 void kernel(std::size_t count, Access access, F&& fn, NodeOptions options = {})
                 {
-                    record(detail::launch_node(std::move(access.reads), std::move(access.writes),
-                                               count, std::forward<F>(fn), options.width),
-                           access.lives);
-                }
-
-                /**
-                 * @brief Records a launch that drives the handler over [0, count) itself.
-                 * @param fn Callable invoked as fn(0, count, sycl::handler&).
-                 */
-                template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
-                void kernel(std::size_t count, Access access, F&& fn, NodeOptions options = {})
-                {
-                    record(detail::range_node(std::move(access.reads), std::move(access.writes),
-                                              count, std::forward<F>(fn), options.width),
-                           access.lives);
+                    if constexpr (detail::accepts_kernel<std::size_t, F>())
+                    {
+                        if constexpr (is_range_kernel_v<F>)
+                            record(detail::range_node(std::move(access.reads),
+                                                      std::move(access.writes), count,
+                                                      std::forward<F>(fn), options.width),
+                                   access.lives);
+                        else
+                            record(detail::launch_node(std::move(access.reads),
+                                                       std::move(access.writes), count,
+                                                       std::forward<F>(fn), options.width),
+                                   access.lives);
+                    }
                 }
 
                 /**
@@ -324,16 +325,17 @@ namespace SushiRuntime
                  * @brief Records a per-element launch over [0, count) that names no region.
                  * @param fn        Callable invoked as fn(i) for each index.
                  * @param placement Device the node runs on; a handle it names is watched.
-                 * @throws Core::SushiException With invalid_access for a device the runtime
-                 *         does not have.
+                 * @param call      Names the call the user wrote in a thrown message.
+                 * @throws Core::SushiException With invalid_access for an unknown device.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
                 void untracked_kernel(std::size_t count, F&& fn,
-                                      const On& placement = On(DeviceIndex{0}))
+                                      const On& placement = On(DeviceIndex{0}),
+                                      const char* call = K_UNTRACKED_KERNEL)
                 {
                     std::vector<Memory::LivenessObserver> lives;
-                    const std::size_t device = placed_device(placement, lives);
+                    const std::size_t device = placed_device(call, placement, lives);
                     record(detail::untracked_launch_node(count, device, std::forward<F>(fn)),
                            lives);
                 }
@@ -342,15 +344,16 @@ namespace SushiRuntime
                  * @brief Records a region-less launch that drives the handler itself.
                  * @param fn        Callable invoked as fn(0, count, sycl::handler&).
                  * @param placement Device the node runs on; a handle it names is watched.
-                 * @throws Core::SushiException With invalid_access for a device the runtime
-                 *         does not have.
+                 * @param call      Names the call the user wrote in a thrown message.
+                 * @throws Core::SushiException With invalid_access for an unknown device.
                  */
                 template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
                 void untracked_kernel(std::size_t count, F&& fn,
-                                      const On& placement = On(DeviceIndex{0}))
+                                      const On& placement = On(DeviceIndex{0}),
+                                      const char* call = K_UNTRACKED_KERNEL)
                 {
                     std::vector<Memory::LivenessObserver> lives;
-                    const std::size_t device = placed_device(placement, lives);
+                    const std::size_t device = placed_device(call, placement, lives);
                     record(detail::untracked_range_node(count, device, std::forward<F>(fn)),
                            lives);
                 }
@@ -359,15 +362,16 @@ namespace SushiRuntime
                  * @brief Records a launch over an Extent that names no region.
                  * @param fn        Callable invoked as fn(sycl::id<N>) with the origin applied.
                  * @param placement Device the node runs on; a handle it names is watched.
-                 * @throws Core::SushiException With invalid_access for a device the runtime
-                 *         does not have.
+                 * @param call      Names the call the user wrote in a thrown message.
+                 * @throws Core::SushiException With invalid_access for an unknown device.
                  */
                 template <int N, class F>
                 void untracked_kernel(Extent<N> extent, F&& fn,
-                                      const On& placement = On(DeviceIndex{0}))
+                                      const On& placement = On(DeviceIndex{0}),
+                                      const char* call = K_UNTRACKED_KERNEL)
                 {
                     std::vector<Memory::LivenessObserver> lives;
-                    const std::size_t device = placed_device(placement, lives);
+                    const std::size_t device = placed_device(call, placement, lives);
                     record(detail::untracked_launch_node(extent, device, std::forward<F>(fn)),
                            lives);
                 }
@@ -377,15 +381,16 @@ namespace SushiRuntime
                  * @param fn        Callable invoked as fn(sycl::nd_item<N>), or as
                  *                  fn(sycl::nd_item<N>, sycl::id<N>) for the id with the origin.
                  * @param placement Device the node runs on; a handle it names is watched.
-                 * @throws Core::SushiException With invalid_access for a device the runtime
-                 *         does not have.
+                 * @param call      Names the call the user wrote in a thrown message.
+                 * @throws Core::SushiException With invalid_access for an unknown device.
                  */
                 template <int N, class F>
                 void untracked_kernel(NdRange<N> range, F&& fn,
-                                      const On& placement = On(DeviceIndex{0}))
+                                      const On& placement = On(DeviceIndex{0}),
+                                      const char* call = K_UNTRACKED_KERNEL)
                 {
                     std::vector<Memory::LivenessObserver> lives;
-                    const std::size_t device = placed_device(placement, lives);
+                    const std::size_t device = placed_device(call, placement, lives);
                     record(detail::untracked_launch_node(range, device, std::forward<F>(fn)),
                            lives);
                 }
@@ -394,21 +399,24 @@ namespace SushiRuntime
                  * @brief Records a raw command group that names no region.
                  * @param fn        Callable invoked as fn(sycl::handler&).
                  * @param placement Device the node runs on; a handle it names is watched.
-                 * @throws Core::SushiException With invalid_access for a device the runtime
-                 *         does not have.
+                 * @param call      Names the call the user wrote in a thrown message.
+                 * @throws Core::SushiException With invalid_access for an unknown device.
                  */
                 template <class F>
-                void untracked_raw_kernel(F&& fn, const On& placement = On(DeviceIndex{0}))
+                void untracked_raw_kernel(
+                    F&& fn, const On& placement = On(DeviceIndex{0}),
+                    const char* call = "Recorder::untracked_raw_kernel(fn, placement)")
                 {
                     std::vector<Memory::LivenessObserver> lives;
-                    const std::size_t device = placed_device(placement, lives);
+                    const std::size_t device = placed_device(call, placement, lives);
                     record(detail::untracked_raw_node(device, std::forward<F>(fn)), lives);
                 }
 
                 /**
                  * @brief Records the per-step rule of a State: read current, write next.
-                 * @param state The state the rule evolves; must outlive this recorder.
-                 * @param fn Callable invoked as fn(i, const T* cur, T* next) over the state's size.
+                 * @param state The state the rule evolves; alive at every run, free to move.
+                 * @param fn Callable invoked as fn(i, const T* current, T* next) over the state's
+                 *        size.
                  */
                 template <typename T, class F>
                 void state_rule(State<T>& state, F&& fn)
@@ -416,34 +424,37 @@ namespace SushiRuntime
                     auto view = steps_.view_for(state);
                     std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, state);
-                    record(detail::state_node(view, &state, std::forward<F>(fn)), lives);
-                    steps_.register_advance(state, view);
+                    record(detail::state_launch_node(view, view->size, std::forward<F>(fn)),
+                           lives);
+                    steps_.register_advance(std::move(view));
                 }
 
                 /**
                  * @brief Records a State rule over a count, an Extent or an NdRange.
-                 * @param state The state the rule evolves; must outlive this recorder.
-                 * @param fn Callable invoked as fn(index, const T* cur, T* next).
+                 * @param state The state the rule evolves; alive at every run, free to move.
+                 * @param fn    Callable invoked as fn(index, const T* current, T* next).
+                 * @param call  Names the call the user wrote in a thrown message.
                  * @throws Core::SushiException With invalid_graph for a launch past the state.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class Launch, class F,
                           std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
-                void state_rule(State<T>& state, Launch launch, F&& fn)
+                void state_rule(State<T>& state, Launch launch, F&& fn,
+                                const char* call = "Recorder::state_rule(state, launch, fn)")
                 {
-                    detail::require_launch_within(launch, state.size(), "add(launch, state, fn)",
-                                                  next_rule(), "the State");
+                    detail::require_launch_within(launch, state.size(), call, next_rule(),
+                                                  "the State");
                     auto view = steps_.view_for(state);
                     std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, state);
-                    record(detail::state_launch_node(view, &state, launch, std::forward<F>(fn)),
-                           lives);
-                    steps_.register_advance(state, view);
+                    record(detail::state_launch_node(view, launch, std::forward<F>(fn)), lives);
+                    steps_.register_advance(std::move(view));
                 }
 
                 /**
                  * @brief Records a State rule whose window is bound per step.
-                 * @param state The state the rule evolves; its size is the capacity.
+                 * @param state The state the rule evolves; its size is the capacity. Alive at
+                 *        every run, free to move.
                  * @throws Core::SushiException With invalid_access for a slot outside host USM.
                  */
                 template <typename T, class F>
@@ -453,84 +464,95 @@ namespace SushiRuntime
                     auto view = steps_.view_for(state);
                     auto bindings = std::make_shared<::SushiRuntime::Graph::LateBindings>();
 
-                    std::vector<Memory::ResourceRegion> reads{ detail::HandleAccess::read_key(state) };
+                    std::vector<Memory::ResourceRegion> slot_reads;
                     std::vector<Memory::LivenessObserver> lives;
-                    detail::adopt_device_bindings(*bindings, window, reads, lives);
+                    detail::adopt_device_bindings(*bindings, window, slot_reads, lives);
                     std::uint32_t* fault = fault_record_for(window);
 
                     detail::gather_life(lives, state);
-                    record(detail::dynamic_state_node(view, &state, bindings, fault,
-                                                      std::move(reads),
+                    record(detail::dynamic_state_node(view, view->size, bindings, fault,
+                                                      std::move(slot_reads),
                                                       std::forward<F>(fn)),
                            lives);
-                    steps_.register_advance(state, view);
+                    steps_.register_advance(std::move(view));
                     steps_.register_binding_updater(std::move(bindings), std::move(window));
                 }
 
                 /**
                  * @brief Records a rule that writes one State from several current fields.
-                 * @param out    The field written; must outlive this recorder.
-                 * @param fn     Callable invoked as fn(i, cur, next, a, ...).
-                 * @param inputs The fields read; each must outlive this recorder.
+                 * @param call   Names the call the user wrote in a thrown message.
+                 * @param out    The field written; alive at every run, free to move.
+                 * @param fn     Callable invoked as fn(i, current, next, a, ...).
+                 * @param inputs The fields read, under the same rule as out.
+                 * @throws Core::SushiException With invalid_graph for an input smaller than out.
+                 */
+                template <typename T, class F, class... Inputs>
+                void coupled_rule(const char* call, State<T>& out, F&& fn,
+                                  State<Inputs>&... inputs)
+                {
+                    (detail::require_launch_within(out.size(), inputs.size(), call, next_rule(),
+                                                   "a State read"), ...);
+                    record_coupled(out.size(), out, std::forward<F>(fn), inputs...);
+                }
+
+                /**
+                 * @brief Records a coupled rule over the whole field, named as this member.
                  * @throws Core::SushiException With invalid_graph for an input smaller than out.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 template <typename T, class F, class... Inputs>
                 void coupled_rule(State<T>& out, F&& fn, State<Inputs>&... inputs)
                 {
-                    (detail::require_launch_within(out.size(), inputs.size(),
-                                                   "add(Coupled(out, in0, ...), fn)", next_rule(),
-                                                   "a State read"), ...);
-                    std::vector<Memory::LivenessObserver> lives;
-                    detail::gather_life(lives, out);
-                    (detail::gather_life(lives, inputs), ...);
-
-                    auto out_view = steps_.view_for(out);
-                    auto views = std::make_tuple(steps_.view_for(inputs)...);
-                    auto states = std::make_tuple(&out, &inputs...);
-                    record(detail::coupled_node(out_view, &out, views, states, std::forward<F>(fn)),
-                           lives);
-                    steps_.register_advance(out, out_view);
+                    coupled_rule("Recorder::coupled_rule(out, fn, inputs...)", out,
+                                 std::forward<F>(fn), inputs...);
                 }
 
                 /**
                  * @brief Records a coupled rule over a count, an Extent or an NdRange.
-                 * @param out    The field written; must outlive this recorder.
-                 * @param fn     Callable invoked as fn(index, cur, next, a, ...).
-                 * @param inputs The fields read; each must outlive this recorder.
+                 * @param call   Names the call the user wrote in a thrown message.
+                 * @param out    The field written; alive at every run, free to move.
+                 * @param fn     Callable invoked as fn(index, current, next, a, ...).
+                 * @param inputs The fields read, under the same rule as out.
+                 * @throws Core::SushiException With invalid_graph for a launch past a State.
+                 */
+                template <class Launch, typename T, class F, class... Inputs,
+                          std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
+                void coupled_rule(const char* call, Launch launch, State<T>& out, F&& fn,
+                                  State<Inputs>&... inputs)
+                {
+                    detail::require_launch_within(launch, out.size(), call, next_rule(),
+                                                  "the State written");
+                    (detail::require_launch_within(launch, inputs.size(), call, next_rule(),
+                                                   "a State read"), ...);
+                    record_coupled(launch, out, std::forward<F>(fn), inputs...);
+                }
+
+                /**
+                 * @brief Records a coupled rule over a launch, named as this member.
                  * @throws Core::SushiException With invalid_graph for a launch past a State.
                  */
                 template <class Launch, typename T, class F, class... Inputs,
                           std::enable_if_t<detail::is_launch_v<Launch>, int> = 0>
                 void coupled_rule(Launch launch, State<T>& out, F&& fn, State<Inputs>&... inputs)
                 {
-                    static constexpr const char* K_CALL = "add(launch, Coupled(out, in0, ...), fn)";
-                    detail::require_launch_within(launch, out.size(), K_CALL, next_rule(),
-                                                  "the State written");
-                    (detail::require_launch_within(launch, inputs.size(), K_CALL, next_rule(),
-                                                   "a State read"), ...);
-                    std::vector<Memory::LivenessObserver> lives;
-                    detail::gather_life(lives, out);
-                    (detail::gather_life(lives, inputs), ...);
-
-                    auto out_view = steps_.view_for(out);
-                    auto views = std::make_tuple(steps_.view_for(inputs)...);
-                    auto states = std::make_tuple(&out, &inputs...);
-                    record(detail::coupled_launch_node(out_view, &out, views, states, launch,
-                                                       std::forward<F>(fn)),
-                           lives);
-                    steps_.register_advance(out, out_view);
+                    coupled_rule("Recorder::coupled_rule(launch, out, fn, inputs...)", launch, out,
+                                 std::forward<F>(fn), inputs...);
                 }
 
                 /**
                  * @brief Records an offloadable per-element task with a local fallback.
                  * @param local  Callable invoked as local(i) for i in [0, count) when run here.
                  * @param params Scalar parameters sent with the kernel name.
+                 * @param call   Names the call the user wrote in a thrown message.
+                 * @throws Core::SushiException With invalid_graph for too many parameters.
                  */
                 template <class F>
                 void offload(::SushiRuntime::Graph::OpID op, std::size_t count, Access access,
-                             F&& local, std::vector<std::uint64_t> params)
+                             F&& local, std::vector<std::uint64_t> params,
+                             const char* call =
+                                 "Recorder::offload(op, count, access, local, params)")
                 {
+                    detail::require_offload_parameters(call, params.size());
                     record(detail::offload_node(op, count, std::move(access.reads),
                                                 std::move(access.writes), std::forward<F>(local),
                                                 std::move(params)),
@@ -540,29 +562,35 @@ namespace SushiRuntime
                 /**
                  * @brief Records an offloadable per-step rule of a State.
                  * @pre state was registered with State::distributed().
-                 * @param local Callable invoked as local(i, const T* cur, T* next) when run here.
+                 * @param local Local fallback invoked as local(i, const T* current, T* next).
+                 * @param call  Names the call the user wrote in a thrown message.
+                 * @throws Core::SushiException With invalid_graph for too many parameters.
                  */
                 template <typename T, class F>
                 void offload_rule(::SushiRuntime::Graph::OpID op, State<T>& state, F&& local,
-                                  std::vector<std::uint64_t> params)
+                                  std::vector<std::uint64_t> params,
+                                  const char* call =
+                                      "Recorder::offload_rule(op, state, local, params)")
                 {
+                    detail::require_offload_parameters(call, params.size());
                     auto view = steps_.view_for(state);
                     auto live_reads = std::make_shared<std::vector<void*>>(
-                        std::vector<void*>{ detail::HandleAccess::read_key(state) });
+                        std::vector<void*>{ static_cast<void*>(view->current) });
                     auto live_writes = std::make_shared<std::vector<void*>>(
-                        std::vector<void*>{ detail::HandleAccess::write_key(state) });
+                        std::vector<void*>{ static_cast<void*>(view->next) });
 
                     std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, state);
-                    record(detail::offload_state_node(op, view, &state, live_reads, live_writes,
-                                                      std::forward<F>(local), std::move(params)),
+                    record(detail::offload_state_node(op, view, view->size, live_reads,
+                                                      live_writes, std::forward<F>(local),
+                                                      std::move(params)),
                            lives);
-                    steps_.register_advance(state, view);
+                    steps_.register_advance(view);
 
                     // Live IO is re-pointed before each step for the coordinator.
                     steps_.add_dist_io_updater([view, live_reads, live_writes]()
                     {
-                        (*live_reads)[0]  = view->cur;
+                        (*live_reads)[0]  = view->current;
                         (*live_writes)[0] = view->next;
                     });
                 }
@@ -623,11 +651,13 @@ namespace SushiRuntime
 
                 /**
                  * @brief Forgets every node, rule, observer, hook and scratch block recorded.
-                 * @pre No rule scope is open, and no step that runs the recorded nodes is pending.
+                 * @pre No step that runs the recorded nodes is pending.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
                 void clear()
                 {
+                    // An open scope stays open, and its next node starts a new rule.
+                    scope_has_node_ = false;
                     specs_.clear();
                     rule_names_.clear();
                     labels_.clear();
@@ -643,7 +673,10 @@ namespace SushiRuntime
                 /** @brief Returns how many nodes are recorded. */
                 [[nodiscard]] std::size_t node_count() const noexcept { return specs_.size(); }
 
-                /** @brief Returns a counter every change to the recorded work advances. */
+                /**
+                 * @brief Returns a counter every change to the recorded work advances.
+                 * @return A value this recorder never returns again for different work.
+                 */
                 [[nodiscard]] std::uint64_t generation() const noexcept { return generation_; }
 
                 /** @brief Returns whether a recorded handle names a freed allocation. */
@@ -666,7 +699,8 @@ namespace SushiRuntime
                  *
                  * The nodes of one rule share a registration index reserved on target when the
                  * first of them is added, and all carry the rule's name.
-                 * @param visit Called as visit(rule, node) once node is added and named.
+                 * @param visit Called as visit(rule, node) once node is added and named; not
+                 *        called for an emitter that added nothing.
                  */
                 template <class Visit>
                 void replay(::SushiRuntime::Graph::TaskGraph& target, Visit&& visit) const
@@ -681,8 +715,12 @@ namespace SushiRuntime
                             stamped = spec.rule;
                             reserved = target.reserve_registration();
                         }
+                        const ::SushiRuntime::Graph::Node* before = target.last_node_added();
                         spec.emit(target, spec.takes_rule_registration
                                               ? reserved : std::optional<std::uint32_t>());
+                        // An emitter may add nothing; the last node is then an earlier rule's.
+                        if (target.last_node_added() == before)
+                            continue;
                         target.name_last_node(rule_names_[spec.rule]);
                         visit(static_cast<std::size_t>(spec.rule), node);
                     }
@@ -718,6 +756,30 @@ namespace SushiRuntime
                     ++generation_;
                 }
 
+                /** @brief Names the untracked_kernel() family in a message of its own. */
+                static constexpr const char* K_UNTRACKED_KERNEL =
+                    "Recorder::untracked_kernel(launch, fn, placement)";
+
+                /**
+                 * @brief Records the node and the advance of a coupled rule already checked.
+                 * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
+                 */
+                template <class Launch, typename T, class F, class... Inputs>
+                void record_coupled(Launch launch, State<T>& out, F&& fn,
+                                    State<Inputs>&... inputs)
+                {
+                    std::vector<Memory::LivenessObserver> lives;
+                    detail::gather_life(lives, out);
+                    (detail::gather_life(lives, inputs), ...);
+
+                    auto out_view = steps_.view_for(out);
+                    auto views = std::make_tuple(steps_.view_for(inputs)...);
+                    record(detail::coupled_launch_node(out_view, std::move(views), launch,
+                                                       std::forward<F>(fn)),
+                           lives);
+                    steps_.register_advance(std::move(out_view));
+                }
+
                 /** @brief Returns the position the next recorded node's rule has. */
                 std::size_t next_rule() const noexcept
                 {
@@ -727,12 +789,13 @@ namespace SushiRuntime
 
                 /**
                  * @brief Checks a placement and hands over the observer of the handle it names.
+                 * @param call  Names the call the user wrote in the message.
                  * @param lives Gains the placement's observer when it watches an allocation.
                  * @return Index of the device the node is placed on.
                  * @throws Core::SushiException With invalid_access for a device the runtime
                  *         does not have.
                  */
-                std::size_t placed_device(const On& placement,
+                std::size_t placed_device(const char* call, const On& placement,
                                           std::vector<Memory::LivenessObserver>& lives) const
                 {
                     const std::size_t device = placement.device.value();
@@ -740,8 +803,8 @@ namespace SushiRuntime
                     if (device >= count)
                         throw Core::SushiException(Core::Error{
                             Core::Errc::invalid_access,
-                            "add_untracked(..., On(DeviceIndex{" + std::to_string(device) +
-                                "}), fn): the runtime has " + std::to_string(count) +
+                            std::string(call) + ": On(DeviceIndex{" + std::to_string(device) +
+                                "}) names no device, the runtime has " + std::to_string(count) +
                                 " device(s); name a device below that, or place the kernel "
                                 "with On(buffer)."});
                     if (!placement.life.expired())
@@ -764,7 +827,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Moves other's contents here and leaves other empty on its context.
-                 * @param other Recorder to empty; its counters return to zero.
+                 * @param other Recorder to empty; its generation advances by one. This one
+                 *        takes other's generation when it is the larger, or advances by one.
                  */
                 void take(Recorder& other) noexcept
                 {
@@ -775,7 +839,12 @@ namespace SushiRuntime
                     scratch_ = std::exchange(other.scratch_, {});
                     observers_ = std::exchange(other.observers_, {});
                     steps_ = std::exchange(other.steps_, detail::StepMachinery());
-                    generation_ = std::exchange(other.generation_, 0);
+                    // A value this recorder returned before must not name other's work.
+                    if (other.generation_ > generation_)
+                        generation_ = other.generation_;
+                    else
+                        ++generation_;
+                    ++other.generation_;
                     scope_open_ = false;
                     scope_has_node_ = false;
                 }
@@ -837,7 +906,7 @@ namespace SushiRuntime
                 /** @brief The per-step hooks of the recorded nodes. */
                 detail::StepMachinery steps_;
 
-                /** @brief Advanced by every recorded node, every rename and every clear(). */
+                /** @brief Advanced by every recorded node, rename, clear() and move. */
                 std::uint64_t generation_ = 0;
 
                 /** @brief Whether a rule scope is open at this moment. */

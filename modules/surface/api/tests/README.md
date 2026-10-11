@@ -71,6 +71,29 @@ be false while the step is held open and true once the step has finished.
 The region-partitioned graph behaves the same way: a step overlaps the caller, and a pending
 structural change is committed before the step is submitted.
 
+### `expect_refused_as_invalid_state`, `AnotherGraphIsRefusedWhileAStepIsPending`
+
+A runtime has one engine, so one graph's pending step occupies it. While the step of the first graph
+is held open at a gate, `run()`, `try_run()` and `try_run_async()` on a second graph of the same
+runtime must each report `invalid_state` and must not run the second graph's task. The first
+graph's handle must then complete with a successful report, and the second graph must run once the
+step is settled. `expect_refused_as_invalid_state` checks one `Result` for that code.
+
+### `CancelReachesOnlyTheGraphItIsCalledOn`
+
+`cancel()` on a graph with no run in flight must leave another graph's pending step alone: the
+step's report says not cancelled. `cancel()` on the graph that owns the pending step must mark its
+report cancelled. A `cancel()` sent while nothing runs must not mark the next run.
+
+### `expect_step_ended_by_its_graph`, `AGraphDestroyedWithAPendingStepEndsTheStep`, `ADynamicGraphDestroyedWithAPendingStepEndsTheStep`
+
+A handle may outlive its graph. The graph is destroyed in an inner scope while its step is pending,
+with the gate released just before, and the handle is destroyed at the end of the test. The buffer
+must hold the task's write when the scope closes, which shows that the destructor waited for the
+step before the plan died. `expect_step_ended_by_its_graph` then expects `pending()` false,
+`ready()` true and `invalid_state` from `try_wait()`, none of which may read the dead graph. The
+`Graph` test also runs a new graph on the runtime, which a step left behind would refuse.
+
 ## test_data_handles.cpp
 
 The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what
@@ -412,16 +435,13 @@ design is sections D, E (item 8) and F.6 of
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`, built as task 6 of
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`.
 
-### `DynamicGraphNodeEventsTestAccess`
-
-`DynamicGraphNodeEventsTestAccess` is a friend used only by tests to reach `DynamicGraph::plan_`,
-which has no public accessor. It mirrors `NodeEventRecordsTestAccess` on `Graph`.
+The file reaches the plan through `dynamic_graph_plan_access.hpp`.
 
 ### `registration_index_of`
 
-`registration_index_of` returns the registration index of the one compiled node called `name`.
-`plan.all_nodes` is populated only while the graph requests profiling (`commit()` in
-`dynamic_graph.hpp`), and every test in the file relies on that.
+`registration_index_of` returns the registration index of the one compiled node called `name`,
+which `find_plan_node` looks up. `plan.all_nodes` is populated only while the graph requests
+profiling (`publish_plan()` in `region_composer.hpp`), and every test in the file relies on that.
 
 ### `NotRequestedRecordsNothing`
 
@@ -933,6 +953,40 @@ raises it to two, and naming the first again leaves it there.
 A buffer named by the first and the last of six rules is destroyed after a good run. The next run
 is refused with `dangling_resource`, on a `Graph` and on a `DynamicGraph`.
 
+### `refusal_of`
+
+`refusal_of` runs a call and returns the `Core::Error` of the `SushiException` it throws, or
+nothing when it throws none.
+
+### `AMovedFromRecorderNeverRepeatsAGeneration`
+
+A graph records one rule and runs, so its plan is built at the recorder's generation. The recorder
+is then moved out of the graph and a second rule is recorded on the graph. The generation of the
+recorder moved from must differ from every value read before, and the next run must execute the
+second rule: a recorder that returned to the generation of the plan would let the old plan run. The
+recorder moved to keeps the generation of the work it took. A move assignment from a recorder with
+a generation no larger than its own must still leave it with a larger one.
+
+### `AClearInsideAnExtensionStartsANewRule`
+
+An extension records a host node, calls `clear()` and records a second host node. The graph then
+holds one rule and one node, and the run executes the second node only. `extend()` holds a rule
+scope open around the extension, so a `clear()` that left the scope's state as it was recorded the
+second node into a rule that no longer existed.
+
+### `AnOffloadRuleTakesAtMostEightParameters`
+
+`add(OpID, count, Reads, Writes, local, params)` and `add(OpID, state, local, params)` with nine
+parameters throw `invalid_graph`; the first message holds `9 parameters` and `at most 8`, and
+neither rule is recorded. Both forms record with eight. A `static_assert` ties the literals to
+`TaskMetadata::K_MAX_PARAMS`. The graph is not run.
+
+### `AnEmitterThatAddsNothingLeavesTheRuleBeforeItAlone`
+
+A rule named `integrate` is followed by an emitter that adds no node and is named `optional`. The
+profiled report holds one row named `integrate` and none named `optional`, the first rule has a
+registration and the second reports `NO_REGISTRATION`.
+
 ## test_region_emitter.cpp
 
 The file covers `add_emitter()`, the recording form that hands the caller the backing TaskGraph.
@@ -1044,9 +1098,10 @@ request back, on both graph types.
 ### `MovingAGraphWithAPendingStepEndsTheStep`
 
 Moving a graph while its step is pending breaks a precondition. A debug build asserts, so the test
-is skipped there. In a release build the move must wait for the step, the handle's `try_wait()` must
-return `invalid_state`, and the destination must run. The gate is released before the move, so the
-move returns as soon as the task has run.
+is skipped there. In a release build the move must wait for the step, the handle must then report
+`pending()` false and `ready()` true, its `try_wait()` must return `invalid_state`, and the
+destination must run. The gate is released before the move, so the move returns as soon as the task
+has run.
 
 ### `CountingCoordinator`, `OffloadedCountIsOfThisRun`
 
@@ -1054,6 +1109,30 @@ move returns as soon as the task has run.
 sets it to five before any run, and the graph's host task adds three per step. A one-step run must
 report three, a two-step run six and an asynchronous step three; a report that copied the
 coordinator's cumulative count would say eight, fourteen and seventeen.
+
+### `CountedStep`, `counted_step_runs_chained`
+
+`CountedStep` owns a graph of three rules: a `State` increment, a kernel that writes a count into a
+`Residency::Host` slot, and a launch sized from that slot with a capacity of eight. A count of nine
+makes every step record a device fault, which the driver sees when it checks faults. The plan is
+kernels and a device-sized launch only, so it takes the chain; `counted_step_runs_chained` runs a
+clean one and reads the report's layer, and the two tests below are skipped when it is not the
+chain, because on the scheduler they would pass without the behaviour they test.
+
+### `AFailedChainedRunOfOneStepAdvancesNoState`, `AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast`
+
+A chained `try_run()` whose step faults must return an error and leave the `State` on the field it
+started on, with the starting value five in it. The chain used to advance before it checked, so the
+`State` showed six. A chained `try_run(3)` whose steps fault must leave seven: the two steps before
+the last have advanced, the last has not.
+
+### `expect_run_for_lasts_until_cancelled`, `ABudgetPastTheClocksRangeRunsUntilCancelled`
+
+`run_for` has no step limit, so the test ends the run from inside: the host task calls `cancel()` on
+its own graph at the third step. With a budget of `hours::max()` or `nanoseconds::max()` the report
+must say cancelled after exactly three steps. A deadline computed as `now + budget` overflowed for
+these budgets and landed in the past, which ended the run after one step. The task throws after a
+thousand steps, so a `cancel()` that reached nothing fails the test and does not hang it.
 
 ## test_run_report_reuse.cpp
 
@@ -1208,11 +1287,27 @@ whose `On(buffer)` handle was destroyed before the run is refused with `dangling
 `extend(fn)` calls `fn` once with the Recorder; the two kernels it records are one rule, and a
 run does not call it again.
 
+### `RefusalsNameTheCallTheUserWrote`
+
+One refused call per family, through the public add(): a State rule past its State, a Coupled
+rule with a short input, a Coupled launch past its State, `add_untracked` with an `On` the runtime
+lacks (both the launch and the raw form), and an offload with nine parameters (both the task and
+the State rule). Each message begins with the spelling of the call the user wrote, and no rule is
+recorded.
+
 ### `DeprecatedSpellingsForwardToTheNewOnes`
 
 Each spelling v0.4.0 deprecates (the old argument orders, `name_last`, `no_registration`,
 `Extent::offset`) still records the same rule. The test switches the deprecation warning off for
 its own body and is deleted with the forwarders.
+
+### `DeprecatedRawPointerFormsForwardToTheRegionForms`
+
+The per-element, the Dynamic and the offload forms that take two lists of base pointers each
+record the same rules and nodes as their `Reads` and `Writes` form. The rule that takes the
+pointers is followed by a rule over the same buffer, which waits for it, so every word ends at
+`(x + 1) * 3`. The test switches the deprecation warning off for its own body and is
+deleted with the forwarders.
 
 ## test_callable_traits.cpp
 
@@ -1223,8 +1318,9 @@ the test.
 ### `AMutablePerElementKernelIsRejected`, `AMutableRangeKernelIsRejected`
 
 `is_per_element_v` and `is_range_kernel_v` are true for a lambda and false for the same lambda
-declared `mutable`. The emitters call both kernels as const objects, so a trait that accepted the
-`mutable` one let it past the `static_assert` and failed inside the emitter.
+declared `mutable` while it captures a counter. The emitters call both kernels as const objects, so
+a trait that accepted the `mutable` one let it past the `static_assert` and failed inside the
+emitter. A captureless `mutable` lambda is not covered here: it converts to a function pointer.
 
 ### `AMutableRawKernelIsAccepted`
 
@@ -1256,9 +1352,9 @@ share no region and may finish in any order, so the widths are compared sorted.
 
 ### `AStateNodeBuiltFromItsViewRunsTheRule`, `ACoupledNodeBuiltFromItsViewsRunsTheRule`, `ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow`
 
-Each case builds a replay callable from an overload that takes no `State<T>*`, hands it a view
-the test filled from the State, and replays it through `add_emitter()`. One step runs and the
-State's next field holds the rule's result. No advance is registered, so the test reads `next()`.
+Each case builds a replay callable outside a recorder, hands it the State's own view from
+`HandleAccess::view()`, and replays it through `add_emitter()`. One step runs and the State's next
+field holds the rule's result. No advance is registered, so the test reads `next()`.
 The late-bound case sets the live count on its `LateBindings` and checks that the elements past it
 keep `CANARY`. `offload_state_node(op, view, size, ...)` has no case here.
 
@@ -1303,3 +1399,143 @@ The file covers `detail::record_device_fault()` for values past a uint32. Two `s
 A record written with a base and a capacity of `UINT32_MAX + 5` holds `UINT32_MAX` in both words
 and the count as given. `throw_if_device_fault()` then names `4294967295` as the start of the
 window and clears the record. The test is skipped where `std::size_t` is 32 bits wide.
+
+## test_state_move.cpp
+
+The file covers a State that moves after `add()` recorded a rule on it, and the view a State shares
+with the graphs that record it. `seeded_state` fills the current field with the index plus `SEED`
+and the next field with `CANARY`, `add_increment` records `next = current + 1` over the whole
+field, and `expect_advanced` compares the current field with the seed plus a number of steps.
+Three `static_assert` lines state that a State moves without throwing and does not copy.
+
+### `ARuleFollowsAStateMovedAfterAdd`
+
+A rule is recorded, the State is moved into a new variable, and three steps run. The moved-to State
+holds the seed plus three. A recorder that kept the address of the State read a moved-from object
+here.
+
+### `ARuleFollowsAStateItsVectorReallocated`
+
+The rule is recorded on element 0 of a `std::vector<State>`, and States are pushed until the
+address of element 0 changes. Three steps then advance element 0 and leave element 1 as seeded.
+
+### `ACoupledRuleFollowsItsMovedStates`
+
+`add(Coupled(out, input), fn)` is recorded and both States are moved. Two steps leave three times
+the seed in the State written and the seed in the State read.
+
+### `ADynamicStateRuleFollowsAMovedState`
+
+`add(sized(...), state, fn)` is recorded and the State moved. Three steps advance the live prefix
+on one compiled plan.
+
+### `TheViewFollowsAdvanceMoveAndDestruction`
+
+The case reads the view through `HandleAccess::view()`. It holds the State's two field pointers and
+its size; an advance swaps the pointers; the moved-to State returns the same view object, and an
+advance through that view swaps the moved-to State. After the State is destroyed the view holds
+null pointers and a size of zero, and an advance through it does nothing. A default-constructed
+State yields an empty view and not a null pointer.
+
+### `AStateAssignedOverRefusesTheRun`
+
+A State with a recorded rule is move-assigned a new State. The next `try_run()` returns
+`dangling_resource`.
+
+### `ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField`
+
+A late-bound State rule used to take its read key when it was recorded and its write key at each
+replay. After one step the two fields have swapped, so a plan rebuilt then registered the rule as a
+reader and a writer of the same field and not as a reader of the current one.
+
+The graph holds a kernel that writes `MARK` into the State's second field, named with
+`Writes(state)`, and then the late-bound rule `next = current + 1`. After one step the second field
+is current. The test replays the recorder onto a `TaskGraph` of its own and reads the in-degree of
+the rule's node, which must be one: the rule waits on the writer of the field it reads. It then
+renames the rule, which rebuilds the plan, runs a second step and expects `MARK + 1` everywhere.
+The in-degree is the deterministic check; the values depend on the order only when the scheduler
+runs the two unordered nodes the other way round.
+
+## dynamic_graph_plan_access.hpp
+
+The header is the seam the tests use to read the composed plan of a `DynamicGraph`, which has no
+public accessor. `test_dynamic_graph_node_events.cpp`, `test_boundary_access.cpp` and
+`test_region_commit.cpp` include it by its relative path.
+
+### `DynamicGraphNodeEventsTestAccess`
+
+`DynamicGraphNodeEventsTestAccess` is the friend `dynamic_graph.hpp` names, used only by tests to
+reach `DynamicGraph::plan_`. It mirrors `NodeEventRecordsTestAccess` on `Graph`.
+
+### `find_plan_node`, `has_boundary_edge`, `boundary_in_degree`
+
+`find_plan_node` returns the one node of `plan.all_nodes` that carries a name and fails the test
+when none or several do; the list is filled only while the graph requests profiling.
+`has_boundary_edge` reports whether `from` lists `to` among its cross-region successors, and
+`boundary_in_degree` returns how many cross-region edges end at a node. With them a test asserts an
+edge of the boundary layer directly and needs no timing.
+
+## test_boundary_access.cpp
+
+The file covers the entry and exit pins `compute_boundary_access()` gives a region and the
+cross-region edges the composer makes from them. The `Unit_BoundaryAccess` cases build the nodes of
+one region on a `TaskGraph` with `add_native` and read the pins; they start no runtime. The
+`Integration_BoundaryAccess` cases record host tasks on a profiled `DynamicGraph` over a buffer of
+20 elements, run one step and assert the edges and the values.
+
+### `AReadPastItsPredecessorsWriteKeepsAnEntryPin`
+
+`p` writes bytes `[0,10)` and `q` reads `[5,20)`. `q` has an intra edge from `p`, yet `p` covers
+only part of what `q` reads, so `q` keeps an entry pin whose read interval contains `[15,20)`.
+
+### `AReadInsideItsPredecessorsWriteHasNoEntryPin`
+
+`p` writes `[0,20)` and `q` reads `[5,20)`. `p` contains everything `q` reads, so the base has one
+entry pin, that of `p`.
+
+### `AWriteBehindAReadingPredecessorKeepsItsWritePin`
+
+`p` reads `[0,10)` and `q` writes `[0,10)`. A reader takes no edge from the readers of earlier
+regions, so it cannot stand in for a write: `q` keeps an entry pin with its write interval.
+
+### `OnlyAContainingSuccessorWriteShadowsAnExit`
+
+A write of `[5,10)` followed by a write of `[0,20)` leaves one exit pin, the later one. In the
+reverse order the wide write keeps its exit pin, because the narrow one rewrites only part of it.
+
+### `AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers`
+
+Region 1 holds `w`, which writes elements `[15,20)`. Region 2 holds `p`, which writes `[0,10)`, and
+`q`, which reads `[5,20)` and sums it. The plan holds the edge `w -> q`, `q` has a boundary
+in-degree of one, and the sum is 40.
+
+### `AReaderItsPredecessorCoversGainsNoEdge`
+
+`p` writes the whole buffer here. The plan holds `w -> p` and no edge `w -> q`: `q` has a boundary
+in-degree of zero and is ordered behind `w` through `p`. The sum is 50.
+
+### `AnEarlierReaderOrdersAWriterBehindAReadingPredecessor`
+
+Region 1 holds `r`, which reads `[0,10)`. Region 2 holds `p`, which reads the same elements, and
+`q`, which overwrites them. The plan holds the edge `r -> q`, and both readers see the value the
+buffer had before `q` ran.
+
+## test_region_commit.cpp
+
+The file covers what a `DynamicGraph` keeps when a commit of its regions throws.
+
+### `expect_producer_orders_consumer`
+
+`expect_producer_orders_consumer` expects the cross-region edge from the node named `a` to the node
+named `c` and a boundary in-degree of one on `c`.
+
+### `AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegions`
+
+Regions 0, 1 and 2 share one buffer: `a` writes it, `b` and `c` read it. After one run region 1 is
+dropped and region 3 is added with an emitter that throws on its first replay and writes a buffer
+of its own afterwards. The run returns `compile_failed`, `compose_count()` has not moved and the
+edge `a -> c` is still in the plan. The emitter then stops throwing, the next run succeeds and
+composes once, the edge `a -> c` is there, and `c` holds what `a` wrote in the second step.
+
+A second mid-commit failure, an allocation that fails after the first region is un-wired, has no
+test: the composer offers no seam that makes `std::set::insert` throw.

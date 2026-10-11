@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -86,6 +87,43 @@ namespace
             return refused.error().message;
         }
         return std::string();
+    }
+
+    /** @brief Tells whether a refusal message begins with the text given. */
+    bool begins_with(const std::string& message, const std::string& text)
+    {
+        return message.compare(0, text.size(), text) == 0;
+    }
+
+    /** @brief Holds what one two-rule graph recorded and produced. */
+    struct Outcome
+    {
+        std::size_t rules = 0;   /**< Rules the graph recorded. */
+        std::size_t nodes = 0;   /**< Nodes the graph recorded. */
+        std::vector<Word> words; /**< Each word of the target after the run. */
+    };
+
+    /**
+     * @brief Records one rule over a seeded buffer, then a rule that triples it, and runs both.
+     * @tparam RecordFirst Callable invoked as record_first(graph, target, words).
+     */
+    template <class RecordFirst>
+    Outcome increment_then_triple(Runtime& rt, RecordFirst&& record_first)
+    {
+        auto target = seeded(rt);
+        Word* words = target.data();
+        auto graph = rt.graph();
+        record_first(graph, target, words);
+        graph.add(WIDTH, API::Reads(target), API::Writes(target),
+                  [words](std::size_t i) { words[i] *= 3u; });
+
+        Outcome outcome;
+        outcome.rules = graph.size();
+        outcome.nodes = graph.node_count();
+        graph.run();
+        for (std::size_t i = 0; i < WIDTH; ++i)
+            outcome.words.push_back(target[i]);
+        return outcome;
     }
 } // namespace
 
@@ -316,6 +354,73 @@ TEST(Integration_BuilderSurface, ExtendRecordsOneNamedRule)
         ASSERT_EQ(target[i], static_cast<Word>(i) + SEED + 2u) << "at i=" << i;
 }
 
+/** @brief Tests that each refusal names the add() call the user wrote, through the public add(). */
+TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
+{
+    auto rt = Runtime::create();
+    auto field = seeded_state(rt);
+    auto output = seeded_state(rt);
+    auto input = seeded_state(rt, PREFIX);
+    auto target = seeded(rt);
+    const std::size_t count = rt.advanced().device_count();
+    auto graph = rt.graph();
+    const API::Extent<1> window{sycl::range<1>(WIDTH), sycl::id<1>(ORIGIN)};
+
+    const std::string state_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    {
+        graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
+    });
+    EXPECT_TRUE(begins_with(state_refusal, "add(launch, state, fn), rule 0: ")) << state_refusal;
+
+    const std::string coupled_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    {
+        graph.add(API::Coupled(output, input),
+                  [](std::size_t, const Word*, Word*, const Word*) {});
+    });
+    EXPECT_TRUE(begins_with(coupled_refusal, "add(Coupled(out, in0, ...), fn), rule 0: "))
+        << coupled_refusal;
+
+    const std::string launch_coupled_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    {
+        graph.add(window, API::Coupled(output, input),
+                  [](sycl::id<1>, const Word*, Word*, const Word*) {});
+    });
+    EXPECT_TRUE(begins_with(launch_coupled_refusal,
+                            "add(launch, Coupled(out, in0, ...), fn), rule 0: "))
+        << launch_coupled_refusal;
+
+    const std::string untracked_refusal = refusal_of(Core::Errc::invalid_access, [&]
+    {
+        graph.add_untracked(WIDTH, API::On(API::DeviceIndex{count}), [](std::size_t) {});
+    });
+    EXPECT_TRUE(begins_with(untracked_refusal, "add_untracked(launch, On(...), fn): "))
+        << untracked_refusal;
+
+    const std::string raw_refusal = refusal_of(Core::Errc::invalid_access, [&]
+    {
+        graph.add_untracked(API::On(API::DeviceIndex{count}), [](sycl::handler&) {});
+    });
+    EXPECT_TRUE(begins_with(raw_refusal, "add_untracked(On(...), fn): ")) << raw_refusal;
+
+    const std::string offload_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    {
+        graph.add("builder.check"_op, WIDTH, API::Reads(target), API::Writes(target),
+                  [](std::size_t) {}, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+    });
+    EXPECT_TRUE(begins_with(offload_refusal, "add(OpID, n, reads, writes, local, params): "))
+        << offload_refusal;
+
+    const std::string offload_rule_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    {
+        graph.add("builder.check"_op, field, [](std::size_t, const Word*, Word*) {},
+                  {1, 2, 3, 4, 5, 6, 7, 8, 9});
+    });
+    EXPECT_TRUE(begins_with(offload_rule_refusal, "add(OpID, state, local, params): "))
+        << offload_rule_refusal;
+
+    EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
+}
+
 #if defined(__clang__) || defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -359,6 +464,61 @@ TEST(Integration_BuilderSurface, DeprecatedSpellingsForwardToTheNewOnes)
         ASSERT_EQ(field.current()[i], static_cast<Word>(i) + SEED + 1u) << "at i=" << i;
     for (std::size_t i = 0; i < WIDTH; ++i)
         ASSERT_EQ(output.current()[i], (static_cast<Word>(i) + SEED) * 2u) << "at i=" << i;
+}
+
+/** @brief Tests that each raw-pointer form v0.4.0 deprecates records what its region form does. */
+TEST(Integration_BuilderSurface, DeprecatedRawPointerFormsForwardToTheRegionForms)
+{
+    auto rt = Runtime::create();
+
+    const auto expect_same = [](const Outcome& legacy, const Outcome& region)
+    {
+        EXPECT_EQ(legacy.rules, region.rules);
+        EXPECT_EQ(legacy.nodes, region.nodes);
+        EXPECT_EQ(legacy.words, region.words);
+        for (std::size_t i = 0; i < legacy.words.size(); ++i)
+            EXPECT_EQ(legacy.words[i], (static_cast<Word>(i) + SEED + 1u) * 3u) << "at i=" << i;
+    };
+
+    // Each first rule adds one; the triple after it waits for it, so the result is (x + 1) * 3.
+    const Outcome per_element = increment_then_triple(rt, [](auto& graph, auto&, Word* words)
+    {
+        graph.add(std::vector<void*>{ words }, std::vector<void*>{ words }, WIDTH,
+                  [words](std::size_t i) { words[i] += 1u; });
+    });
+    const Outcome per_element_region = increment_then_triple(rt,
+        [](auto& graph, auto& target, Word* words)
+    {
+        graph.add(WIDTH, API::Reads(target), API::Writes(target),
+                  [words](std::size_t i) { words[i] += 1u; });
+    });
+    expect_same(per_element, per_element_region);
+
+    const Outcome dynamic = increment_then_triple(rt, [](auto& graph, auto&, Word* words)
+    {
+        graph.add(API::sized([] { return WIDTH; }), std::vector<void*>{ words },
+                  std::vector<void*>{ words }, WIDTH, [words](std::size_t i) { words[i] += 1u; });
+    });
+    const Outcome dynamic_region = increment_then_triple(rt,
+        [](auto& graph, auto& target, Word* words)
+    {
+        graph.add(API::sized([] { return WIDTH; }), WIDTH, API::Reads(target), API::Writes(target),
+                  [words](std::size_t i) { words[i] += 1u; });
+    });
+    expect_same(dynamic, dynamic_region);
+
+    const Outcome offload = increment_then_triple(rt, [](auto& graph, auto&, Word* words)
+    {
+        graph.add("builder.increment"_op, WIDTH, std::vector<void*>{ words },
+                  std::vector<void*>{ words }, [words](std::size_t i) { words[i] += 1u; });
+    });
+    const Outcome offload_region = increment_then_triple(rt,
+        [](auto& graph, auto& target, Word* words)
+    {
+        graph.add("builder.increment"_op, WIDTH, API::Reads(target), API::Writes(target),
+                  [words](std::size_t i) { words[i] += 1u; });
+    });
+    expect_same(offload, offload_region);
 }
 
 #if defined(__clang__) || defined(__GNUC__)
