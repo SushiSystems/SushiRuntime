@@ -51,13 +51,6 @@ namespace SushiRuntime
     SUSHIRUNTIME_API void log_write(LogLevel level, std::string&& line);
 
     /**
-     * @brief Chooses whether a record reaches the sink before its log call returns.
-     * @param synchronous True first delivers every record still queued, then makes each
-     *        log call run the sink itself; false hands records to the logger's thread.
-     */
-    SUSHIRUNTIME_API void set_log_synchronous(bool synchronous);
-
-    /**
      * @brief Holds what the macros of this header expand to.
      */
     namespace Detail

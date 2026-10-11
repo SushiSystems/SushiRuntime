@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — logging: Moved the declaration of `set_log_synchronous` to `log_sink.hpp`, so `<SushiRuntime/api/runtime/logging.hpp>` declares it with the other logging controls (`log_sink.hpp`, `logger.hpp`).
 - 2026-10-12 — api: Added `AdvancedControls::live_allocation_count()`, the number of USM allocations of the runtime not yet released (`advanced_controls.hpp`).
 - 2026-10-12 — api: Added an alignment in bytes as the last argument of `Runtime::buffer` and `Runtime::state`; 0 keeps the device default and a value that is not a power of two stops the process (`runtime.hpp`, `buffer.hpp`).
 - 2026-10-12 — observability: Breaking change: Made `NodeTiming::operation` an `OperationID` and added the public names `NodeTiming`, `NodeEventRecord`, `ExecutionLayer`, `WorkerTiming`, `ClockPairing` and `K_WIDTH_UNKNOWN` (`run_report.hpp`, `dispatch_width.hpp`).

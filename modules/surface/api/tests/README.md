@@ -839,6 +839,18 @@ A native task that throws fails the run, which is the error isolation of work pa
 runtime stays usable: a fresh graph runs cleanly afterwards. Native tasks therefore share the kernel
 error path and do not latch the worker pool dead.
 
+## test_logging_names.cpp
+
+The file includes `api/runtime/logging.hpp` and no other header of the library.
+
+### `TheControlsAreCallableFromTheSurfaceHeader`
+
+Two `static_assert` lines state that the header declares `set_log_synchronous(bool)` and
+`set_log_sink(LogSink)` in `SushiRuntime`. The test calls `set_log_synchronous`, `set_log_sink`,
+`set_log_level` and `log_level` and puts back what it changed. It logs nothing: the header has no
+call that writes a record, and `modules/foundation/logging/tests/test_logger.cpp` covers what
+synchronous delivery does.
+
 ## test_node_options_width.cpp
 
 The file covers NodeOptions. The width a node states when it is recorded is the `launched_width`

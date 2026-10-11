@@ -42,6 +42,7 @@ sushiruntime_add_module_tests(
         test_late_bound_vocabulary.cpp
         test_launch_reach.cpp
         test_late_count.cpp
+        test_logging_names.cpp
         test_native_cpu_path.cpp
         test_node_options_width.cpp
         test_plan_view.cpp
