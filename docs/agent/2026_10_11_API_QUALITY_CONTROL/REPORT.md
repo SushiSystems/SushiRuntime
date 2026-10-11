@@ -519,3 +519,42 @@ dispatch: T23 api READMEs — haiku medium, 30 turns, passed
 dispatch: closing register pass — haiku high, 161 turns, passed
 dispatch: API quality control chief — opus medium, review and six repair waves, passed
 ```
+
+## Refinement baseline
+
+Measured on 2026-10-11 at `a3de43e`, branch `feature/api_refinement`, release build with the
+distributed extension, twelve workers, before any task of `PLAN.md` changed a source file.
+
+| Measure | Value |
+| --- | --- |
+| Tests | 800: 798 passed, 2 skipped (`DiamondAllKernelNodes`, `ImportOnAQueueWithoutTheExtensionThrowsUnsupported`), 273.6 s |
+| Public headers | 148, of which 57 under `api/` |
+| Include closure of `SushiRuntime.h` | 112 headers, 55 of them outside `api/` |
+| Compile of `applications/examples/quickstart.cpp` | 13.8 s, median of three, with its command from `compile_commands.json` |
+
+Per-node round trip, `Performance_ChainDispatch`, nanoseconds per node and step, median of five
+with the lowest and the highest run:
+
+| Chain length | Scheduler layer | Chain layer |
+| --- | --- | --- |
+| 1 | 228 363 (221 654 to 258 572) | 8 677 (8 041 to 9 714) |
+| 16 | 51 759 (45 519 to 62 707) | 8 808 (8 798 to 8 924) |
+| 256 | 39 121 (30 109 to 48 689) | 12 058 (11 883 to 12 814) |
+| 1024 | 56 089 (46 176 to 74 728) | 13 542 (12 778 to 14 909) |
+
+The scheduler rows vary by 13 % to 47 % between runs of one build, the chain rows by 1 % to 19 %.
+
+### Task 0.3: cost of the compiled boundary
+
+No trial was built. The engine already takes a node's work with its type erased:
+`Task::TaskWork` is `std::function<void(sycl::handler&)>` (`task_work.hpp:39`),
+`TaskGraph::add_node` takes it by value (`task_graph.hpp:102`), and a recorded node is held as a
+`std::function` in `Detail::NodeSpec::emit` (`node_spec.hpp`). The boundary of stage 6 moves the
+call of `add_node` from a header into a source file and hands it the same `TaskWork`. The work a
+replay calls is the same object type, built from the same lambda, so the replay path gains no
+indirection. What changes is where the `TaskWork` is built: once at record time, then copied per
+plan build, where today the kernel is copied per plan build and wrapped then.
+
+The expected change of the round trip is therefore zero, against a floor of 8 041 ns per node
+and a run-to-run spread no smaller than 1 %. Task 6.7 measures it on the finished boundary; the
+2 % limit stands there.
