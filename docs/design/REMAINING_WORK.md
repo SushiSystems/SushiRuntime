@@ -207,9 +207,11 @@ Open after a repair:
   `.scratch_syntax/`, `.pytest_cache/` or `.venv/`.
 - **Leftovers on disk and in git.** Four empty `CXX-DetectStdlib-*.h` probes in the root, written
   because the CLI configures with the source root as working directory
-  (`cli/sushiruntime/services/project.py`); `venv/`, `build-asan/`, `.superpowers/`,
+  (`cli/sushiruntime/services/project.py`); `build-asan/`, `.superpowers/`,
   `.scratch_syntax/`; the merged local branch `feature/sushicore_help_screen`; two stash entries
   from 2026-06-20 on a branch that no longer exists.
+- **No way to run `sr` under WSL.** The `venv/` a WSL shell made in the root on 2026-06-14 was
+  deleted on 2026-10-11; nothing replaces it yet. The install path for Linux under WSL is open.
 - **`check_source_comments.py` differs from SushiSkills in `_walk`.** The original calls
   `is_file()` on `venv/bin/python`, a link Windows cannot open, before it applies
   `K_SKIPPED_FOLDERS`, and stops with `WinError 1920`. This copy applies the skip first. Make the

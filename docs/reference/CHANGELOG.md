@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — docs: Recorded that the WSL `venv/` folder was deleted from the root and that the install path of `sr` under WSL is open (`REMAINING_WORK.md`).
 - 2026-10-11 — api: Breaking change: Wrote every acronym of a type name in capitals, so `PeerId`, `UsmKind`, `UsmRequest`, `TcpTransport` and `DeviceUuid` became PeerID, USMKind, USMRequest, TCPTransport and DeviceUUID.
 - 2026-10-11 — graph: Stated that a replayed plan reads Shared or Host USM the host wrote between two executions, and pinned it with a test (`compiled_graph.hpp`, `test_replay_host_write.cpp`).
 - 2026-10-11 — examples: Fixed six examples ending in an uncaught exception; each prints the message and returns 1 (`quickstart.cpp`, `vecadd_demo.cpp`, `stencil_demo.cpp`).
