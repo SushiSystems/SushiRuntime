@@ -1,16 +1,17 @@
 # core
 
-Types every other module uses: errors, results, reference counting, the intrusive pointer, spans,
+Types every other module uses: assertions, errors, results, reference counting, the intrusive pointer, spans,
 strong ids, bit helpers, the export macro and the version.
 
 It depends on the C++ standard library and on no other module of the repository.
 
 ## Public entry points
 
-The eleven public headers under `include/SushiRuntime/core/`:
+The twelve public headers under `include/SushiRuntime/core/`:
 
 | Header | What it declares |
 | --- | --- |
+| `assert.hpp` | `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, `AssertionFailure`, `AssertionHandler`, `set_assertion_handler()` and `fail_assertion()` |
 | `bit.hpp` | `popcount_u64` and `countr_zero_u64`, two 64-bit bit queries for the C++17 baseline |
 | `common.hpp` | The `Backend` enumeration and the size constants `CACHE_LINE_SIZE`, `MAX_SUPPORTED_XPU`, `MAX_NUMA_NODES`, `MAX_WORKER_THREADS` and `DEFAULT_ALIGNMENT` |
 | `delegate.hpp` | `Delegate`, a move-only callable stored inline, with no heap allocation |
@@ -25,6 +26,28 @@ The eleven public headers under `include/SushiRuntime/core/`:
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
+
+## assert.hpp
+
+### SR_ASSERT, SR_VERIFY and SR_FATAL
+
+The three macros are for a rule the caller broke, which no return value can report usefully.
+`SR_VERIFY` checks its condition in every build. `SR_ASSERT` checks it where
+`SR_ENABLE_ASSERTIONS` is 1, which is the default without `NDEBUG`; elsewhere the condition is
+not evaluated. `SR_FATAL` has no condition. A check on a path that runs once per recorded node
+or once per call is an `SR_VERIFY`; `SR_ASSERT` is for a check inside a loop over elements or
+tasks.
+
+A failed check builds an `AssertionFailure` with the text of the condition, the message, the file
+and the line, and passes it to `fail_assertion()`. The message expression is evaluated only then.
+
+### The handler
+
+`fail_assertion()` calls the installed handler and then `std::abort()`. A handler that returns
+does not keep the process alive. The default handler writes one line to standard error.
+`set_assertion_handler()` installs another, such as one that writes to the consumer's log, and
+returns the one it replaced; a null argument restores the default. The handler is one atomic
+pointer for the whole process.
 
 ## bit.hpp
 
@@ -196,6 +219,11 @@ refusing to run against one would reject a compatible upgrade.
 
 Sources of the `Core` layer that need a translation unit. The headers are in
 `include/SushiRuntime/core/`.
+
+### assert.cpp
+
+Holds the handler pointer and the default handler. `fail_assertion()` is compiled into the
+library, so a failed check costs its caller one call and no formatting code.
 
 ### version.cpp
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — core: Added `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, which stop the process through a handler `set_assertion_handler()` replaces (`assert.hpp`, `assert.cpp`, `test_assert.cpp`).
 - 2026-10-11 — docs: Recorded that the WSL `venv/` folder was deleted from the root and that the install path of `sr` under WSL is open (`REMAINING_WORK.md`).
 - 2026-10-11 — api: Breaking change: Wrote every acronym of a type name in capitals, so `PeerId`, `UsmKind`, `UsmRequest`, `TcpTransport` and `DeviceUuid` became PeerID, USMKind, USMRequest, TCPTransport and DeviceUUID.
 - 2026-10-11 — graph: Stated that a replayed plan reads Shared or Host USM the host wrote between two executions, and pinned it with a test (`compiled_graph.hpp`, `test_replay_host_write.cpp`).

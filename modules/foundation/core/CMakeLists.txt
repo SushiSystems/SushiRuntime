@@ -6,11 +6,14 @@
 
 sushiruntime_add_module(
     NAME core TIER foundation
-    SOURCES version.cpp)
+    SOURCES
+        assert.cpp
+        version.cpp)
 
 sushiruntime_add_module_tests(
     MODULE core
     SOURCES
+        test_assert.cpp
         test_delegate.cpp
         test_error.cpp
         test_ref_counted.cpp
