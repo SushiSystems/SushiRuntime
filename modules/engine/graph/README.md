@@ -417,20 +417,10 @@ all; everything else is a deliberate, supported configuration.
 
 #### Distributed offload
 
-The graph decides nothing about offload and names no context. Its constructor takes a
-`Internal::Graph::OffloadCoordinator*`, null by default, and `compile()` hands `all_nodes` to that
-coordinator's `prepare()` after the tracker is reset and before the graph is returned;
-`modules/extension/distributed/README.md` says which nodes the distributed coordinator marks. With a null
-coordinator no node gets an offload state from `compile()`, so the scheduler's offload
-branch does nothing for it.
-
-The graph holds the coordinator's raw address from construction until `compile()` has called
-`prepare()`. Whoever installed the coordinator keeps it installed and alive for that span:
-`RuntimeContext::install_offload()` releases the one it replaces, and a graph that still
-pointed at it would call a destroyed object from `compile()`. `take_nodes()` and the
-destructor never call the coordinator. The fluent layer builds a fresh `TaskGraph` inside
-each `PlanCache::build()` and `RegionComposer::build_region()` and finishes it in the same
-call, so it holds no graph across an install.
+The graph decides nothing about offload and names neither a context nor a coordinator.
+`compile()` returns nodes with no offload state of its own making. The engine that will run the
+plan marks them: `ExecutionEngine::prepare()` of `modules/engine/execution/README.md`, which the
+fluent `PlanCache::build()` calls once on each plan it compiles.
 
 The add functions keep nothing for offload beyond `io_reads_` and `io_writes_`, which
 `prepare()` reads. The two live lists of a node whose buffers rotate are stored in its

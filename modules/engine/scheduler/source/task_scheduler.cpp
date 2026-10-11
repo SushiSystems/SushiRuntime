@@ -1024,5 +1024,10 @@ namespace SushiRuntime
             event_poller.set_offload_coordinator(offload);
         }
 
+        void TaskScheduler::prepare_offload(span<const sushi_ptr<Internal::Graph::Node>> nodes)
+        {
+            offload_gate_.prepare(nodes);
+        }
+
     } // namespace Scheduler
 } // namespace SushiRuntime

@@ -56,6 +56,17 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Lets the coordinator mark the nodes of a compiled graph it may take.
+                 * @pre None of the nodes has been submitted.
+                 * @param nodes Borrowed for the call; with no coordinator nothing happens.
+                 */
+                void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) const
+                {
+                    if (coordinator_ != nullptr)
+                        coordinator_->prepare(nodes);
+                }
+
+                /**
                  * @brief Offers @p task to the coordinator.
                  * @param outcome A node of an aborting run is not offered; it stays local.
                  * @return True when the coordinator took the node and now owns it.

@@ -39,7 +39,6 @@
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include "dependency_tracker.hpp"
-#include <SushiRuntime/task/offload_coordinator.hpp>
 
 namespace SushiRuntime
 {
@@ -92,9 +91,6 @@ namespace SushiRuntime
             /** @brief Tracker to handle automatic dependencies seamlessly. */
             DependencyTracker tracker;
 
-            /** @brief Given the compiled nodes by compile(); null for a local-only graph. */
-            OffloadCoordinator* offload = nullptr;
-
             /**
              * @brief Source of fresh registration indices, shared across add_* calls.
              *
@@ -104,12 +100,6 @@ namespace SushiRuntime
              * atomic and distinct regardless of who is calling.
              */
             std::atomic<std::uint32_t> registration_counter_{0};
-
-            /**
-             * @brief Constructs the internal implementation.
-             * @param coordinator Not owned; null for a local-only graph.
-             */
-            explicit Impl(OffloadCoordinator* coordinator) : offload(coordinator) {}
 
             /**
              * @brief Destroys the internal implementation.
@@ -221,11 +211,8 @@ namespace SushiRuntime
             }
         };
 
-        /**
-         * @brief Creates an empty task graph.
-         * @param offload Not owned; null for a graph that runs only on the local pool.
-         */
-        TaskGraph::TaskGraph(OffloadCoordinator* offload) : impl_(make_sushi<Impl>(offload))
+        /** @brief Creates an empty task graph. */
+        TaskGraph::TaskGraph() : impl_(make_sushi<Impl>())
         {
             SR_LOG_DEBUG("Lock-Free O(1) TaskGraph initialized.");
         }
@@ -603,9 +590,6 @@ namespace SushiRuntime
 
             graph.sentinel = std::move(sentinel);
             impl_->tracker.reset(); // Safely clear the lock-free history
-
-            if (impl_->offload != nullptr)
-                impl_->offload->prepare(graph.all_nodes);
 
             SR_LOG_INFO("DAG compilation completed successfully.");
             return graph;

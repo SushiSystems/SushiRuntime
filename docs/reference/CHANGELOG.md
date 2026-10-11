@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — execution: Breaking change: Removed the coordinator parameter of `TaskGraph`; `ExecutionEngine::prepare` marks a compiled plan for offload and `PlanCache::build` calls it (`task_graph.hpp`, `execution_engine.hpp`, `offload_gate.hpp`).
 - 2026-10-12 — api: Fixed three tests that did not compile: one called the private `Recorder::replay` and reads `Graph::plan()` now, two kept an unused context (`test_state_move.cpp`, `test_registration_index.cpp`, `test_node_dispatch_width.cpp`).
 - 2026-10-12 — api: Added `Graph::plan()`, which returns a `PlanView` of the nodes in recording order with their predecessor counts and regions (`plan_view.hpp`, `plan_cache.hpp`, `graph.hpp`).
 - 2026-10-12 — api: Added `compile()` to `Graph` and `DynamicGraph`, which builds the plan when none is current and runs nothing (`step_driver.hpp`).

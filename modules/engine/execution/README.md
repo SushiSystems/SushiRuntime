@@ -14,7 +14,7 @@ an offload candidate, a device value read at dispatch, a node with no USM region
 context did not allocate, or two devices.
 
 An offload candidate is a node whose `OffloadState::offloadable` is set, which only the installed
-coordinator's prepare() does, at compile, for a node it has a worker and shared buffers for. The
+coordinator's prepare() does, when the engine prepares the plan, for a node it has a worker and shared buffers for. The
 operation a node names does not decide: with no coordinator installed, or none that takes the
 operation, a named node is chained like an unnamed one.
 
@@ -65,6 +65,15 @@ capture_profiling_state() is shared by capture_base_state() (the static Graph) a
 commit(). commit() has no compiled in-degree baseline of its own to capture but needs this sizing
 whenever it populates or repopulates all_nodes. It is safe to call only once all_nodes carries its
 final registration indices for this compose.
+
+### ExecutionEngine::prepare
+
+prepare() is the one call between `TaskGraph::compile()` and the first run of a plan. The default
+does nothing. SchedulerExecutionEngine hands `all_nodes` to the scheduler's offload gate, which
+passes them to the installed coordinator's `prepare()`; with none installed no node gets an
+offload state. The graph module therefore names no coordinator. A caller that compiles a
+`TaskGraph` by hand and wants its nodes offered to a worker calls prepare() itself, before
+`classify_chain()`, which reads the mark.
 
 ### ExecutionEngine::execute(CompiledGraph&)
 
@@ -608,6 +617,6 @@ the scheduler's `set_offload_coordinator()`, and keeps the `shared_ptr` whose ad
 engine's shutdown whatever its installer does with its own reference. Installing another
 coordinator, or null, releases the share after the engine holds the new address. The context
 never names a concrete coordinator: `modules/extension/distributed/README.md` describes the one the
-distributed layer installs. A graph offloads only when it was built with the installed
-pointer: `TaskGraph(context.offload())`, which the fluent `Graph` and `DynamicGraph` pass
-themselves.
+distributed layer installs. A plan offloads only when the engine prepared it while that
+coordinator was installed: `ExecutionEngine::prepare()`, which the fluent `Graph` calls on each
+plan it compiles.

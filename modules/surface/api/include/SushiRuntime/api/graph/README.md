@@ -563,7 +563,8 @@ compiles.
 
 ### build
 
-build() builds a fresh backing graph by replaying the recorder, compiles it, and caches the plan.
+build() builds a fresh backing graph by replaying the recorder, compiles it, hands the plan to
+`ExecutionEngine::prepare()` and caches it.
 The compiled plan snapshots its own replay baseline (in-degrees) so the fluent layer never touches
 Node's scheduler-internal state. compile() drains its builder, so a fresh TaskGraph is built
 whenever the topology changes.

@@ -36,6 +36,7 @@
 #include <SushiRuntime/api/graph/plan_view.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
@@ -130,7 +131,7 @@ namespace SushiRuntime
             [[nodiscard]] Result<void> build(const Recorder& recorder,
                                              Internal::Execution::RuntimeContext& context)
             {
-                ::SushiRuntime::Internal::Graph::TaskGraph backing_graph(context.offload());
+                ::SushiRuntime::Internal::Graph::TaskGraph backing_graph;
                 registrations_.assign(recorder.rule_count(),
                                       ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION);
                 recorded_.clear();
@@ -154,6 +155,7 @@ namespace SushiRuntime
                     return make_error(std::move(compiled.error()));
                 }
                 plan_ = std::move(*compiled);
+                context.execution_engine().prepare(plan_);
                 plan_.profiling = profiling_requested_;
                 plan_.capture_base_state();
                 plan_.chain = Internal::Execution::classify_chain(plan_, context);

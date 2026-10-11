@@ -48,7 +48,6 @@ namespace SushiRuntime
     namespace Internal::Graph
     {
         struct Node;
-        class OffloadCoordinator;
 
         /**
          * @brief Records task nodes, orders them by the regions they touch and compiles them
@@ -61,15 +60,8 @@ namespace SushiRuntime
                 /** @brief Stands for "no node carries an index yet". */
                 static constexpr std::uint32_t K_NO_REGISTRATION = static_cast<std::uint32_t>(-1);
 
-                /**
-                 * @brief Creates an empty task graph.
-                 * @param offload Given the compiled nodes by compile(); null for a graph that
-                 *        runs only on the local pool. Not owned.
-                 * @pre offload is neither replaced on its context nor released before compile()
-                 *      or take_nodes() has returned, or this graph is destroyed.
-                 * @see modules/engine/graph/README.md
-                 */
-                explicit TaskGraph(OffloadCoordinator* offload = nullptr);
+                /** @brief Creates an empty task graph. */
+                TaskGraph();
 
                 /** @brief Destroys the graph and cleans up task states. */
                 ~TaskGraph();
