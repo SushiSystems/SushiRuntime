@@ -11,6 +11,7 @@ A rule is fixed there first and copied here; `K_` settings are the only local ch
 | `documentation/check_docs_layout.py` | `docs/` entries, required documents, document names, work folders, status lines, design ceiling, links under `docs/`, reachability from `docs/README.md`, READMEs under `modules/<tier>/`, archive candidates | Repository root |
 | `documentation/check_changelog.py` | Headings and entry shape, releases kept live, length, one sentence, nesting, cited places | Repository root |
 | `layering/check_layering.py` | Declared tiers, upward includes, reaches into another module's `source/`, same-tier includes outside `K_SAME_TIER_EDGES`, includes of a module the `CMakeLists.txt` does not name in `DEPENDS` or `PRIVATE_DEPENDS` | Repository root |
+| `naming/check_naming.py` | C++: `namespace detail`, the I prefix on classes, `get_` declarations, `K_` constants, enumerator case; `--short-names` adds short identifiers in `include/` | Files or folders, default `modules` |
 | `licensing/write_license_block.py` | Nothing; writes the license block of `source-comments` into every tracked source file, or lists the files that lack it with `--report` | Repository root, `--project` |
 | `packaging/verify_installed_package.py` | That an installed SushiRuntime builds and runs a consumer with only the install prefix on the loader path; `sr test --suite package` runs it | Install prefix |
 | `tests/` | Unit tests for the checker rules; run `python -m unittest discover -s tools/tests` | |
